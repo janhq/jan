@@ -2136,10 +2136,13 @@ impl App {
         self.path_hint_dismissed = false;
     }
 
-    /// Slash commands whose name prefixes the current buffer, or empty when the
-    /// popup should not show: not idle, buffer isn't a bare `/name` token (no
-    /// whitespace yet), the popup was Esc-dismissed, or nothing matches.
-    fn slash_matches(&self) -> Vec<&'static SlashCommand> {
+    /// Slash commands and installed project skills whose name prefixes the
+    /// current buffer, or empty when the popup should not show: not idle,
+    /// buffer isn't a bare `/name` token (no whitespace yet), the popup was
+    /// Esc-dismissed, or nothing matches. Skills honor the `[skills].enabled`
+    /// whitelist exactly like the model-facing `skill_list` tool, so the popup
+    /// never offers a skill the agent cannot see.
+    fn slash_matches(&self) -> Vec<SlashMatch> {
         if self.status != Status::Idle
             || self.slash_dismissed
             || !self.input.starts_with('/')
@@ -2147,10 +2150,25 @@ impl App {
         {
             return Vec::new();
         }
-        SLASH_COMMANDS
+        let mut out: Vec<SlashMatch> = SLASH_COMMANDS
             .iter()
             .filter(|c| c.name.starts_with(&self.input))
-            .collect()
+            .map(SlashMatch::Command)
+            .collect();
+        let enabled = crate::core::agent::project::load_agent_config(&self.project_root)
+            .ok()
+            .map(|c| c.skills.enabled)
+            .unwrap_or_default();
+        for meta in crate::core::agent::skills::catalog(&self.project_root, &enabled) {
+            let name = format!("/{}", meta.name);
+            if name.starts_with(&self.input) {
+                out.push(SlashMatch::Skill {
+                    name,
+                    description: meta.description,
+                });
+            }
+        }
+        out
     }
 
     /// Move the hint selection, wrapping within the current match count.
@@ -2163,14 +2181,15 @@ impl App {
         self.slash_selected = (cur + delta).rem_euclid(len as isize) as usize;
     }
 
-    /// Fill the buffer with the highlighted command name plus a trailing space,
-    /// ready for arguments; the space hides the popup via `slash_matches`.
+    /// Fill the buffer with the highlighted command or skill name plus a
+    /// trailing space, ready for arguments; the space hides the popup via
+    /// `slash_matches`.
     fn accept_slash(&mut self) {
         let matches = self.slash_matches();
         if matches.is_empty() {
             return;
         }
-        let name = matches[self.slash_selected.min(matches.len() - 1)].name;
+        let name = matches[self.slash_selected.min(matches.len() - 1)].name();
         self.input = format!("{name} ");
         self.cursor = self.input.len();
         self.slash_selected = 0;
@@ -5683,7 +5702,7 @@ async fn handle_key(
             KeyCode::Enter => {
                 let matches = app.slash_matches();
                 let sel = app.slash_selected.min(matches.len() - 1);
-                if app.input.trim() != matches[sel].name {
+                if app.input.trim() != matches[sel].name() {
                     app.accept_slash();
                     return;
                 }
@@ -5837,6 +5856,24 @@ struct SlashCommand {
     /// Argument hint (`[id]`) or empty when the command takes none.
     hint: &'static str,
     description: &'static str,
+}
+
+/// One row of the slash-command popup: a built-in command, or an installed
+/// project skill (`.jan/agent/skills/<name>/SKILL.md`) offered by name so
+/// `/deploy` behaves like a command the user can tab-complete and run.
+enum SlashMatch {
+    Command(&'static SlashCommand),
+    Skill { name: String, description: String },
+}
+
+impl SlashMatch {
+    /// Full invocation name including the leading slash.
+    fn name(&self) -> &str {
+        match self {
+            SlashMatch::Command(c) => c.name,
+            SlashMatch::Skill { name, .. } => name,
+        }
+    }
 }
 
 const SLASH_COMMANDS: &[SlashCommand] = &[
@@ -6034,7 +6071,34 @@ async fn run_command(app: &mut App, line: &str) {
         "todo" => todo_command(app, arg).await,
         "cancel" => cancel_command(app, arg),
         "quit" | "exit" => app.should_quit = true,
-        other => app.note(&format!("unknown command '/{other}' (try /help)")),
+        other => {
+            // `/name` that isn't a built-in: an installed project skill is
+            // invocable the same way - the popup offers it, Enter submits the
+            // slash token, and this fallback hands the work to the agent by
+            // name. The model loads the skill body via its skill_read tool
+            // (the system-prompt catalog already lists the name + purpose).
+            let name = format!("/{other}");
+            let enabled = crate::core::agent::project::load_agent_config(&app.project_root)
+                .ok()
+                .map(|c| c.skills.enabled)
+                .unwrap_or_default();
+            let hit = crate::core::agent::skills::catalog(&app.project_root, &enabled)
+                .into_iter()
+                .find(|m| format!("/{}", m.name) == name);
+            match hit {
+                Some(meta) => {
+                    app.note(&format!(
+                        "skill '{}' invoked - the agent will load and follow it",
+                        meta.name
+                    ));
+                    app.submit_user(format!(
+                        "Apply the skill '{}': call skill_read(\"{}\") to load its full instructions, then follow them.",
+                        meta.name, meta.name
+                    ));
+                }
+                None => app.note(&format!("unknown command '/{other}' (try /help)")),
+            }
+        }
     }
 }
 
@@ -8654,10 +8718,14 @@ fn draw_mcp_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &McpPromp
 }
 
 /// the highlighted row reversed. Docked above the input box.
+/// Slash hint popup: one row per match (`/name [hint]  description`), the
+/// highlighted row reversed. Built-in commands render cyan; installed project
+/// skills render magenta so a `/deploy` completion is distinguishable from a
+/// command at a glance. Docked above the input box.
 fn draw_slash_hints(
     f: &mut Frame,
     area: ratatui::layout::Rect,
-    matches: &[&SlashCommand],
+    matches: &[SlashMatch],
     selected: usize,
 ) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
@@ -8665,19 +8733,32 @@ fn draw_slash_hints(
     let dim = Style::new().dark_gray();
     let items: Vec<ListItem> = matches
         .iter()
-        .map(|c| {
-            let mut spans = vec![Span::styled(c.name, Style::new().cyan().bold())];
-            if !c.hint.is_empty() {
-                spans.push(Span::styled(format!(" {}", c.hint), dim));
+        .map(|m| match m {
+            SlashMatch::Command(c) => {
+                let mut spans = vec![Span::styled(c.name, Style::new().cyan().bold())];
+                if !c.hint.is_empty() {
+                    spans.push(Span::styled(format!(" {}", c.hint), dim));
+                }
+                spans.push(Span::styled(format!("  {}", c.description), dim));
+                ListItem::new(Line::from(spans))
             }
-            spans.push(Span::styled(format!("  {}", c.description), dim));
-            ListItem::new(Line::from(spans))
+            SlashMatch::Skill { name, description } => {
+                let desc = if description.is_empty() {
+                    "project skill".to_string()
+                } else {
+                    description.clone()
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(name.clone(), Style::new().magenta().bold()),
+                    Span::styled(format!("  {desc}"), dim),
+                ]))
+            }
         })
         .collect();
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::new().dark_gray())
-        .title(Span::styled(" commands ", Style::new().dim()));
+        .title(Span::styled(" commands + skills ", Style::new().dim()));
     f.render_widget(Clear, area);
     let list = List::new(items)
         .block(block)
@@ -9844,6 +9925,38 @@ mod tests {
             None,
         );
         TestApp { app, _dir: dir }
+    }
+
+    /// App whose project has one installed skill `<name>/SKILL.md` with the
+    /// given frontmatter description, so slash-popup and dispatch tests run
+    /// against a real `.jan/agent/skills/` tree. Returns the temp project
+    /// root for cleanup.
+    fn skill_test_app(name: &str, description: &str) -> (App, std::path::PathBuf) {
+        let root = std::env::temp_dir().join(format!(
+            "jan_tui_skill_{}_{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let agent_dir = root.join(".jan/agent");
+        std::fs::create_dir_all(agent_dir.join("skills").join(name)).unwrap();
+        std::fs::write(
+            agent_dir.join("skills").join(name).join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: {description}\n---\n\n# {name}\n\nBody.\n"),
+        )
+        .unwrap();
+        (
+            App::new(
+                "m".into(),
+                8,
+                128_000,
+                16_384,
+                None,
+                agent_dir,
+                root.clone(),
+                None,
+            ),
+            root,
+        )
     }
 
     /// Draw `app` into an off-screen terminal and return its rows as strings.
@@ -16477,8 +16590,8 @@ mod tests {
         assert_eq!(message_text(&empty), "");
     }
 
-    fn names(app: &App) -> Vec<&'static str> {
-        app.slash_matches().iter().map(|c| c.name).collect()
+    fn names(app: &App) -> Vec<String> {
+        app.slash_matches().iter().map(|m| m.name().to_string()).collect()
     }
 
     #[test]
@@ -16492,7 +16605,7 @@ mod tests {
     fn slash_prefix_narrows_and_unmatched_hides() {
         let mut app = test_app();
         app.input = "/re".into();
-        assert_eq!(names(&app), vec!["/resume"]);
+        assert_eq!(names(&app), vec!["/resume".to_string()]);
         app.input = "/xyz".into();
         assert!(app.slash_matches().is_empty());
     }
@@ -16546,7 +16659,89 @@ mod tests {
         assert!(app.slash_matches().is_empty());
         // Editing the buffer re-shows the popup.
         app.input_insert('s');
-        assert_eq!(names(&app), vec!["/resume"]);
+        assert_eq!(names(&app), vec!["/resume".to_string()]);
+    }
+
+    #[test]
+    fn slash_matches_include_installed_skills() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.input = "/dep".into();
+        assert!(
+            names(&app).iter().any(|n| n == "/deploy"),
+            "skill offered by prefix: {:?}",
+            names(&app)
+        );
+        // Prefix narrowing works for skills too.
+        app.input = "/deplo".into();
+        assert_eq!(names(&app), vec!["/deploy".to_string()]);
+        // Unmatched prefix hides the skill row.
+        app.input = "/zzz".into();
+        assert!(!names(&app).iter().any(|n| n == "/deploy"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_matches_hide_disabled_skills() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        // Whitelist a different skill: deploy must vanish from the popup,
+        // matching the model-facing skill_list semantics.
+        std::fs::write(
+            root.join(".jan/agent/agent.toml"),
+            "[agent]\n[skills]\nenabled = [\"other\"]\n",
+        )
+        .unwrap();
+        app.input = "/dep".into();
+        assert!(
+            !names(&app).iter().any(|n| n == "/deploy"),
+            "disabled skill must not be offered: {:?}",
+            names(&app)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn accept_slash_fills_skill_name() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.input = "/dep".into();
+        app.cursor = app.input.len();
+        app.accept_slash();
+        assert_eq!(app.input, "/deploy ");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_hints_render_skill_rows() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.input = "/dep".into();
+        app.cursor = app.input.len();
+        let rows = render_rows(&mut app, 100, 30);
+        assert!(
+            rows.iter().any(|r| r.contains("/deploy") && r.contains("How to deploy.")),
+            "skill row rendered:\n{}",
+            rows.join("\n")
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn run_command_dispatches_installed_skill() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "deploy").await;
+        assert!(transcript_text(&app).contains("skill 'deploy' invoked"));
+        assert!(
+            transcript_text(&app).contains("Apply the skill 'deploy'"),
+            "{}",
+            transcript_text(&app)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn run_command_unknown_still_notes() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "warp_drive").await;
+        assert!(transcript_text(&app).contains("unknown command '/warp_drive'"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
