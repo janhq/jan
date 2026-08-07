@@ -1,0 +1,107 @@
+---
+title: Cowork
+description: Point Jan at a folder on your computer and work alongside an agent that reads, writes, and runs code in it.
+keywords:
+  [
+    Jan,
+    Jan Desktop,
+    Cowork,
+    coding agent,
+    agent,
+    artifacts,
+    subagents,
+    local files,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+
+# Cowork
+
+**Cowork** is where you hand Jan a folder and work on it together. You describe what you want; the
+agent reads the files, writes new ones, runs commands, and shows you what it did as it goes.
+
+It is a different shape of conversation from a normal chat. A chat answers you. Cowork changes
+things on your disk — so the whole screen is built around seeing those changes and staying in
+control of them.
+
+Open it from **Cowork** in the left sidebar.
+
+## The layout
+
+```
+┌────────────────────────────────┬──────────────────┐
+│                                │                  │
+│  Transcript                    │   Side panel     │
+│    what the agent said,        │                  │
+│    every tool it called,       │    Progress      │
+│    the files it produced       │    Agent changes │
+│                                │    Background    │
+│                                │      tasks       │
+│                                │    Preview       │
+├────────────────────────────────┤                  │
+│  Input   [mode] [model]        │                  │
+│  ~/code/my-project  main       │                  │
+└────────────────────────────────┴──────────────────┘
+```
+
+- **Transcript** — the conversation, with every tool call folded inline. Expand one to see exactly
+  what the agent read, wrote, or ran.
+- **Side panel** — one of four views, described in [Side panels](./panels). Drag its left edge to
+  resize.
+- **Input** — your message, plus the [run mode](./run-modes) and model pickers.
+- **Footer** — the project folder the agent is scoped to, and the current git branch.
+
+## What it can do
+
+**Work with your files.** Read, search, write, and edit anything inside the project folder. Run
+shell commands. Long-running commands move to the background instead of failing.
+
+**Look things up.** Web search and page fetch are built in and work without an API key.
+
+**Split up work.** For anything wide, the agent can start [subagents](../../agent/subagents) that
+run in parallel, each with its own context window.
+
+**Show its work.** Files it produces appear as cards in the transcript and in the
+[Artifacts](./artifacts) library. HTML, images, and markdown get a live preview you can
+[draw on](./annotations) and send back.
+
+**Track a plan.** The agent keeps a todo list you can watch in the Progress panel, and you can set a
+[goal](../../agent/goals-and-todos) it keeps working toward until it's met.
+
+**Remember.** Project-scoped memory and [skills](../../agent/skills) persist across sessions, so
+what it learns about your project isn't lost when you close the app.
+
+## Staying in control
+
+By default the agent asks before anything risky. A write or edit shows you the diff **before** you
+approve it, and a shell command shows you the exact command.
+
+If you'd rather it not touch anything yet, switch to **Plan** mode — write, edit, and exec tools are
+denied outright, so it can only read and think. See [Run modes](./run-modes).
+
+<Callout type="info">
+  Everything the agent does is scoped to the folder you picked. Paths that escape it are refused
+  before the tool runs.
+</Callout>
+
+## Sessions
+
+Each Cowork session remembers its folder, mode, conversation, todos, and goal, and survives
+restarting Jan. Start as many as you like — a session running in the background keeps going while
+you look at another one.
+
+## Same agent, different surface
+
+Cowork and [Jan Agent](../../agent) (the terminal UI) are two front-ends over the same agent: the
+same tools, the same permission model, the same subagents and skills. Pick whichever fits — the
+terminal when you live in one, Cowork when you want to see diffs and previews next to the
+conversation.
+
+## Next
+
+- [Quickstart](./quickstart) — your first task, start to finish
+- [Run modes](./run-modes) — Normal, Plan, and Bypass permissions
+- [Side panels](./panels) — Progress, Agent changes, Background tasks, Preview
+- [Artifacts](./artifacts) — what the agent produced, and previewing it
+- [Annotations](./annotations) — draw on a preview and send it back

@@ -1,0 +1,65 @@
+---
+title: Artifacts
+description: Files the agent produced — surfaced in the transcript, collected in a library, and previewable.
+keywords: [Jan, Jan Desktop, Cowork, artifacts, preview, HTML, files, library]
+---
+
+import { Callout } from 'nextra/components'
+
+# Artifacts
+
+An **artifact** is a file the agent produced. Jan spots them as they're written and surfaces them,
+so a run that builds something ends with something you can look at rather than a wall of tool calls.
+
+## In the transcript
+
+When the agent writes a file, a card for it appears inline at that point in the conversation. From
+the card you can:
+
+- **Open preview** — render it in the side panel
+- **Open** — open it in your default application
+- **Show in Folder** — reveal it in Finder or Explorer
+
+## The Artifacts library
+
+The **Artifacts** item in the left sidebar collects everything produced across your Cowork runs, so
+you can find last week's output without hunting for the session.
+
+Search by name, or filter by type. Long lists load 24 at a time with a **Show more** button.
+
+Selecting one opens it in the Cowork preview panel.
+
+## Previewing
+
+| Type | How it renders |
+|---|---|
+| HTML | Live, in a sandboxed frame |
+| SVG | Rendered, scripts disabled |
+| Markdown | Formatted |
+| Images | Inline |
+| Video / audio | With playback controls |
+| Source and text | Syntax highlighted |
+
+The preview reads from disk each time, so **Reload from disk** always shows the current file — there
+is no cached copy that can go stale behind it.
+
+If a file is missing, too large, or unreadable, the panel says which — it won't render a blank pane
+and leave you guessing.
+
+<Callout type="info">
+  Relative asset references (`./logo.png`, `style.css`) can't resolve inside the sandboxed preview,
+  so pages that use them show a notice with a count. The files are fine on disk; only the preview is
+  affected.
+</Callout>
+
+## Inspecting elements
+
+In an HTML or SVG preview, hovering highlights the element under your cursor and clicking pins it,
+showing its selector — the same idea as a browser's inspector, without leaving Jan.
+
+Pin an element and you can attach a note to it. See [Annotations](./annotations).
+
+## Related
+
+- [Annotations](./annotations) — mark up a preview and send it back to the agent
+- [Side panels](./panels) — the preview panel in context
