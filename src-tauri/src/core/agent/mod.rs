@@ -21,6 +21,7 @@ pub mod git;
 pub mod r#loop;
 pub mod memory;
 pub mod plan;
+pub mod plugins;
 pub mod project;
 pub mod session;
 pub mod skill_hub;
