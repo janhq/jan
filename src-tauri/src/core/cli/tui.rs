@@ -2155,13 +2155,30 @@ impl App {
             .filter(|c| c.name.starts_with(&self.input))
             .map(SlashMatch::Command)
             .collect();
+        // A command wins a name collision: a skill named `cancel` is dropped
+        // from the short form (it could never run - the command arm wins) but
+        // stays reachable via its unambiguous `/skill:cancel` form.
+        let taken: std::collections::HashSet<&str> = out
+            .iter()
+            .filter_map(|m| match m {
+                SlashMatch::Command(c) => Some(c.name),
+                SlashMatch::Skill { .. } => None,
+            })
+            .collect();
+        let colon_form = self.input.starts_with("/skill:");
         let enabled = crate::core::agent::project::load_agent_config(&self.project_root)
             .ok()
             .map(|c| c.skills.enabled)
             .unwrap_or_default();
         for meta in crate::core::agent::skills::catalog(&self.project_root, &enabled) {
-            let name = format!("/{}", meta.name);
-            if name.starts_with(&self.input) {
+            let name = if colon_form {
+                format!("/skill:{}", meta.name)
+            } else {
+                format!("/{}", meta.name)
+            };
+            if name.starts_with(&self.input)
+                && (colon_form || !taken.contains(name.as_str()))
+            {
                 out.push(SlashMatch::Skill {
                     name,
                     description: meta.description,
@@ -2376,6 +2393,14 @@ impl App {
             self.note(&format!("⏳ message queued ({} in queue)", self.message_queue.len()));
             return;
         }
+        // Mid-prompt `/skill:<name>` token: dispatch to the skill, threading
+        // the surrounding prose as its arguments (queued messages re-enter
+        // this method via `dequeue_next`, so the token is re-parsed there too).
+        if let Some((name, args)) = crate::core::agent::skills::parse_invocation(&text) {
+            if self.dispatch_skill(&name, &args) {
+                return;
+            }
+        }
         self.ensure_base_snapshot();
         let images = if display {
             std::mem::take(&mut self.pending_images)
@@ -2416,6 +2441,47 @@ impl App {
         self.overflow_retries = 0;
         self.want_start = true;
         self.persist();
+    }
+
+    /// Invoke an enabled project skill by name: load its full instructions and
+    /// submit them as the user message so the agent follows the procedure
+    /// directly (no `skill_read` round trip). The transcript shows one compact
+    /// `[skill:<name>]` row with the user's args, never the body text. `args`
+    /// are threaded into the message like a command's arguments. Returns false
+    /// when the skill is unknown or disabled, leaving the caller to treat the
+    /// text as a plain message. Message assembly lives in
+    /// `skills::build_invocation_message` so other UIs (desktop/web) invoke
+    /// skills with identical semantics.
+    fn dispatch_skill(&mut self, name: &str, args: &str) -> bool {
+        let root = &self.project_root;
+        let (msg, description) =
+            match crate::core::agent::skills::build_invocation_message(root, name, args) {
+                Ok(pair) => pair,
+                Err(_) => return false,
+            };
+        let args = args.trim();
+        self.history
+            .push(serde_json::json!({ "role": "user", "content": msg }));
+        let mut spans = vec![Span::styled("› ", Style::new().light_magenta().bold())];
+        spans.push(Span::styled(
+            format!("[skill:{name}]"),
+            Style::new().cyan().bold(),
+        ));
+        if !args.is_empty() {
+            spans.push(Span::raw(format!(" {args}")));
+        } else if !description.is_empty() {
+            spans.push(Span::raw(format!(" - {description}")));
+        }
+        self.gap(Kind::User);
+        self.push(Line::from(spans));
+        self.begin_turn();
+        // A fresh user turn is new context: same reminder reset as submit_user.
+        self.last_todo_reminder = None;
+        self.reminder_count = 0;
+        self.reminder_awaiting_progress = false;
+        self.want_start = true;
+        self.persist();
+        true
     }
 
     /// Inject a hidden todo reminder and continue with one more model turn. The
@@ -6072,32 +6138,18 @@ async fn run_command(app: &mut App, line: &str) {
         "cancel" => cancel_command(app, arg),
         "quit" | "exit" => app.should_quit = true,
         other => {
-            // `/name` that isn't a built-in: an installed project skill is
-            // invocable the same way - the popup offers it, Enter submits the
-            // slash token, and this fallback hands the work to the agent by
-            // name. The model loads the skill body via its skill_read tool
-            // (the system-prompt catalog already lists the name + purpose).
-            let name = format!("/{other}");
-            let enabled = crate::core::agent::project::load_agent_config(&app.project_root)
-                .ok()
-                .map(|c| c.skills.enabled)
-                .unwrap_or_default();
-            let hit = crate::core::agent::skills::catalog(&app.project_root, &enabled)
-                .into_iter()
-                .find(|m| format!("/{}", m.name) == name);
-            match hit {
-                Some(meta) => {
-                    app.note(&format!(
-                        "skill '{}' invoked - the agent will load and follow it",
-                        meta.name
-                    ));
-                    app.submit_user(format!(
-                        "Apply the skill '{}': call skill_read(\"{}\") to load its full instructions, then follow them.",
-                        meta.name, meta.name
-                    ));
-                }
-                None => app.note(&format!("unknown command '/{other}' (try /help)")),
+            // A `/name` that isn't a built-in is an installed project skill:
+            // `/deploy` (short form) or `/skill:deploy` (explicit form that
+            // never collides with a command name), with optional args threaded
+            // into the skill message. Unknown names still note.
+            let (skill_name, skill_args) = match other.split_once(':') {
+                Some(("skill", name)) => (name, arg),
+                _ => (other, arg),
+            };
+            if app.dispatch_skill(skill_name, skill_args) {
+                return;
             }
+            app.note(&format!("unknown command '/{other}' (try /help)"));
         }
     }
 }
@@ -16700,6 +16752,19 @@ mod tests {
     }
 
     #[test]
+    fn slash_matches_dedupe_command_collisions() {
+        let (mut app, root) = skill_test_app("cancel", "Cancels things.");
+        app.input = "/".into();
+        let all = names(&app);
+        let hits = all.iter().filter(|n| *n == "/cancel").count();
+        assert_eq!(hits, 1, "command wins, skill row dropped: {all:?}");
+        // The unambiguous form is still completable.
+        app.input = "/skill:can".into();
+        assert!(names(&app).iter().any(|n| n == "/skill:cancel"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn accept_slash_fills_skill_name() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         app.input = "/dep".into();
@@ -16727,11 +16792,95 @@ mod tests {
     async fn run_command_dispatches_installed_skill() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         run_command(&mut app, "deploy").await;
-        assert!(transcript_text(&app).contains("skill 'deploy' invoked"));
         assert!(
-            transcript_text(&app).contains("Apply the skill 'deploy'"),
-            "{}",
+            transcript_text(&app).contains("[skill:deploy]"),
+            "compact row: {}",
             transcript_text(&app)
+        );
+        // The full skill body is injected into history, not deferred to
+        // skill_read, and the folder directory is announced for relative paths.
+        let user = app
+            .history
+            .iter()
+            .rev()
+            .find(|m| m["role"] == "user")
+            .expect("user message pushed");
+        let content = user["content"].as_str().unwrap();
+        assert!(content.contains("You have invoked the \"deploy\" skill"), "{content}");
+        assert!(content.contains("# deploy"), "body injected: {content}");
+        assert!(content.contains("Skill directory:"), "base dir: {content}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn run_command_threads_skill_args() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "deploy staging --force").await;
+        let user = app
+            .history
+            .iter()
+            .rev()
+            .find(|m| m["role"] == "user")
+            .expect("user message pushed");
+        assert!(
+            user["content"].as_str().unwrap().contains("User: staging --force"),
+            "{}",
+            user["content"]
+        );
+        assert!(transcript_text(&app).contains("[skill:deploy] staging --force"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn skill_colon_form_dispatches_and_beats_collisions() {
+        // A skill named like a builtin command: the short form runs the
+        // command; `/skill:cancel` still reaches the skill.
+        let (mut app, root) = skill_test_app("cancel", "Cancels things.");
+        run_command(&mut app, "cancel").await;
+        assert!(
+            !transcript_text(&app).contains("[skill:cancel]"),
+            "command wins the short form: {}",
+            transcript_text(&app)
+        );
+        run_command(&mut app, "skill:cancel").await;
+        assert!(transcript_text(&app).contains("[skill:cancel]"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn submit_user_mid_prompt_skill_invocation() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.submit_user("fix the auth flow /skill:deploy focus on security".into());
+        let user = app
+            .history
+            .iter()
+            .rev()
+            .find(|m| m["role"] == "user")
+            .expect("user message pushed");
+        let content = user["content"].as_str().unwrap();
+        assert!(
+            content.contains("fix the auth flow focus on security"),
+            "surrounding prose becomes args: {content}"
+        );
+        assert!(content.contains("User: fix the auth flow focus on security"), "{content}");
+        assert!(transcript_text(&app).contains("[skill:deploy] fix the auth flow focus on security"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn submit_user_unknown_skill_token_passes_through() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.submit_user("read /skill:nope for me".into());
+        let user = app
+            .history
+            .iter()
+            .rev()
+            .find(|m| m["role"] == "user")
+            .expect("user message pushed");
+        assert_eq!(
+            user["content"].as_str().unwrap(),
+            "read /skill:nope for me",
+            "unknown skill stays a plain message"
         );
         let _ = std::fs::remove_dir_all(&root);
     }

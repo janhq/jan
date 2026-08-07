@@ -255,6 +255,23 @@ pub async fn agent_skill_enabled_set(
     set_skills_enabled_in_agent_toml(&agent_toml_path(&root), &enabled).map_err(ui_error)
 }
 
+/// Build the user message for invoking an enabled skill (`/skill:<name>` /
+/// `<skill>` semantics shared with the console): the full skill body wrapped
+/// in an invocation header, skill directory announcement for bundled files,
+/// and the user's `args` threaded in. Err when the skill is unknown or
+/// disabled. UIs submit the returned message through their own session flow.
+#[tauri::command]
+pub async fn agent_skill_invoke(
+    project: String,
+    name: String,
+    args: String,
+) -> Result<String, String> {
+    let root = std::path::PathBuf::from(&project);
+    skills::build_invocation_message(&root, &name, &args)
+        .map(|(message, _)| message)
+        .map_err(ui_error)
+}
+
 /// Return the git branch name for the project at `project`, or `None` when the
 /// folder is not inside a git repo (or git is not installed). Used by the Code
 /// UI to display the current branch alongside the working directory.
