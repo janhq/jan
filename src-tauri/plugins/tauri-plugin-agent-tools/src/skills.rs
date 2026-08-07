@@ -258,6 +258,103 @@ pub fn read_body(store: &Path, name: &str) -> Result<String, String> {
     Ok(parse(&read_raw(store, name)?).body)
 }
 
+/// Parse a `/skill:<name>` invocation in a user draft.
+///
+/// Returns `(name, args)` for:
+///   - the leading form (`/skill:deploy staging` -> `deploy`, `staging`), and
+///   - a mid-prompt token (`fix the bug /skill:deploy focus on auth` ->
+///     `deploy`, with the surrounding prose collapsed into `args`).
+///
+/// Mid-prompt detection is skipped when the draft starts with another slash
+/// command (`/compact /skill:foo` is a command argument, not an invocation) or
+/// a local-execution sigil (`!cmd` / `$ cmd`), whose bodies routinely contain
+/// `/skill:` references that are not meant as skill invocations.
+pub(crate) fn parse_invocation(text: &str) -> Option<(String, String)> {
+    let trimmed = text.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("/skill:") {
+        let name = rest.split_whitespace().next()?;
+        if name.is_empty() {
+            return None;
+        }
+        let args = rest[name.len()..].trim();
+        return Some((name.to_string(), args.to_string()));
+    }
+    if trimmed.starts_with('/') || trimmed.starts_with('!') || trimmed.starts_with('$') {
+        return None;
+    }
+    // Mid-prompt: `/skill:<name>` preceded by start/space and followed by
+    // space/end. The name excludes `/` so a path like `/skill:foo/bar` is not
+    // an invocation.
+    let bytes = text.as_bytes();
+    let mut search_from = 0;
+    while search_from < text.len() {
+        let Some(rel) = text[search_from..].find("/skill:") else {
+            return None;
+        };
+        let start = search_from + rel;
+        let prev_ok = start == 0 || bytes[start - 1].is_ascii_whitespace();
+        let after = start + "/skill:".len();
+        let name_end = text[after..]
+            .find(|c: char| c.is_whitespace() || c == '/')
+            .map(|i| after + i)
+            .unwrap_or(text.len());
+        let name = &text[after..name_end];
+        let next_ok = name_end == text.len()
+            || text[name_end..]
+                .chars()
+                .next()
+                .is_some_and(char::is_whitespace);
+        if prev_ok && next_ok && !name.is_empty() {
+            let before = text[..start].trim_end();
+            let after_part = text[name_end..].trim_start();
+            let args = [before, after_part]
+                .into_iter()
+                .filter(|p| !p.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+            return Some((name.to_string(), args));
+        }
+        search_from = (start + 1).max(name_end);
+    }
+    None
+}
+
+/// Build the user message for invoking an enabled skill: the full skill body
+/// (frontmatter stripped) wrapped in an invocation header, the skill's
+/// directory announced so bundled files resolve relative paths, and the user's
+/// `args` threaded in. Returns `(message, description)`; `Err` when the skill
+/// is unknown or disabled (same visibility rules as the `skill_read` tool).
+pub(crate) fn build_invocation_message(
+    root: &Path,
+    name: &str,
+    args: &str,
+) -> Result<(String, String), String> {
+    let enabled = crate::core::agent::project::load_agent_config(root)
+        .ok()
+        .map(|c| c.skills.enabled)
+        .unwrap_or_default();
+    let meta = catalog(root, &enabled)
+        .into_iter()
+        .find(|m| m.name == name)
+        .ok_or_else(|| format!("skill '{name}' not found"))?;
+    let body = read_body(root, name)?;
+    let args = args.trim();
+    let mut msg = format!(
+        "[IMPORTANT: You have invoked the \"{name}\" skill - follow its instructions. The full skill content is loaded below.]\n\n{body}"
+    );
+    let base = skills_dir(root).join(name);
+    if base.is_dir() {
+        msg.push_str(&format!(
+            "\n\n---\n[Skill directory: {}]\nResolve relative paths in the skill against that directory.\n",
+            base.display()
+        ));
+    }
+    if !args.is_empty() {
+        msg.push_str(&format!("User: {args}\n"));
+    }
+    Ok((msg, meta.description))
+}
+
 /// Create or overwrite a skill. Existing skills are written in place (preserving
 /// their form); new skills are written as the folder form `<name>/SKILL.md`.
 pub fn write(store: &Path, name: &str, content: &str) -> Result<(), String> {
@@ -357,6 +454,74 @@ mod tests {
         delete(&root, "deploy").unwrap();
         assert!(!skills_dir(&root).join("deploy").exists());
         delete(&root, "deploy").unwrap(); // idempotent
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn parse_invocation_leading_and_mid_prompt_forms() {
+        // Leading form: name + args.
+        let (name, args) = parse_invocation("/skill:deploy staging --force").unwrap();
+        assert_eq!(name, "deploy");
+        assert_eq!(args, "staging --force");
+        // Bare leading form.
+        let (name, args) = parse_invocation("/skill:deploy").unwrap();
+        assert_eq!(name, "deploy");
+        assert_eq!(args, "");
+        // Mid-prompt: surrounding prose collapses into args.
+        let (name, args) = parse_invocation("fix the auth flow /skill:deploy focus on security").unwrap();
+        assert_eq!(name, "deploy");
+        assert_eq!(args, "fix the auth flow focus on security");
+        // Token at the end: only the prose before it.
+        let (name, args) = parse_invocation("fix the auth flow /skill:deploy").unwrap();
+        assert_eq!(name, "deploy");
+        assert_eq!(args, "fix the auth flow");
+        // Trailing token with nothing before.
+        let (name, args) = parse_invocation("/skill:deploy harden").unwrap();
+        assert_eq!(name, "deploy");
+        assert_eq!(args, "harden");
+    }
+
+    #[test]
+    fn parse_invocation_skips_commands_sigils_and_paths() {
+        // Another slash command takes precedence.
+        assert!(parse_invocation("/compact /skill:deploy").is_none());
+        // Local-execution sigils pass through.
+        assert!(parse_invocation("!run /skill:deploy now").is_none());
+        assert!(parse_invocation("$ python /skill:deploy.py").is_none());
+        // A path-like token is not an invocation.
+        assert!(parse_invocation("see /skill:foo/bar for details").is_none());
+        // Unknown/plain text has no token.
+        assert!(parse_invocation("just some words").is_none());
+    }
+
+    #[test]
+    fn build_invocation_message_injects_body_and_args() {
+        let root = std::env::temp_dir().join(format!(
+            "jan_skills_inv_{}",
+            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(skills_dir(&root).join("deploy")).unwrap();
+        std::fs::write(
+            skills_dir(&root).join("deploy").join("SKILL.md"),
+            "---\ndescription: Ship it\n---\n\n# Deploy\n\nRun the script.\n",
+        )
+        .unwrap();
+
+        let (msg, description) = build_invocation_message(&root, "deploy", "staging").unwrap();
+        assert_eq!(description, "Ship it");
+        assert!(msg.contains("You have invoked the \"deploy\" skill"), "{msg}");
+        assert!(msg.contains("# Deploy\n\nRun the script."), "body: {msg}");
+        assert!(msg.contains("Skill directory:"), "folder announced: {msg}");
+        assert!(msg.contains("User: staging"), "{msg}");
+
+        // Unknown or disabled skills are rejected.
+        assert!(build_invocation_message(&root, "nope", "").is_err());
+        std::fs::write(
+            root.join(".jan").join("agent").join("agent.toml"),
+            "[skills]\nenabled = [\"other\"]\n",
+        )
+        .unwrap();
+        assert!(build_invocation_message(&root, "deploy", "").is_err(), "disabled");
         let _ = std::fs::remove_dir_all(&root);
     }
 
