@@ -1151,18 +1151,54 @@ impl App {
             .unwrap_or_default();
         // User-invocable skills only: `user-invocable: false` skills stay out
         // of the human's popup (the agent can still fire them via skill_read).
-        for meta in crate::core::agent::skills::user_catalog(&self.project_root, &enabled) {
+        let catalog = crate::core::agent::skills::user_catalog(&self.project_root, &enabled);
+        // Short-form ownership: a project skill owns its plain name; a plain
+        // name shared by two plugins is ambiguous, so everyone loses the short
+        // form (the explicit `/skill:<plugin>:<name>` form always stays).
+        let mut project_names: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut plugin_plain_counts: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        for meta in &catalog {
+            if meta.plugin.is_none() {
+                project_names.insert(meta.name.as_str());
+            } else {
+                let plain = meta.name.rsplit_once(':').map(|(_, s)| s).unwrap_or(&meta.name);
+                *plugin_plain_counts.entry(plain).or_insert(0) += 1;
+            }
+        }
+        let mut seen_short: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for meta in &catalog {
+            if meta.plugin.is_some() {
+                let plain = meta.name.rsplit_once(':').map(|(_, s)| s).unwrap_or(&meta.name);
+                if !colon_form {
+                    // Short form: command wins, project wins, ambiguity drops.
+                    if taken.contains(format!("/{plain}").as_str())
+                        || project_names.contains(plain)
+                        || plugin_plain_counts.get(plain).copied().unwrap_or(0) > 1
+                        || !seen_short.insert(plain.to_string())
+                    {
+                        continue;
+                    }
+                }
+            } else if !colon_form && !seen_short.insert(meta.name.clone()) {
+                continue;
+            }
             let name = if colon_form {
                 format!("/skill:{}", meta.name)
             } else {
-                format!("/{}", meta.name)
+                let plain = meta
+                    .plugin
+                    .as_ref()
+                    .map(|_| meta.name.rsplit_once(':').map(|(_, s)| s).unwrap_or(&meta.name))
+                    .unwrap_or(&meta.name);
+                format!("/{plain}")
             };
             if name.starts_with(&self.input)
                 && (colon_form || !taken.contains(name.as_str()))
             {
                 out.push(SlashMatch::Skill {
                     name,
-                    description: meta.description,
+                    description: meta.description.clone(),
                 });
             }
         }
@@ -4426,6 +4462,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Enable/disable MCP servers",
     },
     SlashCommand {
+        name: "/plugin",
+        hint: "[list|install <spec>|remove <name>|search [query]]",
+        description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace",
+    },
+    SlashCommand {
         name: "/cancel",
         hint: "[N]",
         description: "Cancel queued messages (bare: all, or index)",
@@ -4558,6 +4599,7 @@ async fn run_command(app: &mut App, line: &str) {
             }
         }
         "mcp" => open_mcp_picker(app),
+        "plugin" => plugin_command(app, arg).await,
         "login" => open_login_prompt(app),
         "update" => update_command(app),
         "config" => open_config_screen(app),
@@ -4871,6 +4913,97 @@ fn cancel_command(app: &mut App, arg: &str) {
         "usage: /cancel [N]  — cancel all or the Nth queued message (queue has {})",
         app.message_queue.len()
     ));
+}
+
+/// `/plugin` handler: manage plugins installed under `.jan/agent/plugins/`.
+///   - `/plugin` or `/plugin list`   — installed plugins + the skills they ship
+///   - `/plugin install <spec>`      — git URL (optionally `#ref`) or a name
+///     from the configured `[plugins] marketplace`
+///   - `/plugin remove <name>`       — uninstall by directory name
+///   - `/plugin search [query]`      — marketplace listing, name/description match
+/// Install and search hit the network, so this is async like `/todo`.
+async fn plugin_command(app: &mut App, arg: &str) {
+    let root = app.project_root.clone();
+    let mut parts = arg.split_whitespace();
+    let op = parts.next().unwrap_or("list");
+    let rest = parts.collect::<Vec<_>>().join(" ");
+    match op {
+        "list" => {
+            let plugins = crate::core::agent::plugins::installed(&root);
+            if plugins.is_empty() {
+                app.note("no plugins installed (try /plugin install <git-url>)");
+                return;
+            }
+            for p in &plugins {
+                app.push(Line::styled(
+                    format!("plugin {} (v{})", p.name, p.version),
+                    Style::new().cyan().bold(),
+                ));
+                if !p.description.is_empty() {
+                    app.push(Line::styled(
+                        format!("  {}", p.description),
+                        Style::new().dim(),
+                    ));
+                }
+                for meta in crate::core::agent::skills::plugin_skill_metas(&root, &p.name) {
+                    let suffix = if meta.description.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" - {}", meta.description)
+                    };
+                    app.push(Line::styled(
+                        format!("  {}{suffix}", meta.name),
+                        Style::new().dim(),
+                    ));
+                }
+            }
+            app.gap(Kind::Meta);
+        }
+        "install" => {
+            if rest.is_empty() {
+                app.note("usage: /plugin install <git-url[#ref]> | <marketplace-name>");
+                return;
+            }
+            match crate::core::agent::plugins::install(&root, &rest).await {
+                Ok(p) => app.note(&format!(
+                    "installed plugin '{}' ({} skills)", p.name, p.skills
+                )),
+                Err(e) => app.note(&e),
+            }
+        }
+        "remove" => {
+            if rest.is_empty() {
+                app.note("usage: /plugin remove <name>");
+                return;
+            }
+            match crate::core::agent::plugins::remove(&root, &rest) {
+                Ok(()) => app.note(&format!("removed plugin '{rest}'")),
+                Err(e) => app.note(&e),
+            }
+        }
+        "search" => match crate::core::agent::plugins::search(&root, &rest).await {
+            Ok(entries) if entries.is_empty() => {
+                app.note("no marketplace plugins match (set [plugins] marketplace in agent.toml to enable)");
+            }
+            Ok(entries) => {
+                for e in &entries {
+                    app.push(Line::styled(
+                        format!("plugin {}", e.name),
+                        Style::new().cyan().bold(),
+                    ));
+                    app.push(Line::styled(
+                        format!("  {}  ({})", e.description, e.repo),
+                        Style::new().dim(),
+                    ));
+                }
+                app.gap(Kind::Meta);
+            }
+            Err(e) => app.note(&e),
+        },
+        other => app.note(&format!(
+            "unknown /plugin subcommand '{other}' (try list|install|remove|search)"
+        )),
+    }
 }
 
 /// Print the active goal's condition, turn count, duration, and the evaluator's
@@ -11502,6 +11635,153 @@ mod tests {
             rows.join("\n")
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A plugin with one folder skill under the app's project root.
+    fn plugin_skill_in_app(root: &std::path::Path, plugin: &str, name: &str, description: &str) {
+        let dir = root
+            .join(".jan/agent/plugins")
+            .join(plugin)
+            .join("skills")
+            .join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            format!("---\ndescription: {description}\n---\n\n# {name}\n\nPlugin body.\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn slash_matches_offer_plugin_skills() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_skill_in_app(&root, "release", "prepare", "Prep the release.");
+        // Short form: the plain name is offered when it is unambiguous.
+        app.input = "/pre".into();
+        assert!(
+            names(&app).contains(&"/prepare".to_string()),
+            "plugin short form offered: {:?}",
+            names(&app)
+        );
+        // Explicit form: the qualified `<plugin>:<skill>` name.
+        app.input = "/skill:rel".into();
+        assert!(
+            names(&app).contains(&"/skill:release:prepare".to_string()),
+            "plugin explicit form offered: {:?}",
+            names(&app)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_matches_ambiguous_plugin_plain_names_drop_short_form() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_skill_in_app(&root, "release", "prepare", "Release prep.");
+        plugin_skill_in_app(&root, "triage", "prepare", "Triage prep.");
+        app.input = "/pre".into();
+        let all = names(&app);
+        assert!(
+            !all.contains(&"/prepare".to_string()),
+            "ambiguous short form must be dropped: {all:?}"
+        );
+        // Explicit forms stay completable for both.
+        app.input = "/skill:rel".into();
+        assert!(names(&app).contains(&"/skill:release:prepare".to_string()));
+        app.input = "/skill:tri".into();
+        assert!(names(&app).contains(&"/skill:triage:prepare".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_matches_project_skill_owns_short_form() {
+        let (mut app, root) = skill_test_app("prepare", "Project prep.");
+        plugin_skill_in_app(&root, "release", "prepare", "Plugin prep.");
+        app.input = "/pre".into();
+        let hits: Vec<_> = names(&app)
+            .into_iter()
+            .filter(|n| n.contains("prepare"))
+            .collect();
+        assert_eq!(hits, vec!["/prepare".to_string()], "project owns the short form");
+        // The plugin copy stays reachable explicitly.
+        app.input = "/skill:rel".into();
+        assert!(names(&app).contains(&"/skill:release:prepare".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn plugin_command_installs_lists_dispatch_removes() {
+        // Local git repo fixture with a plugin payload.
+        let repo = std::env::temp_dir().join(format!("jan_tui_plugin_repo_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(repo.join("skills").join("prepare")).unwrap();
+        std::fs::write(
+            repo.join("skills").join("prepare").join("SKILL.md"),
+            "---\ndescription: Prep\n---\n\n# prepare\n\nBody.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo.join("plugin.toml"),
+            "name = \"release-tools\"\ndescription = \"Release automation\"\nversion = \"1.2.0\"\n",
+        )
+        .unwrap();
+        let st = std::process::Command::new("git")
+            .args(["init", repo.to_str().unwrap()])
+            .status()
+            .unwrap();
+        assert!(st.success());
+        let st = std::process::Command::new("git")
+            .args(["-C", repo.to_str().unwrap(), "add", "-A"])
+            .status()
+            .unwrap();
+        assert!(st.success());
+        let st = std::process::Command::new("git")
+            .args([
+                "-C",
+                repo.to_str().unwrap(),
+                "commit",
+                "-m",
+                "init",
+                "--author=Jan Test <test@jan.ai>",
+            ])
+            .status()
+            .unwrap();
+        assert!(st.success());
+
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, &format!("plugin install file://{}", repo.display())).await;
+        assert!(
+            transcript_text(&app).contains("installed plugin 'release-tools' (1 skills)"),
+            "install note: {}",
+            transcript_text(&app)
+        );
+
+        run_command(&mut app, "plugin list").await;
+        let text = transcript_text(&app);
+        assert!(text.contains("plugin release-tools (v1.2.0)"), "{text}");
+        assert!(text.contains("release-tools:prepare"), "{text}");
+
+        // The installed plugin's skill resolves and dispatches like a project
+        // skill (qualified form here; the short form is covered by unit tests).
+        run_command(&mut app, "release-tools:prepare").await;
+        assert!(
+            transcript_text(&app).contains("[skill:release-tools:prepare]"),
+            "dispatch: {}",
+            transcript_text(&app)
+        );
+
+        run_command(&mut app, "plugin remove release-tools").await;
+        assert!(
+            transcript_text(&app).contains("removed plugin 'release-tools'"),
+            "remove note: {}",
+            transcript_text(&app)
+        );
+        run_command(&mut app, "plugin list").await;
+        assert!(
+            transcript_text(&app).contains("no plugins installed"),
+            "empty list: {}",
+            transcript_text(&app)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[tokio::test]

@@ -428,17 +428,23 @@ fn skill_list(root: &Path) -> String {
 
 /// `skill_read` tool: a skill's full instructions (frontmatter stripped). A
 /// disabled skill — or one with `disable-model-invocation: true` — is treated
-/// as absent so it never reaches the model.
+/// as absent so it never reaches the model. Project and plugin skills both
+/// resolve; a plain name reaching multiple plugins is ambiguous and rejected.
 fn skill_read(args: &serde_json::Value, root: &Path) -> String {
     let Some(name) = arg_str(args, "name") else {
         return "ERROR: missing required argument 'name'".to_string();
     };
-    if !skills::is_enabled(&enabled_skills(root), name) {
+    let enabled = enabled_skills(root);
+    let entry = match skills::resolve_readable(root, name) {
+        Ok(entry) => entry,
+        Err(e) => return e,
+    };
+    if !skills::is_enabled(&enabled, &entry) {
         return format!("ERROR: skill '{name}' not found");
     }
-    let raw = match skills::read_raw(root, name) {
+    let raw = match std::fs::read_to_string(&entry.file) {
         Ok(raw) => raw,
-        Err(e) => return e,
+        Err(e) => return format!("ERROR: {e}"),
     };
     let parsed = skills::parse(&raw);
     if !parsed.model_invocable {

@@ -26,19 +26,26 @@ pub(crate) fn skills_dir(root: &Path) -> PathBuf {
 }
 
 /// One skill on disk, located by its identity name (folder name or flat stem).
+#[derive(Debug, Clone)]
 pub(crate) struct SkillEntry {
     pub name: String,
     /// The markdown file to read (the `SKILL.md`, or the flat `<name>.md`).
     pub file: PathBuf,
     /// True for the folder form `<name>/SKILL.md`, false for legacy flat.
     pub is_folder: bool,
+    /// The plugin this skill ships in (`Some`), or `None` for a project skill.
+    pub plugin: Option<String>,
 }
 
 /// Summary for the management UI / prompt catalog.
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 pub struct SkillMeta {
     pub name: String,
     pub description: String,
+    /// The plugin this skill ships in, `None` for a project skill. Plugin
+    /// skills are named `<plugin>:<skill>`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<String>,
     /// Offered in the user-facing invoke surface (slash popup, `/skill:`).
     pub user_invocable: bool,
     /// Offered to the model (system-prompt catalog, `skill_list`/`skill_read`).
@@ -136,12 +143,12 @@ pub(crate) fn safe_stem(name: &str) -> Result<String, String> {
     Ok(file.trim_end_matches(".md").to_string())
 }
 
-/// All skills in the project, sorted by name. Folder skills (`<name>/SKILL.md`)
-/// and legacy flat skills (`<name>.md`) are both discovered. When both forms
-/// share a name, the folder form wins so a skill is never listed/injected twice.
-pub(crate) fn discover(root: &Path) -> Vec<SkillEntry> {
-    let dir = skills_dir(root);
-    let Ok(rd) = std::fs::read_dir(&dir) else {
+/// Scan one skills directory for folder skills (`<name>/SKILL.md`) and legacy
+/// flat skills (`<name>.md`), sorted by name. When both forms share a name,
+/// the folder form wins so a skill is never listed/injected twice. Entries
+/// come back with `plugin: None`; the caller tags plugin-owned entries.
+pub(crate) fn scan_skill_dir(dir: &Path) -> Vec<SkillEntry> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
     // Keyed by name so a duplicate stem collapses to one entry; BTreeMap also
@@ -167,6 +174,7 @@ pub(crate) fn discover(root: &Path) -> Vec<SkillEntry> {
                         name: name.to_string(),
                         file: skill_md,
                         is_folder: true,
+                        plugin: None,
                     });
                 }
             }
@@ -176,6 +184,7 @@ pub(crate) fn discover(root: &Path) -> Vec<SkillEntry> {
                     name: stem.to_string(),
                     file: path,
                     is_folder: false,
+                    plugin: None,
                 });
             }
         }
@@ -185,7 +194,75 @@ pub(crate) fn discover(root: &Path) -> Vec<SkillEntry> {
     out
 }
 
-/// Locate an existing skill by name, preferring the folder form.
+/// All project skills (`.jan/agent/skills`), sorted by name.
+pub(crate) fn discover(root: &Path) -> Vec<SkillEntry> {
+    scan_skill_dir(&skills_dir(root))
+}
+
+/// The plugins directory `.jan/agent/plugins`.
+pub(crate) fn plugins_dir(root: &Path) -> PathBuf {
+    root.join(".jan").join("agent").join("plugins")
+}
+
+/// Skills shipped by installed plugins, qualified with their plugin name.
+/// Each installed plugin is scanned conventionally: a `skills/` subdirectory
+/// (folder and flat forms, same rules as project skills) plus an optional
+/// single `SKILL.md` at the plugin root (a repo that is itself one skill).
+pub(crate) fn discover_plugins(root: &Path) -> Vec<SkillEntry> {
+    let dir = plugins_dir(root);
+    let Ok(rd) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut out: Vec<SkillEntry> = Vec::new();
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let mut tagged = Vec::new();
+        for e in scan_skill_dir(&path.join("skills")) {
+            tagged.push(SkillEntry {
+                plugin: Some(plugin.to_string()),
+                ..e
+            });
+        }
+        let root_md = path.join("SKILL.md");
+        if root_md.is_file() {
+            tagged.push(SkillEntry {
+                name: plugin.to_string(),
+                file: root_md,
+                is_folder: false,
+                plugin: Some(plugin.to_string()),
+            });
+        }
+        out.extend(tagged);
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+/// Project skills followed by plugin skills (qualified). Project skills shadow
+/// plugin skills of the same plain name.
+pub(crate) fn discover_all(root: &Path) -> Vec<SkillEntry> {
+    let mut out = discover(root);
+    out.extend(discover_plugins(root));
+    out
+}
+
+/// The user-facing identity of a skill entry: `name` for project skills,
+/// `<plugin>:<name>` for plugin skills.
+pub(crate) fn qualified_name(entry: &SkillEntry) -> String {
+    match &entry.plugin {
+        Some(plugin) => format!("{plugin}:{}", entry.name),
+        None => entry.name.clone(),
+    }
+}
+
+/// Locate a project skill by name, preferring the folder form. Plugin skills
+/// are not resolved here — `resolve_readable` handles those.
 fn resolve(root: &Path, name: &str) -> Result<SkillEntry, String> {
     let stem = safe_stem(name)?;
     let dir = skills_dir(root);
@@ -195,6 +272,7 @@ fn resolve(root: &Path, name: &str) -> Result<SkillEntry, String> {
             name: stem,
             file: folder,
             is_folder: true,
+            plugin: None,
         });
     }
     let flat = dir.join(format!("{stem}.md"));
@@ -203,15 +281,88 @@ fn resolve(root: &Path, name: &str) -> Result<SkillEntry, String> {
             name: stem,
             file: flat,
             is_folder: false,
+            plugin: None,
         });
     }
     Err(format!("ERROR: skill '{name}' not found"))
 }
 
+/// Locate a skill inside an installed plugin: `plugins/<plugin>/skills/<plain>`
+/// (folder or flat) plus the single-skill case `<plugin>/SKILL.md` when the
+/// plain name equals the plugin name. Both names are stem-validated so a
+/// caller-supplied name can never escape the plugins directory.
+fn resolve_in_plugin(root: &Path, plugin: &str, plain: &str) -> Option<SkillEntry> {
+    if safe_stem(plugin).ok()? != plugin || safe_stem(plain).ok()? != plain {
+        return None;
+    }
+    let base = plugins_dir(root).join(plugin);
+    let folder = base.join("skills").join(plain).join("SKILL.md");
+    if folder.is_file() {
+        return Some(SkillEntry {
+            name: plain.to_string(),
+            file: folder,
+            is_folder: true,
+            plugin: Some(plugin.to_string()),
+        });
+    }
+    let flat = base.join("skills").join(format!("{plain}.md"));
+    if flat.is_file() {
+        return Some(SkillEntry {
+            name: plain.to_string(),
+            file: flat,
+            is_folder: false,
+            plugin: Some(plugin.to_string()),
+        });
+    }
+    if plain == plugin {
+        let root_md = base.join("SKILL.md");
+        if root_md.is_file() {
+            return Some(SkillEntry {
+                name: plain.to_string(),
+                file: root_md,
+                is_folder: false,
+                plugin: Some(plugin.to_string()),
+            });
+        }
+    }
+    None
+}
+
+/// Locate any readable skill: project skill first (project shadows plugins),
+/// then the explicit `<plugin>:<plain>` form, then a plain name that is unique
+/// across installed plugins. Used by `read_raw`/`read_body` so `skill_read`
+/// and invocation dispatch reach plugin skills with the same names the
+/// catalogs advertise.
+pub(crate) fn resolve_readable(root: &Path, name: &str) -> Result<SkillEntry, String> {
+    if let Ok(entry) = resolve(root, name) {
+        return Ok(entry);
+    }
+    if let Some((plugin, plain)) = name.split_once(':') {
+        if let Some(entry) = resolve_in_plugin(root, plugin, plain) {
+            return Ok(entry);
+        }
+    }
+    let mut matches = discover_plugins(root)
+        .into_iter()
+        .filter(|e| e.name == name);
+    match (matches.next(), matches.next()) {
+        (Some(only), None) => Ok(only),
+        _ => Err(format!("ERROR: skill '{name}' not found")),
+    }
+}
+
 /// Whether a skill is advertised given the `[skills].enabled` whitelist. An
-/// empty whitelist means every skill is enabled.
-pub(crate) fn is_enabled(enabled: &[String], name: &str) -> bool {
-    enabled.is_empty() || enabled.iter().any(|n| n == name)
+/// empty whitelist means every skill is enabled; matching accepts the
+/// qualified `<plugin>:<skill>` name, the plain skill name, or the plugin
+/// name alone (enables every skill a plugin ships).
+pub(crate) fn is_enabled(enabled: &[String], entry: &SkillEntry) -> bool {
+    if enabled.is_empty() {
+        return true;
+    }
+    let qualified = qualified_name(entry);
+    enabled
+        .iter()
+        .any(|n| n == &qualified || n == &entry.name || Some(n) == entry.plugin.as_ref())
 }
 
 /// A skill's summary line: the frontmatter `description`, or the first body line.
@@ -224,17 +375,19 @@ fn describe(parsed: &ParsedSkill) -> String {
 }
 
 /// A discovered skill's metadata with its invocation flags resolved.
-fn meta_for(name: String, parsed: &ParsedSkill) -> SkillMeta {
+fn meta_for(entry: &SkillEntry, parsed: &ParsedSkill) -> SkillMeta {
     SkillMeta {
-        name,
+        name: qualified_name(entry),
         description: describe(parsed),
+        plugin: entry.plugin.clone(),
         user_invocable: parsed.user_invocable,
         model_invocable: parsed.model_invocable,
     }
 }
 
-/// Metadata for every discovered skill (name + description + invocation
-/// flags) — for the management UI, which must see disabled and private skills.
+/// Metadata for every project skill (name + description + invocation
+/// flags) — for the management UI, which must see disabled and private skills
+/// and only edits project skills (plugin skills are managed via plugins).
 /// Keeps empty stubs so the user can see and edit them.
 #[cfg(any(not(feature = "cli"), test))]
 pub(crate) fn list_meta(root: &Path) -> Vec<SkillMeta> {
@@ -242,25 +395,19 @@ pub(crate) fn list_meta(root: &Path) -> Vec<SkillMeta> {
         .into_iter()
         .filter_map(|e| {
             let parsed = parse(&std::fs::read_to_string(&e.file).ok()?);
-            Some(meta_for(e.name, &parsed))
+            Some(meta_for(&e, &parsed))
         })
         .collect()
 }
 
-/// Filter discovered skills by the `[skills].enabled` whitelist and one
-/// invocation side. Skills with neither a description nor a body are skipped
-/// (nothing to advertise or invoke).
+/// Filter discovered skills (project + plugins) by the `[skills].enabled`
+/// whitelist and one invocation side. Skills with neither a description nor a
+/// body are skipped (nothing to advertise or invoke).
 fn side_catalog(root: &Path, enabled: &[String], side: impl Fn(&ParsedSkill) -> bool) -> Vec<SkillMeta> {
-    let allow: Option<std::collections::HashSet<&str>> =
-        (!enabled.is_empty()).then(|| enabled.iter().map(String::as_str).collect());
-    discover(root)
+    discover_all(root)
         .into_iter()
+        .filter(|e| is_enabled(enabled, e))
         .filter_map(|e| {
-            if let Some(allow) = &allow {
-                if !allow.contains(e.name.as_str()) {
-                    return None;
-                }
-            }
             let parsed = parse(&std::fs::read_to_string(&e.file).ok()?);
             if !side(&parsed) {
                 return None;
@@ -269,7 +416,7 @@ fn side_catalog(root: &Path, enabled: &[String], side: impl Fn(&ParsedSkill) -> 
             if description.is_empty() && parsed.body.trim().is_empty() {
                 return None;
             }
-            Some(meta_for(e.name, &parsed))
+            Some(meta_for(&e, &parsed))
         })
         .collect()
 }
@@ -295,14 +442,27 @@ pub(crate) fn user_catalog(root: &Path, enabled: &[String]) -> Vec<SkillMeta> {
     side_catalog(root, enabled, |p| p.user_invocable)
 }
 
-/// Raw SKILL.md text (frontmatter included) for the editor.
+/// Metadata for every skill one plugin ships (both invocation sides), for the
+/// `/plugin list` view. The enabled whitelist is intentionally ignored here:
+/// the management view shows what the plugin contributes, not what is active.
+#[cfg(feature = "cli")]
+pub(crate) fn plugin_skill_metas(root: &Path, plugin: &str) -> Vec<SkillMeta> {
+    let mut metas = side_catalog(root, &[], |_| true);
+    metas.retain(|m| m.plugin.as_deref() == Some(plugin));
+    metas
+}
+
+/// Raw SKILL.md text (frontmatter included) for the editor. Resolves project
+/// and plugin skills alike.
+#[cfg(any(not(feature = "cli"), test))]
 pub(crate) fn read_raw(root: &Path, name: &str) -> Result<String, String> {
-    let entry = resolve(root, name)?;
+    let entry = resolve_readable(root, name)?;
     std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))
 }
 
 /// A skill's markdown body with the frontmatter fence stripped — what the
 /// `skill_read` tool hands the model when it loads a skill on demand.
+#[cfg(any(not(feature = "cli"), test))]
 pub(crate) fn read_body(root: &Path, name: &str) -> Result<String, String> {
     Ok(parse(&read_raw(root, name)?).body)
 }
@@ -384,17 +544,20 @@ pub(crate) fn build_invocation_message(
         .ok()
         .map(|c| c.skills.enabled)
         .unwrap_or_default();
-    let meta = user_catalog(root, &enabled)
-        .into_iter()
-        .find(|m| m.name == name)
+    let user_skills = user_catalog(root, &enabled);
+    let meta = find_user_skill(&user_skills, name)
         .ok_or_else(|| format!("skill '{name}' not found"))?;
-    let body = read_body(root, name)?;
+    let entry = resolve_readable(root, name)?;
+    let body = parse(&std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))?)
+        .body;
     let args = args.trim();
     let mut msg = format!(
         "[IMPORTANT: You have invoked the \"{name}\" skill - follow its instructions. The full skill content is loaded below.]\n\n{body}"
     );
-    let base = skills_dir(root).join(name);
-    if base.is_dir() {
+    // Folder skills (and single-skill plugins) may bundle files next to their
+    // SKILL.md; announce that directory so relative paths resolve.
+    if entry.is_folder {
+        let base = entry.file.parent().unwrap_or_else(|| root);
         msg.push_str(&format!(
             "\n\n---\n[Skill directory: {}]\nResolve relative paths in the skill against that directory.\n",
             base.display()
@@ -404,6 +567,24 @@ pub(crate) fn build_invocation_message(
         msg.push_str(&format!("User: {args}\n"));
     }
     Ok((msg, meta.description))
+}
+
+/// Find a skill in a user-side catalog by the name a human typed: exact
+/// match first (project names and the explicit `<plugin>:<skill>` form), then
+/// a plain name that is unique across plugin skills.
+fn find_user_skill(user_skills: &[SkillMeta], name: &str) -> Option<SkillMeta> {
+    if let Some(meta) = user_skills
+        .iter()
+        .find(|m| m.name == name)
+        .cloned()
+    {
+        return Some(meta);
+    }
+    let mut matches = user_skills.iter().filter(|m| {
+        m.plugin.is_some() && m.name.rsplit_once(':').map(|(_, s)| s) == Some(name)
+    });
+    let first = matches.next()?.clone();
+    matches.next().is_none().then_some(first)
 }
 
 /// Create or overwrite a skill. Existing skills are written in place (preserving
@@ -655,6 +836,191 @@ mod tests {
         write(&root, "legacy", "new").unwrap();
         assert_eq!(std::fs::read_to_string(dir.join("legacy.md")).unwrap(), "new");
         assert!(!dir.join("legacy").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn temp_root(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "jan_pluginskills_{tag}_{}",
+            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+        ))
+    }
+
+    /// A folder skill inside an installed plugin.
+    fn plugin_skill(root: &std::path::Path, plugin: &str, name: &str, body: &str) {
+        let dir = plugins_dir(root).join(plugin).join("skills").join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), body).unwrap();
+    }
+
+    /// A single-skill plugin: `SKILL.md` at the plugin root.
+    fn single_plugin(root: &std::path::Path, plugin: &str, body: &str) {
+        let dir = plugins_dir(root).join(plugin);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), body).unwrap();
+    }
+
+    /// A project folder skill.
+    fn project_skill(root: &std::path::Path, name: &str, body: &str) {
+        let dir = skills_dir(root).join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), body).unwrap();
+    }
+
+    #[test]
+    fn discover_all_tags_plugin_skills_and_single_skill_plugins() {
+        let root = temp_root("disc");
+        project_skill(&root, "deploy", "---\ndescription: d\n---\nproj body\n");
+        plugin_skill(&root, "release", "prepare", "---\ndescription: prep\n---\nrel body\n");
+        plugin_skill(&root, "release", "changelog", "flat body");
+        single_plugin(&root, "triage", "---\ndescription: triage\n---\ntriage body\n");
+
+        let entries = discover_all(&root);
+        let names: Vec<(String, Option<String>)> =
+            entries.iter().map(|e| (qualified_name(e), e.plugin.clone())).collect();
+        assert_eq!(
+            names,
+            vec![
+                ("deploy".to_string(), None),
+                ("release:changelog".to_string(), Some("release".to_string())),
+                ("release:prepare".to_string(), Some("release".to_string())),
+                ("triage:triage".to_string(), Some("triage".to_string())),
+            ]
+        );
+        // Project-only discovery stays project-only.
+        let project_names: Vec<_> = discover(&root).into_iter().map(|e| e.name).collect();
+        assert_eq!(project_names, vec!["deploy"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_readable_project_shadows_plugin_and_qualified_form_wins() {
+        let root = temp_root("prec");
+        project_skill(&root, "deploy", "proj\n");
+        plugin_skill(&root, "release", "deploy", "plugin\n");
+
+        // Plain name resolves to the project skill (project shadows plugins).
+        let entry = resolve_readable(&root, "deploy").unwrap();
+        assert_eq!(entry.plugin, None);
+        // Explicit qualified form reaches the plugin copy.
+        let entry = resolve_readable(&root, "release:deploy").unwrap();
+        assert_eq!(entry.plugin.as_deref(), Some("release"));
+        assert_eq!(entry.name, "deploy");
+        assert!(entry.is_folder);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_readable_unique_plain_name_and_ambiguity() {
+        let root = temp_root("ambig");
+        plugin_skill(&root, "release", "prepare", "rel\n");
+        plugin_skill(&root, "triage", "prepare", "tri\n");
+        plugin_skill(&root, "triage", "labels", "lab\n");
+
+        // Duplicated plain name across plugins is ambiguous.
+        let err = resolve_readable(&root, "prepare").unwrap_err();
+        assert!(err.contains("not found"), "{err}");
+        // Qualified forms both work.
+        assert!(resolve_readable(&root, "release:prepare").is_ok());
+        assert!(resolve_readable(&root, "triage:prepare").is_ok());
+        // A plain name unique across plugins resolves.
+        let entry = resolve_readable(&root, "labels").unwrap();
+        assert_eq!(entry.plugin.as_deref(), Some("triage"));
+        // Single-skill plugin: the plugin name itself resolves.
+        single_plugin(&root, "triage", "---\ndescription: t\n---\nbody\n");
+        let entry = resolve_readable(&root, "triage").unwrap();
+        assert_eq!(entry.plugin.as_deref(), Some("triage"));
+        assert_eq!(entry.name, "triage");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn catalog_and_user_catalog_include_plugin_skills_with_flags() {
+        let root = temp_root("cat");
+        project_skill(&root, "deploy", "---\ndescription: ship\n---\nbody\n");
+        plugin_skill(&root, "release", "prepare", "---\ndescription: prep\n---\nbody\n");
+        // Model-only plugin skill: hidden from the user catalog, visible to the model.
+        plugin_skill(
+            &root,
+            "release",
+            "internals",
+            "---\ndescription: impl\ndisable-model-invocation: false\nuser-invocable: false\n---\nbody\n",
+        );
+        // User-only plugin skill: hidden from the model catalog.
+        plugin_skill(
+            &root,
+            "triage",
+            "labels",
+            "---\ndescription: lab\ndisable-model-invocation: true\n---\nbody\n",
+        );
+
+        let enabled: Vec<String> = Vec::new();
+        let model: Vec<String> = catalog(&root, &enabled).into_iter().map(|m| m.name).collect();
+        assert!(model.contains(&"deploy".to_string()));
+        assert!(model.contains(&"release:prepare".to_string()));
+        assert!(model.contains(&"release:internals".to_string()));
+        assert!(!model.contains(&"triage:labels".to_string()));
+
+        let user: Vec<String> = user_catalog(&root, &enabled).into_iter().map(|m| m.name).collect();
+        assert!(user.contains(&"release:prepare".to_string()));
+        assert!(user.contains(&"triage:labels".to_string()));
+        assert!(!user.contains(&"release:internals".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn is_enabled_whitelist_matches_plugin_names() {
+        let root = temp_root("en");
+        project_skill(&root, "deploy", "body\n");
+        plugin_skill(&root, "release", "prepare", "body\n");
+        plugin_skill(&root, "release", "changelog", "body\n");
+
+        let entries = discover_all(&root);
+        // Plugin name alone enables every skill it ships.
+        let enabled = vec!["release".to_string()];
+        let active: Vec<_> = entries
+            .iter()
+            .filter(|e| is_enabled(&enabled, e))
+            .map(qualified_name)
+            .collect();
+        assert_eq!(active, vec!["release:changelog", "release:prepare"]);
+        // Qualified name enables a single skill.
+        let enabled = vec!["release:prepare".to_string()];
+        let active: Vec<_> = entries
+            .iter()
+            .filter(|e| is_enabled(&enabled, e))
+            .map(qualified_name)
+            .collect();
+        assert_eq!(active, vec!["release:prepare"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn build_invocation_message_reaches_plugin_skills() {
+        let root = temp_root("invoke");
+        let plugin_dir = plugins_dir(&root).join("release");
+        std::fs::create_dir_all(plugin_dir.join("skills").join("prepare")).unwrap();
+        std::fs::write(
+            plugin_dir.join("skills").join("prepare").join("SKILL.md"),
+            "---\ndescription: Prep the release\n---\n\nRun the release steps.\n",
+        )
+        .unwrap();
+        std::fs::write(plugin_dir.join("assets.txt"), "bundled").unwrap();
+
+        let (msg, description) = build_invocation_message(&root, "release:prepare", "staging").unwrap();
+        assert_eq!(description, "Prep the release");
+        assert!(msg.contains("Run the release steps."));
+        assert!(msg.contains("User: staging"));
+        // The announced base directory is the plugin skill folder, so bundled
+        // files resolve.
+        let expected_dir = plugin_dir.join("skills").join("prepare");
+        assert!(msg.contains(&format!("[Skill directory: {}]", expected_dir.display())), "{msg}");
+
+        // Short plain form works when unambiguous.
+        let (msg, _) = build_invocation_message(&root, "prepare", "").unwrap();
+        assert!(msg.contains("Run the release steps."));
+        // Unknown skill errors.
+        assert!(build_invocation_message(&root, "nope", "").is_err());
         let _ = std::fs::remove_dir_all(&root);
     }
 }

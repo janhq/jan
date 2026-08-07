@@ -15,6 +15,7 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 use crate::core::agent::events::StreamEvent;
 use crate::core::agent::git;
 use crate::core::agent::permissions::ToolPermissions;
+use crate::core::agent::plugins;
 use crate::core::agent::project::{
     agent_toml_path, ensure_project, load_agent_config, permissions_from,
     set_skills_enabled_in_agent_toml,
@@ -252,6 +253,36 @@ pub async fn agent_skill_invoke(
     skills::build_invocation_message(&root, &name, &args)
         .map(|(message, _)| message)
         .map_err(ui_error)
+}
+
+/// List installed plugins under `<project>/.jan/agent/plugins/` with their
+/// metadata and skill counts.
+#[tauri::command]
+pub async fn agent_plugin_list(project: String) -> Result<Vec<plugins::InstalledPlugin>, String> {
+    let root = std::path::PathBuf::from(&project);
+    Ok(plugins::installed(&root))
+}
+
+/// Install a plugin: a git URL (optionally `#ref`) or a marketplace name
+/// resolved through `[plugins] marketplace` in agent.toml.
+#[tauri::command]
+pub async fn agent_plugin_install(project: String, spec: String) -> Result<plugins::InstalledPlugin, String> {
+    let root = std::path::PathBuf::from(&project);
+    plugins::install(&root, &spec).await.map_err(ui_error)
+}
+
+/// Remove an installed plugin by directory name.
+#[tauri::command]
+pub async fn agent_plugin_remove(project: String, name: String) -> Result<(), String> {
+    let root = std::path::PathBuf::from(&project);
+    plugins::remove(&root, &name).map_err(ui_error)
+}
+
+/// List marketplace plugins, optionally filtered by a name/description query.
+#[tauri::command]
+pub async fn agent_plugin_search(project: String, query: String) -> Result<Vec<plugins::MarketEntry>, String> {
+    let root = std::path::PathBuf::from(&project);
+    plugins::search(&root, &query).await.map_err(ui_error)
 }
 
 /// Return the git branch name for the project at `project`, or `None` when the
