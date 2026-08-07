@@ -14,6 +14,11 @@ use crate::tools::{BuiltinTool, Capability};
 pub enum PromptKind {
     ReadEscape,
     Write,
+    /// A write that resolves outside the project root (absolute or `..`). Treated
+    /// strictly like a read escape: it can reach host files no sandbox confines,
+    /// so it is never auto-approved and is refused where no prompt round-trip
+    /// exists.
+    WriteEscape,
     Exec,
 }
 
@@ -37,6 +42,7 @@ pub enum PermissionDecision {
 pub struct SessionGrants {
     read_escape: bool,
     write: bool,
+    write_escape: bool,
     exec_commands: std::collections::BTreeSet<String>,
     exec_opaque: std::collections::BTreeSet<String>,
     /// MCP tools granted "allow always" this thread, by tool name.
@@ -48,6 +54,7 @@ impl SessionGrants {
         match kind {
             PromptKind::ReadEscape => self.read_escape,
             PromptKind::Write => self.write,
+            PromptKind::WriteEscape => self.write_escape,
             // Exec coverage is command-specific; use `covers_command`.
             PromptKind::Exec => false,
         }
@@ -69,6 +76,7 @@ impl SessionGrants {
         match kind {
             PromptKind::ReadEscape => self.read_escape = true,
             PromptKind::Write => self.write = true,
+            PromptKind::WriteEscape => self.write_escape = true,
             // No-op: exec is granted per command via `grant_command`.
             PromptKind::Exec => {}
         }
@@ -166,7 +174,27 @@ pub fn resolve_decision(
         // adapter. Treat them like read-only reads inside the project: allowed
         // without a prompt (an explicit agent.toml deny above still wins).
         Capability::Net => Decision::Allow,
-        Capability::Write => gated(PromptKind::Write, grants),
+        // A write inside the project may prompt (the CLI approves it); one that
+        // escapes the project -- absolute or `..` -- can reach host files no
+        // sandbox confines, so mirror the Read branch and gate it separately. It
+        // is refused outright on the desktop, where no prompt round-trip exists.
+        Capability::Write => {
+            let escapes = tool.path_args.iter().any(|key| {
+                args.get(key)
+                    .and_then(|v| v.as_str())
+                    .map(|p| escapes_project(project_root, p).unwrap_or(true))
+                    .unwrap_or(false)
+            });
+            if escapes {
+                if grants.covers(PromptKind::WriteEscape) {
+                    Decision::Allow
+                } else {
+                    Decision::Prompt(PromptKind::WriteEscape)
+                }
+            } else {
+                gated(PromptKind::Write, grants)
+            }
+        }
         Capability::Exec => {
             // Polling a previously backgrounded command (job_id, no new
             // command) never prompts: the exec permission was already
@@ -600,6 +628,73 @@ mod tests {
             &grants,
         );
         assert_eq!(d, Decision::Allow);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_inside_project_prompts_write_not_escape() {
+        let root = unique_root();
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        let grants = SessionGrants::default();
+        let d = resolve_decision(
+            lookup("write").unwrap(),
+            &json!({"path": "sub/new.txt"}),
+            &root,
+            &perms,
+            &grants,
+        );
+        assert_eq!(d, Decision::Prompt(PromptKind::Write));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_escaping_project_prompts_write_escape() {
+        let root = unique_root();
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        let grants = SessionGrants::default();
+        for path in ["../outside.txt", root.join("/tmp").to_str().unwrap()] {
+            let d = resolve_decision(
+                lookup("write").unwrap(),
+                &json!({"path": path}),
+                &root,
+                &perms,
+                &grants,
+            );
+            assert_eq!(d, Decision::Prompt(PromptKind::WriteEscape), "{}", path);
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn session_grant_allows_write_escape() {
+        let root = unique_root();
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        let mut grants = SessionGrants::default();
+        grants.grant(PromptKind::WriteEscape);
+        let d = resolve_decision(
+            lookup("write").unwrap(),
+            &json!({"path": "../x"}),
+            &root,
+            &perms,
+            &grants,
+        );
+        assert_eq!(d, Decision::Allow);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn read_still_prompts_read_escape_not_write() {
+        let root = unique_root();
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        let grants = SessionGrants::default();
+        let d = resolve_decision(
+            lookup("read").unwrap(),
+            &json!({"path": "../x"}),
+            &root,
+            &perms,
+            &grants,
+        );
+        assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

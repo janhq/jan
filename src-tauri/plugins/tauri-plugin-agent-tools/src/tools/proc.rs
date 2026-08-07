@@ -118,12 +118,30 @@ fn which(name: &str) -> Option<PathBuf> {
 /// Spawn `command` in `cwd` using the resolved shell, as a new process group,
 /// with stdout/stderr piped and `kill_on_drop` armed. The returned child's pid
 /// is registered so [`kill_all`] can reap it on shutdown; the caller must
-/// [`unregister`] it once the command finishes.
+/// [`unregister`] it once the command finishes. The child inherits only the
+/// minimal environment in `SANDBOX_ENV_ALLOW`, never the full host environment.
+///
+/// The full host environment leaks secrets to any `bash` call -- `JAN_API_KEY`,
+/// `OPENAI_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `SSH_AUTH_SOCK`, the relocated
+/// `JAN_DATA_FOLDER` -- so the shell is launched with only what a command needs
+/// to run at all. Applied here, the one choke point all backends (bubblewrap,
+/// seatbelt, and the Windows AppContainer helper) funnel through.
+const SANDBOX_ENV_ALLOW: &[&str] = &["PATH", "HOME", "USERPROFILE", "TMPDIR", "TMP", "TEMP", "LANG", "TERM"];
+
 pub async fn spawn(cfg: &ShellConfig, command: &str, cwd: &Path) -> std::io::Result<Child> {
     let mut cmd = Command::new(&cfg.program);
     cmd.args(&cfg.args);
     if !cfg.via_stdin {
         cmd.arg(command);
+    }
+    // Strip every inherited variable, then re-add only the allowlist so the
+    // sandboxed process holds no host secrets regardless of which backend wraps
+    // it. `current_dir` on the workspace keeps relative work correct.
+    cmd.env_clear();
+    for key in SANDBOX_ENV_ALLOW {
+        if let Some(val) = std::env::var_os(key) {
+            cmd.env(key, val);
+        }
     }
     cmd.current_dir(cwd)
         .stdout(Stdio::piped())

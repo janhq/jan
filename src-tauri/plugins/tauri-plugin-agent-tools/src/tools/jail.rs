@@ -62,6 +62,13 @@ impl Backend {
 pub struct Policy {
     /// The thread workspace: the only path that stays both readable and writable.
     pub workspace: PathBuf,
+    /// The agent's data-folder root. On the desktop this is the Jan data folder
+    /// (holding the permanent store, `settings.json`, and model files); it is
+    /// masked from the sandbox like `$HOME`, because a relocated `JAN_DATA_FOLDER`
+    /// outside `$HOME` would otherwise leave all of it readable by the shell. The
+    /// CLI leaves this unset: there the project itself is the workspace, so
+    /// masking it would hide the very files the agent works on.
+    pub mask_root: Option<PathBuf>,
     pub allow_network: bool,
 }
 
@@ -69,8 +76,18 @@ impl Policy {
     pub fn new(workspace: &Path, allow_network: bool) -> Self {
         Self {
             workspace: workspace.to_path_buf(),
+            mask_root: None,
             allow_network,
         }
+    }
+
+    /// Mask `mask_root` from the sandboxed shell. The desktop data folder holds
+    /// the permanent memory/skills store and `settings.json` with provider keys;
+    /// masking it keeps a relocated data folder out of the shell's reach. The
+    /// thread workspace (nested under it) is re-bound on top so it survives.
+    pub fn with_mask_root(mut self, mask_root: &Path) -> Self {
+        self.mask_root = Some(mask_root.to_path_buf());
+        self
     }
 }
 
@@ -248,6 +265,13 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     if let Some(home) = home_dir() {
         push(&mut args, &["--tmpfs", &home.to_string_lossy()]);
     }
+    // Mask a relocated data folder the same way: `$HOME` hiding alone would leave
+    // a `JAN_DATA_FOLDER` outside the home readable, exposing the permanent
+    // store and any co-located `settings.json`. The workspace is re-bound below
+    // (it is nested under this root on the desktop), so it survives.
+    if let Some(mask) = &policy.mask_root {
+        push(&mut args, &["--tmpfs", &mask.to_string_lossy()]);
+    }
 
     push(&mut args, &["--bind", &ws, &ws]);
     push(&mut args, &["--chdir", &ws]);
@@ -312,6 +336,9 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
     if home_dir().is_some() {
         p.push_str("(deny file-read* (subpath (param \"HOME_ROOT\")))\n");
     }
+    if policy.mask_root.is_some() {
+        p.push_str("(deny file-read* (subpath (param \"MASK_ROOT\")))\n");
+    }
     p.push_str(
         "(allow file-read* (subpath (param \"WORKSPACE\")))\n\
          ; Writes: the workspace and the temp dir, nothing else.\n\
@@ -346,6 +373,9 @@ pub fn seatbelt_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
         "-DWORKSPACE={}",
         policy.workspace.to_string_lossy()
     ));
+    if let Some(mask) = &policy.mask_root {
+        args.push(format!("-DMASK_ROOT={}", mask.to_string_lossy()));
+    }
     args.push(format!(
         "-DTMPDIR={}",
         std::env::temp_dir().to_string_lossy()
@@ -590,6 +620,11 @@ mod enforcement_tests {
     /// Run `command` confined to `ws` and return combined output plus success.
     async fn run(ws: &Path, allow_network: bool, command: &str) -> (bool, String) {
         let policy = Policy::new(ws, allow_network);
+        run_policy(policy, ws, command).await
+    }
+
+    /// Run `command` under `policy`, spawning in `ws`.
+    async fn run_policy(policy: Policy, ws: &Path, command: &str) -> (bool, String) {
         let wrapped = wrap(super::super::proc::shell(), &policy).expect("backend");
         let child = super::super::proc::spawn(&wrapped, command, ws)
             .await
@@ -739,5 +774,26 @@ mod enforcement_tests {
         let (ok, _) = run(&ws, false, "exec 3<>/dev/tcp/1.1.1.1/53 && echo connected").await;
         let _ = std::fs::remove_dir_all(&ws);
         assert!(!ok, "network must be denied by default");
+    }
+
+    /// A relocated store root (e.g. `JAN_DATA_FOLDER` outside `$HOME`) must not
+    /// be readable by the shell, even when it is not under the user's home.
+    #[tokio::test]
+    async fn a_relocated_store_root_is_not_readable() {
+        require_backend!();
+        let ws = workspace();
+        let store = workspace();
+        std::fs::create_dir_all(&store).unwrap();
+        let secret = store.join("memory.txt");
+        std::fs::write(&secret, b"STORESECRET").unwrap();
+
+        let policy = Policy::new(&ws, false).with_mask_root(&store);
+        let (_, out) = run_policy(policy, &ws, &format!("cat {}", secret.to_string_lossy())).await;
+        let _ = std::fs::remove_dir_all(&ws);
+        let _ = std::fs::remove_dir_all(&store);
+        assert!(
+            !out.contains("STORESECRET"),
+            "a relocated store root must be unreadable, got: {out}"
+        );
     }
 }

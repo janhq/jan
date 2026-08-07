@@ -15,7 +15,7 @@ use crate::memory;
 use crate::skills;
 use crate::tools::jail;
 use crate::tools::proc;
-use crate::tools::sandbox::is_restricted_agent_path;
+use crate::tools::sandbox::{escapes_project, is_restricted_agent_path};
 use crate::tools::{BuiltinTool, ToolContext};
 
 const MAX_BYTES: usize = 64 * 1024;
@@ -151,8 +151,8 @@ pub async fn execute_builtin(
     match tool.name {
         "read" => read(args, project_root).await,
         "ls" => ls(args, project_root).await,
-        "write" => write(args, project_root).await,
-        "edit" => edit(args, project_root).await,
+        "write" => write(args, project_root, ctx.confine_writes).await,
+        "edit" => edit(args, project_root, ctx.confine_writes).await,
         "bash" => bash(args, ctx).await,
         "find" => find(args, project_root).await,
         "grep" => grep(args, project_root).await,
@@ -537,13 +537,19 @@ async fn ls(args: &serde_json::Value, root: &Path) -> String {
     cap_output(&joined, usize::MAX, MAX_BYTES, "\n[truncated: 64KB limit]")
 }
 
-async fn write(args: &serde_json::Value, root: &Path) -> String {
+async fn write(args: &serde_json::Value, root: &Path, confine: bool) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
     };
     let Some(content) = arg_str(args, "content") else {
         return "ERROR: missing required argument 'content'".to_string();
     };
+    // Defense in depth: when the caller confines writes, re-canonicalize on the
+    // canonical root (not the raw argument) so `..` and absolute paths are
+    // caught even if the gate's decision was made against a stale view.
+    if confine && escapes_project(root, path).unwrap_or(true) {
+        return format!("ERROR: refused to write outside the agent workspace: {path}");
+    }
     let target = resolve(root, path);
     // Report the resolved location, not the raw argument: an absolute or `../`
     // path lands outside the project and the model must see where it went.
@@ -569,7 +575,7 @@ async fn write(args: &serde_json::Value, root: &Path) -> String {
     }
 }
 
-async fn edit(args: &serde_json::Value, root: &Path) -> String {
+async fn edit(args: &serde_json::Value, root: &Path, confine: bool) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
     };
@@ -578,6 +584,9 @@ async fn edit(args: &serde_json::Value, root: &Path) -> String {
     };
     if edits.is_empty() {
         return "ERROR: edits must contain at least one replacement".to_string();
+    }
+    if confine && escapes_project(root, path).unwrap_or(true) {
+        return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
     let target = resolve(root, path);
     let shown = display_path(root, &target);
@@ -632,7 +641,10 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
 
     // No confinement available means no shell: running unsandboxed would give the
     // command the whole machine, which is never what the caller asked for.
-    let policy = jail::Policy::new(root, ctx.allow_network);
+    let mut policy = jail::Policy::new(root, ctx.allow_network);
+    if let Some(mask) = ctx.mask_root {
+        policy = policy.with_mask_root(mask);
+    }
     let Some(shell) = jail::wrap(proc::shell(), &policy) else {
         return "ERROR: bash is unavailable because no OS sandbox could be established on this \
                 system. Use the read/ls/find/grep tools instead."
@@ -1592,6 +1604,32 @@ mod tests {
         );
         assert!(!out.contains(".."), "must not echo the raw path: {out}");
         let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// With write confinement enabled, a `..` write is refused at the handler,
+    /// independent of the gate -- the defense-in-depth layer.
+    #[tokio::test]
+    async fn confined_write_refuses_escape_at_handler() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[]).with_confined_writes(true);
+        let out = super::execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "../escape.txt", "content": "x"}),
+            &ctx,
+        )
+        .await;
+        assert!(out.starts_with("ERROR: refused to write outside"), "got: {out}");
+        assert!(!root.parent().unwrap().join("escape.txt").exists());
+
+        let out = super::execute_builtin(
+            lookup("edit").unwrap(),
+            &json!({"path": "../escape.txt", "edits": [{"old_string": "a", "new_string": "b"}]}),
+            &ctx,
+        )
+        .await;
+        assert!(out.starts_with("ERROR: refused to edit outside"), "got: {out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

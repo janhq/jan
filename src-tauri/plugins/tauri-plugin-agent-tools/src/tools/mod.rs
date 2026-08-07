@@ -42,6 +42,15 @@ pub struct ToolContext<'a> {
     pub store_root: &'a Path,
     pub enabled_skills: &'a [String],
     pub allow_network: bool,
+    /// When set, `write`/`edit` re-canonicalize the target and refuse a path
+    /// that escapes `project_root`, closing the check/use race between the
+    /// gate's decision-time canonicalization and the handler's raw-path write.
+    /// The CLI leaves it off so a user-approved escaping write still works.
+    pub confine_writes: bool,
+    /// The Jan data-folder root, masked from the sandboxed shell on surfaces
+    /// where it sits outside the workspace (the desktop). `None` on the CLI,
+    /// where the project itself is the workspace.
+    pub mask_root: Option<&'a Path>,
 }
 
 impl<'a> ToolContext<'a> {
@@ -51,11 +60,23 @@ impl<'a> ToolContext<'a> {
             store_root,
             enabled_skills,
             allow_network: false,
+            confine_writes: false,
+            mask_root: None,
         }
     }
 
     pub fn with_network(mut self, allow: bool) -> Self {
         self.allow_network = allow;
+        self
+    }
+
+    pub fn with_confined_writes(mut self, confine: bool) -> Self {
+        self.confine_writes = confine;
+        self
+    }
+
+    pub fn with_mask_root(mut self, mask_root: &'a Path) -> Self {
+        self.mask_root = Some(mask_root);
         self
     }
 }

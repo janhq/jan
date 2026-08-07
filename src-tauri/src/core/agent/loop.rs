@@ -740,6 +740,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     let prompt_kind = match kind {
                         PromptKind::ReadEscape => "read_escape",
                         PromptKind::Write => "write",
+                        PromptKind::WriteEscape => "write_escape",
                         PromptKind::Exec => "exec",
                     };
                     let path = tool

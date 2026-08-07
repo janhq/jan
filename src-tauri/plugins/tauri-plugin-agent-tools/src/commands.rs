@@ -308,7 +308,19 @@ pub async fn execute_tool(
         // no durable user data is in range for the prompt to protect, and
         // refusing here while `bash` may already write the same files would be a
         // control a sibling tool bypasses.
+        //
+        // A write that *escapes* the sandbox (absolute or `..`) is different:
+        // it can reach host files (rc files, ssh keys, LaunchAgents, the store)
+        // that the ephemeral-root reasoning does not cover. It is gated as
+        // `WriteEscape` and refused here outright, since this surface has no
+        // prompt round-trip to approve it.
         Decision::Prompt(PromptKind::Write) => {}
+        Decision::Prompt(PromptKind::WriteEscape) => {
+            return Err(format!(
+                "tool '{name}' tried to write outside the agent workspace and was refused"
+            )
+            .into());
+        }
         Decision::Prompt(kind) => {
             return Err(format!(
                 "tool '{name}' needs user approval ({kind:?}) and is not available yet"
@@ -318,8 +330,10 @@ pub async fn execute_tool(
     }
 
     let enabled = enabled_skills.unwrap_or_default();
-    let ctx =
-        ToolContext::new(&root, &store, &enabled).with_network(allow_network.unwrap_or(false));
+    let ctx = ToolContext::new(&root, &store, &enabled)
+        .with_network(allow_network.unwrap_or(false))
+        .with_confined_writes(true)
+        .with_mask_root(Path::new(&data_folder));
     let (content, diff) = handlers::execute_builtin_with_diff(tool, &args, &ctx).await;
     let is_error =
         content.starts_with("ERROR") || (name == "bash" && handlers::bash_result_failed(&content));
@@ -464,6 +478,48 @@ mod tests {
             "unexpected error {}",
             err.message
         );
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// A write that escapes the sandbox (absolute or `..`) must be refused on the
+    /// desktop surface, just like an escaping read -- it could reach host files.
+    #[tokio::test]
+    async fn escaping_writes_are_refused() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+
+        for path in ["../escape.txt", "/tmp/jan_cmd_escape.txt"] {
+            let err = execute_tool(
+                df.clone(),
+                T1.into(),
+                None,
+                "write".into(),
+                json!({"path": path, "content": "x"}),
+                None,
+                None,
+            )
+            .await
+            .expect_err("an escaping write must be refused");
+            assert!(
+                err.message.contains("outside the agent workspace"),
+                "unexpected error {}",
+                err.message
+            );
+        }
+
+        // An in-sandbox write still succeeds, so we didn't over-tighten.
+        let res = execute_tool(
+            df.clone(),
+            T1.into(),
+            None,
+            "write".into(),
+            json!({"path": "ok.txt", "content": "x"}),
+            None,
+            None,
+        )
+        .await
+        .expect("an in-workspace write must succeed");
+        assert_eq!(res.content, "Created ok.txt (1 bytes)");
         let _ = std::fs::remove_dir_all(&data);
     }
 
