@@ -64,8 +64,10 @@ export const PREVIEW_INSPECTOR_SCRIPT = `(function () {
 
   function placeBox(box, el, color, width, dashed) {
     var r = el.getBoundingClientRect()
-    box.style.border =
-      width + 'px ' + (dashed ? 'dashed' : 'solid') + ' ' + color
+    // Inspector uses dots for hover, short dashes for pin - clearly different
+    // from user annotations which use solid lines or long dashes (6px dash, 4px gap).
+    var dashStyle = dashed ? '1px dotted' : '2px dashed'
+    box.style.border = dashStyle + ' ' + color
     box.style.left = r.left + 'px'
     box.style.top = r.top + 'px'
     box.style.width = r.width + 'px'

@@ -239,7 +239,17 @@ export function AnnotationOverlay({
       if (!drawing || !active) return
       const pos = getPointerPos(e)
       if (tool === 'pencil') {
-        setCurrentLine((prev) => [...prev, pos.x, pos.y])
+        setCurrentLine((prev) => {
+          // Skip if too close to last point (reduces jaggedness)
+          if (prev.length >= 2) {
+            const lastX = prev[prev.length - 2]
+            const lastY = prev[prev.length - 1]
+            const dx = pos.x - lastX
+            const dy = pos.y - lastY
+            if (dx * dx + dy * dy < 4) return prev // min 2px distance
+          }
+          return [...prev, pos.x, pos.y]
+        })
       }
     },
     [drawing, active, tool, getPointerPos]
@@ -252,7 +262,7 @@ export function AnnotationOverlay({
     // placeholder is appended after the stroke, so its index is the pre-stroke
     // count + 1 (both updaters run in order within this event).
     let noteAnchor: Point | null = null
-    if (tool === 'pencil' && currentLine.length >= 4) {
+    if (tool === 'pencil' && currentLine.length >= 2) {
       const pts = currentLine
       noteAnchor = { x: pts[pts.length - 2], y: pts[pts.length - 1] }
       setShapes((prev) => [
@@ -350,7 +360,7 @@ export function AnnotationOverlay({
 
   // Compute the bounding box of the current pencil stroke for the dashed bbox feedback.
   let strokeBbox: { x: number; y: number; width: number; height: number } | null = null
-  if (tool === 'pencil' && drawing && currentLine.length >= 4) {
+  if (tool === 'pencil' && drawing && currentLine.length >= 2) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
     for (let i = 0; i < currentLine.length; i += 2) {
       const px = currentLine[i], py = currentLine[i + 1]
@@ -366,7 +376,7 @@ export function AnnotationOverlay({
         points={currentLine}
         stroke={color}
         strokeWidth={strokeWidth}
-        tension={0.5}
+        tension={0.7}
         lineCap="round"
         lineJoin="round"
       />
@@ -398,92 +408,97 @@ export function AnnotationOverlay({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Inline toolbar: sibling of the content box, styled like the panel
-          chrome (main-view fg tokens, subtle dividers, lucide icons). Only
-          tools live here so the row fits the narrow panel width; the
-          Send/Cancel actions float at the bottom of the preview. */}
+      {/* Inline toolbar: two rows for narrow panels.
+          Row 1: tools + undo/clear actions
+          Row 2: color palette + stroke width */}
       <div
         role="toolbar"
         aria-label="Annotation tools"
-        className="flex shrink-0 items-center gap-1.5 border-b px-2 py-1.5"
+        className="flex shrink-0 flex-col border-b"
       >
-        <ToolButton
-          active={tool === 'select'}
-          onClick={() => setTool('select')}
-          title="Select (inspect)"
-        >
-          <MousePointer2 size={14} />
-        </ToolButton>
-        <ToolButton
-          active={tool === 'pencil'}
-          onClick={() => setTool('pencil')}
-          title="Pencil (freehand)"
-        >
-          <Pencil size={14} />
-        </ToolButton>
-        <ToolButton
-          active={tool === 'arrow'}
-          onClick={() => setTool('arrow')}
-          title="Arrow"
-        >
-          <ArrowUpRight size={14} />
-        </ToolButton>
-        <ToolButton
-          active={tool === 'text'}
-          onClick={() => setTool('text')}
-          title="Text"
-        >
-          <Type size={14} />
-        </ToolButton>
-
-        <span className="mx-0.5 h-4 w-px bg-main-view-fg/15" />
-
-        {COLORS.map((c) => (
-          <button
-            key={c}
-            type="button"
-            onClick={() => setColor(c)}
-            title={c}
-            aria-label={`Annotation color ${c}`}
-            className={cn(
-              'size-3.5 rounded-full border transition-transform',
-              color === c
-                ? 'scale-110 border-main-view-fg/60 ring-1 ring-main-view-fg/30'
-                : 'border-main-view-fg/20 hover:scale-110'
-            )}
-            style={{ backgroundColor: c }}
-          />
-        ))}
-
-        <span className="mx-0.5 h-4 w-px bg-main-view-fg/15" />
-
-        {STROKE_WIDTHS.map((w) => (
-          <button
-            key={w}
-            type="button"
-            onClick={() => setStrokeWidth(w)}
-            title={`${w}px`}
-            aria-label={`Stroke width ${w}px`}
-            className={cn(
-              'flex size-4 items-center justify-center rounded text-main-view-fg/60 hover:text-main-view-fg',
-              strokeWidth === w && 'bg-main-view-fg/10 text-main-view-fg'
-            )}
+        {/* Row 1: tools and actions */}
+        <div className="flex items-center gap-1 px-2 py-1.5">
+          <ToolButton
+            active={tool === 'select'}
+            onClick={() => setTool('select')}
+            title="Select (inspect)"
           >
-            <span
-              className="rounded-full bg-current"
-              style={{ width: w + 1, height: w + 1 }}
+            <MousePointer2 size={14} />
+          </ToolButton>
+          <ToolButton
+            active={tool === 'pencil'}
+            onClick={() => setTool('pencil')}
+            title="Pencil (freehand)"
+          >
+            <Pencil size={14} />
+          </ToolButton>
+          <ToolButton
+            active={tool === 'arrow'}
+            onClick={() => setTool('arrow')}
+            title="Arrow"
+          >
+            <ArrowUpRight size={14} />
+          </ToolButton>
+          <ToolButton
+            active={tool === 'text'}
+            onClick={() => setTool('text')}
+            title="Text"
+          >
+            <Type size={14} />
+          </ToolButton>
+
+          <span className="mx-1 h-4 w-px bg-main-view-fg/15" />
+
+          <ToolButton onClick={undo} title="Undo (last shape)">
+            <Undo2 size={14} />
+          </ToolButton>
+          <ToolButton onClick={clearAll} title="Clear all">
+            <Trash2 size={14} />
+          </ToolButton>
+        </div>
+
+        {/* Row 2: colors and stroke width */}
+        <div className="flex items-center gap-1.5 border-t border-main-view-fg/10 px-2 py-1.5">
+          {COLORS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setColor(c)}
+              title={c}
+              aria-label={`Annotation color ${c}`}
+              className={cn(
+                'size-4 rounded-full border transition-all',
+                color === c
+                  ? 'scale-110 border-main-view-fg/60 ring-2 ring-main-view-fg/20'
+                  : 'border-main-view-fg/20 hover:scale-110 hover:border-main-view-fg/40'
+              )}
+              style={{ backgroundColor: c }}
             />
-          </button>
-        ))}
+          ))}
 
-        <span className="mx-0.5 h-4 w-px bg-main-view-fg/15" />
+          <span className="mx-1 h-4 w-px bg-main-view-fg/15" />
 
-        <ToolButton onClick={undo} title="Undo (last shape)">
-          <Undo2 size={14} />
-        </ToolButton>
-        <ToolButton onClick={clearAll} title="Clear all">
-          <Trash2 size={14} />
-        </ToolButton>
+          {STROKE_WIDTHS.map((w) => (
+            <button
+              key={w}
+              type="button"
+              onClick={() => setStrokeWidth(w)}
+              title={`${w}px`}
+              aria-label={`Stroke width ${w}px`}
+              className={cn(
+                'flex size-5 items-center justify-center rounded transition-colors',
+                strokeWidth === w
+                  ? 'bg-main-view-fg/15 text-main-view-fg'
+                  : 'text-main-view-fg/50 hover:bg-main-view-fg/10 hover:text-main-view-fg'
+              )}
+            >
+              <span
+                className="rounded-full bg-current"
+                style={{ width: Math.max(w, 2), height: Math.max(w, 2) }}
+              />
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Content stays a flex child so its scroll container keeps working; the
@@ -527,7 +542,7 @@ export function AnnotationOverlay({
                     points={shape.points}
                     stroke={shape.color}
                     strokeWidth={shape.width}
-                    tension={0.5}
+                    tension={0.7}
                     lineCap="round"
                     lineJoin="round"
                   />
@@ -609,16 +624,21 @@ export function AnnotationOverlay({
 
         {/* Action pill: floats at the bottom of the preview, the natural spot
             after drawing. Solid bg so it stays readable over any content. */}
-        <div className="absolute inset-x-0 bottom-2 z-30 flex justify-center">
-          <div className="flex items-center gap-1 rounded-full border bg-main-view px-1.5 py-1 shadow-md">
-            <Button variant="default" size="xs" onClick={handleSend} className="shrink-0">
+        <div className="absolute inset-x-0 bottom-3 z-30 flex justify-center">
+          <div className="flex items-center gap-2 rounded-full border border-main-view-fg/15 bg-main-view/95 px-2 py-1.5 shadow-lg backdrop-blur-sm">
+            <Button
+              variant="default"
+              size="xs"
+              onClick={handleSend}
+              className="h-6 px-3 text-xs font-medium"
+            >
               Send to model
             </Button>
             <Button
               variant="ghost"
               size="xs"
               onClick={exit}
-              className="shrink-0 text-main-view-fg/60"
+              className="h-6 px-2 text-xs text-main-view-fg/60 hover:text-main-view-fg"
             >
               Cancel
             </Button>
