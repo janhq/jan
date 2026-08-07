@@ -730,6 +730,9 @@ mod enforcement_tests {
     }
 
     #[tokio::test]
+    // `/etc/hostname` does not exist on macOS, so this Linux-content check is
+    // gated to the platform that guarantees the file.
+    #[cfg(target_os = "linux")]
     async fn a_command_still_runs_and_can_read_system_files() {
         require_backend!();
         let ws = workspace();
@@ -802,6 +805,11 @@ mod enforcement_tests {
     }
 
     #[tokio::test]
+    // Sibling-workspace invisibility relies on the sandbox backend scoping the
+    // temp dir (bwrap's private tmpfs / seatbelt's HOME deny). The seatbelt
+    // workspace lives under the mac temp dir, which is not covered by its HOME
+    // deny, so this semantic only holds under bwrap on Linux.
+    #[cfg(target_os = "linux")]
     async fn another_threads_workspace_is_not_reachable() {
         require_backend!();
         // The isolation that matters most: one conversation must not see another's

@@ -239,10 +239,16 @@ fn resolve_allow_network(configured: Option<bool>) -> bool {
 }
 
 /// Default for whether the sandboxed shell can read `$HOME`, used when
-/// `[tools].allow_home_read` is unset. The CLI needs it for `git`/`ssh`
-/// credential helpers; the desktop masks the home entirely, so only the CLI
-/// default is ever consulted here (`resolve_run_settings` is CLI-only).
+/// `[tools].allow_home_read` is unset.
+///
+/// The CLI needs it for `git`/`ssh` credential helpers, so its shell binds
+/// `$HOME` read-only. The desktop keeps the full isolation and masks the home
+/// (the Jan data folder lives inside `$HOME`, so exposing it read-only would
+/// leak `settings.json` API keys, thread workspaces, and the memory store).
+#[cfg(feature = "cli")]
 const DEFAULT_ALLOW_HOME_READ: bool = true;
+#[cfg(not(feature = "cli"))]
+const DEFAULT_ALLOW_HOME_READ: bool = false;
 
 /// `[tools].allow_home_read` wins over the surface default when set.
 fn resolve_allow_home_read(configured: Option<bool>) -> bool {
@@ -2786,6 +2792,22 @@ mod tests {
             invoker.tool_context().home_readonly,
             "CLI shell must read $HOME"
         );
+    }
+
+    /// The desktop keeps the full isolation: the sandbox masks `$HOME` rather
+    /// than binding it read-only, so the Jan data folder (which lives inside
+    /// `$HOME`) stays unreadable.
+    #[test]
+    #[cfg(not(feature = "cli"))]
+    fn desktop_tool_context_withholds_home() {
+        let root = std::path::PathBuf::from("/tmp/jan-home-check");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
+        assert!(!invoker.tool_context().home_readonly);
     }
 
     /// The desktop chat sandbox is ephemeral and unprompted, so it opts in per
