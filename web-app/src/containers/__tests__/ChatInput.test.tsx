@@ -549,7 +549,7 @@ describe('ChatInput', () => {
     expect(transferAttachmentsMock).not.toHaveBeenCalled()
   })
 
-  it('adds attached image files to onSubmit payload', () => {
+  it('adds attached image files to onSubmit payload', async () => {
     promptState = 'with image'
     attachmentsList = [
       {

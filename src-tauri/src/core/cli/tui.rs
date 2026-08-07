@@ -43,7 +43,7 @@ use super::{sort_threads_recent, AgentSession, ResumeTarget};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs, PermissionRegistry};
-use crate::core::agent::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 
 #[derive(Debug, PartialEq)]
 enum Status {
@@ -99,7 +99,7 @@ impl Pending {
     /// sees exactly what a grant covers (`git status && rm foo` -> git AND rm);
     /// commands that can't be decomposed grant only their exact text.
     fn always_label(&self) -> String {
-        use crate::core::agent::tools::cmdscan::{scan_command, CommandScan};
+        use tauri_plugin_agent_tools::tools::cmdscan::{scan_command, CommandScan};
         let Some(command) = self.command.as_deref() else {
             return "Allow always (this thread)".to_string();
         };
@@ -125,6 +125,7 @@ impl Pending {
             Some(d) => diff_lines(
                 d,
                 (inner as usize).saturating_sub(4).max(1),
+                DIFF_PREVIEW_MAX_ROWS,
                 "",
                 self.path.as_deref(),
             ),
@@ -149,7 +150,7 @@ impl Pending {
 }
 
 /// What a highlighted picker row does on Enter.
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 enum PickerKind {
     ResumeThread,
     SelectModel,
@@ -160,6 +161,9 @@ enum PickerKind {
     RewindScope,
     /// Read-only view of `~/.jan/config.toml` providers (`/config`). Enter closes.
     ViewConfig,
+    /// `/settings`: browse editable `[agent]` keys from agent.toml; Enter opens
+    /// a docked edit prompt for the selected row.
+    AgentSettings,
     /// `/todo` editor: browse the phased list and mutate the selected task
     /// (done/drop/rm) through the same canonical `TodoList` the model uses.
     Todo,
@@ -182,6 +186,7 @@ impl Picker {
             PickerKind::RewindMessage => " rewind to message ",
             PickerKind::RewindScope => " restore ",
             PickerKind::ViewConfig => " provider config ",
+            PickerKind::AgentSettings => " agent settings ",
             PickerKind::Todo => " todo ",
         }
     }
@@ -194,6 +199,7 @@ impl Picker {
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
+            PickerKind::AgentSettings => " ↑/↓ select   Enter edit   x unset   Esc close",
             PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
         }
     }
@@ -566,6 +572,10 @@ struct App {
     picker: Option<Picker>,
     /// Active `/login` prompt; owns the keyboard while open.
     login: Option<LoginPrompt>,
+    /// Active `/settings` edit prompt (docked like `/login`); owns the
+    /// keyboard while open. Holds the setting being edited and any validation
+    /// error; writes go straight to agent.toml on Enter.
+    settings_prompt: Option<SettingsPrompt>,
     /// Key handed off to the loop to verify off the render loop. Taken once.
     login_submit: Option<String>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
@@ -578,12 +588,13 @@ struct App {
     scrollback: u16,
     /// Set when the user submits a message; the loop spawns a run next tick.
     want_start: bool,
-    /// Runs started since the todo list last had open work. The list is the
-    /// model's own scratchpad, so a finished one lingers until it declares a
-    /// new plan -- which may never happen. This counts down a grace period
-    /// instead of clearing the moment the last task closes, so a model that is
-    /// still mid-flow (about to append, or reopening a task) keeps its list.
-    runs_since_todos_closed: u32,
+    /// Turns (model roundtrips, plus the submission that kicked off a run)
+    /// since the todo list last had open work. The list is the model's own
+    /// scratchpad, so a finished one lingers until it declares a new plan --
+    /// which may never happen. This counts down a grace period instead of
+    /// clearing the moment the last task closes, so a model that is still
+    /// mid-flow (about to append, or reopening a task) keeps its list.
+    turns_since_todos_closed: u32,
     /// Transcript viewport width in cells, refreshed each `draw`; tables wrap to
     /// it. 0 until the first draw (callers fall back to a default).
     view_width: u16,
@@ -697,6 +708,14 @@ struct SubagentPanel {
     /// request -- no completed tool call yet, so a stats line frozen at
     /// "0 tools" and an activity line stuck on "starting…".
     active: Option<StartingCall>,
+    /// True while the dispatch is parked on the parent run's
+    /// `max_parallel_subagents` cap (reported via `SubagentQueued`); flipped
+    /// off when the child's `SubagentStart` arrives. Queued panels render
+    /// "queued (N waiting)" instead of live stats, so a capped fan-out reads
+    /// as a queue rather than a wall of silently-idle agents.
+    queued: bool,
+    /// 1-based position in the queue at the time the child was queued.
+    waiting: u32,
 }
 
 /// A committed finished-subagent summary row, folded to one line but retaining
@@ -798,12 +817,13 @@ impl App {
             ask_queue: std::collections::VecDeque::new(),
             picker: None,
             login: None,
+            settings_prompt: None,
             login_submit: None,
             update_requested: false,
             update_installing: false,
             scrollback: 0,
             want_start: false,
-            runs_since_todos_closed: 0,
+            turns_since_todos_closed: 0,
             view_width: 0,
             last_kind: Kind::None,
             should_quit: false,
@@ -820,7 +840,7 @@ impl App {
             last_scroll: 0,
             row_index: Vec::new(),
             run_started: None,
-            mouse_capture: true,
+            mouse_capture: false,
             message_queue: std::collections::VecDeque::new(),
             todos: crate::core::agent::todo::TodoList::default(),
             todo_call_this_turn: false,
@@ -933,8 +953,9 @@ impl App {
     /// through markdown, each `<think>` block folded to a one-line summary row
     /// whose full dimmed detail is retained for expansion.
     fn push_assistant_blocks(&mut self, text: &str) {
+        let text = strip_system_xml_tags(text);
         let width = self.render_width();
-        for (reasoning, seg) in split_reasoning(text) {
+        for (reasoning, seg) in split_reasoning(&text) {
             if seg.trim().is_empty() {
                 continue;
             }
@@ -1153,10 +1174,11 @@ impl App {
 
     /// Extract the current `@query` from the input buffer, if any.
     /// Returns `None` when the cursor is not inside or immediately after
-    /// a `@`-prefixed token (no space since the `@`).
+    /// a `@`-prefixed token (no space since the `@`), or when the `@` does
+    /// not start a token (e.g. `user@host` is not a file reference).
     fn path_hint_query(&self) -> Option<String> {
         let before = &self.input[..self.cursor];
-        let at_idx = before.rfind('@')?;
+        let at_idx = path_refs::last_ref_start(before)?;
         let after_at = &before[at_idx + 1..];
         if after_at.contains(' ') {
             return None; // space after @ means the token ended
@@ -1199,7 +1221,7 @@ impl App {
         let sel = self.path_hint_selected.min(self.path_hints.len() - 1);
         let selected = &self.path_hints[sel];
         let before = &self.input[..self.cursor];
-        let at_idx = match before.rfind('@') {
+        let at_idx = match path_refs::last_ref_start(before) {
             Some(i) => i,
             None => return,
         };
@@ -1720,7 +1742,7 @@ impl App {
                 ]));
                 if let Some(diff) = diff {
                     let lang = self.diff_paths.remove(&id);
-                    for line in diff_lines(&diff, max, "│     ", lang.as_deref()) {
+                    for line in diff_lines(&diff, max, DIFF_MAX_ROWS, "│     ", lang.as_deref()) {
                         self.push(line);
                     }
                 }
@@ -1757,7 +1779,36 @@ impl App {
                 .ask_queue
                 .push_back(PendingAsk::new(request_id, request)),
             StreamEvent::SubagentStart { run_id, name, task } => {
-                // Open a live rolling panel for this run; several may be active.
+                // A queued dispatch already opened a panel for this run; promote
+                // it to running instead of pushing a duplicate. Otherwise open a
+                // fresh live panel (several may be active).
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    panel.queued = false;
+                } else {
+                    self.finalize_tool_group();
+                    self.flush_assistant();
+                    self.subagents.push(SubagentPanel {
+                        run_id,
+                        name,
+                        task: task.unwrap_or_default(),
+                        calls: Vec::new(),
+                        requests: 0,
+                        prompt_tokens: 0,
+                        active: None,
+                        queued: false,
+                        waiting: 0,
+                    });
+                }
+            }
+            StreamEvent::SubagentQueued {
+                run_id,
+                name,
+                task,
+                waiting,
+            } => {
+                // The cap is exhausted; this dispatch will start when a running
+                // child finishes. Open its panel now, marked queued, so the
+                // fan-out shows the queue instead of hiding dispatches.
                 self.finalize_tool_group();
                 self.flush_assistant();
                 self.subagents.push(SubagentPanel {
@@ -1768,6 +1819,8 @@ impl App {
                     requests: 0,
                     prompt_tokens: 0,
                     active: None,
+                    queued: true,
+                    waiting,
                 });
             }
             StreamEvent::SubagentEnd { run_id, name, .. } => {
@@ -2206,25 +2259,42 @@ fn summarize_result(s: &str, max: usize) -> String {
     }
 }
 
-/// Max diff rows rendered under a tool result before collapsing the tail.
-const DIFF_MAX_ROWS: usize = 20;
+/// Max diff rows rendered under a tool result before collapsing the tail. The
+/// transcript scrolls, so a whole edit is worth showing; only pathological
+/// machine-generated diffs hit this.
+const DIFF_MAX_ROWS: usize = 1000;
+
+/// Max diff rows in the permission prompt, which does not scroll: its box grows
+/// upward into the transcript and shares the space with the decision list, so a
+/// long diff has to collapse rather than crowd out the options.
+const DIFF_PREVIEW_MAX_ROWS: usize = 20;
 
 /// Max chars shown for a bash/shell/exec command label in the transcript.
 const COMMAND_LABEL_MAX: usize = 80;
 
+/// Diff row backgrounds. Dark and desaturated on purpose: the syntax-highlighted
+/// foreground is drawn on top of them, so the tint has to read as added/removed
+/// at a glance without swallowing the code.
+const DIFF_ADD_BG: Color = Color::Rgb(22, 52, 32);
+const DIFF_DEL_BG: Color = Color::Rgb(66, 26, 30);
+
 /// Render focused-diff text as a boxed panel: a light rule frames the change,
-/// `-` lines red, `+` green, `@@` headers dim-cyan. Content is truncated to
-/// `max` and each row padded so the right border aligns. Collapses to
-/// `DIFF_MAX_ROWS` with a `(+N more)` tail before the closing rule. `gutter`
-/// indents the panel (tool-row alignment under a result; empty in the prompt).
+/// `+` rows on a green background and `-` rows on a red one across the whole row
+/// (so the change reads as a band), `@@` headers dim-cyan. Every row keeps its
+/// syntax highlighting, changed or not; only the background says what happened.
+/// Content is truncated to `max` and each row padded so the right border aligns.
+/// Collapses to `max_rows` with a `(+N more)` tail before the closing rule.
+/// `gutter` indents the panel (tool-row alignment under a result; empty in the
+/// prompt).
 fn diff_lines(
     diff: &str,
     max: usize,
+    max_rows: usize,
     gutter: &'static str,
     lang: Option<&str>,
 ) -> Vec<Line<'static>> {
     let all: Vec<&str> = diff.lines().collect();
-    let shown = all.len().min(DIFF_MAX_ROWS);
+    let shown = all.len().min(max_rows);
     let truncated = all.len() > shown;
 
     // Truncate before highlighting so the width arithmetic is unchanged.
@@ -2242,24 +2312,39 @@ fn diff_lines(
     let mut rows: Vec<Line<'static>> = Vec::with_capacity(shown + 1);
     for (i, line) in kept.iter().enumerate() {
         let (marker, body) = split_diff_marker(line);
-        let marker_style = match marker.as_bytes().first() {
-            Some(b'-') => Style::new().red(),
-            Some(b'+') => Style::new().green(),
-            _ => Style::new().dim(),
-        };
         if marker.starts_with('@') {
             rows.push(Line::styled(line.clone(), Style::new().cyan().dim()));
             continue;
         }
+        let bg = match marker.as_bytes().first() {
+            Some(b'-') => Some(DIFF_DEL_BG),
+            Some(b'+') => Some(DIFF_ADD_BG),
+            _ => None,
+        };
         let mut spans = Vec::with_capacity(2);
         if !marker.is_empty() {
+            // On a tinted row the marker takes the strong colour and the code
+            // keeps its own; elsewhere it recedes.
+            let marker_style = match marker.as_bytes().first() {
+                Some(b'-') => Style::new().red().bold(),
+                Some(b'+') => Style::new().green().bold(),
+                _ => Style::new().dim(),
+            };
             spans.push(Span::styled(marker.to_string(), marker_style));
         }
         match &highlighted {
             Some(h) => spans.extend(h[i].iter().cloned()),
+            // Dimming an unhighlighted body would fight the tint behind it.
+            None if bg.is_some() => spans.push(Span::raw(body.to_string())),
             None => spans.push(Span::styled(body.to_string(), Style::new().dim())),
         }
-        rows.push(Line::from(spans));
+        // The tint rides on the line so `boxed_panel` can carry it across the
+        // padding too, making the band reach the right border.
+        let row = Line::from(spans);
+        rows.push(match bg {
+            Some(bg) => row.style(Style::new().bg(bg)),
+            None => row,
+        });
     }
     if truncated {
         rows.push(Line::styled(
@@ -2289,7 +2374,11 @@ fn row_width(row: &Line<'_>) -> usize {
 
 /// Frame styled rows in a light box, right-padded to the widest row (clamped to
 /// `max`). Rows carry their own spans so style can vary within a row (syntax
-/// highlighting); `gutter` prefixes every line to indent the panel.
+/// highlighting); `gutter` prefixes every line to indent the panel. A row's
+/// line-level style is folded into its spans, since the framed line replaces it
+/// with the border's own style, and a row-level background also fills the
+/// interior padding so a highlighted row reads as a band from border to border
+/// rather than stopping at the end of its text.
 fn boxed_panel(rows: Vec<Line<'static>>, max: usize, gutter: &'static str) -> Vec<Line<'static>> {
     let inner = rows
         .iter()
@@ -2305,12 +2394,26 @@ fn boxed_panel(rows: Vec<Line<'static>>, max: usize, gutter: &'static str) -> Ve
     ]));
     for row in rows {
         let pad = inner.saturating_sub(row_width(&row));
+        let row_style = row.style;
+        // Interior spacing carries the row's background but not its foreground:
+        // the frame itself stays neutral, so only the padding between the
+        // borders is tinted.
+        let fill = match row_style.bg {
+            Some(bg) => border.bg(bg),
+            None => border,
+        };
         let mut spans = vec![
             Span::styled(gutter, border),
-            Span::styled("│ ", border),
+            Span::styled("│", border),
+            Span::styled(" ", fill),
         ];
-        spans.extend(row.spans);
-        spans.push(Span::styled(format!("{} │", " ".repeat(pad)), border));
+        spans.extend(
+            row.spans
+                .into_iter()
+                .map(|s| Span::styled(s.content, row_style.patch(s.style))),
+        );
+        spans.push(Span::styled(format!("{} ", " ".repeat(pad)), fill));
+        spans.push(Span::styled("│", border));
         out.push(Line::from(spans));
     }
     out.push(Line::from(vec![
@@ -2787,7 +2890,7 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
                 ]));
             }
             if let Some(diff) = &call.diff {
-                for line in diff_lines(diff, max, cont_gutter, None) {
+                for line in diff_lines(diff, max, DIFF_MAX_ROWS, cont_gutter, None) {
                     out.push(line);
                 }
             }
@@ -2953,8 +3056,7 @@ fn assistant_is_awaiting_user_answer(text: &str) -> bool {
     let Some(last_line) = text
         .split(['\n', '\r'])
         .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .next_back()
+        .rfind(|l| !l.is_empty())
     else {
         return false;
     };
@@ -3007,6 +3109,29 @@ fn assistant_has_content(text: &str) -> bool {
     split_reasoning(text)
         .iter()
         .any(|(_, seg)| !seg.trim().is_empty())
+}
+
+/// Regex matching `<system>`, `<system-notice>`, `<system-directive>`,
+/// `<system-conventions>`, etc. - any XML tag named `system` or `system-*`.
+/// Complete tags (`<system-notice>...</system-notice>`) are matched first; when
+/// no closing tag exists, everything from the opening tag to end-of-string is
+/// consumed. A bare word like `<systemic>` is not a tag and passes through.
+fn system_tag_re() -> &'static regex::Regex {
+    use std::sync::LazyLock;
+    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(
+            r"(?s)<system(?:-[a-zA-Z]+)?>.*?</system(?:-[a-zA-Z]+)?>|<system(?:-[a-zA-Z]+)?>.*$",
+        )
+        .unwrap()
+    });
+    &RE
+}
+
+/// Strip harness-injected `<system...>` XML tags from assistant text so the
+/// user never sees raw markup. These tags carry internal instructions that
+/// should not be rendered in the TUI transcript.
+fn strip_system_xml_tags(text: &str) -> String {
+    system_tag_re().replace_all(text, "").to_string()
 }
 
 fn spawn_run(args: &Arc<OrchestrationArgs>, body: serde_json::Value) -> CurrentRun {
@@ -3205,8 +3330,10 @@ pub async fn run(
 
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste, EnableMouseCapture)
-        .map_err(|e| e.to_string())?;
+    // Mouse capture stays off by default so terminal text is selectable/copyable
+    // (Ctrl-T enables click-to-expand). `chat_loop` diffs against
+    // `app.mouse_capture` and enables it on the first tick if the user toggles.
+    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste).map_err(|e| e.to_string())?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
 
@@ -3285,9 +3412,9 @@ async fn chat_loop<B: Backend>(
 ) -> Result<(), String> {
     let mut current: Option<CurrentRun> = None;
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
-    // Mirrors app.mouse_capture; `run` enables capture on the real terminal
-    // before this loop starts, so both start in sync.
-    let mut mouse_capture_active = true;
+    // Mirrors app.mouse_capture; `run` sets the real terminal to the same
+    // state before this loop starts, so both start in sync.
+    let mut mouse_capture_active = false;
 
     // Active MCP servers connect in the background; gate the first run on them
     // so the model's tools (collected once per run) are ready.
@@ -3379,6 +3506,8 @@ async fn chat_loop<B: Backend>(
             let base_ready = app.repo_root.is_none() || app.base_snapshot.is_some();
             if mcp_ready && base_ready {
                 app.want_start = false;
+                // The submission itself is one human turn toward the aging
+                // grace period; model roundtrips count via `Step` events.
                 age_closed_todos(app).await;
                 current = Some(spawn_run(args, app.body()));
             } else if !loading_noted && !mcp_ready {
@@ -3433,6 +3562,9 @@ async fn chat_loop<B: Backend>(
                                 }
                             }
                         },
+                        // `handle_ask_mouse` mutates app state, so it stays in the
+                        // arm body rather than a match guard that hides the effect.
+                        #[allow(clippy::collapsible_match)]
                         Ok(Event::Mouse(mouse)) => {
                             if !handle_ask_mouse(app, mouse, ask_requests).await {
                                 handle_mouse(app, mouse);
@@ -3535,6 +3667,14 @@ async fn chat_loop<B: Backend>(
                 Some(StreamEvent::Error { code, message }) => {
                     app.on_error(code, message);
                     current = None;
+                }
+                // Each model roundtrip is one turn toward the finished-todo
+                // aging grace period. A single run can span many tool-call
+                // turns, so aging must count turns, not runs -- otherwise a
+                // finished plan lingers through the rest of a long run.
+                Some(ev @ StreamEvent::Step { .. }) => {
+                    app.apply(ev);
+                    age_closed_todos(app).await;
                 }
                 Some(other) => app.apply(other),
                 None => {
@@ -3849,6 +3989,12 @@ async fn handle_key(
         return;
     }
 
+    // The `/settings` edit dock owns the keyboard while open, same as `/login`.
+    if app.settings_prompt.is_some() {
+        handle_settings_key(app, key, ctrl);
+        return;
+    }
+
     // A pending permission prompt captures y/a/n; Ctrl-C cancels the run and
     // Ctrl-D quits, so it can't be wedged waiting on an unanswered prompt.
     // Several subagents can have requests queued at once (see `pending_queue`),
@@ -3963,6 +4109,27 @@ async fn handle_key(
                     }
                 }
             }
+            // `/settings` picker: `x` restores the selected key to its default
+            // by removing it from agent.toml - same write as clearing the
+            // field in the edit dock, one keypress instead of two.
+            KeyCode::Char('x') if picker.kind == PickerKind::AgentSettings => {
+                let key = picker.items[picker.selected].value.clone();
+                // (picker borrow ends here; nothing below reads it before rebuild)
+                let toml_path = app.agent_dir.join("agent.toml");
+                match crate::core::agent::project::set_agent_key(&toml_path, &key, None) {
+                    Ok(()) => {
+                        app.note(&format!(
+                            "{key} unset (default applies); takes effect on the next run"
+                        ));
+                        if let Some(picker) = app.picker.as_mut() {
+                            picker.items = build_agent_settings_items(&toml_path);
+                            picker.selected =
+                                picker.selected.min(picker.items.len().saturating_sub(1));
+                        }
+                    }
+                    Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
+                }
+            }
             KeyCode::Enter => {
                 let kind = picker.kind;
                 let value = picker.items[picker.selected].value.clone();
@@ -3982,6 +4149,15 @@ async fn handle_key(
                         }
                     }
                     PickerKind::ViewConfig => {}
+                    // `/settings`: open the edit dock for the selected row.
+                    PickerKind::AgentSettings => {
+                        if let Some(def) = AGENT_SETTINGS.iter().find(|d| d.key == value) {
+                            let toml_path = app.agent_dir.join("agent.toml");
+                            let current = current_agent_value(&toml_path, def.key);
+                            app.settings_prompt =
+                                Some(SettingsPrompt::new(def, current.as_deref()));
+                        }
+                    }
                     // Todo Enter is handled by the guarded action arm above.
                     PickerKind::Todo => {}
                 }
@@ -4246,6 +4422,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "View provider config (~/.jan/config.toml)",
     },
     SlashCommand {
+        name: "/settings",
+        hint: "[max_parallel_subagents N]",
+        description: "Edit [agent] settings from agent.toml (menu); takes effect next run",
+    },
+    SlashCommand {
         name: "/update",
         hint: "",
         description: "Install the latest published build (takes effect on restart)",
@@ -4269,7 +4450,7 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("↑/↓", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
-    ("Ctrl-T", "Toggle mouse capture off to select/copy text"),
+    ("Ctrl-T", "Toggle mouse capture (click-to-expand vs text select)"),
     ("Ctrl-D", "Quit"),
 ];
 
@@ -4366,6 +4547,7 @@ async fn run_command(app: &mut App, line: &str) {
         "login" => open_login_prompt(app),
         "update" => update_command(app),
         "config" => open_config_screen(app),
+        "settings" => settings_command(app, arg),
         "goal" => goal_command(app, arg),
         "plan" => plan_command(app, arg),
         "todo" => todo_command(app, arg).await,
@@ -4426,6 +4608,292 @@ fn goal_command(app: &mut App, arg: &str) {
         }
         "" => show_goal_status(app),
         condition => set_goal(app, condition),
+    }
+}
+
+/// One editable `[agent]` key surfaced by `/settings`. Mirrors the template's
+/// knobs; defaults match `load_agent_config`. `model` is deliberately absent:
+/// it has its own `/model` picker.
+struct AgentSettingDef {
+    key: &'static str,
+    label: &'static str,
+    desc: &'static str,
+    kind: AgentSettingKind,
+}
+
+enum AgentSettingKind {
+    Int { default: Option<u64>, min: u64 },
+    Text { default: &'static str },
+    /// Exact-match choice: Enter writes one of `options`, cleared field
+    /// unsets. Covers the `read-only | deny | allow` and `always | relevance`
+    /// toggles that hand-editing agent.toml previously required.
+    Enum { options: &'static [&'static str], default: &'static str },
+}
+
+const AGENT_SETTINGS: &[AgentSettingDef] = &[
+    AgentSettingDef {
+        key: "max_turns",
+        label: "max_turns",
+        desc: "turns per message, clamped 1-400",
+        kind: AgentSettingKind::Int { default: Some(400), min: 1 },
+    },
+    AgentSettingDef {
+        key: "context_window",
+        label: "context_window",
+        desc: "context limit in tokens",
+        kind: AgentSettingKind::Int { default: Some(128000), min: 1 },
+    },
+    AgentSettingDef {
+        key: "compaction_reserve_tokens",
+        label: "compaction_reserve_tokens",
+        desc: "headroom kept free before compaction",
+        kind: AgentSettingKind::Int { default: Some(16384), min: 0 },
+    },
+    AgentSettingDef {
+        key: "max_tokens",
+        label: "max_tokens",
+        desc: "cap on tokens generated per response (omitted when unset)",
+        kind: AgentSettingKind::Int { default: None, min: 1 },
+    },
+    AgentSettingDef {
+        key: "max_parallel_subagents",
+        label: "max_parallel_subagents",
+        desc: "subagents that may run at once; extra dispatches queue FIFO",
+        kind: AgentSettingKind::Int { default: Some(10), min: 1 },
+    },
+    AgentSettingDef {
+        key: "instructions_file",
+        label: "instructions_file",
+        desc: "markdown injected into the system prompt",
+        kind: AgentSettingKind::Text { default: "AGENT.md" },
+    },
+    AgentSettingDef {
+        key: "budget.max_steps",
+        label: "budget.max_steps",
+        desc: "max tool-call steps per run",
+        kind: AgentSettingKind::Int { default: Some(40), min: 1 },
+    },
+    AgentSettingDef {
+        key: "budget.max_tokens",
+        label: "budget.max_tokens",
+        desc: "max tokens budget per run",
+        kind: AgentSettingKind::Int { default: Some(200000), min: 1 },
+    },
+    AgentSettingDef {
+        key: "tools.default",
+        label: "tools.default",
+        desc: "tool permission mode; deny locks down MCP tools",
+        kind: AgentSettingKind::Enum {
+            options: &["read-only", "deny", "allow"],
+            default: "read-only",
+        },
+    },
+    AgentSettingDef {
+        key: "skills.inject",
+        label: "skills.inject",
+        desc: "when project skills are injected into the prompt",
+        kind: AgentSettingKind::Enum {
+            options: &["always", "relevance"],
+            default: "always",
+        },
+    },
+];
+
+/// Docked edit prompt for one `/settings` row: value field, inline validation
+/// error, Enter saves / Esc cancels / cleared field unsets.
+struct SettingsPrompt {
+    key: &'static str,
+    input: String,
+    error: Option<String>,
+}
+
+impl SettingsPrompt {
+    fn new(def: &AgentSettingDef, current: Option<&str>) -> Self {
+        Self {
+            key: def.key,
+            input: current.unwrap_or_default().to_string(),
+            error: None,
+        }
+    }
+
+    fn def(&self) -> &'static AgentSettingDef {
+        AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == self.key)
+            .expect("settings prompt always opens for a def row")
+    }
+}
+
+/// Value of an `[agent]` key in `agent.toml` as a display string, `None` when
+/// unset or the file is unreadable. Reads the inner value directly so the
+/// display is not padded by the document's alignment.
+fn current_agent_value(toml_path: &std::path::Path, key: &str) -> Option<String> {
+    let raw = std::fs::read_to_string(toml_path).ok()?;
+    let doc = raw.parse::<toml_edit::DocumentMut>().ok()?;
+    let (section, key) = match key.split_once('.') {
+        Some((section, key)) => (section, key),
+        None => ("agent", key),
+    };
+    let item = doc.get(section)?.get(key)?;
+    Some(match item.as_value() {
+        Some(toml_edit::Value::Integer(i)) => i.value().to_string(),
+        Some(toml_edit::Value::String(s)) => s.value().to_string(),
+        Some(toml_edit::Value::Boolean(b)) => b.value().to_string(),
+        _ => item.to_string(),
+    })
+}
+
+/// `/settings` dispatcher: bare opens the interactive settings menu (an
+/// `AgentSettings` picker over the `[agent]` keys; Enter on a row docks an edit
+/// prompt); `max_parallel_subagents <N>` still works as a one-shot shortcut.
+/// Writes are format-preserving and take effect on the next run (the current
+/// run snapshotted its config at start). Runs only while idle, like every
+/// command.
+fn settings_command(app: &mut App, arg: &str) {
+    let toml_path = app.agent_dir.join("agent.toml");
+    let arg = arg.trim();
+    let Some((key, value)) = arg.split_once(char::is_whitespace) else {
+        return open_settings_screen(app);
+    };
+    match key {
+        "max_parallel_subagents" => {
+            let n: u64 = match value.parse() {
+                Ok(n) => n,
+                Err(_) => return app.note(&format!("'{value}' is not an integer")),
+            };
+            if n < 1 {
+                return app.note("max_parallel_subagents must be at least 1");
+            }
+            match crate::core::agent::project::set_agent_key(
+                &toml_path,
+                key,
+                Some(toml_edit::value(n as i64)),
+            ) {
+                Ok(()) => app.note(&format!(
+                    "max_parallel_subagents = {n} written; takes effect on the next run"
+                )),
+                Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
+            }
+        }
+        other => app.note(&format!(
+            "unknown setting '/settings {other}' (bare /settings opens the menu)"
+        )),
+    }
+}
+
+/// One picker row per `[agent]` def; the hint carries the current on-disk
+/// value (`= 400`) or `(unset)` when the default applies. `value` is the key
+/// so the edit dock and the `x` unset shortcut can act on it.
+fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
+    AGENT_SETTINGS
+        .iter()
+        .map(|def| {
+            let current = current_agent_value(toml_path, def.key);
+            PickerItem {
+                value: def.key.to_string(),
+                label: def.label.to_string(),
+                hint: Some(match &current {
+                    Some(v) => format!("= {v}"),
+                    None => "(unset)".to_string(),
+                }),
+                checkbox: None,
+            }
+        })
+        .collect()
+}
+
+/// Open the `/settings` menu: a picker row per `[agent]` key, hint showing the
+/// current value (or `unset`), Enter docking the edit prompt for that row, `x`
+/// removing the key so its default applies again.
+fn open_settings_screen(app: &mut App) {
+    let toml_path = app.agent_dir.join("agent.toml");
+    app.picker = Some(Picker {
+        kind: PickerKind::AgentSettings,
+        items: build_agent_settings_items(&toml_path),
+        selected: 0,
+    });
+}
+
+/// Keyboard for the `/settings` edit dock: chars/backspace edit the field,
+/// Enter validates and writes (empty clears the key), Esc cancels. Mirrors
+/// `handle_login_key`, minus the secret/verify machinery.
+fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+    if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c'))) && app.settings_prompt.is_some()
+    {
+        app.settings_prompt = None;
+        return;
+    }
+    let Some(prompt) = app.settings_prompt.as_mut() else {
+        return;
+    };
+    match key.code {
+        KeyCode::Enter => {
+            let toml_path = app.agent_dir.join("agent.toml");
+            let value: Option<toml_edit::Item> = match prompt.def().kind {
+                AgentSettingKind::Int { default, min } => {
+                    if prompt.input.trim().is_empty() {
+                        None
+                    } else {
+                        match prompt.input.trim().parse::<u64>() {
+                            Ok(n) if n >= min => Some(toml_edit::value(n as i64)),
+                            Ok(_) => {
+                                prompt.error = Some(format!(
+                                    "must be at least {min} (default: {})",
+                                    default
+                                        .map(|d| d.to_string())
+                                        .unwrap_or_else(|| "unset".into())
+                                ));
+                                return;
+                            }
+                            Err(_) => {
+                                prompt.error = Some(format!("'{}' is not an integer", prompt.input));
+                                return;
+                            }
+                        }
+                    }
+                }
+                AgentSettingKind::Text { .. } => {
+                    if prompt.input.trim().is_empty() {
+                        None
+                    } else {
+                        Some(toml_edit::value(prompt.input.trim().to_string()))
+                    }
+                }
+                AgentSettingKind::Enum { options, default } => {
+                    let input = prompt.input.trim();
+                    if input.is_empty() {
+                        None
+                    } else if options.contains(&input) {
+                        Some(toml_edit::value(input.to_string()))
+                    } else {
+                        prompt.error = Some(format!(
+                            "must be one of: {} (default: {default})",
+                            options.join(" | ")
+                        ));
+                        return;
+                    }
+                }
+            };
+            match crate::core::agent::project::set_agent_key(&toml_path, prompt.key, value) {
+                Ok(()) => {
+                    let what = if prompt.input.trim().is_empty() {
+                        format!("{} unset (default applies)", prompt.key)
+                    } else {
+                        format!("{} = {} written", prompt.key, prompt.input.trim())
+                    };
+                    app.note(&format!("{what}; takes effect on the next run"));
+                    app.settings_prompt = None;
+                }
+                Err(e) => {
+                    prompt.error = Some(format!("failed to write {}: {e}", toml_path.display()));
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            prompt.input.pop();
+        }
+        KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
+        _ => {}
     }
 }
 
@@ -4496,11 +4964,11 @@ async fn apply_todo_mutation(
     Ok(())
 }
 
-/// Runs allowed to start with a fully closed-out todo list before it is
-/// dropped. One is too eager -- a model often closes the last task and then
-/// appends follow-up work in the next run, and clearing between the two would
-/// destroy a list it is still using.
-const TODO_KEEP_CLOSED_RUNS: u32 = 2;
+/// Turns (model roundtrips or user submissions) allowed to pass with a fully
+/// closed-out todo list before it is dropped. One is too eager -- a model
+/// often closes the last task and then appends follow-up work in the next
+/// turn, and clearing between the two would destroy a list it is still using.
+const TODO_KEEP_CLOSED_TURNS: u32 = 2;
 
 /// Clear the canonical todo list and the TUI projection together.
 ///
@@ -4516,11 +4984,14 @@ async fn clear_todos(app: &mut App) {
     })
     .await;
     app.last_todo_reminder = None;
-    app.runs_since_todos_closed = 0;
+    app.turns_since_todos_closed = 0;
 }
 
 /// Age a finished todo list, dropping it once it has survived
-/// `TODO_KEEP_CLOSED_RUNS` runs without the model reopening or extending it.
+/// `TODO_KEEP_CLOSED_TURNS` turns without the model reopening or extending it.
+/// Called on every model roundtrip (`Step`) and at each run kick, so a single
+/// run's many tool-call turns all count -- a finished plan does not outlive
+/// the long run that produced it.
 ///
 /// Without this the widget is sticky: `is_empty` means "no tasks exist", and a
 /// completed task is still a task, so a finished plan renders forever and only
@@ -4529,11 +5000,11 @@ async fn clear_todos(app: &mut App) {
 async fn age_closed_todos(app: &mut App) {
     if app.todos.is_empty() || app.todos.has_open() {
         // Nothing to age, or the model still has open work.
-        app.runs_since_todos_closed = 0;
+        app.turns_since_todos_closed = 0;
         return;
     }
-    app.runs_since_todos_closed += 1;
-    if app.runs_since_todos_closed > TODO_KEEP_CLOSED_RUNS {
+    app.turns_since_todos_closed += 1;
+    if app.turns_since_todos_closed > TODO_KEEP_CLOSED_TURNS {
         clear_todos(app).await;
         app.persist();
     }
@@ -5495,7 +5966,8 @@ fn draw(f: &mut Frame, app: &mut App) {
 
     if let Some(picker) = &app.picker {
         app.row_index.clear();
-        draw_picker(f, chunks[1], picker);
+        let toml_path = app.agent_dir.join("agent.toml");
+        draw_picker(f, chunks[1], picker, &toml_path);
         f.render_widget(input_box(app), chunks[2]);
         f.render_widget(path_line(app), chunks[3]);
         f.render_widget(footer(app), chunks[4]);
@@ -5549,7 +6021,7 @@ fn draw(f: &mut Frame, app: &mut App) {
                         .map(|block| block.detail.clone())
                 });
             if let Some(detail) = detail {
-                row_index.extend(std::iter::repeat(Some(i)).take(detail.len()));
+                row_index.extend(std::iter::repeat_n(Some(i), detail.len()));
                 lines.extend(detail);
             }
         }
@@ -5702,6 +6174,17 @@ fn draw(f: &mut Frame, app: &mut App) {
             height,
         };
         draw_login(f, rect, prompt);
+    } else if let Some(prompt) = &app.settings_prompt {
+        let height = (5 + u16::from(prompt.error.is_some())).min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        let toml_path = app.agent_dir.join("agent.toml");
+        draw_settings_prompt(f, rect, prompt, &toml_path);
     } else if !app.ask_queue.is_empty() {
         let queue_len = app.ask_queue.len();
         let ask = app.ask_queue.front_mut().expect("checked non-empty above");
@@ -5925,6 +6408,69 @@ fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) 
     f.render_widget(Paragraph::new(lines), inner);
 }
 
+/// Docked `/settings` edit prompt, styled like the `/login` dock: description,
+/// the current on-disk value, the field being edited, an inline validation
+/// error when one fired, and the save/cancel keys.
+fn draw_settings_prompt(
+    f: &mut Frame,
+    area: ratatui::layout::Rect,
+    prompt: &SettingsPrompt,
+    toml_path: &std::path::Path,
+) {
+    use ratatui::widgets::Clear;
+
+    let dim = Style::new().dark_gray();
+    let def = prompt.def();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            format!(" agent settings: {} ", def.key),
+            Style::new().on_cyan().black().bold(),
+        ));
+
+    let mut lines = vec![Line::from(vec![
+        Span::styled(def.desc, dim),
+        Span::styled("   current: ", dim),
+        Span::styled(
+            current_agent_value(toml_path, def.key).unwrap_or_else(|| "unset".to_string()),
+            Style::new().cyan(),
+        ),
+    ])];
+    lines.push(Line::styled(
+        match def.kind {
+            AgentSettingKind::Int { default, min } => {
+                let d = default
+                    .map(|d| d.to_string())
+                    .unwrap_or_else(|| "unset".to_string());
+                format!("default: {d} · valid: >= {min}")
+            }
+            AgentSettingKind::Text { default } => format!("default: {default}"),
+            AgentSettingKind::Enum { options, default } => {
+                format!("default: {default} · valid: {}", options.join(" | "))
+            }
+        },
+        dim,
+    ));
+    if let Some(error) = &prompt.error {
+        lines.push(Line::styled(error.clone(), Style::new().red()));
+    }
+    lines.push(Line::from(vec![
+        Span::styled("value: ", Style::new().bold()),
+        Span::raw(prompt.input.clone()),
+        Span::styled("█", Style::new().cyan()),
+    ]));
+    lines.push(Line::styled(
+        "Enter save · Esc cancel · clear field to unset (default applies)".to_string(),
+        dim,
+    ));
+
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
 /// Slash-command hint popup: one row per match (`/name [hint]  description`),
 /// the highlighted row reversed. Docked above the input box.
 fn draw_slash_hints(
@@ -6077,7 +6623,12 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
     f.render_stateful_widget(list, rows[2], &mut state);
 }
 
-fn draw_picker(f: &mut Frame, area: ratatui::layout::Rect, picker: &Picker) {
+fn draw_picker(
+    f: &mut Frame,
+    area: ratatui::layout::Rect,
+    picker: &Picker,
+    toml_path: &std::path::Path,
+) {
     use ratatui::widgets::{List, ListItem, ListState};
 
     let items: Vec<ListItem> = picker
@@ -6106,7 +6657,57 @@ fn draw_picker(f: &mut Frame, area: ratatui::layout::Rect, picker: &Picker) {
         .highlight_symbol("▶ ");
     let mut state = ListState::default();
     state.select(Some(picker.selected));
-    f.render_stateful_widget(list, area, &mut state);
+
+    // The settings menu keeps two rows under the list for the selected
+    // setting's description, default, valid range, and current value - the
+    // rows themselves stay terse (`key  = value`) because the detail footer
+    // explains what each knob does.
+    if picker.kind == PickerKind::AgentSettings {
+        let list_area = Rect {
+            height: area.height.saturating_sub(2),
+            ..area
+        };
+        f.render_stateful_widget(list, list_area, &mut state);
+        if let Some(def) = picker
+            .items
+            .get(picker.selected)
+            .and_then(|it| AGENT_SETTINGS.iter().find(|d| d.key == it.value))
+        {
+            let current = current_agent_value(toml_path, def.key)
+                .unwrap_or_else(|| "unset".to_string());
+            let meta = match def.kind {
+                AgentSettingKind::Int { default, min } => {
+                    let d = default
+                        .map(|d| d.to_string())
+                        .unwrap_or_else(|| "unset".to_string());
+                    format!("default: {d} · valid: >= {min} · current: {current}")
+                }
+                AgentSettingKind::Text { default } => {
+                    format!("default: {default} · current: {current}")
+                }
+                AgentSettingKind::Enum { options, default } => {
+                    format!(
+                        "default: {default} · valid: {} · current: {current}",
+                        options.join(" | ")
+                    )
+                }
+            };
+            let dim = Style::new().dark_gray();
+            f.render_widget(
+                Paragraph::new(vec![
+                    Line::styled(def.desc.to_string(), dim),
+                    Line::styled(meta, dim),
+                ]),
+                Rect {
+                    y: list_area.y + list_area.height,
+                    height: area.height - list_area.height,
+                    ..area
+                },
+            );
+        }
+    } else {
+        f.render_stateful_widget(list, area, &mut state);
+    }
 }
 
 /// Render a duration as a compact `"12s"` / `"3m12s"` / `"1h04m"` label.
@@ -6152,9 +6753,37 @@ fn subagent_panel_lines(
         let mut spans = vec![
             Span::styled("  • ", Style::new().magenta()),
             Span::styled(panel.name.clone(), Style::new().magenta()),
-            Span::styled(format!("  {}", pluralize("tool", panel.calls.len())), dim),
-            Span::styled(format!("  ·  {} req", panel.requests), dim),
         ];
+        if panel.queued {
+            // Parked on the `max_parallel_subagents` cap; the child has not
+            // started, so there are no live stats to show -- render its queue
+            // position and task instead.
+            spans.push(Span::styled(
+                format!("  queued ({} waiting)", panel.waiting),
+                Style::new().yellow(),
+            ));
+            out.push(Line::from(spans));
+            for (written, raw) in panel
+                .task
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .enumerate()
+            {
+                if written == task_lines {
+                    break;
+                }
+                out.push(indented_row(
+                    truncate(raw.trim(), task_width),
+                    Style::new().dim().italic(),
+                ));
+            }
+            continue;
+        }
+        spans.push(Span::styled(
+            format!("  {}", pluralize("tool", panel.calls.len())),
+            dim,
+        ));
+        spans.push(Span::styled(format!("  ·  {} req", panel.requests), dim));
         // Only once the child has reported usage; "0.0%" before its first
         // response would read as a stalled agent rather than a starting one.
         if panel.prompt_tokens > 0 && context_window > 0 {
@@ -6283,11 +6912,16 @@ fn header(app: &App) -> Paragraph<'static> {
         Span::raw(format!("  {}  ", app.model)),
     ];
     // Wall-clock (local) segment, mirroring the reference status line's leading
-    // HH:MM:SS. Recomputed each frame so it ticks in place.
-    spans.push(Span::styled(
-        format!("  {}", chrono::Local::now().format("%H:%M:%S")),
-        Style::new().dim(),
-    ));
+    // HH:MM:SS. Shown only while a run is active: a clock that ticks once per
+    // second repaints the screen every second, which clears the terminal's text
+    // selection mid-drag. An idle frame must be fully static so the transcript
+    // stays selectable/copyable (the 50ms ticker then emits no output at all).
+    if app.run_started.is_some() {
+        spans.push(Span::styled(
+            format!("  {}", chrono::Local::now().format("%H:%M:%S")),
+            Style::new().dim(),
+        ));
+    }
     spans.push(Span::raw(format!("  {turn}")));
     if app.tokens > 0 {
         spans.push(Span::raw(format!(
@@ -6723,11 +7357,13 @@ mod tests {
         note_update, open_config_screen,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
         run_command, starting_call_lines, unescape_partial_json_string,
-        running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
-        summarize_result, tilde_path, tokens_per_second, tool_activity, tool_finished,
+        running_group_row, split_reasoning, strip_system_xml_tags, subagent_activity,
+        subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
+        tool_activity, tool_finished,
         transcript_top_padding,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
-        SnapshotJob, Status, DIFF_MAX_ROWS, KEY_BINDINGS, SLASH_COMMANDS, SPINNER,
+        SnapshotJob, Status, AGENT_SETTINGS, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
+        KEY_BINDINGS, SLASH_COMMANDS, SPINNER,
         SPINNER_ADVANCE_MS,
     };
     use std::time::{Duration, Instant};
@@ -6739,10 +7375,15 @@ mod tests {
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
     use crate::core::agent::r#loop::PermissionRegistry;
-    use crate::core::agent::tools::gate::PermissionDecision;
+    use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
     use serde_json::json;
     use std::collections::HashMap;
     use std::sync::Arc;
+
+    /// A bare key press with no modifiers.
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
 
     fn test_app() -> App {
         // Persist into a unique temp dir so tests that save threads never
@@ -7178,6 +7819,38 @@ mod tests {
     fn split_reasoning_handles_namespaced_and_unterminated_tags() {
         let segs = split_reasoning("<mm:think>reasoning tail");
         assert_eq!(segs, vec![(true, "reasoning tail".to_string())]);
+    }
+
+    #[test]
+    fn strip_system_xml_tags_removes_system_blocks() {
+        assert_eq!(
+            strip_system_xml_tags(
+                "answer<system-notice>internal nudge</system-notice>tail"
+            ),
+            "answertail"
+        );
+    }
+
+    #[test]
+    fn strip_system_xml_tags_removes_multiline_and_unterminated() {
+        assert_eq!(
+            strip_system_xml_tags(
+                "a<system-directive>\nline one\nline two</system-directive>b"
+            ),
+            "ab"
+        );
+        assert_eq!(
+            strip_system_xml_tags("a<system-notice>never closed"),
+            "a"
+        );
+    }
+
+    #[test]
+    fn strip_system_xml_tags_keeps_plain_text() {
+        assert_eq!(
+            strip_system_xml_tags("no tags here <systemic> not a tag"),
+            "no tags here <systemic> not a tag"
+        );
     }
 
     #[test]
@@ -8265,6 +8938,299 @@ mod tests {
     }
 
     #[test]
+    fn queued_panel_promotes_to_running_without_duplicate() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentQueued {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+            task: Some("queue up".into()),
+            waiting: 2,
+        });
+        let queued = app.subagents.iter().find(|p| p.run_id == "r1").expect("queued panel");
+        assert!(queued.queued, "dispatch beyond the cap opens a queued panel");
+        assert_eq!(queued.waiting, 2);
+
+        // The child's later SubagentStart must flip the same panel to running,
+        // not push a duplicate.
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+            task: None,
+        });
+        assert_eq!(app.subagents.len(), 1, "no duplicate panel on promotion");
+        let promoted = app.subagents.iter().find(|p| p.run_id == "r1").unwrap();
+        assert!(!promoted.queued, "promoted panel is now running");
+    }
+
+    #[test]
+    fn queued_panel_renders_queue_position() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentQueued {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+            task: Some("task".into()),
+            waiting: 3,
+        });
+        let rows = render_rows(&mut app, 80, 20);
+        assert!(
+            rows.iter().any(|r| r.contains("queued (3 waiting)")),
+            "queued panel shows its position: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn settings_command_bare_opens_picker_and_inline_set_writes_toml() {
+        let mut app = test_app();
+        // A minimal agent.toml so the picker shows a real current value.
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\nmax_turns = 8\n").unwrap();
+
+        super::settings_command(&mut app, "max_parallel_subagents 20");
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(
+            doc.contains("max_parallel_subagents = 20"),
+            "key written: {doc}"
+        );
+        assert!(doc.contains("max_turns = 8"), "other keys preserved: {doc}");
+
+        // Zero is invalid: rejected, file unchanged.
+        super::settings_command(&mut app, "max_parallel_subagents 0");
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(
+            doc.contains("max_parallel_subagents = 20"),
+            "rejected write must not clobber: {doc}"
+        );
+        assert!(transcript_text(&app).contains("must be at least 1"));
+
+        // Bare opens the settings picker with a row per def, hints carrying
+        // the on-disk current value (no key prefix; the label is the key).
+        super::settings_command(&mut app, "");
+        let picker = app.picker.as_ref().expect("bare /settings opens picker");
+        assert_eq!(picker.kind, PickerKind::AgentSettings);
+        assert_eq!(picker.items.len(), AGENT_SETTINGS.len());
+        let row = picker
+            .items
+            .iter()
+            .find(|i| i.value == "max_turns")
+            .expect("max_turns row present");
+        assert_eq!(row.hint.as_deref(), Some("= 8"));
+        let row = picker
+            .items
+            .iter()
+            .find(|i| i.value == "max_parallel_subagents")
+            .expect("max_parallel_subagents row present");
+        assert_eq!(row.hint.as_deref(), Some("= 20"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[tokio::test]
+    async fn settings_picker_x_unsets_selected_key() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\nmax_turns = 8\n").unwrap();
+
+        super::settings_command(&mut app, "");
+        // Select the max_turns row (index 0) and press x: the key must be
+        // removed, the row hint flip back to (unset), the note rendered.
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(!doc.contains("max_turns = 8"), "key removed: {doc}");
+        assert!(transcript_text(&app).contains("max_turns unset"));
+        let picker = app.picker.as_ref().expect("picker stays open");
+        let row = picker
+            .items
+            .iter()
+            .find(|i| i.value == "max_turns")
+            .expect("max_turns row present");
+        assert_eq!(row.hint.as_deref(), Some("(unset)"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_command_rejects_non_integer_and_unknown_keys() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n").unwrap();
+
+        super::settings_command(&mut app, "max_parallel_subagents lots");
+        assert!(transcript_text(&app).contains("is not an integer"));
+        super::settings_command(&mut app, "warp_drive 5");
+        assert!(transcript_text(&app).contains("unknown setting"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_enter_writes_and_closes() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "max_parallel_subagents")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        super::handle_settings_key(&mut app, key(KeyCode::Char('3')), false);
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_none(), "Enter closes the dock");
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("max_parallel_subagents = 3"), "{doc}");
+        assert!(transcript_text(&app).contains("max_parallel_subagents = 3 written"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_esc_cancels_without_writing() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\nmax_parallel_subagents = 7\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "max_parallel_subagents")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, Some("7")));
+        super::handle_settings_key(&mut app, key(KeyCode::Char('9')), false);
+        super::handle_settings_key(&mut app, key(KeyCode::Esc), false);
+        assert!(app.settings_prompt.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("max_parallel_subagents = 7"), "unchanged: {doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_cleared_field_unsets_key() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\nmax_turns = 8\n").unwrap();
+
+        let def = AGENT_SETTINGS.iter().find(|d| d.key == "max_turns").unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, Some("8")));
+        super::handle_settings_key(&mut app, key(KeyCode::Backspace), false);
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(!doc.contains("max_turns = 8"), "key removed: {doc}");
+        assert!(transcript_text(&app).contains("max_turns unset"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_rejects_below_min_and_garbage() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "max_parallel_subagents")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        super::handle_settings_key(&mut app, key(KeyCode::Char('0')), false);
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_some(), "dock stays open on error");
+        let err = app
+            .settings_prompt
+            .as_ref()
+            .and_then(|p| p.error.clone())
+            .expect("error recorded");
+        assert!(err.contains("at least 1"), "{err}");
+        assert_eq!(std::fs::read_to_string(&toml_path).unwrap(), "[agent]\n");
+
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        super::handle_settings_key(&mut app, key(KeyCode::Char('x')), false);
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        let err = app
+            .settings_prompt
+            .as_ref()
+            .and_then(|p| p.error.clone())
+            .expect("error recorded");
+        assert!(err.contains("not an integer"), "{err}");
+        assert_eq!(std::fs::read_to_string(&toml_path).unwrap(), "[agent]\n");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_edits_text_key() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "instructions_file")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "AGENTS.md".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("instructions_file = \"AGENTS.md\""), "{doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_edits_enum_key() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n[tools]\ndefault = \"read-only\"\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "tools.default")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "deny".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("default = \"deny\""), "written under [tools]: {doc}");
+        assert!(transcript_text(&app).contains("tools.default = deny written"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_rejects_enum_garbage() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n[tools]\ndefault = \"read-only\"\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "tools.default")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "aggressive".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_some(), "dock stays open on error");
+        let err = app
+            .settings_prompt
+            .as_ref()
+            .and_then(|p| p.error.clone())
+            .expect("error recorded");
+        assert!(err.contains("read-only | deny | allow"), "{err}");
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("default = \"read-only\""), "unchanged: {doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
     fn finished_subagent_summary_expands_full_call_list_via_ctrl_o() {
         let mut app = test_app();
         app.apply(StreamEvent::SubagentStart {
@@ -8546,27 +9512,79 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn a_write_diff_is_syntax_highlighted_from_its_path() {
-        let diff = "+fn main() {\n+    let x = 1;\n+}";
-        let out = diff_lines(diff, 80, "", Some("src/main.rs"));
-        assert!(
-            !diff_syntax_colours(&out).is_empty(),
-            "diff body not highlighted: {:?}",
-            out.iter().map(line_text).collect::<Vec<_>>()
-        );
-        // The add/remove markers must stay legible as such.
-        let greens = out
+    /// The row containing `needle`, panicking if there is none.
+    fn diff_row(rows: &[Line<'static>], needle: &str) -> Line<'static> {
+        rows.iter()
+            .find(|l| line_text(l).contains(needle))
+            .unwrap_or_else(|| panic!("no row containing {needle:?}"))
+            .clone()
+    }
+
+    /// Backgrounds of a row's spans, skipping the box frame and the gutter so
+    /// only the banded interior is left.
+    fn row_backgrounds(rows: &[Line<'static>], needle: &str) -> Vec<Option<ratatui::style::Color>> {
+        diff_row(rows, needle)
+            .spans
             .iter()
-            .flat_map(|l| l.spans.iter())
-            .filter(|s| s.content.starts_with('+') && s.style.fg == Some(ratatui::style::Color::Green))
-            .count();
-        assert_eq!(greens, 3, "one green marker per added line");
+            .filter(|s| !s.content.is_empty() && !s.content.contains('│'))
+            .map(|s| s.style.bg)
+            .collect()
+    }
+
+    /// A changed row is banded by its background, from the left border to the
+    /// right one -- including the padding past the end of the text, or the band
+    /// would stop mid-row on every short line.
+    #[test]
+    fn changed_diff_rows_are_banded_by_background() {
+        let diff = "     1 | keep\n-    2 | before\n+    2 | a much longer added line";
+        let out = diff_lines(diff, 80, DIFF_MAX_ROWS, "│     ", None);
+        assert!(
+            row_backgrounds(&out, "before")
+                .iter()
+                .all(|bg| *bg == Some(DIFF_DEL_BG)),
+            "removed row not fully banded: {:?}",
+            row_backgrounds(&out, "before")
+        );
+        assert!(
+            row_backgrounds(&out, "added line")
+                .iter()
+                .all(|bg| *bg == Some(DIFF_ADD_BG)),
+            "added row not fully banded"
+        );
+        // Unchanged context is left alone, so the bands stand out against it.
+        assert!(
+            row_backgrounds(&out, "keep").iter().all(|bg| bg.is_none()),
+            "context row was banded"
+        );
+    }
+
+    /// The band is a background only: the code inside a changed row keeps the
+    /// same syntax highlighting it has as context, which is what makes it
+    /// readable on top of the tint.
+    #[test]
+    fn changed_diff_rows_keep_their_syntax_highlighting() {
+        use ratatui::style::Color;
+        let diff = "     1 | fn main() {\n-    2 |     let x = 1;\n+    2 |     let y = 2;";
+        let out = diff_lines(diff, 80, DIFF_MAX_ROWS, "", Some("src/main.rs"));
+        for needle in ["let x = 1;", "let y = 2;"] {
+            let row = diff_row(&out, needle);
+            assert!(
+                row.spans
+                    .iter()
+                    .any(|s| matches!(s.style.fg, Some(Color::Rgb(..)))),
+                "changed row {needle:?} lost its highlighting: {row:?}"
+            );
+        }
+        // The marker itself stays red/green, so the sign reads without colour
+        // vision doing all the work.
+        let marker = diff_row(&out, "let y = 2;").spans[3].clone();
+        assert_eq!(marker.content.as_ref(), "+");
+        assert_eq!(marker.style.fg, Some(Color::Green));
     }
 
     #[test]
     fn a_diff_without_a_known_language_stays_plain() {
-        let out = diff_lines("+ foo\n- bar", 80, "", None);
+        let out = diff_lines("+ foo\n- bar", 80, DIFF_MAX_ROWS, "", None);
         assert!(
             diff_syntax_colours(&out).is_empty(),
             "unexpected highlighting without a language"
@@ -8575,7 +9593,13 @@ mod tests {
 
     #[test]
     fn a_hunk_header_is_not_syntax_highlighted() {
-        let out = diff_lines("@@ -1,2 +1,3 @@\n+let x = 1;", 80, "", Some("a.rs"));
+        let out = diff_lines(
+            "@@ -1,2 +1,3 @@\n   1 | let x = 1;",
+            80,
+            DIFF_MAX_ROWS,
+            "",
+            Some("a.rs"),
+        );
         let header = out
             .iter()
             .find(|l| line_text(l).contains("@@"))
@@ -8612,7 +9636,7 @@ mod tests {
             id: "c1".into(),
             content: "wrote 3 lines".into(),
             is_error: false,
-            diff: Some("+fn main() {\n+    let x = 1;\n+}".into()),
+            diff: Some("     1 | fn main() {\n-    2 | let x = 1;\n+    2 | let x = 2;".into()),
         });
         assert!(
             !diff_syntax_colours(&app.transcript).is_empty(),
@@ -8623,7 +9647,7 @@ mod tests {
 
     #[test]
     fn diff_lines_renders_all_when_under_cap() {
-        let out = diff_lines("- foo\n+ bar", 80, "│     ", None);
+        let out = diff_lines("- foo\n+ bar", 80, DIFF_MAX_ROWS, "│     ", None);
         // 2 content rows framed by a top and bottom border.
         assert_eq!(out.len(), 4);
         assert!(line_text(&out[0]).contains('┌'), "top: {}", line_text(&out[0]));
@@ -8634,18 +9658,37 @@ mod tests {
         );
     }
 
-    #[test]
-    fn diff_lines_collapses_tail_past_cap() {
-        let diff = (0..30)
+    fn plus_rows(n: usize) -> String {
+        (0..n)
             .map(|i| format!("+ line {i}"))
             .collect::<Vec<_>>()
-            .join("\n");
-        let out = diff_lines(&diff, 80, "│     ", None);
-        // DIFF_MAX_ROWS content rows + a `(+N more)` row, framed by 2 borders.
-        assert_eq!(out.len(), DIFF_MAX_ROWS + 1 + 2);
+            .join("\n")
+    }
+
+    #[test]
+    fn diff_lines_collapses_tail_past_cap() {
+        let out = diff_lines(&plus_rows(30), 80, 20, "│     ", None);
+        // 20 content rows + a `(+N more)` row, framed by 2 borders.
+        assert_eq!(out.len(), 20 + 1 + 2);
         // The tail sits just above the closing border.
         let tail = line_text(&out[out.len() - 2]);
         assert!(tail.contains("(+10 more)"), "tail: {tail}");
+    }
+
+    /// The transcript scrolls, so a long edit is shown in full there; the
+    /// permission prompt does not, and keeps the tight cap so the decision list
+    /// is never crowded out.
+    #[test]
+    fn the_result_cap_is_generous_and_the_prompt_cap_is_not() {
+        assert_eq!(DIFF_MAX_ROWS, 1000);
+        let long = plus_rows(400);
+        let result = diff_lines(&long, 80, DIFF_MAX_ROWS, "│     ", None);
+        assert_eq!(result.len(), 400 + 2, "result diff must not collapse");
+
+        let mut prompt = pending(true);
+        prompt.diff = Some(long);
+        let preview = prompt.diff_preview(80);
+        assert_eq!(preview.len(), DIFF_PREVIEW_MAX_ROWS + 1 + 2);
     }
 
     #[test]
@@ -9487,7 +10530,7 @@ mod tests {
     #[tokio::test]
     async fn ctrl_t_toggles_mouse_capture() {
         let mut app = test_app();
-        assert!(app.mouse_capture, "capture starts on");
+        assert!(!app.mouse_capture, "capture starts off so text is selectable");
         let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let mcp_servers: crate::core::state::SharedMcpServers =
             Arc::new(tokio::sync::Mutex::new(HashMap::new()));
@@ -9495,9 +10538,9 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
 
         handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
-        assert!(!app.mouse_capture);
-        handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
         assert!(app.mouse_capture);
+        handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
+        assert!(!app.mouse_capture);
     }
 
     #[tokio::test]
@@ -9787,7 +10830,7 @@ mod tests {
             .unwrap();
         assert!(!app.todos.is_empty());
 
-        // Open work is never aged away, however many runs go by.
+        // Open work is never aged away, however many turns go by.
         for _ in 0..5 {
             age_closed_todos(&mut app).await;
         }
@@ -9798,13 +10841,13 @@ mod tests {
             .unwrap();
         assert!(app.todos.open_summary().is_none(), "all work closed out");
 
-        // Survives every run up to the cutoff.
-        for i in 1..=super::TODO_KEEP_CLOSED_RUNS {
+        // Survives every turn up to the cutoff.
+        for i in 1..=super::TODO_KEEP_CLOSED_TURNS {
             age_closed_todos(&mut app).await;
-            assert!(!app.todos.is_empty(), "cleared too eagerly at run {i}");
+            assert!(!app.todos.is_empty(), "cleared too eagerly at turn {i}");
         }
 
-        // One run past the grace period and it goes.
+        // One turn past the grace period and it goes.
         age_closed_todos(&mut app).await;
         assert!(app.todos.is_empty(), "finished list should have been dropped");
     }
@@ -9825,7 +10868,7 @@ mod tests {
             .unwrap();
 
         age_closed_todos(&mut app).await;
-        assert_eq!(app.runs_since_todos_closed, 1);
+        assert_eq!(app.turns_since_todos_closed, 1);
 
         app.todos
             .init(vec![crate::core::agent::todo::TodoPhase {
@@ -9834,7 +10877,7 @@ mod tests {
             }])
             .unwrap();
         age_closed_todos(&mut app).await;
-        assert_eq!(app.runs_since_todos_closed, 0, "counter must reset");
+        assert_eq!(app.turns_since_todos_closed, 0, "counter must reset");
         assert!(!app.todos.is_empty(), "new work must not be aged out");
     }
 
@@ -9845,7 +10888,37 @@ mod tests {
         for _ in 0..5 {
             age_closed_todos(&mut app).await;
         }
-        assert_eq!(app.runs_since_todos_closed, 0);
+        assert_eq!(app.turns_since_todos_closed, 0);
+    }
+
+    /// Turn-granular aging: a single run's model roundtrips (`Step` events)
+    /// each count toward the grace period, so a finished plan does not outlive
+    /// the long tool-call run that produced it.
+    #[tokio::test]
+    async fn closed_todos_age_per_turn_not_per_run() {
+        let mut app = test_app();
+        app.todos
+            .init(vec![crate::core::agent::todo::TodoPhase {
+                name: String::new(),
+                tasks: vec![todo_item("a")],
+            }])
+            .unwrap();
+        app.todos
+            .done(crate::core::agent::todo::Target::All)
+            .unwrap();
+
+        // Three roundtrips inside the run that finished the list: the counter
+        // climbs per turn, and once it passes the cutoff the list drops even
+        // though no new run kicked off.
+        for _ in 1..=super::TODO_KEEP_CLOSED_TURNS {
+            app.apply(StreamEvent::Step { index: 1, max: 8 });
+            age_closed_todos(&mut app).await;
+        }
+        assert!(!app.todos.is_empty(), "must survive the full grace period");
+
+        app.apply(StreamEvent::Step { index: 1, max: 8 });
+        age_closed_todos(&mut app).await;
+        assert!(app.todos.is_empty(), "dropped mid-run after the grace period");
     }
 
     #[test]

@@ -22,5 +22,6 @@
   "permissions": "Tool Permissions",
   "mcp": "MCP",
   "reference-separator": { "title": "Reference", "type": "separator" },
-  "cli": "CLI"
+  "cli": "CLI",
+  "spec-max-parallel-subagents": "Max Parallel Subagents (Spec)"
 }

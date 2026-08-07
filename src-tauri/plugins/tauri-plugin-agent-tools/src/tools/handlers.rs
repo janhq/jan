@@ -74,6 +74,13 @@ fn rel_to(base: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
+/// Single-quote a value for a `sh -c` command line. Paths can contain spaces
+/// (e.g. "Google Chrome.app" and temp dirs); single quotes are the POSIX-safe
+/// wrapper (no `$`/backtick expansion, no globbing).
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
 /// Resolve `.`/`..` without touching the filesystem, so a path is comparable to
 /// the project root even when the target does not exist yet. Purely lexical:
 /// `canonicalize` would also follow symlinks and fail on missing files.
@@ -169,6 +176,7 @@ pub async fn execute_builtin(
         // Native web tools: compiled into the agent core, not an MCP server.
         "web_search" => crate::tools::web::web_search(args).await,
         "web_fetch" => crate::tools::web::web_fetch(args).await,
+        "screenshot" => screenshot(args, project_root).await,
         other => format!("ERROR: unknown built-in tool '{other}'"),
     }
 }
@@ -508,6 +516,168 @@ async fn read(args: &serde_json::Value, root: &Path) -> String {
         MAX_BYTES,
         "\n[truncated: use offset/limit to read more]",
     )
+}
+
+/// Render a local HTML/SVG file with headless Chrome and return the screenshot
+/// as a data-URL PNG so the model can see the artifact it built.
+///
+/// Chrome binaries are discovered per-platform; the tool fails with an explicit
+/// message when none is installed (the model can fall back to reading the
+/// source or asking the user). Output is capped so a giant page cannot flood
+/// the model context with one enormous data URL.
+const SCREENSHOT_MAX_PNG_BYTES: usize = 4 * 1024 * 1024; // 4 MiB
+
+fn chrome_binary() -> Option<PathBuf> {
+    if let Ok(env) = std::env::var("CHROME_PATH") {
+        if !env.is_empty() {
+            return Some(PathBuf::from(env));
+        }
+    }
+    const CANDIDATES: &[&str] = &[
+        // macOS (bundled browsers)
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        // Linux
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+    ];
+    CANDIDATES.iter().find(|p| Path::new(p).exists()).map(PathBuf::from)
+}
+
+/// Render a local HTML/SVG file to PNG bytes with headless Chrome.
+///
+/// Shared by the model-facing `screenshot` tool and the `agent_render_preview`
+/// command the annotation overlay calls, so both agree on Chrome discovery,
+/// viewport clamping and the output cap. `width`/`height` are the viewport in
+/// CSS pixels; the caller picks them (the overlay passes its own stage size so
+/// the PNG lines up pixel-for-pixel with what the user drew on).
+///
+/// `scale` is the device pixel ratio: the PNG comes out `width*scale` pixels
+/// wide with the layout unchanged. The overlay passes the webview's own ratio
+/// so a HiDPI screen doesn't composite crisp marks over an upscaled blur.
+pub async fn render_html_png(
+    target: &Path,
+    width: u64,
+    height: u64,
+    scale: f64,
+) -> Result<Vec<u8>, String> {
+    let ext = target
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    if ext != "html" && ext != "htm" && ext != "svg" {
+        return Err(format!(
+            "screenshot only renders .html/.htm/.svg files, got .{ext}"
+        ));
+    }
+    if !target.is_file() {
+        return Err(format!("file not found: {}", target.display()));
+    }
+
+    let Some(chrome) = chrome_binary() else {
+        return Err(
+            "no Chrome/Chromium binary found (set CHROME_PATH to point at one)".to_string(),
+        );
+    };
+
+    let width = width.clamp(320, 4096);
+    let height = height.clamp(240, 4096);
+    let scale = if scale.is_finite() { scale.clamp(1.0, 3.0) } else { 1.0 };
+    // A per-call profile (pid + nanos) keeps headless Chrome from colliding with
+    // a running browser or a leftover from a previous call; `--screenshot` exits
+    // after writing, but the wait below is bounded in case it lingers.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let shot = std::env::temp_dir().join(format!("jan-shot-{}-{nanos}.png", std::process::id()));
+    let profile = std::env::temp_dir().join(format!("jan-chrome-{}-{nanos}", std::process::id()));
+
+    // file:// lets the page resolve relative assets against its own directory,
+    // matching what the artifact preview does.
+    let file_url = format!("file://{}", target.display());
+    // Chrome is spawned through the shell (`sh -c`): on macOS, a Chrome
+    // headless-new process spawned directly by a non-bundled parent fails its
+    // singleton/TCC check with "Multiple targets are not supported in headless
+    // mode", while the same invocation via the shell succeeds. The `bash` tool
+    // already relies on this property, so we inherit it here.
+    let profile_quoted = shell_quote(profile.to_str().unwrap_or_default());
+    let shot_quoted = shell_quote(shot.to_str().unwrap_or_default());
+    let url_quoted = shell_quote(&file_url);
+    let chrome_quoted = shell_quote(chrome.to_str().unwrap_or_default());
+    let cmd = format!(
+        "{chrome_quoted} --headless=new --disable-gpu --hide-scrollbars --no-sandbox \
+         --disable-dev-shm-usage --no-first-run --user-data-dir={profile_quoted} \
+         --force-device-scale-factor={scale} \
+         --window-size={width},{height} --screenshot={shot_quoted} {url_quoted}"
+    );
+    let mut child = match tokio::process::Command::new(proc::shell().program.clone())
+        .args(proc::shell().args.clone())
+        .arg(&cmd)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => return Err(format!("failed to launch Chrome: {e}")),
+    };
+    // Bounded: headless Chrome can linger after writing the PNG. Give it a
+    // generous window, then reap whatever is left and proceed if the file
+    // exists. stderr is drained on a background task so a chatty Chrome never
+    // fills the pipe and deadlocks.
+    let stderr_pipe = child.stderr.take();
+    let drain = tokio::spawn(async move {
+        use tokio::io::AsyncReadExt as _;
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = stderr_pipe {
+            let _ = pipe.read_to_end(&mut buf).await;
+        }
+        String::from_utf8_lossy(&buf).into_owned()
+    });
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(30), child.wait()).await;
+    let _ = child.kill().await;
+    let stderr = drain.await.unwrap_or_default();
+    let _ = tokio::fs::remove_dir_all(&profile).await;
+
+    let png = match tokio::fs::read(&shot).await {
+        Ok(b) => b,
+        Err(e) => {
+            let detail = stderr.lines().take(3).collect::<Vec<_>>().join(" | ");
+            return Err(format!("screenshot not produced: {e} (chrome: {detail})"));
+        }
+    };
+    let _ = tokio::fs::remove_file(&shot).await;
+
+    if png.is_empty() {
+        return Err("Chrome produced an empty screenshot (page may be blank)".to_string());
+    }
+    if png.len() > SCREENSHOT_MAX_PNG_BYTES {
+        return Err(format!(
+            "screenshot is {} KiB, over the {}-MiB cap; try a smaller viewport",
+            png.len() / 1024,
+            SCREENSHOT_MAX_PNG_BYTES / 1024 / 1024
+        ));
+    }
+    Ok(png)
+}
+
+async fn screenshot(args: &serde_json::Value, root: &Path) -> String {
+    let Some(path) = arg_str(args, "path") else {
+        return "ERROR: missing required argument 'path'".to_string();
+    };
+    let width = arg_u64(args, "width").unwrap_or(1280).clamp(320, 4096);
+    let height = arg_u64(args, "height").unwrap_or(960).clamp(240, 4096);
+    let png = match render_html_png(&resolve(root, path), width, height, 1.0).await {
+        Ok(b) => b,
+        Err(e) => return format!("ERROR: {e}"),
+    };
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+    format!("Screenshot of {path} ({width}x{height}): data:image/png;base64,{b64}")
 }
 
 async fn ls(args: &serde_json::Value, root: &Path) -> String {
@@ -1166,6 +1336,11 @@ mod tests {
     }
 
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    /// Headless Chrome instances collide when spawned concurrently ("Multiple
+    /// targets are not supported"), so the two tests that actually launch
+    /// Chrome serialize on this.
+    static CHROME_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     fn unique_root() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -2232,5 +2407,106 @@ mod tests {
             );
         }
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn screenshot_rejects_non_html_svg() {
+        let root = unique_root();
+        std::fs::write(root.join("a.txt"), b"hello").unwrap();
+        let out = execute_builtin(lookup("screenshot").unwrap(), &json!({"path": "a.txt"}), &root).await;
+        assert!(out.starts_with("ERROR"), "non-renderable must be rejected: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn screenshot_rejects_missing_file() {
+        let root = unique_root();
+        let out = execute_builtin(lookup("screenshot").unwrap(), &json!({"path": "nope.html"}), &root).await;
+        assert!(out.starts_with("ERROR"), "missing file must error: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn screenshot_requires_a_chrome_binary() {
+        // Deterministic part of the happy path: no Chrome on the machine must
+        // yield an explicit, actionable error rather than a silent hang. The
+        // render itself is environment-dependent and covered by the POC.
+        let _guard = CHROME_TEST_LOCK.lock().await;
+        let root = unique_root();
+        std::fs::write(root.join("a.html"), b"<h1>hi</h1>").unwrap();
+        let out = execute_builtin(lookup("screenshot").unwrap(), &json!({"path": "a.html"}), &root).await;
+        if chrome_binary().is_some() {
+            assert!(
+                out.starts_with("Screenshot of") || out.starts_with("ERROR"),
+                "unexpected outcome: {out}"
+            );
+        } else {
+            assert!(out.starts_with("ERROR"), "must error without Chrome: {out}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn screenshot_renders_a_real_html_file_when_chrome_is_present() {
+        // Full happy path, environment-gated: with Chrome installed this
+        // produces a real PNG data URL; without it the explicit no-Chrome
+        // error is still the correct behavior. Held under the same lock as
+        // the other Chrome-spawning test: two concurrent headless Chrome
+        // instances collide ("Multiple targets are not supported").
+        let _guard = CHROME_TEST_LOCK.lock().await;
+        let Some(_chrome) = chrome_binary() else {
+            eprintln!("skipping: no Chrome binary on this machine");
+            return;
+        };
+        let root = unique_root();
+        std::fs::write(
+            root.join("page.html"),
+            b"<!doctype html><html><body style='background:#0f172a'><h1 style='color:#22d3ee'>Shot</h1></body></html>",
+        )
+        .unwrap();
+        let out = execute_builtin(lookup("screenshot").unwrap(), &json!({"path": "page.html"}), &root).await;
+        if !out.starts_with("Screenshot of page.html (1280x960): data:image/png;base64,") {
+            eprintln!("FULL OUTPUT:\n{out}");
+        }
+        assert!(
+            out.starts_with("Screenshot of page.html (1280x960): data:image/png;base64,"),
+            "expected data-URL screenshot, got: {}",
+            &out[..out.len().min(120)]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The annotation overlay's base render. Exercises `render_html_png`
+    /// directly: `agent_render_preview` (which stages the srcdoc to a temp file
+    /// and calls this) lives in the app crate and is not reachable from here.
+    /// Held under `CHROME_TEST_LOCK` — two headless Chromes at once collide.
+    #[tokio::test]
+    async fn render_html_png_honours_the_device_scale() {
+        let _guard = CHROME_TEST_LOCK.lock().await;
+        if chrome_binary().is_none() {
+            eprintln!("skipping: no Chrome binary on this machine");
+            return;
+        }
+        let root = unique_root();
+        let page = root.join("page.html");
+        std::fs::write(
+            &page,
+            b"<!doctype html><html><body style='margin:0;background:#22c55e'></body></html>",
+        )
+        .unwrap();
+        let png = render_html_png(&page, 400, 300, 2.0)
+            .await
+            .expect("render should succeed with Chrome present");
+        // scale=2 must widen the raster, not the layout: a 400x300 CSS viewport
+        // comes back as an 800x600 PNG. Without it a HiDPI webview composites
+        // crisp marks over an upscaled blur.
+        assert_eq!(png_size(&png), (800, 600));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Width/height from the PNG IHDR (bytes 16..24, big-endian).
+    fn png_size(png: &[u8]) -> (u32, u32) {
+        let n = |o: usize| u32::from_be_bytes([png[o], png[o + 1], png[o + 2], png[o + 3]]);
+        (n(16), n(20))
     }
 }

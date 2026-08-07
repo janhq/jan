@@ -7,7 +7,7 @@ use std::path::Path;
 use chrono::Local;
 
 use crate::core::agent::git;
-use crate::core::agent::skills;
+use tauri_plugin_agent_tools::{skills, workspace};
 
 /// Default persona used only when no assistant instructions are supplied, so a
 /// bare project run still opens with a role statement instead of "# Working
@@ -80,14 +80,8 @@ const DEFAULT_SKILL_GUIDE: &str = include_str!("default_skill.md");
 /// Covers folder skills (`<name>/SKILL.md`) and legacy flat `<name>.md`. Returns
 /// None when no advertisable skill exists.
 pub(crate) fn load_skills(project_root: &Path) -> Option<String> {
-    // Honor the project's `[skills].enabled` whitelist (empty = all). Reading the
-    // config here keeps load_skills self-contained; a missing/malformed config
-    // falls back to "all skills" rather than erroring.
-    let enabled = crate::core::agent::project::load_agent_config(project_root)
-        .ok()
-        .map(|c| c.skills.enabled)
-        .unwrap_or_default();
-    let entries = skills::catalog(project_root, &enabled);
+    let enabled = crate::core::agent::project::enabled_skills(project_root);
+    let entries = skills::catalog(&workspace::project_store(project_root), &enabled);
     if entries.is_empty() {
         return None;
     }

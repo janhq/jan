@@ -680,6 +680,87 @@ pub fn chunk_text(text: String, chunk_size: usize, chunk_overlap: usize) -> Vec<
     chunks
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serializes_a_finite_embedding() {
+        assert_eq!(embedding_to_json(&[0.5, -0.25]).unwrap(), "[0.5,-0.25]");
+    }
+
+    // serde_json writes a non-finite float as `null`, which sqlite-vec rejects
+    // with an opaque "JSON parsing error". Catch it here with a usable message.
+    #[test]
+    fn rejects_non_finite_values() {
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let err = embedding_to_json(&[0.1, bad, 0.3]).unwrap_err();
+            let msg = err.to_string();
+            assert!(matches!(err, VectorDBError::InvalidInput(_)), "{msg}");
+            assert!(msg.contains("index 1"), "{msg}");
+        }
+        assert_eq!(serde_json::to_string(&f32::NAN).unwrap(), "null");
+    }
+
+    // How a non-finite value reaches us at all: a JSON number past f32::MAX is
+    // cast, not rejected, so an embedding of 1e39 arrives over IPC as infinity.
+    #[test]
+    fn json_numbers_past_f32_max_arrive_as_infinity() {
+        assert_eq!(
+            serde_json::from_str::<Vec<f32>>("[1e39]").unwrap(),
+            vec![f32::INFINITY]
+        );
+    }
+
+    // The linear path has no JSON step, so it needs its own guard or a NaN
+    // query silently returns zero matches instead of reporting the bad vector.
+    #[test]
+    fn linear_search_rejects_a_non_finite_query() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn, 3).unwrap();
+        let err = search_collection(
+            &conn,
+            &[0.1, f32::NAN, 0.3],
+            5,
+            0.0,
+            Some("linear".to_string()),
+            false,
+            None,
+        )
+        .unwrap_err();
+        assert!(matches!(err, VectorDBError::InvalidInput(_)), "{err}");
+    }
+
+    #[test]
+    fn insert_rejects_a_non_finite_embedding() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn, 3).unwrap();
+        let err = insert_chunks(
+            &conn,
+            "f1",
+            vec![MinimalChunkInput {
+                text: "hello".to_string(),
+                embedding: vec![0.1, f32::INFINITY, 0.3],
+            }],
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, VectorDBError::InvalidInput(_)), "{err}");
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chunks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn rejects_an_empty_embedding() {
+        assert!(matches!(
+            embedding_to_json(&[]).unwrap_err(),
+            VectorDBError::InvalidInput(_)
+        ));
+    }
+}
+
 // ============================================================================
 // Project-scoped agent memory (FTS5 / BM25)
 // ============================================================================

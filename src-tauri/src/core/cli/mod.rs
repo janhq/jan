@@ -368,7 +368,7 @@ use crate::core::agent::project::{
 use crate::core::agent::r#loop::{
     run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
 };
-use crate::core::agent::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use crate::core::mcp::models::McpSettings;
 use std::collections::HashMap;
@@ -428,6 +428,8 @@ pub fn cli_agent_status(
             "allow": cfg.tools.allow,
             "deny": cfg.tools.deny,
             "allow_write": cfg.tools.allow_write,
+            "allow_network": cfg.tools.allow_network,
+            "allow_home_read": cfg.tools.allow_home_read,
         },
         "providers": providers,
     }))
@@ -516,13 +518,14 @@ pub async fn cli_agent_step(
 #[allow(clippy::too_many_arguments)]
 fn build_cli_orchestration_args(
     project_root: PathBuf,
-    permissions: crate::core::agent::permissions::ToolPermissions,
+    permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     provider_configs: HashMap<String, crate::core::state::ProviderConfig>,
     mcp_servers: crate::core::state::SharedMcpServers,
     mcp_settings: McpSettings,
     permission_requests: PermissionRegistry,
     yolo: bool,
     plan: bool,
+    max_parallel_subagents: u32,
 ) -> OrchestrationArgs {
     OrchestrationArgs {
         client: reqwest::Client::new(),
@@ -537,6 +540,7 @@ fn build_cli_orchestration_args(
         todo_registry: None,
         system_prompt_override: None,
         subagents_enabled: true,
+        max_parallel_subagents,
         yolo,
         background_subagents: None,
         run_mode: if plan {
@@ -717,6 +721,10 @@ fn prepare_agent_session(
     };
 
     let permission_requests: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+    let max_parallel_subagents = cfg
+        .agent
+        .max_parallel_subagents
+        .unwrap_or(crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS);
     let args = build_cli_orchestration_args(
         project_root,
         permissions,
@@ -726,6 +734,7 @@ fn prepare_agent_session(
         permission_requests.clone(),
         yolo,
         plan,
+        max_parallel_subagents,
     );
 
     Ok(AgentSession {
@@ -998,6 +1007,9 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         }
         StreamEvent::SubagentStart { name, .. } => {
             eprintln!("\x1b[2m[subagent:{name}] started (background)\x1b[0m")
+        }
+        StreamEvent::SubagentQueued { name, waiting, .. } => {
+            eprintln!("\x1b[2m[subagent:{name}] queued ({waiting} waiting)\x1b[0m")
         }
         StreamEvent::SubagentEnd { name, .. } => {
             eprintln!("\x1b[2m[subagent:{name}] finished\x1b[0m")

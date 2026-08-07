@@ -2280,6 +2280,13 @@ async fn proxy_request(
     Ok(error_response.body(full("Internal proxy error")).unwrap())
 }
 
+/// True when this bind exposes the API to the network with no authentication:
+/// a non-loopback host and an empty API key.
+fn is_insecure_public_bind(host: &str, api_key: &str) -> bool {
+    let is_loopback = matches!(host, "127.0.0.1" | "localhost" | "::1");
+    !is_loopback && api_key.is_empty()
+}
+
 pub(crate) fn add_cors_headers_with_host_and_origin(
     builder: hyper::http::response::Builder,
     _host: &str,

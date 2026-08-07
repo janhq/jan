@@ -37,8 +37,7 @@ Models are served by remote providers configured in ~/.jan/config.toml\n\
   jan cli agent run \"fix the failing test\"               # run the agent non-interactively\n  \
   jan cli models list                                    # show every configured provider model\n  \
   jan cli threads list                                   # list saved conversation threads\n  \
-  jan update                                             # install the latest build of this channel",
-    version
+  jan update                                             # install the latest build of this channel"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -240,41 +239,6 @@ enum AgentCommands {
         #[command(flatten)]
         providers: ProviderArgs,
     },
-}
-
-/// Read/write the user-wide `~/.jan/config.toml` provider store. This is the
-/// self-sufficient config surface for a standalone Jan Agent: every command is
-/// headless and persists across runs.
-#[derive(Subcommand)]
-enum AgentConfigCommands {
-    /// Set or update a provider's API key, base URL, models, or API type
-    Set {
-        /// Provider id (e.g. openai, anthropic, groq)
-        #[arg(long)]
-        provider: String,
-        /// API key for the provider
-        #[arg(long)]
-        api_key: Option<String>,
-        /// Base URL (e.g. https://api.openai.com/v1)
-        #[arg(long)]
-        base_url: Option<String>,
-        /// Model id to expose (repeatable; replaces any existing list)
-        #[arg(long = "model")]
-        models: Vec<String>,
-        /// Wire API type (e.g. openai, anthropic); defaults to OpenAI-compatible
-        #[arg(long)]
-        api_type: Option<String>,
-    },
-    /// Remove a provider entry
-    Unset {
-        /// Provider id to remove
-        #[arg(long)]
-        provider: String,
-    },
-    /// List configured providers as JSON (API keys redacted)
-    List,
-    /// Print the config file path (scaffolding a template if absent)
-    Path,
 }
 
 /// Read/write the user-wide `~/.jan/config.toml` provider store. This is the
@@ -642,7 +606,7 @@ async fn handle_models(cmd: ModelsCommands) {
             let mut output: Vec<serde_json::Value> = configs
                 .values()
                 .filter(|c| app_lib::core::cli::providers::is_cli_reachable(c))
-                .filter(|c| provider.as_ref().map_or(true, |p| &c.provider == p))
+                .filter(|c| provider.as_ref().is_none_or(|p| &c.provider == p))
                 .flat_map(|c| {
                     c.models.iter().map(move |m| {
                         serde_json::json!({

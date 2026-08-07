@@ -6447,18 +6447,6 @@ checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
  "errno",
  "libc",
- "mio",
- "signal-hook",
-]
-
-[[package]]
-name = "signal-hook-registry"
-version = "1.4.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
-dependencies = [
- "errno",
- "libc",
 ]
 
 [[package]]
@@ -7245,6 +7233,7 @@ dependencies = [
 name = "tauri-plugin-agent-tools"
 version = "0.8.3"
 dependencies = [
+ "base64 0.22.1",
  "glob",
  "ignore",
  "nix 0.30.1",

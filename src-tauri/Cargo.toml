@@ -73,6 +73,7 @@ tauri-app = [
     "dep:zbus",
     "tauri-plugin-vector-db/tauri",
     "tauri-plugin-websearch/tauri",
+    "tauri-plugin-agent-tools/tauri",
 ]
 mobile = [
     "tauri/protocol-asset",
@@ -136,11 +137,12 @@ zip = "0.6"
 tauri-plugin-deep-link = { version = "2", optional = true }
 tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = true }
 tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp", optional = true }
-# The CLI consumes only these two plugins' tauri-free cores (`db`, `provider`);
-# the desktop feature turns their Tauri command surface back on.
+# The CLI consumes only these plugins' tauri-free cores (`db`, `provider`, the
+# agent toolset); the desktop feature turns their Tauri command surface back on.
 tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db", default-features = false }
 tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag", optional = true }
 tauri-plugin-websearch = { path = "./plugins/tauri-plugin-websearch", default-features = false }
+tauri-plugin-agent-tools = { path = "./plugins/tauri-plugin-agent-tools", default-features = false }
 # `default-features = false` drops the plugin's default `rustls-tls` (bundled
 # Mozilla roots) so `native-tls` reads the OS trust store instead. Other
 # features re-list the plugin's defaults so behaviour is otherwise unchanged.

@@ -2,6 +2,9 @@
   "toolApproval": {
     "needsApproval": "Tento nástroj vyžaduje vaše schválení před spuštěním.",
     "deny": "Zamítnout",
-    "allowOnce": "Povolit jednou"
+    "allowOnce": "Povolit jednou",
+    "title": "Žádost o volání nástroje",
+    "description": "Asistent chce použít nástroj:",
+    "securityNotice": "Bezpečnostní upozornění: Škodlivé nástroje nebo obsah konverzace by mohly potenciálně oklamat asistenta k pokusu o škodlivé akce. Před schválením pečlivě zkontrolujte každé volání nástroje."
   }
 }

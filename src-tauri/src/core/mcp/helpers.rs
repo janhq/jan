@@ -19,7 +19,8 @@ use tokio::{
 use crate::core::{
     app::commands::get_jan_data_folder_path,
     mcp::models::{extract_active_status, extract_command_args, McpSettings},
-    state::{AppState, RunningServiceEnum, SharedMcpServers},
+    mcp::progress::JanClientHandler,
+    state::{AppState, RunningMcpService, SharedMcpServers},
 };
 use jan_utils::{can_override_npx, can_override_uvx};
 

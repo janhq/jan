@@ -193,6 +193,14 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
         capability: Capability::Net,
         path_args: &[],
     },
+    // Render a local file (html/svg) with headless Chrome and return the image
+    // so the model can see what it built. Read-only on the file, so it carries
+    // the same capability class as `read` and needs no shell-level exec.
+    BuiltinTool {
+        name: "screenshot",
+        capability: Capability::Read,
+        path_args: &["path"],
+    },
 ];
 
 /// Tools that act only on the agent's own `.jan/agent/{skills,memory}/`
@@ -244,8 +252,8 @@ mod tests {
 
     #[test]
     fn builtin_count_matches_expected() {
-        // 7 coding tools + 6 dedicated skill/memory tools + 2 native web tools.
-        assert_eq!(BUILTIN_TOOLS.len(), 15);
+        // 7 coding tools + 6 dedicated skill/memory tools + 2 native web tools + 1 screenshot.
+        assert_eq!(BUILTIN_TOOLS.len(), 16);
     }
 
     #[test]

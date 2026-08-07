@@ -50,6 +50,7 @@ import { artifactsFromParts } from '@/lib/codeArtifacts'
 import { codeTurnsToUIMessages } from '@/lib/codeTurns'
 import { collectCodeFileDiffs } from '@/lib/codeDiffs'
 import { contentLength, hasContent } from '@/lib/codeHistory'
+import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useMessageErrors } from '@/stores/message-errors'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
@@ -323,6 +324,15 @@ function CodePage() {
     () => codeTurnsToUIMessages(current?.turns ?? [], 'c'),
     [current?.turns]
   )
+  // Sessions persist their diffs, but the runtime diff store is transient, so
+  // reopening a session would otherwise render its write/edit cards with no
+  // diff at all.
+  useEffect(() => {
+    const { recordDiff } = useToolCallRuntime.getState()
+    for (const turn of current?.turns ?? []) {
+      if (turn.callId && turn.diff) recordDiff(turn.callId, turn.diff)
+    }
+  }, [current?.turns])
   const liveMessages = useMemo(
     () => codeTurnsToUIMessages(liveTurns, 'l'),
     [liveTurns]
@@ -732,6 +742,11 @@ function CodePage() {
             diff: ev.diff,
             status: 'done',
           })
+          // Kept out of the turn's output text so the model never sees it and
+          // the widget's output parsing stays intact.
+          if (ev.diff) {
+            useToolCallRuntime.getState().recordDiff(ev.id, ev.diff)
+          }
           break
         }
         case 'permission_request':

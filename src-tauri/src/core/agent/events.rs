@@ -57,6 +57,19 @@ pub enum StreamEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         task: Option<String>,
     },
+    /// A backgrounded subagent dispatch found the parent run's concurrency cap
+    /// (`max_parallel_subagents`) exhausted and queued the child in FIFO order.
+    /// `waiting` is the child's 1-based position in the queue (1 = next to
+    /// start). The child's `SubagentStart` follows once a slot frees; a queued
+    /// child aborted at parent teardown is closed by `SubagentEnd` like any
+    /// other.
+    SubagentQueued {
+        run_id: String,
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        task: Option<String>,
+        waiting: u32,
+    },
     /// A backgrounded subagent run finished (success or error). Pairs with the
     /// `SubagentStart` of the same `run_id`. `usage` is the child's own final
     /// completion usage (`None` on error, or if the provider didn't report it) —
@@ -389,6 +402,22 @@ mod tests {
         assert_eq!(
             start,
             json!({ "type": "subagent_start", "run_id": "sub-1", "name": "rust-reviewer" })
+        );
+        let queued = serde_json::to_value(StreamEvent::SubagentQueued {
+            run_id: "sub-2".into(),
+            name: "rust-reviewer".into(),
+            task: None,
+            waiting: 2,
+        })
+        .unwrap();
+        assert_eq!(
+            queued,
+            json!({
+                "type": "subagent_queued",
+                "run_id": "sub-2",
+                "name": "rust-reviewer",
+                "waiting": 2
+            })
         );
         let end = serde_json::to_value(StreamEvent::SubagentEnd {
             run_id: "sub-1".into(),

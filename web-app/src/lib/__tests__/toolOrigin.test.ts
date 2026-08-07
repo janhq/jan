@@ -3,6 +3,7 @@ import { resolveToolOrigin } from '../toolOrigin'
 
 const context = {
   isRagTool: false,
+  isAgentTool: false,
   webSearchProviderLabel: 'Exa',
 }
 
@@ -57,6 +58,24 @@ describe('resolveToolOrigin', () => {
         mcpServer: 'someserver',
       })
     ).toEqual({ kind: 'rag' })
+  })
+
+  it('recognises a built-in agent tool', () => {
+    expect(
+      resolveToolOrigin('memory_read', { ...context, isAgentTool: true })
+    ).toEqual({ kind: 'agent' })
+  })
+
+  // Mirrors the thread route, where agent tools are dispatched before MCP, so a
+  // filesystem server exposing `read` does not claim the built-in one's card.
+  it('prefers the built-in agent tool over a same-named MCP tool', () => {
+    expect(
+      resolveToolOrigin('read', {
+        ...context,
+        isAgentTool: true,
+        mcpServer: 'filesystem',
+      })
+    ).toEqual({ kind: 'agent' })
   })
 
   it('is undefined for an unknown tool', () => {
