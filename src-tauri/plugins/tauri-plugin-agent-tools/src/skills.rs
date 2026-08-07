@@ -8,6 +8,14 @@
 //! desktop's permanent store or a project's co-located one. A skill is a
 //! reusable procedure, so it must outlive the ephemeral per-thread sandbox.
 //!
+//! Skills have two invocation sides, matching the SKILL.md ecosystem:
+//! `user-invocable: false` hides a skill from the human (slash popup, `/skill:`
+//! dispatch) while keeping it model-invocable; `disable-model-invocation: true`
+//! hides it from the model (system-prompt catalog, `skill_list`/`skill_read`)
+//! while keeping it user-invocable. Default is both sides; setting both keys
+//! makes a skill private. `[skills].enabled` stays the orthogonal availability
+//! whitelist applied to both sides.
+//!
 //! Sync (std::fs) so the sync `context::load_skills` and the async `agent_skill_*`
 //! commands share one code path; the ops are tiny single-file reads/writes.
 
@@ -45,6 +53,10 @@ pub struct SkillEntry {
 pub struct SkillMeta {
     pub name: String,
     pub description: String,
+    /// Offered in the user-facing invoke surface (slash popup, `/skill:`).
+    pub user_invocable: bool,
+    /// Offered to the model (system-prompt catalog, `skill_list`/`skill_read`).
+    pub model_invocable: bool,
 }
 
 /// Frontmatter fields we recognize; everything else is ignored.
@@ -53,6 +65,15 @@ struct Frontmatter {
     #[allow(dead_code)]
     name: Option<String>,
     description: Option<String>,
+    /// Claude Code convention: `user-invocable: false` keeps the skill
+    /// model-invocable while hiding it from the human's invoke list.
+    #[serde(rename = "user-invocable")]
+    user_invocable: Option<bool>,
+    /// Matt Pocock's SKILL-MECHANICS convention: `disable-model-invocation:
+    /// true` keeps the skill user-invocable while removing its description
+    /// from the model's reach (no context load).
+    #[serde(rename = "disable-model-invocation")]
+    disable_model_invocation: Option<bool>,
 }
 
 /// A skill's parsed content: optional frontmatter description + markdown body
@@ -60,6 +81,8 @@ struct Frontmatter {
 pub struct ParsedSkill {
     pub description: Option<String>,
     pub body: String,
+    pub user_invocable: bool,
+    pub model_invocable: bool,
 }
 
 /// Split leading `---\n...\n---` YAML frontmatter from the markdown body.
@@ -71,6 +94,8 @@ pub fn parse(content: &str) -> ParsedSkill {
         return ParsedSkill {
             description: None,
             body: content.to_string(),
+            user_invocable: true,
+            model_invocable: true,
         };
     }
     let mut yaml = String::new();
@@ -93,12 +118,16 @@ pub fn parse(content: &str) -> ParsedSkill {
         return ParsedSkill {
             description: None,
             body: content.to_string(),
+            user_invocable: true,
+            model_invocable: true,
         };
     }
     let fm = serde_yaml::from_str::<Frontmatter>(&yaml).unwrap_or_default();
     ParsedSkill {
         description: fm.description.map(|d| d.trim().to_string()),
         body: body.join("\n").trim_start_matches('\n').to_string(),
+        user_invocable: fm.user_invocable.unwrap_or(true),
+        model_invocable: !fm.disable_model_invocation.unwrap_or(false),
     }
 }
 
@@ -216,28 +245,33 @@ fn default_jan_skill_meta() -> SkillMeta {
     }
 }
 
-/// Metadata for every discovered skill (name + description) — for the UI list.
+/// A discovered skill's metadata with its invocation flags resolved.
+fn meta_for(name: String, parsed: &ParsedSkill) -> SkillMeta {
+    SkillMeta {
+        name,
+        description: describe(parsed),
+        user_invocable: parsed.user_invocable,
+        model_invocable: parsed.model_invocable,
+    }
+}
+
+/// Metadata for every discovered skill (name + description + invocation
+/// flags) — for the management UI, which must see disabled and private skills.
 /// Keeps empty stubs so the user can see and edit them.
 pub fn list_meta(store: &Path) -> Vec<SkillMeta> {
     discover(store)
         .into_iter()
         .filter_map(|e| {
             let parsed = parse(&std::fs::read_to_string(&e.file).ok()?);
-            Some(SkillMeta {
-                name: e.name,
-                description: describe(&parsed),
-            })
+            Some(meta_for(e.name, &parsed))
         })
         .collect()
 }
 
-/// Skills worth advertising in the system prompt: name + description, skipping
-/// skills with neither a description nor a body. This is the progressive-
-/// disclosure catalog - the model calls `skill_read` to load a body on demand.
-///
-/// `enabled` is a whitelist of skill names; an empty list means "all skills"
-/// (backward-compatible with the agent.toml scaffold, which ships `enabled = []`).
-pub fn catalog(store: &Path, enabled: &[String]) -> Vec<SkillMeta> {
+/// Filter discovered skills by the `[skills].enabled` whitelist and one
+/// invocation side. Skills with neither a description nor a body are skipped
+/// (nothing to advertise or invoke).
+fn side_catalog(store: &Path, enabled: &[String], side: impl Fn(&ParsedSkill) -> bool) -> Vec<SkillMeta> {
     let allow: Option<std::collections::HashSet<&str>> =
         (!enabled.is_empty()).then(|| enabled.iter().map(String::as_str).collect());
     let mut skills = discover(store)
@@ -249,14 +283,14 @@ pub fn catalog(store: &Path, enabled: &[String]) -> Vec<SkillMeta> {
                 }
             }
             let parsed = parse(&std::fs::read_to_string(&e.file).ok()?);
+            if !side(&parsed) {
+                return None;
+            }
             let description = describe(&parsed);
             if description.is_empty() && parsed.body.trim().is_empty() {
                 return None;
             }
-            Some(SkillMeta {
-                name: e.name,
-                description,
-            })
+            Some(meta_for(e.name, &parsed))
         })
         .collect::<Vec<_>>();
     if is_enabled(enabled, DEFAULT_JAN_SKILL_NAME)
@@ -268,6 +302,27 @@ pub fn catalog(store: &Path, enabled: &[String]) -> Vec<SkillMeta> {
     }
     skills.sort_by(|a, b| a.name.cmp(&b.name));
     skills
+}
+
+/// Skills worth advertising in the system prompt: name + description, skipping
+/// skills with neither a description nor a body. This is the progressive-
+/// disclosure catalog — the model calls `skill_read` to load a body on demand.
+/// Skills with `disable-model-invocation: true` are excluded: their
+/// description would cost permanent context load, and only the human may fire
+/// them (Matt Pocock's SKILL-MECHANICS model-invoked vs user-invoked cut).
+///
+/// `enabled` is a whitelist of skill names; an empty list means "all skills"
+/// (backward-compatible with the agent.toml scaffold, which ships `enabled = []`).
+pub(crate) fn catalog(root: &Path, enabled: &[String]) -> Vec<SkillMeta> {
+    side_catalog(root, enabled, |p| p.model_invocable)
+}
+
+/// User-invocable skills: what the slash popup offers and `/skill:<name>`
+/// dispatches. Skills with `user-invocable: false` (Claude Code convention)
+/// are excluded — the human must not be able to fire them; the agent still
+/// can. Both sides of the popup share this list.
+pub(crate) fn user_catalog(root: &Path, enabled: &[String]) -> Vec<SkillMeta> {
+    side_catalog(root, enabled, |p| p.user_invocable)
 }
 
 /// Raw SKILL.md text (frontmatter included) for the editor.
@@ -349,11 +404,13 @@ pub(crate) fn parse_invocation(text: &str) -> Option<(String, String)> {
     None
 }
 
-/// Build the user message for invoking an enabled skill: the full skill body
+/// Build the user message for invoking a user-invocable skill (`/skill:<name>` /
+/// `<skill>` semantics shared with the console): the full skill body
 /// (frontmatter stripped) wrapped in an invocation header, the skill's
 /// directory announced so bundled files resolve relative paths, and the user's
 /// `args` threaded in. Returns `(message, description)`; `Err` when the skill
-/// is unknown or disabled (same visibility rules as the `skill_read` tool).
+/// is unknown, disabled, or not user-invocable (same visibility rules as the
+/// slash popup; the opposite side of the `skill_read` tool).
 pub(crate) fn build_invocation_message(
     root: &Path,
     name: &str,
@@ -363,7 +420,7 @@ pub(crate) fn build_invocation_message(
         .ok()
         .map(|c| c.skills.enabled)
         .unwrap_or_default();
-    let meta = catalog(root, &enabled)
+    let meta = user_catalog(root, &enabled)
         .into_iter()
         .find(|m| m.name == name)
         .ok_or_else(|| format!("skill '{name}' not found"))?;
@@ -522,6 +579,61 @@ mod tests {
         assert!(parse_invocation("see /skill:foo/bar for details").is_none());
         // Unknown/plain text has no token.
         assert!(parse_invocation("just some words").is_none());
+    }
+
+    #[test]
+    fn parse_invocation_flags_from_frontmatter() {
+        // Default: both sides.
+        let p = parse("---\ndescription: d\n---\nbody");
+        assert!(p.user_invocable && p.model_invocable);
+        // Claude Code convention: model-only.
+        let p = parse("---\ndescription: d\nuser-invocable: false\n---\nbody");
+        assert!(!p.user_invocable && p.model_invocable);
+        // Matt Pocock convention: user-only.
+        let p = parse("---\ndescription: d\ndisable-model-invocation: true\n---\nbody");
+        assert!(p.user_invocable && !p.model_invocable);
+        // Both set: fully private.
+        let p = parse("---\nuser-invocable: false\ndisable-model-invocation: true\n---\nbody");
+        assert!(!p.user_invocable && !p.model_invocable);
+        // No frontmatter at all: both sides.
+        let p = parse("just a body");
+        assert!(p.user_invocable && p.model_invocable);
+    }
+
+    #[test]
+    fn catalog_and_user_catalog_split_invocation_sides() {
+        let root = std::env::temp_dir().join(format!(
+            "jan_skills_sides_{}",
+            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+        ));
+        let dir = skills_dir(&root);
+        let write = |name: &str, fm: &str| {
+            std::fs::create_dir_all(dir.join(name)).unwrap();
+            std::fs::write(
+                dir.join(name).join("SKILL.md"),
+                format!("---\ndescription: {name} desc\n{fm}---\nbody of {name}"),
+            )
+            .unwrap();
+        };
+        write("both", "");
+        write("model_only", "user-invocable: false\n");
+        write("user_only", "disable-model-invocation: true\n");
+
+        let model: Vec<_> = catalog(&root, &[]).into_iter().map(|m| m.name).collect();
+        assert_eq!(model, vec!["both", "model_only"], "model side: {model:?}");
+        let user: Vec<_> = user_catalog(&root, &[]).into_iter().map(|m| m.name).collect();
+        assert_eq!(user, vec!["both", "user_only"], "user side: {user:?}");
+
+        // Both flags still visible to the management list.
+        let all = list_meta(&root);
+        assert_eq!(all.len(), 3);
+        assert!(!all.iter().find(|m| m.name == "model_only").unwrap().user_invocable);
+        assert!(!all.iter().find(|m| m.name == "user_only").unwrap().model_invocable);
+
+        // User invocation refuses model-only skills.
+        assert!(build_invocation_message(&root, "model_only", "").is_err());
+        assert!(build_invocation_message(&root, "user_only", "").is_ok());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
