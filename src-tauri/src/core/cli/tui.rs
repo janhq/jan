@@ -1195,8 +1195,9 @@ impl App {
     /// current buffer, or empty when the popup should not show: not idle,
     /// buffer isn't a bare `/name` token (no whitespace yet), the popup was
     /// Esc-dismissed, or nothing matches. Skills honor the `[skills].enabled`
-    /// whitelist exactly like the model-facing `skill_list` tool, so the popup
-    /// never offers a skill the agent cannot see.
+    /// whitelist and the `user-invocable` frontmatter flag: the popup offers
+    /// exactly what the human may fire, which is a subset of what the model
+    /// sees via `skill_list`.
     fn slash_matches(&self) -> Vec<SlashMatch> {
         if self.status != Status::Idle
             || self.slash_dismissed
@@ -1225,7 +1226,9 @@ impl App {
             .ok()
             .map(|c| c.skills.enabled)
             .unwrap_or_default();
-        for meta in crate::core::agent::skills::catalog(&self.project_root, &enabled) {
+        // User-invocable skills only: `user-invocable: false` skills stay out
+        // of the human's popup (the agent can still fire them via skill_read).
+        for meta in crate::core::agent::skills::user_catalog(&self.project_root, &enabled) {
             let name = if colon_form {
                 format!("/skill:{}", meta.name)
             } else {
@@ -7593,6 +7596,16 @@ mod tests {
     /// against a real `.jan/agent/skills/` tree. Returns the temp project
     /// root for cleanup.
     fn skill_test_app(name: &str, description: &str) -> (App, std::path::PathBuf) {
+        skill_test_app_fm(name, description, "")
+    }
+
+    /// Like `skill_test_app` but with extra frontmatter lines (before the
+    /// closing `---`), for invocation-flag tests.
+    fn skill_test_app_fm(
+        name: &str,
+        description: &str,
+        extra_fm: &str,
+    ) -> (App, std::path::PathBuf) {
         let root = std::env::temp_dir().join(format!(
             "jan_tui_skill_{}_{}",
             std::process::id(),
@@ -7602,7 +7615,9 @@ mod tests {
         std::fs::create_dir_all(agent_dir.join("skills").join(name)).unwrap();
         std::fs::write(
             agent_dir.join("skills").join(name).join("SKILL.md"),
-            format!("---\nname: {name}\ndescription: {description}\n---\n\n# {name}\n\nBody.\n"),
+            format!(
+                "---\nname: {name}\ndescription: {description}\n{extra_fm}---\n\n# {name}\n\nBody.\n"
+            ),
         )
         .unwrap();
         (
@@ -12397,7 +12412,7 @@ mod tests {
     fn slash_matches_hide_disabled_skills() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         // Whitelist a different skill: deploy must vanish from the popup,
-        // matching the model-facing skill_list semantics.
+        // matching the user-side catalog semantics.
         std::fs::write(
             root.join(".jan/agent/agent.toml"),
             "[agent]\n[skills]\nenabled = [\"other\"]\n",
@@ -12423,6 +12438,29 @@ mod tests {
         app.input = "/skill:can".into();
         assert!(names(&app).iter().any(|n| n == "/skill:cancel"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_matches_hide_model_only_skills() {
+        // `user-invocable: false` (Claude Code convention): the agent may fire
+        // it via skill_read, but the human's popup must not offer it.
+        let (mut app, root) =
+            skill_test_app_fm("internal", "Agent-only ritual.", "user-invocable: false\n");
+        let (mut app2, root2) = skill_test_app("open", "Everyone.");
+        app.input = "/int".into();
+        assert!(
+            !names(&app).iter().any(|n| n.contains("internal")),
+            "model-only skill offered to the user: {:?}",
+            names(&app)
+        );
+        // The `/skill:` form is equally hidden.
+        app.input = "/skill:int".into();
+        assert!(names(&app).is_empty(), "{:?}", names(&app));
+        // A normal skill is still offered alongside.
+        app2.input = "/op".into();
+        assert_eq!(names(&app2), vec!["/open".to_string()]);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root2);
     }
 
     #[test]
