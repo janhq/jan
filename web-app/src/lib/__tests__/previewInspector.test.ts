@@ -85,7 +85,8 @@ describe('PREVIEW_INSPECTOR_SCRIPT', () => {
 
     fire('pointerover', main)
     expect(visible(hoverBox)).toBe(true)
-    expect(hoverBox.style.border).toContain('dashed')
+    // Hover uses dotted to visually distinguish from user annotations
+    expect(hoverBox.style.border).toContain('dotted')
     expect(hoverBox.style.width).toBe('200px')
     expect(hoverBox.style.height).toBe('100px')
 
@@ -99,7 +100,7 @@ describe('PREVIEW_INSPECTOR_SCRIPT', () => {
     expect(visible(hoverBox)).toBe(false)
   })
 
-  it('pins a solid bbox with a label on click', () => {
+  it('pins a dashed bbox with a label on click', () => {
     const main = document.querySelector('main')!
     main.id = 'main'
     main.className = 'card active'
@@ -109,7 +110,8 @@ describe('PREVIEW_INSPECTOR_SCRIPT', () => {
 
     fire('pointerdown', main)
     expect(visible(pinBox)).toBe(true)
-    expect(pinBox.style.border).toContain('solid')
+    // Pin uses dashed to distinguish from user annotations (which are solid)
+    expect(pinBox.style.border).toContain('dashed')
     expect(pinBox.style.width).toBe('120px')
     expect(pinLabel.textContent).toBe('main#main.card.active')
   })
