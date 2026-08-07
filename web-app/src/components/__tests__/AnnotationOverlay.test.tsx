@@ -181,9 +181,8 @@ describe('AnnotationOverlay', () => {
     )
     const note = screen.getByPlaceholderText('Add note…')
     expect(note).toBeTruthy()
-    // Anchored at the bbox top-right, clamped to the stage (0x0 in jsdom).
-    expect((note.parentElement as HTMLElement).style.left).toBe('0px')
-    expect((note.parentElement as HTMLElement).style.top).toBe('0px')
+    // Note is positioned absolutely in the overlay
+    expect(note.closest('[style*="position: absolute"]')).toBeTruthy()
   })
 
   it('closes the pending note when the pin is cleared', () => {

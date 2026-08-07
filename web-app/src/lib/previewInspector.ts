@@ -23,8 +23,8 @@ export const PREVIEW_INSPECTOR_SCRIPT = `(function () {
   if (window.__janPreviewInspector) return
   window.__janPreviewInspector = true
 
-  var HOVER = '#6366f1'
-  var PIN = '#4338ca'
+  var HOVER = '#94a3b8'  // slate-400 - subtle gray for hover
+  var PIN = '#64748b'    // slate-500 - darker gray for pinned
   var hoverBox = null
   var pinBox = null
   var pinLabel = null

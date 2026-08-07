@@ -347,7 +347,19 @@ export function AnnotationOverlay({
 
   // Live previews of in-progress shapes.
   const previewShapes: React.ReactNode[] = []
+
+  // Compute the bounding box of the current pencil stroke for the dashed bbox feedback.
+  let strokeBbox: { x: number; y: number; width: number; height: number } | null = null
   if (tool === 'pencil' && drawing && currentLine.length >= 4) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (let i = 0; i < currentLine.length; i += 2) {
+      const px = currentLine[i], py = currentLine[i + 1]
+      if (px < minX) minX = px
+      if (py < minY) minY = py
+      if (px > maxX) maxX = px
+      if (py > maxY) maxY = py
+    }
+    strokeBbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
     previewShapes.push(
       <Line
         key="current-pencil"
@@ -363,6 +375,13 @@ export function AnnotationOverlay({
   if (tool === 'arrow' && drawing && arrowStart) {
     const pointerPos = stageRef.current?.getPointerPosition()
     if (pointerPos) {
+      // Arrow bbox: from start to current pointer position.
+      strokeBbox = {
+        x: Math.min(arrowStart.x, pointerPos.x),
+        y: Math.min(arrowStart.y, pointerPos.y),
+        width: Math.abs(pointerPos.x - arrowStart.x),
+        height: Math.abs(pointerPos.y - arrowStart.y),
+      }
       previewShapes.push(
         <Arrow
           key="current-arrow"
@@ -386,7 +405,7 @@ export function AnnotationOverlay({
       <div
         role="toolbar"
         aria-label="Annotation tools"
-        className="flex shrink-0 items-center gap-1 border-b px-2 py-1.5"
+        className="flex shrink-0 items-center gap-1.5 border-b px-2 py-1.5"
       >
         <ToolButton
           active={tool === 'select'}
@@ -417,7 +436,7 @@ export function AnnotationOverlay({
           <Type size={14} />
         </ToolButton>
 
-        <span className="mx-1 h-4 w-px bg-main-view-fg/15" />
+        <span className="mx-0.5 h-4 w-px bg-main-view-fg/15" />
 
         {COLORS.map((c) => (
           <button
@@ -427,16 +446,16 @@ export function AnnotationOverlay({
             title={c}
             aria-label={`Annotation color ${c}`}
             className={cn(
-              'size-3 rounded-full border transition-transform',
+              'size-3.5 rounded-full border transition-transform',
               color === c
-                ? 'scale-110 border-main-view-fg/60'
+                ? 'scale-110 border-main-view-fg/60 ring-1 ring-main-view-fg/30'
                 : 'border-main-view-fg/20 hover:scale-110'
             )}
             style={{ backgroundColor: c }}
           />
         ))}
 
-        <span className="mx-1 h-4 w-px bg-main-view-fg/15" />
+        <span className="mx-0.5 h-4 w-px bg-main-view-fg/15" />
 
         {STROKE_WIDTHS.map((w) => (
           <button
@@ -446,7 +465,7 @@ export function AnnotationOverlay({
             title={`${w}px`}
             aria-label={`Stroke width ${w}px`}
             className={cn(
-              'flex size-3.5 items-center justify-center rounded text-main-view-fg/60 hover:text-main-view-fg',
+              'flex size-4 items-center justify-center rounded text-main-view-fg/60 hover:text-main-view-fg',
               strokeWidth === w && 'bg-main-view-fg/10 text-main-view-fg'
             )}
           >
@@ -457,7 +476,7 @@ export function AnnotationOverlay({
           </button>
         ))}
 
-        <span className="mx-1 h-4 w-px bg-main-view-fg/15" />
+        <span className="mx-0.5 h-4 w-px bg-main-view-fg/15" />
 
         <ToolButton onClick={undo} title="Undo (last shape)">
           <Undo2 size={14} />
@@ -559,7 +578,24 @@ export function AnnotationOverlay({
               }
               return null
             })}
-            {previewShapes}
+            {/* Dashed bbox feedback while drawing */}
+            {strokeBbox && (
+              <Line
+                key="stroke-bbox"
+                points={[
+                  strokeBbox.x, strokeBbox.y,
+                  strokeBbox.x + strokeBbox.width, strokeBbox.y,
+                  strokeBbox.x + strokeBbox.width, strokeBbox.y + strokeBbox.height,
+                  strokeBbox.x, strokeBbox.y + strokeBbox.height,
+                  strokeBbox.x, strokeBbox.y,
+                ]}
+                stroke={color}
+                strokeWidth={1}
+                dash={[6, 4]}
+                closed
+                listening={false}
+              />
+            )}
           </Layer>
         </Stage>
 
@@ -642,38 +678,60 @@ function TextInputOverlay({
     <div
       style={{
         position: 'absolute',
-        left: pos.x,
-        top: pos.y,
+        left: Math.max(8, pos.x - 60),
+        top: pos.y + 12,
         zIndex: 30,
       }}
     >
-      <textarea
-        ref={inputRef}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault()
-            onConfirm(value)
-          }
-          if (e.key === 'Escape') {
-            // Stop it reaching the window handler, which would also exit mode.
-            e.stopPropagation()
-            onConfirm('')
-          }
-        }}
-        onBlur={() => onConfirm(value)}
-        placeholder="Add note…"
-        rows={1}
-        className="min-w-[130px] max-w-[220px] resize-none rounded-lg border bg-main-view px-2 py-1.5 text-sm shadow-md outline-none"
-        style={{
-          color,
-          fontSize: TEXT_FONT_SIZE,
-          fontFamily: 'system-ui, sans-serif',
-          borderColor: color,
-          lineHeight: 1.3,
-        }}
-      />
+      <div
+        className="rounded-lg border bg-main-view shadow-lg"
+        style={{ borderColor: color }}
+      >
+        <textarea
+          ref={inputRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              onConfirm(value)
+            }
+            if (e.key === 'Escape') {
+              e.stopPropagation()
+              onConfirm('')
+            }
+          }}
+          onBlur={() => onConfirm(value)}
+          placeholder="Add note…"
+          rows={2}
+          className="min-w-[140px] max-w-[220px] resize-none rounded-lg border-0 bg-transparent px-2.5 py-2 text-sm outline-none"
+          style={{
+            color,
+            fontSize: 13,
+            fontFamily: 'system-ui, sans-serif',
+            lineHeight: 1.4,
+          }}
+        />
+        <div className="flex items-center justify-between border-t border-main-view-fg/10 px-2 py-1">
+          <span className="text-[10px] text-main-view-fg/40">Enter to save</span>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => onConfirm('')}
+              className="rounded px-1.5 py-0.5 text-[10px] text-main-view-fg/60 hover:bg-main-view-fg/10"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => onConfirm(value)}
+              className="rounded bg-main-view-fg/10 px-1.5 py-0.5 text-[10px] text-main-view-fg/80 hover:bg-main-view-fg/20"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
