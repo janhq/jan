@@ -15,6 +15,7 @@ import { describeNativeToolCall } from '@/lib/toolPresentation'
 import { isToolPart, type MessagePartLike } from './types'
 import { RagToolWidget } from './RagToolWidget'
 import { WebToolWidget } from './WebToolWidget'
+import { AgentToolWidget, TerminalWidget } from './AgentToolWidget'
 
 const identityResolver = (input: string) => Promise.resolve(input)
 
@@ -42,7 +43,9 @@ export const ToolCallCard = memo(
           ? t('tools:toolCall.originWeb')
           : origin.kind === 'rag'
             ? t('tools:toolCall.originDocuments')
-            : origin.detail
+            : origin.kind === 'agent'
+              ? t('tools:toolCall.originWorkspace')
+              : origin.detail
 
     const errorText = isError
       ? part.error || part.errorText || t('tools:toolCall.executionFailed')
@@ -87,6 +90,21 @@ export const ToolCallCard = memo(
                 errorText={errorText}
                 messageId={messageId}
                 citationOffset={citationOffset}
+              />
+            ) : bar.variant === 'terminal' ? (
+              <TerminalWidget
+                bar={bar}
+                state={part.state}
+                output={part.output}
+                errorText={errorText}
+              />
+            ) : bar.variant === 'workspace' ? (
+              <AgentToolWidget
+                bar={bar}
+                state={part.state}
+                output={part.output}
+                errorText={errorText}
+                toolCallId={part.toolCallId}
               />
             ) : (
               <WebToolWidget

@@ -18,6 +18,8 @@ default = ["tauri"]
 tauri = ["dep:tauri", "dep:tauri-plugin"]
 
 [dependencies]
+# The `screenshot` tool returns its PNG as a data URL.
+base64 = "0.22"
 glob = "0.3"
 ignore = "0.4"
 regex = "1"

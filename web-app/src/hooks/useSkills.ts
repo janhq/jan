@@ -1,9 +1,11 @@
 import { invoke } from '@tauri-apps/api/core'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { toast } from 'sonner'
+import * as skillStore from '@/lib/skillStore'
+import type { SkillMeta } from '@/lib/skillStore'
 
-export type SkillMeta = { name: string; description: string }
+export type { SkillMeta }
 export type HubSkill = { name: string; description: string }
 
 // The `[skills].enabled` whitelist uses three shapes:
@@ -43,9 +45,11 @@ const useSkillsVersion = create<{ v: number; bump: () => void }>((set) => ({
 }))
 
 /**
- * CRUD over the agent's per-project skills (`<folder>/.jan/agent/skills/*.md`),
- * backed by the `agent_skill_*` Tauri commands. All operations are scoped to
- * `folder`; with no folder there are no skills to manage.
+ * CRUD over the agent's per-project skills (`<folder>/.jan/agent/skills/*.md`).
+ * Storage is shared with the settings page's permanent store via `skillStore`;
+ * only the root differs. The `[skills].enabled` whitelist and the skill hub stay
+ * on their own commands -- both are project concerns with no store equivalent.
+ * All operations are scoped to `folder`; with no folder there are no skills.
  */
 export function useSkills(folder: string | null) {
   const [skills, setSkills] = useState<SkillMeta[]>([])
@@ -58,8 +62,13 @@ export function useSkills(folder: string | null) {
   // an await without depending on (and being recreated by) the state itself.
   const enabledRef = useRef<string[]>([])
 
+  const scope = useMemo(
+    () => (folder ? skillStore.projectScope(folder) : null),
+    [folder]
+  )
+
   const refresh = useCallback(async () => {
-    if (!folder) {
+    if (!folder || !scope) {
       setSkills([])
       setEnabledState([])
       enabledRef.current = []
@@ -68,7 +77,7 @@ export function useSkills(folder: string | null) {
     setLoading(true)
     try {
       const [list, en] = await Promise.all([
-        invoke<SkillMeta[]>('agent_skill_list', { project: folder }),
+        skillStore.listSkills(scope),
         invoke<string[]>('agent_skill_enabled_get', { project: folder }),
       ])
       setSkills(list)
@@ -77,7 +86,7 @@ export function useSkills(folder: string | null) {
     } finally {
       setLoading(false)
     }
-  }, [folder])
+  }, [folder, scope])
 
   // Persist the enabled whitelist (empty = all). Optimistic local update; on a
   // write failure, roll back so the UI never diverges from the on-disk config.
@@ -108,26 +117,33 @@ export function useSkills(folder: string | null) {
     refresh()
   }, [refresh, version])
 
+  // Callers reach these only from surfaces that already require a folder; the
+  // guard keeps that an explicit failure rather than a silent write to the
+  // wrong root.
+  const requireScope = useCallback(() => {
+    if (!scope) throw new Error('No project folder selected')
+    return scope
+  }, [scope])
+
   const read = useCallback(
-    (name: string) =>
-      invoke<string>('agent_skill_read', { project: folder, name }),
-    [folder]
+    (name: string) => skillStore.readSkill(requireScope(), name),
+    [requireScope]
   )
 
   const write = useCallback(
     async (name: string, content: string) => {
-      await invoke('agent_skill_write', { project: folder, name, content })
+      await skillStore.writeSkill(requireScope(), name, content)
       bump()
     },
-    [folder, bump]
+    [requireScope, bump]
   )
 
   const remove = useCallback(
     async (name: string) => {
-      await invoke('agent_skill_delete', { project: folder, name })
+      await skillStore.deleteSkill(requireScope(), name)
       bump()
     },
-    [folder, bump]
+    [requireScope, bump]
   )
 
   // Anthropic skill hub. `hubList` is project-independent; `hubImport` downloads

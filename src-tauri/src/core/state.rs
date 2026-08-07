@@ -7,11 +7,13 @@ use std::sync::Arc;
 use crate::core::downloads::models::DownloadManagerState;
 #[cfg(not(feature = "cli"))]
 use crate::core::mcp::models::{McpSettings, ToolWithServer};
-use rmcp::{
-    model::{CallToolRequestParam, CallToolResult, InitializeRequestParam, Tool},
-    service::RunningService,
-    RoleClient, ServiceError,
-};
+#[cfg(not(feature = "cli"))]
+use crate::core::mcp::progress::JanClientHandler;
+#[cfg(feature = "cli")]
+use rmcp::model::{CallToolRequestParam, CallToolResult, InitializeRequestParam, Tool};
+#[cfg(feature = "cli")]
+use rmcp::ServiceError;
+use rmcp::{service::RunningService, RoleClient};
 use tokio::sync::Mutex;
 #[cfg(not(feature = "cli"))]
 use tokio::sync::{oneshot, Notify};
@@ -74,6 +76,25 @@ pub enum RunningServiceEnum {
 }
 #[cfg(feature = "cli")]
 pub type SharedMcpServers = Arc<Mutex<HashMap<String, RunningServiceEnum>>>;
+
+#[cfg(feature = "cli")]
+impl RunningServiceEnum {
+    pub async fn list_all_tools(&self) -> Result<Vec<Tool>, ServiceError> {
+        match self {
+            Self::NoInit(s) => s.list_all_tools().await,
+            Self::WithInit(s) => s.list_all_tools().await,
+        }
+    }
+    pub async fn call_tool(
+        &self,
+        params: CallToolRequestParam,
+    ) -> Result<CallToolResult, ServiceError> {
+        match self {
+            Self::NoInit(s) => s.call_tool(params).await,
+            Self::WithInit(s) => s.call_tool(params).await,
+        }
+    }
+}
 
 /// Shared desktop application state owned by Tauri. The CLI builds its
 /// subsystems (MCP map, provider configs) directly instead.

@@ -61,6 +61,7 @@ Point at a different file with `instructions_file` if you already keep conventio
 # context_window = 128000
 # compaction_reserve_tokens = 16384
 # max_tokens = 4096
+# max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
 instructions_file = "AGENT.md"
 
 # [provider]
@@ -95,6 +96,7 @@ inject = "always"
 | `context_window` | `128000` | Context limit in tokens |
 | `compaction_reserve_tokens` | `16384` | Headroom kept free before [compaction](/docs/agent/context) |
 | `max_tokens` | unset | Cap on tokens generated per response. Omitted from the request when unset |
+| `max_parallel_subagents` | `10` | Subagents that may run at once (min 1); extra dispatches queue FIFO |
 | `instructions_file` | `AGENT.md` | Markdown injected into the system prompt |
 
 ### `[provider]`
