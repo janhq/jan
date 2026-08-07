@@ -2,6 +2,7 @@ export const route = {
   // home as new chat or thread
   home: '/',
   code: '/code',
+  artifacts: '/artifacts',
   appLogs: '/logs',
   project: '/project',
   projectDetail: '/project/$projectId',
@@ -31,3 +32,11 @@ export const route = {
   systemMonitor: '/system-monitor',
   threadsDetail: '/threads/$threadId',
 }
+
+/**
+ * Routes that belong to the Cowork surface, so the sidebar keeps the Cowork nav
+ * instead of falling back to Home. One list rather than an equality check
+ * repeated per consumer — a new Cowork route only has to be added here.
+ */
+export const isCoworkRoute = (pathname: string): boolean =>
+  pathname === route.code || pathname === route.artifacts

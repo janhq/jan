@@ -538,6 +538,7 @@ fn build_cli_orchestration_args(
         system_prompt_override: None,
         subagents_enabled: true,
         yolo,
+        background_subagents: None,
         run_mode: if plan {
             crate::core::agent::plan::RunMode::Plan
         } else {

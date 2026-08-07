@@ -81,6 +81,12 @@ pub(crate) struct OrchestrationArgs {
     /// call (built-in reads/writes/exec and MCP) without prompting. Inherited by
     /// dispatched subagents via the cloned parent args.
     pub yolo: bool,
+    /// Externally-tracked background-subagent registry for this run, so a
+    /// Tauri command can cancel one specific dispatched subagent by run_id
+    /// from outside the loop. `None` falls back to a fresh, purely-local
+    /// registry (the CLI/TUI/proxy paths, and every subagent child run, which
+    /// must never share the parent's — see `run_subagent`).
+    pub background_subagents: Option<Arc<crate::core::agent::subagent::BackgroundSubagents>>,
     /// Read-only plan mode. When `Plan`, mutation-capable tools (write/edit/bash,
     /// memory_write/skill_write, MCP, subagent dispatch) are neither advertised
     /// nor executable: the dispatcher hard-denies them with `plan_mode_read_only`,
@@ -210,6 +216,7 @@ impl CompositeToolInvoker {
             .insert(request_id.clone(), tx);
         let _ = self.events.send(StreamEvent::PermissionRequest {
             request_id: request_id.clone(),
+            tool_call_id: None,
             tool_name: tool_name.to_string(),
             capability: "run".to_string(),
             path: None,
@@ -234,6 +241,7 @@ impl CompositeToolInvoker {
             .insert(request_id.clone(), tx);
         let _ = self.events.send(StreamEvent::PermissionRequest {
             request_id: request_id.clone(),
+            tool_call_id: None,
             tool_name: "create_subagent".to_string(),
             capability: "write".to_string(),
             path: Some(name.to_string()),
@@ -684,6 +692,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     let diff = preview_diff(tool, &args, &self.project_root).await;
                     let _ = self.events.send(StreamEvent::PermissionRequest {
                         request_id: request_id.clone(),
+                        tool_call_id: Some(id.clone()),
                         tool_name: name.to_string(),
                         capability: capability.to_string(),
                         path,
@@ -775,6 +784,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         system_prompt_override: None,
         subagents_enabled: false,
         yolo: false,
+        background_subagents: None,
         run_mode: crate::core::agent::plan::RunMode::Normal,
     };
     run_orchestration_streamed(&tx, json_body, &args).await
@@ -1002,6 +1012,7 @@ async fn orchestrate_inner(
         system_prompt_override,
         subagents_enabled,
         yolo,
+        background_subagents,
         run_mode,
     } = args;
 
@@ -1096,8 +1107,11 @@ async fn orchestrate_inner(
     }
     // Paired with the addendum above: force the model's very first tool call
     // to actually be `todo` rather than leaving compliance up to a prompt it
-    // could silently ignore.
-    let force_first_tool = eager_todo_plan.then_some("todo");
+    // could silently ignore. Only when the todo tool is actually advertised —
+    // with no registry the loop skips the `todo` schema, and a forced
+    // tool_choice for an unadvertised tool is rejected upstream (the headless
+    // CLI path runs with `todo_registry: None`).
+    let force_first_tool = (eager_todo_plan && todo_registry.is_some()).then_some("todo");
 
     let model_override = json_body.get("model").and_then(|v| v.as_str());
     let mut model_id: Option<String> = model_override.map(|v| v.to_string());
@@ -1270,7 +1284,12 @@ async fn orchestrate_inner(
         }
         // Background subagents are scoped to this run: `_bg_guard` aborts any
         // still-running child when `orchestrate_inner` returns or is cancelled.
-        let bg = std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+        // Use the externally-tracked registry when the caller supplied one (so
+        // a Tauri command can cancel one specific subagent from outside), else
+        // a fresh local one exactly as before.
+        let bg = background_subagents.clone().unwrap_or_else(|| {
+            std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::default())
+        });
         let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),
@@ -1374,11 +1393,10 @@ fn build_completion_request(
     serde_json::Value::Object(completion_map)
 }
 
-/// Manually compact `messages` for the given model, resolving the upstream from
-/// `args` and reusing the same summarization path as the reactive loop. Used by
-/// the TUI `/compact` command, which holds `OrchestrationArgs` + a model id but
-/// no `ModelInvoker`.
-#[cfg(feature = "cli")]
+/// Manually compact `messages` for a model, resolving the upstream from `args`
+/// and reusing the same summarization path as the reactive loop. Used by the
+/// TUI `/compact` command and the Code UI's `/compact` slash command, both of
+/// which hold `OrchestrationArgs` + a model id but no `ModelInvoker`.
 pub(crate) async fn compact_history(
     args: &OrchestrationArgs,
     model_id: &str,
@@ -1412,7 +1430,6 @@ pub(crate) async fn compact_history(
 /// fast "smol" role). Mirrors [`compact_history`]: resolve the upstream for the
 /// evaluator model, then make a single tool-free model call that judges whether
 /// `condition` is satisfied by `messages`. No tools, no streaming to the user.
-#[cfg(feature = "cli")]
 pub(crate) async fn evaluate_goal(
     args: &OrchestrationArgs,
     smol_model_id: &str,

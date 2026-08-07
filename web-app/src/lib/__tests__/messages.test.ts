@@ -8,7 +8,50 @@ import {
   convertThreadMessagesToUIMessages,
   extractContentPartsFromUIMessage,
   parseReasoning,
+  reasoningPartsFromText,
 } from '../messages'
+
+describe('reasoningPartsFromText', () => {
+  it('keeps prose the model emitted before opening the reasoning tag', () => {
+    // Regression: `parseReasoning` folds a leading prefix into
+    // `reasoningSegment`, so taking only the tag body dropped this prose from
+    // the transcript entirely — the model spoke and nothing rendered.
+    expect(
+      reasoningPartsFromText("Let me know!<think>internal</think>")
+    ).toEqual([
+      { type: 'text', text: 'Let me know!' },
+      { type: 'reasoning', text: 'internal' },
+    ])
+  })
+
+  it('preserves emission order across prefix, reasoning, and suffix', () => {
+    expect(reasoningPartsFromText('Before <think>mid</think>After')).toEqual([
+      { type: 'text', text: 'Before' },
+      { type: 'reasoning', text: 'mid' },
+      { type: 'text', text: 'After' },
+    ])
+  })
+
+  it('keeps the prefix while reasoning is still streaming (unclosed tag)', () => {
+    expect(reasoningPartsFromText('Working on it<think>partial')).toEqual([
+      { type: 'text', text: 'Working on it' },
+      { type: 'reasoning', text: 'partial' },
+    ])
+  })
+
+  it('reasoning-first needs no prefix part', () => {
+    expect(reasoningPartsFromText('<think>a</think>b')).toEqual([
+      { type: 'reasoning', text: 'a' },
+      { type: 'text', text: 'b' },
+    ])
+  })
+
+  it('passes plain text through untouched', () => {
+    expect(reasoningPartsFromText('just prose')).toEqual([
+      { type: 'text', text: 'just prose' },
+    ])
+  })
+})
 
 describe('parseReasoning', () => {
   it.each([

@@ -1,6 +1,6 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { HomeIcon, CodeIcon } from 'lucide-react'
-import { route } from '@/constants/routes'
+import { Handshake, HomeIcon } from 'lucide-react'
+import { route, isCoworkRoute } from '@/constants/routes'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
@@ -15,7 +15,7 @@ export function NavTabs() {
   const { t } = useTranslation()
   const { pathname } = useLocation()
 
-  const isCode = pathname === route.code
+  const isCode = isCoworkRoute(pathname)
   // Home owns the chat surfaces (new chat, threads, projects); Code owns /code.
   const isHome =
     pathname === route.home ||
@@ -24,7 +24,7 @@ export function NavTabs() {
 
   const tabs: TabItem[] = [
     { label: t('common:home'), to: route.home, icon: HomeIcon, isActive: isHome },
-    { label: t('common:code'), to: route.code, icon: CodeIcon, isActive: isCode },
+    { label: t('common:code'), to: route.code, icon: Handshake, isActive: isCode },
   ]
 
   return (

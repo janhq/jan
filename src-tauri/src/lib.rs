@@ -87,7 +87,11 @@ macro_rules! invoke_commands_with_extras {
         // Agent commands
         core::agent::commands::agent_run,
         core::agent::commands::agent_cancel,
+        core::agent::commands::agent_cancel_subagent,
         core::agent::commands::agent_permission_respond,
+        core::agent::commands::agent_ask_respond,
+        core::agent::commands::agent_compact,
+        core::agent::commands::agent_goal_evaluate,
         core::agent::commands::agent_skill_list,
         core::agent::commands::agent_skill_read,
         core::agent::commands::agent_skill_write,
@@ -316,6 +320,7 @@ pub fn run() {
         })
         .manage(core::agent::commands::AgentRuns::default())
         .manage(core::agent::commands::AgentPermissions::default())
+        .manage(core::agent::commands::AgentAsks::default())
         .setup(|app| {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()

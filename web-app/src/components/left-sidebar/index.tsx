@@ -16,12 +16,12 @@ import {
 import { cn } from '@/lib/utils'
 import { useTitlebarLayout } from '@/stores/titlebar-layout-store'
 import { useLocation } from '@tanstack/react-router'
-import { route } from '@/constants/routes'
+import { isCoworkRoute } from '@/constants/routes'
 
 export function LeftSidebar() {
   const { open: isLeftPanelOpen } = useLeftPanel()
   const { pathname } = useLocation()
-  const isCode = pathname === route.code
+  const isCode = isCoworkRoute(pathname)
   // Right-align the header when native controls own the top-left (macOS, or a Linux
   // DE placing buttons left); "Jan" moves into the right cluster except on macOS.
   const leftButtons = useTitlebarLayout((s) => s.layout.left.length)

@@ -1,8 +1,10 @@
 import { memo, useMemo, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { CodeIcon, EyeIcon } from 'lucide-react'
+import { CodeIcon, EyeIcon, TriangleAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CodeBlock } from '@/components/ai-elements/code-block'
+import { countUnresolvedAssetRefs } from '@/lib/htmlAssets'
+import { PREVIEW_INSPECTOR_SCRIPT } from '@/lib/previewInspector'
 import type { BundledLanguage } from 'shiki'
 
 interface HtmlArtifactProps {
@@ -58,9 +60,18 @@ function buildSrcDoc(
 ): string {
   const csp = buildCsp(allowNetwork, allowScripts)
   const meta = `<meta http-equiv="Content-Security-Policy" content="${csp}">`
+  // Zero the shell's body margin so artifact content sits flush and the
+  // element inspector can treat full-viewport wrappers as background.
+  const shellStyle = '<style>html,body{margin:0}</style>'
+  // Element inspection (hover outline / click-to-pin bbox) needs a script in
+  // the iframe's own document, which is only possible when scripts run at all
+  // (allowScripts=false is the static SVG mode).
+  const inspector = allowScripts
+    ? `<script>${PREVIEW_INSPECTOR_SCRIPT}</script>`
+    : ''
   // Always wrap so the CSP meta precedes all model markup — a meta CSP is only
   // honored before resource-fetching content, and a later one can't loosen it.
-  return `<!doctype html><html><head>${meta}</head><body>${code}</body></html>`
+  return `<!doctype html><html><head>${meta}${shellStyle}${inspector}</head><body>${code}</body></html>`
 }
 
 function HtmlArtifactComponent({
@@ -73,6 +84,13 @@ function HtmlArtifactComponent({
 }: HtmlArtifactProps) {
   const { t } = useTranslation()
   const [view, setView] = useState<View>('preview')
+
+  // Relative refs (`./logo.png`, `style.css`) cannot resolve inside the
+  // opaque-origin sandbox; surface the count instead of a silently broken page.
+  const unresolvedAssets = useMemo(
+    () => (view === 'preview' ? countUnresolvedAssetRefs(code) : 0),
+    [view, code]
+  )
 
   const srcDoc = useMemo(
     () =>
@@ -133,14 +151,26 @@ function HtmlArtifactComponent({
       </div>
 
       {activeView === 'preview' ? (
-        <iframe
+        <>
+          {unresolvedAssets > 0 && (
+            <div
+              role="note"
+              data-testid="html-artifact-unresolved"
+              className="flex items-start gap-2 border-b border-border bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400"
+            >
+              <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+              <span>{t('htmlArtifact.unresolvedAssets', { count: unresolvedAssets })}</span>
+            </div>
+          )}
+          <iframe
           title={t('htmlArtifact.preview')}
           data-testid="html-artifact-iframe"
           className="h-[600px] max-h-[80vh] min-h-64 w-full resize-y overflow-auto border-0 bg-white"
           sandbox={allowScripts ? 'allow-scripts' : ''}
           referrerPolicy="no-referrer"
           srcDoc={srcDoc}
-        />
+          />
+        </>
       ) : (
         <CodeBlock code={code} language={language as BundledLanguage} />
       )}

@@ -10,6 +10,7 @@ import {
 import { ToolProgressRow } from '@/components/ai-elements/tool-runtime'
 import { useToolOrigin } from '@/hooks/useToolOrigin'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { completedToolLabel } from '@/lib/agentActivity'
 import { describeNativeToolCall } from '@/lib/toolPresentation'
 import { isToolPart, type MessagePartLike } from './types'
 import { RagToolWidget } from './RagToolWidget'
@@ -52,6 +53,13 @@ export const ToolCallCard = memo(
     // the raw payload is still one click away in the header.
     const bar = describeNativeToolCall(origin, toolName, part.input)
 
+    // `skill_read` reads as a bare tool name otherwise; the label names the
+    // skill actually being loaded, which is the only interesting part of it.
+    const title =
+      toolName === 'skill_read'
+        ? completedToolLabel(toolName, part.input, part.state)
+        : toolName
+
     return (
       <Tool
         state={part.state}
@@ -60,7 +68,7 @@ export const ToolCallCard = memo(
         className={className}
       >
         <ToolHeader
-          title={toolName}
+          title={title}
           type={`tool-${toolName}` as `tool-${string}`}
           state={part.state}
           origin={originLabel}
@@ -90,7 +98,7 @@ export const ToolCallCard = memo(
             )}
           </div>
         )}
-        <ToolContent title={toolName}>
+        <ToolContent title={title}>
           {Boolean(part.input) && <ToolInput input={part.input} />}
           <ToolApprovalActions />
           {/* The widget already presents the result for native tools. */}

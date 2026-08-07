@@ -1774,7 +1774,7 @@ impl App {
                     active: None,
                 });
             }
-            StreamEvent::SubagentEnd { run_id, name } => {
+            StreamEvent::SubagentEnd { run_id, name, .. } => {
                 // Take the run's full call list, commit a folded summary row, and
                 // retain the detail so Ctrl-O can expand it (like a tool group).
                 let calls = self
@@ -7059,6 +7059,7 @@ mod tests {
         let mut app = test_app();
         app.apply(StreamEvent::PermissionRequest {
             request_id: "w1".into(),
+            tool_call_id: None,
             tool_name: "write".into(),
             capability: "write".into(),
             path: Some("out.txt".into()),
@@ -7093,6 +7094,7 @@ mod tests {
         let mut app = test_app();
         app.apply(StreamEvent::PermissionRequest {
             request_id: "e1".into(),
+            tool_call_id: None,
             tool_name: "bash".into(),
             capability: "exec".into(),
             path: None,
@@ -8293,6 +8295,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "sub-reviewer-1".into(),
             name: "reviewer".into(),
+            usage: None,
         });
         assert_eq!(
             app.awaiting.len(),
@@ -8415,6 +8418,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            usage: None,
         });
         // A collapsed summary row + a retained expandable block.
         assert_eq!(app.subagent_blocks.len(), 1);
@@ -8463,6 +8467,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            usage: None,
         });
         assert!(app.subagents.iter().all(|p| p.run_id != "r1"));
         assert!(app
@@ -8508,6 +8513,7 @@ mod tests {
             "reviewer",
             StreamEvent::PermissionRequest {
                 request_id: "p1".into(),
+                tool_call_id: None,
                 tool_name: "bash".into(),
                 capability: "exec".into(),
                 path: None,
@@ -8546,6 +8552,7 @@ mod tests {
             "reviewer",
             StreamEvent::PermissionRequest {
                 request_id: "p1".into(),
+                tool_call_id: None,
                 tool_name: "bash".into(),
                 capability: "exec".into(),
                 path: None,
@@ -8561,6 +8568,7 @@ mod tests {
             "explorer",
             StreamEvent::PermissionRequest {
                 request_id: "p2".into(),
+                tool_call_id: None,
                 tool_name: "read".into(),
                 capability: "read".into(),
                 path: Some("secrets.env".into()),
@@ -9535,6 +9543,7 @@ mod tests {
             });
             app.apply(StreamEvent::PermissionRequest {
                 request_id: format!("p-{id}"),
+                tool_call_id: None,
                 tool_name: "bash".into(),
                 capability: "exec".into(),
                 path: None,
