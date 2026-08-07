@@ -91,12 +91,13 @@ export const PREVIEW_INSPECTOR_SCRIPT = `(function () {
   // The parent (annotation overlay) anchors its inline note box at the pinned
   // element, so it needs the bbox. postMessage works across the sandbox; the
   // opaque origin forces targetOrigin '*'.
-  function sendPin(r) {
+  function sendPin(r, label) {
     try {
       window.parent.postMessage(
         {
           source: 'jan-preview-inspector',
           type: 'pin',
+          label: label,
           rect: { x: r.left, y: r.top, width: r.width, height: r.height }
         },
         '*'
@@ -140,7 +141,11 @@ export const PREVIEW_INSPECTOR_SCRIPT = `(function () {
       clearPin()
       return
     }
-    placeLabel(placeBox(pinBox, pinnedEl, PIN, 2, false))
+    var r = placeBox(pinBox, pinnedEl, PIN, 2, false)
+    placeLabel(r)
+    // Re-post so the parent's pin chip tracks the element while the page
+    // scrolls or resizes; the overlay dedupes an unchanged rect.
+    sendPin(r, pinLabel.textContent)
   }
 
   document.addEventListener(
@@ -183,13 +188,25 @@ export const PREVIEW_INSPECTOR_SCRIPT = `(function () {
       pinLabel.textContent = labelFor(t)
       var r = placeBox(pinBox, t, PIN, 2, false)
       placeLabel(r)
-      sendPin(r)
+      sendPin(r, pinLabel.textContent)
     },
     true
   )
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') clearPin()
+  })
+
+  // The annotation overlay drops the pin when it leaves the select tool, so a
+  // stale bbox never sits underneath the strokes the user is drawing.
+  window.addEventListener('message', function (e) {
+    var d = e.data
+    if (d && d.source === 'jan-annotation-overlay' && d.type === 'clear') {
+      clearPin()
+      // The hover outline sticks too: once the overlay captures the pointer,
+      // this frame never sees the pointerout that would have hidden it.
+      if (hoverBox) hoverBox.style.display = 'none'
+    }
   })
 
   window.addEventListener('scroll', refreshPin, true)

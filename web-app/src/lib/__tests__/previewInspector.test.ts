@@ -116,7 +116,7 @@ describe('PREVIEW_INSPECTOR_SCRIPT', () => {
     expect(pinLabel.textContent).toBe('main#main.card.active')
   })
 
-  it('posts the pinned bbox rect to the parent', () => {
+  it('posts the pinned bbox rect and selector to the parent', () => {
     const spy = vi.spyOn(window, 'postMessage').mockImplementation(() => {})
     const main = document.querySelector('main')!
     main.style.width = '120px'
@@ -127,6 +127,7 @@ describe('PREVIEW_INSPECTOR_SCRIPT', () => {
       {
         source: 'jan-preview-inspector',
         type: 'pin',
+        label: 'main',
         rect: { x: 0, y: 0, width: 120, height: 60 },
       },
       '*'
@@ -225,7 +226,7 @@ describe('PREVIEW_INSPECTOR_SCRIPT', () => {
     expect(visible(pinBox)).toBe(false)
   })
 
-  it('posts the pinned bbox rect to the parent', () => {
+  it('posts the pinned bbox rect and selector to the parent', () => {
     const spy = vi.spyOn(window, 'postMessage').mockImplementation(() => {})
     const main = document.querySelector('main')!
     main.style.width = '120px'
@@ -236,6 +237,7 @@ describe('PREVIEW_INSPECTOR_SCRIPT', () => {
       {
         source: 'jan-preview-inspector',
         type: 'pin',
+        label: 'main',
         rect: { x: 0, y: 0, width: 120, height: 60 },
       },
       '*'

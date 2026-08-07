@@ -101,6 +101,7 @@ macro_rules! invoke_commands_with_extras {
         core::agent::commands::agent_skill_enabled_get,
         core::agent::commands::agent_skill_enabled_set,
         core::agent::commands::agent_git_branch,
+        core::agent::commands::agent_render_preview,
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
