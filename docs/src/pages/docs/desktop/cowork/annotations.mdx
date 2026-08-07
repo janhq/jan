@@ -1,0 +1,74 @@
+---
+title: Annotations
+description: Draw on a preview, attach notes to elements, and send the marked-up screenshot back to the agent.
+keywords:
+  [Jan, Jan Desktop, Cowork, annotations, visual feedback, preview, screenshot]
+---
+
+import { Callout } from 'nextra/components'
+
+# Annotations
+
+Describing a visual problem in words is slow. *"The score is too close to the top-left, and the
+button under it should be centred"* takes longer to write than to point at.
+
+Annotations let you point. Draw on the preview, attach notes where they belong, and send the
+marked-up image to the agent as part of your next message.
+
+## Marking up a preview
+
+Open a preview in the side panel and click the **pencil** in the panel header.
+
+The toolbar gives you four tools:
+
+| Tool | Shortcut | What it does |
+|---|---|---|
+| Select | `V` | Click an element to inspect and pin it |
+| Pencil | `P` | Freehand drawing |
+| Arrow | `A` | Point at something |
+| Text | `T` | Drop a note anywhere |
+
+Also: `⌘Z` / `Ctrl+Z` to undo, `Esc` to leave annotation mode.
+
+Colour and stroke width live behind the swatch in the toolbar, and only appear once you've picked a
+drawing tool.
+
+## Adding notes
+
+Notes are offered, never forced. Finish a stroke and a small **+** appears at its tip; click an
+element with the Select tool and a **Note** button appears next to it. Click either to type.
+
+Committed notes render as numbered cards with a line back to whatever they're about, so a screenshot
+with four notes on it is still readable.
+
+Press `Enter` to save a note, `Esc` to discard it.
+
+## Sending it
+
+Once you've drawn something, **Send to model** appears at the bottom of the preview.
+
+Jan renders the page underneath your marks and combines the two into one image, which lands as a
+thumbnail in the chat input. Type your message alongside it and send — the agent sees the page and
+your annotations together.
+
+<Callout type="info">
+  Rendering the page takes a moment. Jan renders it fresh rather than screenshotting the panel, so
+  the image the agent gets is the full page at the size you were looking at.
+</Callout>
+
+## Requirements and limits
+
+**HTML and SVG only.** Markdown and image previews can't be rendered by the annotation pipeline, so
+the pencil doesn't appear for them.
+
+**Needs a Chromium-based browser installed.** Jan uses it to render the page behind your marks. It
+looks for Chrome, Chromium, Brave, or Edge in the usual locations, or wherever `CHROME_PATH` points.
+
+If it can't find one, the send stops and tells you, rather than sending an image with nothing behind
+the drawings. You can then choose **Send marks only** if the drawings alone are useful — the agent
+still has the source file.
+
+## Related
+
+- [Artifacts](./artifacts) — previewing and inspecting what the agent built
+- [Side panels](./panels) — where the preview lives

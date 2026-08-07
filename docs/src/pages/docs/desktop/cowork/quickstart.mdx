@@ -1,0 +1,88 @@
+---
+title: Cowork Quickstart
+description: Pick a folder, give the agent a task, and review what it changed.
+keywords: [Jan, Jan Desktop, Cowork, quickstart, coding agent, getting started]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Cowork Quickstart
+
+<Steps>
+
+### Open Cowork
+
+Click **Cowork** in the left sidebar.
+
+### Pick a folder
+
+Click **Select folder** and choose the project you want to work on. Everything the agent does is
+scoped to this folder — it cannot read or write outside it.
+
+The folder and its git branch show under the input box, so you always know where you are.
+
+<Callout type="warning">
+  Start on a branch you don't mind changing, or one you can throw away. The agent edits files in
+  place.
+</Callout>
+
+### Pick a model
+
+Use the model picker next to the input, or type `/models`. Cowork works best with models that are
+good at tool calling.
+
+### Describe the task
+
+Write what you want in plain language. You don't need to name files — the agent will search for
+them.
+
+```
+Add a --dry-run flag to the CLI so it prints the commands it would run
+instead of running them. Update the README too.
+```
+
+To point at a specific file, type `@` and start typing its path.
+
+### Approve as it goes
+
+In the default mode the agent stops and asks before it writes, edits, or runs anything. A write or
+edit shows the diff first; a shell command shows the exact command. **Allow** or **Deny**.
+
+If you'd rather review everything at the end, see [Run modes](./run-modes).
+
+### Review what changed
+
+Open the **Agent changes** panel to see every write and edit from this session in one place. The
+**Progress** panel shows the todo list the agent is working through.
+
+### Keep going
+
+Type your next message any time — even mid-run. It queues and sends when the current turn finishes.
+
+</Steps>
+
+## Useful commands
+
+| Command | What it does |
+|---|---|
+| `/help` | List available commands |
+| `/models` | Switch the active model |
+| `/goal <condition>` | Keep working until a condition is met |
+| `/compact` | Summarize older turns to free up context |
+| `/clear` | Clear this session |
+
+## When a run goes wrong
+
+**Stop it.** Cancel ends the current run. Anything already written to disk stays written — cancel
+stops the agent, it doesn't undo its work.
+
+**Check the diff.** The Agent changes panel is the fastest way to see what actually happened, and
+git will tell you the rest.
+
+**Running out of context?** Watch the token counter near the input. `/compact` summarizes older
+turns so you can keep going without starting over.
+
+## Next
+
+- [Run modes](./run-modes) — how much to approve, and when
+- [Artifacts](./artifacts) — previewing what the agent built

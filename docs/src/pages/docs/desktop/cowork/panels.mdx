@@ -1,0 +1,64 @@
+---
+title: Side Panels
+description: Watch the agent's plan, review its changes, follow its subagents, and preview what it built.
+keywords:
+  [Jan, Jan Desktop, Cowork, panels, diffs, progress, todos, subagents, preview]
+---
+
+# Side Panels
+
+The right-hand panel shows one of four views. Drag its left edge to resize it, or close it to give
+the transcript the full width.
+
+## Progress
+
+The todo list the agent is working through, grouped into phases.
+
+The agent maintains this itself — it breaks the task down, then checks items off as it goes. It's
+the fastest way to answer "how far in is it, and does its plan match what I asked for?"
+
+If the plan is wrong, say so mid-run. You don't have to wait for it to finish being wrong.
+
+See [Goals & todos](../../agent/goals-and-todos) for how the agent decides what goes on the list.
+
+## Agent changes
+
+Every write and edit from this session, as diffs, in one place.
+
+The transcript shows changes in the order they happened, interleaved with everything else. This
+panel is just the changes — the view you want before you commit, or when you're trying to work out
+what the agent touched twenty turns ago.
+
+## Background tasks
+
+Live state for every [subagent](../../agent/subagents) the run has started.
+
+Each row shows the agent's name, what it's working on, and whether it's queued, running, or done.
+Ten subagents run at a time by default; the rest queue and start as slots free up.
+
+You can cancel a single subagent from here without stopping the main run.
+
+## Preview
+
+Renders a file the agent produced — HTML, SVG, markdown, images, video, audio, or source with syntax
+highlighting.
+
+Pick a file from the list at the top of the panel. **Reload from disk** re-reads the file, so it is
+always showing what's actually on disk rather than a cached copy.
+
+For HTML and SVG you can also [annotate the preview](./annotations) — draw on it, attach notes, and
+send the result back to the agent.
+
+### About the sandbox
+
+Previews of model-generated HTML run in a sandboxed frame with no network access. That keeps
+generated pages from reaching out anywhere, with one visible consequence: relative asset references
+like `./logo.png` or `style.css` can't resolve inside the frame.
+
+When that happens the preview says so, with a count. The files are fine on disk — they just can't
+load in the preview. Jan tells you rather than showing a broken page as if it were correct.
+
+## Related
+
+- [Artifacts](./artifacts) — the full library of what the agent produced
+- [Subagents](../../agent/subagents) — how delegation works
