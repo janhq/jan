@@ -10,7 +10,7 @@ import { Callout } from 'nextra/components'
 
 Type `/` in the input to filter the list as you type. <kbd>Enter</kbd> runs the highlighted command.
 
-Installed project skills ([Skills](/docs/agent/skills)) join the same popup: typing `/deploy` matches a skill named `deploy` (magenta row, alongside the cyan commands), <kbd>Tab</kbd> completes it, and <kbd>Enter</kbd> tells the agent to follow the skill. Disabled skills (via `[skills].enabled`) are not offered.
+Installed project skills ([Skills](/docs/agent/skills)) join the same popup: typing `/deploy` matches a skill named `deploy` (magenta row, alongside the cyan commands), <kbd>Tab</kbd> completes it, and <kbd>Enter</kbd> tells the agent to follow the skill. Disabled skills (via `[skills].enabled`) are not offered, and neither are `user-invocable: false` skills - those stay agent-invoked only.
 
 Skills accept arguments, and there are two ways to invoke one:
 

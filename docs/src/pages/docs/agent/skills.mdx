@@ -55,6 +55,28 @@ You can write the file yourself, or ask the agent to:
 Write a skill for how we cut releases, based on what you see in CHANGELOG.md and the CI config
 ```
 
+## Who can invoke a skill
+
+A skill has two invocation sides, like the wider SKILL.md ecosystem. By default
+both are open:
+
+- **User-invoked** - you type `/release` (or `/skill:release`) in the console, or
+  pick it from the slash popup.
+- **Model-invoked** - the agent sees the skill's `description` in its catalog and
+  can fire it on its own by loading it with `skill_read`.
+
+Frontmatter closes either side:
+
+- `user-invocable: false` - the human's popup and `/skill:` no longer offer it;
+  the agent can still fire it. Use for skills that should only run as part of an
+  agent's judgment.
+- `disable-model-invocation: true` - the agent's catalog and `skill_read` no
+  longer see it; only you can invoke it. Its description costs zero context,
+  at the price that you must remember it exists. Use for personal procedures.
+- Both keys set - the skill is private: neither side offers it.
+
+The `[skills].enabled` whitelist is orthogonal and applies to both sides.
+
 ## Tools
 
 | Tool | Approval |
