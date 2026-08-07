@@ -165,7 +165,7 @@ pub async fn execute_builtin(
         // (`<name>/SKILL.md`) and frontmatter, matching what the UI writes.
         "skill_list" => skill_list(ctx),
         "skill_read" => skill_read(args, ctx),
-        "skill_write" => skill_write(args, ctx.store_root),
+        "skill_write" => skill_write(args, ctx),
         // Native web tools: compiled into the agent core, not an MCP server.
         "web_search" => crate::tools::web::web_search(args).await,
         "web_fetch" => crate::tools::web::web_fetch(args).await,
@@ -418,14 +418,20 @@ fn skill_read(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
 }
 
 /// `skill_write` tool: create/update a skill (new ones as `<name>/SKILL.md`).
-fn skill_write(args: &serde_json::Value, store: &Path) -> String {
+/// The `[skills].enabled` whitelist is honored for writes too: a disabled skill
+/// is treated as read-only so the model cannot silently overwrite (or resurrect)
+/// a skill the user has turned off or locked out of the catalog.
+fn skill_write(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let Some(name) = arg_str(args, "name") else {
         return "ERROR: missing required argument 'name'".to_string();
     };
     let Some(content) = arg_str(args, "content") else {
         return "ERROR: missing required argument 'content'".to_string();
     };
-    match skills::write(store, name, content) {
+    if !skills::is_enabled(ctx.enabled_skills, name) {
+        return format!("ERROR: skill '{name}' is disabled and read-only");
+    }
+    match skills::write(ctx.store_root, name, content) {
         Ok(()) => format!("Wrote skill '{name}'"),
         Err(e) => e,
     }
@@ -2187,6 +2193,26 @@ mod tests {
             super::execute_builtin(lookup("skill_read").unwrap(), &json!({"name": "on"}), &ctx)
                 .await;
         assert_eq!(read_on, "on body");
+
+        // A disabled skill is read-only for the model: writing to it is refused
+        // and the on-disk content is untouched.
+        let write_off = super::execute_builtin(
+            lookup("skill_write").unwrap(),
+            &json!({"name": "off", "content": "evil body"}),
+            &ctx,
+        )
+        .await;
+        assert!(
+            write_off.starts_with("ERROR"),
+            "disabled write: {write_off}"
+        );
+        let r = super::execute_builtin(
+            lookup("skill_read").unwrap(),
+            &json!({"name": "off"}),
+            &ctx,
+        )
+        .await;
+        assert!(r.starts_with("ERROR"), "still disabled after write");
         let _ = std::fs::remove_dir_all(&root);
     }
 

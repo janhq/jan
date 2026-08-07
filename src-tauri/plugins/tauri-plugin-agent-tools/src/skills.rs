@@ -263,13 +263,22 @@ pub fn read_body(store: &Path, name: &str) -> Result<String, String> {
 pub fn write(store: &Path, name: &str, content: &str) -> Result<(), String> {
     let stem = safe_stem(name)?;
     let dir = skills_dir(store);
+    let folder = dir.join(&stem);
+    let folder_skill = folder.join("SKILL.md");
+    // Mirror `resolve`/`discover`: the folder form `<name>/SKILL.md` is the
+    // canonical one and wins over a legacy flat `<name>.md`. When the folder
+    // form is absent we fall back to the flat file if one exists; a fresh skill
+    // is created as the folder form. So an edit always lands where the skill
+    // will be read back from, instead of updating a stale flat file that
+    // `resolve` ignores (which would silently swallow the edit).
     let flat = dir.join(format!("{stem}.md"));
-    let target = if flat.is_file() {
+    let target = if folder_skill.is_file() {
+        folder_skill
+    } else if flat.is_file() {
         flat
     } else {
-        let folder = dir.join(&stem);
         std::fs::create_dir_all(&folder).map_err(|e| format!("ERROR: {e}"))?;
-        folder.join("SKILL.md")
+        folder_skill
     };
     std::fs::write(&target, content).map_err(|e| format!("ERROR: {e}"))
 }
@@ -383,6 +392,34 @@ mod tests {
         write(&root, "legacy", "new").unwrap();
         assert_eq!(std::fs::read_to_string(dir.join("legacy.md")).unwrap(), "new");
         assert!(!dir.join("legacy").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_prefers_folder_form_when_both_exist() {
+        // When a folder form and a legacy flat form share a name, `resolve` and
+        // `discover` read the folder form. `write` must land on the same file so
+        // an edit isn't swallowed into a flat file the reader ignores.
+        let root = std::env::temp_dir().join(format!(
+            "jan_skills_both_{}",
+            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+        ));
+        let dir = skills_dir(&root);
+        std::fs::create_dir_all(dir.join("dup")).unwrap();
+        std::fs::write(dir.join("dup").join("SKILL.md"), "folder").unwrap();
+        std::fs::write(dir.join("dup.md"), "flat").unwrap();
+
+        write(&root, "dup", "updated").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("dup").join("SKILL.md")).unwrap(),
+            "updated",
+            "the folder form, which resolve reads, must receive the edit"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("dup.md")).unwrap(),
+            "flat",
+            "the stale flat form must be left untouched"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }

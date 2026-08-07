@@ -319,12 +319,16 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
          (allow process-fork)\n\
          (allow signal (target same-sandbox))\n\
          (allow process-info* (target same-sandbox))\n\
+         ; Read-only sysctl (uname, hostname, env probes) -- a read-only open, LOW risk.\n\
          (allow sysctl-read)\n\
          ; openpty() and friends, so interactive-ish tools detect a tty.\n\
          (allow pseudo-tty)\n\
          (allow file-read* file-write* file-ioctl (literal \"/dev/ptmx\"))\n\
          (allow file-ioctl (regex #\"^/dev/ttys[0-9]+\"))\n\
-         ; Python multiprocessing and OpenMP runtimes.\n\
+         ; Python multiprocessing and OpenMP runtimes. Their shared POSIX shm/sem\n\
+         ; names are host-wide and cannot be scoped per-sandbox on sandbox-exec\n\
+         ; (also deprecated / not a security boundary per Apple) -- accepted tradeoff;\n\
+         ; the real boundary is the $HOME / MASK_ROOT read denial below.\n\
          (allow ipc-posix-sem)\n\
          (allow ipc-posix-shm*)\n\
          (allow mach-lookup (global-name \"com.apple.system.opendirectoryd.libinfo\"))\n\
@@ -610,9 +614,26 @@ mod enforcement_tests {
 
     static N: AtomicUsize = AtomicUsize::new(0);
 
+    /// The canonical temp dir. On macOS `std::env::temp_dir()` returns the
+    /// `/var/folders/...` symlinked form while `sandbox-exec` matches the
+    /// canonical `/private/var/folders/...` path, so denying the symlinked form
+    /// (and the workspace built on top of it) is silently bypassed. Resolving the
+    /// symlink keeps the enforcement tests meaningful on macOS. A no-op elsewhere.
+    fn temp_dir() -> PathBuf {
+        let tmp = std::env::temp_dir();
+        #[cfg(target_os = "macos")]
+        {
+            return tmp.canonicalize().unwrap_or(tmp);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            tmp
+        }
+    }
+
     fn workspace() -> PathBuf {
         let n = N.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!("jan_jail_{}_{}", std::process::id(), n));
+        let dir = temp_dir().join(format!("jan_jail_{}_{}", std::process::id(), n));
         std::fs::create_dir_all(&dir).expect("create workspace");
         dir
     }

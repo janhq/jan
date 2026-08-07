@@ -2307,10 +2307,10 @@ const ChatInput = memo(function ChatInput({
                     <TooltipContent>
                       <p>
                         {isJanBrowserMCPLoading
-                          ? 'Starting...'
+                          ? t('common:starting')
                           : janBrowserMCPActive
-                            ? 'Browse (Active)'
-                            : 'Browse'}
+                            ? t('common:browse') + t('common:activeSuffix')
+                            : t('common:browse')}
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -2450,7 +2450,7 @@ const ChatInput = memo(function ChatInput({
                     <TooltipContent>
                       <p>
                         {webSearchEnabled
-                          ? t('common:web_search') + ' (Active)'
+                          ? t('common:web_search') + t('common:activeSuffix')
                           : t('common:web_search')}
                       </p>
                     </TooltipContent>
@@ -2478,7 +2478,7 @@ const ChatInput = memo(function ChatInput({
                     <TooltipContent>
                       <p>
                         {agentToolsEnabled
-                          ? t('common:agent_tools') + ' (Active)'
+                          ? t('common:agent_tools') + t('common:activeSuffix')
                           : t('common:agent_tools')}
                       </p>
                     </TooltipContent>

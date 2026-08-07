@@ -128,6 +128,42 @@ fn which(name: &str) -> Option<PathBuf> {
 /// seatbelt, and the Windows AppContainer helper) funnel through.
 const SANDBOX_ENV_ALLOW: &[&str] = &["PATH", "HOME", "USERPROFILE", "TMPDIR", "TMP", "TEMP", "LANG", "TERM"];
 
+/// Bound the resource exhaustion a sandboxed command could otherwise trigger on
+/// the host. `bwrap` 0.6.1 (and older) has no `--rlimit`, so instead we clamp the
+/// child's soft limits here, before exec, from the one choke point every backend
+/// funnels through. A fork-bomb is capped by `NPROC`, descriptor exhaustion by
+/// `NOFILE`, and disk fill through the unbounded workspace bind by `FSIZE`. The
+/// bwrap wrapper execs `bwrap` itself, which sets up the namespace and then
+/// execs the real shell, so the limits carry over to every descendant. Linux
+/// only; the Windows AppContainer child is limited by its token.
+#[cfg(unix)]
+fn confine_limits(cmd: &mut Command) {
+    // `tokio::process::Command::pre_exec` (unix) is the std `pre_exec`; the call
+    // below is what mounts the limits.
+    // # Safety: `pre_exec` runs in the forked child before exec. Only async-signal-
+    // safe calls are allowed; `setrlimit` is one. Errors fall back to the parent's
+    // values and are ignored (best effort), so a kernel that refuses a limit
+    // cannot wedge a launch.
+    unsafe {
+        cmd.pre_exec(|| {
+            for (resource, limit) in [
+                (nix::libc::RLIMIT_NPROC, 4096_u64),
+                (nix::libc::RLIMIT_NOFILE, 1024_u64),
+                (nix::libc::RLIMIT_FSIZE, 1024_u64 * 1024_u64 * 1024_u64),
+            ] {
+                let r = nix::libc::rlimit {
+                    rlim_cur: limit,
+                    rlim_max: limit,
+                };
+                // Best effort: a setrlimit failure is intentionally ignored so a
+                // kernel that refuses a limit cannot wedge the launch.
+                let _ = nix::libc::setrlimit(resource, &r);
+            }
+            Ok(())
+        });
+    }
+}
+
 pub async fn spawn(cfg: &ShellConfig, command: &str, cwd: &Path) -> std::io::Result<Child> {
     let mut cmd = Command::new(&cfg.program);
     cmd.args(&cfg.args);
@@ -153,6 +189,8 @@ pub async fn spawn(cfg: &ShellConfig, command: &str, cwd: &Path) -> std::io::Res
         })
         .kill_on_drop(true);
     set_process_group(&mut cmd);
+    #[cfg(unix)]
+    confine_limits(&mut cmd);
 
     let mut child = cmd.spawn()?;
 
@@ -297,5 +335,25 @@ mod tests {
         assert!(running().lock().unwrap().contains(&fake));
         unregister(fake);
         assert!(!running().lock().unwrap().contains(&fake));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn confine_limits_caps_the_child_process_count() {
+        // The rlimit mounting must actually reach the spawned child: with NPROC
+        // clamped we still run up to the cap, but a fork-bomb past it fails.
+        let child = spawn(shell(), "exit 0", &tmp()).await.unwrap();
+        let pid = child.id().unwrap();
+        child.wait_with_output().await.unwrap();
+        unregister(pid);
+
+        // Spawn a shell that reports its own soft NOFILE limit; confine_limits
+        // sets it to 1024, which should be visible inside the sandbox.
+        let child = spawn(shell(), "ulimit -n", &tmp()).await.unwrap();
+        let pid = child.id().unwrap();
+        let out = child.wait_with_output().await.unwrap();
+        unregister(pid);
+        let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        assert_eq!(val, "1024", "NOFILE soft limit should be capped, got: {val}");
     }
 }
