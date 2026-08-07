@@ -429,6 +429,7 @@ pub fn cli_agent_status(
             "deny": cfg.tools.deny,
             "allow_write": cfg.tools.allow_write,
             "allow_network": cfg.tools.allow_network,
+            "allow_home_read": cfg.tools.allow_home_read,
         },
         "providers": providers,
     }))

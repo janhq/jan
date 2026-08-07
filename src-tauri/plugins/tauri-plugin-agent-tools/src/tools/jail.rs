@@ -7,8 +7,10 @@
 //! - reads: everything except `$HOME`, with the thread workspace carved back in
 //!   (it lives under `$HOME`, so the carve-out is what keeps the sandbox usable
 //!   while `settings.json`, provider keys, and the rest of the Jan data folder
-//!   stay unreadable). Reads outside `$HOME` stay open because a process cannot
-//!   start without its interpreter, loader, and libraries.
+//!   stay unreadable). The CLI can opt into `home_readonly`, which instead
+//!   mounts `$HOME` read-only so `git`/`ssh` credential helpers work. Reads
+//!   outside `$HOME` stay open because a process cannot start without its
+//!   interpreter, loader, and libraries.
 //! - writes: the thread workspace and a private temp dir, nothing else.
 //! - network: denied unless explicitly allowed.
 //!
@@ -70,6 +72,13 @@ pub struct Policy {
     /// masking it would hide the very files the agent works on.
     pub mask_root: Option<PathBuf>,
     pub allow_network: bool,
+    /// Expose `$HOME` to the sandboxed shell read-only instead of hiding it.
+    /// The CLI turns this on so helpers that read the user's home (`git`/`ssh`
+    /// credential helpers, `~/.ssh/config`, `~/.netrc`) work, while writes stay
+    /// confined to the workspace at the mount/policy layer. Off by default: the
+    /// desktop keeps the full isolation so `settings.json` and provider keys
+    /// stay out of the shell's reach.
+    pub home_readonly: bool,
 }
 
 impl Policy {
@@ -78,6 +87,7 @@ impl Policy {
             workspace: workspace.to_path_buf(),
             mask_root: None,
             allow_network,
+            home_readonly: false,
         }
     }
 
@@ -87,6 +97,12 @@ impl Policy {
     /// thread workspace (nested under it) is re-bound on top so it survives.
     pub fn with_mask_root(mut self, mask_root: &Path) -> Self {
         self.mask_root = Some(mask_root.to_path_buf());
+        self
+    }
+
+    /// Expose `$HOME` read-only instead of masking it. See [`Policy::home_readonly`].
+    pub fn with_home_readonly(mut self, home_readonly: bool) -> Self {
+        self.home_readonly = home_readonly;
         self
     }
 }
@@ -262,8 +278,17 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     // An empty tmpfs over $HOME hides user files without needing a deny rule.
     // The workspace is re-bound on top, so it survives while its siblings (the
     // permanent memory/skills store, settings.json, model files) do not.
+    //
+    // With `home_readonly` the CLI instead mounts $HOME read-only so helpers
+    // that read it (git/ssh credential helpers, ~/.ssh/config, ~/.netrc) work;
+    // the read-only mount is what keeps writes out even if the command tries.
+    // It is deliberately read-only, so no later rw bind can shadow it.
     if let Some(home) = home_dir() {
-        push(&mut args, &["--tmpfs", &home.to_string_lossy()]);
+        if policy.home_readonly {
+            push(&mut args, &["--ro-bind", &home.to_string_lossy(), &home.to_string_lossy()]);
+        } else {
+            push(&mut args, &["--tmpfs", &home.to_string_lossy()]);
+        }
     }
     // Mask a relocated data folder the same way: `$HOME` hiding alone would leave
     // a `JAN_DATA_FOLDER` outside the home readable, exposing the permanent
@@ -309,7 +334,8 @@ fn seatbelt_program() -> &'static str {
 
 /// Seatbelt profile. `(deny default)` closes everything, then each section opens
 /// the narrowest thing that works. Later rules win, which is what lets the
-/// workspace be re-allowed after `$HOME` is denied.
+/// workspace be re-allowed after `$HOME` is denied (or, with `home_readonly`,
+/// lets the home stay readable while writes remain confined).
 pub fn seatbelt_policy(policy: &Policy) -> String {
     let mut p = String::from(
         "(version 1)\n\
@@ -337,7 +363,7 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
          ; Reads: open, minus the user's home, plus the workspace back.\n\
          (allow file-read*)\n",
     );
-    if home_dir().is_some() {
+    if home_dir().is_some() && !policy.home_readonly {
         p.push_str("(deny file-read* (subpath (param \"HOME_ROOT\")))\n");
     }
     if policy.mask_root.is_some() {
@@ -431,9 +457,13 @@ pub fn denial_hint(policy: &Policy) -> String {
     } else {
         " Network access is disabled."
     };
+    let home = if policy.home_readonly {
+        ""
+    } else {
+        " and files under your home directory are not readable"
+    };
     format!(
-        "\n[sandbox: writes are limited to the workspace ({}) and files under \
-         your home directory are not readable.{net}]",
+        "\n[sandbox: writes are limited to the workspace ({}){home}.{net}]",
         policy.workspace.display()
     )
 }
@@ -480,6 +510,26 @@ mod tests {
     }
 
     #[test]
+    fn bwrap_masks_home_by_default_and_reads_it_when_configured() {
+        let Some(home) = home_dir() else {
+            panic!("test needs a HOME");
+        };
+        let home = home.to_string_lossy();
+        let ro_bind = format!("--ro-bind {home} {home}");
+        let tmpfs = format!("--tmpfs {home}");
+
+        // Default: an empty tmpfs hides the home.
+        let masked = joined(&bwrap_args(&policy(), &cfg()));
+        assert!(masked.contains(&tmpfs), "{masked}");
+        assert!(!masked.contains(&ro_bind), "{masked}");
+
+        // home_readonly: the home is bound read-only instead of hidden.
+        let ro = joined(&bwrap_args(&policy().with_home_readonly(true), &cfg()));
+        assert!(!ro.contains(&tmpfs), "{ro}");
+        assert!(ro.contains(&ro_bind), "{ro}");
+    }
+
+    #[test]
     fn bwrap_denies_network_unless_allowed() {
         let denied = joined(&bwrap_args(&policy(), &cfg()));
         assert!(denied.contains("--unshare-all"));
@@ -517,6 +567,16 @@ mod tests {
         let p = seatbelt_policy(&policy());
         assert!(p.starts_with("(version 1)\n(deny default)"));
         assert!(p.contains("(allow file-read*)"));
+    }
+
+    #[test]
+    fn seatbelt_keeps_home_readable_but_unwritable_when_configured() {
+        // home_readonly: no home read-denial, and the write section never opens
+        // HOME_ROOT, so reads work but writes stay confined to workspace/temp.
+        let p = seatbelt_policy(&policy().with_home_readonly(true));
+        assert!(!p.contains("(deny file-read* (subpath (param \"HOME_ROOT\")))"), "{p}");
+        assert!(p.contains("(allow file-read*)"), "{p}");
+        assert!(!p.contains("(allow file-write* (subpath (param \"HOME_ROOT\")))"), "{p}");
     }
 
     #[test]
@@ -785,6 +845,39 @@ mod enforcement_tests {
             !out.contains("TOPSECRET"),
             "home files must be unreadable, got: {out}"
         );
+    }
+
+    #[tokio::test]
+    async fn home_is_readable_and_writes_stay_confined_when_home_readonly() {
+        require_backend!();
+        let Some(home) = home_dir() else {
+            eprintln!("skipping: no HOME set");
+            return;
+        };
+        // A file in the real home the sandbox must now be able to read...
+        let secret = home.join(format!(".jan_jail_ro_read_{}", std::process::id()));
+        if std::fs::write(&secret, b"READABLE_SECRET").is_err() {
+            eprintln!("skipping: home not writable");
+            return;
+        }
+        let ws = workspace();
+        let policy = Policy::new(&ws, false).with_home_readonly(true);
+        // ...read it back, and fail to write a second file into the home.
+        let victim = home.join(format!(".jan_jail_ro_write_{}", std::process::id()));
+        let _ = std::fs::remove_file(&victim);
+        let command = format!(
+            "cat {} && echo pwned > {}",
+            secret.to_string_lossy(),
+            victim.to_string_lossy()
+        );
+        let (ok, out) = run_policy(policy, &ws, &command).await;
+        let leaked = victim.exists();
+        let _ = std::fs::remove_file(&secret);
+        let _ = std::fs::remove_file(&victim);
+        let _ = std::fs::remove_dir_all(&ws);
+        assert!(out.contains("READABLE_SECRET"), "home reads must work: {out}");
+        assert!(!leaked, "home writes must stay confined even when readable: {out}");
+        assert!(!ok, "the write into the home must fail: {out}");
     }
 
     #[tokio::test]

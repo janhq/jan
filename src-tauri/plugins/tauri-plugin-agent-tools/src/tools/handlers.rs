@@ -647,7 +647,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
 
     // No confinement available means no shell: running unsandboxed would give the
     // command the whole machine, which is never what the caller asked for.
-    let mut policy = jail::Policy::new(root, ctx.allow_network);
+    let mut policy = jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
     if let Some(mask) = ctx.mask_root {
         policy = policy.with_mask_root(mask);
     }

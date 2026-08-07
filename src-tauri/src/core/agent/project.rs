@@ -99,6 +99,12 @@ pub(crate) struct ToolsSection {
     /// sandbox does not and denies it.
     #[serde(default)]
     pub allow_network: Option<bool>,
+    /// Whether the sandboxed shell may read the user's home directory (the
+    /// CLI, for `git`/`ssh` credential helpers). `None` (unset) leaves the
+    /// choice to the surface: the CLI defaults to true, the desktop masks
+    /// `$HOME` entirely. Writes are confined to the workspace either way.
+    #[serde(default)]
+    pub allow_home_read: Option<bool>,
 }
 
 const AGENT_TOML_TEMPLATE: &str = r#"[agent]
@@ -137,6 +143,10 @@ allow_write = []
 # running the agent: the CLI allows it (every exec is prompted first), the
 # desktop's throwaway chat sandbox does not.
 # allow_network = true
+# Whether the sandboxed shell can read your home directory (for git/ssh
+# credential helpers and ~/.ssh/config). Unset follows the surface: the CLI
+# allows it (true), the desktop masks $HOME. Writes stay in the workspace.
+# allow_home_read = true
 
 [skills]
 enabled = []
@@ -172,6 +182,9 @@ pub(crate) struct RunSettings {
     /// `[tools].allow_network`; `None` when unset, so the caller applies the
     /// default appropriate to its surface.
     pub allow_network: Option<bool>,
+    /// `[tools].allow_home_read`; `None` when unset, so the caller applies the
+    /// default appropriate to its surface.
+    pub allow_home_read: Option<bool>,
 }
 
 /// A missing or malformed config yields defaults rather than an error: a project
@@ -183,6 +196,7 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
     RunSettings {
         enabled_skills: cfg.skills.enabled,
         allow_network: cfg.tools.allow_network,
+        allow_home_read: cfg.tools.allow_home_read,
     }
 }
 

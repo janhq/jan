@@ -51,6 +51,9 @@ pub struct ToolContext<'a> {
     /// where it sits outside the workspace (the desktop). `None` on the CLI,
     /// where the project itself is the workspace.
     pub mask_root: Option<&'a Path>,
+    /// Expose `$HOME` to the sandboxed shell read-only (the CLI) instead of
+    /// hiding it (the desktop). Passed through to the `bash` sandbox policy.
+    pub home_readonly: bool,
 }
 
 impl<'a> ToolContext<'a> {
@@ -62,6 +65,7 @@ impl<'a> ToolContext<'a> {
             allow_network: false,
             confine_writes: false,
             mask_root: None,
+            home_readonly: false,
         }
     }
 
@@ -77,6 +81,12 @@ impl<'a> ToolContext<'a> {
 
     pub fn with_mask_root(mut self, mask_root: &'a Path) -> Self {
         self.mask_root = Some(mask_root);
+        self
+    }
+
+    /// Expose `$HOME` to the sandboxed shell read-only. See [`Self::home_readonly`].
+    pub fn with_home_readonly(mut self, home_readonly: bool) -> Self {
+        self.home_readonly = home_readonly;
         self
     }
 }

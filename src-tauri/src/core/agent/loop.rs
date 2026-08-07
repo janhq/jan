@@ -202,6 +202,9 @@ struct CompositeToolInvoker {
     /// per run from `[tools].allow_network`, falling back to the surface
     /// default when unset.
     allow_network: bool,
+    /// Whether the sandboxed shell may read `$HOME`. Resolved once per run
+    /// from `[tools].allow_home_read`, falling back to `true` on the CLI.
+    allow_home_read: bool,
     permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
@@ -235,11 +238,23 @@ fn resolve_allow_network(configured: Option<bool>) -> bool {
     configured.unwrap_or(DEFAULT_ALLOW_NETWORK)
 }
 
+/// Default for whether the sandboxed shell can read `$HOME`, used when
+/// `[tools].allow_home_read` is unset. The CLI needs it for `git`/`ssh`
+/// credential helpers; the desktop masks the home entirely, so only the CLI
+/// default is ever consulted here (`resolve_run_settings` is CLI-only).
+const DEFAULT_ALLOW_HOME_READ: bool = true;
+
+/// `[tools].allow_home_read` wins over the surface default when set.
+fn resolve_allow_home_read(configured: Option<bool>) -> bool {
+    configured.unwrap_or(DEFAULT_ALLOW_HOME_READ)
+}
+
 /// agent.toml resolved for one run: the skill whitelist, plus the network
 /// decision with this surface's default already applied.
 struct ResolvedSettings {
     enabled_skills: Vec<String>,
     allow_network: bool,
+    allow_home_read: bool,
 }
 
 /// Kept out of the invoker's struct literal so it is reachable from a test.
@@ -250,6 +265,7 @@ fn resolve_run_settings(project_root: &std::path::Path) -> ResolvedSettings {
     ResolvedSettings {
         enabled_skills: settings.enabled_skills,
         allow_network: resolve_allow_network(settings.allow_network),
+        allow_home_read: resolve_allow_home_read(settings.allow_home_read),
     }
 }
 
@@ -261,6 +277,7 @@ impl CompositeToolInvoker {
             &self.enabled_skills,
         )
         .with_network(self.allow_network)
+        .with_home_readonly(self.allow_home_read)
     }
 
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
@@ -707,9 +724,11 @@ impl ToolInvoker for CompositeToolInvoker {
                 let store = self.store_root.clone();
                 let enabled = self.enabled_skills.clone();
                 let allow_network = self.allow_network;
+                let allow_home_read = self.allow_home_read;
                 read_futures.push(async move {
                     let ctx = ToolContext::new(&root, &store, &enabled)
-                        .with_network(allow_network);
+                        .with_network(allow_network)
+                        .with_home_readonly(allow_home_read);
                     let (text, diff) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
                         id,
@@ -1363,6 +1382,7 @@ async fn orchestrate_inner(
             store_root: tauri_plugin_agent_tools::workspace::project_store(root),
             enabled_skills: settings.enabled_skills,
             allow_network: settings.allow_network,
+            allow_home_read: settings.allow_home_read,
             project_root: root.clone(),
             permissions: permissions.clone(),
             events: events.clone(),
@@ -2656,6 +2676,7 @@ mod tests {
             store_root: tauri_plugin_agent_tools::workspace::project_store(&root),
             enabled_skills: Vec::new(),
             allow_network: DEFAULT_ALLOW_NETWORK,
+            allow_home_read: DEFAULT_ALLOW_HOME_READ,
             project_root: root,
             // Read-only default => write PROMPTS.
             permissions: ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
@@ -2720,6 +2741,15 @@ mod tests {
         assert_eq!(resolve_allow_network(None), DEFAULT_ALLOW_NETWORK);
     }
 
+    /// `[tools].allow_home_read` likewise overrides the CLI default (on by
+    /// default) in both directions, so a project can lock `$HOME` back down.
+    #[test]
+    fn configured_allow_home_read_overrides_the_default() {
+        assert!(resolve_allow_home_read(Some(true)));
+        assert!(!resolve_allow_home_read(Some(false)));
+        assert_eq!(resolve_allow_home_read(None), DEFAULT_ALLOW_HOME_READ);
+    }
+
     /// The CLI agent's shell keeps its network namespace. Before the sandbox
     /// existed this shell ran fully unconfined, so flipping this to `false`
     /// silently breaks `curl`, `git fetch` and package installs while every
@@ -2737,6 +2767,24 @@ mod tests {
         assert!(
             invoker.tool_context().allow_network,
             "CLI shell must keep its network namespace"
+        );
+    }
+
+    /// The CLI shell reads `$HOME` (so git/ssh credential helpers work) unless
+    /// the project explicitly opts out.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn cli_tool_context_reads_home() {
+        let root = std::path::PathBuf::from("/tmp/jan-home-check");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
+        assert!(
+            invoker.tool_context().home_readonly,
+            "CLI shell must read $HOME"
         );
     }
 
