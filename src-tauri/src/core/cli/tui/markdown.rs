@@ -18,6 +18,30 @@ pub(super) fn format_assistant_lines(text: &str, width: u16) -> Vec<Line<'static
     lines
 }
 
+/// Live tail rendering for the in-progress assistant buffer. With reasoning
+/// folding on (`fold_reasoning`), an open (unterminated) think block is hidden
+/// entirely so the user sees only the answer prose stream, matching the
+/// `[thinking]` header state; once the tag closes (or prose begins) the rest
+/// renders as usual. When folding is off this is identical to
+/// `format_assistant_lines`, so the existing live-tail tests hold.
+pub(super) fn live_assistant_lines(text: &str, width: u16, fold_reasoning: bool) -> Vec<Line<'static>> {
+    if !fold_reasoning {
+        return format_assistant_lines(text, width);
+    }
+    let mut lines = Vec::new();
+    for (reasoning, seg) in super::split_reasoning(text) {
+        if reasoning {
+            // Folded: the streaming content is hidden; nothing to show. (Once it
+            // commits, `push_assistant_blocks` emits the summary row instead.)
+            continue;
+        }
+        if !seg.trim().is_empty() {
+            lines.extend(format_markdown_lines(&seg, width));
+        }
+    }
+    lines
+}
+
 /// A reasoning block's full dimmed lines (`┊ ` gutter, dim italic body).
 pub(super) fn reasoning_detail_lines(seg: &str) -> Vec<Line<'static>> {
     seg.lines()
