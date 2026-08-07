@@ -1156,7 +1156,7 @@ function CodePage() {
                 onSubmit={handleSubmit}
                 onStop={handleStop}
                 chatStatus={running ? 'streaming' : 'ready'}
-                queueKey={currentId ?? undefined}
+                scopeKey={currentId ?? undefined}
               />
               </div>
             </div>
