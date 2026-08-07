@@ -50,11 +50,12 @@ See [Run modes](/docs/agent/run-modes), [Goals and todos](/docs/agent/goals-and-
 | --- | --- |
 | `/model [id]` | Switch model. Bare: pick interactively |
 | `/mcp` | Enable or disable MCP servers |
+| `/plugin [list\|install <spec>\|remove <name>\|search [query]]` | Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace |
 | `/login` | Sign in to Tokamak and save the API key |
 | `/config` | View provider config (`~/.jan/config.toml`) |
 | `/settings [max_parallel_subagents N]` | Edit `agent.toml` settings in an interactive menu - `[agent]` knobs (`max_turns`, `context_window`, `compaction_reserve_tokens`, `max_tokens`, `max_parallel_subagents`, `instructions_file`), `[budget]` limits, and the `[tools]` / `[skills]` toggles (Enter edits a row, `x` resets to default, Esc cancels, clearing the field unsets). `max_parallel_subagents N` works as a one-shot shortcut. Writes apply on the next run |
 
-See [Providers](/docs/agent/providers) and [MCP](/docs/agent/mcp).
+See [Providers](/docs/agent/providers), [MCP](/docs/agent/mcp), and [Plugins](/docs/agent/plugins).
 
 ## Other
 

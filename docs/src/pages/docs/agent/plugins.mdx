@@ -1,0 +1,99 @@
+---
+title: Plugins
+description: Install skills from git repos or a marketplace as plugins.
+keywords: [Jan, Jan Agent, plugins, skills, marketplace, git, install]
+---
+
+import { Callout } from 'nextra/components'
+
+# Plugins
+
+A plugin is a set of [skills](/docs/agent/skills) installed from a git repository. Any repo that
+looks like a skill collection - or is a single skill - can be installed with one command, without
+copying files by hand or trusting a download step. Installing a plugin never runs its code: a
+plugin carries instructions plus optional metadata, nothing executable.
+
+## Where they live
+
+```
+<project>/.jan/agent/plugins/
+└── release-tools/
+    ├── plugin.toml              # optional metadata (name, description, version, repo)
+    ├── skills/
+    │   └── prepare/
+    │       └── SKILL.md
+    └── ...
+```
+
+A plugin's skills are discovered conventionally, so a repo needs no manifest to be installable:
+
+- `skills/` - the same layout as project skills: folder skills (`<name>/SKILL.md`) and flat
+  `<name>.md`
+- `SKILL.md` at the repo root - a repo that is itself one skill
+- `plugin.toml` - optional metadata: `name`, `description`, `version`, `repo`. The directory name
+  is the plugin's identity; the manifest's `name` is what `plugin list` shows when present.
+
+## Installing
+
+```
+/plugin install <git-url>
+/plugin install <git-url>#<ref>        # install a specific branch or tag
+/plugin install <marketplace-name>     # resolve a name through your marketplace
+```
+
+The plugin is cloned (`--depth 1`), validated to contain `plugin.toml`, `skills/`, or a root
+`SKILL.md`, and moved into place under its final name. Reinstalling an existing plugin is refused
+(remove it first). Specs with shell metacharacters are rejected outright - a plugin name is a name,
+not a command.
+
+## Invoking plugin skills
+
+Plugin skills are qualified with their plugin name: `release-tools:prepare`.
+
+| You type | What happens |
+| --- | --- |
+| `/prepare` | The plugin skill, when the name is unambiguous |
+| `/skill:release-tools:prepare` | The exact plugin skill, always |
+| `/release-tools:prepare` | Same as the explicit form |
+
+Precedence: a project skill always wins its short name, and a plain name shared by two plugins is
+ambiguous, so only the explicit forms work. The slash popup applies the same rules - it offers the
+short form when unambiguous and the qualified form otherwise. Plugin skills flow through the same
+invocation mechanics as project skills, including the `[skills].enabled` whitelist: enable a plugin
+name (`release-tools`), one qualified skill (`release-tools:prepare`), or a plain name.
+
+## Managing
+
+```
+/plugin list                  # installed plugins and the skills they ship
+/plugin remove release-tools  # uninstall
+/plugin search prepare        # search the marketplace (name/description)
+```
+
+Removal is a directory delete under the same name guard as everything else in the agent: a name
+can never escape the plugins directory.
+
+## Marketplace
+
+Point `[plugins] marketplace` in `agent.toml` at a JSON index to install by name and search:
+
+```toml
+[plugins]
+marketplace = "https://example.com/jan-plugins/index.json"
+```
+
+```json
+[
+  { "name": "release-tools", "description": "Release automation", "repo": "https://github.com/acme/release-tools" },
+  { "name": "triage", "description": "Issue triage helpers", "repo": "https://github.com/acme/triage", "ref": "main" }
+]
+```
+
+`repo` is cloned with an optional pinned `ref` (branch or tag). Without a configured marketplace,
+`install <name>` and `search` report the missing config - direct git URLs always work.
+
+<Callout type="info">
+Plugins are shared with Jan Desktop - the same project files, through the same directory. The
+desktop agent exposes `agent_plugin_list`, `agent_plugin_install`, `agent_plugin_remove`, and
+`agent_plugin_search` for UI integration.
+</Callout>
