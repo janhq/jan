@@ -351,6 +351,12 @@ fn make_logo() -> String {
 
 #[tokio::main]
 async fn main() {
+    // Exits early if invoked as the Windows sandbox helper for a `bash` tool
+    // call: the helper's only job is to spawn the confined shell and wait, so it
+    // must run before anything else -- starting the app first would run a second
+    // copy per shell command.
+    tauri_plugin_agent_tools::run_sandbox_helper_if_requested();
+
     // Pre-scan raw args for --verbose / -v before full parse so we can set
     // the log level before any logging happens.
     let verbose = std::env::args().any(|a| a == "--verbose" || a == "-v");
@@ -600,7 +606,7 @@ async fn handle_models(cmd: ModelsCommands) {
             let mut output: Vec<serde_json::Value> = configs
                 .values()
                 .filter(|c| app_lib::core::cli::providers::is_cli_reachable(c))
-                .filter(|c| provider.as_ref().map_or(true, |p| &c.provider == p))
+                .filter(|c| provider.as_ref().is_none_or(|p| &c.provider == p))
                 .flat_map(|c| {
                     c.models.iter().map(move |m| {
                         serde_json::json!({

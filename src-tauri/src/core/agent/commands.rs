@@ -14,15 +14,16 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::core::agent::events::StreamEvent;
 use crate::core::agent::git;
-use crate::core::agent::permissions::ToolPermissions;
+use tauri_plugin_agent_tools::permissions::ToolPermissions;
 use crate::core::agent::project::{
     agent_toml_path, ensure_project, load_agent_config, permissions_from,
     set_skills_enabled_in_agent_toml,
 };
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs};
 use crate::core::agent::skill_hub;
-use crate::core::agent::skills::{self, SkillMeta};
-use crate::core::agent::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::skills::{self, SkillMeta};
+use tauri_plugin_agent_tools::workspace;
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
 
@@ -171,14 +172,14 @@ fn ui_error(e: String) -> String {
 #[tauri::command]
 pub async fn agent_skill_list(project: String) -> Result<Vec<SkillMeta>, String> {
     let root = std::path::PathBuf::from(&project);
-    Ok(skills::list_meta(&root))
+    Ok(skills::list_meta(&workspace::project_store(&root)))
 }
 
 /// Read one skill's raw SKILL.md (frontmatter included) for the editor.
 #[tauri::command]
 pub async fn agent_skill_read(project: String, name: String) -> Result<String, String> {
     let root = std::path::PathBuf::from(&project);
-    skills::read_raw(&root, &name).map_err(ui_error)
+    skills::read_raw(&workspace::project_store(&root), &name).map_err(ui_error)
 }
 
 /// Create or overwrite a skill. New skills are written as `<name>/SKILL.md`;
@@ -191,14 +192,14 @@ pub async fn agent_skill_write(
 ) -> Result<(), String> {
     let root = std::path::PathBuf::from(&project);
     ensure_project(&root)?;
-    skills::write(&root, &name, &content).map_err(ui_error)
+    skills::write(&workspace::project_store(&root), &name, &content).map_err(ui_error)
 }
 
 /// Delete a skill by name. Idempotent: a missing skill is treated as success.
 #[tauri::command]
 pub async fn agent_skill_delete(project: String, name: String) -> Result<(), String> {
     let root = std::path::PathBuf::from(&project);
-    skills::delete(&root, &name).map_err(ui_error)
+    skills::delete(&workspace::project_store(&root), &name).map_err(ui_error)
 }
 
 /// List the skills available on Anthropic's public skill hub (name + purpose).

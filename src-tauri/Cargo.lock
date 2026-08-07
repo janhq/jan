@@ -52,12 +52,12 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
- "similar",
  "sqlx",
  "syntect",
  "tar",
  "tauri",
  "tauri-build",
+ "tauri-plugin-agent-tools",
  "tauri-plugin-deep-link",
  "tauri-plugin-dialog",
  "tauri-plugin-hardware",
@@ -7227,6 +7227,26 @@ dependencies = [
  "serde_json",
  "tauri-utils",
  "walkdir",
+]
+
+[[package]]
+name = "tauri-plugin-agent-tools"
+version = "0.8.3"
+dependencies = [
+ "glob",
+ "ignore",
+ "nix 0.30.1",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "similar",
+ "tauri",
+ "tauri-plugin",
+ "tauri-plugin-websearch",
+ "thiserror 2.0.18",
+ "tokio",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

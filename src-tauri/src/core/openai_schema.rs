@@ -139,7 +139,9 @@ pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::V
     }
 }
 
-#[cfg(any(not(feature = "cli"), test))]
+// Only the desktop proxy calls this, and its tests live in `core::server`, which
+// is itself absent from the CLI build.
+#[cfg(not(feature = "cli"))]
 pub(crate) fn normalize_openai_tools_in_chat_body(body: &mut serde_json::Value) {
     let tools = match body.get_mut("tools") {
         Some(t) => t,

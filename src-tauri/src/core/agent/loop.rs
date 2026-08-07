@@ -15,7 +15,7 @@ use tokio::sync::{mpsc, Mutex};
 
 use crate::core::agent::events::{StreamEvent, Usage};
 use crate::core::agent::session::SessionBudget;
-use crate::core::agent::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use crate::core::agent::upstream::{
     collect_mcp_openai_tools, copy_optional_chat_params, execute_mcp_tool_calls,
     extract_choice_message, extract_tool_calls, load_assistant_config, parse_openai_messages,
@@ -61,7 +61,7 @@ pub(crate) struct OrchestrationArgs {
     pub mcp_servers: SharedMcpServers,
     pub mcp_settings: Arc<Mutex<McpSettings>>,
     pub jan_data_folder: String,
-    pub permissions: crate::core::agent::permissions::ToolPermissions,
+    pub permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     pub project_root: Option<std::path::PathBuf>,
     pub permission_requests: PermissionRegistry,
     /// Present only when a client can render and answer structured questions.
@@ -191,18 +191,101 @@ struct SubagentContext {
 struct CompositeToolInvoker {
     mcp: McpToolInvoker,
     project_root: std::path::PathBuf,
-    permissions: crate::core::agent::permissions::ToolPermissions,
+    /// Where `memory/` and `skills/` live. Co-located with the project here, so
+    /// the on-disk layout is unchanged; the desktop points this at its permanent
+    /// store instead.
+    store_root: std::path::PathBuf,
+    /// `[skills].enabled`, resolved once per run. The toolset owns no config
+    /// format, so the whitelist is injected rather than re-read per tool call.
+    enabled_skills: Vec<String>,
+    /// Whether the sandboxed shell keeps its network namespace. Resolved once
+    /// per run from `[tools].allow_network`, falling back to the surface
+    /// default when unset.
+    allow_network: bool,
+    /// Whether the sandboxed shell may read `$HOME`. Resolved once per run
+    /// from `[tools].allow_home_read`, falling back to `true` on the CLI.
+    allow_home_read: bool,
+    permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
     ask_requests: Option<crate::core::agent::interaction::AskRegistry>,
     todo_registry: Option<crate::core::agent::todo::TodoRegistry>,
-    grants: std::sync::Mutex<crate::core::agent::tools::gate::SessionGrants>,
+    grants: std::sync::Mutex<tauri_plugin_agent_tools::tools::gate::SessionGrants>,
     subagents: Option<SubagentContext>,
     yolo: bool,
     run_mode: crate::core::agent::plan::RunMode,
 }
 
+/// Default for the sandboxed shell's network namespace, used when
+/// `[tools].allow_network` is unset.
+///
+/// The CLI agent runs in the user's own terminal against their own project, and
+/// every exec is already gated behind an interactive prompt, so the network is
+/// not what confines it -- the user is. Before the shell was sandboxed at all it
+/// ran fully unconfined, and a coding agent that cannot `curl`, `git fetch`, or
+/// install a package is largely useless, so the sandbox keeps the network and
+/// relies on the prompt.
+///
+/// The desktop chat sandbox makes the opposite trade: it is ephemeral, has no
+/// prompt, and opts in per call from a user setting (`commands.rs`).
+#[cfg(feature = "cli")]
+const DEFAULT_ALLOW_NETWORK: bool = true;
+#[cfg(not(feature = "cli"))]
+const DEFAULT_ALLOW_NETWORK: bool = false;
+
+/// `[tools].allow_network` wins over the surface default when set.
+fn resolve_allow_network(configured: Option<bool>) -> bool {
+    configured.unwrap_or(DEFAULT_ALLOW_NETWORK)
+}
+
+/// Default for whether the sandboxed shell can read `$HOME`, used when
+/// `[tools].allow_home_read` is unset.
+///
+/// The CLI needs it for `git`/`ssh` credential helpers, so its shell binds
+/// `$HOME` read-only. The desktop keeps the full isolation and masks the home
+/// (the Jan data folder lives inside `$HOME`, so exposing it read-only would
+/// leak `settings.json` API keys, thread workspaces, and the memory store).
+#[cfg(feature = "cli")]
+const DEFAULT_ALLOW_HOME_READ: bool = true;
+#[cfg(not(feature = "cli"))]
+const DEFAULT_ALLOW_HOME_READ: bool = false;
+
+/// `[tools].allow_home_read` wins over the surface default when set.
+fn resolve_allow_home_read(configured: Option<bool>) -> bool {
+    configured.unwrap_or(DEFAULT_ALLOW_HOME_READ)
+}
+
+/// agent.toml resolved for one run: the skill whitelist, plus the network
+/// decision with this surface's default already applied.
+struct ResolvedSettings {
+    enabled_skills: Vec<String>,
+    allow_network: bool,
+    allow_home_read: bool,
+}
+
+/// Kept out of the invoker's struct literal so it is reachable from a test.
+/// Inline, it was silently passing `None` instead of the parsed value, which
+/// made `[tools].allow_network` a no-op that nothing detected.
+fn resolve_run_settings(project_root: &std::path::Path) -> ResolvedSettings {
+    let settings = crate::core::agent::project::run_settings(project_root);
+    ResolvedSettings {
+        enabled_skills: settings.enabled_skills,
+        allow_network: resolve_allow_network(settings.allow_network),
+        allow_home_read: resolve_allow_home_read(settings.allow_home_read),
+    }
+}
+
 impl CompositeToolInvoker {
+    fn tool_context(&self) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
+        tauri_plugin_agent_tools::tools::ToolContext::new(
+            &self.project_root,
+            &self.store_root,
+            &self.enabled_skills,
+        )
+        .with_network(self.allow_network)
+        .with_home_readonly(self.allow_home_read)
+    }
+
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
     /// A dropped responder (client gone / run cancelled) resolves to Deny.
     async fn prompt_mcp_permission(&self, tool_name: &str) -> PermissionDecision {
@@ -494,10 +577,10 @@ impl ToolInvoker for CompositeToolInvoker {
         &self,
         tool_calls: &[serde_json::Value],
     ) -> Result<Vec<ToolOutcome>, String> {
-        use crate::core::agent::tools::{
+        use tauri_plugin_agent_tools::tools::{
             gate::{resolve_decision, Decision, PromptKind},
             handlers::{execute_builtin_with_diff, preview_diff},
-            is_builtin, lookup, Capability,
+            is_builtin, lookup, Capability, ToolContext,
         };
         let mut out: Vec<ToolOutcome> = Vec::with_capacity(tool_calls.len());
         let mut mcp_calls: Vec<serde_json::Value> = Vec::new();
@@ -641,9 +724,18 @@ impl ToolInvoker for CompositeToolInvoker {
             if matches!(decision, Decision::Allow)
                 && matches!(tool.capability, Capability::Read | Capability::Net)
             {
+                // The future outlives this borrow of `self`, so it owns its roots
+                // and builds the context inside.
                 let root = self.project_root.clone();
+                let store = self.store_root.clone();
+                let enabled = self.enabled_skills.clone();
+                let allow_network = self.allow_network;
+                let allow_home_read = self.allow_home_read;
                 read_futures.push(async move {
-                    let (text, diff) = execute_builtin_with_diff(tool, &args, &root).await;
+                    let ctx = ToolContext::new(&root, &store, &enabled)
+                        .with_network(allow_network)
+                        .with_home_readonly(allow_home_read);
+                    let (text, diff) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
                         id,
                         content: text,
@@ -653,7 +745,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 continue;
             }
             let (text, diff) = match decision {
-                Decision::Allow => execute_builtin_with_diff(tool, &args, &self.project_root).await,
+                Decision::Allow => execute_builtin_with_diff(tool, &args, &self.tool_context()).await,
                 Decision::HardDeny => (denied_by_policy_msg(name, &self.project_root), None),
                 Decision::Prompt(kind) => {
                     let request_id = next_permission_id();
@@ -673,6 +765,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     let prompt_kind = match kind {
                         PromptKind::ReadEscape => "read_escape",
                         PromptKind::Write => "write",
+                        PromptKind::WriteEscape => "write_escape",
                         PromptKind::Exec => "exec",
                     };
                     let path = tool
@@ -685,7 +778,7 @@ impl ToolInvoker for CompositeToolInvoker {
                         .then(|| args.get("command").and_then(|v| v.as_str()))
                         .flatten()
                         .map(String::from);
-                    let diff = preview_diff(tool, &args, &self.project_root).await;
+                    let diff = preview_diff(tool, &args, &self.tool_context()).await;
                     let _ = self.events.send(StreamEvent::PermissionRequest {
                         request_id: request_id.clone(),
                         tool_name: name.to_string(),
@@ -703,7 +796,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     self.permission_requests.lock().await.remove(&request_id);
                     match decision {
                         PermissionDecision::AllowOnce => {
-                            execute_builtin_with_diff(tool, &args, &self.project_root).await
+                            execute_builtin_with_diff(tool, &args, &self.tool_context()).await
                         }
                         PermissionDecision::AllowAlways => {
                             // Thread-scoped only; never persisted to agent.toml.
@@ -717,7 +810,7 @@ impl ToolInvoker for CompositeToolInvoker {
                             } else {
                                 self.grants.lock().unwrap().grant(kind);
                             }
-                            execute_builtin_with_diff(tool, &args, &self.project_root).await
+                            execute_builtin_with_diff(tool, &args, &self.tool_context()).await
                         }
                         PermissionDecision::Deny => {
                             (format!("ERROR: tool '{name}' denied by user"), None)
@@ -771,7 +864,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         mcp_servers,
         mcp_settings,
         jan_data_folder: jan_data_folder.to_string(),
-        permissions: crate::core::agent::permissions::ToolPermissions::allow_all(),
+        permissions: tauri_plugin_agent_tools::permissions::ToolPermissions::allow_all(),
         project_root: None,
         permission_requests: Arc::new(Mutex::new(HashMap::new())),
         ask_requests: None,
@@ -836,7 +929,7 @@ fn apply_tool_allowlist(
 fn retain_advertisable_mcp_tools(
     openai_tools: &mut Vec<serde_json::Value>,
     tool_to_server: &mut HashMap<String, String>,
-    permissions: &crate::core::agent::permissions::ToolPermissions,
+    permissions: &tauri_plugin_agent_tools::permissions::ToolPermissions,
 ) {
     openai_tools.retain(|t| {
         t.get("function")
@@ -1167,7 +1260,7 @@ async fn orchestrate_inner(
         // we only drop tools explicitly denied in agent.toml (and honor allowed_tools
         // if the request set one). Advertisement is independent of the read-only
         // default that applies to opaque MCP tools.
-        for schema in crate::core::agent::tools::schema::builtin_tool_schemas() {
+        for schema in tauri_plugin_agent_tools::tools::schema::builtin_tool_schemas() {
             let name = schema["function"]["name"].as_str().unwrap_or_default();
             if permissions.is_denied(name) {
                 continue;
@@ -1175,11 +1268,11 @@ async fn orchestrate_inner(
             // Plan mode advertises only read/net builtins; write/exec are hidden
             // entirely rather than relying on a prompt or execution-time denial.
             if run_mode == crate::core::agent::plan::RunMode::Plan
-                && crate::core::agent::tools::lookup(name).is_some_and(|t| {
+                && tauri_plugin_agent_tools::tools::lookup(name).is_some_and(|t| {
                     matches!(
                         t.capability,
-                        crate::core::agent::tools::Capability::Write
-                            | crate::core::agent::tools::Capability::Exec
+                        tauri_plugin_agent_tools::tools::Capability::Write
+                            | tauri_plugin_agent_tools::tools::Capability::Exec
                     )
                 })
             {
@@ -1289,15 +1382,20 @@ async fn orchestrate_inner(
             max_session_tokens,
             bg: bg.clone(),
         });
+        let settings = resolve_run_settings(root);
         let tools = CompositeToolInvoker {
             mcp: mcp_tools,
+            store_root: tauri_plugin_agent_tools::workspace::project_store(root),
+            enabled_skills: settings.enabled_skills,
+            allow_network: settings.allow_network,
+            allow_home_read: settings.allow_home_read,
             project_root: root.clone(),
             permissions: permissions.clone(),
             events: events.clone(),
             permission_requests: permission_requests.clone(),
             ask_requests: ask_requests.clone(),
             todo_registry: todo_registry.clone(),
-            grants: std::sync::Mutex::new(crate::core::agent::tools::gate::SessionGrants::default()),
+            grants: std::sync::Mutex::new(tauri_plugin_agent_tools::tools::gate::SessionGrants::default()),
             subagents,
             yolo: *yolo,
             run_mode,
@@ -1709,7 +1807,7 @@ async fn run_turn_cycle(
             // call as failed for display.
             let is_error = content.starts_with("ERROR")
                 || (tool_names.get(id.as_str()) == Some(&"bash")
-                    && crate::core::agent::tools::handlers::bash_result_failed(&content));
+                    && tauri_plugin_agent_tools::tools::handlers::bash_result_failed(&content));
             let name = tool_names.get(id.as_str()).copied().unwrap_or("");
             if name == "todo" {
                 todo_touched_this_batch = true;
@@ -2545,8 +2643,8 @@ mod tests {
         assert_eq!(map.keys().collect::<Vec<_>>(), vec!["search"]);
     }
 
-    use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
-    use crate::core::agent::tools::gate::{PermissionDecision, SessionGrants};
+    use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
+    use tauri_plugin_agent_tools::tools::gate::{PermissionDecision, SessionGrants};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static TEST_ROOT_SEQ: AtomicUsize = AtomicUsize::new(0);
@@ -2581,6 +2679,10 @@ mod tests {
                 mcp_servers: Arc::new(Mutex::new(HashMap::new())),
                 mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             },
+            store_root: tauri_plugin_agent_tools::workspace::project_store(&root),
+            enabled_skills: Vec::new(),
+            allow_network: DEFAULT_ALLOW_NETWORK,
+            allow_home_read: DEFAULT_ALLOW_HOME_READ,
             project_root: root,
             // Read-only default => write PROMPTS.
             permissions: ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
@@ -2593,6 +2695,134 @@ mod tests {
             yolo: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
         }
+    }
+
+    /// The whole point of the setting: what agent.toml says has to survive the
+    /// trip into the invoker. This is the assertion that was missing when the
+    /// resolution passed `None` and silently ignored the file.
+    #[test]
+    fn agent_toml_network_setting_reaches_the_invoker() {
+        let root = std::env::temp_dir().join(format!(
+            "jan_loop_net_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let agent_dir = root.join(".jan").join("agent");
+        std::fs::create_dir_all(&agent_dir).expect("create agent dir");
+
+        let write = |body: &str| {
+            std::fs::write(agent_dir.join("agent.toml"), body).expect("write agent.toml")
+        };
+
+        write("[tools]\nallow_network = false\n[skills]\nenabled = [\"deploy\"]\n");
+        let denied = resolve_run_settings(&root);
+        assert!(!denied.allow_network, "explicit false must be honoured");
+        assert_eq!(denied.enabled_skills, vec!["deploy".to_string()]);
+
+        write("[tools]\nallow_network = true\n");
+        assert!(
+            resolve_run_settings(&root).allow_network,
+            "explicit true must be honoured"
+        );
+
+        write("[tools]\ndefault = \"read-only\"\n");
+        assert_eq!(
+            resolve_run_settings(&root).allow_network,
+            DEFAULT_ALLOW_NETWORK,
+            "unset must fall back to the surface default"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An explicit `[tools].allow_network` overrides the surface default in both
+    /// directions, so a project can lock the shell down or open it up whichever
+    /// way its surface leans.
+    #[test]
+    fn configured_allow_network_overrides_the_default() {
+        assert!(resolve_allow_network(Some(true)));
+        assert!(!resolve_allow_network(Some(false)));
+        assert_eq!(resolve_allow_network(None), DEFAULT_ALLOW_NETWORK);
+    }
+
+    /// `[tools].allow_home_read` likewise overrides the CLI default (on by
+    /// default) in both directions, so a project can lock `$HOME` back down.
+    #[test]
+    fn configured_allow_home_read_overrides_the_default() {
+        assert!(resolve_allow_home_read(Some(true)));
+        assert!(!resolve_allow_home_read(Some(false)));
+        assert_eq!(resolve_allow_home_read(None), DEFAULT_ALLOW_HOME_READ);
+    }
+
+    /// The CLI agent's shell keeps its network namespace. Before the sandbox
+    /// existed this shell ran fully unconfined, so flipping this to `false`
+    /// silently breaks `curl`, `git fetch` and package installs while every
+    /// test that does not actually open a socket keeps passing.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn cli_tool_context_allows_network() {
+        let root = std::path::PathBuf::from("/tmp/jan-net-check");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
+        assert!(
+            invoker.tool_context().allow_network,
+            "CLI shell must keep its network namespace"
+        );
+    }
+
+    /// The CLI shell reads `$HOME` (so git/ssh credential helpers work) unless
+    /// the project explicitly opts out.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn cli_tool_context_reads_home() {
+        let root = std::path::PathBuf::from("/tmp/jan-home-check");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
+        assert!(
+            invoker.tool_context().home_readonly,
+            "CLI shell must read $HOME"
+        );
+    }
+
+    /// The desktop keeps the full isolation: the sandbox masks `$HOME` rather
+    /// than binding it read-only, so the Jan data folder (which lives inside
+    /// `$HOME`) stays unreadable.
+    #[test]
+    #[cfg(not(feature = "cli"))]
+    fn desktop_tool_context_withholds_home() {
+        let root = std::path::PathBuf::from("/tmp/jan-home-check");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
+        assert!(!invoker.tool_context().home_readonly);
+    }
+
+    /// The desktop chat sandbox is ephemeral and unprompted, so it opts in per
+    /// call from a user setting instead of defaulting on here.
+    #[test]
+    #[cfg(not(feature = "cli"))]
+    fn desktop_tool_context_withholds_network() {
+        let root = std::path::PathBuf::from("/tmp/jan-net-check");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
+        assert!(!invoker.tool_context().allow_network);
     }
 
     async fn respond_once(
@@ -3140,7 +3370,7 @@ mod tests {
 
     #[test]
     fn read_only_project_still_advertises_mcp_tools() {
-        use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+        use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools = vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
         let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
         // The scaffolded CLI project default: read-only, no allow-list.
@@ -3154,7 +3384,7 @@ mod tests {
 
     #[test]
     fn denied_mcp_tool_is_not_advertised() {
-        use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+        use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools = vec![
             json!({ "type": "function", "function": { "name": "web_search_exa" } }),
             json!({ "type": "function", "function": { "name": "dangerous_write" } }),
@@ -3179,7 +3409,7 @@ mod tests {
 
     #[test]
     fn deny_default_advertises_no_mcp_tools() {
-        use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+        use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools = vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
         let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
         let perms = ToolPermissions::new(PermissionDefault::Deny, &[], &[], &[]);

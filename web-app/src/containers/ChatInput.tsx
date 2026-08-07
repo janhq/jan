@@ -32,6 +32,7 @@ import {
   IconPaperclip,
   IconLoader2,
   IconWorldSearch,
+  IconFolderCode,
   IconBrandChrome,
 } from '@tabler/icons-react'
 import { generateId } from 'ai'
@@ -109,6 +110,7 @@ import {
   type FilePickerEntry as FileEntry,
 } from '@/lib/path-references'
 import { FilePickerPopover } from '@/components/FilePickerPopover'
+import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
 
 type ChatInputProps = {
   className?: string
@@ -194,6 +196,10 @@ const ChatInput = memo(function ChatInput({
   const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
   const webSearchEnabled = useWebSearchConfig((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useWebSearchConfig((s) => s.setWebSearchEnabled)
+  const agentToolsEnabled = useAgentToolsConfig((s) => s.agentToolsEnabled)
+  const setAgentToolsEnabled = useAgentToolsConfig(
+    (s) => s.setAgentToolsEnabled
+  )
 
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [filePickerQuery, setFilePickerQuery] = useState('')
@@ -240,7 +246,7 @@ const ChatInput = memo(function ChatInput({
       // @ (the @ must not be glued to a preceding word char, so `user@host`
       // never opens the picker)
       const beforeCursor = value.slice(0, cursorIdx)
-      const atMatch = beforeCursor.match(/(?<![A-Za-z0-9_])@([\w.\/-]*)$/)
+      const atMatch = beforeCursor.match(/(?<![A-Za-z0-9_])@([\w./-]*)$/)
 
       if (atMatch) {
         const query = atMatch[1] ?? ''
@@ -282,7 +288,7 @@ const ChatInput = memo(function ChatInput({
       const afterCursor = prompt.slice(filePickerCursorPos.current)
 
       // Replace the `@query` with `path/to/file` (the resolved reference)
-      const textBefore = beforeCursor.replace(/(?<![A-Za-z0-9_])@[\w.\/-]*$/, '')
+      const textBefore = beforeCursor.replace(/(?<![A-Za-z0-9_])@[\w./-]*$/, '')
       const refText = entry.path
       const newPrompt = textBefore + refText + afterCursor
 
@@ -2301,10 +2307,10 @@ const ChatInput = memo(function ChatInput({
                     <TooltipContent>
                       <p>
                         {isJanBrowserMCPLoading
-                          ? 'Starting...'
+                          ? t('common:starting')
                           : janBrowserMCPActive
-                            ? 'Browse (Active)'
-                            : 'Browse'}
+                            ? t('common:browse') + t('common:activeSuffix')
+                            : t('common:browse')}
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -2444,8 +2450,36 @@ const ChatInput = memo(function ChatInput({
                     <TooltipContent>
                       <p>
                         {webSearchEnabled
-                          ? t('common:web_search') + ' (Active)'
+                          ? t('common:web_search') + t('common:activeSuffix')
                           : t('common:web_search')}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className={cn(agentToolsEnabled && 'text-primary')}
+                        onClick={() => setAgentToolsEnabled(!agentToolsEnabled)}
+                      >
+                        <IconFolderCode
+                          size={18}
+                          className={cn(
+                            'text-muted-foreground',
+                            agentToolsEnabled && 'text-primary'
+                          )}
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {agentToolsEnabled
+                          ? t('common:agent_tools') + t('common:activeSuffix')
+                          : t('common:agent_tools')}
                       </p>
                     </TooltipContent>
                   </Tooltip>

@@ -1,0 +1,19 @@
+[default]
+description = "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution"
+permissions = [
+    "allow-workspace-path",
+    "allow-thread-workspace-path",
+    "allow-thread-workspace-delete",
+    "allow-thread-workspace-sweep",
+    "allow-skill-list",
+    "allow-skill-read",
+    "allow-skill-write",
+    "allow-skill-delete",
+    "allow-memory-list",
+    "allow-memory-read",
+    "allow-memory-write",
+    "allow-memory-delete",
+    "allow-tool-schemas",
+    "allow-sandbox-status",
+    "allow-execute-tool",
+]
