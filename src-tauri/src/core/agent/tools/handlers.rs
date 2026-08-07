@@ -497,29 +497,46 @@ fn chrome_binary() -> Option<PathBuf> {
     CANDIDATES.iter().find(|p| Path::new(p).exists()).map(PathBuf::from)
 }
 
-async fn screenshot(args: &serde_json::Value, root: &Path) -> String {
-    let Some(path) = arg_str(args, "path") else {
-        return "ERROR: missing required argument 'path'".to_string();
-    };
-    let target = resolve(root, path);
+/// Render a local HTML/SVG file to PNG bytes with headless Chrome.
+///
+/// Shared by the model-facing `screenshot` tool and the `agent_render_preview`
+/// command the annotation overlay calls, so both agree on Chrome discovery,
+/// viewport clamping and the output cap. `width`/`height` are the viewport in
+/// CSS pixels; the caller picks them (the overlay passes its own stage size so
+/// the PNG lines up pixel-for-pixel with what the user drew on).
+///
+/// `scale` is the device pixel ratio: the PNG comes out `width*scale` pixels
+/// wide with the layout unchanged. The overlay passes the webview's own ratio
+/// so a HiDPI screen doesn't composite crisp marks over an upscaled blur.
+pub(crate) async fn render_html_png(
+    target: &Path,
+    width: u64,
+    height: u64,
+    scale: f64,
+) -> Result<Vec<u8>, String> {
     let ext = target
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase())
         .unwrap_or_default();
     if ext != "html" && ext != "htm" && ext != "svg" {
-        return format!("ERROR: screenshot only renders .html/.htm/.svg files, got .{ext}");
+        return Err(format!(
+            "screenshot only renders .html/.htm/.svg files, got .{ext}"
+        ));
     }
     if !target.is_file() {
-        return format!("ERROR: file not found: {}", target.display());
+        return Err(format!("file not found: {}", target.display()));
     }
 
     let Some(chrome) = chrome_binary() else {
-        return "ERROR: no Chrome/Chromium binary found (set CHROME_PATH to point at one)".to_string();
+        return Err(
+            "no Chrome/Chromium binary found (set CHROME_PATH to point at one)".to_string(),
+        );
     };
 
-    let width = arg_u64(args, "width").unwrap_or(1280).clamp(320, 4096);
-    let height = arg_u64(args, "height").unwrap_or(960).clamp(240, 4096);
+    let width = width.clamp(320, 4096);
+    let height = height.clamp(240, 4096);
+    let scale = if scale.is_finite() { scale.clamp(1.0, 3.0) } else { 1.0 };
     // A per-call profile (pid + nanos) keeps headless Chrome from colliding with
     // a running browser or a leftover from a previous call; `--screenshot` exits
     // after writing, but the wait below is bounded in case it lingers.
@@ -545,6 +562,7 @@ async fn screenshot(args: &serde_json::Value, root: &Path) -> String {
     let cmd = format!(
         "{chrome_quoted} --headless=new --disable-gpu --hide-scrollbars --no-sandbox \
          --disable-dev-shm-usage --no-first-run --user-data-dir={profile_quoted} \
+         --force-device-scale-factor={scale} \
          --window-size={width},{height} --screenshot={shot_quoted} {url_quoted}"
     );
     let mut child = match tokio::process::Command::new(proc::shell().program.clone())
@@ -555,7 +573,7 @@ async fn screenshot(args: &serde_json::Value, root: &Path) -> String {
         .spawn()
     {
         Ok(c) => c,
-        Err(e) => return format!("ERROR: failed to launch Chrome: {e}"),
+        Err(e) => return Err(format!("failed to launch Chrome: {e}")),
     };
     // Bounded: headless Chrome can linger after writing the PNG. Give it a
     // generous window, then reap whatever is left and proceed if the file
@@ -579,22 +597,34 @@ async fn screenshot(args: &serde_json::Value, root: &Path) -> String {
         Ok(b) => b,
         Err(e) => {
             let detail = stderr.lines().take(3).collect::<Vec<_>>().join(" | ");
-            return format!("ERROR: screenshot not produced: {e} (chrome: {detail})");
+            return Err(format!("screenshot not produced: {e} (chrome: {detail})"));
         }
     };
     let _ = tokio::fs::remove_file(&shot).await;
 
     if png.is_empty() {
-        return "ERROR: Chrome produced an empty screenshot (page may be blank)".to_string();
+        return Err("Chrome produced an empty screenshot (page may be blank)".to_string());
     }
     if png.len() > SCREENSHOT_MAX_PNG_BYTES {
-        return format!(
-            "ERROR: screenshot is {} KiB, over the {}-MiB cap; try a smaller viewport",
+        return Err(format!(
+            "screenshot is {} KiB, over the {}-MiB cap; try a smaller viewport",
             png.len() / 1024,
             SCREENSHOT_MAX_PNG_BYTES / 1024 / 1024
-        );
+        ));
     }
+    Ok(png)
+}
 
+async fn screenshot(args: &serde_json::Value, root: &Path) -> String {
+    let Some(path) = arg_str(args, "path") else {
+        return "ERROR: missing required argument 'path'".to_string();
+    };
+    let width = arg_u64(args, "width").unwrap_or(1280).clamp(320, 4096);
+    let height = arg_u64(args, "height").unwrap_or(960).clamp(240, 4096);
+    let png = match render_html_png(&resolve(root, path), width, height, 1.0).await {
+        Ok(b) => b,
+        Err(e) => return format!("ERROR: {e}"),
+    };
     use base64::Engine as _;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
     format!("Screenshot of {path} ({width}x{height}): data:image/png;base64,{b64}")
@@ -2119,5 +2149,56 @@ mod tests {
             &out[..out.len().min(120)]
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The annotation overlay's base render. Lives here rather than beside the
+    /// command because `CHROME_TEST_LOCK` does — two headless Chromes at once
+    /// collide.
+    #[tokio::test]
+    async fn render_preview_rasterizes_srcdoc_and_cleans_up() {
+        let _guard = CHROME_TEST_LOCK.lock().await;
+        if chrome_binary().is_none() {
+            eprintln!("skipping: no Chrome binary on this machine");
+            return;
+        }
+        let before = staged_preview_count();
+        let out = crate::core::agent::commands::agent_render_preview(
+            "<!doctype html><html><body style='margin:0;background:#22c55e'></body></html>"
+                .to_string(),
+            400,
+            300,
+            2.0,
+        )
+        .await
+        .expect("render should succeed with Chrome present");
+        let Some(b64) = out.strip_prefix("data:image/png;base64,") else {
+            panic!("expected a PNG data URL, got: {}", &out[..out.len().min(80)]);
+        };
+        use base64::Engine as _;
+        let png = base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .expect("data URL should carry valid base64");
+        // scale=2 must widen the raster, not the layout: a 400x300 CSS
+        // viewport comes back as an 800x600 PNG. Without it a HiDPI webview
+        // composites crisp marks over an upscaled blur.
+        assert_eq!(png_size(&png), (800, 600));
+        // The staged copy of the srcdoc must not outlive the render.
+        assert_eq!(before, staged_preview_count());
+    }
+
+    /// Width/height from the PNG IHDR (bytes 16..24, big-endian).
+    fn png_size(png: &[u8]) -> (u32, u32) {
+        let n = |o: usize| u32::from_be_bytes([png[o], png[o + 1], png[o + 2], png[o + 3]]);
+        (n(16), n(20))
+    }
+
+    fn staged_preview_count() -> usize {
+        std::fs::read_dir(std::env::temp_dir())
+            .map(|rd| {
+                rd.filter_map(Result::ok)
+                    .filter(|e| e.file_name().to_string_lossy().starts_with("jan-preview-"))
+                    .count()
+            })
+            .unwrap_or(0)
     }
 }

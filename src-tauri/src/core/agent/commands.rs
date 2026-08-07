@@ -302,3 +302,46 @@ pub async fn agent_plugin_search(
 pub fn agent_git_branch(project: String) -> Option<String> {
     git::current_branch(std::path::Path::new(&project))
 }
+
+/// Rasterize an artifact preview to a PNG data URL at exactly `width`x`height`
+/// CSS pixels.
+///
+/// The annotation overlay calls this to get the pixels *under* its drawing
+/// layer: the preview lives in a `sandbox="allow-scripts"` iframe with an opaque
+/// origin, so nothing in the webview can rasterize it. Same headless Chrome path
+/// as the model-facing `screenshot` tool, at the overlay's own stage size so the
+/// render lines up with the strokes drawn on top of it.
+///
+/// `html` is the exact `srcdoc` the iframe was given, not the file on disk —
+/// the shell it is wrapped in (CSP, `body{margin:0}`) changes the layout, so
+/// rendering the raw file would land ~8px off from what the user drew on. It
+/// goes to a temp file outside the project, so this touches no project state
+/// and needs no path sandboxing.
+#[tauri::command]
+pub async fn agent_render_preview(
+    html: String,
+    width: u64,
+    height: u64,
+    scale: f64,
+) -> Result<String, String> {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let page = std::env::temp_dir().join(format!(
+        "jan-preview-{}-{nanos}.html",
+        std::process::id()
+    ));
+    tokio::fs::write(&page, html.as_bytes())
+        .await
+        .map_err(|e| format!("could not stage the preview for rendering: {e}"))?;
+    let rendered =
+        crate::core::agent::tools::handlers::render_html_png(&page, width, height, scale).await;
+    let _ = tokio::fs::remove_file(&page).await;
+
+    use base64::Engine as _;
+    Ok(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(&rendered?)
+    ))
+}

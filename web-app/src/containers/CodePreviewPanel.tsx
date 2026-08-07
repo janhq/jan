@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fs } from '@janhq/core'
+import { invoke } from '@tauri-apps/api/core'
 import { AlertTriangle, FileIcon, FolderOpen, Pencil, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { CodeSidePanel } from '@/containers/CodeSidePanel'
-import { HtmlArtifact } from '@/components/HtmlArtifact'
+import { buildSrcDoc } from '@/components/HtmlArtifact'
 import { AnnotationOverlay } from '@/components/AnnotationOverlay'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { CodeBlock } from '@/components/ai-elements/code-block'
@@ -25,8 +26,15 @@ import {
 } from '@/lib/codePreview'
 import type { BundledLanguage } from 'shiki'
 
-/** Kinds that can be meaningfully annotated (visual content). */
-const ANNOTATABLE_KINDS = new Set(['html', 'svg', 'image', 'markdown'])
+/**
+ * Kinds that can be annotated.
+ *
+ * Limited to what `agent_render_preview` can rasterize under the marks:
+ * headless Chrome renders the file from disk, so it needs a real .html/.svg.
+ * Markdown and images are previewed but not annotatable — an annotation whose
+ * PNG has nothing behind the strokes is not worth sending to the model.
+ */
+const ANNOTATABLE_KINDS = new Set(['html', 'svg'])
 
 /**
  * Preview pane for files the agent produced (jan-internal #242). Reads from disk
@@ -123,10 +131,17 @@ export function CodePreviewPanel({
       // Compute a rough byte length from the data URL (base64 inflates ~33%).
       const base64 = dataUrl.split(',')[1] ?? ''
       const size = Math.ceil((base64.length * 3) / 4)
+      // `sid` is the code-session id, which is also what the Code UI passes to
+      // ChatInput as `scopeKey` — the two must agree or the thumbnail never
+      // reaches the input.
       setAttachments(sid, (prev) => [
         ...prev,
         createImageAttachment({
-          name: 'annotation.png',
+          // Named after the artifact so a chat input holding several
+          // annotations says which is which on hover.
+          name: selectedPath
+            ? `${basenameOf(selectedPath)} annotation.png`
+            : 'annotation.png',
           base64,
           dataUrl,
           mimeType: 'image/png',
@@ -135,13 +150,42 @@ export function CodePreviewPanel({
       ])
       toast.success('Annotation added to message')
     },
-    [currentId, setAttachments]
+    [currentId, selectedPath, setAttachments]
   )
 
   const canAnnotate =
     state.status === 'ready' &&
     state.kind != null &&
     ANNOTATABLE_KINDS.has(state.kind)
+
+  const srcDoc = useMemo(() => {
+    if (state.status !== 'ready') return ''
+    if (state.kind === 'html') return buildSrcDoc(state.content ?? '', false, true)
+    if (state.kind === 'svg') return buildSrcDoc(state.content ?? '', false, false)
+    return ''
+  }, [state])
+
+  /**
+   * Render the artifact under the annotation marks.
+   *
+   * The preview iframe is sandboxed to an opaque origin, so the webview cannot
+   * rasterize it — headless Chrome renders the same `srcdoc` instead, at the
+   * overlay's exact stage size. It lines up 1:1 because the iframe below fills
+   * that same box (no fixed height, no nested card chrome) and Chrome gets the
+   * identical wrapped markup, not the bare file.
+   */
+  const captureBase = useCallback(
+    async (width: number, height: number, scale: number) => {
+      if (!srcDoc) return null
+      return invoke<string>('agent_render_preview', {
+        html: srcDoc,
+        width,
+        height,
+        scale,
+      })
+    },
+    [srcDoc]
+  )
 
   // Load whenever the caller changes the selection (file list click, or a
   // transcript artifact card opening a specific file).
@@ -258,25 +302,30 @@ export function CodePreviewPanel({
             <div className="flex h-full flex-col">
               {!!state.unresolvedRefs && (
                 // Say it, rather than presenting a broken page as correct.
-                <p className="flex items-start gap-1.5 border-b bg-main-view-fg/[0.04] px-3 py-1.5 text-[11px] text-main-view-fg/70">
+                <p className="flex shrink-0 items-start gap-1.5 border-b bg-main-view-fg/[0.04] px-3 py-1.5 text-[11px] text-main-view-fg/70">
                   <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                   {t('common:previewUnresolvedRefs', { count: state.unresolvedRefs })}
                 </p>
               )}
               <AnnotationOverlay
                 active={annotate && canAnnotate}
+                captureBase={captureBase}
                 onSend={handleAnnotateSend}
                 onCancel={() => setAnnotate(false)}
               >
                 <div className="min-h-0 flex-1 overflow-auto">
-                  {state.kind === 'html' && (
-                    <HtmlArtifact code={state.content ?? ''} language="html" />
-                  )}
-                  {state.kind === 'svg' && (
-                    <HtmlArtifact
-                      code={state.content ?? ''}
-                      language="xml"
-                      allowScripts={false}
+                  {(state.kind === 'html' || state.kind === 'svg') && (
+                    // Bare, panel-filling iframe: the artifact card's border,
+                    // margins, tab bar and fixed 600px height all read as
+                    // clutter in a narrow side panel, and a fixed height would
+                    // desync the annotation stage from the rendered page.
+                    <iframe
+                      title={t('common:previewPanelTitle')}
+                      data-testid="code-preview-iframe"
+                      className="size-full border-0 bg-white"
+                      sandbox={state.kind === 'html' ? 'allow-scripts' : ''}
+                      referrerPolicy="no-referrer"
+                      srcDoc={srcDoc}
                     />
                   )}
                   {state.kind === 'markdown' && (
