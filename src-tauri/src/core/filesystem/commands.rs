@@ -39,7 +39,8 @@ pub fn mkdir<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> 
         return Err("mkdir error: Invalid argument".to_string());
     }
 
-    let path = resolve_path(app_handle, &args[0]);
+    let (_jan_data_folder, path) = resolve_app_path_within_jan_data_folder(app_handle, &args[0])
+        .map_err(|_| format!("mkdir error: path {} is not under jan data folder", args[0]))?;
     fs::create_dir_all(&path).map_err(|e| e.to_string())
 }
 
@@ -49,8 +50,15 @@ pub fn mv<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Res
         return Err("mv error: Invalid argument - source and destination required".to_string());
     }
 
-    let source = resolve_path(app_handle.clone(), &args[0]);
-    let destination = resolve_path(app_handle, &args[1]);
+    let (_jan_data_folder, source) =
+        resolve_app_path_within_jan_data_folder(app_handle.clone(), &args[0]).map_err(|_| {
+            format!("mv error: source {} is not under jan data folder", args[0])
+        })?;
+    let (_jan_data_folder, destination) = resolve_app_path_within_jan_data_folder(
+        app_handle,
+        &args[1],
+    )
+    .map_err(|_| format!("mv error: destination {} is not under jan data folder", args[1]))?;
 
     if !source.exists() {
         return Err("mv error: Source path does not exist".to_string());
@@ -125,7 +133,13 @@ pub fn write_file_sync<R: Runtime>(
         return Err("write_file_sync error: Invalid argument".to_string());
     }
 
-    let path = resolve_path(app_handle, &args[0]);
+    let (_jan_data_folder, path) = resolve_app_path_within_jan_data_folder(app_handle, &args[0])
+        .map_err(|_| {
+            format!(
+                "write_file_sync error: path {} is not under jan data folder",
+                args[0]
+            )
+        })?;
     let content = &args[1];
     fs::write(&path, content).map_err(|e| e.to_string())
 }
