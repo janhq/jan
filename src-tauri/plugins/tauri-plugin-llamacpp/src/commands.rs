@@ -28,7 +28,9 @@ async fn router_endpoint<R: Runtime>(
 ) -> Result<(u16, String, u32), String> {
     let state: State<Arc<LlamacppState>> = app_handle.state();
     let guard = state.router.lock().await;
-    let h = guard.as_ref().ok_or_else(|| "router not started".to_string())?;
+    let h = guard
+        .as_ref()
+        .ok_or_else(|| "router not started".to_string())?;
     Ok((h.port, h.api_key.clone(), h.pid))
 }
 
@@ -79,7 +81,10 @@ fn parse_load_progress_event(block: &str, model_id: &str) -> Option<LoadProgress
         if progress.is_null() {
             continue;
         }
-        let value = progress.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let value = progress
+            .get("value")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
         let stage = progress
             .get("current")
             .and_then(|v| v.as_str())
@@ -177,7 +182,10 @@ fn spawn_load_progress_listener<R: Runtime>(
         let resp = match client.get(&url).bearer_auth(&api_key).send().await {
             Ok(r) => r,
             Err(e) => {
-                log::debug!("model load progress: failed to connect to /models/sse: {}", e);
+                log::debug!(
+                    "model load progress: failed to connect to /models/sse: {}",
+                    e
+                );
                 return;
             }
         };
@@ -489,13 +497,10 @@ async fn wait_until_loaded(
             ))
         })?;
 
-        let entry = json
-            .get("data")
-            .and_then(|d| d.as_array())
-            .and_then(|arr| {
-                arr.iter()
-                    .find(|m| m.get("id").and_then(|v| v.as_str()) == Some(model_id))
-            });
+        let entry = json.get("data").and_then(|d| d.as_array()).and_then(|arr| {
+            arr.iter()
+                .find(|m| m.get("id").and_then(|v| v.as_str()) == Some(model_id))
+        });
 
         match evaluate_load_poll(
             entry,
@@ -537,7 +542,10 @@ async fn post_unload(port: u16, api_key: &str, model_id: &str) -> Result<(), Str
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Router rejected unload (status {}): {}", status, body));
+        return Err(format!(
+            "Router rejected unload (status {}): {}",
+            status, body
+        ));
     }
 
     // /models/unload returns once shutdown is *initiated*; poll until the
@@ -580,13 +588,10 @@ async fn wait_until_unloaded(
             ))
         })?;
 
-        let entry = json
-            .get("data")
-            .and_then(|d| d.as_array())
-            .and_then(|arr| {
-                arr.iter()
-                    .find(|m| m.get("id").and_then(|v| v.as_str()) == Some(model_id))
-            });
+        let entry = json.get("data").and_then(|d| d.as_array()).and_then(|arr| {
+            arr.iter()
+                .find(|m| m.get("id").and_then(|v| v.as_str()) == Some(model_id))
+        });
 
         // No entry at all → treat as unloaded.
         let still_loaded = entry
@@ -627,7 +632,9 @@ async fn unload_busy_router_models(port: u16, api_key: &str) -> Result<(), Strin
         .unwrap_or_default();
     let unload_url = format!("http://127.0.0.1:{}/models/unload", port);
     for m in &data {
-        let Some(id) = m.get("id").and_then(|v| v.as_str()) else { continue };
+        let Some(id) = m.get("id").and_then(|v| v.as_str()) else {
+            continue;
+        };
         let status = m
             .get("status")
             .and_then(|s| s.get("value"))
@@ -724,8 +731,14 @@ pub async fn unload_llama_model<R: Runtime>(
         .await
         .map_err(ServerError::InvalidArgument)?;
     match post_unload(port, &api_key, &model_id).await {
-        Ok(()) => Ok(UnloadResult { success: true, error: None }),
-        Err(e) => Ok(UnloadResult { success: false, error: Some(e) }),
+        Ok(()) => Ok(UnloadResult {
+            success: true,
+            error: None,
+        }),
+        Err(e) => Ok(UnloadResult {
+            success: false,
+            error: Some(e),
+        }),
     }
 }
 
@@ -919,15 +932,17 @@ pub async fn adopt_router<R: Runtime>(
 
             // The SSE subscriber is a plain HTTP client, so it reattaches to an
             // adopted router exactly as it would to one we spawned.
-            let watcher =
-                spawn_unload_watcher(app_handle.clone(), info.port, info.api_key.clone());
+            let watcher = spawn_unload_watcher(app_handle.clone(), info.port, info.api_key.clone());
             *state.unload_watcher.lock().await = Some(watcher);
 
             Ok(Some(info))
         }
         crate::router::AdoptOutcome::NothingToAdopt => Ok(None),
         crate::router::AdoptOutcome::Killed(reason) => {
-            log::info!("Router not adopted ({}); caller will spawn a fresh one", reason);
+            log::info!(
+                "Router not adopted ({}); caller will spawn a fresh one",
+                reason
+            );
             Ok(None)
         }
     }
@@ -1096,7 +1111,8 @@ pub async fn try_graceful_stop_router<R: Runtime>(
     let Some(handle) = maybe_handle else {
         return Ok(None);
     };
-    match crate::router::try_graceful_stop_router(handle, Duration::from_secs(deadline_secs)).await {
+    match crate::router::try_graceful_stop_router(handle, Duration::from_secs(deadline_secs)).await
+    {
         Ok(()) => {
             state
                 .router_pid
@@ -1145,14 +1161,20 @@ mod load_poll_tests {
     fn loaded_wins() {
         let e = entry(serde_json::json!({ "value": "loaded" }));
         let mut saw = false;
-        assert_eq!(evaluate_load_poll(Some(&e), &mut saw, false), LoadPoll::Loaded);
+        assert_eq!(
+            evaluate_load_poll(Some(&e), &mut saw, false),
+            LoadPoll::Loaded
+        );
     }
 
     #[test]
     fn loading_marks_attempt_observed() {
         let e = entry(serde_json::json!({ "value": "loading" }));
         let mut saw = false;
-        assert_eq!(evaluate_load_poll(Some(&e), &mut saw, false), LoadPoll::Pending);
+        assert_eq!(
+            evaluate_load_poll(Some(&e), &mut saw, false),
+            LoadPoll::Pending
+        );
         assert!(saw);
     }
 
@@ -1164,7 +1186,10 @@ mod load_poll_tests {
             "value": "unloaded", "failed": true, "exit_code": 1
         }));
         let mut saw = false;
-        assert_eq!(evaluate_load_poll(Some(&e), &mut saw, false), LoadPoll::Pending);
+        assert_eq!(
+            evaluate_load_poll(Some(&e), &mut saw, false),
+            LoadPoll::Pending
+        );
     }
 
     #[test]
@@ -1175,7 +1200,9 @@ mod load_poll_tests {
         let mut saw = true;
         assert_eq!(
             evaluate_load_poll(Some(&e), &mut saw, false),
-            LoadPoll::Failed { exit_code: Some(137) }
+            LoadPoll::Failed {
+                exit_code: Some(137)
+            }
         );
     }
 
@@ -1195,7 +1222,10 @@ mod load_poll_tests {
     fn unloaded_without_failure_keeps_polling() {
         let e = entry(serde_json::json!({ "value": "unloaded" }));
         let mut saw = true;
-        assert_eq!(evaluate_load_poll(Some(&e), &mut saw, true), LoadPoll::Pending);
+        assert_eq!(
+            evaluate_load_poll(Some(&e), &mut saw, true),
+            LoadPoll::Pending
+        );
     }
 
     #[test]
@@ -1216,11 +1246,25 @@ mod load_status_change_tests {
 
     #[test]
     fn parses_loading_loaded_and_failed_unloaded() {
-        let b = sse_block("m", "status_change", serde_json::json!({ "status": "loading" }));
-        assert_eq!(parse_load_status_change(&b, "m"), Some(LoadStatusChange::Loading));
+        let b = sse_block(
+            "m",
+            "status_change",
+            serde_json::json!({ "status": "loading" }),
+        );
+        assert_eq!(
+            parse_load_status_change(&b, "m"),
+            Some(LoadStatusChange::Loading)
+        );
 
-        let b = sse_block("m", "status_change", serde_json::json!({ "status": "loaded" }));
-        assert_eq!(parse_load_status_change(&b, "m"), Some(LoadStatusChange::Loaded));
+        let b = sse_block(
+            "m",
+            "status_change",
+            serde_json::json!({ "status": "loaded" }),
+        );
+        assert_eq!(
+            parse_load_status_change(&b, "m"),
+            Some(LoadStatusChange::Loaded)
+        );
 
         let b = sse_block(
             "m",
@@ -1242,7 +1286,11 @@ mod load_status_change_tests {
         );
         assert_eq!(parse_load_status_change(&b, "m"), None);
 
-        let b = sse_block("m", "model_status", serde_json::json!({ "status": "unloaded" }));
+        let b = sse_block(
+            "m",
+            "model_status",
+            serde_json::json!({ "status": "unloaded" }),
+        );
         assert_eq!(parse_load_status_change(&b, "m"), None);
     }
 
@@ -1334,7 +1382,11 @@ mod load_progress_tests {
 
     #[test]
     fn ignores_status_change_without_progress() {
-        let block = sse_block("model-1", "status_change", serde_json::json!({ "status": "loaded" }));
+        let block = sse_block(
+            "model-1",
+            "status_change",
+            serde_json::json!({ "status": "loaded" }),
+        );
         assert!(parse_load_progress_event(&block, "model-1").is_none());
     }
 
@@ -1429,11 +1481,7 @@ mod unload_watcher_tests {
 
     #[test]
     fn ignores_non_status_change_events() {
-        let block = sse_block(
-            "model-1",
-            "model_remove",
-            serde_json::json!({}),
-        );
+        let block = sse_block("model-1", "model_remove", serde_json::json!({}));
         assert!(parse_unload_event(&block).is_none());
     }
 

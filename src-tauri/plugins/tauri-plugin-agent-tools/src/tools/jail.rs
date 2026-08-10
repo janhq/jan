@@ -348,7 +348,14 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     // It is deliberately read-only, so no later rw bind can shadow it.
     if let Some(home) = home_dir() {
         if policy.home_readonly {
-            push(&mut args, &["--ro-bind", &home.to_string_lossy(), &home.to_string_lossy()]);
+            push(
+                &mut args,
+                &[
+                    "--ro-bind",
+                    &home.to_string_lossy(),
+                    &home.to_string_lossy(),
+                ],
+            );
         } else {
             push(&mut args, &["--tmpfs", &home.to_string_lossy()]);
         }
@@ -729,9 +736,15 @@ mod tests {
         // home_readonly: no home read-denial, and the write section never opens
         // HOME_ROOT, so reads work but writes stay confined to workspace/temp.
         let p = seatbelt_policy(&policy().with_home_readonly(true));
-        assert!(!p.contains("(deny file-read* (subpath (param \"HOME_ROOT\")))"), "{p}");
+        assert!(
+            !p.contains("(deny file-read* (subpath (param \"HOME_ROOT\")))"),
+            "{p}"
+        );
         assert!(p.contains("(allow file-read*)"), "{p}");
-        assert!(!p.contains("(allow file-write* (subpath (param \"HOME_ROOT\")))"), "{p}");
+        assert!(
+            !p.contains("(allow file-write* (subpath (param \"HOME_ROOT\")))"),
+            "{p}"
+        );
     }
 
     #[test]
@@ -1128,8 +1141,14 @@ mod enforcement_tests {
         let _ = std::fs::remove_file(&secret);
         let _ = std::fs::remove_file(&victim);
         let _ = std::fs::remove_dir_all(&ws);
-        assert!(out.contains("READABLE_SECRET"), "home reads must work: {out}");
-        assert!(!leaked, "home writes must stay confined even when readable: {out}");
+        assert!(
+            out.contains("READABLE_SECRET"),
+            "home reads must work: {out}"
+        );
+        assert!(
+            !leaked,
+            "home writes must stay confined even when readable: {out}"
+        );
         assert!(!ok, "the write into the home must fail: {out}");
     }
 

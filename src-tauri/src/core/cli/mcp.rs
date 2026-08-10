@@ -24,8 +24,8 @@ use serde_json::Value;
 use tokio::process::Command;
 
 use crate::core::app::commands::resolve_jan_data_folder;
-use crate::core::mcp::models::{extract_active_status, extract_command_args};
 use crate::core::mcp::models::McpSettings;
+use crate::core::mcp::models::{extract_active_status, extract_command_args};
 use crate::core::state::{RunningServiceEnum, SharedMcpServers};
 
 /// The Jan Browser MCP needs the desktop bridge/lockfile machinery, so it is
@@ -334,16 +334,12 @@ pub fn parse_pairs(s: &str, what: &str) -> Result<serde_json::Map<String, Value>
 
 /// Connect one server and insert it into the shared map. Best-effort: a bad
 /// transport/config returns `Err` without touching the map.
-pub async fn connect(
-    name: &str,
-    config: &Value,
-    servers: &SharedMcpServers,
-) -> Result<(), String> {
+pub async fn connect(name: &str, config: &Value, servers: &SharedMcpServers) -> Result<(), String> {
     if name == BROWSER_MCP_NAME {
         return Err("Jan Browser MCP is desktop-only".to_string());
     }
-    let params = extract_command_args(config)
-        .ok_or_else(|| format!("invalid MCP config for '{name}'"))?;
+    let params =
+        extract_command_args(config).ok_or_else(|| format!("invalid MCP config for '{name}'"))?;
 
     let service = match (params.transport_type.as_deref(), params.url.as_deref()) {
         (Some("http"), Some(url)) => {
@@ -405,8 +401,7 @@ pub async fn connect(
                 .spawn()
                 .map_err(|e| format!("failed to spawn '{name}': {e}"))?;
             RunningServiceEnum::NoInit(
-                ()
-                    .serve(process)
+                ().serve(process)
                     .await
                     .map_err(|e| format!("failed to connect to '{name}': {e}"))?,
             )
@@ -433,9 +428,7 @@ fn client_info() -> ClientInfo {
 
 /// Build a reqwest client that sends the configured `headers` on every request
 /// (http/sse auth). Non-string header names/values are skipped.
-fn http_client(
-    headers: &serde_json::Map<String, Value>,
-) -> Result<reqwest::Client, String> {
+fn http_client(headers: &serde_json::Map<String, Value>) -> Result<reqwest::Client, String> {
     let mut map = reqwest::header::HeaderMap::new();
     for (key, value) in headers.iter() {
         if let Some(v) = value.as_str() {

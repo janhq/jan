@@ -81,7 +81,6 @@ impl serde::Serialize for KVCacheError {
     }
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub enum ModelSupportStatus {
     #[serde(rename = "RED")]

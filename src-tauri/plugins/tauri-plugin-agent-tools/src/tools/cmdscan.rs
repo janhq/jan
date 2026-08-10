@@ -32,9 +32,9 @@ const SHELLS: &[&str] = &["sh", "bash", "dash", "zsh", "ksh", "ash"];
 /// Prefix commands and shell keywords that precede the real command; we skip
 /// them (and their flags) to reach the command they wrap.
 const WRAPPERS: &[&str] = &[
-    "nice", "nohup", "setsid", "time", "timeout", "stdbuf", "ionice", "chrt",
-    "command", "builtin", "exec", "then", "else", "elif", "do", "if", "while",
-    "until", "for", "case", "function", "select", "coproc", "!",
+    "nice", "nohup", "setsid", "time", "timeout", "stdbuf", "ionice", "chrt", "command", "builtin",
+    "exec", "then", "else", "elif", "do", "if", "while", "until", "for", "case", "function",
+    "select", "coproc", "!",
 ];
 
 pub fn scan_command(command: &str) -> CommandScan {

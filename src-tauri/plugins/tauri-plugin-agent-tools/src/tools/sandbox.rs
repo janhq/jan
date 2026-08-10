@@ -365,7 +365,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-
     #[test]
     fn hidden_path_covers_the_whole_jan_dir() {
         let root = unique_root();

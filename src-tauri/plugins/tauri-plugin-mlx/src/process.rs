@@ -64,10 +64,7 @@ pub async fn graceful_terminate_process(child: &mut tokio::process::Child) {
             Ok(Ok(status)) => log::info!("MLX process exited gracefully: {}", status),
             Ok(Err(e)) => log::error!("Error waiting after SIGTERM for MLX process: {}", e),
             Err(_) => {
-                log::warn!(
-                    "SIGTERM timed out for MLX PID {}; sending SIGKILL",
-                    raw_pid
-                );
+                log::warn!("SIGTERM timed out for MLX PID {}; sending SIGKILL", raw_pid);
                 let _ = kill(Pid::from_raw(raw_pid), Signal::SIGKILL);
                 match child.wait().await {
                     Ok(s) => log::info!("Force-killed MLX process exited: {}", s),

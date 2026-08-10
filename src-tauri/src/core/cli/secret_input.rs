@@ -171,7 +171,10 @@ mod tests {
 
     #[test]
     fn typing_and_pasting_both_reach_the_field() {
-        assert_eq!(classify(&key(KeyCode::Char('a'))), Action::Insert("a".into()));
+        assert_eq!(
+            classify(&key(KeyCode::Char('a'))),
+            Action::Insert("a".into())
+        );
         assert_eq!(
             classify(&Event::Paste("  sk-abc \n".into())),
             Action::Insert("sk-abc".into())

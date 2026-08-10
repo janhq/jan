@@ -418,12 +418,12 @@ pub async fn call_tool(
     let servers = state.mcp_servers.lock().await;
 
     // If server_name is provided, only check that specific server
-    let servers_to_check: Vec<(&String, &RunningMcpService)> =
-        if let Some(ref server) = server_name {
-            servers.iter().filter(|(name, _)| *name == server).collect()
-        } else {
-            servers.iter().collect()
-        };
+    let servers_to_check: Vec<(&String, &RunningMcpService)> = if let Some(ref server) = server_name
+    {
+        servers.iter().filter(|(name, _)| *name == server).collect()
+    } else {
+        servers.iter().collect()
+    };
 
     if servers_to_check.is_empty() {
         cleanup_cancellation_token(&state, &cancellation_token).await;

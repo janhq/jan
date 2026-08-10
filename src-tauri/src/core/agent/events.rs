@@ -87,9 +87,7 @@ pub enum StreamEvent {
     /// The loop's compaction reduced the conversation while retrying a
     /// context overflow. The client should replace its session history with
     /// `messages` for subsequent turns.
-    MessagesUpdated {
-        messages: Vec<serde_json::Value>,
-    },
+    MessagesUpdated { messages: Vec<serde_json::Value> },
     /// The `ask` tool is waiting for structured interactive input.
     AskRequest {
         request_id: String,
@@ -191,7 +189,11 @@ pub fn describe_tool_call(name: &str, args: &serde_json::Value) -> String {
     });
     if let Some((verb, kind, item)) = labelled {
         return if item.is_empty() {
-            let plural = if kind == "memory" { "memory notes" } else { "skills" };
+            let plural = if kind == "memory" {
+                "memory notes"
+            } else {
+                "skills"
+            };
             format!("{verb} {plural}")
         } else {
             format!("{verb} {kind}: {item}")
@@ -260,7 +262,10 @@ mod tests {
             describe_tool_call("memory_list", &json!({})),
             "Reading memory notes"
         );
-        assert_eq!(describe_tool_call("skill_list", &json!({})), "Reading skills");
+        assert_eq!(
+            describe_tool_call("skill_list", &json!({})),
+            "Reading skills"
+        );
     }
 
     #[test]

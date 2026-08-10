@@ -81,10 +81,10 @@ mod tests {
     #[test]
     fn test_parse_uuid() {
         let uuid_bytes = [
-            0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88
+            0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+            0x77, 0x88,
         ];
-        
+
         let uuid_string = parse_uuid(&uuid_bytes);
         assert_eq!(uuid_string, "12345678-9abc-def0-1122-334455667788");
     }
@@ -105,7 +105,9 @@ mod tests {
 
     #[test]
     fn test_parse_c_string() {
-        let c_string = [b'H' as i8, b'e' as i8, b'l' as i8, b'l' as i8, b'o' as i8, 0, b'W' as i8];
+        let c_string = [
+            b'H' as i8, b'e' as i8, b'l' as i8, b'l' as i8, b'o' as i8, 0, b'W' as i8,
+        ];
         let result = parse_c_string(&c_string);
         assert_eq!(result, "Hello");
     }
@@ -139,7 +141,7 @@ mod tests {
         let error_msg = "Something went wrong";
         let result = err_to_string(error_msg);
         assert_eq!(result, "Error: Something went wrong");
-        
+
         let io_error = std::io::Error::new(std::io::ErrorKind::NotFound, "File not found");
         let result = err_to_string(io_error);
         assert!(result.starts_with("Error: "));
@@ -177,7 +179,8 @@ mod tests {
 
     #[test]
     fn test_find_memory_pattern_multiple_parentheses() {
-        let text = "Start (not memory) then (1024 MiB, 512 MiB free) and (2048 MiB, 1024 MiB free) end";
+        let text =
+            "Start (not memory) then (1024 MiB, 512 MiB free) and (2048 MiB, 1024 MiB free) end";
         let result = find_memory_pattern(text);
         assert!(result.is_some());
         let (_, content) = result.unwrap();
@@ -189,7 +192,7 @@ mod tests {
     fn test_find_memory_pattern_no_match() {
         let text = "No memory info here";
         assert!(find_memory_pattern(text).is_none());
-        
+
         let text_with_invalid = "Some text (invalid memory info) here";
         assert!(find_memory_pattern(text_with_invalid).is_none());
     }

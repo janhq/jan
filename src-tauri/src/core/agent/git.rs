@@ -22,7 +22,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
-
 /// Run `git` with literal args (callers pass their own `-C`). Returns trimmed
 /// stdout on success, trimmed stderr (or a generic message) on failure.
 fn git(args: &[&str]) -> Result<String, String> {
@@ -56,7 +55,9 @@ fn run(repo: &Path, index: Option<&Path>, args: &[&str]) -> Result<String, Strin
     if let Some(idx) = index {
         cmd.env("GIT_INDEX_FILE", idx);
     }
-    let out = cmd.output().map_err(|e| format!("failed to launch git: {e}"))?;
+    let out = cmd
+        .output()
+        .map_err(|e| format!("failed to launch git: {e}"))?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     } else {
@@ -134,7 +135,11 @@ fn stage_path(repo: &Path, idx: &Path, rel: &Path) -> Result<(), String> {
     if repo.join(rel).exists() {
         run(repo, Some(idx), &["add", "--", &rel_str])?;
     } else {
-        run(repo, Some(idx), &["rm", "--cached", "--ignore-unmatch", "--", &rel_str])?;
+        run(
+            repo,
+            Some(idx),
+            &["rm", "--cached", "--ignore-unmatch", "--", &rel_str],
+        )?;
     }
     Ok(())
 }
@@ -228,8 +233,8 @@ pub(crate) fn restore(repo: &Path, target: &str, latest: &str) -> Result<(), Str
 #[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
-    use std::sync::atomic::Ordering;
     use std::sync::atomic::AtomicU32;
+    use std::sync::atomic::Ordering;
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -248,7 +253,12 @@ mod tests {
         // --no-gpg-sign: this is a throwaway test repo, so signing (which
         // needs the developer's own key/passphrase and would hang or fail on
         // a box without one configured) is irrelevant and must be off.
-        run(&root, None, &["commit", "-q", "-m", "init", "--no-gpg-sign"]).ok()?;
+        run(
+            &root,
+            None,
+            &["commit", "-q", "-m", "init", "--no-gpg-sign"],
+        )
+        .ok()?;
         repo_root(&root)
     }
 
@@ -272,7 +282,10 @@ mod tests {
 
         // Restore to base: a.txt reverts, b.txt (added) is removed, ignored file stays.
         restore(&root, &base, &turn).expect("restore");
-        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "one\n");
+        assert_eq!(
+            std::fs::read_to_string(root.join("a.txt")).unwrap(),
+            "one\n"
+        );
         assert!(!root.join("b.txt").exists(), "added file must be removed");
         assert!(
             root.join("ignored/keep.txt").exists(),
@@ -309,7 +322,10 @@ mod tests {
 
         let head_tree = run(&root, None, &["rev-parse", "HEAD^{tree}"]).unwrap();
         let base_tree = run(&root, None, &["rev-parse", &format!("{base}^{{tree}}")]).unwrap();
-        assert_ne!(base_tree, head_tree, "base tree must include the pre-existing dirty edit");
+        assert_ne!(
+            base_tree, head_tree,
+            "base tree must include the pre-existing dirty edit"
+        );
 
         cleanup_snapshot_index(thread_id);
         let _ = std::fs::remove_dir_all(&root);

@@ -6,9 +6,9 @@ use std::{
 use tauri::{AppHandle, Manager, Runtime, State};
 
 use super::constants::{CONFIGURATION_FILE_NAME, TAURI_BUNDLE_IDENTIFIER};
-use super::models::AppConfiguration;
 #[cfg(not(feature = "cli"))]
 use super::helpers::copy_dir_recursive;
+use super::models::AppConfiguration;
 #[cfg(not(feature = "cli"))]
 use crate::core::state::AppState;
 

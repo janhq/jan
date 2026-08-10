@@ -655,8 +655,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
 
             // ClientInfo::default() is exactly what the previous `()` handler
             // sent on initialize, so the handshake is unchanged.
-            let handler =
-                JanClientHandler::new(ClientInfo::default(), name.clone(), app.clone());
+            let handler = JanClientHandler::new(ClientInfo::default(), name.clone(), app.clone());
             match handler.serve(process).await {
                 Ok(server) => break (server, stderr),
                 Err(e) => {
@@ -710,10 +709,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
             });
         }
         log::trace!("Connected to server: {:#?}", server.peer_info());
-        servers
-            .lock()
-            .await
-            .insert(name.clone(), server);
+        servers.lock().await.insert(name.clone(), server);
         log::info!("Server {name} started successfully.");
 
         // Wait a short time to verify the server is stable before marking as connected

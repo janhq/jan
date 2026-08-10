@@ -124,13 +124,17 @@ mod tests {
     #[tokio::test]
     async fn web_search_requires_query() {
         assert!(web_search(&json!({})).await.starts_with("ERROR"));
-        assert!(web_search(&json!({"query": "   "})).await.starts_with("ERROR"));
+        assert!(web_search(&json!({"query": "   "}))
+            .await
+            .starts_with("ERROR"));
     }
 
     #[tokio::test]
     async fn web_fetch_validates_url() {
         assert!(web_fetch(&json!({})).await.starts_with("ERROR"));
-        assert!(web_fetch(&json!({"url": "ftp://x"})).await.starts_with("ERROR"));
+        assert!(web_fetch(&json!({"url": "ftp://x"}))
+            .await
+            .starts_with("ERROR"));
     }
 
     #[test]

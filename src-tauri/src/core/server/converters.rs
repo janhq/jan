@@ -428,13 +428,22 @@ impl UpstreamConverter for OpenAIResponsesConverter {
                 }
             }
             "response.completed" | "response.incomplete" => {
-                let finish = if state.saw_tool_call { "tool_calls" } else { "stop" };
+                let finish = if state.saw_tool_call {
+                    "tool_calls"
+                } else {
+                    "stop"
+                };
                 let usage = data
                     .get("response")
                     .and_then(|r| r.get("usage"))
                     .map(|u| convert_usage(Some(u)))
                     .filter(|u| !u.is_null());
-                out.push(chunk_str_with_usage(state, json!({}), Some(finish), usage.as_ref()));
+                out.push(chunk_str_with_usage(
+                    state,
+                    json!({}),
+                    Some(finish),
+                    usage.as_ref(),
+                ));
                 out.push("[DONE]".to_string());
                 state.finished = true;
             }
@@ -486,12 +495,18 @@ fn convert_gemini_usage(usage: Option<&Value>) -> Value {
     let Some(u) = usage else {
         return Value::Null;
     };
-    let prompt = u.get("promptTokenCount").and_then(|v| v.as_i64()).unwrap_or(0);
+    let prompt = u
+        .get("promptTokenCount")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
     let candidates = u
         .get("candidatesTokenCount")
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
-    let thoughts = u.get("thoughtsTokenCount").and_then(|v| v.as_i64()).unwrap_or(0);
+    let thoughts = u
+        .get("thoughtsTokenCount")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
     let completion = candidates + thoughts;
     let total = u
         .get("totalTokenCount")
@@ -507,7 +522,10 @@ fn convert_gemini_usage(usage: Option<&Value>) -> Value {
 impl UpstreamConverter for GoogleGenerateContentConverter {
     fn upstream_path(&self, body: &Value) -> String {
         let model = body.get("model").and_then(|m| m.as_str()).unwrap_or("");
-        let streaming = body.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
+        let streaming = body
+            .get("stream")
+            .and_then(|s| s.as_bool())
+            .unwrap_or(false);
         if streaming {
             format!("/models/{model}:streamGenerateContent?alt=sse")
         } else {
@@ -529,7 +547,9 @@ impl UpstreamConverter for GoogleGenerateContentConverter {
                     for call in calls {
                         if let (Some(id), Some(name)) = (
                             call.get("id").and_then(|v| v.as_str()),
-                            call.get("function").and_then(|f| f.get("name")).and_then(|n| n.as_str()),
+                            call.get("function")
+                                .and_then(|f| f.get("name"))
+                                .and_then(|n| n.as_str()),
                         ) {
                             call_names.insert(id.to_string(), name.to_string());
                         }
@@ -557,12 +577,16 @@ impl UpstreamConverter for GoogleGenerateContentConverter {
                         if let Some(calls) = msg.get("tool_calls").and_then(|c| c.as_array()) {
                             for call in calls {
                                 let func = call.get("function");
-                                let name = func.and_then(|f| f.get("name")).cloned().unwrap_or(Value::Null);
+                                let name = func
+                                    .and_then(|f| f.get("name"))
+                                    .cloned()
+                                    .unwrap_or(Value::Null);
                                 let args_str = func
                                     .and_then(|f| f.get("arguments"))
                                     .and_then(|a| a.as_str())
                                     .unwrap_or("{}");
-                                let args: Value = serde_json::from_str(args_str).unwrap_or_else(|_| json!({}));
+                                let args: Value =
+                                    serde_json::from_str(args_str).unwrap_or_else(|_| json!({}));
                                 parts.push(json!({"functionCall": {"name": name, "args": args}}));
                             }
                         }
@@ -571,8 +595,14 @@ impl UpstreamConverter for GoogleGenerateContentConverter {
                         }
                     }
                     "tool" => {
-                        let call_id = msg.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("");
-                        let name = call_names.get(call_id).cloned().unwrap_or_else(|| call_id.to_string());
+                        let call_id = msg
+                            .get("tool_call_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let name = call_names
+                            .get(call_id)
+                            .cloned()
+                            .unwrap_or_else(|| call_id.to_string());
                         let text = message_text(&content);
                         // Gemini requires the functionResponse `response` to be an object.
                         let response: Value = serde_json::from_str(&text)
@@ -584,7 +614,8 @@ impl UpstreamConverter for GoogleGenerateContentConverter {
                             "parts": [{"functionResponse": {"name": name, "response": response}}]
                         }));
                     }
-                    _ => contents.push(json!({"role": "user", "parts": [{"text": message_text(&content)}]})),
+                    _ => contents
+                        .push(json!({"role": "user", "parts": [{"text": message_text(&content)}]})),
                 }
             }
         }
@@ -601,10 +632,17 @@ impl UpstreamConverter for GoogleGenerateContentConverter {
         if let Some(v) = body.get("top_p") {
             gen_config["topP"] = v.clone();
         }
-        if let Some(v) = body.get("max_tokens").or_else(|| body.get("max_completion_tokens")) {
+        if let Some(v) = body
+            .get("max_tokens")
+            .or_else(|| body.get("max_completion_tokens"))
+        {
             gen_config["maxOutputTokens"] = v.clone();
         }
-        if body.get("reasoning_effort").and_then(|e| e.as_str()).is_some() {
+        if body
+            .get("reasoning_effort")
+            .and_then(|e| e.as_str())
+            .is_some()
+        {
             gen_config["thinkingConfig"] = json!({"thinkingBudget": -1, "includeThoughts": true});
         }
         if gen_config.as_object().is_some_and(|o| !o.is_empty()) {
@@ -665,7 +703,11 @@ impl UpstreamConverter for GoogleGenerateContentConverter {
                         }
                     }));
                 } else if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
-                    if part.get("thought").and_then(|t| t.as_bool()).unwrap_or(false) {
+                    if part
+                        .get("thought")
+                        .and_then(|t| t.as_bool())
+                        .unwrap_or(false)
+                    {
                         reasoning.push_str(text);
                     } else {
                         content.push_str(text);
@@ -761,7 +803,11 @@ impl UpstreamConverter for GoogleGenerateContentConverter {
                     ));
                 } else if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
                     push_role_chunk(state, &mut out);
-                    let key = if part.get("thought").and_then(|t| t.as_bool()).unwrap_or(false) {
+                    let key = if part
+                        .get("thought")
+                        .and_then(|t| t.as_bool())
+                        .unwrap_or(false)
+                    {
                         "reasoning_content"
                     } else {
                         "content"
@@ -771,13 +817,21 @@ impl UpstreamConverter for GoogleGenerateContentConverter {
             }
         }
 
-        if let Some(reason) = candidate.and_then(|c| c.get("finishReason")).and_then(|r| r.as_str()) {
+        if let Some(reason) = candidate
+            .and_then(|c| c.get("finishReason"))
+            .and_then(|r| r.as_str())
+        {
             let finish = map_gemini_finish(reason, state.saw_tool_call);
             let usage = data
                 .get("usageMetadata")
                 .map(|u| convert_gemini_usage(Some(u)))
                 .filter(|u| !u.is_null());
-            out.push(chunk_str_with_usage(state, json!({}), Some(finish), usage.as_ref()));
+            out.push(chunk_str_with_usage(
+                state,
+                json!({}),
+                Some(finish),
+                usage.as_ref(),
+            ));
             out.push("[DONE]".to_string());
             state.finished = true;
         }
@@ -889,7 +943,8 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                                     .and_then(|f| f.get("arguments"))
                                     .and_then(|a| a.as_str())
                                     .unwrap_or("{}");
-                                let input: Value = serde_json::from_str(args_str).unwrap_or_else(|_| json!({}));
+                                let input: Value =
+                                    serde_json::from_str(args_str).unwrap_or_else(|_| json!({}));
                                 blocks.push(json!({
                                     "type": "tool_use",
                                     "id": call.get("id").cloned().unwrap_or(Value::Null),
@@ -1006,12 +1061,21 @@ impl UpstreamConverter for AnthropicMessagesConverter {
             message["tool_calls"] = json!(tool_calls);
         }
         let finish_reason = map_anthropic_finish(
-            upstream.get("stop_reason").and_then(|r| r.as_str()).unwrap_or("end_turn"),
+            upstream
+                .get("stop_reason")
+                .and_then(|r| r.as_str())
+                .unwrap_or("end_turn"),
             saw_tool,
         );
         let usage = upstream.get("usage");
-        let input_tokens = usage.and_then(|u| u.get("input_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
-        let output_tokens = usage.and_then(|u| u.get("output_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
+        let input_tokens = usage
+            .and_then(|u| u.get("input_tokens"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let output_tokens = usage
+            .and_then(|u| u.get("output_tokens"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
 
         json!({
             "id": upstream.get("id").cloned().unwrap_or_else(|| json!("chatcmpl-proxy")),
@@ -1051,7 +1115,11 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                     if let Some(model) = msg.get("model").and_then(|v| v.as_str()) {
                         state.model = model.to_string();
                     }
-                    if let Some(t) = msg.get("usage").and_then(|u| u.get("input_tokens")).and_then(|v| v.as_i64()) {
+                    if let Some(t) = msg
+                        .get("usage")
+                        .and_then(|u| u.get("input_tokens"))
+                        .and_then(|v| v.as_i64())
+                    {
                         state.input_tokens = t;
                     }
                 }
@@ -1061,7 +1129,11 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                 let block_type = block.and_then(|b| b.get("type")).and_then(|t| t.as_str());
                 push_role_chunk(state, &mut out);
                 if block_type == Some("tool_use") {
-                    let block_index = data.get("index").and_then(|v| v.as_i64()).unwrap_or(0).to_string();
+                    let block_index = data
+                        .get("index")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0)
+                        .to_string();
                     let idx = state.next_tool_index;
                     state.next_tool_index += 1;
                     state.tool_index.insert(block_index, idx);
@@ -1085,21 +1157,33 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                 let delta = data.get("delta");
                 match delta.and_then(|d| d.get("type")).and_then(|t| t.as_str()) {
                     Some("text_delta") => {
-                        if let Some(text) = delta.and_then(|d| d.get("text")).and_then(|t| t.as_str()) {
+                        if let Some(text) =
+                            delta.and_then(|d| d.get("text")).and_then(|t| t.as_str())
+                        {
                             push_role_chunk(state, &mut out);
                             out.push(chunk_str(state, json!({"content": text}), None));
                         }
                     }
                     Some("thinking_delta") => {
-                        if let Some(text) = delta.and_then(|d| d.get("thinking")).and_then(|t| t.as_str()) {
+                        if let Some(text) = delta
+                            .and_then(|d| d.get("thinking"))
+                            .and_then(|t| t.as_str())
+                        {
                             push_role_chunk(state, &mut out);
                             out.push(chunk_str(state, json!({"reasoning_content": text}), None));
                         }
                     }
                     Some("input_json_delta") => {
-                        let block_index = data.get("index").and_then(|v| v.as_i64()).unwrap_or(0).to_string();
+                        let block_index = data
+                            .get("index")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0)
+                            .to_string();
                         let idx = *state.tool_index.get(&block_index).unwrap_or(&0);
-                        if let Some(partial) = delta.and_then(|d| d.get("partial_json")).and_then(|t| t.as_str()) {
+                        if let Some(partial) = delta
+                            .and_then(|d| d.get("partial_json"))
+                            .and_then(|t| t.as_str())
+                        {
                             out.push(chunk_str(
                                 state,
                                 json!({"tool_calls": [{"index": idx, "function": {"arguments": partial}}]}),
@@ -1124,7 +1208,12 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0);
                 let usage = anthropic_usage(state.input_tokens, output_tokens);
-                out.push(chunk_str_with_usage(state, json!({}), Some(finish), Some(&usage)));
+                out.push(chunk_str_with_usage(
+                    state,
+                    json!({}),
+                    Some(finish),
+                    Some(&usage),
+                ));
                 out.push("[DONE]".to_string());
                 state.finished = true;
             }
@@ -1305,7 +1394,10 @@ mod openai_responses_tests {
         assert_eq!(out["max_output_tokens"], json!(128));
         assert_eq!(out["temperature"], json!(0.4));
         assert_eq!(out["stream"], json!(true));
-        assert_eq!(out["reasoning"], json!({"effort": "high", "summary": "auto"}));
+        assert_eq!(
+            out["reasoning"],
+            json!({"effort": "high", "summary": "auto"})
+        );
     }
 
     #[test]
@@ -1360,7 +1452,10 @@ mod openai_responses_tests {
         assert_eq!(choice["message"]["content"], json!("hello"));
         assert_eq!(choice["message"]["reasoning_content"], json!("thinking"));
         assert_eq!(choice["finish_reason"], json!("stop"));
-        assert_eq!(out["usage"], json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}));
+        assert_eq!(
+            out["usage"],
+            json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+        );
     }
 
     #[test]
@@ -1395,11 +1490,17 @@ mod openai_responses_tests {
         let mut state = StreamState::default();
         assert!(c
             .convert_stream_event(
-                &ev("response.created", json!({"response": {"id": "r1", "model": "gpt-5", "created_at": 9}})),
+                &ev(
+                    "response.created",
+                    json!({"response": {"id": "r1", "model": "gpt-5", "created_at": 9}})
+                ),
                 &mut state
             )
             .is_empty());
-        let first = c.convert_stream_event(&ev("response.output_text.delta", json!({"delta": "he"})), &mut state);
+        let first = c.convert_stream_event(
+            &ev("response.output_text.delta", json!({"delta": "he"})),
+            &mut state,
+        );
         assert_eq!(first.len(), 2);
         let role: Value = serde_json::from_str(&first[0]).unwrap();
         assert_eq!(role["choices"][0]["delta"]["role"], json!("assistant"));
@@ -1408,7 +1509,10 @@ mod openai_responses_tests {
         let content: Value = serde_json::from_str(&first[1]).unwrap();
         assert_eq!(content["choices"][0]["delta"]["content"], json!("he"));
 
-        let second = c.convert_stream_event(&ev("response.output_text.delta", json!({"delta": "llo"})), &mut state);
+        let second = c.convert_stream_event(
+            &ev("response.output_text.delta", json!({"delta": "llo"})),
+            &mut state,
+        );
         assert_eq!(second.len(), 1);
         let content2: Value = serde_json::from_str(&second[0]).unwrap();
         assert_eq!(content2["choices"][0]["delta"]["content"], json!("llo"));
@@ -1419,13 +1523,19 @@ mod openai_responses_tests {
         let c = conv();
         let mut state = StreamState::default();
         let out = c.convert_stream_event(
-            &ev("response.reasoning_summary_text.delta", json!({"delta": "hmm"})),
+            &ev(
+                "response.reasoning_summary_text.delta",
+                json!({"delta": "hmm"}),
+            ),
             &mut state,
         );
         // role chunk + reasoning chunk
         assert_eq!(out.len(), 2);
         let reasoning: Value = serde_json::from_str(&out[1]).unwrap();
-        assert_eq!(reasoning["choices"][0]["delta"]["reasoning_content"], json!("hmm"));
+        assert_eq!(
+            reasoning["choices"][0]["delta"]["reasoning_content"],
+            json!("hmm")
+        );
     }
 
     #[test]
@@ -1448,7 +1558,10 @@ mod openai_responses_tests {
         assert_eq!(tc["function"]["name"], json!("getw"));
 
         let arg = c.convert_stream_event(
-            &ev("response.function_call_arguments.delta", json!({"item_id": "fc_1", "delta": "{\"x\""})),
+            &ev(
+                "response.function_call_arguments.delta",
+                json!({"item_id": "fc_1", "delta": "{\"x\""}),
+            ),
             &mut state,
         );
         assert_eq!(arg.len(), 1);
@@ -1480,7 +1593,10 @@ mod openai_responses_tests {
         assert!(state.finished);
         // Events after completion are ignored.
         assert!(c
-            .convert_stream_event(&ev("response.output_text.delta", json!({"delta": "x"})), &mut state)
+            .convert_stream_event(
+                &ev("response.output_text.delta", json!({"delta": "x"})),
+                &mut state
+            )
             .is_empty());
     }
 
@@ -1489,7 +1605,10 @@ mod openai_responses_tests {
         let c = conv();
         let mut state = StreamState::default();
         let out = c.convert_stream_event(
-            &ev("", json!({"type": "response.output_text.delta", "delta": "hi"})),
+            &ev(
+                "",
+                json!({"type": "response.output_text.delta", "delta": "hi"}),
+            ),
             &mut state,
         );
         assert_eq!(out.len(), 2);
@@ -1500,10 +1619,22 @@ mod openai_responses_tests {
         let c = conv();
         let mut state = StreamState::default();
         assert!(c
-            .convert_stream_event(&SseEvent { event: String::new(), data: "[DONE]".into() }, &mut state)
+            .convert_stream_event(
+                &SseEvent {
+                    event: String::new(),
+                    data: "[DONE]".into()
+                },
+                &mut state
+            )
             .is_empty());
         assert!(c
-            .convert_stream_event(&SseEvent { event: String::new(), data: "not json".into() }, &mut state)
+            .convert_stream_event(
+                &SseEvent {
+                    event: String::new(),
+                    data: "not json".into()
+                },
+                &mut state
+            )
             .is_empty());
     }
 }
@@ -1549,7 +1680,10 @@ mod google_generate_content_tests {
             "reasoning_effort": "high"
         });
         let out = conv().convert_request(&body);
-        assert_eq!(out["systemInstruction"], json!({"parts": [{"text": "be brief"}]}));
+        assert_eq!(
+            out["systemInstruction"],
+            json!({"parts": [{"text": "be brief"}]})
+        );
         assert_eq!(
             out["contents"],
             json!([
@@ -1596,7 +1730,10 @@ mod google_generate_content_tests {
             out["tools"],
             json!([{"functionDeclarations": [{"name": "getw", "description": "d", "parameters": {"type": "object"}}]}])
         );
-        assert_eq!(out["toolConfig"], json!({"functionCallingConfig": {"mode": "ANY"}}));
+        assert_eq!(
+            out["toolConfig"],
+            json!({"functionCallingConfig": {"mode": "ANY"}})
+        );
     }
 
     #[test]
@@ -1633,7 +1770,10 @@ mod google_generate_content_tests {
         assert_eq!(choice["finish_reason"], json!("stop"));
         assert_eq!(out["id"], json!("r1"));
         assert_eq!(out["model"], json!("gemini-2.5-pro"));
-        assert_eq!(out["usage"], json!({"prompt_tokens": 8, "completion_tokens": 6, "total_tokens": 14}));
+        assert_eq!(
+            out["usage"],
+            json!({"prompt_tokens": 8, "completion_tokens": 6, "total_tokens": 14})
+        );
     }
 
     #[test]
@@ -1655,7 +1795,10 @@ mod google_generate_content_tests {
     }
 
     fn ev(data: Value) -> SseEvent {
-        SseEvent { event: String::new(), data: data.to_string() }
+        SseEvent {
+            event: String::new(),
+            data: data.to_string(),
+        }
     }
 
     #[test]
@@ -1674,7 +1817,10 @@ mod google_generate_content_tests {
         assert_eq!(role["choices"][0]["delta"]["role"], json!("assistant"));
         assert_eq!(role["model"], json!("gemini-2.5-pro"));
         let reason: Value = serde_json::from_str(&first[1]).unwrap();
-        assert_eq!(reason["choices"][0]["delta"]["reasoning_content"], json!("hmm"));
+        assert_eq!(
+            reason["choices"][0]["delta"]["reasoning_content"],
+            json!("hmm")
+        );
 
         let second = c.convert_stream_event(
             &ev(json!({"candidates": [{"content": {"parts": [{"text": "hello"}]}}]})),
@@ -1847,11 +1993,17 @@ mod anthropic_messages_tests {
         let tc = &choice["message"]["tool_calls"][0];
         assert_eq!(tc["id"], json!("tu_1"));
         assert_eq!(tc["function"]["arguments"], json!("{\"a\":1}"));
-        assert_eq!(out["usage"], json!({"prompt_tokens": 12, "completion_tokens": 6, "total_tokens": 18}));
+        assert_eq!(
+            out["usage"],
+            json!({"prompt_tokens": 12, "completion_tokens": 6, "total_tokens": 18})
+        );
     }
 
     fn ev(event: &str, data: Value) -> SseEvent {
-        SseEvent { event: event.to_string(), data: data.to_string() }
+        SseEvent {
+            event: event.to_string(),
+            data: data.to_string(),
+        }
     }
 
     #[test]
@@ -1863,7 +2015,10 @@ mod anthropic_messages_tests {
             &mut state,
         );
         let block = c.convert_stream_event(
-            &ev("content_block_start", json!({"index": 0, "content_block": {"type": "text"}})),
+            &ev(
+                "content_block_start",
+                json!({"index": 0, "content_block": {"type": "text"}}),
+            ),
             &mut state,
         );
         // role chunk on first content block
@@ -1873,7 +2028,10 @@ mod anthropic_messages_tests {
         assert_eq!(role["id"], json!("msg_1"));
 
         let text = c.convert_stream_event(
-            &ev("content_block_delta", json!({"index": 0, "delta": {"type": "text_delta", "text": "hi"}})),
+            &ev(
+                "content_block_delta",
+                json!({"index": 0, "delta": {"type": "text_delta", "text": "hi"}}),
+            ),
             &mut state,
         );
         assert_eq!(text.len(), 1);
@@ -1881,20 +2039,29 @@ mod anthropic_messages_tests {
         assert_eq!(content["choices"][0]["delta"]["content"], json!("hi"));
 
         let reasoning = c.convert_stream_event(
-            &ev("content_block_delta", json!({"index": 0, "delta": {"type": "thinking_delta", "thinking": "why"}})),
+            &ev(
+                "content_block_delta",
+                json!({"index": 0, "delta": {"type": "thinking_delta", "thinking": "why"}}),
+            ),
             &mut state,
         );
         let r: Value = serde_json::from_str(&reasoning[0]).unwrap();
         assert_eq!(r["choices"][0]["delta"]["reasoning_content"], json!("why"));
 
         let done = c.convert_stream_event(
-            &ev("message_delta", json!({"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 5}})),
+            &ev(
+                "message_delta",
+                json!({"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 5}}),
+            ),
             &mut state,
         );
         assert_eq!(done.len(), 2);
         let finish: Value = serde_json::from_str(&done[0]).unwrap();
         assert_eq!(finish["choices"][0]["finish_reason"], json!("stop"));
-        assert_eq!(finish["usage"], json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}));
+        assert_eq!(
+            finish["usage"],
+            json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+        );
         assert_eq!(done[1], "[DONE]");
         assert!(state.finished);
     }

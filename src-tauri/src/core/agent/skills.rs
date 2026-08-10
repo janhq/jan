@@ -126,7 +126,7 @@ pub(crate) fn parse(content: &str) -> ParsedSkill {
 
 /// First non-empty, non-heading line of `body`, capped at 120 chars. Fallback
 /// description when a skill has no frontmatter `description`.
-fn first_line(body: &str) -> String {
+pub(crate) fn first_line(body: &str) -> String {
     body.lines()
         .map(str::trim)
         .find(|l| !l.is_empty() && !l.starts_with('#'))
@@ -153,7 +153,8 @@ pub(crate) fn scan_skill_dir(dir: &Path) -> Vec<SkillEntry> {
     };
     // Keyed by name so a duplicate stem collapses to one entry; BTreeMap also
     // gives the sorted-by-name order for free.
-    let mut by_name: std::collections::BTreeMap<String, SkillEntry> = std::collections::BTreeMap::new();
+    let mut by_name: std::collections::BTreeMap<String, SkillEntry> =
+        std::collections::BTreeMap::new();
     let mut consider = |entry: SkillEntry| {
         match by_name.get(&entry.name) {
             // Keep an existing folder entry over an incoming flat one.
@@ -403,7 +404,11 @@ pub(crate) fn list_meta(root: &Path) -> Vec<SkillMeta> {
 /// Filter discovered skills (project + plugins) by the `[skills].enabled`
 /// whitelist and one invocation side. Skills with neither a description nor a
 /// body are skipped (nothing to advertise or invoke).
-fn side_catalog(root: &Path, enabled: &[String], side: impl Fn(&ParsedSkill) -> bool) -> Vec<SkillMeta> {
+fn side_catalog(
+    root: &Path,
+    enabled: &[String],
+    side: impl Fn(&ParsedSkill) -> bool,
+) -> Vec<SkillMeta> {
     discover_all(root)
         .into_iter()
         .filter(|e| is_enabled(enabled, e))
@@ -545,11 +550,11 @@ pub(crate) fn build_invocation_message(
         .map(|c| c.skills.enabled)
         .unwrap_or_default();
     let user_skills = user_catalog(root, &enabled);
-    let meta = find_user_skill(&user_skills, name)
-        .ok_or_else(|| format!("skill '{name}' not found"))?;
+    let meta =
+        find_user_skill(&user_skills, name).ok_or_else(|| format!("skill '{name}' not found"))?;
     let entry = resolve_readable(root, name)?;
-    let body = parse(&std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))?)
-        .body;
+    let body =
+        parse(&std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))?).body;
     let args = args.trim();
     let mut msg = format!(
         "[IMPORTANT: You have invoked the \"{name}\" skill - follow its instructions. The full skill content is loaded below.]\n\n{body}"
@@ -573,16 +578,12 @@ pub(crate) fn build_invocation_message(
 /// match first (project names and the explicit `<plugin>:<skill>` form), then
 /// a plain name that is unique across plugin skills.
 fn find_user_skill(user_skills: &[SkillMeta], name: &str) -> Option<SkillMeta> {
-    if let Some(meta) = user_skills
-        .iter()
-        .find(|m| m.name == name)
-        .cloned()
-    {
+    if let Some(meta) = user_skills.iter().find(|m| m.name == name).cloned() {
         return Some(meta);
     }
-    let mut matches = user_skills.iter().filter(|m| {
-        m.plugin.is_some() && m.name.rsplit_once(':').map(|(_, s)| s) == Some(name)
-    });
+    let mut matches = user_skills
+        .iter()
+        .filter(|m| m.plugin.is_some() && m.name.rsplit_once(':').map(|(_, s)| s) == Some(name));
     let first = matches.next()?.clone();
     matches.next().is_none().then_some(first)
 }
@@ -648,7 +649,10 @@ mod tests {
     fn discover_finds_folder_and_flat_skills_sorted() {
         let root = std::env::temp_dir().join(format!(
             "jan_skills_test_{}",
-            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+            std::time::SystemTime::UNIX_EPOCH
+                .elapsed()
+                .unwrap()
+                .as_nanos()
         ));
         let dir = skills_dir(&root);
         std::fs::create_dir_all(dir.join("b_folder")).unwrap();
@@ -664,7 +668,10 @@ mod tests {
     fn write_new_creates_folder_form_read_delete_roundtrip() {
         let root = std::env::temp_dir().join(format!(
             "jan_skills_rt_{}",
-            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+            std::time::SystemTime::UNIX_EPOCH
+                .elapsed()
+                .unwrap()
+                .as_nanos()
         ));
         write(&root, "deploy", "---\ndescription: d\n---\nbody").unwrap();
         assert!(skills_dir(&root).join("deploy").join("SKILL.md").is_file());
@@ -692,7 +699,8 @@ mod tests {
         assert_eq!(name, "deploy");
         assert_eq!(args, "");
         // Mid-prompt: surrounding prose collapses into args.
-        let (name, args) = parse_invocation("fix the auth flow /skill:deploy focus on security").unwrap();
+        let (name, args) =
+            parse_invocation("fix the auth flow /skill:deploy focus on security").unwrap();
         assert_eq!(name, "deploy");
         assert_eq!(args, "fix the auth flow focus on security");
         // Token at the end: only the prose before it.
@@ -741,7 +749,10 @@ mod tests {
     fn catalog_and_user_catalog_split_invocation_sides() {
         let root = std::env::temp_dir().join(format!(
             "jan_skills_sides_{}",
-            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+            std::time::SystemTime::UNIX_EPOCH
+                .elapsed()
+                .unwrap()
+                .as_nanos()
         ));
         let dir = skills_dir(&root);
         let write = |name: &str, fm: &str| {
@@ -758,14 +769,27 @@ mod tests {
 
         let model: Vec<_> = catalog(&root, &[]).into_iter().map(|m| m.name).collect();
         assert_eq!(model, vec!["both", "model_only"], "model side: {model:?}");
-        let user: Vec<_> = user_catalog(&root, &[]).into_iter().map(|m| m.name).collect();
+        let user: Vec<_> = user_catalog(&root, &[])
+            .into_iter()
+            .map(|m| m.name)
+            .collect();
         assert_eq!(user, vec!["both", "user_only"], "user side: {user:?}");
 
         // Both flags still visible to the management list.
         let all = list_meta(&root);
         assert_eq!(all.len(), 3);
-        assert!(!all.iter().find(|m| m.name == "model_only").unwrap().user_invocable);
-        assert!(!all.iter().find(|m| m.name == "user_only").unwrap().model_invocable);
+        assert!(
+            !all.iter()
+                .find(|m| m.name == "model_only")
+                .unwrap()
+                .user_invocable
+        );
+        assert!(
+            !all.iter()
+                .find(|m| m.name == "user_only")
+                .unwrap()
+                .model_invocable
+        );
 
         // User invocation refuses model-only skills.
         assert!(build_invocation_message(&root, "model_only", "").is_err());
@@ -777,7 +801,10 @@ mod tests {
     fn build_invocation_message_injects_body_and_args() {
         let root = std::env::temp_dir().join(format!(
             "jan_skills_inv_{}",
-            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+            std::time::SystemTime::UNIX_EPOCH
+                .elapsed()
+                .unwrap()
+                .as_nanos()
         ));
         std::fs::create_dir_all(skills_dir(&root).join("deploy")).unwrap();
         std::fs::write(
@@ -788,7 +815,10 @@ mod tests {
 
         let (msg, description) = build_invocation_message(&root, "deploy", "staging").unwrap();
         assert_eq!(description, "Ship it");
-        assert!(msg.contains("You have invoked the \"deploy\" skill"), "{msg}");
+        assert!(
+            msg.contains("You have invoked the \"deploy\" skill"),
+            "{msg}"
+        );
         assert!(msg.contains("# Deploy\n\nRun the script."), "body: {msg}");
         assert!(msg.contains("Skill directory:"), "folder announced: {msg}");
         assert!(msg.contains("User: staging"), "{msg}");
@@ -800,7 +830,10 @@ mod tests {
             "[skills]\nenabled = [\"other\"]\n",
         )
         .unwrap();
-        assert!(build_invocation_message(&root, "deploy", "").is_err(), "disabled");
+        assert!(
+            build_invocation_message(&root, "deploy", "").is_err(),
+            "disabled"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -808,7 +841,10 @@ mod tests {
     fn catalog_enabled_whitelist_filters() {
         let root = std::env::temp_dir().join(format!(
             "jan_skills_wl_{}",
-            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+            std::time::SystemTime::UNIX_EPOCH
+                .elapsed()
+                .unwrap()
+                .as_nanos()
         ));
         write(&root, "a", "body a").unwrap();
         write(&root, "b", "body b").unwrap();
@@ -827,14 +863,20 @@ mod tests {
     fn write_existing_flat_stays_flat() {
         let root = std::env::temp_dir().join(format!(
             "jan_skills_flat_{}",
-            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+            std::time::SystemTime::UNIX_EPOCH
+                .elapsed()
+                .unwrap()
+                .as_nanos()
         ));
         let dir = skills_dir(&root);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("legacy.md"), "old").unwrap();
 
         write(&root, "legacy", "new").unwrap();
-        assert_eq!(std::fs::read_to_string(dir.join("legacy.md")).unwrap(), "new");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("legacy.md")).unwrap(),
+            "new"
+        );
         assert!(!dir.join("legacy").exists());
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -842,7 +884,10 @@ mod tests {
     fn temp_root(tag: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
             "jan_pluginskills_{tag}_{}",
-            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+            std::time::SystemTime::UNIX_EPOCH
+                .elapsed()
+                .unwrap()
+                .as_nanos()
         ))
     }
 
@@ -871,13 +916,24 @@ mod tests {
     fn discover_all_tags_plugin_skills_and_single_skill_plugins() {
         let root = temp_root("disc");
         project_skill(&root, "deploy", "---\ndescription: d\n---\nproj body\n");
-        plugin_skill(&root, "release", "prepare", "---\ndescription: prep\n---\nrel body\n");
+        plugin_skill(
+            &root,
+            "release",
+            "prepare",
+            "---\ndescription: prep\n---\nrel body\n",
+        );
         plugin_skill(&root, "release", "changelog", "flat body");
-        single_plugin(&root, "triage", "---\ndescription: triage\n---\ntriage body\n");
+        single_plugin(
+            &root,
+            "triage",
+            "---\ndescription: triage\n---\ntriage body\n",
+        );
 
         let entries = discover_all(&root);
-        let names: Vec<(String, Option<String>)> =
-            entries.iter().map(|e| (qualified_name(e), e.plugin.clone())).collect();
+        let names: Vec<(String, Option<String>)> = entries
+            .iter()
+            .map(|e| (qualified_name(e), e.plugin.clone()))
+            .collect();
         assert_eq!(
             names,
             vec![
@@ -938,7 +994,12 @@ mod tests {
     fn catalog_and_user_catalog_include_plugin_skills_with_flags() {
         let root = temp_root("cat");
         project_skill(&root, "deploy", "---\ndescription: ship\n---\nbody\n");
-        plugin_skill(&root, "release", "prepare", "---\ndescription: prep\n---\nbody\n");
+        plugin_skill(
+            &root,
+            "release",
+            "prepare",
+            "---\ndescription: prep\n---\nbody\n",
+        );
         // Model-only plugin skill: hidden from the user catalog, visible to the model.
         plugin_skill(
             &root,
@@ -955,13 +1016,19 @@ mod tests {
         );
 
         let enabled: Vec<String> = Vec::new();
-        let model: Vec<String> = catalog(&root, &enabled).into_iter().map(|m| m.name).collect();
+        let model: Vec<String> = catalog(&root, &enabled)
+            .into_iter()
+            .map(|m| m.name)
+            .collect();
         assert!(model.contains(&"deploy".to_string()));
         assert!(model.contains(&"release:prepare".to_string()));
         assert!(model.contains(&"release:internals".to_string()));
         assert!(!model.contains(&"triage:labels".to_string()));
 
-        let user: Vec<String> = user_catalog(&root, &enabled).into_iter().map(|m| m.name).collect();
+        let user: Vec<String> = user_catalog(&root, &enabled)
+            .into_iter()
+            .map(|m| m.name)
+            .collect();
         assert!(user.contains(&"release:prepare".to_string()));
         assert!(user.contains(&"triage:labels".to_string()));
         assert!(!user.contains(&"release:internals".to_string()));
@@ -1007,14 +1074,18 @@ mod tests {
         .unwrap();
         std::fs::write(plugin_dir.join("assets.txt"), "bundled").unwrap();
 
-        let (msg, description) = build_invocation_message(&root, "release:prepare", "staging").unwrap();
+        let (msg, description) =
+            build_invocation_message(&root, "release:prepare", "staging").unwrap();
         assert_eq!(description, "Prep the release");
         assert!(msg.contains("Run the release steps."));
         assert!(msg.contains("User: staging"));
         // The announced base directory is the plugin skill folder, so bundled
         // files resolve.
         let expected_dir = plugin_dir.join("skills").join("prepare");
-        assert!(msg.contains(&format!("[Skill directory: {}]", expected_dir.display())), "{msg}");
+        assert!(
+            msg.contains(&format!("[Skill directory: {}]", expected_dir.display())),
+            "{msg}"
+        );
 
         // Short plain form works when unambiguous.
         let (msg, _) = build_invocation_message(&root, "prepare", "").unwrap();

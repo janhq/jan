@@ -8,7 +8,9 @@ pub async fn parse_document<R: tauri::Runtime>(
     file_type: String,
 ) -> Result<String, RagError> {
     log::info!("Parsing document: {} (type: {})", file_path, file_type);
-    let res = catch_unwind(AssertUnwindSafe(|| parser::parse_document(&file_path, &file_type)));
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        parser::parse_document(&file_path, &file_type)
+    }));
     match res {
         Ok(result) => result,
         Err(payload) => {

@@ -51,9 +51,8 @@ pub(crate) fn load_context_files(project_root: &Path) -> Option<String> {
     // Ancestors are collected nearest-first; reverse so the nearest (most
     // specific) instructions appear last and take precedence.
     files.reverse();
-    let mut block = String::from(
-        "<project_context>\n\nProject-specific instructions and guidelines:\n\n",
-    );
+    let mut block =
+        String::from("<project_context>\n\nProject-specific instructions and guidelines:\n\n");
     for (path, content) in files {
         block.push_str(&format!(
             "<project_instructions path=\"{}\">\n{}\n</project_instructions>\n\n",
@@ -182,11 +181,7 @@ fn display_path(path: &Path) -> String {
 fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> String {
     let cwd = display_path(project_root);
 
-    let os = format!(
-        "{} {}",
-        std::env::consts::OS,
-        std::env::consts::ARCH
-    );
+    let os = format!("{} {}", std::env::consts::OS, std::env::consts::ARCH);
 
     let now = Local::now();
     let date = now.format("%Y-%m-%d").to_string();
@@ -397,7 +392,10 @@ mod tests {
         );
         let block = load_skills(&root).expect("skills block");
         assert!(block.contains("## Skill: agent-only"), "block: {block}");
-        assert!(!block.contains("## Skill: user-only"), "user-only leaked: {block}");
+        assert!(
+            !block.contains("## Skill: user-only"),
+            "user-only leaked: {block}"
+        );
         assert!(!block.contains("user body"), "body leaked: {block}");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -424,12 +422,18 @@ mod tests {
         assert!(out.contains("web_search"));
         assert!(out.contains("web_fetch"));
         // Provider-neutral: the model must not be told to call a branded tool.
-        assert!(out.contains("exa_search"), "guide names the anti-pattern to avoid");
+        assert!(
+            out.contains("exa_search"),
+            "guide names the anti-pattern to avoid"
+        );
         // Teaches how to call the tools, not just that they exist.
         assert!(out.contains("query"), "documents the web_search query arg");
         assert!(out.contains("count"), "documents the web_search count arg");
         assert!(out.contains("url"), "documents the web_fetch url arg");
-        assert!(out.contains("Workflow"), "describes the search->fetch->cite flow");
+        assert!(
+            out.contains("Workflow"),
+            "describes the search->fetch->cite flow"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -513,7 +517,11 @@ mod tests {
         let block = runtime_environment_block(&root, None);
         // Must be a handful of lines, not a wall of text.
         let lines: Vec<_> = block.lines().filter(|l| !l.is_empty()).collect();
-        assert!(lines.len() <= 15, "env block is too large: {} lines", lines.len());
+        assert!(
+            lines.len() <= 15,
+            "env block is too large: {} lines",
+            lines.len()
+        );
         // Must contain the key sections.
         assert!(block.contains("# Runtime Environment"));
         assert!(block.contains("Work directory:"));
@@ -537,7 +545,10 @@ mod tests {
         // The block sits right after the Working Directory section.
         let work_dir_pos = out.find("# Working Directory").unwrap();
         let env_pos = out.find("# Runtime Environment").unwrap();
-        assert!(work_dir_pos < env_pos, "env block must come after working directory");
+        assert!(
+            work_dir_pos < env_pos,
+            "env block must come after working directory"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

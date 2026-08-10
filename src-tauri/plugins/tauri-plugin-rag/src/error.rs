@@ -17,4 +17,3 @@ impl From<std::io::Error> for RagError {
         RagError::IoError(err.to_string())
     }
 }
-

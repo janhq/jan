@@ -132,8 +132,7 @@ mod windows_impl {
     type AdlAdapterNumberofadaptersGet = unsafe extern "C" fn(*mut c_int) -> c_int;
     type AdlAdapterAdapterinfoGet = unsafe extern "C" fn(*mut AdapterInfo, c_int) -> c_int;
     type AdlAdapterActiveGet = unsafe extern "C" fn(c_int, *mut c_int) -> c_int;
-    type AdlGetDedicatedVramUsage =
-        unsafe extern "C" fn(*mut c_void, c_int, *mut c_int) -> c_int;
+    type AdlGetDedicatedVramUsage = unsafe extern "C" fn(*mut c_void, c_int, *mut c_int) -> c_int;
 
     // === ADL Memory Allocator ===
     unsafe extern "C" fn adl_malloc(i_size: i32) -> *mut c_void {
@@ -160,14 +159,23 @@ mod windows_impl {
                 get_sym!(lib, b"ADL_Main_Control_Create\0", ADLMAINCONTROLCREATE);
             let adlmaincontroldestroy: Symbol<ADLMAINCONTROLDESTROY> =
                 get_sym!(lib, b"ADL_Main_Control_Destroy\0", ADLMAINCONTROLDESTROY);
-            let adl_adapter_number_of_adapters_get: Symbol<AdlAdapterNumberofadaptersGet> =
-                get_sym!(lib, b"ADL_Adapter_NumberOfAdapters_Get\0", AdlAdapterNumberofadaptersGet);
-            let adl_adapter_adapter_info_get: Symbol<AdlAdapterAdapterinfoGet> =
-                get_sym!(lib, b"ADL_Adapter_AdapterInfo_Get\0", AdlAdapterAdapterinfoGet);
+            let adl_adapter_number_of_adapters_get: Symbol<AdlAdapterNumberofadaptersGet> = get_sym!(
+                lib,
+                b"ADL_Adapter_NumberOfAdapters_Get\0",
+                AdlAdapterNumberofadaptersGet
+            );
+            let adl_adapter_adapter_info_get: Symbol<AdlAdapterAdapterinfoGet> = get_sym!(
+                lib,
+                b"ADL_Adapter_AdapterInfo_Get\0",
+                AdlAdapterAdapterinfoGet
+            );
             let AdlAdapterActiveGet: Symbol<AdlAdapterActiveGet> =
                 get_sym!(lib, b"ADL_Adapter_Active_Get\0", AdlAdapterActiveGet);
-            let AdlGetDedicatedVramUsage: Symbol<AdlGetDedicatedVramUsage> =
-                get_sym!(lib, b"ADL2_Adapter_DedicatedVRAMUsage_Get\0", AdlGetDedicatedVramUsage);
+            let AdlGetDedicatedVramUsage: Symbol<AdlGetDedicatedVramUsage> = get_sym!(
+                lib,
+                b"ADL2_Adapter_DedicatedVRAMUsage_Get\0",
+                AdlGetDedicatedVramUsage
+            );
 
             // TODO: try to put nullptr here. then we don't need direct libc dep
             if adlmaincontrolcreate(Some(adl_malloc), 1) != 0 {

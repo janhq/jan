@@ -104,7 +104,10 @@ fn read_file_map(path: &PathBuf) -> BTreeMap<String, Vec<String>> {
     serde_json::from_slice(&plaintext).unwrap_or_default()
 }
 
-fn write_file_map_atomic(path: &PathBuf, map: &BTreeMap<String, Vec<String>>) -> Result<(), String> {
+fn write_file_map_atomic(
+    path: &PathBuf,
+    map: &BTreeMap<String, Vec<String>>,
+) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -129,7 +132,10 @@ fn write_file_map_atomic(path: &PathBuf, map: &BTreeMap<String, Vec<String>>) ->
 fn restrict_permissions(path: &PathBuf) {
     use std::os::unix::fs::PermissionsExt;
     if let Err(err) = fs::set_permissions(path, fs::Permissions::from_mode(0o600)) {
-        log::warn!("Failed to restrict permissions on {}: {err}", path.display());
+        log::warn!(
+            "Failed to restrict permissions on {}: {err}",
+            path.display()
+        );
     }
 }
 
@@ -305,12 +311,12 @@ mod tests {
         // A missing key is normal churn -> must not disable the keyring.
         assert!(!is_infra_failure(&keyring::Error::NoEntry));
         // Backend-unusable errors (D-Bus timeout surfaces as PlatformFailure) latch.
-        assert!(is_infra_failure(&keyring::Error::PlatformFailure(Box::new(
-            std::io::Error::other("dbus timeout")
-        ))));
-        assert!(is_infra_failure(&keyring::Error::NoStorageAccess(Box::new(
-            std::io::Error::other("locked")
-        ))));
+        assert!(is_infra_failure(&keyring::Error::PlatformFailure(
+            Box::new(std::io::Error::other("dbus timeout"))
+        )));
+        assert!(is_infra_failure(&keyring::Error::NoStorageAccess(
+            Box::new(std::io::Error::other("locked"))
+        )));
     }
 
     #[test]
@@ -358,8 +364,14 @@ mod tests {
         file_store("openai", &[secret.to_string()]).unwrap();
         let bytes = fs::read(secrets_file_path()).unwrap();
         let haystack = String::from_utf8_lossy(&bytes);
-        assert!(!haystack.contains(secret), "secret must not appear in plaintext on disk");
-        assert!(!haystack.contains("openai"), "provider name must not appear in plaintext");
+        assert!(
+            !haystack.contains(secret),
+            "secret must not appear in plaintext on disk"
+        );
+        assert!(
+            !haystack.contains("openai"),
+            "provider name must not appear in plaintext"
+        );
     }
 
     #[cfg(unix)]
@@ -368,7 +380,10 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let _tmp = TempDataFolder::new();
         file_store("openai", &["sk-x".to_string()]).unwrap();
-        let mode = fs::metadata(secrets_file_path()).unwrap().permissions().mode();
+        let mode = fs::metadata(secrets_file_path())
+            .unwrap()
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o777, 0o600);
     }
 }

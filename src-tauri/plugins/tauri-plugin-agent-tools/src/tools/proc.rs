@@ -79,10 +79,7 @@ fn resolve_shell() -> ShellConfig {
         if let Some(p) = which("bash") {
             // System32\bash.exe is the WSL launcher: it rejects `-c`, so the
             // command must be piped to `bash -s` on stdin instead.
-            let is_wsl = p
-                .to_string_lossy()
-                .to_lowercase()
-                .contains("system32");
+            let is_wsl = p.to_string_lossy().to_lowercase().contains("system32");
             if is_wsl {
                 return ShellConfig {
                     program: p,
@@ -126,7 +123,16 @@ fn which(name: &str) -> Option<PathBuf> {
 /// `JAN_DATA_FOLDER` -- so the shell is launched with only what a command needs
 /// to run at all. Applied here, the one choke point all backends (bubblewrap,
 /// seatbelt, and the Windows AppContainer helper) funnel through.
-const SANDBOX_ENV_ALLOW: &[&str] = &["PATH", "HOME", "USERPROFILE", "TMPDIR", "TMP", "TEMP", "LANG", "TERM"];
+const SANDBOX_ENV_ALLOW: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USERPROFILE",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "LANG",
+    "TERM",
+];
 
 /// Every spelling of "where temporary files go": POSIX tools read `TMPDIR`,
 /// Windows ones `TEMP`/`TMP`, and a mixed toolchain (git-bash, MSYS) reads both.
@@ -383,7 +389,10 @@ mod tests {
             }
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
-        assert!(!alive(grandchild), "grandchild must be reaped by group kill");
+        assert!(
+            !alive(grandchild),
+            "grandchild must be reaped by group kill"
+        );
     }
 
     #[test]
@@ -415,6 +424,9 @@ mod tests {
         let out = child.wait_with_output().await.unwrap();
         unregister(pid);
         let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        assert_eq!(val, "1024", "NOFILE soft limit should be capped, got: {val}");
+        assert_eq!(
+            val, "1024",
+            "NOFILE soft limit should be capped, got: {val}"
+        );
     }
 }

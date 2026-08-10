@@ -18,33 +18,60 @@ plugin carries instructions plus optional metadata, nothing executable.
 ```
 <project>/.jan/agent/plugins/
 └── release-tools/
-    ├── plugin.toml              # optional metadata (name, description, version, repo)
+    ├── plugin.toml              # optional TOML metadata
+    ├── .claude-plugin/
+    │   └── plugin.json          # Claude-compatible metadata
     ├── skills/
     │   └── prepare/
     │       └── SKILL.md
     └── ...
 ```
 
-A plugin's skills are discovered conventionally, so a repo needs no manifest to be installable:
+A plugin's payload is discovered conventionally, so a repo needs no manifest to be installable:
 
 - `skills/` - the same layout as project skills: folder skills (`<name>/SKILL.md`) and flat
   `<name>.md`
 - `SKILL.md` at the repo root - a repo that is itself one skill
-- `plugin.toml` - optional metadata: `name`, `description`, `version`, `repo`. The directory name
-  is the plugin's identity; the manifest's `name` is what `plugin list` shows when present.
+- `commands/` - slash-invocable prompt templates (`<name>.md`, nested directories included)
+- `agents/` - dispatchable subagent definitions (`<name>.md`, nested directories included)
+- `plugin.toml` or `.claude-plugin/plugin.json` - optional metadata: `name`, `description`, `version`,
+  and `repo`. The directory name is the plugin's identity; the manifest's `name` is what
+  `plugin list` shows when present.
+
+This is the same layout Claude Code and Codex plugins use, so existing plugins install and work
+unchanged: `anthropics/claude-plugins-official` and similar marketplaces are drop-in compatible.
 
 ## Installing
 
-```
-/plugin install <git-url>
-/plugin install <git-url>#<ref>        # install a specific branch or tag
-/plugin install <marketplace-name>     # resolve a name through your marketplace
+From the command line:
+
+```bash
+jan plugin install <git-url>
+jan plugin install <git-url>#<ref>        # install a specific branch or tag
+jan plugin install <github-tree-url>      # install a plugin from a repo subdirectory
+jan plugin install <marketplace-name>     # resolve a name through your marketplace
+jan plugin list
+jan plugin remove <name>
+jan plugin search [query]
 ```
 
-The plugin is cloned (`--depth 1`), validated to contain `plugin.toml`, `skills/`, or a root
-`SKILL.md`, and moved into place under its final name. Reinstalling an existing plugin is refused
-(remove it first). Specs with shell metacharacters are rejected outright - a plugin name is a name,
-not a command.
+Inside the interactive agent, the equivalent commands are:
+
+```
+/plugin install <git-url>
+/plugin list
+/plugin remove <name>
+/plugin search <query>
+```
+
+GitHub tree URLs such as
+`https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-code-setup`
+are cloned from the repository root and install only the selected subdirectory.
+
+The plugin is cloned (`--depth 1`), validated to contain a plugin manifest, `skills/`, `commands/`,
+`agents/`, `.mcp.json`, or a root `SKILL.md`, and moved into place under its final name.
+Reinstalling an existing plugin is refused (remove it first). Specs with shell metacharacters are
+rejected outright - a plugin name is a name, not a command.
 
 ## Invoking plugin skills
 
@@ -62,12 +89,70 @@ short form when unambiguous and the qualified form otherwise. Plugin skills flow
 invocation mechanics as project skills, including the `[skills].enabled` whitelist: enable a plugin
 name (`release-tools`), one qualified skill (`release-tools:prepare`), or a plain name.
 
+## Plugin commands
+
+A plugin's `commands/` directory is discovered as slash commands. Each markdown file is a prompt
+template: the frontmatter `description` feeds the slash popup, and the body is loaded into the
+conversation when you run the command. `$ARGUMENTS` is replaced with everything you typed after the
+command name, and `$1`..`$9` with the individual whitespace-separated words:
+
+```bash
+/feature-dev add user authentication     # $ARGUMENTS = "add user authentication", $1 = "add"
+```
+
+Precedence in the slash namespace is built-in command, then plugin command, then skill, so a plugin
+command named `resume` never shadows the built-in `/resume` (the explicit `/command:<plugin>:<name>`
+form always works). Like skills, commands honor the `[skills].enabled` whitelist. The transcript
+shows one compact `[command:<name>]` row with your arguments.
+
+## Plugin agents
+
+A plugin's `agents/` directory is discovered as dispatchable subagents: the markdown frontmatter
+`name` and `description` become the subagent's identity, and the body becomes its system prompt, so
+a plugin can fan work out to specialized agents exactly as it does in Claude Code. Claude-runtime
+metadata is handled honestly:
+
+- `model` and `color` are ignored - the agent always runs on the session's model
+- `tools` is mapped onto Jan's tool names (`Read` -> `read`, `Glob` -> `glob`, `Grep` -> `grep`,
+  `WebSearch` -> `web_search`, `WebFetch` -> `web_fetch`, `TodoWrite` -> `todo`, and so on);
+  names with no Jan equivalent are dropped, and an agent listing only unknown tools inherits the
+  parent's full tool policy
+
+Plugin agents are read-only: `create_subagent` refuses the plugin scope, and a subagent defined in
+`.jan/agent/subagents/` shadows a plugin agent of the same name.
+
 ## Managing
 
+Interactive commands:
+
 ```
-/plugin list                  # installed plugins and the skills they ship
+/plugin list                  # one compact summary line per plugin
+/plugin list release-tools    # description and skill names for one plugin
 /plugin remove release-tools  # uninstall
 /plugin search prepare        # search the marketplace (name/description)
+```
+
+The compact list shows each plugin's name, version, and payload counts (skills, commands, agents).
+Descriptions and artifact names are shown only when a plugin name is requested. Interrupted
+`.installing-*` staging directories are omitted from listings.
+
+The headless CLI uses the same compact table by default:
+
+```bash
+jan plugin list --project ~/code/app
+```
+
+Use `--json` when complete plugin metadata or machine-readable output is needed:
+
+```bash
+jan plugin list --project ~/code/app --json
+```
+
+Install and search continue to print JSON results:
+
+```bash
+jan plugin install https://github.com/acme/release-tools --project ~/code/app
+jan plugin search prepare --project ~/code/app
 ```
 
 Removal is a directory delete under the same name guard as everything else in the agent: a name

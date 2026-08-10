@@ -45,8 +45,14 @@ fn test_get_vulkan_gpus_on_desktop() {
         if let Some(vulkan_info) = &gpu.vulkan_info {
             println!("    Vulkan API Version: {}", vulkan_info.api_version);
             println!("    Device Type: {}", vulkan_info.device_type);
-            assert!(!vulkan_info.api_version.is_empty(), "Vulkan API version should not be empty");
-            assert!(!vulkan_info.device_type.is_empty(), "Device type should not be empty");
+            assert!(
+                !vulkan_info.api_version.is_empty(),
+                "Vulkan API version should not be empty"
+            );
+            assert!(
+                !vulkan_info.device_type.is_empty(),
+                "Device type should not be empty"
+            );
         }
     }
 }
@@ -69,13 +75,21 @@ fn test_get_vulkan_gpus_on_android() {
         println!("    Driver Version: {}", gpu.driver_version);
 
         // Verify C string parsing works correctly with i8 on Android
-        assert!(!gpu.name.is_empty(), "GPU name should not be empty on Android");
-        assert!(!gpu.uuid.is_empty(), "GPU UUID should not be empty on Android");
+        assert!(
+            !gpu.name.is_empty(),
+            "GPU name should not be empty on Android"
+        );
+        assert!(
+            !gpu.uuid.is_empty(),
+            "GPU UUID should not be empty on Android"
+        );
 
         // Android devices should typically have Adreno, Mali, or PowerVR GPUs
         // The name parsing should handle i8 char arrays correctly
         assert!(
-            gpu.name.chars().all(|c| c.is_ascii() || c.is_ascii_control()),
+            gpu.name
+                .chars()
+                .all(|c| c.is_ascii() || c.is_ascii_control()),
             "GPU name should contain valid characters when parsed from i8 array"
         );
 
@@ -116,7 +130,9 @@ fn test_get_vulkan_gpus_on_ios() {
         // iOS devices should typically have Apple GPU (if Vulkan is available via MoltenVK)
         // The name parsing should handle i8 char arrays correctly
         assert!(
-            gpu.name.chars().all(|c| c.is_ascii() || c.is_ascii_control()),
+            gpu.name
+                .chars()
+                .all(|c| c.is_ascii() || c.is_ascii_control()),
             "GPU name should contain valid characters when parsed from i8 array"
         );
 

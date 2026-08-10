@@ -6,9 +6,9 @@ pub mod brand;
 pub mod journal;
 pub mod login;
 pub mod mcp;
-pub mod providers;
 mod path_refs;
 pub mod run_report;
+pub mod providers;
 mod secret_input;
 pub mod telemetry;
 pub mod tokamak;
@@ -23,8 +23,7 @@ use crate::core::threads::{
     constants::THREADS_FILE,
     helpers::{read_messages_from_file, update_thread_metadata, write_messages_to_file},
     utils::{
-        ensure_data_dirs, get_data_dir, get_messages_path, get_thread_dir,
-        get_thread_metadata_path,
+        ensure_data_dirs, get_data_dir, get_messages_path, get_thread_dir, get_thread_metadata_path,
     },
 };
 
@@ -414,6 +413,29 @@ fn openai_content_text(content: Option<&serde_json::Value>) -> String {
     }
 }
 
+/// If `text` is a machine-generated skill or plugin-command invocation message
+/// (the `[IMPORTANT: You have invoked the "<name>" <kind> - follow its
+/// instructions...]` wrapper produced by `skills::build_invocation_message` and
+/// `commands::build_message`), return the compact transcript label
+/// (`[skill:<name>]` or `[command:<name>]`). `None` for any other text, so a
+/// user who types that prefix verbatim still renders normally.
+pub fn invocation_label(text: &str) -> Option<String> {
+    const PREFIX: &str = "[IMPORTANT: You have invoked the \"";
+    let rest = text.strip_prefix(PREFIX)?;
+    let (name, rest) = rest.split_once('"')?;
+    if name.is_empty() {
+        return None;
+    }
+    let kind = if rest.starts_with(" skill - follow its instructions") {
+        "skill"
+    } else if rest.starts_with(" command - follow its instructions") {
+        "command"
+    } else {
+        return None;
+    };
+    Some(format!("[{kind}:{name}]"))
+}
+
 /// Fallback thread title: the first user message, whitespace-collapsed and
 /// truncated. Used only when no summarized title exists yet.
 fn default_thread_title(history: &[serde_json::Value]) -> String {
@@ -422,6 +444,9 @@ fn default_thread_title(history: &[serde_json::Value]) -> String {
         .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
         .map(|m| openai_content_text(m.get("content")))
         .unwrap_or_default();
+    if let Some(label) = invocation_label(&first_user) {
+        return label;
+    }
     let collapsed = first_user.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.is_empty() {
         return "Agent chat".to_string();
@@ -457,13 +482,13 @@ use crate::core::agent::project::{
 use crate::core::agent::r#loop::{
     run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
 };
-use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tauri_plugin_agent_tools::workspace;
 use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use crate::core::cli::run_report::{OutputFormat, RunReport};
 use crate::core::mcp::models::McpSettings;
 use std::collections::HashMap;
 use std::io::Write as _;
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tokio::sync::{mpsc, Mutex};
 
 /// Token-spend ceiling for one agent run when `agent.toml [budget].max_tokens`
@@ -591,6 +616,32 @@ pub fn cli_agent_config_list() -> Result<serde_json::Value, String> {
         "config_path": crate::core::agent::global_config::global_config_path()?.to_string_lossy(),
         "providers": providers,
     }))
+}
+
+/// List plugins installed for a project.
+pub fn cli_plugin_list(project: &str) -> Vec<crate::core::agent::plugins::InstalledPlugin> {
+    crate::core::agent::plugins::installed(&resolve_project_root(project))
+}
+
+/// Install a git or marketplace plugin for a project.
+pub async fn cli_plugin_install(
+    project: &str,
+    spec: &str,
+) -> Result<crate::core::agent::plugins::InstalledPlugin, String> {
+    crate::core::agent::plugins::install(&resolve_project_root(project), spec).await
+}
+
+/// Remove a plugin from a project.
+pub fn cli_plugin_remove(project: &str, name: &str) -> Result<(), String> {
+    crate::core::agent::plugins::remove(&resolve_project_root(project), name)
+}
+
+/// Search the configured plugin marketplace for a project.
+pub async fn cli_plugin_search(
+    project: &str,
+    query: &str,
+) -> Result<Vec<crate::core::agent::plugins::MarketEntry>, String> {
+    crate::core::agent::plugins::search(&resolve_project_root(project), query).await
 }
 
 /// Autonomous run: as many turns as the task needs, bounded only by the
@@ -796,7 +847,11 @@ fn prepare_agent_session(
     let explicit = model_override.is_some() || overrides.api_key.is_some();
     let model = model_override
         .or_else(|| cfg.agent.model.clone())
-        .or_else(|| crate::core::agent::global_config::default_model().ok().flatten())
+        .or_else(|| {
+            crate::core::agent::global_config::default_model()
+                .ok()
+                .flatten()
+        })
         .or_else(|| crate::core::cli::providers::desktop_selection().model);
     // A project or global default can name a model with nobody around to serve
     // it (e.g. this repo's own agent.toml pins one, but a fresh `~/.jan` has no
@@ -849,8 +904,7 @@ fn prepare_agent_session(
     // before the first turn (tools are collected once per run), so a race with
     // the first message can't leave the model without its MCP tools. `None` when
     // no server is active.
-    let mcp_servers: crate::core::state::SharedMcpServers =
-        Arc::new(Mutex::new(HashMap::new()));
+    let mcp_servers: crate::core::state::SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
     let mcp_settings = mcp::read_settings();
     let mcp_task = if mcp::active_count() > 0 {
         let servers = mcp_servers.clone();
@@ -958,7 +1012,11 @@ fn prepare_agent_run(
     let resumed = resume.and_then(|target| {
         match load_resume_history(&agent_dir_for(&project_root), &target) {
             Ok(r) => {
-                eprintln!("(resumed session {} with {} message(s))", short_id(&r.thread_id), r.history.len());
+                eprintln!(
+                    "(resumed session {} with {} message(s))",
+                    short_id(&r.thread_id),
+                    r.history.len()
+                );
                 Some(r)
             }
             Err(e) => {
@@ -968,7 +1026,10 @@ fn prepare_agent_run(
         }
     });
 
-    let mut history = resumed.as_ref().map(|r| r.history.clone()).unwrap_or_default();
+    let mut history = resumed
+        .as_ref()
+        .map(|r| r.history.clone())
+        .unwrap_or_default();
     history.push(serde_json::json!({ "role": "user", "content": final_task }));
     let mut body = session.body(serde_json::json!(history.clone()));
     if single_turn {
@@ -1105,6 +1166,7 @@ async fn run_agent_loop(
                 }
                 session_id = Some(id);
             }
+
             Err(e) => eprintln!("(could not save session: {e})"),
         }
     }
@@ -1256,7 +1318,10 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
             eprintln!("\x1b[2m[subagent:{name}] finished\x1b[0m")
         }
         StreamEvent::Subagent { name, event, .. } => {
-            if let StreamEvent::ToolCall { name: tool, args, .. } = *event {
+            if let StreamEvent::ToolCall {
+                name: tool, args, ..
+            } = *event
+            {
                 eprintln!(
                     "\x1b[2m[subagent:{name}] {}\x1b[0m",
                     crate::core::agent::events::describe_tool_call(&tool, &args)
@@ -1341,7 +1406,10 @@ mod tests {
     #[test]
     fn resume_target_from_flags() {
         assert_eq!(ResumeTarget::from_flags(None, false), None);
-        assert_eq!(ResumeTarget::from_flags(None, true), Some(ResumeTarget::Latest));
+        assert_eq!(
+            ResumeTarget::from_flags(None, true),
+            Some(ResumeTarget::Latest)
+        );
         assert_eq!(
             ResumeTarget::from_flags(Some(None), false),
             Some(ResumeTarget::Latest)
@@ -1542,8 +1610,7 @@ mod tests {
 
     #[test]
     fn completion_text_extracts_assistant_content() {
-        let completion =
-            serde_json::json!({ "choices": [{ "message": { "content": "hello" } }] });
+        let completion = serde_json::json!({ "choices": [{ "message": { "content": "hello" } }] });
         assert_eq!(completion_text(&completion).as_deref(), Some("hello"));
         assert_eq!(completion_text(&serde_json::json!({})), None);
         assert_eq!(
@@ -1552,7 +1619,46 @@ mod tests {
         );
     }
 
-    // ── default_thread_title ───────────────────────────────────────────────
+    // ── invocation_label / default_thread_title ────────────────────────────
+
+    #[test]
+    fn invocation_label_recognizes_skill_and_command_wrappers() {
+        assert_eq!(
+            invocation_label(
+                "[IMPORTANT: You have invoked the \"deploy\" skill - follow its instructions. The full skill content is loaded below.]\n\nBody."
+            ),
+            Some("[skill:deploy]".to_string())
+        );
+        assert_eq!(
+            invocation_label(
+                "[IMPORTANT: You have invoked the \"feature-dev\" command - follow its instructions. The full command content is loaded below.]\n\nBuild: $ARGUMENTS"
+            ),
+            Some("[command:feature-dev]".to_string())
+        );
+        // Anything that is not the exact machine wrapper stays None.
+        assert_eq!(invocation_label("deploy"), None);
+        assert_eq!(invocation_label("[IMPORTANT: You have invoked the \"\" skill - x"), None);
+        assert_eq!(
+            invocation_label("[IMPORTANT: You have invoked the \"deploy\" skill"), // truncated wrapper
+            None
+        );
+        assert_eq!(
+            invocation_label("[IMPORTANT: You have invoked the \"deploy\""), // no kind
+            None
+        );
+    }
+
+    #[test]
+    fn default_thread_title_uses_invocation_label_for_first_message() {
+        let history = serde_json::json!([{
+            "role": "user",
+            "content": "[IMPORTANT: You have invoked the \"feature-dev\" command - follow its instructions. The full command content is loaded below.]\n\nBuild: auth"
+        }]);
+        assert_eq!(
+            default_thread_title(history.as_array().unwrap()),
+            "[command:feature-dev]"
+        );
+    }
 
     #[test]
     fn default_thread_title_uses_first_user_message() {
@@ -1573,7 +1679,10 @@ mod tests {
             { "type": "image_url", "image_url": { "url": "data:image/png;base64,AA" } },
         ]);
         assert_eq!(openai_content_text(Some(&content)), "describe");
-        assert_eq!(openai_content_text(Some(&serde_json::json!("plain"))), "plain");
+        assert_eq!(
+            openai_content_text(Some(&serde_json::json!("plain"))),
+            "plain"
+        );
     }
 
     #[test]
@@ -1600,7 +1709,10 @@ mod tests {
         assert!(title.ends_with('…'));
 
         let no_user = serde_json::json!([{ "role": "assistant", "content": "hi" }]);
-        assert_eq!(default_thread_title(no_user.as_array().unwrap()), "Agent chat");
+        assert_eq!(
+            default_thread_title(no_user.as_array().unwrap()),
+            "Agent chat"
+        );
     }
 
     // ── cli_save_thread metadata (snapshot bookkeeping) ────────────────────

@@ -1,23 +1,27 @@
 use crate::{RagError, MAX_PARSE_FILE_SIZE};
-use std::borrow::Cow;
-use std::fs;
-use std::io::{Cursor, Read};
-use std::panic::{catch_unwind, AssertUnwindSafe};
 use calamine::{open_workbook_auto, DataType, Reader as _};
 use chardetng::EncodingDetector;
 use csv as csv_crate;
 use quick_xml::events::Event;
 use quick_xml::Reader;
+use std::borrow::Cow;
+use std::fs;
+use std::io::{Cursor, Read};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use zip::read::ZipArchive;
 
 pub fn parse_pdf(file_path: &str) -> Result<String, RagError> {
     let metadata = fs::metadata(file_path)?;
     if metadata.len() > MAX_PARSE_FILE_SIZE {
-        return Err(RagError::ParseError("File too large (max 200MB)".to_string()));
+        return Err(RagError::ParseError(
+            "File too large (max 200MB)".to_string(),
+        ));
     }
     let bytes = fs::read(file_path)?;
     // pdf-extract can panic on some malformed PDFs; guard to avoid crashing the app
-    let text = match catch_unwind(AssertUnwindSafe(|| pdf_extract::extract_text_from_mem(&bytes))) {
+    let text = match catch_unwind(AssertUnwindSafe(|| {
+        pdf_extract::extract_text_from_mem(&bytes)
+    })) {
         Ok(Ok(t)) => t,
         Ok(Err(e)) => return Err(RagError::ParseError(format!("PDF parse error: {}", e))),
         Err(payload) => {
@@ -37,9 +41,7 @@ pub fn parse_pdf(file_path: &str) -> Result<String, RagError> {
 
     // Validate that the PDF has extractable text (not image-based/scanned)
     // Count meaningful characters (excluding whitespace)
-    let meaningful_chars = text.chars()
-        .filter(|c| !c.is_whitespace())
-        .count();
+    let meaningful_chars = text.chars().filter(|c| !c.is_whitespace()).count();
 
     // Require at least 50 non-whitespace characters to consider it a text PDF
     // This threshold filters out PDFs that are purely images or scanned documents
@@ -129,7 +131,9 @@ pub fn parse_document(file_path: &str, file_type: &str) -> Result<String, RagErr
 fn parse_docx(file_path: &str) -> Result<String, RagError> {
     let metadata = std::fs::metadata(file_path)?;
     if metadata.len() > MAX_PARSE_FILE_SIZE {
-        return Err(RagError::ParseError("File too large (max 200MB)".to_string()));
+        return Err(RagError::ParseError(
+            "File too large (max 200MB)".to_string(),
+        ));
     }
     let file = std::fs::File::open(file_path)?;
     let mut zip = ZipArchive::new(file).map_err(|e| RagError::ParseError(e.to_string()))?;
@@ -203,7 +207,9 @@ fn parse_docx(file_path: &str) -> Result<String, RagError> {
 fn parse_csv(file_path: &str) -> Result<String, RagError> {
     let metadata = fs::metadata(file_path)?;
     if metadata.len() > MAX_PARSE_FILE_SIZE {
-        return Err(RagError::ParseError("File too large (max 200MB)".to_string()));
+        return Err(RagError::ParseError(
+            "File too large (max 200MB)".to_string(),
+        ));
     }
     let mut rdr = csv_crate::ReaderBuilder::new()
         .has_headers(false)
@@ -222,10 +228,12 @@ fn parse_csv(file_path: &str) -> Result<String, RagError> {
 fn parse_spreadsheet(file_path: &str) -> Result<String, RagError> {
     let metadata = fs::metadata(file_path)?;
     if metadata.len() > MAX_PARSE_FILE_SIZE {
-        return Err(RagError::ParseError("File too large (max 200MB)".to_string()));
+        return Err(RagError::ParseError(
+            "File too large (max 200MB)".to_string(),
+        ));
     }
-    let mut workbook = open_workbook_auto(file_path)
-        .map_err(|e| RagError::ParseError(e.to_string()))?;
+    let mut workbook =
+        open_workbook_auto(file_path).map_err(|e| RagError::ParseError(e.to_string()))?;
     let mut out = String::new();
     for sheet_name in workbook.sheet_names().to_owned() {
         if let Ok(range) = workbook.worksheet_range(&sheet_name) {
@@ -256,7 +264,9 @@ fn parse_spreadsheet(file_path: &str) -> Result<String, RagError> {
 fn parse_pptx(file_path: &str) -> Result<String, RagError> {
     let metadata = std::fs::metadata(file_path)?;
     if metadata.len() > MAX_PARSE_FILE_SIZE {
-        return Err(RagError::ParseError("File too large (max 200MB)".to_string()));
+        return Err(RagError::ParseError(
+            "File too large (max 200MB)".to_string(),
+        ));
     }
     let file = std::fs::File::open(file_path)?;
     let mut zip = ZipArchive::new(file).map_err(|e| RagError::ParseError(e.to_string()))?;
@@ -264,7 +274,10 @@ fn parse_pptx(file_path: &str) -> Result<String, RagError> {
     // Collect slide files: ppt/slides/slide*.xml
     let mut slides = Vec::new();
     for i in 0..zip.len() {
-        let name = zip.by_index(i).map(|f| f.name().to_string()).unwrap_or_default();
+        let name = zip
+            .by_index(i)
+            .map(|f| f.name().to_string())
+            .unwrap_or_default();
         if name.starts_with("ppt/slides/") && name.ends_with(".xml") {
             slides.push(name);
         }
@@ -273,9 +286,12 @@ fn parse_pptx(file_path: &str) -> Result<String, RagError> {
 
     let mut output = String::new();
     for slide_name in slides {
-        let mut file = zip.by_name(&slide_name).map_err(|e| RagError::ParseError(e.to_string()))?;
+        let mut file = zip
+            .by_name(&slide_name)
+            .map_err(|e| RagError::ParseError(e.to_string()))?;
         let mut xml = String::new();
-        file.read_to_string(&mut xml).map_err(|e| RagError::ParseError(e.to_string()))?;
+        file.read_to_string(&mut xml)
+            .map_err(|e| RagError::ParseError(e.to_string()))?;
         output.push_str(&extract_pptx_text(&xml));
         output.push_str("\n\n");
     }
@@ -334,7 +350,9 @@ fn parse_html(file_path: &str) -> Result<String, RagError> {
 fn read_text_auto(file_path: &str) -> Result<String, RagError> {
     let metadata = fs::metadata(file_path)?;
     if metadata.len() > MAX_PARSE_FILE_SIZE {
-        return Err(RagError::ParseError("File too large (max 200MB)".to_string()));
+        return Err(RagError::ParseError(
+            "File too large (max 200MB)".to_string(),
+        ));
     }
     let bytes = fs::read(file_path)?;
     // Detect encoding

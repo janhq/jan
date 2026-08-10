@@ -44,6 +44,10 @@ pub struct InstalledPlugin {
     pub repo: String,
     /// Number of skills the plugin contributes.
     pub skills: usize,
+    /// Number of command prompt templates (`commands/**/*.md`).
+    pub commands: usize,
+    /// Number of agent definitions (`agents/**/*.md`).
+    pub agents: usize,
 }
 
 /// A plugin available on the configured marketplace: JSON index entry.
@@ -86,9 +90,24 @@ fn plugins_section(root: &Path) -> PluginsSection {
         .unwrap_or_default()
 }
 
-/// Every installed plugin, sorted by name. A dir without a parseable manifest
-/// is still listed (its name is the directory name).
+/// Every installed plugin, sorted by display name. Staging directories from
+/// interrupted installs are intentionally excluded.
 pub(crate) fn installed(root: &Path) -> Vec<InstalledPlugin> {
+    installed_entries(root)
+        .into_iter()
+        .map(|(_, plugin)| plugin)
+        .collect()
+}
+
+/// Find an installed plugin by directory name or manifest name.
+pub(crate) fn find_installed(root: &Path, query: &str) -> Option<(String, InstalledPlugin)> {
+    let query = skills::safe_stem(query).ok()?;
+    installed_entries(root)
+        .into_iter()
+        .find(|(directory, plugin)| directory == &query || plugin.name == query)
+}
+
+fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
     let dir = skills::plugins_dir(root);
     let Ok(rd) = std::fs::read_dir(&dir) else {
         return Vec::new();
@@ -99,27 +118,49 @@ pub(crate) fn installed(root: &Path) -> Vec<InstalledPlugin> {
         if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
             continue;
         }
-        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+        let Some(directory) = path.file_name().and_then(|s| s.to_str()) else {
             continue;
         };
-        let manifest = std::fs::read_to_string(path.join("plugin.toml"))
-            .ok()
-            .and_then(|raw| toml::from_str::<Manifest>(&raw).ok())
-            .unwrap_or_default();
+        if directory.starts_with(".installing-") {
+            continue;
+        }
+        let manifest = read_manifest(&path);
         let plugin_skills = skills::discover_plugins(root)
             .into_iter()
-            .filter(|e| e.plugin.as_deref() == Some(name))
+            .filter(|e| e.plugin.as_deref() == Some(directory))
             .count();
-        out.push(InstalledPlugin {
-            name: manifest.name.unwrap_or_else(|| name.to_string()),
-            description: manifest.description.unwrap_or_default(),
-            version: manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
-            repo: manifest.repo.unwrap_or_default(),
-            skills: plugin_skills,
-        });
+        let plugin_commands = crate::core::agent::commands::discover(root)
+            .into_iter()
+            .filter(|e| e.plugin == directory)
+            .count();
+        let plugin_agents = crate::core::agent::subagent::count_plugin_agents(root, directory);
+        out.push((
+            directory.to_string(),
+            InstalledPlugin {
+                name: manifest.name.unwrap_or_else(|| directory.to_string()),
+                description: manifest.description.unwrap_or_default(),
+                version: manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
+                repo: manifest.repo.unwrap_or_default(),
+                skills: plugin_skills,
+                commands: plugin_commands,
+                agents: plugin_agents,
+            },
+        ));
     }
-    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out.sort_by(|a, b| a.1.name.cmp(&b.1.name));
     out
+}
+
+fn read_manifest(root: &Path) -> Manifest {
+    std::fs::read_to_string(root.join("plugin.toml"))
+        .ok()
+        .and_then(|raw| toml::from_str::<Manifest>(&raw).ok())
+        .or_else(|| {
+            std::fs::read_to_string(root.join(".claude-plugin/plugin.json"))
+                .ok()
+                .and_then(|raw| serde_json::from_str::<Manifest>(&raw).ok())
+        })
+        .unwrap_or_default()
 }
 
 /// Reject specs that could inject shell commands. The spec is later passed as
@@ -146,6 +187,52 @@ fn looks_like_git(spec: &str) -> bool {
         || ["github:", "gitlab:", "bitbucket:", "codeberg:"]
             .iter()
             .any(|p| spec.starts_with(p))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct GitSource {
+    url: String,
+    r#ref: Option<String>,
+    subdir: Option<String>,
+}
+
+/// Parse a git URL and the optional GitHub `/tree/<ref>/<subdir>` payload path.
+fn parse_git_source(spec: &str) -> Result<GitSource, String> {
+    let (base, suffix_ref) = split_ref(spec.trim());
+    if let Some(path) = base.strip_prefix("https://github.com/") {
+        let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+        if parts.len() >= 4 && parts[2] == "tree" {
+            let repo = format!("https://github.com/{}/{}.git", parts[0], parts[1]);
+            let tree_ref = parts[3].to_string();
+            let subdir = (parts.len() > 4).then(|| parts[4..].join("/"));
+            if subdir
+                .as_deref()
+                .is_some_and(|path| path.split('/').any(|part| part == "." || part == ".."))
+            {
+                return Err("ERROR: plugin subdirectory cannot contain '.' or '..'".into());
+            }
+            return Ok(GitSource {
+                url: repo,
+                r#ref: Some(suffix_ref.unwrap_or(&tree_ref).to_string()),
+                subdir,
+            });
+        }
+    }
+    Ok(GitSource {
+        url: base.to_string(),
+        r#ref: suffix_ref.map(str::to_string),
+        subdir: None,
+    })
+}
+
+fn plugin_has_content(root: &Path) -> bool {
+    root.join("plugin.toml").is_file()
+        || root.join(".claude-plugin/plugin.json").is_file()
+        || root.join("skills").is_dir()
+        || root.join("commands").is_dir()
+        || root.join("agents").is_dir()
+        || root.join("SKILL.md").is_file()
+        || root.join(".mcp.json").is_file()
 }
 
 /// Split a `#ref` suffix off a git URL (`https://host/repo#main`).
@@ -183,34 +270,52 @@ fn git(args: &[&str]) -> Result<String, String> {
 /// Clone a plugin source into a temporary dir, validate it, and move it into
 /// place under its final name. A failed clone or an empty repo leaves nothing
 /// behind (the temp dir is removed).
-async fn install_git(root: &Path, url: &str, r#ref: Option<&str>) -> Result<InstalledPlugin, String> {
+async fn install_git(
+    root: &Path,
+    url: &str,
+    r#ref: Option<&str>,
+) -> Result<InstalledPlugin, String> {
+    let source = parse_git_source(url)?;
     let plugins = skills::plugins_dir(root);
     std::fs::create_dir_all(&plugins).map_err(|e| format!("ERROR: {e}"))?;
     let tmp = plugins.join(format!(".installing-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
 
-    let (clean_url, url_ref) = split_ref(url);
-    let r#ref = r#ref.or(url_ref);
+    let r#ref = r#ref.or(source.r#ref.as_deref());
     let mut args = vec!["clone", "--depth", "1"];
     if let Some(r#ref) = r#ref {
         args.extend(["--branch", r#ref]);
     }
-    args.extend([clean_url, tmp.to_str().expect("utf-8 path")]);
+    args.extend([source.url.as_str(), tmp.to_str().expect("utf-8 path")]);
     if let Err(e) = git(&args) {
         let _ = std::fs::remove_dir_all(&tmp);
         return Err(e);
     }
 
-    let manifest = std::fs::read_to_string(tmp.join("plugin.toml"))
-        .ok()
-        .and_then(|raw| toml::from_str::<Manifest>(&raw).ok())
-        .unwrap_or_default();
-    let name = match (manifest.name.as_deref(), repo_dir_name(url)) {
+    let payload = source
+        .subdir
+        .as_deref()
+        .map(|subdir| tmp.join(subdir))
+        .unwrap_or_else(|| tmp.clone());
+    if !payload.is_dir() {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(format!(
+            "ERROR: plugin subdirectory does not exist: '{}'",
+            source.subdir.as_deref().unwrap_or("")
+        ));
+    }
+    let manifest = read_manifest(&payload);
+    let fallback_name = source
+        .subdir
+        .as_deref()
+        .and_then(|subdir| subdir.rsplit('/').next())
+        .or_else(|| repo_dir_name(&source.url));
+    let name = match (manifest.name.as_deref(), fallback_name) {
         (Some(name), _) if !name.is_empty() => name.to_string(),
         (_, Some(dir)) => dir.to_string(),
         _ => {
             let _ = std::fs::remove_dir_all(&tmp);
-            return Err("ERROR: cannot determine plugin name from '{}'".replace("{}", url));
+            return Err(format!("ERROR: cannot determine plugin name from '{url}'"));
         }
     };
     let stem = match skills::safe_stem(&name) {
@@ -221,14 +326,10 @@ async fn install_git(root: &Path, url: &str, r#ref: Option<&str>) -> Result<Inst
         }
     };
 
-    // A plugin must carry something the agent can use.
-    let has_content = tmp.join("plugin.toml").is_file()
-        || tmp.join("skills").is_dir()
-        || tmp.join("SKILL.md").is_file();
-    if !has_content {
+    if !plugin_has_content(&payload) {
         let _ = std::fs::remove_dir_all(&tmp);
         return Err(format!(
-            "ERROR: '{url}' has no plugin.toml, skills/, or SKILL.md - nothing to install"
+            "ERROR: '{url}' has no plugin manifest, skills/, commands/, agents/, or SKILL.md - nothing to install"
         ));
     }
     let target = plugins.join(&stem);
@@ -236,22 +337,37 @@ async fn install_git(root: &Path, url: &str, r#ref: Option<&str>) -> Result<Inst
         let _ = std::fs::remove_dir_all(&tmp);
         return Err(format!("ERROR: plugin '{stem}' is already installed"));
     }
-    std::fs::rename(&tmp, &target).map_err(|e| {
+    if source.subdir.is_some() {
+        std::fs::rename(&payload, &target).map_err(|e| {
+            let _ = std::fs::remove_dir_all(&tmp);
+            format!("ERROR: {e}")
+        })?;
         let _ = std::fs::remove_dir_all(&tmp);
-        format!("ERROR: {e}")
-    })?;
+    } else {
+        std::fs::rename(&tmp, &target).map_err(|e| {
+            let _ = std::fs::remove_dir_all(&tmp);
+            format!("ERROR: {e}")
+        })?;
+    }
 
     // Recompute counts after the move (discovery reads from `root`).
     let skills_count = skills::discover_plugins(root)
         .into_iter()
         .filter(|e| e.plugin.as_deref() == Some(stem.as_str()))
         .count();
+    let commands_count = crate::core::agent::commands::discover(root)
+        .into_iter()
+        .filter(|e| e.plugin == stem)
+        .count();
+    let agents_count = crate::core::agent::subagent::count_plugin_agents(root, &stem);
     Ok(InstalledPlugin {
         name: stem,
         description: manifest.description.unwrap_or_default(),
         version: manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
-        repo: manifest.repo.unwrap_or_else(|| clean_url.to_string()),
+        repo: manifest.repo.unwrap_or(source.url),
         skills: skills_count,
+        commands: commands_count,
+        agents: agents_count,
     })
 }
 
@@ -264,7 +380,10 @@ async fn fetch_index(url: &str) -> Result<Vec<MarketEntry>, String> {
         .await
         .map_err(|e| format!("ERROR: fetching marketplace index: {e}"))?;
     if !resp.status().is_success() {
-        return Err(format!("ERROR: marketplace index returned {}", resp.status()));
+        return Err(format!(
+            "ERROR: marketplace index returned {}",
+            resp.status()
+        ));
     }
     resp.json::<Vec<MarketEntry>>()
         .await
@@ -310,8 +429,7 @@ pub(crate) async fn search(root: &Path, query: &str) -> Result<Vec<MarketEntry>,
     let query = query.trim().to_lowercase();
     if !query.is_empty() {
         entries.retain(|e| {
-            e.name.to_lowercase().contains(&query)
-                || e.description.to_lowercase().contains(&query)
+            e.name.to_lowercase().contains(&query) || e.description.to_lowercase().contains(&query)
         });
     }
     Ok(entries)
@@ -325,7 +443,8 @@ mod tests {
 
     /// A local git repo fixture containing a plugin payload.
     fn make_repo(tag: &str, with_manifest: bool) -> PathBuf {
-        let repo = std::env::temp_dir().join(format!("jan_plugin_repo_{tag}_{}", std::process::id()));
+        let repo =
+            std::env::temp_dir().join(format!("jan_plugin_repo_{tag}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&repo);
         std::fs::create_dir_all(repo.join("skills").join("prepare")).unwrap();
         std::fs::write(
@@ -381,23 +500,99 @@ mod tests {
     fn split_ref_and_repo_name() {
         assert_eq!(split_ref("https://h/r"), ("https://h/r", None));
         assert_eq!(split_ref("https://h/r#main"), ("https://h/r", Some("main")));
-        assert_eq!(repo_dir_name("https://github.com/acme/release-tools.git"), Some("release-tools"));
-        assert_eq!(repo_dir_name("https://github.com/acme/release-tools#v2"), Some("release-tools"));
-        assert_eq!(repo_dir_name("git@github.com:acme/tools.git"), Some("tools"));
+        assert_eq!(
+            repo_dir_name("https://github.com/acme/release-tools.git"),
+            Some("release-tools")
+        );
+        assert_eq!(
+            repo_dir_name("https://github.com/acme/release-tools#v2"),
+            Some("release-tools")
+        );
+        assert_eq!(
+            repo_dir_name("git@github.com:acme/tools.git"),
+            Some("tools")
+        );
+    }
+    #[test]
+    fn parses_github_tree_specs_as_repo_ref_and_subdirectory() {
+        let source = parse_git_source(
+            "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-code-setup",
+        )
+        .unwrap();
+        assert_eq!(
+            source.url,
+            "https://github.com/anthropics/claude-plugins-official.git"
+        );
+        assert_eq!(source.r#ref.as_deref(), Some("main"));
+        assert_eq!(source.subdir.as_deref(), Some("plugins/claude-code-setup"));
+    }
+
+    #[test]
+    fn installed_skips_staging_dirs_and_finds_manifest_names() {
+        let root = unique_root("installed-filter");
+        let plugins = skills::plugins_dir(&root);
+        let release = plugins.join("release-tools");
+        let staging = plugins.join(".installing-123");
+        std::fs::create_dir_all(&release).unwrap();
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(
+            release.join("plugin.toml"),
+            "name = \"release-automation\"\nversion = \"1.2.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(staging.join("plugin.toml"), "name = \"incomplete\"\n").unwrap();
+
+        let listed = installed(&root);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].name, "release-automation");
+        assert_eq!(
+            find_installed(&root, "release-tools").map(|(directory, _)| directory),
+            Some("release-tools".to_string())
+        );
+        assert_eq!(
+            find_installed(&root, "release-automation").map(|(directory, _)| directory),
+            Some("release-tools".to_string())
+        );
+        assert!(find_installed(&root, ".installing-123").is_none());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_traversal_in_github_tree_subdirectory() {
+        assert!(parse_git_source("https://github.com/acme/tools/tree/main/../../outside").is_err());
+    }
+    #[test]
+    fn reads_claude_plugin_json_manifest() {
+        let root = unique_root("json-manifest");
+        std::fs::create_dir_all(root.join(".claude-plugin")).unwrap();
+        std::fs::write(
+            root.join(".claude-plugin/plugin.json"),
+            r#"{"name":"claude-code-setup","description":"Claude Code setup","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let manifest = read_manifest(&root);
+        assert_eq!(manifest.name.as_deref(), Some("claude-code-setup"));
+        assert_eq!(manifest.description.as_deref(), Some("Claude Code setup"));
+        assert_eq!(manifest.version.as_deref(), Some("1.0.0"));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn install_clones_and_validates() {
         let repo = make_repo("install1", true);
         let root = unique_root("install1");
-        let p = install(&root, &format!("file://{}", repo.display())).await.unwrap();
+        let p = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap();
         assert_eq!(p.name, "release-tools");
         assert_eq!(p.skills, 1);
         let dir = skills::plugins_dir(&root).join("release-tools");
         assert!(dir.join("plugin.toml").is_file());
         assert!(dir.join("skills/prepare/SKILL.md").is_file());
         // Re-install collides.
-        let err = install(&root, &format!("file://{}", repo.display())).await.unwrap_err();
+        let err = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap_err();
         assert!(err.contains("already installed"), "{err}");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -406,7 +601,9 @@ mod tests {
     async fn install_names_from_repo_dir_without_manifest() {
         let repo = make_repo("install2", false);
         let root = unique_root("install2");
-        let p = install(&root, &format!("file://{}", repo.display())).await.unwrap();
+        let p = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap();
         // Repo dir name is the fallback name; skills still discovered.
         let dir_name = repo.file_name().unwrap().to_str().unwrap();
         assert_eq!(p.name, dir_name);
@@ -420,12 +617,27 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo);
         std::fs::create_dir_all(&repo).unwrap();
         git(&["init", repo.to_str().unwrap()]).unwrap();
-        git(&["-C", repo.to_str().unwrap(), "commit", "--allow-empty", "-m", "empty"]).unwrap();
+        git(&[
+            "-C",
+            repo.to_str().unwrap(),
+            "commit",
+            "--allow-empty",
+            "-m",
+            "empty",
+        ])
+        .unwrap();
         let root = unique_root("empty");
-        let err = install(&root, &format!("file://{}", repo.display())).await.unwrap_err();
+        let err = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap_err();
         assert!(err.contains("nothing to install"), "{err}");
         // No leftover temp or installed dir.
-        assert_eq!(std::fs::read_dir(skills::plugins_dir(&root)).unwrap().count(), 0);
+        assert_eq!(
+            std::fs::read_dir(skills::plugins_dir(&root))
+                .unwrap()
+                .count(),
+            0
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -433,7 +645,9 @@ mod tests {
     async fn remove_deletes_installed_plugin() {
         let repo = make_repo("remove1", false);
         let root = unique_root("remove1");
-        let p = install(&root, &format!("file://{}", repo.display())).await.unwrap();
+        let p = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap();
         assert!(skills::plugins_dir(&root).join(&p.name).is_dir());
         remove(&root, &p.name).unwrap();
         assert!(!skills::plugins_dir(&root).join(&p.name).exists());

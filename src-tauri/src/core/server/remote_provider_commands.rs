@@ -118,10 +118,7 @@ pub async fn set_model_param_defaults(
 
 /// Drop a provider's in-memory config, reporting whether it was present. Pure:
 /// touches only the map, never the persisted keyring secret.
-fn remove_provider_config(
-    configs: &mut HashMap<String, ProviderConfig>,
-    provider: &str,
-) -> bool {
+fn remove_provider_config(configs: &mut HashMap<String, ProviderConfig>, provider: &str) -> bool {
     configs.remove(provider).is_some()
 }
 
