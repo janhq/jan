@@ -117,6 +117,9 @@ metadata is handled honestly:
   `WebSearch` -> `web_search`, `WebFetch` -> `web_fetch`, `TodoWrite` -> `todo`, and so on);
   names with no Jan equivalent are dropped, and an agent listing only unknown tools inherits the
   parent's full tool policy
+- `skill_list` and `skill_read` stay available even when `tools` maps to a narrow set - a plugin
+  agent can always load the skills its procedure references, matching Claude Code (see
+  [Subagents](/docs/agent/subagents#tool-permissions))
 
 Plugin agents are read-only: `create_subagent` refuses the plugin scope, and a subagent defined in
 `.jan/agent/subagents/` shadows a plugin agent of the same name.
