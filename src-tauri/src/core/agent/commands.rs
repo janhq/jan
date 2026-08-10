@@ -21,6 +21,8 @@ use crate::core::agent::project::{
 };
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs};
 use crate::core::agent::skill_hub;
+use crate::core::agent::plugins;
+use crate::core::agent::skills as agent_skills;
 use tauri_plugin_agent_tools::skills::{self, SkillMeta};
 use tauri_plugin_agent_tools::workspace;
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
@@ -251,9 +253,44 @@ pub async fn agent_skill_invoke(
     args: String,
 ) -> Result<String, String> {
     let root = std::path::PathBuf::from(&project);
-    skills::build_invocation_message(&root, &name, &args)
+    agent_skills::build_invocation_message(&root, &name, &args)
         .map(|(message, _)| message)
         .map_err(ui_error)
+}
+
+/// List installed plugins under `<project>/.jan/agent/plugins/` with metadata
+/// and skill counts.
+#[tauri::command]
+pub async fn agent_plugin_list(project: String) -> Result<Vec<plugins::InstalledPlugin>, String> {
+    let root = std::path::PathBuf::from(&project);
+    Ok(plugins::installed(&root))
+}
+
+/// Install a plugin from a git URL or configured marketplace name.
+#[tauri::command]
+pub async fn agent_plugin_install(
+    project: String,
+    spec: String,
+) -> Result<plugins::InstalledPlugin, String> {
+    let root = std::path::PathBuf::from(&project);
+    plugins::install(&root, &spec).await.map_err(ui_error)
+}
+
+/// Remove an installed plugin by directory name.
+#[tauri::command]
+pub async fn agent_plugin_remove(project: String, name: String) -> Result<(), String> {
+    let root = std::path::PathBuf::from(&project);
+    plugins::remove(&root, &name).map_err(ui_error)
+}
+
+/// Search the configured plugin marketplace.
+#[tauri::command]
+pub async fn agent_plugin_search(
+    project: String,
+    query: String,
+) -> Result<Vec<plugins::MarketEntry>, String> {
+    let root = std::path::PathBuf::from(&project);
+    plugins::search(&root, &query).await.map_err(ui_error)
 }
 
 /// Return the git branch name for the project at `project`, or `None` when the

@@ -6772,6 +6772,72 @@ fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) 
     f.render_widget(Paragraph::new(lines), inner);
 }
 
+/// Docked `/settings` edit prompt, styled like the `/login` dock: description,
+/// the current on-disk value, the field being edited, an inline validation
+/// error when one fired, and the save/cancel keys.
+fn draw_settings_prompt(
+    f: &mut Frame,
+    area: ratatui::layout::Rect,
+    prompt: &SettingsPrompt,
+    toml_path: &std::path::Path,
+) {
+    use ratatui::widgets::Clear;
+
+    let dim = Style::new().dark_gray();
+    let def = prompt.def();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            format!(" agent settings: {} ", def.key),
+            Style::new().on_cyan().black().bold(),
+        ));
+
+    let mut lines = vec![Line::from(vec![
+        Span::styled(def.desc, dim),
+        Span::styled("   current: ", dim),
+        Span::styled(
+            current_agent_value(toml_path, def.key).unwrap_or_else(|| "unset".to_string()),
+            Style::new().cyan(),
+        ),
+    ])];
+    lines.push(Line::styled(
+        match def.kind {
+            AgentSettingKind::Int { default, min } => {
+                let d = default
+                    .map(|d| d.to_string())
+                    .unwrap_or_else(|| "unset".to_string());
+                format!("default: {d} · valid: >= {min}")
+            }
+            AgentSettingKind::Text { default } => format!("default: {default}"),
+            AgentSettingKind::Enum { options, default } => {
+                format!("default: {default} · valid: {}", options.join(" | "))
+            }
+            AgentSettingKind::Bool { default } => {
+                format!("default: {default} · valid: true | false")
+            }
+        },
+        dim,
+    ));
+    if let Some(error) = &prompt.error {
+        lines.push(Line::styled(error.clone(), Style::new().red()));
+    }
+    lines.push(Line::from(vec![
+        Span::styled("value: ", Style::new().bold()),
+        Span::raw(prompt.input.clone()),
+        Span::styled("█", Style::new().cyan()),
+    ]));
+    lines.push(Line::styled(
+        "Enter save · Esc cancel · clear field to unset (default applies)".to_string(),
+        dim,
+    ));
+
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
 /// Slash hint popup: one row per match (`/name [hint]  description`), the
 /// highlighted row reversed. Built-in commands render cyan; installed project
 /// skills render magenta so a `/deploy` completion is distinguishable from a
@@ -7760,6 +7826,7 @@ mod tests {
                 128_000,
                 16_384,
                 None,
+                false,
                 agent_dir,
                 root.clone(),
                 None,

@@ -25,6 +25,7 @@ pub mod plugins;
 pub mod project;
 pub mod session;
 pub mod skill_hub;
+pub mod skills;
 pub mod todo;
 pub mod subagent;
 pub mod upstream;
