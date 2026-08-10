@@ -15,6 +15,7 @@ import { predefinedProviders } from '@/constants/providers'
 import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
 import {
   useCodeSessions,
+  DEFAULT_CODE_RUN_MODE,
   ensureCurrentSession,
   type CodeTurn,
   type CodeMessage,
@@ -174,7 +175,7 @@ function CodePage() {
 
   const folder = current?.folder ?? null
   const folderName = folder ? folder.split(/[/\\]/).pop() : undefined
-  const mode = current?.mode ?? 'normal'
+  const mode = current?.mode ?? DEFAULT_CODE_RUN_MODE
   const [gitBranch, setGitBranch] = useState<string | null>(null)
 
   // Fetch git branch when the folder changes.
@@ -810,8 +811,8 @@ function CodePage() {
           max_turns: 0,
           max_session_tokens: MAX_SESSION_TOKENS,
           model: selectedModel.id,
-          auto_approve: session.mode === 'yolo',
-          plan: session.mode === 'plan',
+          auto_approve: (session.mode ?? DEFAULT_CODE_RUN_MODE) === 'yolo',
+          plan: (session.mode ?? DEFAULT_CODE_RUN_MODE) === 'plan',
           todos: session.todos ?? { phases: [] },
         },
       })

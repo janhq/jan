@@ -64,11 +64,24 @@ export type Usage = {
   total_tokens?: number
 }
 
-// Mirrors the run-mode mechanisms the agent core actually exposes: `--yolo`
-// (bypass permissions, reachable via agent_run's `yolo` body field) and the
-// TUI/CLI's read-only `--plan` mode (mutation-capable tools hard-denied at
+// Mirrors the run-mode mechanisms the agent core actually exposes: auto-approve
+// (bypass permissions, reachable via agent_run's `auto_approve` body field) and
+// the TUI/CLI's read-only `--plan` mode (mutation-capable tools hard-denied at
 // the dispatcher, reachable via agent_run's `plan` body field).
 export type CodeRunMode = 'normal' | 'yolo' | 'plan'
+
+/**
+ * Mode a session starts in, and the fallback for sessions persisted before the
+ * field existed.
+ *
+ * Auto-approve, matching the CLI. Confinement does not depend on the prompt:
+ * `bash` is always wrapped in the OS jail (Seatbelt/bubblewrap/AppContainer) and
+ * *refuses to run at all* if no sandbox can be established, and the filesystem
+ * tools are held inside the project by the path sandbox either way. Prompting on
+ * every call therefore buys interruption, not safety — `normal` stays one click
+ * away for anyone who wants the confirmations.
+ */
+export const DEFAULT_CODE_RUN_MODE: CodeRunMode = 'yolo'
 
 // Mirrors the Rust `TodoItem`/`TodoPhase`/`TodoList` structs (todo.rs)
 // verbatim, same convention as `Usage` above.
