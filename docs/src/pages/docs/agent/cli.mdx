@@ -37,7 +37,7 @@ jan <COMMAND>
 | `--max-turns <N>` | Turns per message, clamped to 1-400 |
 | `--image <PATH>` | Attach an image to the first message. Repeatable |
 | `--plan` | Start in read-only plan mode |
-| `--yolo` | Disable the sandbox and auto-approve every tool call |
+| `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
 | `--resume [ID]` | Resume the most recent session, or one whose id starts with `ID` |
 | `-c`, `--continue` | Resume the most recent session |
 | `--provider <ID>` | Target a specific provider for this run |
@@ -50,12 +50,14 @@ jan --task "fix the failing test"       # with a first message
 jan -c                                  # resume the latest session
 jan --resume 3f7a91c2                   # resume by id prefix
 jan --plan                              # read-only
-jan --yolo                              # no prompts (see the warning below)
+jan --safe                              # ask before writes and shell commands
 ```
 
-<Callout type="warning">
-`--yolo` gives the agent unrestricted shell access. Use it only in a container, VM, or scratch
-checkout.
+<Callout type="info">
+Tool calls are auto-approved by default. Shell commands still run inside the OS sandbox
+(bubblewrap, Seatbelt, or AppContainer), confined to the project directory, and the hard denies
+never lift: `.jan/agent/` internals, anything in `[tools] deny`, and everything plan mode blocks.
+`--safe` adds the interactive approval prompt on top of that.
 </Callout>
 
 ## `jan cli agent`
@@ -70,7 +72,7 @@ Run to completion, or until the turn/token budget is spent.
 jan cli agent run "fix the failing test in tests/auth"
 jan cli agent run --project ~/code/app "update the changelog"
 jan cli agent run --model gpt-4o --max-turns 20 "add unit tests for the parser"
-jan cli agent run --yolo "run the migration"
+jan cli agent run --safe "run the migration"   # approve each step
 ```
 
 | Flag | Description |
@@ -78,7 +80,7 @@ jan cli agent run --yolo "run the migration"
 | `--project <PATH>` | Project root. Defaults to `.` |
 | `--model <ID>` | Model id, overriding `[agent].model` |
 | `--max-turns <N>` | Turns, overriding `[agent].max_turns`. Clamped to 1-400 |
-| `--yolo` | Disable the sandbox and auto-approve every tool call |
+| `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
 | `--resume[=ID]` | Resume the most recent session, or one by id |
 | `-c`, `--continue` | Resume the most recent session |
 | `--provider`, `--api-key` | Credential overrides for this run |
@@ -202,9 +204,9 @@ jan cli agent run \
   --project . \
   --provider anthropic \
   --max-turns 30 \
-  --yolo \
   "update the changelog for the current release"
 ```
 
-`--yolo` is appropriate here for the same reason it usually isn't: a CI runner is a disposable
-environment, and there's nobody at a keyboard to answer a prompt.
+No flag is needed: tool calls are auto-approved by default, which is what a CI runner wants since
+there's nobody at a keyboard to answer a prompt. Do not pass `--safe` here. With no TTY on stdin
+there is no way to answer, so every prompt is denied and the run stalls out on its first write.

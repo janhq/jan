@@ -68,7 +68,7 @@ allow_write = []
 
 | `default` | Effect |
 | --- | --- |
-| `read-only` | The default. MCP tools and built-in reads available; built-in writes and exec still prompt |
+| `read-only` | The default. MCP tools and built-in reads available; built-in writes and exec go through the gate |
 | `deny` | Locks down all MCP tools. Anything in `allow` is still exposed |
 | `allow` | Exposes everything not in `deny` |
 
@@ -76,22 +76,22 @@ allow_write = []
 
 ## Network access
 
-A `bash` command runs inside an OS sandbox, and by default it has **no network**. An explicitly
-approved command cannot `curl`, `git fetch`, or install a package unless networking is switched on
-for that surface. Where the toggle lives depends on how the agent runs:
+A `bash` command runs inside an OS sandbox. Whether that sandbox has network access depends on the
+surface, and the two defaults differ:
 
 | Surface | How to set network access | Default |
 | --- | --- | --- |
 | Desktop chat agent | The chat-screen tools toggle (`agent_tools`). Per session, in the UI | Off |
 | `jan cli` code-screen agent | `[tools].allow_network` in `.jan/agent/agent.toml` | On |
 
-The two are deliberately independent: the desktop chat agent is ephemeral and never prompts, so it
-stays offline unless you opt in; the CLI runs in your own terminal where every exec is already
-gated behind a prompt, so a coding agent that cannot `curl` or `git fetch` would be largely useless.
+The split is deliberate. The desktop chat agent is ephemeral, so it stays offline unless you opt in.
+The CLI is a coding agent in your own project, where one that cannot `curl`, `git fetch`, or install
+a package would be largely useless.
+
 ```toml
-# Re-enable networking for a CLI agent
+# Take a CLI agent offline
 [tools]
-allow_network = true
+allow_network = false
 ```
 
 ## Subagents
@@ -100,11 +100,12 @@ A [subagent's](/docs/agent/subagents) tools are narrowed, never widened. For a s
 allowlist further restricts its own; for a one-off it is its toolset. Either way a subagent reaches
 a subset of what the parent could, so delegation can't be used to escape this policy.
 
-## Turning it off
+## Turning the prompts on
 
-[YOLO mode](/docs/agent/run-modes#yolo-mode) disables the sandbox and auto-approves everything.
+Approval prompts are opt-in: by default every call above is auto-approved. Start the session with
+`jan --safe` to be asked instead. See [run modes](/docs/agent/run-modes).
 
-<Callout type="warning">
-That means unrestricted shell access to the machine. Appropriate in a container, a VM, or CI - not
-in your home directory.
+<Callout type="info">
+Auto-approval only removes the prompt. The OS sandbox around shell commands, the `.jan/agent/`
+restriction, and `[tools] deny` all still apply.
 </Callout>

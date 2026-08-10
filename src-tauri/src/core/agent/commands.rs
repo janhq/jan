@@ -87,7 +87,7 @@ fn build_orchestration_args<R: Runtime>(
         system_prompt_override: None,
         subagents_enabled: true,
         max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
-        yolo: false,
+        auto_approve: false,
         background_subagents: None,
         run_mode: crate::core::agent::plan::RunMode::Normal,
     }
@@ -134,11 +134,11 @@ pub async fn agent_run<R: Runtime>(
         args.project_root = Some(project_root);
     }
 
-    // Mirrors the CLI's `--yolo` flag: an explicit per-request opt-in to
-    // disable the permission gate and auto-allow every tool call. Omitted or
-    // non-bool keeps the safe `false` default set above.
-    if let Some(yolo) = body.get("yolo").and_then(|v| v.as_bool()) {
-        args.yolo = yolo;
+    // Desktop's Bypass-permissions mode: an explicit per-request opt-in to
+    // auto-allow every tool call. Desktop defaults to false (the CLI defaults
+    // the other way). Omitted or non-bool keeps the safe `false` set above.
+    if let Some(auto_approve) = body.get("auto_approve").and_then(|v| v.as_bool()) {
+        args.auto_approve = auto_approve;
     }
     // Mirrors the CLI's `--plan`/`/plan`: read-only mode where mutation-capable
     // tools are hard-denied at the dispatcher. Omitted or non-bool keeps Normal.

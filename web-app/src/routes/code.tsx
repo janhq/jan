@@ -73,13 +73,14 @@ export const Route = createFileRoute(route.code as any)({
 
 type CodeSidePanelView = 'subagents' | 'diff' | 'todos' | 'preview'
 
-// Per-run cumulative token ceiling (one agent_run = one multi-step task). Since
-// `max_turns: 0`, this cumulative *spend* bound (prompt replays + completions,
-// summed across tool turns — see SessionBudget in session.rs) is the real guard
-// that stops a runaway loop. It is NOT a context-window gauge. A fresh budget is
-// created per run, so a real agentic task with many tool turns must fit under it
-// while a genuine runaway (hundreds of turns burning millions of tokens) trips.
-const MAX_SESSION_TOKENS = 2_000_000
+
+// Per-run token ceiling. `max_turns: 0` lets a multi-step task run to completion;
+// this budget is the real bound that stops a runaway loop (see SessionBudget in
+// session.rs). Only the *marginal* token increase between requests counts — every
+// turn replays the full conversation, so summing absolute totals would grow
+// quadratically with context length and cut off a legitimate long task. A real
+// runaway (hundreds of turns) still accumulates unbounded marginal spend and trips.
+const MAX_SESSION_TOKENS = 200_000
 
 // Cap the history replayed to the agent so a long session never sends more than
 // the model can take (rough ~4 chars/token estimate → well under the ceiling).
@@ -809,7 +810,7 @@ function CodePage() {
           max_turns: 0,
           max_session_tokens: MAX_SESSION_TOKENS,
           model: selectedModel.id,
-          yolo: session.mode === 'yolo',
+          auto_approve: session.mode === 'yolo',
           plan: session.mode === 'plan',
           todos: session.todos ?? { phases: [] },
         },
