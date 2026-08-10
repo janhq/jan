@@ -17,9 +17,21 @@ Click **Cowork** in the left sidebar.
 ### Pick a folder
 
 Click **Select folder** and choose the project you want to work on. Everything the agent does is
-scoped to this folder — it cannot read or write outside it.
+scoped to this folder - it cannot read or write outside it.
 
 The folder and its git branch show under the input box, so you always know where you are.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                                                              │
+│  SCREENSHOT PLACEHOLDER                                      │
+│  ../_assets/cowork-select-folder.png                         │
+│                                                              │
+│  The folder picker, and the resulting project path plus git  │
+│  branch shown beneath the input box.                         │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
 
 <Callout type="warning">
   Start on a branch you don't mind changing, or one you can throw away. The agent edits files in
@@ -33,7 +45,7 @@ good at tool calling.
 
 ### Describe the task
 
-Write what you want in plain language. You don't need to name files — the agent will search for
+Write what you want in plain language. You don't need to name files - the agent will search for
 them.
 
 ```
@@ -41,14 +53,33 @@ Add a --dry-run flag to the CLI so it prints the commands it would run
 instead of running them. Update the README too.
 ```
 
-To point at a specific file, type `@` and start typing its path.
+To point at a specific file, type `@` and start typing its path, then Tab to complete it.
 
 ### Approve as it goes
 
 In the default mode the agent stops and asks before it writes, edits, or runs anything. A write or
-edit shows the diff first; a shell command shows the exact command. **Allow** or **Deny**.
+edit shows the diff first; a shell command shows the exact command.
 
-If you'd rather review everything at the end, see [Run modes](./run-modes).
+- **Allow Once** - just this call
+- **Always allow** - stop asking for this for the rest of the session
+- **Deny** - refuse it. Closing the dialog or pressing `Esc` also counts as a deny, so the agent
+  never proceeds without an explicit allow.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                                                              │
+│  SCREENSHOT PLACEHOLDER                                      │
+│  ../_assets/cowork-permission-prompt.png                     │
+│                                                              │
+│  An edit awaiting approval, showing the diff above the       │
+│  Allow Once / Always allow / Deny buttons.                   │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Grants live in memory and are never written to disk. What a grant actually covers is in
+[Tool permissions](/docs/agent/permissions); to skip prompts entirely, or block writes outright,
+see [Run modes](/docs/agent/run-modes).
 
 ### Review what changed
 
@@ -57,14 +88,14 @@ Open the **Agent changes** panel to see every write and edit from this session i
 
 ### Keep going
 
-Type your next message any time — even mid-run. It queues and sends when the current turn finishes.
+Type your next message any time - even mid-run. It queues and sends when the current turn finishes.
 
 </Steps>
 
 ## Useful commands
 
 | Command | What it does |
-|---|---|
+| --- | --- |
 | `/help` | List available commands |
 | `/models` | Switch the active model |
 | `/goal <condition>` | Keep working until a condition is met |
@@ -73,16 +104,17 @@ Type your next message any time — even mid-run. It queues and sends when the c
 
 ## When a run goes wrong
 
-**Stop it.** Cancel ends the current run. Anything already written to disk stays written — cancel
+**Stop it.** Cancel ends the current run. Anything already written to disk stays written - cancel
 stops the agent, it doesn't undo its work.
 
 **Check the diff.** The Agent changes panel is the fastest way to see what actually happened, and
 git will tell you the rest.
 
 **Running out of context?** Watch the token counter near the input. `/compact` summarizes older
-turns so you can keep going without starting over.
+turns so you can keep going without starting over - see
+[Context & compaction](/docs/agent/context).
 
 ## Next
 
-- [Run modes](./run-modes) — how much to approve, and when
-- [Artifacts](./artifacts) — previewing what the agent built
+- [Side panels](./panels) - watching the agent work
+- [Artifacts](./artifacts) - previewing what it built
