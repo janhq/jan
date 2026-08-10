@@ -375,11 +375,12 @@ use std::collections::HashMap;
 use std::io::Write as _;
 use tokio::sync::{mpsc, Mutex};
 
-/// Default turn cap when neither `--max-turns` nor `agent.toml [agent].max_turns`
-/// is set. `0` means unbounded: the session token budget and user cancellation
-/// guard the loop instead of a fixed step count, so runs aren't cut off
-/// mid-task. Set an explicit cap to bound it.
-const DEFAULT_MAX_TURNS: u32 = 0;
+/// Token-spend ceiling for one agent run when `agent.toml [budget].max_tokens`
+/// is unset. There is no turn cap: the agent takes as many turns as the task
+/// needs and this budget (or cancellation) is what stops a runaway loop. `0`
+/// disables the ceiling entirely. Counted marginally by `SessionBudget`, so
+/// this bounds real new spend, not the context replayed on every turn.
+const DEFAULT_MAX_SESSION_TOKENS: u64 = 128_000;
 
 /// Resolve the `--project` flag (default `"."`) to an absolute path. The raw
 /// value is what the model would otherwise see verbatim in the system prompt's
@@ -422,7 +423,7 @@ pub fn cli_agent_status(
         "project": project_root.to_string_lossy(),
         "data_folder": resolve_jan_data_folder().to_string_lossy(),
         "model": cfg.agent.model,
-        "max_turns": cfg.agent.max_turns.unwrap_or(DEFAULT_MAX_TURNS),
+        "max_session_tokens": cfg.budget.max_tokens.unwrap_or(DEFAULT_MAX_SESSION_TOKENS),
         "tools": {
             "default": cfg.tools.default,
             "allow": cfg.tools.allow,
@@ -491,20 +492,21 @@ pub fn cli_agent_config_list() -> Result<serde_json::Value, String> {
     }))
 }
 
-/// Autonomous multi-turn run to completion or the turn/token budget.
+/// Autonomous run: as many turns as the task needs, bounded only by the
+/// session token budget.
 pub async fn cli_agent_run(
     project: &str,
     task: &str,
     model: Option<String>,
-    max_turns: Option<u32>,
     overrides: ProviderOverrides,
     auto_approve: bool,
     resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
-    run_agent_loop(project, task, model, max_turns, overrides, auto_approve, resume).await
+    run_agent_loop(project, task, model, false, overrides, auto_approve, resume).await
 }
 
-/// Single-turn run for debugging (`max_turns = 1`).
+/// Single-turn run for debugging: the one place a turn cap is still applied,
+/// and it is not user-configurable.
 pub async fn cli_agent_step(
     project: &str,
     task: &str,
@@ -512,7 +514,7 @@ pub async fn cli_agent_step(
     overrides: ProviderOverrides,
     auto_approve: bool,
 ) -> Result<(), String> {
-    run_agent_loop(project, task, model, Some(1), overrides, auto_approve, None).await
+    run_agent_loop(project, task, model, true, overrides, auto_approve, None).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -572,16 +574,10 @@ struct PersistTarget {
     history: Vec<serde_json::Value>,
 }
 
-/// Resolved engine handle for a chat session: the args are built once and the
-/// request body is assembled per turn (the TUI reuses this across many turns;
-/// the plain CLI builds a single body). `model`/`max_turns` seed each body.
-pub(crate) struct AgentSession {
-    pub args: OrchestrationArgs,
-    pub permission_requests: PermissionRegistry,
-    pub model: String,
-    /// Fast model for the `smol` role (goal evaluation). Falls back to `model`.
-    pub smol_model: String,
-    pub max_turns: u32,
+/// Per-run limits resolved from agent.toml. Grouped rather than passed as a
+/// run of bare numbers, which would be trivial to transpose at a call site.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SessionLimits {
     /// Context window limit in tokens for the model. Defaults to 128K if agent.toml
     /// doesn't set it. Used to display `ctx N/K` in the header and trigger compaction.
     pub context_window: u64,
@@ -591,6 +587,21 @@ pub(crate) struct AgentSession {
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     pub max_tokens: Option<u64>,
+    /// `[budget].max_tokens`: marginal token-spend ceiling for one run, the
+    /// only cap on run length. `0` is unbounded.
+    pub max_session_tokens: u64,
+}
+
+/// Resolved engine handle for a chat session: the args are built once and the
+/// request body is assembled per turn (the TUI reuses this across many turns;
+/// the plain CLI builds a single body). `model`/`limits` seed each body.
+pub(crate) struct AgentSession {
+    pub args: OrchestrationArgs,
+    pub permission_requests: PermissionRegistry,
+    pub model: String,
+    /// Fast model for the `smol` role (goal evaluation). Falls back to `model`.
+    pub smol_model: String,
+    pub limits: SessionLimits,
     /// Whether the TUI expands `<think>` reasoning blocks (default false).
     pub show_reasoning: bool,
     /// Shared MCP connection map (same Arc held by `args`), so the TUI can
@@ -607,12 +618,12 @@ impl AgentSession {
         let mut body = serde_json::json!({
             "model": self.model,
             "messages": messages,
-            "max_turns": self.max_turns,
+            "max_session_tokens": self.limits.max_session_tokens,
             "stream": true,
         });
         // Forward the per-request output cap only when configured; it flows to
         // the upstream via `copy_optional_chat_params`.
-        if let Some(max) = self.max_tokens {
+        if let Some(max) = self.limits.max_tokens {
             body["max_tokens"] = serde_json::json!(max);
         }
         body
@@ -624,7 +635,6 @@ impl AgentSession {
 fn prepare_agent_session(
     project: &str,
     model_override: Option<String>,
-    max_turns_override: Option<u32>,
     overrides: ProviderOverrides,
     auto_approve: bool,
     plan: bool,
@@ -668,10 +678,6 @@ fn prepare_agent_session(
                 .to_string(),
         );
     }
-    let max_turns = max_turns_override
-        .or(cfg.agent.max_turns)
-        .unwrap_or(DEFAULT_MAX_TURNS);
-
     // The `smol` role (used by /goal evaluation): an explicit smol_model in
     // ~/.jan/config.toml, else reuse the main model so evaluation always works.
     let smol_model = crate::core::agent::global_config::smol_model()
@@ -737,10 +743,12 @@ fn prepare_agent_session(
         permission_requests,
         model,
         smol_model,
-        max_turns,
-        context_window: cfg.agent.context_window.unwrap_or(128_000),
-        reserve_tokens: cfg.agent.compaction_reserve_tokens.unwrap_or(16_384),
-        max_tokens: cfg.agent.max_tokens,
+        limits: SessionLimits {
+            context_window: cfg.agent.context_window.unwrap_or(128_000),
+            reserve_tokens: cfg.agent.compaction_reserve_tokens.unwrap_or(16_384),
+            max_tokens: cfg.agent.max_tokens,
+            max_session_tokens: cfg.budget.max_tokens.unwrap_or(DEFAULT_MAX_SESSION_TOKENS),
+        },
         show_reasoning: cfg.agent.show_reasoning.unwrap_or(false),
         mcp_servers,
         mcp_task,
@@ -789,7 +797,7 @@ fn prepare_agent_run(
     project: &str,
     task: &str,
     model_override: Option<String>,
-    max_turns_override: Option<u32>,
+    single_turn: bool,
     overrides: ProviderOverrides,
     auto_approve: bool,
     resume: Option<ResumeTarget>,
@@ -799,7 +807,6 @@ fn prepare_agent_run(
     let session = prepare_agent_session(
         project,
         model_override,
-        max_turns_override,
         overrides,
         auto_approve,
         false,
@@ -829,7 +836,10 @@ fn prepare_agent_run(
 
     let mut history = resumed.as_ref().map(|r| r.history.clone()).unwrap_or_default();
     history.push(serde_json::json!({ "role": "user", "content": final_task }));
-    let body = session.body(serde_json::json!(history.clone()));
+    let mut body = session.body(serde_json::json!(history.clone()));
+    if single_turn {
+        body["max_turns"] = serde_json::json!(1);
+    }
     // Emit resolved references stderr so the user sees what was injected
     if !injected.is_empty() {
         eprintln!("(resolved @path references)");
@@ -859,7 +869,7 @@ async fn run_agent_loop(
     project: &str,
     task: &str,
     model_override: Option<String>,
-    max_turns_override: Option<u32>,
+    single_turn: bool,
     overrides: ProviderOverrides,
     auto_approve: bool,
     resume: Option<ResumeTarget>,
@@ -874,7 +884,7 @@ async fn run_agent_loop(
         project,
         task,
         model_override,
-        max_turns_override,
+        single_turn,
         overrides,
         auto_approve,
         resume,
@@ -941,7 +951,6 @@ pub async fn cli_agent_ui(
     project: &str,
     task: Option<String>,
     model: Option<String>,
-    max_turns: Option<u32>,
     images: Vec<String>,
     overrides: ProviderOverrides,
     auto_approve: bool,
@@ -958,15 +967,7 @@ pub async fn cli_agent_ui(
     // Fresh install with a terminal attached: launch with no model rather than
     // forcing sign-in here. The TUI shows a one-line notice and `/login` (or
     // `jan login`) picks a model up once the user is ready.
-    let session = prepare_agent_session(
-        project,
-        model,
-        max_turns,
-        overrides,
-        auto_approve,
-        plan,
-        false,
-    )?;
+    let session = prepare_agent_session(project, model, overrides, auto_approve, plan, false)?;
     // TUI threads persist under the project's .jan/agent dir, separate from the
     // desktop store, so continuing here never mutates desktop threads.
     let agent_dir = agent_dir_for(&project_root);
@@ -987,7 +988,10 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
             print!("{text}");
             let _ = std::io::stdout().flush();
         }
-        StreamEvent::Step { index, max } => eprintln!("\n\x1b[2m[turn {index}/{max}]\x1b[0m"),
+        StreamEvent::Step { index, max } => match max {
+            0 => eprintln!("\n\x1b[2m[turn {index}]\x1b[0m"),
+            m => eprintln!("\n\x1b[2m[turn {index}/{m}]\x1b[0m"),
+        },
         // In-progress signal is for the live TUI; the piped log stays quiet
         // until the full call (with args) arrives just below.
         // Headless prints one line per completed call; the in-progress signal
@@ -1364,7 +1368,6 @@ mod tests {
             let session = prepare_agent_session(
                 dir.path().to_str().unwrap(),
                 None,
-                None,
                 ProviderOverrides::default(),
                 false,
                 false,
@@ -1399,7 +1402,6 @@ mod tests {
 
             let session = prepare_agent_session(
                 dir.path().to_str().unwrap(),
-                None,
                 None,
                 ProviderOverrides::default(),
                 false,
