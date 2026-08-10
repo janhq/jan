@@ -55,10 +55,16 @@ instead of running them. Update the README too.
 
 To point at a specific file, type `@` and start typing its path, then Tab to complete it.
 
-### Approve as it goes
+### Let it work, or approve as it goes
 
-In the default mode the agent stops and asks before it writes, edits, or runs anything. A write or
-edit shows the diff first; a shell command shows the exact command.
+Cowork starts in **Bypass permissions**: tool calls are auto-approved so the agent can work without
+stopping at every step. Confinement does not depend on the prompt - `bash` always runs inside an OS
+sandbox (and refuses to run at all if one cannot be established), and file writes stay inside your
+project folder either way.
+
+Switch the mode picker to **Normal** if you would rather confirm each change. The agent then stops
+before it writes, edits, or runs anything: a write or edit shows the diff first, a shell command
+shows the exact command.
 
 - **Allow Once** - just this call
 - **Always allow** - stop asking for this for the rest of the session
@@ -78,8 +84,8 @@ edit shows the diff first; a shell command shows the exact command.
 ```
 
 Grants live in memory and are never written to disk. What a grant actually covers is in
-[Tool permissions](/docs/agent/permissions); to skip prompts entirely, or block writes outright,
-see [Run modes](/docs/agent/run-modes).
+[Tool permissions](/docs/agent/permissions); to block writes outright rather than confirm them, see
+[Run modes](/docs/agent/run-modes).
 
 ### Review what changed
 
