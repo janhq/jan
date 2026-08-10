@@ -116,15 +116,15 @@ Desktop's [local API server](/docs/desktop/api-server), with `jan config set --b
 
 ## Staying in control
 
-The agent never edits a file or runs a command without asking, unless you tell it otherwise. Reads
-are free; writes and shell commands prompt. You can approve a single call, approve that kind of call
-for the rest of the session, or deny it.
+The agent edits files and runs commands without stopping to ask, but a shell command runs inside an
+OS sandbox confined to the project directory, and `.jan/agent/` internals and anything in
+`[tools] deny` are refused outright.
 
 Two ways to change that:
 
 - **Plan mode** (`jan --plan`) makes the session read-only. The agent investigates and proposes, but
   cannot change anything.
-- **YOLO mode** (`jan --yolo`) disables the sandbox and auto-approves everything. Fast, and only
-  appropriate in a throwaway environment such as a container or a scratch checkout.
+- **Safe mode** (`jan --safe`) asks before every write and shell command, instead of auto-approving
+  them inside the sandbox.
 
 See [Tools & permissions](/docs/agent/permissions) for the full picture.

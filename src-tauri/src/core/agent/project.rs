@@ -138,7 +138,8 @@ max_tokens = 200000
 
 [tools]
 # read-only | deny | allow. read-only (default) exposes MCP tools and built-in
-# reads; built-in writes/exec still prompt. deny locks down all MCP tools.
+# reads; built-in writes/exec go through the permission gate. deny locks down
+# all MCP tools.
 default = "read-only"
 # Exposed even under deny; deny-list wins over everything:
 allow = []
@@ -147,8 +148,8 @@ deny = []
 # allow_write = ["fs.write"]
 allow_write = []
 # Whether the sandboxed shell can reach the network. Unset follows the surface
-# running the agent: the CLI allows it (every exec is prompted first), the
-# desktop's throwaway chat sandbox does not.
+# running the agent: the CLI allows it, the desktop's throwaway chat sandbox
+# does not.
 # allow_network = true
 # Whether the sandboxed shell can read your home directory (for git/ssh
 # credential helpers and ~/.ssh/config). Unset follows the surface: the CLI

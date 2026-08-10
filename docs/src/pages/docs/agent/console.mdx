@@ -62,7 +62,8 @@ Type while it's working and your message queues rather than being dropped - see
 
 ## Approving work
 
-Reads are free. Writes and shell commands stop and ask:
+Writes and shell commands are auto-approved. Start the console with `jan --safe` and they stop to
+ask instead:
 
 ```
  write src/cli.rs
@@ -84,6 +85,6 @@ as you type.
 <DocCards>
   <DocCard title="Slash commands" href="/docs/agent/slash-commands" icon={<Command size={20} />}>Every command, grouped by what it's for.</DocCard>
   <DocCard title="Keybindings" href="/docs/agent/keybindings" icon={<Keyboard size={20} />}>Shortcuts for input, scrolling, and approval prompts.</DocCard>
-  <DocCard title="Run modes" href="/docs/agent/run-modes" icon={<GitBranch size={20} />}>Normal, read-only plan mode, and YOLO.</DocCard>
+  <DocCard title="Run modes" href="/docs/agent/run-modes" icon={<GitBranch size={20} />}>Auto-approval, safe mode, and read-only plan mode.</DocCard>
   <DocCard title="Sessions" href="/docs/agent/sessions" icon={<Layers size={20} />}>Resuming, rewinding, and queueing.</DocCard>
 </DocCards>

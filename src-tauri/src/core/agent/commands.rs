@@ -72,7 +72,7 @@ fn build_orchestration_args<R: Runtime>(
         system_prompt_override: None,
         subagents_enabled: true,
         max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
-        yolo: false,
+        auto_approve: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
     }
 }
