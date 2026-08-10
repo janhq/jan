@@ -85,9 +85,9 @@ Separately from the context window, a project can bound how far one run goes:
 
 ```toml
 [budget]
-max_steps = 40
-max_tokens = 200000
+# max_tokens = 128000  # token-spend ceiling per run; 0 disables the cap
 ```
 
-That's a stop point for the run as a whole, not a per-request limit. See
+That's a stop point for the run as a whole, not a per-request limit. There is no turn cap - the
+agent runs as many turns as the task needs, bounded only by this budget (or by cancelling it). See
 [Project config](/docs/agent/project-config).

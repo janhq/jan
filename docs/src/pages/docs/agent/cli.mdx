@@ -34,7 +34,6 @@ jan <COMMAND>
 | `--project <PATH>` | Project root containing `.jan/agent/agent.toml`. Defaults to `.` |
 | `--task <TEXT>` | Seed the session with a first message |
 | `--model <ID>` | Model id, overriding `[agent].model` |
-| `--max-turns <N>` | Turns per message, clamped to 1-400 |
 | `--image <PATH>` | Attach an image to the first message. Repeatable |
 | `--plan` | Start in read-only plan mode |
 | `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
@@ -66,12 +65,13 @@ Run the agent without a UI. This is the form to use in scripts.
 
 ### `run`
 
-Run to completion, or until the turn/token budget is spent.
+Run to completion, or until the session token budget is spent. There is no turn cap - the agent
+runs as many turns as the task needs, bounded only by `[budget].max_tokens`, or by cancelling it.
 
 ```bash
 jan cli agent run "fix the failing test in tests/auth"
 jan cli agent run --project ~/code/app "update the changelog"
-jan cli agent run --model gpt-4o --max-turns 20 "add unit tests for the parser"
+jan cli agent run --model gpt-4o "add unit tests for the parser"
 jan cli agent run --safe "run the migration"   # approve each step
 ```
 
@@ -79,7 +79,6 @@ jan cli agent run --safe "run the migration"   # approve each step
 | --- | --- |
 | `--project <PATH>` | Project root. Defaults to `.` |
 | `--model <ID>` | Model id, overriding `[agent].model` |
-| `--max-turns <N>` | Turns, overriding `[agent].max_turns`. Clamped to 1-400 |
 | `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
 | `--resume[=ID]` | Resume the most recent session, or one by id |
 | `-c`, `--continue` | Resume the most recent session |
@@ -203,7 +202,6 @@ export ANTHROPIC_API_KEY="$SECRET_KEY"
 jan cli agent run \
   --project . \
   --provider anthropic \
-  --max-turns 30 \
   "update the changelog for the current release"
 ```
 
