@@ -284,12 +284,63 @@ struct ToolGroup {
 }
 
 impl ToolGroup {
-    /// Whether the most recent call is still awaiting its `ToolResult`.
-    /// A group can stay open with no in-flight call so future calls keep
-    /// folding into it; the throbber must not show while that's the case.
+    /// Whether any call is still awaiting its `ToolResult`. A group can stay
+    /// open with every call resolved so future calls keep folding into it; the
+    /// throbber must not show while that's the case. Results within a batch can
+    /// land out of dispatch order, so this looks at every call, not the last.
     fn is_running(&self) -> bool {
-        self.calls.last().is_some_and(|c| c.content.is_none())
+        self.calls.iter().any(|c| c.content.is_none())
     }
+
+    /// Terminal marker for the collapsed row. A failed call outranks an
+    /// unresolved one: it is the more specific thing to report.
+    fn outcome_tag(&self, interrupted: bool) -> (&'static str, Style) {
+        if self.calls.iter().any(|c| c.is_error) {
+            ("✗", Style::new().red())
+        } else if interrupted && self.is_running() {
+            ("○", Style::new().yellow())
+        } else {
+            ("✓", Style::new().green())
+        }
+    }
+
+    /// The group's row: present-tense `▸` only while it is open with a call in
+    /// flight, otherwise a resolved tag plus past-tense summary.
+    fn row(&self, state: GroupRow, max: usize) -> Line<'static> {
+        if state == GroupRow::Open && self.is_running() {
+            return tool_row(
+                "▸",
+                Style::new().cyan(),
+                &truncate(&group_activity(&self.nouns), max),
+                Style::new().cyan().dim(),
+            );
+        }
+        let text = if self.nouns.len() <= 1 {
+            self.first_done.clone()
+        } else {
+            group_summary(&self.nouns)
+        };
+        let (tag, tag_style) = self.outcome_tag(state == GroupRow::Aborted);
+        tool_row(tag, tag_style, &truncate(&text, max), Style::new().dim())
+    }
+}
+
+/// How a group's row should read: still open to further calls, closed normally,
+/// or closed by an abort that left calls unresolved.
+#[derive(Clone, Copy, PartialEq)]
+enum GroupRow {
+    Open,
+    Closed,
+    Aborted,
+}
+
+/// A standalone (diff-producing) tool row awaiting its `ToolResult`, retained so
+/// an aborted run can mark it interrupted instead of leaving a `▸` that reads as
+/// work still in flight.
+struct PendingToolRow {
+    id: String,
+    idx: usize,
+    label: String,
 }
 
 /// A committed `<think>` reasoning block, folded to a one-line summary row.
@@ -533,6 +584,9 @@ struct App {
     /// Finalized tool groups, retained with their per-call detail so a collapsed
     /// summary row can be expanded back to its individual calls/results.
     groups: Vec<ToolGroup>,
+    /// Standalone (edit/write) call rows still awaiting their result. Several
+    /// can be open at once: a batch emits every `ToolCall` before any result.
+    pending_rows: Vec<PendingToolRow>,
     /// Committed reasoning blocks, folded to a summary row and expandable back to
     /// their full dimmed lines.
     reasoning_blocks: Vec<ReasoningBlock>,
@@ -821,6 +875,7 @@ impl App {
             tool_group: None,
             grouped_ids: std::collections::HashSet::new(),
             groups: Vec::new(),
+            pending_rows: Vec::new(),
             reasoning_blocks: Vec::new(),
             show_reasoning,
             expanded: std::collections::HashSet::new(),
@@ -931,6 +986,7 @@ impl App {
         self.grouped_ids.clear();
         self.starting.clear();
         self.groups.clear();
+        self.pending_rows.clear();
         self.reasoning_blocks.clear();
         self.subagent_blocks.clear();
         self.expanded.clear();
@@ -1030,18 +1086,10 @@ impl App {
         let extend = self.tool_group.as_mut().map(|g| {
             g.nouns.push((noun, is_read));
             g.calls.push(call);
-            (g.idx, group_activity(&g.nouns))
+            g.idx
         });
         match extend {
-            Some((idx, running)) if idx < self.transcript.len() => {
-                let max = self.render_width().saturating_sub(6) as usize;
-                self.transcript[idx] = tool_row(
-                    "▸",
-                    Style::new().cyan(),
-                    &truncate(&running, max),
-                    Style::new().cyan().dim(),
-                );
-            }
+            Some(idx) if idx < self.transcript.len() => self.refresh_group_row(),
             _ => {
                 self.gap(Kind::Tool);
                 self.push(tool_row(
@@ -1067,22 +1115,65 @@ impl App {
         }
     }
 
-    /// Close the current tool group, rewriting its row to a `✓` short summary:
-    /// the single activity label for one call, else a counted breakdown.
+    /// Rewrite the open group's row for its current state, leaving it open so
+    /// later calls keep folding in. Called as each result lands so the status
+    /// resolves then, rather than lagging until the group closes (which only
+    /// happens once the model starts answering).
+    fn refresh_group_row(&mut self) {
+        let max = self.render_width().saturating_sub(6) as usize;
+        let Some((idx, row)) = self
+            .tool_group
+            .as_ref()
+            .filter(|g| g.idx < self.transcript.len())
+            .map(|g| (g.idx, g.row(GroupRow::Open, max)))
+        else {
+            return;
+        };
+        self.transcript[idx] = row;
+    }
+
+    /// Close the current tool group, rewriting its row to a short summary: the
+    /// single activity label for one call, else a counted breakdown.
     fn finalize_tool_group(&mut self) {
+        self.close_tool_group(false);
+    }
+
+    /// `interrupted` marks calls that never received a result as unresolved
+    /// rather than done. Only an abort knows that: a normal finalize can land
+    /// while a call is legitimately still running (a `dispatch_subagent`
+    /// resolves after its child's panel opens).
+    fn close_tool_group(&mut self, interrupted: bool) {
         let Some(g) = self.tool_group.take() else {
             return;
         };
         if g.idx >= self.transcript.len() {
             return;
         }
-        let text = if g.nouns.len() <= 1 {
-            g.first_done.clone()
+        let max = self.render_width().saturating_sub(6) as usize;
+        let state = if interrupted {
+            GroupRow::Aborted
         } else {
-            group_summary(&g.nouns)
+            GroupRow::Closed
         };
-        self.transcript[g.idx] = tool_row("✓", Style::new().green(), &text, Style::new().dim());
+        self.transcript[g.idx] = g.row(state, max);
         self.groups.push(g);
+    }
+
+    /// Resolve every row still awaiting a result: the run ended (cancel, error,
+    /// aborted stream) and no `ToolResult` is coming, so a `▸`/`✓` would read as
+    /// work that is still running or that succeeded.
+    fn abort_tool_rows(&mut self) {
+        self.close_tool_group(true);
+        // A call whose args were still streaming never gets its "Preparing X"
+        // throbber cleared by the `ToolCall` that would have superseded it, so
+        // it animates on past the end of the run, naming a tool that never ran.
+        self.starting.clear();
+        for row in std::mem::take(&mut self.pending_rows) {
+            if row.idx < self.transcript.len() {
+                self.transcript[row.idx] =
+                    tool_row("○", Style::new().yellow(), &row.label, Style::new().dim());
+            }
+        }
     }
 
     /// Header status while a turn is running with reasoning folding on: `[thinking]`
@@ -1762,6 +1853,11 @@ impl App {
                     self.flush_assistant();
                     self.gap(Kind::Tool);
                     self.push(tool_row("▸", Style::new().cyan(), &label, Style::new().cyan().dim()));
+                    self.pending_rows.push(PendingToolRow {
+                        id: id.clone(),
+                        idx: self.transcript.len() - 1,
+                        label,
+                    });
                 } else {
                     // Commit any buffered prose OR reasoning the model emitted
                     // before this call so the timeline stays in emission order
@@ -1780,6 +1876,7 @@ impl App {
             } => {
                 // Clear the throbber for an awaited subagent once its result lands.
                 self.awaiting.retain(|(await_id, ..)| await_id != &id);
+                self.pending_rows.retain(|row| row.id != id);
                 // Any tool result means the model took some action since the last
                 // reminder fired; let a later stop remind again if work is still
                 // open. Set unconditionally, before the grouped-call early return
@@ -1797,6 +1894,7 @@ impl App {
                         call.diff = diff;
                         call.content = Some(content);
                     }
+                    self.refresh_group_row();
                     return;
                 }
                 self.flush_assistant();
@@ -2159,7 +2257,7 @@ impl App {
     }
 
     fn on_error(&mut self, code: String, message: String) {
-        self.finalize_tool_group();
+        self.abort_tool_rows();
         self.flush_assistant();
         self.status = Status::Idle;
         self.run_started = None;
@@ -2258,7 +2356,7 @@ impl App {
         // Commit whatever was streamed before the cancel so partial prose and the
         // preceding tool calls stay in the transcript, and record the partial
         // answer in history so the next turn and a later /resume both see it.
-        self.finalize_tool_group();
+        self.abort_tool_rows();
         let answer = self.take_answer();
         if !answer.is_empty() {
             self.history
@@ -2272,11 +2370,6 @@ impl App {
         self.want_start = false;
         self.subagents.clear();
         self.awaiting.clear();
-        // A call whose args were still streaming (no ToolCall event yet) never
-        // gets its "Preparing X" throbber cleared by that event once cancelled
-        // -- it would otherwise linger in the transcript forever, looking like
-        // work is still happening after "cancelled" has already printed.
-        self.starting.clear();
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
         self.gap(Kind::Meta);
@@ -2866,8 +2959,9 @@ fn starting_call_lines(call: &mut StartingCall, frame: &str) -> Vec<Line<'static
     let Some(tail) = call.preview.tail.as_ref() else {
         let label = match call.preview.path.as_deref() {
             // Even without a body, the path lands early enough to be worth
-            // showing -- "Preparing write" alone says nothing about what.
-            Some(path) if !path.is_empty() => format!("Preparing write: {path}"),
+            // showing -- "Preparing write" alone says nothing about what. Any
+            // path-carrying tool reaches here, so the name comes from the call.
+            Some(path) if !path.is_empty() => format!("Preparing {}: {path}", call.name),
             _ => format!("Preparing {}", call.name),
         };
         return vec![tool_row(frame, Style::new().cyan(), &label, Style::new().cyan().dim())];
@@ -3773,7 +3867,7 @@ async fn chat_loop<B: Backend>(
                     app.pending_queue.clear();
                     if app.status == Status::Running {
                         app.flush_assistant();
-                        app.finalize_tool_group();
+                        app.abort_tool_rows();
                         app.status = Status::Idle;
                         app.run_started = None;
                     }
@@ -5754,6 +5848,7 @@ fn rebuild_transcript(app: &mut App) {
     app.grouped_ids.clear();
     app.starting.clear();
     app.groups.clear();
+    app.pending_rows.clear();
     app.reasoning_blocks.clear();
     app.subagent_blocks.clear();
     app.expanded.clear();
@@ -5808,6 +5903,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     app.tool_group = None;
     app.grouped_ids.clear();
     app.groups.clear();
+    app.pending_rows.clear();
     app.reasoning_blocks.clear();
     app.subagent_blocks.clear();
     app.expanded.clear();
@@ -10062,6 +10158,102 @@ mod tests {
     }
 
     #[test]
+    fn failed_grouped_call_finalizes_the_row_as_failed() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "foo" }),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "read".into(),
+            args: json!({ "path": "main.rs" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ERROR: tool 'grep' denied by user".into(),
+            is_error: true,
+            diff: None,
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c2".into(),
+            content: "fn main() {}".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.finalize_tool_group();
+        let row = line_text(&app.transcript[app.groups[0].idx]);
+        assert!(
+            row.contains("✗") && !row.contains("✓"),
+            "a failed call must not collapse to a success row: {row}"
+        );
+    }
+
+    #[test]
+    fn cancelled_tool_group_is_not_marked_successful() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 300" }),
+        });
+        let idx = app.tool_group.as_ref().unwrap().idx;
+        app.cancel_run();
+        let row = line_text(&app.transcript[idx]);
+        assert!(
+            !row.contains("✓"),
+            "a cancelled command must not read as succeeded: {row}"
+        );
+        assert!(row.contains("○"), "no interrupted marker: {row}");
+    }
+
+    #[test]
+    fn cancelled_standalone_edit_row_is_marked_interrupted() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "e1".into(),
+            name: "edit".into(),
+            args: json!({ "path": "foo.rs", "old_string": "a", "new_string": "b" }),
+        });
+        let idx = app.transcript.len() - 1;
+        assert!(line_text(&app.transcript[idx]).contains("▸"));
+        app.cancel_run();
+        let row = line_text(&app.transcript[idx]);
+        assert!(
+            !row.contains("▸"),
+            "cancelled edit still reads as in flight: {row}"
+        );
+        assert!(row.contains("○"), "no interrupted marker: {row}");
+    }
+
+    #[test]
+    fn completed_standalone_edit_survives_a_later_cancel() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "e1".into(),
+            name: "edit".into(),
+            args: json!({ "path": "foo.rs", "old_string": "a", "new_string": "b" }),
+        });
+        let idx = app.transcript.len() - 1;
+        app.apply(StreamEvent::ToolResult {
+            id: "e1".into(),
+            content: "edited foo.rs".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.cancel_run();
+        let row = line_text(&app.transcript[idx]);
+        assert!(
+            row.contains("▸") && !row.contains("○"),
+            "a resolved edit must keep its call row: {row}"
+        );
+    }
+
+    #[test]
     fn pre_tool_prose_lands_above_the_tool_row() {
         let mut app = test_app();
         app.apply(StreamEvent::Token {
@@ -10118,10 +10310,12 @@ mod tests {
             .filter(|l| line_text(l).contains("Reading") || line_text(l).contains("Read "))
             .count();
         assert_eq!(tool_rows, 1);
-        // The live row is an honest present-tense breakdown, not "<latest> (4)".
-        assert!(line_text(app.transcript.last().unwrap())
-            .contains("Reading 3 memory notes, 1 skill"));
-        // The model speaking finalizes it to a short summary sentence.
+        // Every call has reported, so the row already reads as a finished
+        // breakdown -- not "<latest> (4)", and not still-running until the
+        // model speaks.
+        let row = line_text(app.transcript.last().unwrap());
+        assert!(row.contains("✓ Read 3 memory notes, 1 skill"), "row: {row}");
+        // The model speaking closes the group without disturbing the row.
         app.apply(StreamEvent::Token { text: "Done.".into() });
         let row = line_text(app.transcript.last().unwrap());
         assert!(row.contains("✓ Read 3 memory notes, 1 skill"), "row: {row}");
@@ -10240,6 +10434,94 @@ mod tests {
             args: json!({ "pattern": "bar" }),
         });
         assert!(app.tool_group.as_ref().unwrap().is_running());
+    }
+
+    #[test]
+    fn grouped_row_resolves_when_its_result_lands_not_when_prose_starts() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "foo" }),
+        });
+        let idx = app.tool_group.as_ref().unwrap().idx;
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        // No token has streamed yet: the row must already read as done rather
+        // than sitting on the present-tense running form until prose arrives.
+        let row = line_text(&app.transcript[idx]);
+        assert!(row.contains("✓"), "status lagged behind the result: {row}");
+        assert!(row.contains("Searched"), "row not past tense: {row}");
+
+        // A later call in the same group reopens it as running.
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "read".into(),
+            args: json!({ "path": "main.rs" }),
+        });
+        let row = line_text(&app.transcript[idx]);
+        assert!(row.contains("▸") && !row.contains("✓"), "row: {row}");
+    }
+
+    #[test]
+    fn failed_grouped_row_shows_the_failure_before_the_group_closes() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cargo build" }),
+        });
+        let idx = app.tool_group.as_ref().unwrap().idx;
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ERROR: command not found".into(),
+            is_error: true,
+            diff: None,
+        });
+        let row = line_text(&app.transcript[idx]);
+        assert!(
+            row.contains("✗") && !row.contains("✓"),
+            "failure not shown at result time: {row}"
+        );
+    }
+
+    #[test]
+    fn group_row_stays_running_while_a_sibling_call_is_outstanding() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 10" }),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "read".into(),
+            args: json!({ "path": "main.rs" }),
+        });
+        let idx = app.tool_group.as_ref().unwrap().idx;
+        // Results can land out of dispatch order; the row must not claim the
+        // batch is done while an earlier call is still outstanding.
+        app.apply(StreamEvent::ToolResult {
+            id: "c2".into(),
+            content: "fn main() {}".into(),
+            is_error: false,
+            diff: None,
+        });
+        assert!(app.tool_group.as_ref().unwrap().is_running());
+        let row = line_text(&app.transcript[idx]);
+        assert!(!row.contains("✓"), "resolved early: {row}");
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "done".into(),
+            is_error: false,
+            diff: None,
+        });
+        assert!(!app.tool_group.as_ref().unwrap().is_running());
+        assert!(line_text(&app.transcript[idx]).contains("✓"));
     }
 
     #[test]
@@ -10394,7 +10676,10 @@ mod tests {
         let tool_rows = app
             .transcript
             .iter()
-            .filter(|l| { let t = line_text(l); t.contains("Executing") || t.contains("Running") })
+            .filter(|l| {
+                let t = line_text(l);
+                t.contains("Executing") || t.contains("Running") || t.contains("Ran")
+            })
             .count();
         assert_eq!(tool_rows, 1);
         app.on_done("stop".into(), None);
@@ -10438,7 +10723,7 @@ mod tests {
         let think_at = rows.iter().position(|r| r.contains("reasoning (1 line)")).unwrap();
         let tool_at = rows
             .iter()
-            .position(|r| r.contains("Executing") || r.contains("Running"))
+            .position(|r| r.contains("Executing") || r.contains("Running") || r.contains("Ran"))
             .unwrap();
         assert!(
             think_at < tool_at,
@@ -10513,7 +10798,7 @@ mod tests {
             .iter()
             .filter(|l| {
                 let t = line_text(l);
-                t.contains("Executing") || t.contains("Running")
+                t.contains("Executing") || t.contains("Running") || t.contains("Ran ")
             })
             .count();
         assert_eq!(tool_rows, 1);
@@ -10605,7 +10890,10 @@ mod tests {
         let tool_rows = app
             .transcript
             .iter()
-            .filter(|l| { let t = line_text(l); t.contains("Executing") || t.contains("Running") })
+            .filter(|l| {
+                let t = line_text(l);
+                t.contains("Executing") || t.contains("Running") || t.contains("Ran")
+            })
             .count();
         assert_eq!(tool_rows, 1);
     }
@@ -11234,6 +11522,41 @@ mod tests {
         let text: Vec<String> = starting_call_lines(&mut call, "⠋").iter().map(line_text).collect();
         assert_eq!(text.len(), 1);
         assert!(text[0].contains("Preparing bash"), "got {text:?}");
+    }
+
+    /// A path-carrying tool that isn't `write` must be named as itself.
+    #[test]
+    fn starting_throbber_names_the_actual_tool() {
+        for name in ["read", "edit", "list"] {
+            let mut call = super::StartingCall::new("c1".into(), name.into());
+            call.args = r#"{"path":"src/main.rs"#.into();
+            let text: Vec<String> = starting_call_lines(&mut call, "⠋")
+                .iter()
+                .map(line_text)
+                .collect();
+            assert_eq!(text.len(), 1);
+            assert!(
+                text[0].contains(&format!("Preparing {name}: src/main.rs")),
+                "got {text:?}"
+            );
+            assert!(!text[0].contains("write"), "wrong tool named: {text:?}");
+        }
+    }
+
+    #[test]
+    fn stream_error_clears_the_preparing_throbber() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "c1".into(),
+            name: "write".into(),
+        });
+        assert!(!app.starting.is_empty());
+        app.on_error("stream".into(), "connection reset".into());
+        assert!(
+            app.starting.is_empty(),
+            "an aborted run leaves a throbber naming a tool that never ran"
+        );
     }
 
     /// The deltas have to actually reach the call they belong to.
