@@ -3,9 +3,14 @@ import { render } from '@testing-library/react'
 import { act } from '@testing-library/react'
 import LlamacppOomListener from '../LlamacppOomListener'
 import { useAppState } from '@/hooks/useAppState'
+import { useCodeRun } from '@/hooks/useCodeRun'
 
 let loadProgressHandler: ((event: { payload: unknown }) => void) | undefined
 let unloadHandler: ((event: { payload: unknown }) => void) | undefined
+let oomHandler: ((event: { payload: unknown }) => void) | undefined
+let backendErrorHandler: ((event: { payload: unknown }) => void) | undefined
+
+const invokeMock = vi.fn().mockResolvedValue(undefined)
 
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn((eventName: string, handler: (event: { payload: unknown }) => void) => {
@@ -15,8 +20,18 @@ vi.mock('@tauri-apps/api/event', () => ({
     if (eventName === 'llamacpp-model-unloaded') {
       unloadHandler = handler
     }
+    if (eventName === 'llamacpp-router-oom') {
+      oomHandler = handler
+    }
+    if (eventName === 'llamacpp-router-backend-error') {
+      backendErrorHandler = handler
+    }
     return Promise.resolve(() => {})
   }),
+}))
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args: unknown[]) => invokeMock(...args),
 }))
 
 vi.mock('@/lib/platform/utils', () => ({
@@ -81,6 +96,132 @@ describe('LlamacppOomListener - model load progress', () => {
       stage: undefined,
       value: 0.3,
     })
+  })
+})
+
+describe('LlamacppOomListener - Cowork session attribution', () => {
+  beforeEach(() => {
+    loadProgressHandler = undefined
+    oomHandler = undefined
+    backendErrorHandler = undefined
+    invokeMock.mockClear()
+    act(() => {
+      useCodeRun.setState({
+        llamacppRuns: {},
+        runId: {},
+        pendingLlamacppError: {},
+        loadingModels: {},
+        modelLoadProgress: {},
+      })
+    })
+  })
+
+  it('forwards load progress only to the session(s) loading that model, by id', async () => {
+    act(() => {
+      useCodeRun.setState({
+        llamacppRuns: { 'session-a': 'model-1', 'session-b': 'model-2' },
+      })
+    })
+    render(<LlamacppOomListener />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    act(() => {
+      loadProgressHandler?.({ payload: { model: 'model-1', value: 0.5 } })
+    })
+
+    expect(useCodeRun.getState().modelLoadProgress['session-a']).toEqual(
+      { modelId: 'model-1', stage: undefined, value: 0.5 }
+    )
+    expect(useCodeRun.getState().loadingModels['session-a']).toBe(true)
+    // session-b is loading a different model — must not see model-1's progress.
+    expect(useCodeRun.getState().modelLoadProgress['session-b']).toBeUndefined()
+    // Cowork's own load state must never touch chat's Records — that's the
+    // exact cross-contamination this separate Record exists to avoid (see
+    // useCodeRun.loadingModels).
+    expect(useAppState.getState().loadingModels['session-a']).toBeUndefined()
+    expect(
+      useAppState.getState().modelLoadProgressByThread['session-a']
+    ).toBeUndefined()
+  })
+
+  it('stashes a friendly message and cancels the run on OOM', async () => {
+    act(() => {
+      useCodeRun.setState({
+        llamacppRuns: { 'session-a': 'model-1' },
+        runId: { 'session-a': 'run-123' },
+      })
+    })
+    render(<LlamacppOomListener />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(oomHandler).toBeDefined()
+    act(() => {
+      oomHandler?.({ payload: 'llama.cpp ran out of memory' })
+    })
+
+    expect(useCodeRun.getState().pendingLlamacppError['session-a']).toBe(
+      'llama.cpp ran out of memory'
+    )
+    expect(invokeMock).toHaveBeenCalledWith('agent_cancel', { runId: 'run-123' })
+  })
+
+  it('mirrors the same attribution for a backend error', async () => {
+    act(() => {
+      useCodeRun.setState({
+        llamacppRuns: { 'session-a': 'model-1' },
+        runId: { 'session-a': 'run-123' },
+      })
+    })
+    render(<LlamacppOomListener />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    act(() => {
+      backendErrorHandler?.({ payload: 'GGML backend encountered an error' })
+    })
+
+    expect(useCodeRun.getState().pendingLlamacppError['session-a']).toBe(
+      'GGML backend encountered an error'
+    )
+    expect(invokeMock).toHaveBeenCalledWith('agent_cancel', { runId: 'run-123' })
+  })
+
+  it('is a no-op when no Cowork session is running against llamacpp', async () => {
+    render(<LlamacppOomListener />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    act(() => {
+      oomHandler?.({ payload: 'llama.cpp ran out of memory' })
+    })
+
+    expect(useCodeRun.getState().pendingLlamacppError).toEqual({})
+    expect(invokeMock).not.toHaveBeenCalledWith('agent_cancel', expect.anything())
+  })
+
+  it('does not attribute to a session tracked as llamacpp-using but whose run already ended', async () => {
+    // llamacppRuns not yet cleared, but runId has no entry — a stale/already-
+    // finished session must not be cancelled or stamped.
+    act(() => {
+      useCodeRun.setState({ llamacppRuns: { 'session-a': 'model-1' }, runId: {} })
+    })
+    render(<LlamacppOomListener />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    act(() => {
+      oomHandler?.({ payload: 'llama.cpp ran out of memory' })
+    })
+
+    expect(useCodeRun.getState().pendingLlamacppError).toEqual({})
+    expect(invokeMock).not.toHaveBeenCalled()
   })
 })
 
