@@ -1,6 +1,6 @@
 ---
 title: Artifacts
-description: Files the agent produced — surfaced in the transcript, collected in a library, and previewable.
+description: Files the agent produced - surfaced in the transcript, collected in a library, and previewable.
 keywords: [Jan, Jan Desktop, Cowork, artifacts, preview, HTML, files, library]
 ---
 
@@ -16,9 +16,21 @@ so a run that builds something ends with something you can look at rather than a
 When the agent writes a file, a card for it appears inline at that point in the conversation. From
 the card you can:
 
-- **Open preview** — render it in the side panel
-- **Open** — open it in your default application
-- **Show in Folder** — reveal it in Finder or Explorer
+- **Open preview** - render it in the side panel
+- **Open** - open it in your default application
+- **Show in Folder** - reveal it in Finder or Explorer
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                                                              │
+│  SCREENSHOT PLACEHOLDER                                      │
+│  ../_assets/cowork-artifact-card.png                         │
+│                                                              │
+│  An artifact card inline in the transcript, with its         │
+│  preview / open / reveal actions.                            │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
 
 ## The Artifacts library
 
@@ -28,6 +40,18 @@ you can find last week's output without hunting for the session.
 Search by name, or filter by type. Long lists load 24 at a time with a **Show more** button.
 
 Selecting one opens it in the Cowork preview panel.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                                                              │
+│  SCREENSHOT PLACEHOLDER                                      │
+│  ../_assets/cowork-artifacts-library.png                     │
+│                                                              │
+│  The Artifacts library grid with the search box and type     │
+│  filter.                                                     │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
 
 ## Previewing
 
@@ -40,10 +64,10 @@ Selecting one opens it in the Cowork preview panel.
 | Video / audio | With playback controls |
 | Source and text | Syntax highlighted |
 
-The preview reads from disk each time, so **Reload from disk** always shows the current file — there
+The preview reads from disk each time, so **Reload from disk** always shows the current file - there
 is no cached copy that can go stale behind it.
 
-If a file is missing, too large, or unreadable, the panel says which — it won't render a blank pane
+If a file is missing, too large, or unreadable, the panel says which - it won't render a blank pane
 and leave you guessing.
 
 <Callout type="info">
@@ -55,11 +79,11 @@ and leave you guessing.
 ## Inspecting elements
 
 In an HTML or SVG preview, hovering highlights the element under your cursor and clicking pins it,
-showing its selector — the same idea as a browser's inspector, without leaving Jan.
+showing its selector - the same idea as a browser's inspector, without leaving Jan.
 
 Pin an element and you can attach a note to it. See [Annotations](./annotations).
 
 ## Related
 
-- [Annotations](./annotations) — mark up a preview and send it back to the agent
-- [Side panels](./panels) — the preview panel in context
+- [Annotations](./annotations) - mark up a preview and send it back to the agent
+- [Side panels](./panels) - the preview panel in context
