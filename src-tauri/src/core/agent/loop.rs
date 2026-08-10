@@ -81,14 +81,16 @@ pub(crate) struct OrchestrationArgs {
     /// (`[agent].max_parallel_subagents` in agent.toml, default 10). Snapshot
     /// taken at run start: a mid-run config edit affects the *next* run only.
     pub max_parallel_subagents: u32,
-    /// `--yolo`: disable the sandbox/permission gate and auto-allow every tool
-    /// call (built-in reads/writes/exec and MCP) without prompting. Inherited by
-    /// dispatched subagents via the cloned parent args.
-    pub yolo: bool,
+    /// Auto-allow every tool call that would otherwise prompt (built-in
+    /// reads/writes/exec and MCP). The CLI default, since the OS jail in the
+    /// tools plugin confines exec regardless; `--safe` turns it off. Desktop
+    /// leaves it false. `HardDeny` still stands. Inherited by dispatched
+    /// subagents via the cloned parent args.
+    pub auto_approve: bool,
     /// Read-only plan mode. When `Plan`, mutation-capable tools (write/edit/bash,
     /// memory_write/skill_write, MCP, subagent dispatch) are neither advertised
     /// nor executable: the dispatcher hard-denies them with `plan_mode_read_only`,
-    /// stronger than `--yolo`'s prompt suppression (yolo cannot override this).
+    /// stronger than auto-approval's prompt suppression (it cannot override this).
     pub run_mode: crate::core::agent::plan::RunMode,
 }
 
@@ -212,22 +214,21 @@ struct CompositeToolInvoker {
     todo_registry: Option<crate::core::agent::todo::TodoRegistry>,
     grants: std::sync::Mutex<tauri_plugin_agent_tools::tools::gate::SessionGrants>,
     subagents: Option<SubagentContext>,
-    yolo: bool,
+    auto_approve: bool,
     run_mode: crate::core::agent::plan::RunMode,
 }
 
 /// Default for the sandboxed shell's network namespace, used when
 /// `[tools].allow_network` is unset.
 ///
-/// The CLI agent runs in the user's own terminal against their own project, and
-/// every exec is already gated behind an interactive prompt, so the network is
-/// not what confines it -- the user is. Before the shell was sandboxed at all it
-/// ran fully unconfined, and a coding agent that cannot `curl`, `git fetch`, or
-/// install a package is largely useless, so the sandbox keeps the network and
-/// relies on the prompt.
+/// The CLI agent runs against the user's own project, where what confines it is
+/// the workspace the sandbox pins it to, not the network namespace. Before the
+/// shell was sandboxed at all it ran fully unconfined, and a coding agent that
+/// cannot `curl`, `git fetch`, or install a package is largely useless, so the
+/// network stays on. `--safe` adds a prompt on top; it does not change this.
 ///
-/// The desktop chat sandbox makes the opposite trade: it is ephemeral, has no
-/// prompt, and opts in per call from a user setting (`commands.rs`).
+/// The desktop chat sandbox makes the opposite trade: it is ephemeral, cannot
+/// prompt at all, and opts in per call from a user setting (`commands.rs`).
 #[cfg(feature = "cli")]
 const DEFAULT_ALLOW_NETWORK: bool = true;
 #[cfg(not(feature = "cli"))]
@@ -633,7 +634,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 // Plan mode blocks subagent dispatch (a subagent could mutate).
                 // They are not advertised in Plan; this is defense in depth
-                // against a stale tool schema. `--yolo` cannot override.
+                // against a stale tool schema. Auto-approval cannot override.
                 if self.run_mode == crate::core::agent::plan::RunMode::Plan {
                     out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
                     continue;
@@ -652,7 +653,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 // Plan mode blocks all MCP tools: their capability is arbitrary
                 // and unknowable, so they are never advertised in Plan and are
-                // hard-denied here as defense in depth. `--yolo` cannot override.
+                // hard-denied here as defense in depth. Auto-approval cannot override.
                 if self.run_mode == crate::core::agent::plan::RunMode::Plan {
                     out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
                     continue;
@@ -665,7 +666,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     ));
                     continue;
                 }
-                if self.yolo || self.grants.lock().unwrap().covers_mcp(name) {
+                if self.auto_approve || self.grants.lock().unwrap().covers_mcp(name) {
                     mcp_calls.push(tc.clone());
                     continue;
                 }
@@ -695,7 +696,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 .unwrap_or(serde_json::Value::Object(Default::default()));
             let tool = lookup(name).expect("is_builtin implies lookup");
             // Plan mode: mutation-capable builtins (Write/Exec) are hard-denied
-            // BEFORE the normal gate, without a permission prompt, and `--yolo`
+            // BEFORE the normal gate, without a permission prompt, and auto-approval
             // cannot override this (unlike the normal prompt suppression below).
             // Read/Net/workspace-read tools fall through to the usual gate.
             if self.run_mode == crate::core::agent::plan::RunMode::Plan
@@ -712,11 +713,11 @@ impl ToolInvoker for CompositeToolInvoker {
                 &self.permissions,
                 &snapshot,
             );
-            // --yolo suppresses every prompt (sandbox escape, write, exec) but
+            // Auto-approval suppresses every prompt (sandbox escape, write, exec) but
             // still honors HardDeny, so the `.jan/agent` restricted-path invariant
             // and explicit agent.toml denies hold.
             let decision = match decision {
-                Decision::Prompt(_) if self.yolo => Decision::Allow,
+                Decision::Prompt(_) if self.auto_approve => Decision::Allow,
                 other => other,
             };
             // Read and Net tools are non-mutating and safe to run concurrently
@@ -872,7 +873,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         system_prompt_override: None,
         subagents_enabled: false,
         max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
-        yolo: false,
+        auto_approve: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
     };
     run_orchestration_streamed(&tx, json_body, &args).await
@@ -1100,7 +1101,7 @@ async fn orchestrate_inner(
         system_prompt_override,
         subagents_enabled,
         max_parallel_subagents,
-        yolo,
+        auto_approve,
         run_mode,
     } = args;
 
@@ -1397,7 +1398,7 @@ async fn orchestrate_inner(
             todo_registry: todo_registry.clone(),
             grants: std::sync::Mutex::new(tauri_plugin_agent_tools::tools::gate::SessionGrants::default()),
             subagents,
-            yolo: *yolo,
+            auto_approve: *auto_approve,
             run_mode,
         };
         let result = run_turn_cycle(
@@ -2692,7 +2693,7 @@ mod tests {
             todo_registry: None,
             grants: std::sync::Mutex::new(SessionGrants::default()),
             subagents: None,
-            yolo: false,
+            auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
         }
     }
@@ -2873,14 +2874,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn plan_mode_denies_write_even_with_yolo() {
+    async fn plan_mode_denies_write_even_with_auto_approve() {
         let root = unique_project_root();
         let (tx, _rx) = mpsc::unbounded_channel();
         let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
         let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
         invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
-        // --yolo must NOT override the plan-mode read-only gate.
-        invoker.yolo = true;
+        // Auto-approval must NOT override the plan-mode read-only gate.
+        invoker.auto_approve = true;
 
         let out = invoker.invoke(&[write_call()]).await.unwrap();
 
@@ -2901,7 +2902,7 @@ mod tests {
         let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
         let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
         invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
-        invoker.yolo = true;
+        invoker.auto_approve = true;
 
         // An unknown (non-builtin) name stands in for an MCP tool a stale schema
         // could still surface; it must be denied before any dispatch.
@@ -3191,12 +3192,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn yolo_writes_without_prompting() {
+    async fn auto_approve_writes_without_prompting() {
         let root = unique_project_root();
         let (tx, mut rx) = mpsc::unbounded_channel();
         let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
         let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
-        invoker.yolo = true;
+        invoker.auto_approve = true;
 
         let out = invoker.invoke(&[write_call()]).await.unwrap();
 
@@ -3206,7 +3207,7 @@ mod tests {
         // No permission prompt should have been emitted.
         assert!(
             !matches!(rx.try_recv(), Ok(StreamEvent::PermissionRequest { .. })),
-            "yolo must not prompt for a write"
+            "auto_approve must not prompt for a write"
         );
         let _ = std::fs::remove_dir_all(&root);
     }

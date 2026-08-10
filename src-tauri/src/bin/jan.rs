@@ -30,7 +30,7 @@ Models are served by remote providers configured in ~/.jan/config.toml\n\
 (see `jan config set`), a project's agent.toml, or the Jan desktop app.",
     after_help = "Examples:\n  \
   jan                                                    # open the interactive agent console (TUI)\n  \
-  jan --yolo                                             # TUI with every tool call auto-approved\n  \
+  jan --safe                                             # TUI that asks before writes and commands\n  \
   jan --task \"fix the failing test\"                      # seed the TUI with a first message\n  \
   jan -c                                                 # resume the most recent session\n  \
   jan --resume 3f7a91c2                                  # resume a session by id (or id prefix)\n  \
@@ -59,10 +59,10 @@ struct Cli {
     images: Vec<String>,
     #[command(flatten)]
     providers: ProviderArgs,
-    /// Disable the sandbox and auto-approve every tool call in the default agent
-    /// TUI (no prompts). Ignored when a subcommand is given.
+    /// Prompt for approval before writes, shell commands, and MCP tool calls in
+    /// the default agent TUI. Ignored when a subcommand is given.
     #[arg(long)]
-    yolo: bool,
+    safe: bool,
     #[command(flatten)]
     resume: ResumeArgs,
     /// Start the default agent TUI in read-only plan mode (same as /plan).
@@ -207,9 +207,9 @@ enum AgentCommands {
         /// Max turns (overrides [agent].max_turns; clamped 1..=400)
         #[arg(long)]
         max_turns: Option<u32>,
-        /// Disable the sandbox and auto-approve every tool call (no prompts)
+        /// Prompt for approval before writes, shell commands, and MCP tool calls
         #[arg(long)]
-        yolo: bool,
+        safe: bool,
         #[command(flatten)]
         providers: ProviderArgs,
         #[command(flatten)]
@@ -225,9 +225,9 @@ enum AgentCommands {
         /// Model ID (overrides [agent].model in agent.toml)
         #[arg(long)]
         model: Option<String>,
-        /// Disable the sandbox and auto-approve every tool call (no prompts)
+        /// Prompt for approval before writes, shell commands, and MCP tool calls
         #[arg(long)]
-        yolo: bool,
+        safe: bool,
         #[command(flatten)]
         providers: ProviderArgs,
     },
@@ -388,7 +388,7 @@ async fn main() {
             cli.max_turns,
             cli.images,
             overrides,
-            cli.yolo,
+            !cli.safe,
             cli.plan,
             cli.resume.into_target(),
         )
@@ -475,7 +475,7 @@ async fn handle_agent(cmd: AgentCommands) {
             task,
             model,
             max_turns,
-            yolo,
+            safe,
             providers,
             resume,
         } => {
@@ -485,7 +485,7 @@ async fn handle_agent(cmd: AgentCommands) {
                 model,
                 max_turns,
                 providers.into_overrides(),
-                yolo,
+                !safe,
                 resume.into_target(),
             )
             .await
@@ -494,9 +494,9 @@ async fn handle_agent(cmd: AgentCommands) {
             project,
             task,
             model,
-            yolo,
+            safe,
             providers,
-        } => cli_agent_step(&project, &task, model, providers.into_overrides(), yolo).await,
+        } => cli_agent_step(&project, &task, model, providers.into_overrides(), !safe).await,
         AgentCommands::Status { project, providers } => {
             match cli_agent_status(&project, &providers.into_overrides()) {
                 Ok(status) => {
@@ -632,17 +632,25 @@ async fn handle_models(cmd: ModelsCommands) {
 mod tests {
     use super::*;
 
-    // `--plan` is a per-invocation startup toggle mirroring `--yolo`; it must
+    // `--plan` is a per-invocation startup toggle mirroring `--safe`; it must
     // parse on the top-level `jan` command and default off.
     #[test]
     fn top_level_plan_flag_parses() {
         let cli = Cli::parse_from(["jan", "--plan"]);
         assert!(cli.plan);
-        assert!(!cli.yolo);
+        assert!(!cli.safe);
         assert!(cli.command.is_none());
 
         let cli = Cli::parse_from(["jan"]);
         assert!(!cli.plan);
+    }
+
+    // Permission prompts are opt-in: auto-approval inside the OS sandbox is the
+    // default, and `--safe` is what turns the gate back on.
+    #[test]
+    fn safe_flag_parses_and_defaults_off() {
+        assert!(!Cli::parse_from(["jan"]).safe);
+        assert!(Cli::parse_from(["jan", "--safe"]).safe);
     }
 
     #[test]

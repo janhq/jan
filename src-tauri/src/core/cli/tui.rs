@@ -3437,8 +3437,10 @@ pub async fn run(
     if app.model.is_empty() {
         app.note("not signed in — run /login to sign in to Tokamak, or `jan config set` to configure a provider manually");
     }
-    if args.yolo {
-        app.note("--yolo: sandbox disabled, all tool calls auto-approved without prompting");
+    if args.auto_approve {
+        app.note("tool calls are auto-approved inside the OS sandbox; start with --safe to be asked first");
+    } else {
+        app.note("--safe: writes, shell commands, and MCP tool calls need approval");
     }
     // A failed resume is not fatal: the note explains why and the blank session
     // the user already has stays usable.

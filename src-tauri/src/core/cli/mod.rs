@@ -498,10 +498,10 @@ pub async fn cli_agent_run(
     model: Option<String>,
     max_turns: Option<u32>,
     overrides: ProviderOverrides,
-    yolo: bool,
+    auto_approve: bool,
     resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
-    run_agent_loop(project, task, model, max_turns, overrides, yolo, resume).await
+    run_agent_loop(project, task, model, max_turns, overrides, auto_approve, resume).await
 }
 
 /// Single-turn run for debugging (`max_turns = 1`).
@@ -510,9 +510,9 @@ pub async fn cli_agent_step(
     task: &str,
     model: Option<String>,
     overrides: ProviderOverrides,
-    yolo: bool,
+    auto_approve: bool,
 ) -> Result<(), String> {
-    run_agent_loop(project, task, model, Some(1), overrides, yolo, None).await
+    run_agent_loop(project, task, model, Some(1), overrides, auto_approve, None).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -523,7 +523,7 @@ fn build_cli_orchestration_args(
     mcp_servers: crate::core::state::SharedMcpServers,
     mcp_settings: McpSettings,
     permission_requests: PermissionRegistry,
-    yolo: bool,
+    auto_approve: bool,
     plan: bool,
     max_parallel_subagents: u32,
 ) -> OrchestrationArgs {
@@ -541,7 +541,7 @@ fn build_cli_orchestration_args(
         system_prompt_override: None,
         subagents_enabled: true,
         max_parallel_subagents,
-        yolo,
+        auto_approve,
         run_mode: if plan {
             crate::core::agent::plan::RunMode::Plan
         } else {
@@ -626,7 +626,7 @@ fn prepare_agent_session(
     model_override: Option<String>,
     max_turns_override: Option<u32>,
     overrides: ProviderOverrides,
-    yolo: bool,
+    auto_approve: bool,
     plan: bool,
     require_model: bool,
 ) -> Result<AgentSession, String> {
@@ -637,12 +637,6 @@ fn prepare_agent_session(
     }
     let cfg = load_agent_config(&project_root)?;
     let permissions = permissions_from(&cfg);
-
-    if yolo {
-        eprintln!(
-            "WARNING: --yolo disables the sandbox. The agent can read, write, and run any command without asking for approval."
-        );
-    }
 
     // Resolution order: --model flag, then agent.toml [agent].model, then the
     // standalone global config (~/.jan/config.toml default_model / first provider
@@ -733,7 +727,7 @@ fn prepare_agent_session(
         mcp_servers.clone(),
         mcp_settings,
         permission_requests.clone(),
-        yolo,
+        auto_approve,
         plan,
         max_parallel_subagents,
     );
@@ -797,7 +791,7 @@ fn prepare_agent_run(
     model_override: Option<String>,
     max_turns_override: Option<u32>,
     overrides: ProviderOverrides,
-    yolo: bool,
+    auto_approve: bool,
     resume: Option<ResumeTarget>,
 ) -> Result<PreparedRun, String> {
     // Non-interactive runs (`agent run`/`step`) have no plan-review handoff, so
@@ -807,7 +801,7 @@ fn prepare_agent_run(
         model_override,
         max_turns_override,
         overrides,
-        yolo,
+        auto_approve,
         false,
         true,
     )?;
@@ -867,7 +861,7 @@ async fn run_agent_loop(
     model_override: Option<String>,
     max_turns_override: Option<u32>,
     overrides: ProviderOverrides,
-    yolo: bool,
+    auto_approve: bool,
     resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
     let PreparedRun {
@@ -882,7 +876,7 @@ async fn run_agent_loop(
         model_override,
         max_turns_override,
         overrides,
-        yolo,
+        auto_approve,
         resume,
     )?;
 
@@ -950,7 +944,7 @@ pub async fn cli_agent_ui(
     max_turns: Option<u32>,
     images: Vec<String>,
     overrides: ProviderOverrides,
-    yolo: bool,
+    auto_approve: bool,
     plan: bool,
     resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
@@ -964,7 +958,15 @@ pub async fn cli_agent_ui(
     // Fresh install with a terminal attached: launch with no model rather than
     // forcing sign-in here. The TUI shows a one-line notice and `/login` (or
     // `jan login`) picks a model up once the user is ready.
-    let session = prepare_agent_session(project, model, max_turns, overrides, yolo, plan, false)?;
+    let session = prepare_agent_session(
+        project,
+        model,
+        max_turns,
+        overrides,
+        auto_approve,
+        plan,
+        false,
+    )?;
     // TUI threads persist under the project's .jan/agent dir, separate from the
     // desktop store, so continuing here never mutates desktop threads.
     let agent_dir = agent_dir_for(&project_root);
