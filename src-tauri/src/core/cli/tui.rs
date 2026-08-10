@@ -281,6 +281,10 @@ struct ToolGroup {
     calls: Vec<GroupedCall>,
     /// When the group opened, so the running row can show elapsed time.
     started: Instant,
+    /// Outcome of the most recently *arrived* result, which is what the
+    /// collapsed row reports. Results can land out of dispatch order, so this
+    /// can't be read back off `calls`.
+    last_result_error: Option<bool>,
 }
 
 impl ToolGroup {
@@ -292,10 +296,12 @@ impl ToolGroup {
         self.calls.iter().any(|c| c.content.is_none())
     }
 
-    /// Terminal marker for the collapsed row. A failed call outranks an
-    /// unresolved one: it is the more specific thing to report.
+    /// Terminal marker for the collapsed row: the latest result's status, so a
+    /// call that failed and then succeeded on a retry reads as resolved. The
+    /// per-call failure stays visible in the expanded detail. A failure still
+    /// outranks an unresolved call: it is the more specific thing to report.
     fn outcome_tag(&self, interrupted: bool) -> (&'static str, Style) {
-        if self.calls.iter().any(|c| c.is_error) {
+        if self.last_result_error == Some(true) {
             ("✗", Style::new().red())
         } else if interrupted && self.is_running() {
             ("○", Style::new().yellow())
@@ -1274,6 +1280,7 @@ impl App {
                         diff: None,
                     }],
                     started: Instant::now(),
+                    last_result_error: None,
                 });
             }
         }
@@ -2060,14 +2067,13 @@ impl App {
                 // Grouped calls are already represented by the group row; retain
                 // their result on the group so an expand can show it later.
                 if self.grouped_ids.contains(&id) {
-                    if let Some(call) = self
-                        .tool_group
-                        .as_mut()
-                        .and_then(|g| g.calls.iter_mut().find(|c| c.id == id))
-                    {
-                        call.is_error = is_error;
-                        call.diff = diff;
-                        call.content = Some(content);
+                    if let Some(group) = self.tool_group.as_mut() {
+                        if let Some(call) = group.calls.iter_mut().find(|c| c.id == id) {
+                            call.is_error = is_error;
+                            call.diff = diff;
+                            call.content = Some(content);
+                            group.last_result_error = Some(is_error);
+                        }
                     }
                     self.refresh_group_row();
                     return;
@@ -10475,7 +10481,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_grouped_call_finalizes_the_row_as_failed() {
+    fn failed_grouped_call_keeps_its_failure_in_the_expanded_detail() {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
             id: "c1".into(),
@@ -10500,10 +10506,18 @@ mod tests {
             diff: None,
         });
         app.finalize_tool_group();
+        // The collapsed row carries the latest result, but the earlier failure
+        // must still be reachable by expanding the group.
         let row = row_text(&app.transcript[app.groups[0].idx]);
+        assert!(row.contains("✓"), "row: {row}");
+        let detail: String = group_detail_lines(&app.groups[0], 80)
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(
-            row.contains("✗") && !row.contains("✓"),
-            "a failed call must not collapse to a success row: {row}"
+            detail.contains("✗") && detail.contains("denied by user"),
+            "failure lost from the expanded detail: {detail}"
         );
     }
 
@@ -10803,6 +10817,40 @@ mod tests {
         assert!(
             row.contains("✗") && !row.contains("✓"),
             "failure not shown at result time: {row}"
+        );
+    }
+
+    #[test]
+    fn grouped_row_reports_the_latest_result_not_an_earlier_failure() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cargo buidl" }),
+        });
+        let idx = app.tool_group.as_ref().unwrap().idx;
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ERROR: no such subcommand".into(),
+            is_error: true,
+            diff: None,
+        });
+        // The retry succeeds, so the collapsed row must stop reading as failed.
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cargo build" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c2".into(),
+            content: "Finished".into(),
+            is_error: false,
+            diff: None,
+        });
+        let row = row_text(&app.transcript[idx]);
+        assert!(
+            row.contains("✓") && !row.contains("✗"),
+            "stale failure on the summary row: {row}"
         );
     }
 
