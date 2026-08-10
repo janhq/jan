@@ -64,6 +64,19 @@ enum Kind {
     Meta,
 }
 
+/// Blocks that read as one run of activity and so need no blank between them.
+/// A turn alternating folded reasoning summaries with tool rows was spending a
+/// blank line on every switch, which is most of the turn.
+fn band(kind: Kind) -> u8 {
+    match kind {
+        Kind::Tool | Kind::Reasoning => 0,
+        Kind::None => 1,
+        Kind::User => 2,
+        Kind::Prose => 3,
+        Kind::Meta => 4,
+    }
+}
+
 struct Pending {
     request_id: String,
     tool_name: String,
@@ -817,6 +830,11 @@ struct App {
     /// clearing the moment the last task closes, so a model that is still
     /// mid-flow (about to append, or reopening a task) keeps its list.
     turns_since_todos_closed: u32,
+    /// When the plan last went from having open work to having none. Drives the
+    /// dock's own, wall-clock hide: `turns_since_todos_closed` only advances on
+    /// model roundtrips, so a run that finishes its plan and stops would pin a
+    /// fully checked-off list on screen indefinitely.
+    todos_closed_at: Option<Instant>,
     /// Transcript viewport width in cells, refreshed each `draw`; tables wrap to
     /// it. 0 until the first draw (callers fall back to a default).
     view_width: u16,
@@ -901,6 +919,11 @@ struct App {
     reminder_awaiting_progress: bool,
 }
 
+/// How long a fully checked-off plan stays in the dock before it hides: just
+/// long enough to see the last task tick over. The list itself lives on until
+/// `age_closed_todos` drops it, and `/todo` reopens it at any point.
+const TODO_HIDE_AFTER: Duration = Duration::from_secs(3);
+
 /// Braille throbber frames for in-progress rows (e.g. awaiting a subagent).
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -971,13 +994,6 @@ impl SubagentBlock {
             .collect()
     }
 }
-
-/// Rolling window size for a subagent's live tool-call list.
-const SUBAGENT_WINDOW: usize = 5;
-
-/// Lines of the dispatch prompt shown for a lone subagent, where there is room
-/// for the brief itself rather than just its first line.
-const SUBAGENT_TASK_LINES: usize = 4;
 
 /// A queued git workspace snapshot. Snapshots only stage the paths the agent
 /// actually touched this turn (see `App::turn_touched`), never the whole
@@ -1072,6 +1088,7 @@ impl App {
             scrollback: 0,
             want_start: false,
             turns_since_todos_closed: 0,
+            todos_closed_at: None,
             view_width: 0,
             last_kind: Kind::None,
             should_quit: false,
@@ -1122,11 +1139,12 @@ impl App {
         self.transcript.push(row.into());
     }
 
-    /// Insert a blank separator when the block kind changes, then record it.
-    /// Keeps consecutive same-kind lines tight while spacing turn boundaries.
+    /// Insert a blank separator when the block *band* changes, then record the
+    /// kind. Keeps consecutive same-kind lines tight while spacing turn
+    /// boundaries.
     fn gap(&mut self, next: Kind) {
         let last_blank = self.transcript.last().map(Row::is_blank).unwrap_or(true);
-        if !self.transcript.is_empty() && self.last_kind != next && !last_blank {
+        if !self.transcript.is_empty() && band(self.last_kind) != band(next) && !last_blank {
             self.transcript.push(Row::line(Line::raw("")));
         }
         self.last_kind = next;
@@ -1155,6 +1173,7 @@ impl App {
         self.pending_rows.clear();
         self.reasoning_blocks.clear();
         self.subagent_blocks.clear();
+        self.subagents.clear();
         self.expanded.clear();
         self.reveal = None;
         self.assistant_buf.clear();
@@ -1171,6 +1190,7 @@ impl App {
         // A fresh session drops the todo projection and reminder state; the
         // model re-declares work with a new `todo init`.
         self.todos = crate::core::agent::todo::TodoList::default();
+        self.todos_closed_at = None;
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
         self.last_todo_reminder = None;
@@ -1328,6 +1348,45 @@ impl App {
         self.groups.push(g);
     }
 
+    /// Fold one finished child into a summary row, retaining its call list so
+    /// the row can expand back to it (like a tool group). `finished` separates a
+    /// clean `SubagentEnd` from a child the run ended out from under.
+    fn push_subagent_summary(&mut self, name: &str, calls: Vec<String>, finished: bool) {
+        let total = calls.len();
+        let noun = if total == 1 { "call" } else { "calls" };
+        let verb = if finished { "finished" } else { "interrupted" };
+        let style = if finished {
+            Style::new().magenta().dim()
+        } else {
+            Style::new().yellow()
+        };
+        self.gap(Kind::Tool);
+        self.push_row(RowKind::Tool {
+            tag: "↲".to_string(),
+            tag_style: style,
+            label: format!("subagent {name} {verb} ({total} tool {noun})"),
+            label_style: if finished { style } else { Style::new().dim() },
+            reserve: TOOL_ROW_RESERVE,
+        });
+        if total > 0 {
+            let idx = self.transcript.len() - 1;
+            self.subagent_blocks.push(SubagentBlock { idx, calls });
+        }
+    }
+
+    /// Close every live child panel, for a run that ended without their own
+    /// `SubagentEnd` events (an upstream error mid-fan-out, a `Done` that beats
+    /// the children, a cancel). The panel is live state and must not outlive the
+    /// run -- a stranded block spins in the dock on an idle session -- but a
+    /// child that did work still earns its summary row, so the calls it made are
+    /// accounted for rather than vanishing with the panel.
+    fn close_live_subagents(&mut self) {
+        for panel in std::mem::take(&mut self.subagents) {
+            self.push_subagent_summary(&panel.name, panel.calls, false);
+        }
+        self.awaiting.clear();
+    }
+
     /// Resolve every row still awaiting a result: the run ended (cancel, error,
     /// aborted stream) and no `ToolResult` is coming, so a `▸`/`✓` would read as
     /// work that is still running or that succeeded.
@@ -1351,11 +1410,39 @@ impl App {
         }
     }
 
-    /// Header status while a turn is running with reasoning folding on: `[thinking]`
-    /// while a ` thinking` block is actively streaming, `[thought for Ns]` for a
-    /// short while after a block closes, then back to `None` (the plain
-    /// `[working]`) once the model is working again. `None` when no reasoning has
-    /// happened recently this turn.
+    /// Stamp the moment the plan ran out of open work, and clear the stamp the
+    /// moment it has some again. Called once per frame rather than at each
+    /// mutation site, so the four places that write `todos` cannot disagree.
+    fn refresh_todo_deadline(&mut self) {
+        if self.todos.is_empty() || self.todos.has_open() {
+            self.todos_closed_at = None;
+        } else if self.todos_closed_at.is_none() {
+            self.todos_closed_at = Some(Instant::now());
+        }
+    }
+
+    /// True once a fully checked-off plan has sat closed for `TODO_HIDE_AFTER`.
+    /// Only the dock hides: the list still exists, `/todo` still opens it, and
+    /// `age_closed_todos` still owns actually dropping it. A finished plan stops
+    /// being live state the moment it is read, and holding those rows costs the
+    /// conversation the space they take.
+    fn todos_expired(&self) -> bool {
+        self.todos_closed_at
+            .is_some_and(|closed| closed.elapsed() >= TODO_HIDE_AFTER)
+    }
+
+    /// True while a reasoning block is streaming with folding on: the one
+    /// stretch of a run that puts nothing on screen, so the header badge is the
+    /// only place progress can show.
+    fn is_thinking(&self) -> bool {
+        self.status != Status::Idle && !self.show_reasoning && thinking_open(&self.assistant_buf)
+    }
+
+    /// Header status while a turn is running with reasoning folding on:
+    /// `[thinking]` while a reasoning block is actively streaming, `[thought for
+    /// Ns]` for a short while after a block closes, then back to `None` (the
+    /// plain `[working]`) once the model is working again. `None` when no
+    /// reasoning has happened recently this turn.
     fn reasoning_status(&self) -> Option<(String, Style)> {
         if thinking_open(&self.assistant_buf) {
             Some(("thinking".to_string(), Style::new().cyan().bold()))
@@ -2171,8 +2258,6 @@ impl App {
                 });
             }
             StreamEvent::SubagentEnd { run_id, name } => {
-                // Take the run's full call list, commit a folded summary row, and
-                // retain the detail so Ctrl-O can expand it (like a tool group).
                 let calls = self
                     .subagents
                     .iter()
@@ -2181,20 +2266,7 @@ impl App {
                     .unwrap_or_default();
                 self.subagents.retain(|p| p.run_id != run_id);
                 self.awaiting.retain(|(_, r, _)| r != &run_id);
-                let total = calls.len();
-                self.gap(Kind::Tool);
-                let noun = if total == 1 { "call" } else { "calls" };
-                self.push_row(RowKind::Tool {
-                    tag: "↲".to_string(),
-                    tag_style: Style::new().magenta().dim(),
-                    label: format!("subagent {name} finished ({total} tool {noun})"),
-                    label_style: Style::new().magenta().dim(),
-                    reserve: TOOL_ROW_RESERVE,
-                });
-                if total > 0 {
-                    let idx = self.transcript.len() - 1;
-                    self.subagent_blocks.push(SubagentBlock { idx, calls });
-                }
+                self.push_subagent_summary(&name, calls, true);
             }
             StreamEvent::Subagent {
                 run_id,
@@ -2342,6 +2414,10 @@ impl App {
 
     fn on_done(&mut self, stop_reason: String, usage: Option<Usage>) {
         self.finalize_tool_group();
+        // Children cannot outlive the run that dispatched them: their events
+        // arrive on its stream. Any panel still open here never got its own
+        // `SubagentEnd`.
+        self.close_live_subagents();
         let answer = self.take_answer();
         if !answer.is_empty() {
             self.history
@@ -2426,6 +2502,7 @@ impl App {
 
     fn on_error(&mut self, code: String, message: String) {
         self.abort_tool_rows();
+        self.close_live_subagents();
         self.flush_assistant();
         self.status = Status::Idle;
         self.run_started = None;
@@ -2536,8 +2613,7 @@ impl App {
         // snapshot readiness); otherwise the loop starts it once ready and the
         // cancel is silently undone.
         self.want_start = false;
-        self.subagents.clear();
-        self.awaiting.clear();
+        self.close_live_subagents();
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
         self.gap(Kind::Meta);
@@ -5993,12 +6069,23 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
         }
     }
 
+    // Lift the target user message's text into the input area so the user
+    // can re-submit (or edit) it after the rewind. Image-only content yields
+    // no text.
+    let fill = user_content_parts(
+        app.history.get(cut).and_then(|m| m.get("content")).unwrap_or(&serde_json::Value::Null),
+    )
+    .0;
+
     app.history.truncate(cut);
     app.checkpoints.retain(|c| c.user_index < target);
     rebuild_transcript(app);
     app.status = Status::Idle;
     app.run_started = None;
     app.scrollback = 0;
+    app.input_clear();
+    app.input = fill;
+    app.cursor = app.input.len();
     app.note(&format!("rewound to message #{}", target + 1));
     app.persist();
 }
@@ -6290,44 +6377,64 @@ fn transcript_top_padding(total: u16, inner_h: u16) -> u16 {
     inner_h.saturating_sub(total)
 }
 
+/// Rows the status panel may take, given the frame it has to share. The
+/// conversation is the point of the screen, so the panel is what gives way: it
+/// gets what is left after the header, rule, input, dock and
+/// `MIN_TRANSCRIPT_ROWS`, capped at `PANEL_MAX_ROWS`, and disappears entirely
+/// on a frame with nothing to spare.
+fn panel_budget(frame_h: u16, input_h: u16) -> usize {
+    let fixed = 1 + 1 + input_h + 1; // header, rule, input, dock
+    frame_h
+        .saturating_sub(fixed + MIN_TRANSCRIPT_ROWS)
+        .min(PANEL_MAX_ROWS as u16) as usize
+}
+
 fn draw(f: &mut Frame, app: &mut App) {
-    // Cached before anything reads it: the todo HUD sizes the layout, so a
+    // Cached before anything reads it: the status panel sizes the layout, so a
     // stale width would mis-size the frame a resize lands on. The body spans
     // the full frame width (its border is top-only).
     app.view_width = f.area().width.max(1);
+    // Every frame, so a finished plan hides on wall-clock time even with the
+    // session idle -- the loop redraws on its tick either way, and ratatui
+    // emits nothing until the panel actually changes.
+    app.refresh_todo_deadline();
     let input_h = input_box_height(app, f.area().width);
-    // A multi-line todo tree HUD sits just below the header when todos exist and
-    // no overlay is open, sized to its bounded row count. Kept out of the layout
-    // otherwise so a todo-free session (or an open picker) renders exactly as
-    // before. Built at most once per frame -- its line count sizes the layout
-    // and the same lines are reused for the actual render below.
-    let todo_lines = (app.picker.is_none() && !app.todos.is_empty()).then(|| todo_hud(app));
-    let todo_h = todo_lines.as_ref().map_or(0, |l| l.len() as u16);
-    let show_todo = todo_h > 0;
-    // The header stays pinned at the top; the working dir/branch line and the
-    // transient status footer sit *below* the input, so the whole "where am I,
-    // what's happening" block reads as one unit at the bottom edge next to
-    // where the user types, instead of being split across both ends. The todo
-    // HUD sits
-    // directly above the input box -- the last thing in view right before where
-    // the user types, not competing with the header for attention. The
-    // separator rule is its own row *below* the HUD (rather than the body's own
-    // bottom border) so the todos read as part of the input dock, above the
-    // line, instead of stranded between the rule and the prompt. A zero-length
-    // todo slot collapses away, so a todo-free session (or an open overlay)
-    // renders exactly as before.
+    // Live state -- the plan and the running fan-out -- is docked, not woven
+    // into the transcript: it describes *now*, and it is what the eye wants
+    // right where the typing happens. Built at most once per frame, since its
+    // own height sizes the layout, and clamped to what the frame can spare so a
+    // short terminal loses panel rows rather than conversation.
+    let panel_lines = app
+        .picker
+        .is_none()
+        .then(|| {
+            let width = f.area().width.max(1);
+            status_panel(app, width, panel_budget(f.area().height, input_h))
+        })
+        .filter(|l| !l.is_empty());
+    let panel_h = panel_lines.as_ref().map_or(0, |l| l.len() as u16);
+    // The header stays pinned at the top; the working dir/branch and the
+    // transient key hints share the single row *below* the input, so the whole
+    // "where am I, what's happening" block reads as one unit at the bottom edge
+    // next to where the user types, instead of being split across both ends and
+    // spending two rows on it. The panel sits directly above the input box --
+    // the last thing in view right before where the user types, not competing
+    // with the header for attention. The separator rule is its own row *below*
+    // the panel (rather than the body's own bottom border) so the live state
+    // reads as part of the input dock, above the line, instead of stranded
+    // between the rule and the prompt. A zero-length slot collapses away, so a
+    // session with neither todos nor subagents renders exactly as before.
     let raw = Layout::vertical([
-        Constraint::Length(1),       // 0: header
-        Constraint::Min(1),          // 1: body
-        Constraint::Length(todo_h),  // 2: todo HUD
-        Constraint::Length(1),       // 3: separator rule
-        Constraint::Length(input_h), // 4: input
-        Constraint::Length(1),       // 5: path line
-        Constraint::Length(1),       // 6: footer
+        Constraint::Length(1),                 // 0: header
+        Constraint::Min(1),                    // 1: body
+        Constraint::Length(panel_h),           // 2: status panel
+        Constraint::Length(1),                 // 3: separator rule
+        Constraint::Length(input_h),           // 4: input
+        Constraint::Length(1),                 // 5: path + key hints
     ])
     .split(f.area());
-    let todo_area = show_todo.then(|| raw[2]);
-    let chunks = [raw[0], raw[1], raw[4], raw[5], raw[6]];
+    let panel_area = raw[2];
+    let chunks = [raw[0], raw[1], raw[4], raw[5]];
 
     f.render_widget(header(app), chunks[0]);
     // Drawn for every path (picker included) so the dock always reads the same.
@@ -6342,8 +6449,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         let toml_path = app.agent_dir.join("agent.toml");
         draw_picker(f, chunks[1], picker, &toml_path);
         f.render_widget(input_box(app), chunks[2]);
-        f.render_widget(path_line(app), chunks[3]);
-        f.render_widget(footer(app), chunks[4]);
+        f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
         return;
     }
 
@@ -6352,6 +6458,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     // row, so a mouse click can be mapped back to a region to toggle.
     let mut row_index: Vec<Option<usize>> = Vec::with_capacity(app.transcript.len());
     let mut reveal_at: Option<usize> = None;
+    let frame = app.spinner();
     for (i, row) in app.transcript.iter().enumerate() {
         if app.reveal == Some(i) {
             reveal_at = Some(lines.len());
@@ -6400,22 +6507,6 @@ fn draw(f: &mut Frame, app: &mut App) {
             }
         }
     }
-    if !app.subagents.is_empty() {
-        let last_blank = lines
-            .last()
-            .map(|l| l.spans.iter().all(|s| s.content.trim().is_empty()))
-            .unwrap_or(true);
-        if !last_blank {
-            lines.push(Line::raw(""));
-        }
-        let frame = app.spinner();
-        lines.extend(subagent_panel_lines(
-            &mut app.subagents,
-            app.context_window,
-            width,
-            frame,
-        ));
-    }
     if !app.assistant_buf.is_empty() {
         let tail = live_assistant_lines(&app.assistant_buf, width, !app.show_reasoning);
         if !tail.is_empty() {
@@ -6435,7 +6526,16 @@ fn draw(f: &mut Frame, app: &mut App) {
     }
     // Awaiting throbbers render last: below the assistant's reasoning/message
     // so the "still waiting" state trails the prose that led up to the wait.
-    if !app.awaiting.is_empty() || !app.starting.is_empty() {
+    // A child with a live panel already shows its own throbber in the fan-out
+    // block, so only orphaned waits (the child ended, its result has not
+    // landed) get a row -- otherwise every parallel dispatch is listed twice.
+    let orphaned: Vec<&String> = app
+        .awaiting
+        .iter()
+        .filter(|(_, run_id, _)| !app.subagents.iter().any(|p| &p.run_id == run_id))
+        .map(|(_, _, name)| name)
+        .collect();
+    if !orphaned.is_empty() || !app.starting.is_empty() {
         let last_blank = lines
             .last()
             .map(|l| l.spans.iter().all(|s| s.content.trim().is_empty()))
@@ -6444,8 +6544,7 @@ fn draw(f: &mut Frame, app: &mut App) {
             lines.push(Line::raw(""));
         }
     }
-    for (_, _, name) in &app.awaiting {
-        let frame = app.spinner();
+    for name in orphaned {
         lines.push(tool_row(
             frame,
             Style::new().cyan(),
@@ -6456,12 +6555,11 @@ fn draw(f: &mut Frame, app: &mut App) {
     // In-progress tool calls whose arguments are still streaming: a throbber
     // trails the prose until the full call (with args) arrives and renders its
     // own row.
-    let frame = app.spinner();
     for call in &mut app.starting {
         lines.extend(starting_call_lines(call, frame));
     }
-    // Live subagent panels, streaming prose, and awaiting throbbers above have
-    // no transcript index; they're all appended after the transcript loop.
+    // Streaming prose and awaiting throbbers above have no transcript index;
+    // they're all appended after the transcript loop.
     row_index.resize(lines.len(), None);
 
     // TOP border only: the rule under the transcript is now its own row below
@@ -6519,7 +6617,7 @@ fn draw(f: &mut Frame, app: &mut App) {
 
     // Keep the cursor row visible when the input outgrows the box.
     let input_scroll = if app.status == Status::Idle && app.picker.is_none() {
-        let visible = chunks[2].height.saturating_sub(2);
+        let visible = chunks[2].height.saturating_sub(1);
         let total = Paragraph::new(input_content_lines(&app.input, app.cursor))
             .wrap(Wrap { trim: false })
             .line_count(chunks[2].width.saturating_sub(2).max(1))
@@ -6528,13 +6626,11 @@ fn draw(f: &mut Frame, app: &mut App) {
     } else {
         0
     };
-    if let Some(area) = todo_area {
-        // `todo_area` is only `Some` when `todo_lines` was built above.
-        f.render_widget(Paragraph::new(todo_lines.unwrap()), area);
+    if let Some(lines) = panel_lines {
+        f.render_widget(Paragraph::new(lines), panel_area);
     }
     f.render_widget(input_box(app).scroll((input_scroll, 0)), chunks[2]);
-    f.render_widget(path_line(app), chunks[3]);
-    f.render_widget(footer(app), chunks[4]);
+    f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
 
     // `/login` is modal and user-initiated (only reachable while idle), so it
     // outranks the queues below: nothing else may take keystrokes meant for a key.
@@ -7098,134 +7194,143 @@ fn tokens_per_second(output_tokens: u64, duration_ms: u64) -> f64 {
     output_tokens as f64 * 1000.0 / d as f64
 }
 
-/// One block for every in-flight subagent, instead of a scattered header-plus-
-/// call-list per child.
+/// Rows the docked status panel may occupy. Both columns elide to fit; a short
+/// terminal shrinks the budget further (see `draw`), and a terminal with no
+/// room left for the conversation drops the panel entirely.
+const PANEL_MAX_ROWS: usize = 8;
+
+/// Conversation rows the panel may never eat into. Below this the panel gives
+/// up its own rows first: the transcript is the point of the screen.
+const MIN_TRANSCRIPT_ROWS: u16 = 4;
+
+/// Narrowest terminal that still gets two side-by-side columns. Under it they
+/// stack, plan first, because a 30-column half fits neither a task nor an agent.
+const PANEL_SPLIT_MIN_WIDTH: u16 = 76;
+
+/// Cells between the two columns, including the divider glyph.
+const PANEL_GUTTER: u16 = 3;
+
+/// Detail rows one agent may occupy under its stats line, when the budget
+/// stretches that far: the dispatch brief and the current activity.
+const AGENT_MAX_ROWS: usize = 3;
+
+/// The live fan-out, as a column: one stats line per child plus as much detail
+/// as `rows` allows.
 ///
-/// Parallel agents were previously unreadable: N separate sections, each
-/// growing, with the interesting question -- which of these is actually making
-/// progress, and is one about to blow its context -- answerable only by
-/// counting rows. Each child now gets exactly two lines, a stats line and its
-/// current activity, so the whole fan-out fits in one glance and stays a fixed
+/// Parallel agents are otherwise unreadable -- N growing sections, with the
+/// interesting question (which of these is progressing, and is one about to
+/// blow its context) answerable only by counting rows. Here every child gets
+/// the same shape, so the whole fan-out reads at a glance and holds a fixed
 /// height as the work runs.
-fn subagent_panel_lines(
+fn agents_column(
     panels: &mut [SubagentPanel],
     context_window: u64,
     width: u16,
+    rows: usize,
     frame: &str,
 ) -> Vec<Line<'static>> {
+    if panels.is_empty() || rows == 0 {
+        return Vec::new();
+    }
     let dim = Style::new().dark_gray();
+    let max = width.max(8) as usize;
     let mut out = vec![Line::from(vec![
         Span::styled("≡ ", Style::new().magenta()),
         Span::styled(
-            format!("Task {}", pluralize("agent", panels.len())),
+            pluralize("agent", panels.len()),
             Style::new().magenta().bold(),
         ),
     ])];
-    // A lone subagent keeps its rolling history and a fuller look at its task
-    // -- there's room, and both are useful context. Once several run at once
-    // that same detail multiplies into an unreadable wall, so each drops to one
-    // line apiece and the block stays a fixed, scannable height.
-    let solo = panels.len() == 1;
-    let window = if solo { SUBAGENT_WINDOW } else { 1 };
-    let task_lines = if solo { SUBAGENT_TASK_LINES } else { 1 };
-    let task_width = width.saturating_sub(8).max(20) as usize;
-    for panel in panels {
-        let mut spans = vec![
-            Span::styled("  • ", Style::new().magenta()),
-            Span::styled(panel.name.clone(), Style::new().magenta()),
-        ];
+
+    // Fit as many children as the budget allows at one line each, keeping the
+    // last row for the count of those that did not fit.
+    let body = rows - 1;
+    let (shown, hidden) = if panels.len() <= body {
+        (panels.len(), 0)
+    } else {
+        (body.saturating_sub(1), panels.len() - body.saturating_sub(1))
+    };
+    // Whatever is left over after one line each is spread evenly as detail.
+    let per = (body - shown)
+        .checked_div(shown)
+        .map_or(0, |n| n.min(AGENT_MAX_ROWS - 1));
+
+    for panel in panels.iter_mut().take(shown) {
+        let mut spans = vec![Span::styled(
+            format!("{} ", if panel.queued { "·" } else { frame }),
+            Style::new().magenta(),
+        )];
         if panel.queued {
             // Parked on the `max_parallel_subagents` cap; the child has not
-            // started, so there are no live stats to show -- render its queue
-            // position and task instead.
+            // started, so there are no live stats -- its queue position instead.
             spans.push(Span::styled(
-                format!("  queued ({} waiting)", panel.waiting),
+                truncate(&panel.name, max.saturating_sub(14)),
+                Style::new().magenta().dim(),
+            ));
+            spans.push(Span::styled(
+                format!("  queued ({})", panel.waiting),
                 Style::new().yellow(),
             ));
-            out.push(Line::from(spans));
-            for (written, raw) in panel
-                .task
-                .lines()
-                .filter(|l| !l.trim().is_empty())
-                .enumerate()
-            {
-                if written == task_lines {
-                    break;
-                }
-                out.push(indented_row(
-                    truncate(raw.trim(), task_width),
-                    Style::new().dim().italic(),
-                ));
-            }
-            continue;
-        }
-        spans.push(Span::styled(
-            format!("  {}", pluralize("tool", panel.calls.len())),
-            dim,
-        ));
-        spans.push(Span::styled(format!("  ·  {} req", panel.requests), dim));
-        // Only once the child has reported usage; "0.0%" before its first
-        // response would read as a stalled agent rather than a starting one.
-        if panel.prompt_tokens > 0 && context_window > 0 {
-            let pct = panel.prompt_tokens as f64 / context_window as f64 * 100.0;
+        } else {
             spans.push(Span::styled(
-                format!("  ·  {pct:.1}%/{}", compact_tokens(context_window)),
-                dim,
+                truncate(&panel.name, max.saturating_sub(20)),
+                Style::new().magenta(),
             ));
+            // Compact stats: side by side with the plan there is no room for
+            // "33 tools  ·  24 req", and the units are obvious in context.
+            let mut stats = format!("  {}t · {}r", panel.calls.len(), panel.requests);
+            // Only once the child has reported usage; "0%" before its first
+            // response would read as a stalled agent rather than a starting one.
+            if panel.prompt_tokens > 0 && context_window > 0 {
+                let pct = panel.prompt_tokens as f64 / context_window as f64 * 100.0;
+                stats.push_str(&format!(" · {pct:.1}%"));
+            }
+            spans.push(Span::styled(stats, dim));
         }
         out.push(Line::from(spans));
 
-        // The dispatch prompt, so the block says what the fan-out is *for*.
-        // Split on the task's own newlines rather than word-wrapping: models
-        // write these as structured briefs, and the first lines are the summary.
-        for (written, raw) in panel
-            .task
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .enumerate()
-        {
-            if written == task_lines {
-                // Only worth a marker where the brief reads as complete.
-                // Collapsed to a single line it is plainly a summary already,
-                // and the marker would cost the line just saved.
-                if solo {
-                    out.push(indented_row("…", dim));
-                }
-                break;
-            }
-            out.push(indented_row(
-                truncate(raw.trim(), task_width),
-                Style::new().dim().italic(),
-            ));
+        if per == 0 {
+            continue;
         }
-
-        let start = panel.calls.len().saturating_sub(window);
-        for label in &panel.calls[start..] {
-            out.push(indented_row(truncate(label, task_width), Style::new().dim()));
-        }
-        // The call currently being assembled trails the finished ones, so the
-        // row keeps moving through a long argument stream.
-        match panel.active.as_mut() {
-            Some(call) => out.push(indented_row(
-                format!("{frame} {}", call.activity_label()),
-                Style::new().cyan().dim(),
-            )),
-            None if panel.calls.is_empty() => {
-                out.push(indented_row("starting…", Style::new().dim()))
+        // The dispatch brief says what this child is *for*. Split on the task's
+        // own newlines rather than word-wrapping: models write these as
+        // structured briefs whose first line is the summary.
+        let brief = panel.task.lines().find(|l| !l.trim().is_empty());
+        let activity = match panel.active.as_mut() {
+            Some(call) => Some((format!("{frame} {}", call.activity_label()), Style::new().cyan().dim())),
+            None => panel
+                .calls
+                .last()
+                .map(|label| (label.clone(), Style::new().dim()))
+                .or_else(|| (!panel.queued).then(|| ("starting…".to_string(), Style::new().dim()))),
+        };
+        // With only one detail row the activity wins: what it is doing now is
+        // worth more than what it was asked, which the transcript already shows.
+        let detail: Vec<(String, Style)> = match (per, brief, activity) {
+            (1, _, Some(a)) => vec![a],
+            (1, Some(b), None) => vec![(b.trim().to_string(), Style::new().dim().italic())],
+            (_, Some(b), Some(a)) => {
+                vec![(b.trim().to_string(), Style::new().dim().italic()), a]
             }
-            None => {}
+            (_, None, Some(a)) => vec![a],
+            (_, Some(b), None) => vec![(b.trim().to_string(), Style::new().dim().italic())],
+            _ => Vec::new(),
+        };
+        for (text, style) in detail {
+            out.push(Line::from(vec![
+                Span::raw("   "),
+                Span::styled(truncate(&text, max.saturating_sub(3)), style),
+            ]));
         }
     }
+    if hidden > 0 {
+        out.push(Line::from(vec![Span::styled(
+            format!("  +{hidden} more running"),
+            dim,
+        )]));
+    }
+    out.truncate(rows);
     out
-}
-
-/// A detail row indented under a subagent's stats line. One place owns the
-/// indent so the block's rows can't drift out of alignment with each other.
-fn indented_row(text: impl Into<String>, style: Style) -> Line<'static> {
-    Line::from(vec![
-        Span::styled("      ", Style::new().dark_gray()),
-        Span::styled(text.into(), style),
-    ])
 }
 
 /// Token counts as `43K` / `1.1K` / `840` -- three significant characters, so a
@@ -7271,6 +7376,35 @@ fn format_elapsed(secs: u64) -> String {
     } else {
         format!("{}h{:02}m", secs / 3600, (secs % 3600) / 60)
     }
+}
+
+/// Frames the shimmer rests between sweeps, so the wave reads as a pulse
+/// rather than a continuously scrolling band.
+const SHIMMER_PAUSE: usize = 4;
+
+/// Sweep a crest across `text`, one character per spinner frame: `palette` is
+/// `[crest, trail, base]`, applied to the character under the crest, the one
+/// behind it, and everything else.
+///
+/// Folded reasoning is the one stretch of a run that produces no output at all
+/// -- no prose, no tool rows, nothing moving -- so the badge is the only thing
+/// that can say the model is still going. The sweep animates in place, without
+/// changing the text's width, so nothing to its left shifts as it runs.
+fn shimmer_spans(text: &str, palette: [Style; 3], frame: usize) -> Vec<Span<'static>> {
+    let chars: Vec<char> = text.chars().collect();
+    let head = frame % (chars.len() + SHIMMER_PAUSE);
+    chars
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let style = match head.checked_sub(i) {
+                Some(0) => palette[0],
+                Some(1) => palette[1],
+                _ => palette[2],
+            };
+            Span::styled(c.to_string(), style)
+        })
+        .collect()
 }
 
 fn header(app: &App) -> Paragraph<'static> {
@@ -7350,33 +7484,28 @@ fn header(app: &App) -> Paragraph<'static> {
         ));
     }
     spans.push(Span::raw("  "));
-    spans.push(Span::styled(format!("[{status}]"), style));
+    if app.is_thinking() {
+        spans.push(Span::styled("[", style));
+        spans.extend(shimmer_spans(
+            &status,
+            [
+                Style::new().cyan().bold(),
+                Style::new().cyan(),
+                Style::new().cyan().dim(),
+            ],
+            app.spinner_frame,
+        ));
+        spans.push(Span::styled("]", style));
+    } else {
+        spans.push(Span::styled(format!("[{status}]"), style));
+    }
     Paragraph::new(Line::from(spans))
 }
 
-/// Hard ceiling on HUD rows so a huge plan can't crowd out the transcript.
-const MAX_TODO_ROWS: usize = 10;
-/// Per-phase task cap before a `+N more` summary row is shown.
-const TODO_TASK_CAP: usize = 8;
-
-/// Tree connector: `└─` for the last row at a nesting level, `├─` otherwise.
-fn tree_connector(is_last: bool) -> &'static str {
-    if is_last {
-        "└─"
-    } else {
-        "├─"
-    }
-}
-
-/// One task row: `<indent><connector> <glyph> <text>`, styled by status.
-/// Pending is dim, in-progress accent, completed dim+strikethrough, abandoned
-/// red+strikethrough with a distinct `☒` glyph.
-fn todo_task_line(
-    indent: &str,
-    is_last: bool,
-    task: &crate::core::agent::todo::TodoItem,
-    max: usize,
-) -> Line<'static> {
+/// One task row: ` <glyph> <text>`, styled by status. Pending is dim,
+/// in-progress accent, completed dim+strikethrough, abandoned red+strikethrough
+/// with a distinct `☒` glyph.
+fn todo_task_row(task: &crate::core::agent::todo::TodoItem, max: usize) -> Line<'static> {
     use crate::core::agent::todo::TodoStatus;
     let (glyph, style) = match task.status {
         TodoStatus::Pending => ("☐", Style::new().dim()),
@@ -7385,125 +7514,210 @@ fn todo_task_line(
         TodoStatus::Abandoned => ("☒", Style::new().red().add_modifier(Modifier::CROSSED_OUT)),
     };
     Line::from(vec![
-        Span::styled(
-            format!("{indent}{} ", tree_connector(is_last)),
-            Style::new().dark_gray(),
-        ),
+        Span::raw(" "),
         Span::styled(format!("{glyph} "), style),
         Span::styled(truncate(&task.content, max), style),
     ])
 }
 
-/// Multi-line tree HUD for the session todos, capped at `MAX_TODO_ROWS`:
+/// Which phase holds the in-progress task, if any.
+fn active_phase(todos: &crate::core::agent::todo::TodoList) -> Option<usize> {
+    use crate::core::agent::todo::TodoStatus;
+    todos
+        .phases
+        .iter()
+        .position(|p| p.tasks.iter().any(|t| t.status == TodoStatus::InProgress))
+}
+
+/// `done/total` over a phase's tasks; abandoned counts as closed.
+fn phase_progress(phase: &crate::core::agent::todo::TodoPhase) -> (usize, usize) {
+    use crate::core::agent::todo::TodoStatus;
+    let done = phase
+        .tasks
+        .iter()
+        .filter(|t| matches!(t.status, TodoStatus::Completed | TodoStatus::Abandoned))
+        .count();
+    (done, phase.tasks.len())
+}
+
+/// 1-based index of the phase the plan is on, for the `idx/count` suffix. With
+/// no active task (all done, or none started) this counts the fully finished
+/// phases, so a completed plan reads `N/N`.
+fn phase_position(todos: &crate::core::agent::todo::TodoList) -> usize {
+    active_phase(todos).map(|i| i + 1).unwrap_or_else(|| {
+        todos
+            .phases
+            .iter()
+            .filter(|p| {
+                let (done, total) = phase_progress(p);
+                done == total
+            })
+            .count()
+            .max(1)
+    })
+}
+
+/// Head line of the plan column: the phase the plan is on, how far into it the
+/// agent is, and the command that opens the editor.
 ///
 /// ```text
-/// Todos · 1/2   /todo
-///  └─ backend · 1/3
-///      ├─ ☑ scaffold
-///      └─ ☐ wire routes
+/// Todos · 1/2 · backend 1/3   /todo
 /// ```
-///
-/// Single-phase lists skip the redundant phase header and nest tasks directly
-/// under `Todos`. Multi-phase lists show one connected row per phase with its
-/// `· done/total` progress; only the active phase (the one holding the
-/// in-progress task) expands its task rows, the rest stay header-only.
-fn todo_hud(app: &App) -> Vec<Line<'static>> {
-    use crate::core::agent::todo::TodoStatus;
-    let phases = &app.todos.phases;
-    let multi = phases.len() > 1;
-    let width = app.render_width() as usize;
-
-    // Which phase holds the in-progress task, if any; used both for the root
-    // row's `idx/count` suffix and to pick which phase expands its tasks below.
-    let active_idx = phases
-        .iter()
-        .position(|p| p.tasks.iter().any(|t| t.status == TodoStatus::InProgress));
-
-    // Root row: `Todos`, plus ` · idx/count` when multi-phase, plus the hint.
-    let mut root = vec![Span::styled("Todos", Style::new().cyan().bold())];
-    if multi {
-        // ponytail: no active task (all done, or none started) → count fully
-        // finished phases so a completed plan reads `N/N`.
-        let idx = active_idx.map(|i| i + 1).unwrap_or_else(|| {
-            phases
-                .iter()
-                .filter(|p| {
-                    p.tasks
-                        .iter()
-                        .all(|t| matches!(t.status, TodoStatus::Completed | TodoStatus::Abandoned))
-                })
-                .count()
-                .max(1)
-        });
-        root.push(Span::styled(
-            format!(" · {idx}/{}", phases.len()),
+fn todo_pin(todos: &crate::core::agent::todo::TodoList) -> Line<'static> {
+    let mut spans = vec![Span::styled("Todos", Style::new().cyan().bold())];
+    if todos.phases.len() > 1 {
+        spans.push(Span::styled(
+            format!(" · {}/{}", phase_position(todos), todos.phases.len()),
             Style::new().cyan(),
         ));
     }
-    root.push(Span::styled("   /todo".to_string(), Style::new().dark_gray()));
-    let mut lines = vec![Line::from(root)];
-
-    // Which task rows to emit for a phase, capped with a `+N more` summary.
-    // ponytail: flat cap over all statuses (completed included, so their
-    // strikethrough shows); no completed-omission viewport for v1.
-    let push_tasks = |lines: &mut Vec<Line<'static>>, indent: &str, tasks: &[crate::core::agent::todo::TodoItem]| {
-        let shown = tasks.len().min(TODO_TASK_CAP);
-        let has_more = tasks.len() > shown;
-        let max = width.saturating_sub(indent.chars().count() + 4).max(8);
-        for (i, task) in tasks.iter().take(shown).enumerate() {
-            let is_last = !has_more && i + 1 == shown;
-            lines.push(todo_task_line(indent, is_last, task, max));
-        }
-        if has_more {
-            let more = tasks.len() - shown;
-            lines.push(Line::from(vec![Span::styled(
-                format!("{indent}{} +{more} more", tree_connector(true)),
-                Style::new().dark_gray(),
-            )]));
-        }
-    };
-
-    if multi {
-        for (pi, phase) in phases.iter().enumerate() {
-            let is_last = pi + 1 == phases.len();
-            let done = phase
-                .tasks
-                .iter()
-                .filter(|t| matches!(t.status, TodoStatus::Completed | TodoStatus::Abandoned))
-                .count();
-            let active = Some(pi) == active_idx;
-            let style = if active {
-                Style::new().bold()
-            } else {
-                Style::new().dim()
-            };
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!(" {} ", tree_connector(is_last)),
-                    Style::new().dark_gray(),
-                ),
-                Span::styled(phase.name.clone(), style),
-                Span::styled(format!(" · {done}/{}", phase.tasks.len()), style),
-            ]));
-            // Only the active phase expands its tasks; others stay header-only.
-            if active {
-                push_tasks(&mut lines, "     ", &phase.tasks);
-            }
-        }
-    } else if let Some(phase) = phases.first() {
-        push_tasks(&mut lines, " ", &phase.tasks);
+    // The phase in flight, or the last one, so a finished plan still reports.
+    let idx = active_phase(todos).unwrap_or(todos.phases.len().saturating_sub(1));
+    if let Some(phase) = todos.phases.get(idx) {
+        let (done, total) = phase_progress(phase);
+        let label = if todos.phases.len() > 1 {
+            format!(" · {} {done}/{total}", phase.name)
+        } else {
+            format!(" · {done}/{total}")
+        };
+        spans.push(Span::styled(label, Style::new().dim()));
     }
+    spans.push(Span::styled("   /todo".to_string(), Style::new().dark_gray()));
+    Line::from(spans)
+}
 
-    lines.truncate(MAX_TODO_ROWS);
+/// The plan as a column, capped at `rows`:
+///
+/// ```text
+/// Todos · 1/2 · backend 1/3   /todo
+///  ☑ scaffold
+///  ☐ wire routes
+///  +3 more
+/// ```
+///
+/// Only the phase in flight expands its tasks -- the head line already names it
+/// and counts the rest, so a header per phase would spend rows repeating that.
+fn todo_column(
+    todos: &crate::core::agent::todo::TodoList,
+    width: u16,
+    rows: usize,
+) -> Vec<Line<'static>> {
+    if todos.is_empty() || rows == 0 {
+        return Vec::new();
+    }
+    let mut lines = vec![todo_pin(todos)];
+    let idx = active_phase(todos).unwrap_or(todos.phases.len().saturating_sub(1));
+    let Some(phase) = todos.phases.get(idx) else {
+        return lines;
+    };
+    let max = width.saturating_sub(4).max(8) as usize;
+    let body = rows - 1;
+    let (shown, hidden) = if phase.tasks.len() <= body {
+        (phase.tasks.len(), 0)
+    } else {
+        // Keep the last row for the count of what did not fit.
+        let shown = body.saturating_sub(1);
+        (shown, phase.tasks.len() - shown)
+    };
+    for task in phase.tasks.iter().take(shown) {
+        lines.push(todo_task_row(task, max));
+    }
+    if hidden > 0 {
+        lines.push(Line::from(vec![Span::styled(
+            format!("  +{hidden} more"),
+            Style::new().dark_gray(),
+        )]));
+    }
+    lines.truncate(rows);
     lines
+}
+
+/// Pad `lines` to exactly `rows` entries so a column keeps its shape when the
+/// other one is taller.
+fn pad_column(mut lines: Vec<Line<'static>>, rows: usize) -> Vec<Line<'static>> {
+    lines.resize_with(rows, || Line::raw(""));
+    lines
+}
+
+/// Set two columns side by side, `left` padded out to `left_w` and separated by
+/// a dim divider. Callers pass columns already clamped to their own widths.
+fn join_columns(
+    left: Vec<Line<'static>>,
+    right: Vec<Line<'static>>,
+    left_w: u16,
+) -> Vec<Line<'static>> {
+    let rows = left.len().max(right.len());
+    let (left, right) = (pad_column(left, rows), pad_column(right, rows));
+    left.into_iter()
+        .zip(right)
+        .map(|(l, r)| {
+            let pad = (left_w as usize).saturating_sub(spans_width(&l.spans));
+            let mut spans = l.spans;
+            spans.push(Span::raw(" ".repeat(pad)));
+            spans.push(Span::styled(" │ ", Style::new().dark_gray()));
+            spans.extend(r.spans);
+            Line::from(spans)
+        })
+        .collect()
+}
+
+/// The docked status panel: the plan on the left, the live fan-out on the
+/// right, both bounded by `rows`.
+///
+/// Neither belongs in the transcript -- they describe *now*, not what was said
+/// -- so they sit above the input where the eye already is, and they use the
+/// width instead of stacking. When the terminal is too narrow to split, the
+/// columns stack (plan first, since it is the shorter of the two); when it is
+/// too short, `rows` shrinks and each column elides its own tail.
+fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
+    if rows == 0 {
+        return Vec::new();
+    }
+    let frame = app.spinner();
+    let context_window = app.context_window;
+    let has_todos = !app.todos.is_empty() && !app.todos_expired();
+    let has_agents = !app.subagents.is_empty();
+    match (has_todos, has_agents) {
+        (false, false) => Vec::new(),
+        (true, false) => todo_column(&app.todos, width, rows),
+        (false, true) => agents_column(&mut app.subagents, context_window, width, rows, frame),
+        (true, true) if width < PANEL_SPLIT_MIN_WIDTH => {
+            // Stacked: the plan keeps its head line plus whatever is left after
+            // the agents, which are the thing actually moving.
+            let agents = agents_column(
+                &mut app.subagents,
+                context_window,
+                width,
+                rows.saturating_sub(1),
+                frame,
+            );
+            let mut out = todo_column(&app.todos, width, rows - agents.len());
+            out.extend(agents);
+            out
+        }
+        (true, true) => {
+            let left_w = (width.saturating_sub(PANEL_GUTTER)) / 2;
+            let right_w = width.saturating_sub(left_w + PANEL_GUTTER);
+            let left = todo_column(&app.todos, left_w, rows);
+            let right = agents_column(
+                &mut app.subagents,
+                context_window,
+                right_w,
+                rows,
+                frame,
+            );
+            join_columns(left, right, left_w)
+        }
+    }
 }
 
 /// Max content rows the input box grows to before it scrolls internally.
 const MAX_INPUT_ROWS: u16 = 8;
 
-/// Height (incl. borders) the message box should occupy: 1 content row for the
-/// idle/working placeholder, or the wrapped input height clamped to
-/// `MAX_INPUT_ROWS` while editing.
+/// Rows the message box occupies: 1 content row for the idle/working
+/// placeholder, or the wrapped input height clamped to `MAX_INPUT_ROWS` while
+/// editing, plus one row of air above the dock. The box is borderless, so the
+/// two rows this used to add on top of its content were simply blank.
 fn input_box_height(app: &App, width: u16) -> u16 {
     let content = if app.picker.is_none() && !(app.status == Status::Running && app.input.is_empty()) {
         let inner = width.saturating_sub(2).max(1);
@@ -7515,7 +7729,7 @@ fn input_box_height(app: &App, width: u16) -> u16 {
     } else {
         1
     };
-    content + 2
+    content + 1
 }
 
 /// Visible input as styled lines: `› ` on the first line, 2-space hang on
@@ -7656,8 +7870,8 @@ fn tilde_path(path: &std::path::Path) -> String {
     }
 }
 
-/// One-line working-dir + branch display shown below the input box.
-fn path_line(app: &App) -> Paragraph<'static> {
+/// Working-dir + branch spans, the left half of the dock row.
+fn path_spans(app: &App) -> Vec<Span<'static>> {
     let mut spans = vec![
         Span::styled("📂 ", Style::new().dark_gray()),
         Span::styled(tilde_path(&app.project_root), Style::new().dark_gray()),
@@ -7668,12 +7882,37 @@ fn path_line(app: &App) -> Paragraph<'static> {
             Style::new().dark_gray(),
         ));
     }
+    spans
+}
+
+/// Display width of a row, in cells. `Span::width` is grapheme-aware, which a
+/// char count is not: the dock opens with an emoji that occupies two cells.
+fn spans_width(spans: &[Span<'static>]) -> usize {
+    spans.iter().map(Span::width).sum()
+}
+
+/// The single row below the input: location on the left, key hints and status
+/// on the right. Two separate rows spent a whole line of a small terminal on
+/// text that is static all session; merged, the location keeps its place and
+/// the hints keep theirs, and only a terminal too narrow for both drops the
+/// location.
+fn dock_line(app: &App, width: u16) -> Paragraph<'static> {
+    let hints = footer_spans(app);
+    let mut spans = path_spans(app);
+    let (used, hint_w) = (spans_width(&spans), spans_width(&hints));
+    // `hint_spans` already opens with a pad; a gap of at least two keeps the
+    // location from running into it.
+    if used + hint_w + 2 > width as usize {
+        return Paragraph::new(Line::from(hints));
+    }
+    spans.push(Span::raw(" ".repeat(width as usize - used - hint_w)));
+    spans.extend(hints);
     Paragraph::new(Line::from(spans))
 }
 
-fn footer(app: &App) -> Paragraph<'static> {
+fn footer_spans(app: &App) -> Vec<Span<'static>> {
     if !app.pending_queue.is_empty() {
-        return Paragraph::new(Line::from(hint_spans(
+        return hint_spans(
             Style::new().yellow().bold(),
             &[
                 ("↑/↓", "select"),
@@ -7681,10 +7920,10 @@ fn footer(app: &App) -> Paragraph<'static> {
                 ("Esc", "deny"),
                 ("Ctrl-C", "cancel"),
             ],
-        )));
+        );
     }
     if let Some(picker) = &app.picker {
-        return Paragraph::new(Line::styled(picker.action_hint(), Style::new().dim()));
+        return vec![Span::styled(picker.action_hint(), Style::new().dim())];
     }
     let key_style = Style::new().cyan().bold();
     let queue_count = app.message_queue.len();
@@ -7732,7 +7971,7 @@ fn footer(app: &App) -> Paragraph<'static> {
             Style::new().dim(),
         ));
     }
-    Paragraph::new(Line::from(spans))
+    spans
 }
 
 #[cfg(test)]
@@ -7750,7 +7989,7 @@ mod tests {
         running_group_row, split_reasoning, strip_system_xml_tags, subagent_activity,
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
-        transcript_top_padding,
+        transcript_top_padding, rewind_to,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
         SnapshotJob, Status, AGENT_SETTINGS, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
         KEY_BINDINGS, SLASH_COMMANDS, SPINNER,
@@ -8991,6 +9230,47 @@ mod tests {
     }
 
     #[test]
+    fn rewind_to_fills_input_with_target_user_message() {
+        let mut app = test_app();
+        app.repo_root = Some(std::path::PathBuf::from("/tmp/repo"));
+        app.thread_id = Some("t1".into());
+        app.history = vec![
+            json!({ "role": "user", "content": "first" }),
+            json!({ "role": "assistant", "content": "reply" }),
+            json!({ "role": "user", "content": "second" }),
+        ];
+        // Rewind to message #1 (0-indexed target 0): history is cut right
+        // before the first user message, and that message's text should be
+        // left in the input area for re-submission.
+        rewind_to(&mut app, 0, false);
+        assert_eq!(app.history.len(), 0);
+        assert_eq!(app.input, "first");
+        assert_eq!(app.cursor, app.input.len());
+        assert_eq!(app.status, Status::Idle);
+    }
+
+    #[test]
+    fn rewind_to_fills_input_with_target_user_message_with_text_parts() {
+        let mut app = test_app();
+        app.thread_id = Some("t1".into());
+        app.history = vec![
+            json!({
+                "role": "user",
+                "content": [
+                    { "type": "image_url", "image_url": { "url": "data:...", "detail": "auto" } }
+                ]
+            }),
+            json!({ "role": "assistant", "content": "ok" }),
+            json!({ "role": "user", "content": "second" }),
+        ];
+        rewind_to(&mut app, 0, false);
+        // An image-only user message has no text to put in the input area.
+        assert_eq!(app.history.len(), 0);
+        assert_eq!(app.input, "");
+        assert_eq!(app.cursor, 0);
+    }
+
+    #[test]
     fn resolve_snapshot_builds_git_inputs() {
         let mut app = test_app();
         app.repo_root = Some(std::path::PathBuf::from("/tmp/repo"));
@@ -9515,7 +9795,7 @@ mod tests {
         assert_eq!(panel.calls.len(), 7);
         assert!(panel.calls.first().unwrap().contains("cmd0"));
         assert!(panel.calls.last().unwrap().contains("cmd6"));
-        // The live panel renders only the last SUBAGENT_WINDOW calls.
+        // The live panel renders only the newest call.
         use ratatui::{backend::TestBackend, Terminal};
         let render = |app: &mut App| {
             let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
@@ -9526,9 +9806,11 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         };
+        // The docked panel has room for the newest call only; the whole list
+        // stays reachable through the finished summary row (Ctrl-O).
         let out = render(&mut app);
-        assert!(out.contains("cmd6") && out.contains("cmd2"), "window tail shown");
-        assert!(!out.contains("cmd0") && !out.contains("cmd1"), "oldest scrolled out: {out}");
+        assert!(out.contains("cmd6"), "newest call shown: {out}");
+        assert!(!out.contains("cmd5") && !out.contains("cmd0"), "older calls elided: {out}");
     }
 
     #[test]
@@ -9597,7 +9879,7 @@ mod tests {
         });
         let rows = render_rows(&mut app, 80, 20);
         assert!(
-            rows.iter().any(|r| r.contains("queued (3 waiting)")),
+            rows.iter().any(|r| r.contains("queued (3)")),
             "queued panel shows its position: {rows:?}"
         );
     }
@@ -11424,21 +11706,18 @@ mod tests {
         });
     }
 
-    /// The dispatch prompt rides on the event, so the block can say what the
-    /// fan-out is for. A lone agent shows a fuller brief; several collapse to
-    /// their first line each so the block stays a fixed height.
+    /// The dispatch prompt rides on the event, so the panel can say what the
+    /// fan-out is for. Only its first line: the panel is a pinned dock, and the
+    /// brief's later lines are already in the transcript.
     #[test]
-    fn subagent_block_shows_the_dispatch_prompt() {
-        let brief = "Build Flappy Space\nRocket dodging asteroids\n400x600 canvas\nGRAVITY=0.5\nNo external deps";
+    fn subagent_panel_shows_the_dispatch_prompt() {
+        let brief = "Build Flappy Space\nRocket dodging asteroids\n400x600 canvas";
 
         let mut solo = test_app();
         start_subagent_with_task(&mut solo, "r0", "space", Some(brief));
         let out = render_rows(&mut solo, 100, 24).join("\n");
         assert!(out.contains("Build Flappy Space"), "brief missing: {out}");
-        assert!(out.contains("GRAVITY=0.5"), "lone agent should show more: {out}");
-        // Capped, with the overflow marked rather than silently dropped.
-        assert!(!out.contains("No external deps"), "should stop at the cap: {out}");
-        assert!(out.contains('…'), "overflow should be marked: {out}");
+        assert!(!out.contains("400x600"), "only the summary line: {out}");
 
         let mut pair = test_app();
         start_subagent_with_task(&mut pair, "r0", "space", Some(brief));
@@ -11446,9 +11725,7 @@ mod tests {
         let out = render_rows(&mut pair, 100, 24).join("\n");
         assert!(out.contains("Build Flappy Space"), "{out}");
         assert!(out.contains("Build Flappy Fish"), "{out}");
-        // One line each once they're sharing the block.
-        assert!(!out.contains("GRAVITY=0.5"), "should collapse when parallel: {out}");
-        assert!(!out.contains("Underwater"), "should collapse when parallel: {out}");
+        assert!(!out.contains("Underwater"), "{out}");
     }
 
     /// A dispatch with no task (or an older event without the field) still
@@ -11458,7 +11735,7 @@ mod tests {
         let mut app = test_app();
         start_subagent(&mut app, "r0", "alpha");
         let out = render_rows(&mut app, 100, 20).join("\n");
-        assert!(out.contains("Task 1 agent") && out.contains("alpha"), "{out}");
+        assert!(out.contains("1 agent") && out.contains("alpha"), "{out}");
     }
 
     fn subagent_event(app: &mut App, run_id: &str, name: &str, event: StreamEvent) {
@@ -11505,18 +11782,115 @@ mod tests {
 
         let rows = render_rows(&mut app, 100, 24);
         let out = rows.join("\n");
-        assert!(out.contains("Task 2 agents"), "no consolidated header: {out}");
+        assert!(out.contains("2 agents"), "no consolidated header: {out}");
         for (name, pct) in [("alpha", "10.0%"), ("beta", "20.0%")] {
             assert!(out.contains(name), "missing {name}: {out}");
             assert!(out.contains(pct), "missing context share {pct}: {out}");
         }
-        assert!(out.contains("1 tool "), "missing tool count: {out}");
-        assert!(out.contains("1 req"), "missing request count: {out}");
+        assert!(out.contains("1t · 1r"), "missing compact call/request counts: {out}");
         // Two agents -> one activity line each, so the block stays scannable.
         assert_eq!(
             rows.iter().filter(|r| r.contains("alpha.rs") || r.contains("beta.rs")).count(),
             2,
             "expected exactly one activity line per agent: {out}"
+        );
+    }
+
+    /// The fan-out is pinned above the input, not woven into the transcript: it
+    /// describes what is running *now*, so it must sit below prose the parent
+    /// emitted earlier, no matter when the dispatch happened.
+    #[test]
+    fn fan_out_is_pinned_below_the_transcript() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        app.apply(StreamEvent::Token {
+            text: "parent keeps talking".into(),
+        });
+        app.flush_assistant();
+
+        let rows = render_rows(&mut app, 100, 24);
+        let prose = rows
+            .iter()
+            .position(|r| r.contains("parent keeps talking"))
+            .expect("prose row");
+        let panel = rows.iter().position(|r| r.contains("alpha")).expect("panel row");
+        let input = rows
+            .iter()
+            .position(|r| r.contains("Type here to chat with agent"))
+            .expect("input");
+        assert!(prose < panel, "the panel is docked, not inline: {rows:?}");
+        assert!(panel < input, "and it sits above the input: {rows:?}");
+        assert!(
+            rows.iter().any(|r| r.contains("2 agents") || r.contains("1 agent")),
+            "the fan-out is counted: {rows:?}"
+        );
+    }
+
+    /// Every dispatch joins the one panel; nothing is committed to the chat.
+    #[test]
+    fn parallel_dispatches_share_one_pinned_panel() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        let before = app.transcript.len();
+        start_subagent(&mut app, "r1", "beta");
+        assert_eq!(app.transcript.len(), before, "no transcript rows committed");
+        let rows = render_rows(&mut app, 100, 24);
+        assert_eq!(
+            rows.iter().filter(|r| r.contains("agents")).count(),
+            1,
+            "one panel head only: {rows:?}"
+        );
+        assert!(rows.iter().any(|r| r.contains("2 agents")), "{rows:?}");
+    }
+
+    /// The panel is live state: when the last child ends it vanishes, leaving
+    /// the committed summary row as the only trace in the conversation.
+    #[test]
+    fn panel_clears_when_the_last_child_ends() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "r0".into(),
+            name: "alpha".into(),
+        });
+        assert!(app.subagents.is_empty(), "live panel closed");
+        let rows = render_rows(&mut app, 100, 24);
+        assert!(
+            !rows.iter().any(|r| r.contains("1 agent")),
+            "panel must be gone: {rows:?}"
+        );
+        assert!(
+            rows.iter().any(|r| r.contains("subagent alpha finished")),
+            "summary row missing: {rows:?}"
+        );
+    }
+
+    /// `await_subagent` on a child that already has a live panel used to print
+    /// a second "Awaiting subagent: X" row directly under the block that was
+    /// showing that child's progress. Only an orphaned wait gets a row.
+    #[test]
+    fn awaiting_row_is_suppressed_while_the_child_has_a_live_panel() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        app.apply(StreamEvent::ToolCall {
+            id: "a1".into(),
+            name: "await_subagent".into(),
+            args: json!({ "run_id": "r0" }),
+        });
+        assert_eq!(app.awaiting.len(), 1, "wait state is still tracked");
+        let rows = render_rows(&mut app, 100, 24);
+        assert!(
+            !rows.iter().any(|r| r.contains("Awaiting subagent")),
+            "live panel already reports this child: {rows:?}"
+        );
+
+        // The child ends while its result is still in flight: with no panel
+        // left to report it, the wait gets its own row again.
+        app.subagents.clear();
+        let rows = render_rows(&mut app, 100, 24);
+        assert!(
+            rows.iter().any(|r| r.contains("Awaiting subagent")),
+            "orphaned wait must stay visible: {rows:?}"
         );
     }
 
@@ -11553,7 +11927,7 @@ mod tests {
         }
         let out = render_rows(&mut app, 100, 20).join("\n");
         assert!(out.contains("flappy-2d.html"), "destination should surface: {out}");
-        assert!(out.contains("0 tools"), "still no completed call: {out}");
+        assert!(out.contains("0t · "), "still no completed call: {out}");
 
         // The completed call supersedes the in-progress row.
         subagent_event(
@@ -11567,10 +11941,9 @@ mod tests {
             },
         );
         let out = render_rows(&mut app, 100, 20).join("\n");
-        assert!(out.contains("1 tool "), "completed call should count: {out}");
-        assert_eq!(
+        assert!(out.contains("1t · "), "completed call should count: {out}");
+        assert!(
             app.subagents[0].active.is_none(),
-            true,
             "in-flight view should clear once the call lands"
         );
     }
@@ -11582,7 +11955,7 @@ mod tests {
         let mut app = test_app();
         start_subagent(&mut app, "r1", "alpha");
         let out = render_rows(&mut app, 100, 20).join("\n");
-        assert!(out.contains("Task 1 agent"), "{out}");
+        assert!(out.contains("1 agent"), "{out}");
         assert!(out.contains("starting…"), "{out}");
         assert!(!out.contains('%'), "no share before the first response: {out}");
     }
@@ -11988,11 +12361,12 @@ mod tests {
         for (label, setup) in states {
             setup(&mut app);
             let rows = render_rows(&mut app, 80, 12);
-            // The footer is the last row: ... input, path line, footer.
-            let footer_row = rows.last().expect("non-empty render").trim();
+            // The dock is the last row: location on the left, hints on the
+            // right. Idle contributes no hints, so only the location shows.
+            let dock = rows.last().expect("non-empty render").trim();
             assert!(
-                footer_row.is_empty(),
-                "{label}: idle footer should be blank, got {footer_row:?}"
+                dock.starts_with("📂") && !dock.contains("Ctrl-"),
+                "{label}: idle dock should carry no cheat sheet, got {dock:?}"
             );
         }
     }
@@ -12004,21 +12378,28 @@ mod tests {
         let mut app = test_app();
         app.detail = "stop_reason=stop".into();
         let rows = render_rows(&mut app, 80, 12);
-        assert_eq!(rows.last().unwrap().trim_end(), " stop_reason=stop");
+        let dock = rows.last().unwrap();
+        assert!(dock.trim_end().ends_with("stop_reason=stop"), "{dock:?}");
+        assert!(dock.contains("/tmp/repo"), "location keeps its place: {dock:?}");
     }
 
-    /// Working dir + branch sit below the input, directly above the status
-    /// footer -- not split across the top and bottom of the screen.
+    /// Working dir + branch share the single dock row below the input with the
+    /// key hints -- not split across the top and bottom of the screen, and not
+    /// spending a row of their own.
     #[test]
-    fn path_line_sits_below_the_input() {
+    fn path_shares_the_dock_row_with_the_hints() {
         let mut app = test_app();
         app.git_branch = Some("goal/general-agent".into());
-        let rows = render_rows(&mut app, 80, 12);
-        let path_row = rows.len() - 2;
+        app.status = Status::Running;
+        let rows = render_rows(&mut app, 100, 12);
+        let dock = rows.last().expect("non-empty render");
         assert!(
-            rows[path_row].contains("/tmp/repo") && rows[path_row].contains("goal/general-agent"),
-            "expected dir+branch just above the footer, got {:?}",
-            rows[path_row]
+            dock.contains("/tmp/repo") && dock.contains("goal/general-agent"),
+            "expected dir+branch on the dock row, got {dock:?}"
+        );
+        assert!(
+            dock.contains("cancel") && dock.contains("scroll"),
+            "hints share the same row: {dock:?}"
         );
         // Nothing but the header above the transcript any more.
         assert!(
@@ -12510,10 +12891,9 @@ mod tests {
     }
 
     #[test]
-    fn single_phase_todo_hud_renders_tree_lines() {
+    fn single_phase_plan_column_lists_its_tasks() {
         use crate::core::agent::todo::TodoStatus::*;
-        let mut app = test_app();
-        app.todos = todos_from(vec![(
+        let todos = todos_from(vec![(
             "only",
             vec![
                 ("alpha", InProgress),
@@ -12521,24 +12901,25 @@ mod tests {
                 ("gamma", Completed),
             ],
         )]);
-        let lines: Vec<String> = super::todo_hud(&app).iter().map(line_text).collect();
-        // Root row: `Todos` + hint, no phase-count suffix for a single phase.
-        assert!(lines[0].contains("Todos"), "{lines:?}");
+        let lines: Vec<String> = super::todo_column(&todos, 60, 8)
+            .iter()
+            .map(line_text)
+            .collect();
+        // Head line: progress plus the hint that opens the editor. A single
+        // phase has no idx/count, and its name is not worth a row.
+        assert!(lines[0].contains("Todos · 1/3"), "{lines:?}");
         assert!(lines[0].contains("/todo"), "{lines:?}");
-        assert!(!lines[0].contains(" · "), "single phase has no idx/count: {lines:?}");
-        // No redundant phase header: tasks nest directly under the root.
         assert!(!lines.iter().any(|l| l.contains("only")), "{lines:?}");
-        // Glyphs per status and connectors: non-last `├─`, last `└─`.
-        assert!(lines[1].contains("├─") && lines[1].contains("☐ alpha"), "{lines:?}");
-        assert!(lines[2].contains("├─") && lines[2].contains("☐ beta"), "{lines:?}");
-        assert!(lines[3].contains("└─") && lines[3].contains("☑ gamma"), "{lines:?}");
+        assert!(lines[1].contains("☐ alpha"), "{lines:?}");
+        assert!(lines[2].contains("☐ beta"), "{lines:?}");
+        assert!(lines[3].contains("☑ gamma"), "{lines:?}");
     }
 
-    /// The todo HUD belongs to the input dock: it must render ABOVE the
-    /// horizontal rule that separates the transcript from the input, not
-    /// stranded between that rule and the prompt.
+    /// The panel belongs to the input dock: it must render ABOVE the horizontal
+    /// rule that separates the transcript from the input, not stranded between
+    /// that rule and the prompt.
     #[test]
-    fn todo_hud_sits_above_the_input_separator_rule() {
+    fn status_panel_sits_above_the_input_separator_rule() {
         use crate::core::agent::todo::TodoStatus::*;
         let mut app = test_app();
         app.todos = todos_from(vec![("only", vec![("alpha", InProgress)])]);
@@ -12557,7 +12938,7 @@ mod tests {
 
         assert!(
             todo_row < rule_row,
-            "todos must be above the rule (todos={todo_row}, rule={rule_row}): {rows:#?}"
+            "the panel must be above the rule (todos={todo_row}, rule={rule_row}): {rows:#?}"
         );
         assert!(
             rule_row < input_row,
@@ -12565,8 +12946,8 @@ mod tests {
         );
     }
 
-    /// A todo-free session keeps the original look: one rule directly above the
-    /// input, with no leftover blank row where the HUD would have been.
+    /// A session with nothing live keeps the original look: one rule directly
+    /// above the input, with no leftover blank row where the panel would be.
     #[test]
     fn separator_rule_hugs_the_input_when_there_are_no_todos() {
         let mut app = test_app();
@@ -12588,38 +12969,40 @@ mod tests {
         );
     }
 
+    /// Only the phase in flight spends rows on its tasks; the head line already
+    /// names it and counts the others.
     #[test]
-    fn multi_phase_todo_hud_collapses_inactive_phases() {
+    fn multi_phase_plan_column_expands_only_the_active_phase() {
         use crate::core::agent::todo::TodoStatus::*;
-        let mut app = test_app();
-        app.todos = todos_from(vec![
+        let todos = todos_from(vec![
             ("backend", vec![("scaffold", Completed), ("routes", InProgress)]),
             ("frontend", vec![("ui", Pending), ("polish", Pending)]),
         ]);
-        let hud = super::todo_hud(&app);
-        let lines: Vec<String> = hud.iter().map(line_text).collect();
-        // Root carries the active-phase/count suffix when multi-phase.
-        assert!(lines[0].contains("Todos") && lines[0].contains("· 1/2"), "{lines:?}");
-        // Each phase gets a connected header with its own done/total.
-        assert!(lines.iter().any(|l| l.contains("backend") && l.contains("· 1/2")), "{lines:?}");
-        assert!(lines.iter().any(|l| l.contains("frontend") && l.contains("· 0/2")), "{lines:?}");
-        // Active phase (backend) expands its tasks; inactive phase collapses.
+        let lines: Vec<String> = super::todo_column(&todos, 60, 8)
+            .iter()
+            .map(line_text)
+            .collect();
+        assert!(
+            lines[0].contains("Todos · 1/2") && lines[0].contains("backend 1/2"),
+            "head names the phase and both progressions: {lines:?}"
+        );
         assert!(lines.iter().any(|l| l.contains("routes")), "active tasks shown: {lines:?}");
-        assert!(!lines.iter().any(|l| l.contains("ui") || l.contains("polish")),
-            "inactive phase tasks stay collapsed: {lines:?}");
+        assert!(
+            !lines.iter().any(|l| l.contains("ui") || l.contains("polish")),
+            "inactive phase costs no rows: {lines:?}"
+        );
     }
 
     #[test]
     fn completed_and_abandoned_todos_render_distinctly() {
         use crate::core::agent::todo::TodoStatus::*;
-        let mut app = test_app();
-        app.todos = todos_from(vec![(
+        let todos = todos_from(vec![(
             "only",
             vec![("shipped", Completed), ("dropped", Abandoned)],
         )]);
-        let hud = super::todo_hud(&app);
-        let done = hud.iter().find(|l| line_text(l).contains("shipped")).unwrap();
-        let gone = hud.iter().find(|l| line_text(l).contains("dropped")).unwrap();
+        let col = super::todo_column(&todos, 60, 8);
+        let done = col.iter().find(|l| line_text(l).contains("shipped")).unwrap();
+        let gone = col.iter().find(|l| line_text(l).contains("dropped")).unwrap();
         // Completed: checked glyph + strikethrough.
         assert!(line_text(done).contains("☑"), "{:?}", line_text(done));
         assert!(crossed_out(done), "completed is struck through");
@@ -12632,37 +13015,300 @@ mod tests {
         );
     }
 
-    /// `draw` hides the HUD (reserves 0 layout rows) exactly when the picker is
-    /// open or there are no todos; this mirrors that same guard directly rather
-    /// than through a dedicated height helper, since `draw` now builds the HUD
-    /// once and sizes the layout from its own line count (see `draw`'s
-    /// `todo_lines` local).
-    fn todo_hud_height(app: &App) -> usize {
-        if app.picker.is_some() || app.todos.is_empty() {
-            0
-        } else {
-            super::todo_hud(app).len()
+    /// Folded reasoning puts nothing on screen, so the badge has to carry the
+    /// motion: a crest sweeps the word, one character per spinner frame, and
+    /// wraps back to the start after a pause.
+    #[test]
+    fn thinking_badge_shimmers_across_its_frames() {
+        use ratatui::style::{Modifier, Style};
+        let palette = [
+            Style::new().cyan().bold(),
+            Style::new().cyan(),
+            Style::new().cyan().dim(),
+        ];
+        let crest_at = |frame: usize| {
+            let spans = super::shimmer_spans("thinking", palette, frame);
+            // The text is intact and unmoved at every frame; only style changes.
+            let text: String = spans.iter().map(|s| s.content.as_ref()).collect::<String>();
+            assert_eq!(text, "thinking", "frame {frame} must not move the label");
+            spans
+                .iter()
+                .position(|s| s.style.add_modifier.contains(Modifier::BOLD))
+        };
+
+        assert_eq!(crest_at(0), Some(0));
+        assert_eq!(crest_at(3), Some(3), "the crest advances one char per frame");
+        // Past the end of the word the crest is off-screen (the pause), then
+        // the cycle restarts.
+        assert_eq!(crest_at(8), None, "pause between sweeps");
+        assert_eq!(crest_at(8 + super::SHIMMER_PAUSE), Some(0), "sweep restarts");
+    }
+
+    /// The animation is scoped to the state that needs it: a folded, streaming
+    /// reasoning block. Everything else keeps its flat badge.
+    #[test]
+    fn only_folded_live_reasoning_animates_the_badge() {
+        let mut app = test_app();
+        assert!(!app.is_thinking(), "idle");
+        app.submit_user("hi".into());
+        assert!(!app.is_thinking(), "running, but nothing thinking yet");
+
+        app.apply(StreamEvent::Token {
+            text: "<think>pondering".into(),
+        });
+        assert!(app.is_thinking(), "open reasoning block");
+        let rows = render_rows(&mut app, 60, 12);
+        assert!(rows[0].contains("[thinking]"), "label intact: {:?}", rows[0]);
+
+        app.apply(StreamEvent::Token {
+            text: "</think>done".into(),
+        });
+        assert!(!app.is_thinking(), "the block closed");
+
+        // With reasoning shown inline the transcript itself is moving, so the
+        // badge stays flat.
+        app.show_reasoning = true;
+        app.apply(StreamEvent::Token {
+            text: "<think>more".into(),
+        });
+        assert!(!app.is_thinking(), "unfolded reasoning needs no badge motion");
+    }
+
+    /// Folded reasoning summaries and tool rows are one run of activity: a turn
+    /// that alternates them used to spend a blank line on every switch.
+    #[test]
+    fn reasoning_and_tool_rows_share_one_band() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "<think>weighing options</think>".into(),
+        });
+        app.flush_assistant();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "x" }),
+        });
+        assert!(
+            !app.transcript.iter().any(Row::is_blank),
+            "no separator between a reasoning summary and a tool row"
+        );
+
+        // Prose is a different band and still gets its air.
+        app.apply(StreamEvent::Token { text: "an answer".into() });
+        app.flush_assistant();
+        assert!(
+            app.transcript.iter().any(Row::is_blank),
+            "prose is still separated from the activity above it"
+        );
+    }
+
+    /// The borderless input box used to reserve two blank rows for borders it
+    /// does not draw. One row of air above the dock is all it needs.
+    #[test]
+    fn input_box_reserves_one_row_of_air() {
+        let mut app = test_app();
+        let rows = render_rows(&mut app, 80, 12);
+        let input = rows
+            .iter()
+            .position(|r| r.contains("Type here to chat with agent"))
+            .expect("input");
+        assert_eq!(input + 3, rows.len(), "input, one blank, then the dock: {rows:?}");
+        assert!(rows[input + 1].trim().is_empty());
+        assert!(rows.last().unwrap().contains("/tmp/repo"));
+    }
+
+    /// The pin answers "where are we now" in one line, and carries the hint
+    /// that opens the editor.
+    #[test]
+    fn todo_pin_reports_phase_and_progress() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let multi = todos_from(vec![
+            ("backend", vec![("scaffold", Completed), ("routes", InProgress)]),
+            ("frontend", vec![("ui", Pending)]),
+        ]);
+        let text = line_text(&super::todo_pin(&multi));
+        assert!(text.contains("Todos"), "{text}");
+        assert!(text.contains("1/2"), "phase position: {text}");
+        assert!(text.contains("backend 1/2"), "active phase progress: {text}");
+        assert!(text.contains("/todo"), "editor hint: {text}");
+
+        let single = todos_from(vec![("only", vec![("a", Completed), ("b", Pending)])]);
+        let text = line_text(&super::todo_pin(&single));
+        assert!(text.contains("Todos · 1/2"), "single phase progress: {text}");
+    }
+
+    /// A child's panel normally closes on its own `SubagentEnd`. A run that
+    /// ends without one -- an upstream error mid-fan-out, a `Done` that beats
+    /// the child's own event -- used to strand the block: it kept spinning in
+    /// the dock, on an idle session, until the next `/clear`.
+    #[test]
+    fn run_end_closes_panels_no_subagent_end_ever_closed() {
+        for finish in ["done", "error"] {
+            let mut app = test_app();
+            app.submit_user("go".into());
+            start_subagent(&mut app, "r0", "alpha");
+            subagent_event(
+                &mut app,
+                "r0",
+                "alpha",
+                StreamEvent::ToolCall {
+                    id: "c1".into(),
+                    name: "read".into(),
+                    args: json!({ "path": "a.rs" }),
+                },
+            );
+            assert_eq!(app.subagents.len(), 1, "{finish}: panel open");
+
+            match finish {
+                "done" => app.on_done("stop".into(), None),
+                _ => app.on_error("upstream".into(), "boom".into()),
+            }
+
+            assert!(app.subagents.is_empty(), "{finish}: live panel must close");
+            let rows = render_rows(&mut app, 100, 24);
+            assert!(
+                !rows.iter().any(|r| r.contains("1 agent")),
+                "{finish}: panel must be gone: {rows:?}"
+            );
+            // Not silently: the child did work, so it gets the same kind of
+            // summary row a clean end would leave, marked unfinished.
+            assert!(
+                rows.iter().any(|r| r.contains("subagent alpha interrupted")),
+                "{finish}: unfinished child must be accounted for: {rows:?}"
+            );
         }
     }
 
+    /// A plan with every task closed stops being live state: the dock drops it
+    /// after `TODO_HIDE_AFTER`, giving the rows back to the conversation. The
+    /// list itself survives -- `/todo` still opens it, and the turn-based aging
+    /// still owns clearing it.
     #[test]
-    fn todo_hud_height_zero_when_hidden_and_bounded_otherwise() {
+    fn finished_plan_hides_from_the_dock_after_the_timeout() {
         use crate::core::agent::todo::TodoStatus::*;
-        // Empty list: no rows reserved.
         let mut app = test_app();
-        assert_eq!(todo_hud_height(&app), 0);
-        // Non-empty: at least the root plus a task, capped under MAX_TODO_ROWS.
-        app.todos = todos_from(vec![("only", vec![("t", InProgress)])]);
-        let h = todo_hud_height(&app);
-        assert!(h >= 2 && h <= super::MAX_TODO_ROWS, "bounded height, got {h}");
-        // A picker overlay hides the HUD entirely.
-        super::open_todo_picker(&mut app);
-        assert_eq!(todo_hud_height(&app), 0, "picker suppresses the HUD");
-        // A huge single phase stays clamped at the ceiling.
+        app.todos = todos_from(vec![("only", vec![("ship it", Completed)])]);
+
+        // Closed, but only just: still shown, and the deadline is now armed.
+        let rows = render_rows(&mut app, 80, 20);
+        assert!(rows.iter().any(|r| r.contains("Todos")), "{rows:?}");
+        let closed = app.todos_closed_at.expect("deadline armed on a closed plan");
+
+        // Past the timeout: the dock gives the rows back, the list stays.
+        app.todos_closed_at = closed.checked_sub(super::TODO_HIDE_AFTER);
+        assert!(app.todos_expired());
+        let rows = render_rows(&mut app, 80, 20);
+        assert!(!rows.iter().any(|r| r.contains("Todos")), "{rows:?}");
+        assert!(!app.todos.is_empty(), "the plan itself is untouched");
+
+        // Reopened work brings it straight back, deadline cleared.
+        app.todos = todos_from(vec![("only", vec![("ship it", InProgress)])]);
+        let rows = render_rows(&mut app, 80, 20);
+        assert!(app.todos_closed_at.is_none(), "deadline disarmed");
+        assert!(rows.iter().any(|r| r.contains("Todos")), "{rows:?}");
+    }
+
+    /// The timeout is wall-clock, not turn-based: an open plan is never hidden
+    /// however long the model sits on it.
+    #[test]
+    fn open_plan_is_never_hidden() {
+        use crate::core::agent::todo::TodoStatus::*;
         let mut app = test_app();
-        let many: Vec<(&str, _)> = (0..50).map(|_| ("x", Pending)).collect();
+        app.todos = todos_from(vec![("only", vec![("done", Completed), ("open", Pending)])]);
+        render_rows(&mut app, 80, 20);
+        assert!(app.todos_closed_at.is_none(), "open work arms nothing");
+        assert!(!app.todos_expired());
+    }
+
+    /// A wide terminal sets the plan and the fan-out side by side, each in its
+    /// own half, so the panel spends rows once instead of twice.
+    #[test]
+    fn wide_panel_sets_the_columns_side_by_side() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        app.todos = todos_from(vec![("only", vec![("wire routes", InProgress)])]);
+        start_subagent(&mut app, "r0", "alpha");
+        let rows = render_rows(&mut app, 120, 24);
+        let head = rows
+            .iter()
+            .find(|r| r.contains("Todos"))
+            .expect("panel head");
+        assert!(
+            head.contains("│") && head.contains("1 agent"),
+            "both columns share the row: {head:?}"
+        );
+        assert!(
+            head.find("Todos") < head.find("1 agent"),
+            "plan on the left, agents on the right: {head:?}"
+        );
+    }
+
+    /// Too narrow to split: the columns stack rather than being squeezed into
+    /// halves too thin to hold a task or an agent name.
+    #[test]
+    fn narrow_panel_stacks_the_columns() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        app.todos = todos_from(vec![("only", vec![("wire routes", InProgress)])]);
+        start_subagent(&mut app, "r0", "alpha");
+        let rows = render_rows(&mut app, super::PANEL_SPLIT_MIN_WIDTH - 1, 24);
+        assert!(
+            !rows.iter().any(|r| r.contains("│")),
+            "no divider when stacked: {rows:?}"
+        );
+        let todos = rows.iter().position(|r| r.contains("Todos")).expect("plan");
+        let agents = rows.iter().position(|r| r.contains("≡")).expect("agents");
+        assert!(todos < agents, "plan first when stacked: {rows:?}");
+    }
+
+    /// A short terminal spends its rows on the conversation: the panel shrinks
+    /// first, eliding its own tail, and disappears before the transcript does.
+    #[test]
+    fn short_terminal_shrinks_the_panel_before_the_transcript() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        let many: Vec<(&str, _)> = (0..12).map(|_| ("a task", Pending)).collect();
         app.todos = todos_from(vec![("only", many)]);
-        assert_eq!(todo_hud_height(&app), super::MAX_TODO_ROWS);
+
+        // Roomy: capped at the panel ceiling, never more.
+        assert_eq!(super::panel_budget(40, 2), super::PANEL_MAX_ROWS);
+        // Squeezed: only what is left after the fixed rows and the transcript
+        // floor, and nothing at all once even that is gone.
+        assert_eq!(super::panel_budget(12, 2), 3);
+        assert_eq!(super::panel_budget(9, 2), 0);
+
+        let rows = render_rows(&mut app, 80, 12);
+        let panel: Vec<&String> = rows
+            .iter()
+            .filter(|r| r.contains("Todos") || r.contains("a task") || r.contains("more"))
+            .collect();
+        assert!(panel.len() <= 3, "panel clamped to its budget: {rows:?}");
+        assert!(
+            rows.iter().any(|r| r.contains("+11 more")),
+            "the tail is elided, not dropped silently: {rows:?}"
+        );
+
+        // No room at all: the panel yields entirely and the dock still renders.
+        let rows = render_rows(&mut app, 80, 9);
+        assert!(!rows.iter().any(|r| r.contains("Todos")), "{rows:?}");
+        assert!(rows.last().unwrap().contains("/tmp/repo"), "{rows:?}");
+    }
+
+    /// Many parallel agents cannot push the plan off the screen: the column
+    /// shows what fits and counts the rest.
+    #[test]
+    fn crowded_fan_out_elides_with_a_running_count() {
+        let mut app = test_app();
+        for i in 0..9 {
+            start_subagent(&mut app, &format!("r{i}"), &format!("agent-{i}"));
+        }
+        let rows = render_rows(&mut app, 100, 24);
+        let shown = rows.iter().filter(|r| r.contains("agent-")).count();
+        assert!(shown < 9, "not every agent fits: {rows:?}");
+        assert!(
+            rows.iter().any(|r| r.contains("more running")),
+            "the rest are counted: {rows:?}"
+        );
     }
 
     #[tokio::test]
