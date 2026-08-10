@@ -64,7 +64,11 @@ type StreamEvent =
     }
 
 // Per-run token ceiling. `max_turns: 0` lets a multi-step task run to completion;
-// this budget is the real bound that stops a runaway loop (see loop.rs).
+// this budget is the real bound that stops a runaway loop (see SessionBudget in
+// session.rs). Only the *marginal* token increase between requests counts — every
+// turn replays the full conversation, so summing absolute totals would grow
+// quadratically with context length and cut off a legitimate long task. A real
+// runaway (hundreds of turns) still accumulates unbounded marginal spend and trips.
 const MAX_SESSION_TOKENS = 200_000
 
 // Cap the history replayed to the agent so a long session never sends more than
