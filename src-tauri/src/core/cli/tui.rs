@@ -36,7 +36,7 @@ mod highlight;
 mod markdown;
 
 use markdown::{
-    format_assistant_lines, format_markdown_lines, reasoning_detail_lines, reasoning_summary_row,
+    format_markdown_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
 };
 
 use super::{sort_threads_recent, AgentSession, ResumeTarget};
@@ -536,6 +536,10 @@ struct App {
     /// Committed reasoning blocks, folded to a summary row and expandable back to
     /// their full dimmed lines.
     reasoning_blocks: Vec<ReasoningBlock>,
+    /// Whether `<think>` reasoning reveals in full instead of folding. Defaults
+    /// from `[agent].show_reasoning` in agent.toml (false). Ctrl-O toggles every
+    /// existing block between its summary row and full detail for the session.
+    show_reasoning: bool,
     /// Transcript row indices of collapsed regions (tool groups or reasoning
     /// blocks) the user has expanded to full detail.
     expanded: std::collections::HashSet<usize>,
@@ -559,6 +563,18 @@ struct App {
     /// Set by Esc to dismiss the path-hint popup; cleared on next char edit.
     path_hint_dismissed: bool,
     status: Status,
+    /// Wall-clock start of the current reasoning `<think>` block while it is
+    /// open (the model is actively reasoning). `None` between blocks.
+    thinking_since: Option<Instant>,
+    /// Duration of the reasoning block that just closed, cached so the header
+    /// can show `[thought for Ns]` transiently. `None` after the reasoning is
+    /// shown inline (or none has happened yet).
+    thought_for: Option<Duration>,
+    /// Wall-clock time `thought_for` was last set, so the `[thought for Ns]`
+    /// summary can expire back to the plain `[working]` after a short while
+    /// rather than persisting for the rest of the turn. `None` when `thought_for`
+    /// is `None` or not yet set.
+    thought_for_since: Option<Instant>,
     turn: (u32, u32),
     tokens: u64,
     detail: String,
@@ -685,6 +701,12 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 /// Milliseconds per spinner frame, decoupled from the 50ms render tick.
 const SPINNER_ADVANCE_MS: u64 = 80;
 
+/// How long the `[thought for Ns]` header summary lingers after a reasoning
+/// block closes before it falls back to the plain `[working]` status. The
+/// summary is only a transient cue that a block finished; it should not pin the
+/// header for the rest of the turn once the model gets back to work.
+const THOUGHT_FOR_TTL: Duration = Duration::from_secs(3);
+
 /// Live rolling view of an in-flight subagent's tool calls. The panel shows only
 /// the most recent [`SUBAGENT_WINDOW`] calls, but the full list is retained so
 /// the finished summary row can expand back to every call (Ctrl-O).
@@ -764,6 +786,7 @@ impl App {
         context_window: u64,
         reserve_tokens: u64,
         max_tokens: Option<u64>,
+        show_reasoning: bool,
         agent_dir: std::path::PathBuf,
         project_root: PathBuf,
         repo_root: Option<PathBuf>,
@@ -799,6 +822,7 @@ impl App {
             grouped_ids: std::collections::HashSet::new(),
             groups: Vec::new(),
             reasoning_blocks: Vec::new(),
+            show_reasoning,
             expanded: std::collections::HashSet::new(),
             reveal: None,
             input: String::new(),
@@ -810,6 +834,9 @@ impl App {
             path_hint_selected: 0,
             path_hint_dismissed: false,
             status: Status::Idle,
+            thinking_since: None,
+            thought_for: None,
+            thought_for_since: None,
             turn: (0, 0),
             tokens: 0,
             detail: String::new(),
@@ -939,6 +966,10 @@ impl App {
     fn flush_assistant(&mut self) {
         let text = self.assistant_buf.trim_end().to_string();
         self.assistant_buf.clear();
+        // The buffered stream is committed: any open reasoning window closes
+        // (its elapsed time was stashed when the block itself closed, so this
+        // only matters for a flush that happens mid-block, e.g. a tool call).
+        self.thinking_since = None;
         // No-op (and, crucially, don't finalize the tool group) on an empty or
         // whitespace-only buffer, so silent consecutive tool calls keep folding.
         if !assistant_has_content(&text) {
@@ -967,9 +998,13 @@ impl App {
                 // Distinct Kind so the reasoning->prose transition still gaps
                 // (both sharing Kind::Prose would collapse to no separator).
                 self.gap(Kind::Reasoning);
-                self.push(reasoning_summary_row(detail.len()));
-                let idx = self.transcript.len() - 1;
-                self.reasoning_blocks.push(ReasoningBlock { idx, detail });
+                if self.show_reasoning {
+                    self.transcript.extend(detail);
+                } else {
+                    self.push(reasoning_summary_row(detail.len()));
+                    let idx = self.transcript.len() - 1;
+                    self.reasoning_blocks.push(ReasoningBlock { idx, detail });
+                }
             } else {
                 let lines = format_markdown_lines(&seg, width);
                 if !lines.is_empty() {
@@ -1048,6 +1083,30 @@ impl App {
         };
         self.transcript[g.idx] = tool_row("✓", Style::new().green(), &text, Style::new().dim());
         self.groups.push(g);
+    }
+
+    /// Header status while a turn is running with reasoning folding on: `[thinking]`
+    /// while a ` thinking` block is actively streaming, `[thought for Ns]` for a
+    /// short while after a block closes, then back to `None` (the plain
+    /// `[working]`) once the model is working again. `None` when no reasoning has
+    /// happened recently this turn.
+    fn reasoning_status(&self) -> Option<(String, Style)> {
+        if thinking_open(&self.assistant_buf) {
+            Some(("thinking".to_string(), Style::new().cyan().bold()))
+        } else {
+            // The summary is transient: it lasts only `THOUGHT_FOR_TTL` after the
+            // block closed, so a long tool call or answer prose falls back to the
+            // plain [working] instead of pinning [thought for Ns] till turn end.
+            match (self.thought_for, self.thought_for_since) {
+                (Some(d), Some(since)) if since.elapsed() < THOUGHT_FOR_TTL => {
+                    Some((
+                        format!("thought for {}", format_elapsed(d.as_secs())),
+                        Style::new().cyan(),
+                    ))
+                }
+                _ => None,
+            }
+        }
     }
 
     /// Toggle full detail for every collapsed region (tool groups and reasoning
@@ -1620,6 +1679,19 @@ impl App {
         match ev {
             StreamEvent::Token { text } => {
                 self.assistant_buf.push_str(&text);
+                // Track the live thinking state so the header can fold reasoning
+                // to `[thinking]` / `[thought for Ns]`. Start the timer when a
+                //  block opens; close it (stashing the duration) once the block
+                // closes or the tool group proceeds.
+                let open = thinking_open(&self.assistant_buf);
+                if open && self.thinking_since.is_none() {
+                    self.thinking_since = Some(Instant::now());
+                } else if !open {
+                    if let Some(started) = self.thinking_since.take() {
+                        self.thought_for = Some(started.elapsed());
+                        self.thought_for_since = Some(Instant::now());
+                    }
+                }
                 // Commit the tool group as `✓` once real answer prose begins, so
                 // it lands above the streaming response. Reasoning tokens must
                 // not trigger this, or every call by a reasoning model splits
@@ -1979,6 +2051,10 @@ impl App {
         self.scrollback = 0;
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
+        // A fresh turn starts with no active reasoning.
+        self.thinking_since = None;
+        self.thought_for = None;
+        self.thought_for_since = None;
         // A call cancelled before its result would otherwise leave its path
         // behind for the life of the session.
         self.diff_paths.clear();
@@ -3104,6 +3180,17 @@ fn split_reasoning(text: &str) -> Vec<(bool, String)> {
     out
 }
 
+/// True if `text` ends inside an unclosed ` think>` block (an opening tag whose
+/// matching close has not yet streamed). Used to show `[thinking]` while
+/// reasoning streams. Re-uses the same tag matcher as `split_reasoning`.
+fn thinking_open(text: &str) -> bool {
+    let mut open = false;
+    for m in think_re().find_iter(text) {
+        open = !m.as_str().starts_with("</");
+    }
+    open
+}
+
 /// True if `text` has any non-whitespace content in any reasoning/answer run.
 fn assistant_has_content(text: &str) -> bool {
     split_reasoning(text)
@@ -3304,6 +3391,7 @@ pub async fn run(
         context_window,
         reserve_tokens,
         max_tokens,
+        show_reasoning,
         mcp_servers,
         mcp_task,
     } = session;
@@ -3340,7 +3428,7 @@ pub async fn run(
     // A git repo enables workspace snapshots (rewind can restore files); a
     // non-repo runs exactly as before with conversation-only rewind.
     let repo_root = git::repo_root(&project_root);
-    let mut app = App::new(model, max_turns, context_window, reserve_tokens, max_tokens, agent_dir, project_root, repo_root);
+    let mut app = App::new(model, max_turns, context_window, reserve_tokens, max_tokens, show_reasoning, agent_dir, project_root, repo_root);
     app.smol_model = smol_model;
     app.args = Some(args.clone());
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
@@ -4628,6 +4716,9 @@ enum AgentSettingKind {
     /// unsets. Covers the `read-only | deny | allow` and `always | relevance`
     /// toggles that hand-editing agent.toml previously required.
     Enum { options: &'static [&'static str], default: &'static str },
+    /// Boolean toggle: Enter writes a TOML boolean (the Enum kind would emit a
+    /// quoted string). Unset clears the key so its default applies.
+    Bool { default: bool },
 }
 
 const AGENT_SETTINGS: &[AgentSettingDef] = &[
@@ -4696,6 +4787,12 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
             options: &["always", "relevance"],
             default: "always",
         },
+    },
+    AgentSettingDef {
+        key: "show_reasoning",
+        label: "show_reasoning",
+        desc: "expand  reasoning in the transcript (Ctrl-O still toggles)",
+        kind: AgentSettingKind::Bool { default: false },
     },
 ];
 
@@ -4869,6 +4966,19 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                         prompt.error = Some(format!(
                             "must be one of: {} (default: {default})",
                             options.join(" | ")
+                        ));
+                        return;
+                    }
+                }
+                AgentSettingKind::Bool { default } => {
+                    let input = prompt.input.trim();
+                    if input.is_empty() {
+                        None
+                    } else if let Ok(b) = input.parse::<bool>() {
+                        Some(toml_edit::value(b))
+                    } else {
+                        prompt.error = Some(format!(
+                            "must be true or false (default: {default})"
                         ));
                         return;
                     }
@@ -6043,7 +6153,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         ));
     }
     if !app.assistant_buf.is_empty() {
-        let tail = format_assistant_lines(&app.assistant_buf, width);
+        let tail = live_assistant_lines(&app.assistant_buf, width, !app.show_reasoning);
         if !tail.is_empty() {
             // Mirror flush_assistant's `gap(Kind::Prose)` so the separator above
             // streaming prose is present live, not only once it's finalized.
@@ -6449,6 +6559,9 @@ fn draw_settings_prompt(
             AgentSettingKind::Enum { options, default } => {
                 format!("default: {default} · valid: {}", options.join(" | "))
             }
+            AgentSettingKind::Bool { default } => {
+                format!("default: {default} · valid: true | false")
+            }
         },
         dim,
     ));
@@ -6691,6 +6804,9 @@ fn draw_picker(
                         options.join(" | ")
                     )
                 }
+                AgentSettingKind::Bool { default } => {
+                    format!("default: {default} · valid: true | false · current: {current}")
+                }
             };
             let dim = Style::new().dark_gray();
             f.render_widget(
@@ -6894,9 +7010,18 @@ fn format_elapsed(secs: u64) -> String {
 }
 
 fn header(app: &App) -> Paragraph<'static> {
-    let (status, style) = match app.status {
-        Status::Idle => ("ready", Style::new().green()),
-        Status::Running => ("working", Style::new().yellow().bold()),
+    let (status, style): (String, Style) = if app.status == Status::Idle {
+        ("ready".to_string(), Style::new().green())
+    } else if !app.show_reasoning {
+        // Reasoning folding is on: show the live thought state in place of the
+        // generic 'working'. [thinking] while a  block streams; [thought for
+        // Ns] for the rest of the turn once it closes.
+        match app.reasoning_status() {
+            Some(s) => s,
+            None => ("working".to_string(), Style::new().yellow().bold()),
+        }
+    } else {
+        ("working".to_string(), Style::new().yellow().bold())
     };
     let turn = match app.turn {
         (0, _) => String::new(),
@@ -7393,7 +7518,7 @@ mod tests {
             std::process::id(),
             uuid::Uuid::new_v4()
         ));
-        App::new("m".into(), 8, 128_000, 16_384, None, agent_dir, std::path::PathBuf::from("/tmp/repo"), None)
+        App::new("m".into(), 8, 128_000, 16_384, None, false, agent_dir, std::path::PathBuf::from("/tmp/repo"), None)
     }
 
     /// Draw `app` into an off-screen terminal and return its rows as strings.
@@ -7854,27 +7979,114 @@ mod tests {
     }
 
     #[test]
-    fn live_tail_dims_open_think_block_instead_of_stripping() {
+    fn live_tail_hides_open_think_block_and_shows_it_when_revealed() {
         use ratatui::{backend::TestBackend, Terminal};
         let mut app = test_app();
         app.assistant_buf = "<think>pondering the answer".to_string();
-        let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
-        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
-        let buf = terminal.backend().buffer().clone();
 
-        let mut found_dim = false;
-        for y in 0..buf.area.height {
-            let row: String = (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect();
-            if row.contains("pondering") {
-                let x = row.find("pondering").unwrap() as u16;
-                assert!(
-                    buf[(x, y)].style().add_modifier.contains(Modifier::DIM),
-                    "open <think> content must render dimmed while streaming"
-                );
-                found_dim = true;
-            }
+        let render = |app: &mut App| {
+            let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+            terminal.draw(|f| super::draw(f, app)).unwrap();
+            let buf = terminal.backend().buffer().clone();
+            (0..buf.area.height)
+                .map(|y| {
+                    (0..buf.area.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // Reasoning folding is the default: an open  block is hidden from
+        // the live tail (the header shows [thinking] instead).
+        let hidden = render(&mut app);
+        assert!(
+            !hidden.contains("pondering"),
+            "open reasoning must be hidden by default"
+        );
+
+        // With show_reasoning on, the streaming reasoning renders dimmed as before.
+        app.show_reasoning = true;
+        let shown = render(&mut app);
+        assert!(shown.contains("pondering"), "revealed live tail must contain it");
+    }
+
+    #[test]
+    fn header_shows_thinking_and_thought_for_status_when_folded() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        app.submit_user("hi".to_string());
+
+        let render = |app: &mut App| {
+            let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+            terminal.draw(|f| super::draw(f, app)).unwrap();
+            let buf = terminal.backend().buffer().clone();
+            (0..buf.area.height)
+                .map(|y| {
+                    (0..buf.area.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // Open reasoning -> [thinking] (replacing [working]).
+        app.apply(StreamEvent::Token {
+            text: "<think>pondering the plan".into(),
+        });
+        let thinking = render(&mut app);
+        assert!(thinking.contains("[thinking]"), "thinking: {thinking}");
+        assert!(!thinking.contains("[working]"), "thinking: {thinking}");
+
+        // Block closes -> [thought for Ns] for a short while after.
+        app.apply(StreamEvent::Token {
+            text: "</think>Answer.".into(),
+        });
+        let done = render(&mut app);
+        assert!(done.contains("[thought for"), "thought-for: {done}");
+    }
+
+    #[test]
+    fn thought_for_falls_back_to_working_after_ttl() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        app.submit_user("hi".to_string());
+
+        let render = |app: &mut App| {
+            let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+            terminal.draw(|f| super::draw(f, app)).unwrap();
+            let buf = terminal.backend().buffer().clone();
+            (0..buf.area.height)
+                .map(|y| {
+                    (0..buf.area.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // Open then close a reasoning block so the summary appears.
+        app.apply(StreamEvent::Token {
+            text: "<think>ponder the plan".into(),
+        });
+        app.apply(StreamEvent::Token {
+            text: "</think> responseA.".into(),
+        });
+        let fresh = render(&mut app);
+        assert!(fresh.contains("[thought for"), "fresh: {fresh}");
+
+        // Age the summary beyond its TTL; it must fall back to [working] rather
+        // than pinning [thought for Ns] for the rest of the turn.
+        if let Some(since) = app.thought_for_since {
+            app.thought_for_since =
+                Some(since - super::THOUGHT_FOR_TTL - std::time::Duration::from_secs(1));
         }
-        assert!(found_dim, "open <think> content must still appear in the live tail");
+        let stale = render(&mut app);
+        assert!(stale.contains("[working]"), "stale should be [working]: {stale}");
+        assert!(!stale.contains("[thought for"), "stale thought-for: {stale}");
     }
 
     #[test]

@@ -592,6 +592,8 @@ pub(crate) struct AgentSession {
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     pub max_tokens: Option<u64>,
+    /// Whether the TUI expands `<think>` reasoning blocks (default false).
+    pub show_reasoning: bool,
     /// Shared MCP connection map (same Arc held by `args`), so the TUI can
     /// connect/disconnect servers live via `/mcp` and later turns pick them up.
     pub mcp_servers: crate::core::state::SharedMcpServers,
@@ -746,6 +748,7 @@ fn prepare_agent_session(
         context_window: cfg.agent.context_window.unwrap_or(128_000),
         reserve_tokens: cfg.agent.compaction_reserve_tokens.unwrap_or(16_384),
         max_tokens: cfg.agent.max_tokens,
+        show_reasoning: cfg.agent.show_reasoning.unwrap_or(false),
         mcp_servers,
         mcp_task,
     })

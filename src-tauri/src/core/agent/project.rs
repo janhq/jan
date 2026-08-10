@@ -81,6 +81,12 @@ pub(crate) struct AgentSection {
     /// run only.
     #[serde(default)]
     pub max_parallel_subagents: Option<u32>,
+    /// Expand `<think>` reasoning blocks in the TUI transcript instead of
+    /// folding them to a `[thinking]`/`[thought for Ns]` status and a summary
+    /// row. Default false (hidden); Ctrl-O still reveals a folded block, and
+    /// this flips the default for every block in the session.
+    #[serde(default)]
+    pub show_reasoning: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -114,6 +120,7 @@ max_turns = 400
 # compaction_reserve_tokens = 16384  # headroom before auto-compaction; defaults to 16K
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
+# show_reasoning = false  # expand  reasoning in the transcript (Ctrl-O still toggles)
 instructions_file = "AGENT.md"
 
 # Project-local provider override. Wins over ~/.jan/config.toml and any
@@ -307,7 +314,7 @@ pub(crate) fn set_agent_key(
 
 /// Persist `[skills].enabled` into the agent.toml at `path`, format-preserving
 /// (comments kept). An empty list clears the whitelist (= all skills enabled).
-#[cfg(any(not(feature = "cli"), test))]
+#[cfg(not(feature = "cli"))]
 pub(crate) fn set_skills_enabled_in_agent_toml(
     path: &Path,
     enabled: &[String],
@@ -504,6 +511,26 @@ mod tests {
         set_agent_key(&path, "max_parallel_subagents", None).expect("unset");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.max_parallel_subagents, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn show_reasoning_parses_and_defaults_to_false() {
+        let root = unique_root("show_reasoning");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.show_reasoning, None, "template leaves it unset");
+
+        // Explicit value round-trips through the /settings writer; unset removes.
+        let path = agent_toml_path(&root);
+        set_agent_key(&path, "show_reasoning", Some(toml_edit::value(true)))
+            .expect("write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.show_reasoning, Some(true));
+        set_agent_key(&path, "show_reasoning", None).expect("unset");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.show_reasoning, None);
         let _ = std::fs::remove_dir_all(&root);
     }
 
