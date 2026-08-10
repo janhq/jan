@@ -305,23 +305,33 @@ impl ToolGroup {
     }
 
     /// The group's row: present-tense `▸` only while it is open with a call in
-    /// flight, otherwise a resolved tag plus past-tense summary.
-    fn row(&self, state: GroupRow, max: usize) -> Line<'static> {
+    /// flight, otherwise a resolved tag plus past-tense summary. The label is
+    /// stored untruncated; `Row::Tool` clamps it to the current draw width.
+    fn row(&self, state: GroupRow) -> Row {
         if state == GroupRow::Open && self.is_running() {
-            return tool_row(
-                "▸",
-                Style::new().cyan(),
-                &truncate(&group_activity(&self.nouns), max),
-                Style::new().cyan().dim(),
-            );
+            return RowKind::Tool {
+                tag: "▸".to_string(),
+                tag_style: Style::new().cyan(),
+                label: group_activity(&self.nouns),
+                label_style: Style::new().cyan().dim(),
+                reserve: TOOL_ROW_RESERVE,
+            }
+            .into();
         }
-        let text = if self.nouns.len() <= 1 {
+        let label = if self.nouns.len() <= 1 {
             self.first_done.clone()
         } else {
             group_summary(&self.nouns)
         };
         let (tag, tag_style) = self.outcome_tag(state == GroupRow::Aborted);
-        tool_row(tag, tag_style, &truncate(&text, max), Style::new().dim())
+        RowKind::Tool {
+            tag: tag.to_string(),
+            tag_style,
+            label,
+            label_style: Style::new().dim(),
+            reserve: TOOL_ROW_RESERVE,
+        }
+        .into()
     }
 }
 
@@ -341,6 +351,138 @@ struct PendingToolRow {
     id: String,
     idx: usize,
     label: String,
+}
+
+/// One committed transcript entry. Width-dependent entries keep their *source*
+/// rather than rendered lines, so a terminal resize re-lays them out at the new
+/// width instead of leaving tables, boxed diffs and truncated labels sized for
+/// the old one. `Line` holds content whose layout is width-independent (it wraps
+/// naturally in the body `Paragraph`).
+///
+/// A row may render to several lines; transcript indices (group/reasoning/
+/// pending-row `idx`, `expanded`, `reveal`) address rows, so they stay valid
+/// across a resize no matter how the line count changes.
+struct Row {
+    kind: RowKind,
+    /// Last render, keyed by the width that produced it. The whole transcript
+    /// is laid out on every frame, so without this a long session would
+    /// re-parse its markdown and re-highlight its diffs 20 times a second;
+    /// only a width change invalidates the entry.
+    cache: std::cell::RefCell<Option<(u16, Vec<Line<'static>>)>>,
+}
+
+enum RowKind {
+    Line(Line<'static>),
+    /// Assistant prose, re-wrapped through markdown at the draw width.
+    Markdown(String),
+    /// A tool call/summary row, re-truncated to `width - reserve`.
+    Tool {
+        tag: String,
+        tag_style: Style,
+        label: String,
+        label_style: Style,
+        reserve: u16,
+    },
+    /// A tool result summary plus its optional boxed diff panel.
+    Result {
+        tag: &'static str,
+        tag_style: Style,
+        content: String,
+        diff: Option<String>,
+        /// Path of the edited file, for diff syntax highlighting.
+        lang: Option<String>,
+    },
+}
+
+impl From<RowKind> for Row {
+    fn from(kind: RowKind) -> Self {
+        Row {
+            kind,
+            cache: std::cell::RefCell::new(None),
+        }
+    }
+}
+
+impl Row {
+    fn line(line: Line<'static>) -> Row {
+        RowKind::Line(line).into()
+    }
+
+    fn lines(&self, width: u16) -> Vec<Line<'static>> {
+        if let Some((cached_width, lines)) = self.cache.borrow().as_ref() {
+            if *cached_width == width {
+                return lines.clone();
+            }
+        }
+        let lines = self.render(width);
+        *self.cache.borrow_mut() = Some((width, lines.clone()));
+        lines
+    }
+
+    fn render(&self, width: u16) -> Vec<Line<'static>> {
+        match &self.kind {
+            RowKind::Line(line) => vec![line.clone()],
+            RowKind::Markdown(text) => format_markdown_lines(text, width),
+            RowKind::Tool {
+                tag,
+                tag_style,
+                label,
+                label_style,
+                reserve,
+            } => {
+                let max = width.saturating_sub(*reserve).max(1) as usize;
+                vec![tool_row(
+                    tag,
+                    *tag_style,
+                    &truncate(label, max),
+                    *label_style,
+                )]
+            }
+            RowKind::Result {
+                tag,
+                tag_style,
+                content,
+                diff,
+                lang,
+            } => {
+                let max = width.saturating_sub(8).max(1) as usize;
+                let mut out = vec![Line::from(vec![
+                    Span::styled("│   ", Style::new().dark_gray()),
+                    Span::styled(format!("{tag} "), *tag_style),
+                    Span::styled(summarize_result(content, max), Style::new().dim()),
+                ])];
+                if let Some(diff) = diff {
+                    out.extend(diff_lines(
+                        diff,
+                        max,
+                        DIFF_MAX_ROWS,
+                        "│     ",
+                        lang.as_deref(),
+                    ));
+                }
+                out
+            }
+        }
+    }
+
+    /// Whether this row is the blank separator `gap` inserts. Only a literal
+    /// blank line qualifies; a source-backed row always renders content.
+    fn is_blank(&self) -> bool {
+        match &self.kind {
+            RowKind::Line(line) => line.spans.iter().all(|s| s.content.trim().is_empty()),
+            _ => false,
+        }
+    }
+
+    /// Unstyled text of the row's source, for matching (`retain`).
+    fn plain_text(&self) -> String {
+        match &self.kind {
+            RowKind::Line(line) => line.spans.iter().map(|s| s.content.as_ref()).collect(),
+            RowKind::Markdown(text) => text.clone(),
+            RowKind::Tool { tag, label, .. } => format!("{tag} {label}"),
+            RowKind::Result { tag, content, .. } => format!("{tag} {content}"),
+        }
+    }
 }
 
 /// A committed `<think>` reasoning block, folded to a one-line summary row.
@@ -571,8 +713,10 @@ struct App {
     history: Vec<serde_json::Value>,
     /// Thread this conversation persists to (set on first save or on resume).
     thread_id: Option<String>,
-    /// Styled display transcript (user turns, assistant text, workflow lines).
-    transcript: Vec<Line<'static>>,
+    /// Display transcript (user turns, assistant text, workflow lines). Rows,
+    /// not lines: width-dependent entries keep their source and re-render on
+    /// resize (see `Row`).
+    transcript: Vec<Row>,
     /// In-progress assistant text for the current turn, flushed on the next
     /// step/tool/terminal event.
     assistant_buf: String,
@@ -801,8 +945,25 @@ struct SubagentPanel {
 struct SubagentBlock {
     /// Transcript index of the summary row this block owns.
     idx: usize,
-    /// Full detail lines (one per tool call), revealed when expanded.
-    detail: Vec<Line<'static>>,
+    /// Tool-call labels, revealed when expanded. Held as text, not lines, so
+    /// they re-truncate to the draw width.
+    calls: Vec<String>,
+}
+
+impl SubagentBlock {
+    fn detail_lines(&self, width: u16) -> Vec<Line<'static>> {
+        let max = width.saturating_sub(8).max(1) as usize;
+        self.calls
+            .iter()
+            .map(|label| {
+                Line::from(vec![
+                    Span::styled("│   ", Style::new().dark_gray()),
+                    Span::styled("▸ ", Style::new().magenta()),
+                    Span::styled(truncate(label, max), Style::new().dim()),
+                ])
+            })
+            .collect()
+    }
 }
 
 /// Rolling window size for a subagent's live tool-call list.
@@ -948,19 +1109,19 @@ impl App {
     }
 
     fn push(&mut self, line: Line<'static>) {
-        self.transcript.push(line);
+        self.transcript.push(Row::line(line));
+    }
+
+    fn push_row(&mut self, row: impl Into<Row>) {
+        self.transcript.push(row.into());
     }
 
     /// Insert a blank separator when the block kind changes, then record it.
     /// Keeps consecutive same-kind lines tight while spacing turn boundaries.
     fn gap(&mut self, next: Kind) {
-        let last_blank = self
-            .transcript
-            .last()
-            .map(|l| l.spans.iter().all(|s| s.content.trim().is_empty()))
-            .unwrap_or(true);
+        let last_blank = self.transcript.last().map(Row::is_blank).unwrap_or(true);
         if !self.transcript.is_empty() && self.last_kind != next && !last_blank {
-            self.transcript.push(Line::raw(""));
+            self.transcript.push(Row::line(Line::raw("")));
         }
         self.last_kind = next;
     }
@@ -1040,7 +1201,6 @@ impl App {
     /// whose full dimmed detail is retained for expansion.
     fn push_assistant_blocks(&mut self, text: &str) {
         let text = strip_system_xml_tags(text);
-        let width = self.render_width();
         for (reasoning, seg) in split_reasoning(&text) {
             if seg.trim().is_empty() {
                 continue;
@@ -1054,17 +1214,21 @@ impl App {
                 // (both sharing Kind::Prose would collapse to no separator).
                 self.gap(Kind::Reasoning);
                 if self.show_reasoning {
-                    self.transcript.extend(detail);
+                    self.transcript.extend(detail.into_iter().map(Row::line));
                 } else {
                     self.push(reasoning_summary_row(detail.len()));
                     let idx = self.transcript.len() - 1;
                     self.reasoning_blocks.push(ReasoningBlock { idx, detail });
                 }
             } else {
-                let lines = format_markdown_lines(&seg, width);
-                if !lines.is_empty() {
+                // Kept as source: the markdown re-wraps at the draw width, so a
+                // resize re-flows tables and code blocks instead of stranding
+                // them at the width they were committed at. Markup that renders
+                // to nothing (a bare HTML comment) still emits no row.
+                let row: Row = RowKind::Markdown(seg.to_string()).into();
+                if !row.lines(self.render_width()).is_empty() {
                     self.gap(Kind::Prose);
-                    self.transcript.extend(lines);
+                    self.push_row(row);
                 }
             }
         }
@@ -1091,12 +1255,13 @@ impl App {
             Some(idx) if idx < self.transcript.len() => self.refresh_group_row(),
             _ => {
                 self.gap(Kind::Tool);
-                self.push(tool_row(
-                    "▸",
-                    Style::new().cyan(),
-                    &label,
-                    Style::new().cyan().dim(),
-                ));
+                self.push_row(RowKind::Tool {
+                    tag: "▸".to_string(),
+                    tag_style: Style::new().cyan(),
+                    label,
+                    label_style: Style::new().cyan().dim(),
+                    reserve: TOOL_ROW_RESERVE,
+                });
                 self.tool_group = Some(ToolGroup {
                     idx: self.transcript.len() - 1,
                     first_done: done.clone(),
@@ -1119,12 +1284,11 @@ impl App {
     /// resolves then, rather than lagging until the group closes (which only
     /// happens once the model starts answering).
     fn refresh_group_row(&mut self) {
-        let max = self.render_width().saturating_sub(6) as usize;
         let Some((idx, row)) = self
             .tool_group
             .as_ref()
             .filter(|g| g.idx < self.transcript.len())
-            .map(|g| (g.idx, g.row(GroupRow::Open, max)))
+            .map(|g| (g.idx, g.row(GroupRow::Open)))
         else {
             return;
         };
@@ -1148,13 +1312,12 @@ impl App {
         if g.idx >= self.transcript.len() {
             return;
         }
-        let max = self.render_width().saturating_sub(6) as usize;
         let state = if interrupted {
             GroupRow::Aborted
         } else {
             GroupRow::Closed
         };
-        self.transcript[g.idx] = g.row(state, max);
+        self.transcript[g.idx] = g.row(state);
         self.groups.push(g);
     }
 
@@ -1169,8 +1332,14 @@ impl App {
         self.starting.clear();
         for row in std::mem::take(&mut self.pending_rows) {
             if row.idx < self.transcript.len() {
-                self.transcript[row.idx] =
-                    tool_row("○", Style::new().yellow(), &row.label, Style::new().dim());
+                self.transcript[row.idx] = RowKind::Tool {
+                    tag: "○".to_string(),
+                    tag_style: Style::new().yellow(),
+                    label: row.label,
+                    label_style: Style::new().dim(),
+                    reserve: TOOL_ROW_RESERVE,
+                }
+                .into();
             }
         }
     }
@@ -1837,9 +2006,10 @@ impl App {
                     self.awaiting.push((id, run_id.to_string(), sub));
                     return;
                 }
-                let max = self.render_width().saturating_sub(6) as usize;
-                let label = truncate(&tool_activity(&name, &args), max);
-                let done = truncate(&tool_finished(&name, &args), max);
+                // Untruncated: every row that shows these clamps to the width it
+                // is drawn at, so they survive a resize either way.
+                let label = tool_activity(&name, &args);
+                let done = tool_finished(&name, &args);
                 if matches!(name.as_str(), "edit" | "write") {
                     // Record the touched path so the next checkpoint snapshots
                     // exactly this file instead of scanning the whole repo.
@@ -1851,7 +2021,13 @@ impl App {
                     self.finalize_tool_group();
                     self.flush_assistant();
                     self.gap(Kind::Tool);
-                    self.push(tool_row("▸", Style::new().cyan(), &label, Style::new().cyan().dim()));
+                    self.push_row(RowKind::Tool {
+                        tag: "▸".to_string(),
+                        tag_style: Style::new().cyan(),
+                        label: label.clone(),
+                        label_style: Style::new().cyan().dim(),
+                        reserve: TOOL_ROW_RESERVE,
+                    });
                     self.pending_rows.push(PendingToolRow {
                         id: id.clone(),
                         idx: self.transcript.len() - 1,
@@ -1902,19 +2078,15 @@ impl App {
                 } else {
                     ("✓", Style::new().green())
                 };
-                let max = self.render_width().saturating_sub(8) as usize;
+                let lang = diff.is_some().then(|| self.diff_paths.remove(&id)).flatten();
                 self.gap(Kind::Tool);
-                self.push(Line::from(vec![
-                    Span::styled("│   ", Style::new().dark_gray()),
-                    Span::styled(format!("{tag} "), tag_style),
-                    Span::styled(summarize_result(&content, max), Style::new().dim()),
-                ]));
-                if let Some(diff) = diff {
-                    let lang = self.diff_paths.remove(&id);
-                    for line in diff_lines(&diff, max, DIFF_MAX_ROWS, "│     ", lang.as_deref()) {
-                        self.push(line);
-                    }
-                }
+                self.push_row(RowKind::Result {
+                    tag,
+                    tag_style,
+                    content,
+                    diff,
+                    lang,
+                });
             }
             StreamEvent::PermissionRequest {
                 request_id,
@@ -2006,25 +2178,16 @@ impl App {
                 let total = calls.len();
                 self.gap(Kind::Tool);
                 let noun = if total == 1 { "call" } else { "calls" };
-                self.push(tool_row(
-                    "↲",
-                    Style::new().magenta().dim(),
-                    &format!("subagent {name} finished ({total} tool {noun})"),
-                    Style::new().magenta().dim(),
-                ));
+                self.push_row(RowKind::Tool {
+                    tag: "↲".to_string(),
+                    tag_style: Style::new().magenta().dim(),
+                    label: format!("subagent {name} finished ({total} tool {noun})"),
+                    label_style: Style::new().magenta().dim(),
+                    reserve: TOOL_ROW_RESERVE,
+                });
                 if total > 0 {
                     let idx = self.transcript.len() - 1;
-                    let detail = calls
-                        .into_iter()
-                        .map(|label| {
-                            Line::from(vec![
-                                Span::styled("│   ", Style::new().dark_gray()),
-                                Span::styled("▸ ", Style::new().magenta()),
-                                Span::styled(label, Style::new().dim()),
-                            ])
-                        })
-                        .collect();
-                    self.subagent_blocks.push(SubagentBlock { idx, detail });
+                    self.subagent_blocks.push(SubagentBlock { idx, calls });
                 }
             }
             StreamEvent::Subagent {
@@ -2066,8 +2229,8 @@ impl App {
             StreamEvent::ToolCall {
                 id, name: tool, args,
             } => {
-                let max = self.render_width().saturating_sub(6) as usize;
-                let label = truncate(&subagent_activity(&tool, &args), max);
+                // Stored untruncated; the panel clamps it to the draw width.
+                let label = subagent_activity(&tool, &args);
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     // The completed call supersedes its in-progress view.
                     if panel.active.as_ref().is_some_and(|c| c.id == id) {
@@ -2439,6 +2602,10 @@ const DIFF_PREVIEW_MAX_ROWS: usize = 20;
 
 /// Max chars shown for a bash/shell/exec command label in the transcript.
 const COMMAND_LABEL_MAX: usize = 80;
+
+/// Cells a `tool_row` spends on its gutter and tag, subtracted from the draw
+/// width to bound the label so the row never wraps.
+const TOOL_ROW_RESERVE: u16 = 6;
 
 /// Diff row backgrounds. Dark and desaturated on purpose: the syntax-highlighted
 /// foreground is drawn on top of them, so the tint has to read as added/removed
@@ -3033,7 +3200,7 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
             out.push(Line::from(vec![
                 Span::styled("│   ", Style::new().dark_gray()),
                 Span::styled("▸ ", Style::new().cyan()),
-                Span::styled(call.done.clone(), Style::new().dim()),
+                Span::styled(truncate(&call.done, max), Style::new().dim()),
             ]));
         }
         if let Some(content) = &call.content {
@@ -3822,10 +3989,8 @@ async fn chat_loop<B: Backend>(
                         )
                         .await;
                         // Remove the "auto-compacting..." note.
-                        app.transcript.retain(|l| {
-                            let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
-                            !text.contains("auto-compacting")
-                        });
+                        app.transcript
+                            .retain(|row| !row.plain_text().contains("auto-compacting"));
                         match compacted {
                             Ok(c) if c.len() < before => {
                                 history = c;
@@ -6120,6 +6285,10 @@ fn transcript_top_padding(total: u16, inner_h: u16) -> u16 {
 }
 
 fn draw(f: &mut Frame, app: &mut App) {
+    // Cached before anything reads it: the todo HUD sizes the layout, so a
+    // stale width would mis-size the frame a resize lands on. The body spans
+    // the full frame width (its border is top-only).
+    app.view_width = f.area().width.max(1);
     let input_h = input_box_height(app, f.area().width);
     // A multi-line todo tree HUD sits just below the header when todos exist and
     // no overlay is open, sized to its bounded row count. Kept out of the layout
@@ -6158,10 +6327,9 @@ fn draw(f: &mut Frame, app: &mut App) {
     // Drawn for every path (picker included) so the dock always reads the same.
     f.render_widget(Block::default().borders(Borders::TOP), raw[3]);
 
-    // Top/bottom borders only, so wrapping uses the full width; the two border
-    // rows reduce the vertical viewport. Cache the width so flushed tables wrap.
+    // Top border only, so wrapping uses the full width; the border row reduces
+    // the vertical viewport.
     let width = chunks[1].width.max(1);
-    app.view_width = width;
 
     if let Some(picker) = &app.picker {
         app.row_index.clear();
@@ -6178,21 +6346,22 @@ fn draw(f: &mut Frame, app: &mut App) {
     // row, so a mouse click can be mapped back to a region to toggle.
     let mut row_index: Vec<Option<usize>> = Vec::with_capacity(app.transcript.len());
     let mut reveal_at: Option<usize> = None;
-    for (i, line) in app.transcript.iter().enumerate() {
+    for (i, row) in app.transcript.iter().enumerate() {
         if app.reveal == Some(i) {
             reveal_at = Some(lines.len());
         }
-        if let Some(row) = app
+        // Every committed row re-renders at the current width, so a resize
+        // re-flows prose, re-boxes diffs and re-truncates labels.
+        let rendered = match app
             .tool_group
             .as_ref()
             .filter(|g| g.idx == i && g.is_running())
-            .map(|g| running_group_row(g, app.spinner_frame, width))
         {
-            lines.push(row);
-        } else {
-            lines.push(line.clone());
-        }
-        row_index.push(Some(i));
+            Some(g) => vec![running_group_row(g, app.spinner_frame, width)],
+            None => row.lines(width),
+        };
+        row_index.extend(std::iter::repeat_n(Some(i), rendered.len()));
+        lines.extend(rendered);
         if app.expanded.contains(&i) {
             // Detail rows map back to the same owning idx (not `None`), so a
             // click anywhere in an expanded block collapses it -- not just on
@@ -6217,7 +6386,7 @@ fn draw(f: &mut Frame, app: &mut App) {
                     app.subagent_blocks
                         .iter()
                         .find(|b| b.idx == i)
-                        .map(|block| block.detail.clone())
+                        .map(|block| block.detail_lines(width))
                 });
             if let Some(detail) = detail {
                 row_index.extend(std::iter::repeat_n(Some(i), detail.len()));
@@ -7026,7 +7195,7 @@ fn subagent_panel_lines(
 
         let start = panel.calls.len().saturating_sub(window);
         for label in &panel.calls[start..] {
-            out.push(indented_row(label.clone(), Style::new().dim()));
+            out.push(indented_row(truncate(label, task_width), Style::new().dim()));
         }
         // The call currently being assembled trails the finished ones, so the
         // row keeps moving through a long argument stream.
@@ -7566,7 +7735,7 @@ mod tests {
     use super::{
         age_closed_todos, apply_resume, assistant_is_awaiting_user_answer, build_user_message,
         clipboard_path,
-        diff_lines, group_activity, group_detail_lines, group_summary, handle_ask_key,
+        diff_lines, Row, group_activity, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
         compact_tokens, finish_login, finish_update_install, load_image_file, message_text,
         note_update, open_config_screen,
@@ -7760,8 +7929,23 @@ mod tests {
         assert!(transcript_text(&app).contains("0.8.4-11"));
     }
 
-    fn message_text_of(line: &Line<'static>) -> String {
-        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    fn message_text_of(row: &Row) -> String {
+        row_text(row)
+    }
+
+    /// Text a committed transcript row renders to at a nominal width, joined
+    /// across the lines a multi-line row (prose, a diff panel) expands to.
+    fn row_text(row: &Row) -> String {
+        row_lines(std::slice::from_ref(row))
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Every line the given rows render to at a nominal width.
+    fn row_lines(rows: &[Row]) -> Vec<Line<'static>> {
+        rows.iter().flat_map(|r| r.lines(80)).collect()
     }
 
     #[test]
@@ -7804,6 +7988,128 @@ mod tests {
         // Overflowing viewport: no padding, scrollback path stays untouched.
         assert_eq!(transcript_top_padding(45, 20), 0);
     }
+
+    /// Committed markdown keeps its source, so a resize re-wraps the table to
+    /// the new width instead of leaving rows sized for the old one.
+    #[test]
+    fn committed_prose_reflows_when_the_terminal_resizes() {
+        let mut app = test_app();
+        app.push_assistant_blocks(
+            "| column one heading | column two heading |\n|---|---|\n\
+             | a reasonably long value here | another reasonably long value |",
+        );
+        let wide = render_rows(&mut app, 100, 20);
+        let narrow = render_rows(&mut app, 46, 20);
+        let table_row = |rows: &[String]| {
+            rows.iter()
+                .find(|r| r.contains("column one"))
+                .expect("no table row")
+                .trim_end()
+                .to_string()
+        };
+        let (w, n) = (table_row(&wide), table_row(&narrow));
+        assert!(w.chars().count() > n.chars().count(), "table did not reflow: {w:?} vs {n:?}");
+        assert!(n.chars().count() <= 46, "table overflows the narrow frame: {n:?}");
+    }
+
+    /// The boxed diff panel is re-drawn at the current width, so its right
+    /// border still lands inside the frame after a shrink.
+    #[test]
+    fn a_committed_diff_panel_reboxes_on_resize() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "e1".into(),
+            name: "edit".into(),
+            args: json!({"path": "src/main.rs"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "e1".into(),
+            content: "edited".into(),
+            is_error: false,
+            diff: Some("@@ edit 1/1 @@\n-    let value = compute_something_long(1, 2, 3);\n+    let value = compute_something_much_longer(1, 2, 3, 4);".into()),
+        });
+        let border_width = |rows: &[String]| {
+            rows.iter()
+                .find(|r| r.contains('┌'))
+                .map(|r| r.trim_end().chars().count())
+                .expect("no diff panel")
+        };
+        let wide = border_width(&render_rows(&mut app, 100, 24));
+        let narrow_rows = render_rows(&mut app, 50, 24);
+        let narrow = border_width(&narrow_rows);
+        assert!(narrow < wide, "panel kept its old width: {narrow} vs {wide}");
+        assert!(narrow <= 50, "panel overflows the frame: {narrow}");
+        // Every panel row still closes inside the frame, so the box reads as a box.
+        for row in narrow_rows.iter().filter(|r| r.contains('│')) {
+            assert!(row.trim_end().chars().count() <= 50, "row overflows: {row:?}");
+        }
+    }
+
+    /// A tool row's label is stored untruncated and clamped at draw time, so it
+    /// grows back when the terminal widens rather than staying elided.
+    #[test]
+    fn tool_row_labels_retruncate_on_resize() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({"command": "echo the quick brown fox jumps over the lazy dog"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        // Close the group so its row reads as the finished command, not the
+        // live "running 1 command" throbber.
+        app.finalize_tool_group();
+        let label = |rows: &[String]| {
+            rows.iter()
+                .find(|r| r.contains("Ran: echo"))
+                .expect("no tool row")
+                .trim_end()
+                .to_string()
+        };
+        let narrow = label(&render_rows(&mut app, 40, 12));
+        let wide = label(&render_rows(&mut app, 100, 12));
+        assert!(narrow.contains('…'), "narrow row was not elided: {narrow:?}");
+        assert!(narrow.chars().count() <= 40, "narrow row overflows: {narrow:?}");
+        assert!(
+            wide.chars().count() > narrow.chars().count(),
+            "row did not grow back: {wide:?}"
+        );
+    }
+
+    /// Degenerate frames (a sliver of a terminal mid-drag) must render, not panic.
+    #[test]
+    fn tiny_frames_render_without_panicking() {
+        let mut app = test_app();
+        app.push_user_line("hello", &[]);
+        app.push_assistant_blocks("| a | b |\n|---|---|\n| 1 | 2 |\n\n```rs\nlet x = 1;\n```");
+        app.apply(StreamEvent::ToolResult {
+            id: "x".into(),
+            content: "done".into(),
+            is_error: false,
+            diff: Some("@@ edit 1/1 @@\n-a\n+b".into()),
+        });
+        let sizes = [(1, 1), (2, 3), (8, 4), (20, 6), (40, 2), (200, 80)];
+        for (w, h) in sizes {
+            render_rows(&mut app, w, h);
+        }
+        // The permission prompt grows upward from the input dock and sizes its
+        // diff preview from the frame, so it is the overlay most exposed to a
+        // frame that has just shrunk out from under it.
+        let mut p = pending(true);
+        p.diff = Some("@@ edit 1/1 @@\n-old line of code\n+new line of code".into());
+        p.path = Some("src/main.rs".into());
+        app.pending_queue.push_back(p);
+        for (w, h) in sizes {
+            render_rows(&mut app, w, h);
+        }
+    }
+
+
 
     #[test]
     fn always_label_is_command_scoped_for_exec() {
@@ -8632,7 +8938,7 @@ mod tests {
         assert_eq!(content[1]["type"], "image_url");
         assert!(app.pending_images.is_empty(), "pending images flushed");
 
-        let rendered: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let rendered: Vec<String> = app.transcript.iter().map(row_text).collect();
         assert!(rendered.iter().any(|l| l.contains("[IMAGE] shot.png")));
     }
 
@@ -8991,7 +9297,7 @@ mod tests {
         app.submit_user("hi".into());
         assert!(!app.want_start, "a fresh install must not start a turn with no model");
         assert!(app.history.is_empty());
-        let text: String = app.transcript.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.to_string()).collect();
+        let text: String = row_lines(&app.transcript).iter().flat_map(|l| l.spans.clone()).map(|s| s.content.to_string()).collect();
         assert!(text.contains("/login"), "{text}");
     }
 
@@ -9624,7 +9930,7 @@ mod tests {
         assert!(app
             .transcript
             .iter()
-            .any(|l| line_text(l).contains("subagent reviewer finished (1 tool call)")));
+            .any(|r| row_text(r).contains("subagent reviewer finished (1 tool call)")));
     }
 
     #[test]
@@ -9952,9 +10258,9 @@ mod tests {
             diff: Some("     1 | fn main() {\n-    2 | let x = 1;\n+    2 | let x = 2;".into()),
         });
         assert!(
-            !diff_syntax_colours(&app.transcript).is_empty(),
+            !diff_syntax_colours(&row_lines(&app.transcript)).is_empty(),
             "result diff not highlighted: {:?}",
-            app.transcript.iter().map(line_text).collect::<Vec<_>>()
+            app.transcript.iter().map(row_text).collect::<Vec<_>>()
         );
     }
 
@@ -10060,7 +10366,7 @@ mod tests {
             text: "Here is what I found so far".into(),
         });
         app.cancel_run();
-        let body: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let body: Vec<String> = app.transcript.iter().map(row_text).collect();
         let joined = body.join("\n");
         assert!(
             joined.contains("Here is what I found so far"),
@@ -10092,7 +10398,7 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": "grep -n foo src/" }),
         });
-        let running = line_text(app.transcript.last().unwrap());
+        let running = row_text(app.transcript.last().unwrap());
         assert!(running.contains("▸ Executing: grep"), "running: {running}");
         let before = app.transcript.len();
         app.apply(StreamEvent::ToolResult {
@@ -10105,7 +10411,7 @@ mod tests {
         assert_eq!(app.transcript.len(), before);
         // Finalizing (turn boundary / done) marks it complete on the same row.
         app.finalize_tool_group();
-        let row = line_text(app.transcript.last().unwrap());
+        let row = row_text(app.transcript.last().unwrap());
         assert!(row.contains("✓") && row.contains("Ran: grep"), "row: {row}");
         assert!(!row.contains("lines"), "row: {row}");
         assert!(app.tool_group.is_none());
@@ -10159,7 +10465,7 @@ mod tests {
             .transcript
             .iter()
             .rev()
-            .map(line_text)
+            .map(row_text)
             .find(|t| t.contains("Ran: grep"))
             .unwrap();
         assert!(row.contains("✓"), "row: {row}");
@@ -10194,7 +10500,7 @@ mod tests {
             diff: None,
         });
         app.finalize_tool_group();
-        let row = line_text(&app.transcript[app.groups[0].idx]);
+        let row = row_text(&app.transcript[app.groups[0].idx]);
         assert!(
             row.contains("✗") && !row.contains("✓"),
             "a failed call must not collapse to a success row: {row}"
@@ -10212,7 +10518,7 @@ mod tests {
         });
         let idx = app.tool_group.as_ref().unwrap().idx;
         app.cancel_run();
-        let row = line_text(&app.transcript[idx]);
+        let row = row_text(&app.transcript[idx]);
         assert!(
             !row.contains("✓"),
             "a cancelled command must not read as succeeded: {row}"
@@ -10230,9 +10536,9 @@ mod tests {
             args: json!({ "path": "foo.rs", "old_string": "a", "new_string": "b" }),
         });
         let idx = app.transcript.len() - 1;
-        assert!(line_text(&app.transcript[idx]).contains("▸"));
+        assert!(row_text(&app.transcript[idx]).contains("▸"));
         app.cancel_run();
-        let row = line_text(&app.transcript[idx]);
+        let row = row_text(&app.transcript[idx]);
         assert!(
             !row.contains("▸"),
             "cancelled edit still reads as in flight: {row}"
@@ -10257,7 +10563,7 @@ mod tests {
             diff: None,
         });
         app.cancel_run();
-        let row = line_text(&app.transcript[idx]);
+        let row = row_text(&app.transcript[idx]);
         assert!(
             row.contains("▸") && !row.contains("○"),
             "a resolved edit must keep its call row: {row}"
@@ -10285,7 +10591,7 @@ mod tests {
             text: "Found it.".into(),
         });
         app.apply(StreamEvent::Step { index: 2, max: 8 });
-        let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
         let prose = rows.iter().position(|r| r.contains("check the README")).unwrap();
         let tool = rows.iter().position(|r| r.contains("Ran: grep")).unwrap();
         let after = rows.iter().position(|r| r.contains("Found it")).unwrap();
@@ -10318,17 +10624,17 @@ mod tests {
         let tool_rows = app
             .transcript
             .iter()
-            .filter(|l| line_text(l).contains("Reading") || line_text(l).contains("Read "))
+            .filter(|r| row_text(r).contains("Reading") || row_text(r).contains("Read "))
             .count();
         assert_eq!(tool_rows, 1);
         // Every call has reported, so the row already reads as a finished
         // breakdown -- not "<latest> (4)", and not still-running until the
         // model speaks.
-        let row = line_text(app.transcript.last().unwrap());
+        let row = row_text(app.transcript.last().unwrap());
         assert!(row.contains("✓ Read 3 memory notes, 1 skill"), "row: {row}");
         // The model speaking closes the group without disturbing the row.
         app.apply(StreamEvent::Token { text: "Done.".into() });
-        let row = line_text(app.transcript.last().unwrap());
+        let row = row_text(app.transcript.last().unwrap());
         assert!(row.contains("✓ Read 3 memory notes, 1 skill"), "row: {row}");
     }
 
@@ -10464,7 +10770,7 @@ mod tests {
         });
         // No token has streamed yet: the row must already read as done rather
         // than sitting on the present-tense running form until prose arrives.
-        let row = line_text(&app.transcript[idx]);
+        let row = row_text(&app.transcript[idx]);
         assert!(row.contains("✓"), "status lagged behind the result: {row}");
         assert!(row.contains("Searched"), "row not past tense: {row}");
 
@@ -10474,7 +10780,7 @@ mod tests {
             name: "read".into(),
             args: json!({ "path": "main.rs" }),
         });
-        let row = line_text(&app.transcript[idx]);
+        let row = row_text(&app.transcript[idx]);
         assert!(row.contains("▸") && !row.contains("✓"), "row: {row}");
     }
 
@@ -10493,7 +10799,7 @@ mod tests {
             is_error: true,
             diff: None,
         });
-        let row = line_text(&app.transcript[idx]);
+        let row = row_text(&app.transcript[idx]);
         assert!(
             row.contains("✗") && !row.contains("✓"),
             "failure not shown at result time: {row}"
@@ -10523,7 +10829,7 @@ mod tests {
             diff: None,
         });
         assert!(app.tool_group.as_ref().unwrap().is_running());
-        let row = line_text(&app.transcript[idx]);
+        let row = row_text(&app.transcript[idx]);
         assert!(!row.contains("✓"), "resolved early: {row}");
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
@@ -10532,7 +10838,7 @@ mod tests {
             diff: None,
         });
         assert!(!app.tool_group.as_ref().unwrap().is_running());
-        assert!(line_text(&app.transcript[idx]).contains("✓"));
+        assert!(row_text(&app.transcript[idx]).contains("✓"));
     }
 
     #[test]
@@ -10688,7 +10994,7 @@ mod tests {
             .transcript
             .iter()
             .filter(|l| {
-                let t = line_text(l);
+                let t = row_text(l);
                 t.contains("Executing") || t.contains("Running") || t.contains("Ran")
             })
             .count();
@@ -10697,7 +11003,7 @@ mod tests {
         let row = app
             .transcript
             .iter()
-            .map(line_text)
+            .map(row_text)
             .find(|t| t.contains("Ran "))
             .unwrap();
         assert!(row.contains("✓ Ran 3 commands"), "row: {row}");
@@ -10726,7 +11032,7 @@ mod tests {
         assert!(app.assistant_buf.is_empty());
         // Reasoning folds to a collapsed summary row (raw thought hidden), which
         // still lands above the tool row it preceded (emission order).
-        let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
         assert!(
             !rows.iter().any(|r| r.contains("let me look")),
             "raw reasoning must be hidden by default: {rows:?}"
@@ -10752,7 +11058,7 @@ mod tests {
             text: "<think>thinking</think>Hi there!".into(),
         });
         app.apply(StreamEvent::Step { index: 1, max: 8 });
-        let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
         let think_at = rows.iter().position(|r| r.contains("reasoning (1 line)")).unwrap();
         let prose_at = rows.iter().position(|r| r.contains("Hi there!")).unwrap();
         assert!(think_at < prose_at);
@@ -10772,7 +11078,7 @@ mod tests {
         // A turn boundary commits the buffer.
         app.apply(StreamEvent::Step { index: 1, max: 8 });
 
-        let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
         assert!(rows.iter().any(|r| r.contains("reasoning (2 lines)")));
         assert!(rows.iter().any(|r| r.contains("The answer is 42")));
         // Raw reasoning is hidden until expanded.
@@ -10808,7 +11114,7 @@ mod tests {
             .transcript
             .iter()
             .filter(|l| {
-                let t = line_text(l);
+                let t = row_text(l);
                 t.contains("Executing") || t.contains("Running") || t.contains("Ran ")
             })
             .count();
@@ -10820,7 +11126,7 @@ mod tests {
         let row = app
             .transcript
             .iter()
-            .map(line_text)
+            .map(row_text)
             .find(|t| t.contains("Ran "))
             .unwrap();
         assert!(row.contains("✓ Ran 3 commands"), "row: {row}");
@@ -10836,7 +11142,7 @@ mod tests {
         assert!(!app
             .transcript
             .iter()
-            .any(|l| line_text(l).contains("finished")));
+            .any(|l| row_text(l).contains("finished")));
     }
 
     #[test]
@@ -10849,7 +11155,7 @@ mod tests {
         let warn = app
             .transcript
             .iter()
-            .map(line_text)
+            .map(row_text)
             .find(|t| t.contains("finished early"))
             .unwrap();
         assert!(warn.contains("length"), "warn: {warn}");
@@ -10866,7 +11172,7 @@ mod tests {
         assert!(app
             .transcript
             .iter()
-            .any(|l| line_text(l).contains("finished with no answer")));
+            .any(|l| row_text(l).contains("finished with no answer")));
     }
 
     #[test]
@@ -10902,7 +11208,7 @@ mod tests {
             .transcript
             .iter()
             .filter(|l| {
-                let t = line_text(l);
+                let t = row_text(l);
                 t.contains("Executing") || t.contains("Running") || t.contains("Ran")
             })
             .count();
@@ -10929,7 +11235,7 @@ mod tests {
         let joined: String = app
             .transcript
             .iter()
-            .map(|l| line_text(l))
+            .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains("Editing a.txt"), "{joined}");
@@ -10968,7 +11274,7 @@ mod tests {
         let joined: String = fresh
             .transcript
             .iter()
-            .map(|l| line_text(l))
+            .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains("first") && joined.contains("reply"), "{joined}");
@@ -10989,7 +11295,7 @@ mod tests {
         let joined: String = app
             .transcript
             .iter()
-            .map(|l| line_text(l))
+            .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains(super::super::NO_SESSION_TO_RESUME), "{joined}");
@@ -11052,7 +11358,7 @@ mod tests {
         let mut app = test_app();
         app.history.push(json!({ "role": "user", "content": "hi" }));
         run_command(&mut app, "compact").await;
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("compaction unavailable"), "got: {text}");
         // History untouched when no session is attached.
         assert_eq!(app.history.len(), 1);
@@ -11304,7 +11610,7 @@ mod tests {
         assert_eq!(app.turn_prompt_tokens, 40_000);
 
         app.on_done("stop".into(), None);
-        let out: String = app.transcript.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        let out: String = app.transcript.iter().map(row_text).collect::<Vec<_>>().join("\n");
         assert!(out.contains("40K"), "input tokens missing: {out}");
         assert!(out.contains("1.5K"), "summed output missing: {out}");
         assert!(out.contains("/s"), "rate missing: {out}");
@@ -11603,7 +11909,7 @@ mod tests {
     async fn help_lists_every_keybinding() {
         let mut app = test_app();
         run_command(&mut app, "help").await;
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         for (keys, description) in KEY_BINDINGS {
             assert!(text.contains(keys), "missing keys {keys:?} in: {text}");
             assert!(
@@ -11733,7 +12039,7 @@ mod tests {
         app.goal = Some(crate::core::agent::goal::GoalState::new("x"));
         run_command(&mut app, "goal clear").await;
         assert!(app.goal.is_none());
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("goal cleared"), "missing note: {text}");
     }
 
@@ -11742,7 +12048,7 @@ mod tests {
         let mut app = test_app();
         run_command(&mut app, "goal clear").await;
         assert!(app.goal.is_none());
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("no active goal"), "missing note: {text}");
     }
 
@@ -11754,7 +12060,7 @@ mod tests {
         goal.last_reason = "two files still modified".into();
         app.goal = Some(goal);
         run_command(&mut app, "goal").await;
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("make git status clean"), "condition: {text}");
         assert!(text.contains("turns: 3"), "turn count: {text}");
         assert!(text.contains("two files still modified"), "reason: {text}");
@@ -11764,7 +12070,7 @@ mod tests {
     async fn goal_status_with_no_goal_notes() {
         let mut app = test_app();
         run_command(&mut app, "goal").await;
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("no active goal"), "missing note: {text}");
     }
 
@@ -11878,7 +12184,7 @@ mod tests {
         app.status = Status::Running;
         run_command(&mut app, "plan").await;
         assert_eq!(app.run_mode, RunMode::Normal, "must not switch mid-turn");
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("only settable while idle"), "note: {text}");
     }
 
@@ -11889,7 +12195,7 @@ mod tests {
         run_command(&mut app, "plan make a html cat slide. use 3 subagents to research").await;
         assert_eq!(app.run_mode, RunMode::Plan, "text arg must also enter plan mode");
         assert_eq!(app.status, Status::Running, "seeded text must start a turn");
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(
             text.contains("make a html cat slide"),
             "seeded text must render as the user's message: {text}"
@@ -11904,7 +12210,7 @@ mod tests {
         run_command(&mut app, "plan investigate the auth module").await;
         assert_eq!(app.run_mode, RunMode::Plan);
         assert_eq!(app.status, Status::Running);
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("investigate the auth module"), "{text}");
     }
 
@@ -11977,7 +12283,7 @@ mod tests {
         assert!(injected.contains("unfinished todos"), "got: {injected}");
         assert!(injected.contains("t1") && injected.contains("t2"));
         // The reminder is hidden: no user-authored `› ` row in the transcript.
-        let rows: String = app.transcript.iter().map(line_text).collect();
+        let rows: String = app.transcript.iter().map(row_text).collect();
         assert!(!rows.contains("› "), "reminder must not render as a user row");
     }
 
@@ -12412,7 +12718,7 @@ mod tests {
         // Atomic handoff: no staged plan => stay in Plan, no continuation.
         assert_eq!(app.run_mode, RunMode::Plan);
         assert!(app.message_queue.is_empty());
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("no plan staged"), "note: {text}");
     }
 
@@ -12506,7 +12812,7 @@ mod tests {
         assert!(app.history.is_empty());
         assert!(app.thread_id.is_none(), "must detach from the saved thread");
         assert_eq!(app.tokens, 0);
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(!text.contains("old content"), "transcript not reset: {text}");
         assert!(text.contains("started a new session"), "missing note: {text}");
     }
