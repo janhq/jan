@@ -43,6 +43,16 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      - name: Install Linux native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libdbus-1-dev
+
+      - name: Verify DBus development package
+        run: |
+          pkg-config --exists dbus-1
+          echo "Found dbus-1 $(pkg-config --modversion dbus-1)"
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
