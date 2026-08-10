@@ -9,7 +9,8 @@
 pub enum StreamEvent {
     /// A streamed content delta from the model.
     Token { text: String },
-    /// A new orchestration turn began (`index` is 1-based, `max` = max_turns).
+    /// A new orchestration turn began (`index` is 1-based; `max` is the turn
+    /// cap, `0` when the run is unbounded, which is the normal case).
     Step { index: u32, max: u32 },
     /// A tool call started streaming: emitted mid-stream the instant the model's
     /// tool-call `id` and `name` are known, before its arguments finish

@@ -82,10 +82,10 @@ tool-call window. Add a distinct `queued` state:
 
 Today `/config` is read-only and shows only `~/.jan/config.toml` providers.
 Extend it (or add `/settings`) to edit `[agent]` keys, starting with
-`max_parallel_subagents`, ideally the full set (`max_turns`,
-`context_window`, `compaction_reserve_tokens`, `max_tokens`,
-`instructions_file`). Writes go through the same `agent.toml` writer the CLI
-uses; input validated (integer, >= 1).
+`max_parallel_subagents`, ideally the full set (`context_window`,
+`compaction_reserve_tokens`, `max_tokens`, `instructions_file`). Writes go
+through the same `agent.toml` writer the CLI uses; input validated (integer,
+>= 1).
 
 ## Out of scope
 

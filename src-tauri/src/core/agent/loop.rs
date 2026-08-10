@@ -844,6 +844,10 @@ impl ToolInvoker for CompositeToolInvoker {
 /// API-server entry point. Preserves the original single-final-JSON contract by
 /// running the streamed loop with a discarded event sink. Desktop-only: the
 /// `cli` build has no proxy server.
+///
+/// An HTTP client has no way to cancel mid-run, so this is the one path that
+/// keeps a turn cap: a body that doesn't ask for one gets
+/// [`PROXY_DEFAULT_MAX_TURNS`] rather than the unbounded default.
 #[cfg(not(feature = "cli"))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_server_side_openai_orchestration(
@@ -876,8 +880,26 @@ pub(crate) async fn run_server_side_openai_orchestration(
         auto_approve: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
     };
-    run_orchestration_streamed(&tx, json_body, &args).await
+    let body = match json_body.get("max_turns") {
+        Some(_) => std::borrow::Cow::Borrowed(json_body),
+        None => {
+            let mut b = json_body.clone();
+            if let Some(map) = b.as_object_mut() {
+                map.insert(
+                    "max_turns".to_string(),
+                    serde_json::json!(PROXY_DEFAULT_MAX_TURNS),
+                );
+            }
+            std::borrow::Cow::Owned(b)
+        }
+    };
+    run_orchestration_streamed(&tx, &body, &args).await
 }
+
+/// Turn cap applied to an API-server run whose body doesn't set one. Small on
+/// purpose: nothing on that path can interrupt a loop that never converges.
+#[cfg(not(feature = "cli"))]
+const PROXY_DEFAULT_MAX_TURNS: u64 = 8;
 
 /// Streaming entry point. Emits `Step`/`ToolCall`/`ToolResult` progress events
 /// and exactly one terminal `Done`/`Error` derived from the final result, while
@@ -1339,13 +1361,7 @@ async fn orchestrate_inner(
     )
     .await?;
 
-    // Explicit values pass through unclamped; `0` means unbounded (guarded by
-    // the session token budget and cancellation). Absent falls back to 8 for
-    // the proxy path, which has no interactive cancel.
-    let max_turns = json_body
-        .get("max_turns")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(8) as usize;
+    let max_turns = body_turn_cap(json_body);
 
     let http_model = HttpModelInvoker {
         client: client.clone(),
@@ -1358,7 +1374,7 @@ async fn orchestrate_inner(
         mcp_settings: mcp_settings.clone(),
     };
 
-    let max_session_tokens = json_body.get("max_session_tokens").and_then(|v| v.as_u64());
+    let max_session_tokens = body_session_budget(json_body);
     let mut budget = SessionBudget::new(max_session_tokens);
 
     if let Some(root) = project_root {
@@ -1555,6 +1571,26 @@ async fn open_todo_summary(
     todo_registry?.lock().await.open_summary()
 }
 
+/// Turn cap for a request body. No cap by default: the agent runs as long as
+/// the task needs, guarded by the session token budget and cancellation.
+/// `max_turns` survives only for callers that have neither guard (`jan cli
+/// agent step`, the API-server proxy); `0` and absent both mean unbounded.
+fn body_turn_cap(json_body: &serde_json::Value) -> usize {
+    json_body
+        .get("max_turns")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as usize
+}
+
+/// Token-spend ceiling for a request body, the real bound on run length.
+/// `0` is the explicit "no ceiling" encoding, matching `max_turns`.
+fn body_session_budget(json_body: &serde_json::Value) -> Option<u64> {
+    json_body
+        .get("max_session_tokens")
+        .and_then(|v| v.as_u64())
+        .filter(|v| *v > 0)
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_turn_cycle(
     events: &mpsc::UnboundedSender<StreamEvent>,
@@ -1573,9 +1609,9 @@ async fn run_turn_cycle(
     // instead of an easily-ignored suggestion. `None` for every later turn.
     force_first_tool: Option<&str>,
 ) -> Result<serde_json::Value, String> {
-    // `max_turns == 0` means unbounded: the session token budget and user
-    // cancellation are the real guards, so an interactive run isn't cut off
-    // mid-task by a fixed turn cap.
+    // `max_turns == 0` is the normal case: the session token budget and user
+    // cancellation are the real guards, so a run isn't cut off mid-task by a
+    // fixed turn cap.
     let unlimited = max_turns == 0;
     let mut turn: usize = 0;
     // Mid-run todo upkeep: after a long uninterrupted run of mutating tool
@@ -1868,7 +1904,7 @@ async fn run_turn_cycle(
     }
 
     Err(format!(
-        "reached the {max_turns}-turn limit while the model was still calling tools; raise --max-turns (or set 0 for unbounded) to let it finish"
+        "reached the {max_turns}-turn limit while the model was still calling tools"
     ))
 }
 
@@ -2612,6 +2648,23 @@ mod tests {
             .unwrap();
 
         assert_eq!(result["choices"][0]["message"]["content"], "done");
+    }
+
+    #[test]
+    fn absent_turn_cap_is_unbounded() {
+        assert_eq!(body_turn_cap(&json!({})), 0);
+        assert_eq!(body_turn_cap(&json!({ "max_turns": 0 })), 0);
+        assert_eq!(body_turn_cap(&json!({ "max_turns": 3 })), 3);
+    }
+
+    #[test]
+    fn session_budget_treats_zero_and_absent_as_no_ceiling() {
+        assert_eq!(body_session_budget(&json!({})), None);
+        assert_eq!(body_session_budget(&json!({ "max_session_tokens": 0 })), None);
+        assert_eq!(
+            body_session_budget(&json!({ "max_session_tokens": 128_000 })),
+            Some(128_000)
+        );
     }
 
     #[test]

@@ -51,9 +51,6 @@ struct Cli {
     /// Model ID overriding [agent].model in agent.toml (bare TUI only)
     #[arg(long)]
     model: Option<String>,
-    /// Max turns per message, clamped 1..=400 (bare TUI only)
-    #[arg(long)]
-    max_turns: Option<u32>,
     /// Image file to attach to the first message, repeatable (bare TUI only)
     #[arg(long = "image")]
     images: Vec<String>,
@@ -194,7 +191,7 @@ impl ProviderArgs {
 
 #[derive(Subcommand)]
 enum AgentCommands {
-    /// Run the agent loop to completion or the turn/token budget
+    /// Run the agent loop to completion or the session token budget
     Run {
         /// Project root containing .jan/agent/agent.toml
         #[arg(long, default_value = ".")]
@@ -204,9 +201,6 @@ enum AgentCommands {
         /// Model ID (overrides [agent].model in agent.toml)
         #[arg(long)]
         model: Option<String>,
-        /// Max turns (overrides [agent].max_turns; clamped 1..=400)
-        #[arg(long)]
-        max_turns: Option<u32>,
         /// Prompt for approval before writes, shell commands, and MCP tool calls
         #[arg(long)]
         safe: bool,
@@ -385,7 +379,6 @@ async fn main() {
             &cli.project,
             cli.task,
             cli.model,
-            cli.max_turns,
             cli.images,
             overrides,
             !cli.safe,
@@ -474,7 +467,6 @@ async fn handle_agent(cmd: AgentCommands) {
             project,
             task,
             model,
-            max_turns,
             safe,
             providers,
             resume,
@@ -483,7 +475,6 @@ async fn handle_agent(cmd: AgentCommands) {
                 &project,
                 &task,
                 model,
-                max_turns,
                 providers.into_overrides(),
                 !safe,
                 resume.into_target(),

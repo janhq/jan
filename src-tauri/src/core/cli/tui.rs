@@ -39,7 +39,7 @@ use markdown::{
     format_markdown_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
 };
 
-use super::{sort_threads_recent, AgentSession, ResumeTarget};
+use super::{sort_threads_recent, AgentSession, ResumeTarget, SessionLimits};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs, PermissionRegistry};
@@ -526,7 +526,6 @@ struct App {
     /// Orchestration handle for out-of-run model calls (the `/compact` command).
     /// `None` in unit tests, set by `run` for the live session.
     args: Option<Arc<OrchestrationArgs>>,
-    max_turns: u32,
     /// Context window limit for the current model (default 128K).
     context_window: u64,
     /// Tokens to reserve for the model's response (compaction triggers at limit - reserve).
@@ -534,6 +533,9 @@ struct App {
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     max_tokens: Option<u64>,
+    /// Token-spend ceiling for one message's run; `0` is unbounded. The only
+    /// cap on run length -- there is no turn limit.
+    max_session_tokens: u64,
     /// Repo top-level when the project is a git repo; enables workspace snapshots.
     /// Cleared if git setup fails, permanently disabling snapshots this session.
     repo_root: Option<PathBuf>,
@@ -836,10 +838,7 @@ impl App {
     #[allow(clippy::too_many_arguments)]
     fn new(
         model: String,
-        max_turns: u32,
-        context_window: u64,
-        reserve_tokens: u64,
-        max_tokens: Option<u64>,
+        limits: SessionLimits,
         show_reasoning: bool,
         agent_dir: std::path::PathBuf,
         project_root: PathBuf,
@@ -852,10 +851,10 @@ impl App {
             goal_eval_pending: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             args: None,
-            max_turns,
-            context_window,
-            reserve_tokens,
-            max_tokens,
+            context_window: limits.context_window,
+            reserve_tokens: limits.reserve_tokens,
+            max_tokens: limits.max_tokens,
+            max_session_tokens: limits.max_session_tokens,
             repo_root,
             git_branch: git::current_branch(&project_root),
             project_root,
@@ -1606,7 +1605,7 @@ impl App {
         let mut body = serde_json::json!({
             "model": self.model,
             "messages": self.history,
-            "max_turns": self.max_turns,
+            "max_session_tokens": self.max_session_tokens,
             "stream": true,
         });
         // Forward the per-request output cap only when configured; it reaches
@@ -3481,10 +3480,7 @@ pub async fn run(
         permission_requests,
         model,
         smol_model,
-        max_turns,
-        context_window,
-        reserve_tokens,
-        max_tokens,
+        limits,
         show_reasoning,
         mcp_servers,
         mcp_task,
@@ -3522,7 +3518,14 @@ pub async fn run(
     // A git repo enables workspace snapshots (rewind can restore files); a
     // non-repo runs exactly as before with conversation-only rewind.
     let repo_root = git::repo_root(&project_root);
-    let mut app = App::new(model, max_turns, context_window, reserve_tokens, max_tokens, show_reasoning, agent_dir, project_root, repo_root);
+    let mut app = App::new(
+        model,
+        limits,
+        show_reasoning,
+        agent_dir,
+        project_root,
+        repo_root,
+    );
     app.smol_model = smol_model;
     app.args = Some(args.clone());
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
@@ -4819,12 +4822,6 @@ enum AgentSettingKind {
 
 const AGENT_SETTINGS: &[AgentSettingDef] = &[
     AgentSettingDef {
-        key: "max_turns",
-        label: "max_turns",
-        desc: "turns per message, clamped 1-400",
-        kind: AgentSettingKind::Int { default: Some(400), min: 1 },
-    },
-    AgentSettingDef {
         key: "context_window",
         label: "context_window",
         desc: "context limit in tokens",
@@ -4855,16 +4852,10 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         kind: AgentSettingKind::Text { default: "AGENT.md" },
     },
     AgentSettingDef {
-        key: "budget.max_steps",
-        label: "budget.max_steps",
-        desc: "max tool-call steps per run",
-        kind: AgentSettingKind::Int { default: Some(40), min: 1 },
-    },
-    AgentSettingDef {
         key: "budget.max_tokens",
         label: "budget.max_tokens",
-        desc: "max tokens budget per run",
-        kind: AgentSettingKind::Int { default: Some(200000), min: 1 },
+        desc: "token-spend ceiling per run; the only cap on run length",
+        kind: AgentSettingKind::Int { default: Some(128000), min: 0 },
     },
     AgentSettingDef {
         key: "tools.default",
@@ -7571,6 +7562,7 @@ fn footer(app: &App) -> Paragraph<'static> {
 
 #[cfg(test)]
 mod tests {
+    use super::SessionLimits;
     use super::{
         age_closed_todos, apply_resume, assistant_is_awaiting_user_answer, build_user_message,
         clipboard_path,
@@ -7616,7 +7608,20 @@ mod tests {
             std::process::id(),
             uuid::Uuid::new_v4()
         ));
-        App::new("m".into(), 8, 128_000, 16_384, None, false, agent_dir, std::path::PathBuf::from("/tmp/repo"), None)
+        let limits = SessionLimits {
+            context_window: 128_000,
+            reserve_tokens: 16_384,
+            max_tokens: None,
+            max_session_tokens: 128_000,
+        };
+        App::new(
+            "m".into(),
+            limits,
+            false,
+            agent_dir,
+            std::path::PathBuf::from("/tmp/repo"),
+            None,
+        )
     }
 
     /// Draw `app` into an off-screen terminal and return its rows as strings.
@@ -9291,7 +9296,7 @@ mod tests {
         // A minimal agent.toml so the picker shows a real current value.
         std::fs::create_dir_all(&app.agent_dir).unwrap();
         let toml_path = app.agent_dir.join("agent.toml");
-        std::fs::write(&toml_path, "[agent]\nmax_turns = 8\n").unwrap();
+        std::fs::write(&toml_path, "[agent]\ncontext_window = 64000\n").unwrap();
 
         super::settings_command(&mut app, "max_parallel_subagents 20");
         let doc = std::fs::read_to_string(&toml_path).unwrap();
@@ -9299,7 +9304,10 @@ mod tests {
             doc.contains("max_parallel_subagents = 20"),
             "key written: {doc}"
         );
-        assert!(doc.contains("max_turns = 8"), "other keys preserved: {doc}");
+        assert!(
+            doc.contains("context_window = 64000"),
+            "other keys preserved: {doc}"
+        );
 
         // Zero is invalid: rejected, file unchanged.
         super::settings_command(&mut app, "max_parallel_subagents 0");
@@ -9319,9 +9327,9 @@ mod tests {
         let row = picker
             .items
             .iter()
-            .find(|i| i.value == "max_turns")
-            .expect("max_turns row present");
-        assert_eq!(row.hint.as_deref(), Some("= 8"));
+            .find(|i| i.value == "context_window")
+            .expect("context_window row present");
+        assert_eq!(row.hint.as_deref(), Some("= 64000"));
         let row = picker
             .items
             .iter()
@@ -9336,21 +9344,21 @@ mod tests {
         let mut app = test_app();
         std::fs::create_dir_all(&app.agent_dir).unwrap();
         let toml_path = app.agent_dir.join("agent.toml");
-        std::fs::write(&toml_path, "[agent]\nmax_turns = 8\n").unwrap();
+        std::fs::write(&toml_path, "[agent]\ncontext_window = 64000\n").unwrap();
 
         super::settings_command(&mut app, "");
-        // Select the max_turns row (index 0) and press x: the key must be
+        // Select the context_window row (index 0) and press x: the key must be
         // removed, the row hint flip back to (unset), the note rendered.
         press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
         let doc = std::fs::read_to_string(&toml_path).unwrap();
-        assert!(!doc.contains("max_turns = 8"), "key removed: {doc}");
-        assert!(transcript_text(&app).contains("max_turns unset"));
+        assert!(!doc.contains("context_window = 64000"), "key removed: {doc}");
+        assert!(transcript_text(&app).contains("context_window unset"));
         let picker = app.picker.as_ref().expect("picker stays open");
         let row = picker
             .items
             .iter()
-            .find(|i| i.value == "max_turns")
-            .expect("max_turns row present");
+            .find(|i| i.value == "context_window")
+            .expect("context_window row present");
         assert_eq!(row.hint.as_deref(), Some("(unset)"));
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
@@ -9415,16 +9423,19 @@ mod tests {
         let mut app = test_app();
         std::fs::create_dir_all(&app.agent_dir).unwrap();
         let toml_path = app.agent_dir.join("agent.toml");
-        std::fs::write(&toml_path, "[agent]\nmax_turns = 8\n").unwrap();
+        std::fs::write(&toml_path, "[agent]\ncontext_window = 8\n").unwrap();
 
-        let def = AGENT_SETTINGS.iter().find(|d| d.key == "max_turns").unwrap();
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "context_window")
+            .unwrap();
         app.settings_prompt = Some(super::SettingsPrompt::new(def, Some("8")));
         super::handle_settings_key(&mut app, key(KeyCode::Backspace), false);
         super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
         assert!(app.settings_prompt.is_none());
         let doc = std::fs::read_to_string(&toml_path).unwrap();
-        assert!(!doc.contains("max_turns = 8"), "key removed: {doc}");
-        assert!(transcript_text(&app).contains("max_turns unset"));
+        assert!(!doc.contains("context_window = 8"), "key removed: {doc}");
+        assert!(transcript_text(&app).contains("context_window unset"));
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
@@ -12678,6 +12689,20 @@ mod tests {
         app.max_tokens = Some(4096);
         let body = app.body();
         assert_eq!(body.get("max_tokens").and_then(|v| v.as_u64()), Some(4096));
+    }
+
+    /// The session token budget is the only cap: it is always forwarded, and no
+    /// turn limit is sent at all.
+    #[test]
+    fn body_forwards_session_budget_and_no_turn_cap() {
+        let mut app = test_app();
+        app.max_session_tokens = 64_000;
+        let body = app.body();
+        assert_eq!(
+            body.get("max_session_tokens").and_then(|v| v.as_u64()),
+            Some(64_000)
+        );
+        assert!(body.get("max_turns").is_none());
     }
 }
 

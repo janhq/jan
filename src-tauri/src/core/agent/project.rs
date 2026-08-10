@@ -6,14 +6,16 @@ use serde::Deserialize;
 
 use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
 
-/// `[tools]` is always modeled. `[agent]` is only compiled for the CLI (its
-/// sole consumer, via `jan cli agent run/step/status`); serde still ignores the
-/// remaining deferred sections (`[budget]`/`[skills]`).
+/// `[tools]`/`[skills]` are always modeled. `[agent]` and `[budget]` are only
+/// compiled for the CLI (their sole consumer, via `jan cli agent run/step/status`).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct AgentToml {
     #[cfg(feature = "cli")]
     #[serde(default)]
     pub agent: AgentSection,
+    #[cfg(feature = "cli")]
+    #[serde(default)]
+    pub budget: BudgetSection,
     #[cfg(feature = "cli")]
     #[serde(default)]
     pub provider: Option<ProviderSection>,
@@ -50,15 +52,24 @@ pub(crate) struct SkillsSection {
     pub enabled: Vec<String>,
 }
 
-/// `[agent]` — resolves the model and default turn cap for CLI agent runs.
-/// `max_turns` is a soft default; the loop clamps it to 1..=400.
+/// `[budget]` — the only cap on how long a run may go. The agent takes as many
+/// turns as the task needs; `max_tokens` bounds the run's *marginal* token
+/// spend (see `SessionBudget`: replayed context is not recharged each turn).
+/// Unset applies `DEFAULT_MAX_SESSION_TOKENS`; an explicit `0` disables the
+/// ceiling, leaving cancellation as the only guard.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct BudgetSection {
+    #[serde(default)]
+    pub max_tokens: Option<u64>,
+}
+
+/// `[agent]` — resolves the model and per-run knobs for CLI agent runs.
 #[cfg(feature = "cli")]
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct AgentSection {
     #[serde(default)]
     pub model: Option<String>,
-    #[serde(default)]
-    pub max_turns: Option<u32>,
     /// Context window limit in tokens for the model (defaults to 128K if unset).
     /// Set this to match your model's actual context length so compaction
     /// triggers at the right threshold.
@@ -115,7 +126,6 @@ pub(crate) struct ToolsSection {
 
 const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # model = "Jan-V4"
-max_turns = 400
 # context_window = 128000  # tokens; defaults to 128K if unset
 # compaction_reserve_tokens = 16384  # headroom before auto-compaction; defaults to 16K
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
@@ -132,9 +142,11 @@ instructions_file = "AGENT.md"
 # base_url = "https://api.openai.com/v1"
 # models = ["gpt-4o"]
 
+# The run's only cap: new token spend across all turns (replayed context is not
+# recharged each turn). There is no turn limit. Defaults to 128000 when unset;
+# 0 disables the cap so the agent runs until the task is done or cancelled.
 [budget]
-max_steps = 40
-max_tokens = 200000
+# max_tokens = 128000
 
 [tools]
 # read-only | deny | allow. read-only (default) exposes MCP tools and built-in
@@ -344,9 +356,14 @@ mod tests {
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
+    /// The pid keeps the path unique across concurrently-running test binaries
+    /// (the `cli` and `tauri` feature configs both compile this module), which a
+    /// per-process counter alone does not: a leftover root from one run makes
+    /// `ensure_project` skip scaffolding in the next.
     fn unique_root(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let root = std::env::temp_dir().join(format!("jan_agent_test_{tag}_{n}"));
+        let pid = std::process::id();
+        let root = std::env::temp_dir().join(format!("jan_agent_test_{tag}_{pid}_{n}"));
         std::fs::create_dir_all(&root).expect("create test project root");
         root
     }
@@ -535,31 +552,48 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn dotted_keys_write_and_remove_under_their_section() {
         let root = unique_root("dotted");
         ensure_project(&root).expect("scaffold");
         let path = agent_toml_path(&root);
 
-        set_agent_key(&path, "budget.max_steps", Some(toml_edit::value(60i64))).expect("write");
+        set_agent_key(&path, "budget.max_tokens", Some(toml_edit::value(60i64))).expect("write");
         let raw = std::fs::read_to_string(&path).unwrap();
-        assert!(raw.contains("max_steps = 60"), "written under [budget]: {raw}");
+        assert!(raw.contains("max_tokens = 60"), "written under [budget]: {raw}");
 
-        set_agent_key(&path, "budget.max_steps", None).expect("unset");
+        set_agent_key(&path, "budget.max_tokens", None).expect("unset");
         let raw = std::fs::read_to_string(&path).unwrap();
-        assert!(!raw.contains("max_steps = 60"), "removed: {raw}");
+        assert!(!raw.contains("max_tokens = 60"), "removed: {raw}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn full_template_parses_ignoring_deferred_sections() {
+    fn full_template_parses() {
         let root = unique_root("full");
         ensure_project(&root).expect("scaffold");
-        // The template carries [agent]/[budget]/[skills] we don't model yet;
-        // parsing must succeed and read [tools].
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.tools.default.as_deref(), Some("read-only"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The scaffold leaves the key commented out, so a fresh project picks up
+    /// `DEFAULT_MAX_SESSION_TOKENS` rather than a hardcoded template value.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn scaffold_template_leaves_session_budget_unset() {
+        let cfg: AgentToml =
+            toml::from_str(AGENT_TOML_TEMPLATE).expect("scaffold template parses");
+        assert_eq!(cfg.budget.max_tokens, None);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn budget_max_tokens_parses_when_set() {
+        let cfg: AgentToml =
+            toml::from_str("[budget]\nmax_tokens = 200000\n").expect("parses");
+        assert_eq!(cfg.budget.max_tokens, Some(200_000));
     }
 
     #[cfg(feature = "cli")]
