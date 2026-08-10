@@ -37,7 +37,7 @@ const USER_AGENT: &str = "jan-agent-plugin-manager";
 
 /// An installed plugin, from its directory plus optional manifest.
 #[derive(Debug, serde::Serialize, Clone)]
-pub(crate) struct InstalledPlugin {
+pub struct InstalledPlugin {
     pub name: String,
     pub description: String,
     pub version: String,
@@ -48,7 +48,7 @@ pub(crate) struct InstalledPlugin {
 
 /// A plugin available on the configured marketplace: JSON index entry.
 #[derive(serde::Serialize, Deserialize, Clone)]
-pub(crate) struct MarketEntry {
+pub struct MarketEntry {
     pub name: String,
     pub description: String,
     pub repo: String,

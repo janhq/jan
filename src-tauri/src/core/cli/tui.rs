@@ -8813,6 +8813,7 @@ fn draw_settings_prompt(
                     .unwrap_or_else(|| "unset".to_string());
                 format!("default: {d} · valid: >= {min}")
             }
+            AgentSettingKind::Text { default } => format!("default: {default}"),
             AgentSettingKind::Enum { options, default } => {
                 format!("default: {default} · valid: {}", options.join(" | "))
             }
@@ -10151,6 +10152,7 @@ mod tests {
                 128_000,
                 16_384,
                 None,
+                false,
                 agent_dir,
                 root.clone(),
                 None,
