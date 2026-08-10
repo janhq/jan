@@ -8,6 +8,7 @@ pub(crate) struct SessionBudget {
     max_tokens: Option<u64>,
     spent_tokens: u64,
     last_total: u64,
+    last_prompt: Option<u64>,
 }
 
 impl SessionBudget {
@@ -16,26 +17,45 @@ impl SessionBudget {
             max_tokens,
             spent_tokens: 0,
             last_total: 0,
+            last_prompt: None,
         }
     }
 
     /// Fold a completion's usage into the running total, returning the new total.
     ///
-    /// Counts the *marginal* token spend — the increase over the previously
-    /// recorded request — rather than each request's absolute total. Every turn
-    /// replays the whole accumulated conversation, so summing per-request
-    /// `total_tokens` grows quadratically with context length and would cut off a
-    /// legitimate long task long before any real runaway. The increase from one
-    /// request to the next is what a runaway loop actually burns, so that is what
-    /// the ceiling should guard.
+    /// Counts new completion tokens and positive prompt-token growth rather than
+    /// replayed prompt history. The first request uses its reported total as the
+    /// baseline. When providers omit prompt or completion fields, the total-token
+    /// delta remains the fallback.
     pub(crate) fn record(&mut self, usage: &Option<Usage>) -> u64 {
-        if let Some(total) = usage.as_ref().and_then(|u| u.total_tokens) {
-            // Saturating at zero: a compaction can shrink the replayed history and
-            // make `total` fall below `last_total`; never let that "refund" spend.
-            self.spent_tokens =
-                self.spent_tokens.saturating_add(total.saturating_sub(self.last_total));
-            self.last_total = total;
-        }
+        let Some(usage) = usage.as_ref() else {
+            return self.spent_tokens;
+        };
+
+        let delta = match usage.total_tokens {
+            Some(total) => {
+                let delta = match (
+                    usage.prompt_tokens,
+                    self.last_prompt,
+                    usage.completion_tokens,
+                ) {
+                    (Some(prompt), Some(last_prompt), Some(completion)) => {
+                        completion.saturating_add(prompt.saturating_sub(last_prompt))
+                    }
+                    (Some(_), None, _) => total,
+                    (_, Some(_), Some(completion)) => {
+                        completion.max(total.saturating_sub(self.last_total))
+                    }
+                    _ => total.saturating_sub(self.last_total),
+                };
+                self.last_total = total;
+                delta
+            }
+            None => usage.completion_tokens.unwrap_or(0),
+        };
+
+        self.last_prompt = usage.prompt_tokens.or(self.last_prompt);
+        self.spent_tokens = self.spent_tokens.saturating_add(delta);
         self.spent_tokens
     }
 
@@ -60,6 +80,31 @@ mod tests {
             completion_tokens: None,
             total_tokens: total,
         })
+    }
+
+    fn usage_with_parts(
+        prompt_tokens: u64,
+        completion_tokens: u64,
+        total_tokens: u64,
+    ) -> Option<Usage> {
+        Some(Usage {
+            prompt_tokens: Some(prompt_tokens),
+            completion_tokens: Some(completion_tokens),
+            total_tokens: Some(total_tokens),
+        })
+    }
+
+    #[test]
+    fn compaction_still_charges_completion_tokens() {
+        let mut b = SessionBudget::new(Some(1_100));
+        b.record(&usage_with_parts(900, 100, 1_000));
+        assert!(!b.exhausted());
+
+        // The compacted prompt is smaller, but this request still consumed
+        // another 100 completion tokens and must exhaust the session budget.
+        b.record(&usage_with_parts(400, 100, 500));
+        assert_eq!(b.spent(), 1_100);
+        assert!(b.exhausted());
     }
 
     #[test]
