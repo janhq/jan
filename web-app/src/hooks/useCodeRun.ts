@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { CodeTurn, SubagentRun, Usage, CodeMessage, TodoList } from '@/hooks/useCodeSessions'
 import type { PendingPermission } from '@/containers/dialogs/CodePermissionDialog'
+import type { ModelLoadProgress } from '@/hooks/useAppState'
 
 // Mirrors the Rust `Question`/`OptionItem`/`AskRequest` structs (interaction.rs)
 // verbatim, same convention as `Usage`/`TodoList` above.
@@ -146,6 +147,28 @@ type CodeRunState = {
   usage: Record<string, Usage>
   /** Set by the artifacts library so Cowork opens that file on mount. */
   pendingPreview: { sessionId: string; path: string } | null
+  // Session ids currently talking to the llamacpp provider, mapped to the
+  // model id in flight. Cowork sessions aren't chat threads, so they're
+  // invisible to the chat-only signals the global OOM/backend-error listener
+  // otherwise keys off; this is how that listener (mounted outside Cowork's
+  // component tree, so it still sees a session running in the background)
+  // finds the right session(s) to attribute a router-level failure to, and
+  // matches load-progress events by model id rather than "whichever session
+  // ran most recently".
+  llamacppRuns: Record<string, string>
+  // A friendlier failure message the listener stashes when the router itself
+  // reports why (OOM / backend crash) — submitTurn prefers this over whatever
+  // generic message the resulting connection failure produced.
+  pendingLlamacppError: Record<string, string>
+  // Cowork's own mirror of useAppState's thread-keyed loadingModels /
+  // modelLoadProgressByThread, keyed by session id instead of chat thread id.
+  // Kept as an entirely separate Record rather than sharing chat's — several
+  // chat-side functions (hasActiveLlamacppRequest, clearActiveWork) scan
+  // useAppState.loadingModels' *keys* as their "is a real chat thread active"
+  // signal; writing Cowork session ids into that same Record would make a
+  // Cowork-only model load/failure look like chat activity to those checks.
+  loadingModels: Record<string, boolean>
+  modelLoadProgress: Record<string, ModelLoadProgress>
 
   beginRun: (sid: string, runId: string, userText: string, images?: string[]) => void
   appendToken: (sid: string, text: string) => void
@@ -158,6 +181,16 @@ type CodeRunState = {
   setUsage: (sid: string, usage: Usage | null) => void
   requestPreview: (sessionId: string, path: string) => void
   clearPendingPreview: () => void
+  setLlamacppRun: (sid: string, modelId: string) => void
+  clearLlamacppRun: (sid: string) => void
+  setPendingLlamacppError: (sid: string, message: string) => void
+  /** Reads and clears in one step, so a message can't be applied twice. */
+  takePendingLlamacppError: (sid: string) => string | undefined
+  setSessionLoadingModel: (sid: string, loading: boolean) => void
+  setSessionModelLoadProgress: (
+    sid: string,
+    progress: ModelLoadProgress | undefined
+  ) => void
   addPendingPerm: (sid: string, perm: PendingPermission) => void
   removePendingPerm: (sid: string, requestId: string) => void
   addPendingAsk: (sid: string, requestId: string, request: AskRequestPayload) => void
@@ -179,6 +212,10 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
   pendingAsks: {},
   usage: {},
   pendingPreview: null,
+  llamacppRuns: {},
+  pendingLlamacppError: {},
+  loadingModels: {},
+  modelLoadProgress: {},
 
   beginRun: (sid, runId, userText, images) =>
     set((s) => ({
@@ -270,6 +307,36 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
   requestPreview: (sessionId, path) => set({ pendingPreview: { sessionId, path } }),
   clearPendingPreview: () => set({ pendingPreview: null }),
 
+  setLlamacppRun: (sid, modelId) =>
+    set((s) => ({ llamacppRuns: { ...s.llamacppRuns, [sid]: modelId } })),
+  clearLlamacppRun: (sid) =>
+    set((s) => ({ llamacppRuns: omitKey(s.llamacppRuns, sid) })),
+  setPendingLlamacppError: (sid, message) =>
+    set((s) => ({
+      pendingLlamacppError: { ...s.pendingLlamacppError, [sid]: message },
+    })),
+  takePendingLlamacppError: (sid) => {
+    const message = get().pendingLlamacppError[sid]
+    if (message !== undefined) {
+      set((s) => ({ pendingLlamacppError: omitKey(s.pendingLlamacppError, sid) }))
+    }
+    return message
+  },
+  setSessionLoadingModel: (sid, loading) =>
+    set((s) => {
+      const next = { ...s.loadingModels }
+      if (loading) next[sid] = true
+      else delete next[sid]
+      return { loadingModels: next }
+    }),
+  setSessionModelLoadProgress: (sid, progress) =>
+    set((s) => {
+      const next = { ...s.modelLoadProgress }
+      if (progress) next[sid] = progress
+      else delete next[sid]
+      return { modelLoadProgress: next }
+    }),
+
   addPendingPerm: (sid, perm) =>
     set((s) => ({
       pendingPerms: {
@@ -329,6 +396,10 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
       pendingPerms: omitKey(s.pendingPerms, sid),
       pendingAsks: omitKey(s.pendingAsks, sid),
       usage: omitKey(s.usage, sid),
+      llamacppRuns: omitKey(s.llamacppRuns, sid),
+      pendingLlamacppError: omitKey(s.pendingLlamacppError, sid),
+      loadingModels: omitKey(s.loadingModels, sid),
+      modelLoadProgress: omitKey(s.modelLoadProgress, sid),
     })),
 }))
 
