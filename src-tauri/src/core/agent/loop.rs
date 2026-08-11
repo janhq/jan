@@ -1730,11 +1730,36 @@ async fn run_turn_cycle(
             return Ok(completion);
         }
 
+        // The session budget is exhausted. This is a soft stop, not an error:
+        // a subagent that inherits the parent's remaining budget must hand back
+        // its partial progress (as an assistant message) so the parent can act
+        // on it, instead of the run hard-failing and losing the work. Tool
+        // calls are not executed; nothing further is spent against the ceiling.
         if budget.exhausted() {
-            return Err(format!(
-                "session token budget exhausted ({} tokens) before resolving tool calls",
-                budget.spent()
-            ));
+            let partial = extract_choice_message(&completion)
+                .and_then(|m| m.get("content").and_then(|c| c.as_str()))
+                .unwrap_or("")
+                .to_string();
+            let stop_note = format!(
+                "[session token budget exhausted ({} tokens)] Partial progress so far:\n\
+                 {}",
+                budget.spent(),
+                if partial.is_empty() {
+                    "(none yet reported)".to_string()
+                } else {
+                    partial
+                }
+            );
+            conversation_messages.push(serde_json::json!({
+                "role": "assistant",
+                "content": stop_note,
+            }));
+            let _ = events.send(StreamEvent::MessagesUpdated {
+                messages: conversation_messages.clone(),
+            });
+            return Ok(serde_json::json!({
+                "choices": [{ "message": { "content": stop_note }, "finish_reason": "stop" }]
+            }));
         }
 
         for tc in &tool_calls {
@@ -2520,8 +2545,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn turn_cycle_stops_when_budget_exhausted() {
-        let (tx, _rx) = mpsc::unbounded_channel();
+    async fn turn_cycle_soft_stops_when_budget_exhausted() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let mut over_budget = tool_call_completion();
         over_budget["usage"] = json!({ "total_tokens": 100 });
         let model = MockModel::new(vec![over_budget]);
@@ -2529,7 +2554,7 @@ mod tests {
         let mut budget = SessionBudget::new(Some(50));
         let convo = vec![json!({ "role": "user", "content": "hi" })];
 
-        let err = run_turn_cycle(
+        let result = run_turn_cycle(
             &tx,
             &json!({}),
             "m",
@@ -2544,12 +2569,28 @@ mod tests {
             None,
         )
         .await
-        .unwrap_err();
+        .expect("budget exhaustion is a soft stop, not an error");
 
-        assert!(err.contains("budget"), "unexpected error: {err}");
+        let final_text = extract_choice_message(&result)
+            .and_then(|m| m.get("content").and_then(|c| c.as_str()))
+            .unwrap_or_default();
+        let spent = budget.spent();
+        assert!(
+            final_text.contains("budget")
+                && final_text.contains(&spent.to_string()),
+            "soft stop should describe the exhausted budget ({spent} tokens): {final_text}",
+        );
         assert!(
             tool.calls.lock().unwrap().is_empty(),
             "tool must not run once budget is exhausted"
+        );
+        // A MessagesUpdated is published so live surfaces (and the replay
+        // session) see the partial conversation before the soft stop.
+        assert!(
+            std::iter::from_fn(|| rx.try_recv().ok()).any(
+                |ev| matches!(ev, StreamEvent::MessagesUpdated { .. })
+            ),
+            "expected a MessagesUpdated event on soft stop"
         );
     }
 
