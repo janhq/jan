@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 use std::future::pending;
-use std::io;
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,11 +17,11 @@ use super::path_refs;
 
 use ratatui::crossterm::{
     event::{
-        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
-        EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton,
-        MouseEvent, MouseEventKind,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, Event, KeyCode,
+        KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
     },
     execute,
+    style::Print,
     terminal::{
         disable_raw_mode, enable_raw_mode, BeginSynchronizedUpdate, EndSynchronizedUpdate,
         EnterAlternateScreen, LeaveAlternateScreen,
@@ -44,6 +44,85 @@ use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs, PermissionRegistry};
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+
+/// Mouse tracking, hand-rolled instead of crossterm's `EnableMouseCapture`,
+/// which also turns on any-motion reporting (1003) -- a stream of events for
+/// every idle pointer move. Buttons and the wheel (1000) plus motion *while a
+/// button is held* (1002), with SGR coordinates (1006), is exactly what
+/// drag-to-select needs and nothing more.
+const MOUSE_TRACK_ON: &str = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
+/// Alternate scroll (1007) makes the terminal translate the wheel into arrow
+/// keys, which the composer reads as message-history recall -- so it is saved
+/// and forced off for the session, then restored on exit. Needed whether or not
+/// tracking is on, since with tracking off the wheel would otherwise type.
+const ALT_SCROLL_SAVE_OFF: &str = "\x1b[?1007s\x1b[?1007l";
+const ALT_SCROLL_RESTORE: &str = "\x1b[?1007r";
+
+/// How long the dock advertises a finished copy.
+const COPY_NOTICE: Duration = Duration::from_millis(1500);
+/// Terminals cap the OSC 52 payload they will accept; past this the sequence is
+/// skipped and the in-process clipboard is the only path.
+const OSC52_MAX_BYTES: usize = 100_000;
+
+/// Which cells a drag covers. `Linear` follows reading order, taking whole rows
+/// between the endpoints; `Block` takes the rectangle between them, for lifting
+/// one column out of a table or a diff without its `+`/`-` markers. Alt held as
+/// the drag starts picks `Block`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SelectionMode {
+    Linear,
+    Block,
+}
+
+/// A mouse selection in frame cell coordinates. The TUI owns selection outright
+/// because mouse tracking takes it away from the terminal: without this, a drag
+/// with tracking on would do nothing at all.
+#[derive(Debug, Clone, Copy)]
+struct Selection {
+    anchor: (u16, u16),
+    head: (u16, u16),
+    mode: SelectionMode,
+    /// Button still held, so edge auto-scroll may run.
+    dragging: bool,
+    /// The pointer moved since the press. A press that never moves is a click
+    /// (expand a tool row), not a selection.
+    moved: bool,
+}
+
+impl Selection {
+    fn new(at: (u16, u16), mode: SelectionMode) -> Self {
+        Self {
+            anchor: at,
+            head: at,
+            mode,
+            dragging: true,
+            moved: false,
+        }
+    }
+
+    /// Covered cells as `(row, first_col, last_col)`, inclusive on both ends and
+    /// clipped to `width`. Ordered top to bottom regardless of drag direction.
+    fn spans(&self, width: u16) -> Vec<(u16, u16, u16)> {
+        let last = width.saturating_sub(1);
+        let (a, h) = (self.anchor, self.head);
+        match self.mode {
+            SelectionMode::Block => {
+                let (c0, c1) = (a.0.min(h.0).min(last), a.0.max(h.0).min(last));
+                (a.1.min(h.1)..=a.1.max(h.1)).map(|r| (r, c0, c1)).collect()
+            }
+            SelectionMode::Linear => {
+                let (start, end) = if (a.1, a.0) <= (h.1, h.0) { (a, h) } else { (h, a) };
+                (start.1..=end.1)
+                    .map(|r| {
+                        let c0 = if r == start.1 { start.0.min(last) } else { 0 };
+                        let c1 = if r == end.1 { end.0.min(last) } else { last };
+                        (r, c0, c1)
+                    })
+                    .collect()
+            }
+        }
+    }
+}
 
 #[derive(Debug, PartialEq)]
 enum Status {
@@ -905,11 +984,16 @@ struct App {
     /// When the current run started, so the header can show elapsed time.
     /// `None` while idle.
     run_started: Option<Instant>,
-    /// Whether the terminal's mouse capture should be on (click-to-expand) or
-    /// off (native text selection/copy). Toggled by Ctrl-T; `chat_loop` diffs
-    /// this against its previous value each tick to (de)activate it, since
-    /// crossterm's enable/disable calls need the real terminal handle.
-    mouse_capture: bool,
+    /// Mouse selection, live or finished. Cleared by any key, wheel notch or
+    /// fresh press.
+    selection: Option<Selection>,
+    /// Set when a drag ends: the next `draw` lifts the text out of the buffer it
+    /// just rendered (only `draw` holds one) and hands it to `chat_loop`.
+    copy_armed: bool,
+    /// Selected text waiting to reach the clipboard.
+    copy_request: Option<String>,
+    /// (when, line count) of the last copy, for the transient dock notice.
+    copied: Option<(Instant, usize)>,
     /// Messages queued while a run is in progress, dequeued automatically
     /// when the current turn finishes.
     message_queue: std::collections::VecDeque<String>,
@@ -1124,7 +1208,10 @@ impl App {
             last_scroll: 0,
             row_index: Vec::new(),
             run_started: None,
-            mouse_capture: false,
+            selection: None,
+            copy_armed: false,
+            copy_request: None,
+            copied: None,
             message_queue: std::collections::VecDeque::new(),
             todos: crate::core::agent::todo::TodoList::default(),
             todo_call_this_turn: false,
@@ -1218,6 +1305,20 @@ impl App {
     }
 
     /// Append a dim single-line status note (command output, cancel, errors).
+    /// Drop any selection, and with it a copy armed but not yet lifted out of a
+    /// frame -- otherwise it would fire against whatever is selected next.
+    fn clear_selection(&mut self) {
+        self.selection = None;
+        self.copy_armed = false;
+    }
+
+    /// Line count of a copy recent enough to still advertise, if any.
+    fn copy_notice(&self) -> Option<usize> {
+        self.copied
+            .filter(|(at, _)| at.elapsed() < COPY_NOTICE)
+            .map(|(_, lines)| lines)
+    }
+
     fn note(&mut self, text: &str) {
         self.scrollback = 0;
         self.gap(Kind::Meta);
@@ -3840,10 +3941,13 @@ pub async fn run(
 
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
-    // Mouse capture stays off by default so terminal text is selectable/copyable
-    // (Ctrl-T enables click-to-expand). `chat_loop` diffs against
-    // `app.mouse_capture` and enables it on the first tick if the user toggles.
     execute!(stdout, EnterAlternateScreen, EnableBracketedPaste).map_err(|e| e.to_string())?;
+    let mut modes = String::from(ALT_SCROLL_SAVE_OFF);
+    if crate::core::agent::global_config::mouse_enabled() {
+        modes.push_str(MOUSE_TRACK_ON);
+    }
+    let _ = stdout.write_all(modes.as_bytes());
+    let _ = stdout.flush();
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
 
@@ -3905,6 +4009,7 @@ pub async fn run(
         terminal.backend_mut(),
         DisableBracketedPaste,
         DisableMouseCapture,
+        Print(ALT_SCROLL_RESTORE),
         LeaveAlternateScreen,
     );
     let _ = terminal.show_cursor();
@@ -3931,10 +4036,6 @@ async fn chat_loop<B: Backend>(
 ) -> Result<(), String> {
     let mut current: Option<CurrentRun> = None;
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
-    // Mirrors app.mouse_capture; `run` sets the real terminal to the same
-    // state before this loop starts, so both start in sync.
-    let mut mouse_capture_active = false;
-
     // Active MCP servers connect in the background; gate the first run on them
     // so the model's tools (collected once per run) are ready.
     let mut mcp_ready = mcp_task.is_none();
@@ -4039,13 +4140,18 @@ async fn chat_loop<B: Backend>(
         // Wrap the repaint in synchronized-output (`\x1b[?2026h/l`) so the
         // terminal buffers the whole frame and flips it atomically, eliminating
         // tearing. Written straight to stdout (not the generic `Backend`) for the
-        // same reason mouse-capture toggles are: `chat_loop` is generic over B
-        // for TestBackend, which isn't `io::Write`. ratatui already diffs the
+        // same reason the clipboard write below is: `chat_loop` is generic over
+        // B for TestBackend, which isn't `io::Write`. ratatui already diffs the
         // buffer and emits ANSI only for changed cells.
         let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
         let draw_result = terminal.draw(|f| draw(f, app)).map_err(|e| e.to_string());
         let _ = execute!(io::stdout(), EndSynchronizedUpdate);
         draw_result?;
+        // Outside the synchronized block: `draw` only extracts the text, so the
+        // OSC 52 write can't land in the middle of a frame.
+        if let Some(text) = app.copy_request.take() {
+            copy_to_clipboard(&text);
+        }
 
         tokio::select! {
             _ = ticker.tick() => {
@@ -4055,20 +4161,11 @@ async fn chat_loop<B: Backend>(
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     match event::read() {
                         Ok(Event::Key(key)) => {
+                            // Typing moves the content under a highlight, and the
+                            // copy already happened on release.
+                            app.clear_selection();
                             if !handle_ask_key(app, key, ask_requests).await {
                                 handle_key(app, key, registry, &mut current, mcp_servers).await;
-                            }
-                            if app.mouse_capture != mouse_capture_active {
-                                mouse_capture_active = app.mouse_capture;
-                                // Written straight to stdout (not through the generic
-                                // `Backend`) since chat_loop is generic over B for
-                                // testability with TestBackend, which isn't io::Write.
-                                let mut stdout = io::stdout();
-                                let _ = if mouse_capture_active {
-                                    execute!(stdout, EnableMouseCapture)
-                                } else {
-                                    execute!(stdout, DisableMouseCapture)
-                                };
                             }
                         }
                         Ok(Event::Paste(text)) => {
@@ -4222,41 +4319,145 @@ async fn chat_loop<B: Backend>(
     Ok(())
 }
 
-/// A left click on a folded row (tool group / reasoning block / subagent
-/// summary) toggles its detail, the same as Ctrl-O but for a single region.
-/// Ignores clicks outside the transcript viewport or on rows that aren't a
-/// region's own summary row (detail lines, blank padding, etc).
+/// Wheel, drag-to-select and click-to-expand. Press/release are split: the
+/// toggle fires on release and only when the pointer never moved, so a drag that
+/// starts on a folded row selects text instead of expanding it.
 fn handle_mouse(app: &mut App, mouse: MouseEvent) {
     // Wheel scrolls the transcript (clamped to `max_back` on the next draw);
-    // one notch matches a single arrow-key step.
+    // one notch matches a single arrow-key step. Scrolling moves the content out
+    // from under a finished selection, so it drops one.
     match mouse.kind {
         MouseEventKind::ScrollUp => {
+            app.clear_selection();
             app.scrollback = app.scrollback.saturating_add(1);
-            return;
         }
         MouseEventKind::ScrollDown => {
+            app.clear_selection();
             app.scrollback = app.scrollback.saturating_sub(1);
-            return;
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            app.copy_armed = false;
+            let mode = if mouse.modifiers.contains(KeyModifiers::ALT) {
+                SelectionMode::Block
+            } else {
+                SelectionMode::Linear
+            };
+            app.selection = Some(Selection::new((mouse.column, mouse.row), mode));
+        }
+        MouseEventKind::Drag(MouseButton::Left) => {
+            if let Some(sel) = app.selection.as_mut() {
+                let at = (mouse.column, mouse.row);
+                sel.moved |= at != sel.anchor;
+                sel.head = at;
+            }
+        }
+        MouseEventKind::Up(MouseButton::Left) => {
+            let Some(sel) = app.selection.as_mut() else {
+                return;
+            };
+            sel.dragging = false;
+            if sel.moved {
+                // The text lives in the rendered buffer, which only `draw` has;
+                // it copies on the next frame (<=50ms).
+                app.copy_armed = true;
+            } else {
+                app.clear_selection();
+                click_region(app, mouse.column, mouse.row);
+            }
         }
         _ => {}
     }
-    if !matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
-        return;
-    }
+}
+
+/// A click that never became a drag: expand or collapse the region whose summary
+/// row it landed on. Ignores clicks outside the transcript viewport or on rows
+/// that aren't a region's own summary row (detail lines, blank padding, etc).
+fn click_region(app: &mut App, column: u16, row: u16) {
     let rect = app.transcript_rect;
-    if mouse.column < rect.x
-        || mouse.column >= rect.x + rect.width
-        || mouse.row <= rect.y
-        || mouse.row >= rect.y + rect.height.saturating_sub(1)
+    if column < rect.x
+        || column >= rect.x + rect.width
+        || row <= rect.y
+        || row >= rect.y + rect.height.saturating_sub(1)
     {
         return;
     }
     // Top border consumes one row; the rest maps 1:1 onto `row_index` since
     // summary rows are pre-truncated to the viewport width and never wrap.
-    let body_row = (mouse.row - rect.y - 1) as usize;
+    let body_row = (row - rect.y - 1) as usize;
     let absolute = app.last_scroll as usize + body_row;
     if let Some(Some(idx)) = app.row_index.get(absolute) {
         app.toggle_region(*idx);
+    }
+}
+
+/// Extend a held drag past the top or bottom edge of the transcript by scrolling
+/// a row per frame toward the pointer. Only nudges `scrollback`; `draw` clamps it
+/// and shifts the anchor by however much the view actually moved.
+fn autoscroll_selection(app: &mut App) {
+    let Some(sel) = app.selection.filter(|s| s.dragging) else {
+        return;
+    };
+    let rect = app.transcript_rect;
+    if rect.height <= 2 {
+        return;
+    }
+    if sel.head.1 <= rect.y {
+        app.scrollback = app.scrollback.saturating_add(1);
+    } else if sel.head.1 >= rect.y + rect.height.saturating_sub(1) {
+        app.scrollback = app.scrollback.saturating_sub(1);
+    }
+}
+
+/// Lift the selected cells out of a rendered frame. Rows are joined with
+/// newlines and stripped of trailing padding, so a copied command pastes as the
+/// command and not as the width of the terminal.
+fn selection_text(buf: &Buffer, sel: Selection, area: Rect) -> String {
+    sel.spans(area.width)
+        .into_iter()
+        .filter(|(row, _, _)| *row < area.height)
+        .map(|(row, c0, c1)| {
+            // Wide glyphs park an empty symbol in their second cell, so plain
+            // concatenation already reconstructs them.
+            let line: String = (c0..=c1)
+                .filter_map(|col| buf.cell((col, row)))
+                .map(|cell| cell.symbol())
+                .collect();
+            line.trim_end().to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Put a selection on the system clipboard by both routes available to a TUI:
+/// `arboard`, which serves it for as long as this process runs, and OSC 52,
+/// which hands it to the terminal emulator so it survives `jan` exiting and
+/// crosses an ssh/tmux session. OSC 52 goes second so that where it is supported
+/// the terminal ends up owning the selection.
+fn copy_to_clipboard(text: &str) {
+    let owned = text.to_string();
+    std::thread::spawn(move || {
+        let Ok(mut clip) = arboard::Clipboard::new() else {
+            return;
+        };
+        // X11/Wayland ownership lives with the setter, so this thread parks
+        // inside `wait()` until something else claims the clipboard; returning
+        // immediately would drop the text on the floor.
+        #[cfg(target_os = "linux")]
+        {
+            use arboard::SetExtLinux;
+            let _ = clip.set().wait().text(owned);
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = clip.set_text(owned);
+        }
+    });
+    if text.len() <= OSC52_MAX_BYTES {
+        use base64::Engine;
+        let payload = base64::engine::general_purpose::STANDARD.encode(text);
+        let mut out = io::stdout();
+        let _ = write!(out, "\x1b]52;c;{payload}\x07");
+        let _ = out.flush();
     }
 }
 
@@ -4497,18 +4698,6 @@ async fn handle_key(
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let ctrl_c = ctrl && key.code == KeyCode::Char('c');
     let ctrl_d = ctrl && key.code == KeyCode::Char('d');
-
-    // Global: toggle mouse capture so the terminal's native text selection
-    // works (crossterm's mouse capture otherwise claims all mouse input).
-    if ctrl && key.code == KeyCode::Char('t') {
-        app.mouse_capture = !app.mouse_capture;
-        app.note(if app.mouse_capture {
-            "mouse capture on: click to expand"
-        } else {
-            "mouse capture off: drag to select/copy text (Ctrl-T to re-enable)"
-        });
-        return;
-    }
 
     // The `/login` prompt owns the keyboard while open: every keystroke is part
     // of a secret being typed, so none of it may reach the input box or the
@@ -4990,7 +5179,7 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("PgUp/PgDn", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
-    ("Ctrl-T", "Toggle mouse capture (click-to-expand vs text select)"),
+    ("Drag", "Select text, copied on release (Alt+drag for a block)"),
     ("Ctrl-D", "Quit"),
 ];
 
@@ -6186,6 +6375,7 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     app.history.truncate(cut);
     app.checkpoints.retain(|c| c.user_index < target);
     rebuild_transcript(app);
+    rebuild_recall(app);
     app.status = Status::Idle;
     app.run_started = None;
     app.scrollback = 0;
@@ -6194,6 +6384,26 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     app.cursor = app.input.len();
     app.note(&format!("rewound to message #{}", target + 1));
     app.persist();
+}
+
+/// Rebuild Up/Down recall from `history`, the conversation being the one source
+/// of truth for it. Anything that replaces or truncates the conversation
+/// (resume, rewind) calls this, so recall can never offer a message the thread
+/// no longer contains -- nor lose the ones it does.
+fn rebuild_recall(app: &mut App) {
+    app.input_history.clear();
+    app.reset_recall();
+    let texts: Vec<String> = app
+        .history
+        .iter()
+        .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+        .filter_map(|m| m.get("content"))
+        .map(|c| user_content_parts(c).0)
+        .filter(|t| !t.is_empty())
+        .collect();
+    for text in texts {
+        app.record_submitted(&text);
+    }
 }
 
 /// Re-render the transcript from the current `history` after a rewind.
@@ -6305,6 +6515,9 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
         }
         count += 1;
     }
+    // Recall follows the conversation, so the replaced session's lines go with
+    // it and the resumed thread's come back.
+    rebuild_recall(app);
 
     let title = thread
         .get("title")
@@ -6504,6 +6717,9 @@ fn draw(f: &mut Frame, app: &mut App) {
     // session idle -- the loop redraws on its tick either way, and ratatui
     // emits nothing until the panel actually changes.
     app.refresh_todo_deadline();
+    // Before the layout reads `scrollback`: a drag held past an edge keeps
+    // pulling content into view a row per frame.
+    autoscroll_selection(app);
     let input_h = input_box_height(app, f.area().width);
     // Live state -- the plan and the running fan-out -- is docked, not woven
     // into the transcript: it describes *now*, and it is what the eye wants
@@ -6717,6 +6933,15 @@ fn draw(f: &mut Frame, app: &mut App) {
     app.scrollback = app.scrollback.min(max_back);
     let scroll = max_back - app.scrollback;
     f.render_widget(body.scroll((scroll, 0)), chunks[1]);
+    // The anchor is a screen cell, so content moving under it has to move it
+    // too, or an auto-scrolled drag would keep re-selecting the same rows.
+    if let Some(sel) = app.selection.as_mut().filter(|s| s.dragging) {
+        let delta = scroll as i32 - app.last_scroll as i32;
+        if delta != 0 {
+            sel.anchor.1 = (sel.anchor.1 as i32 - delta).clamp(0, u16::MAX as i32) as u16;
+            sel.moved = true;
+        }
+    }
     app.transcript_rect = chunks[1];
     app.last_scroll = scroll;
     app.row_index = row_index;
@@ -6812,6 +7037,28 @@ fn draw(f: &mut Frame, app: &mut App) {
                 height,
             };
             draw_path_hints(f, rect, &app.path_hints, app.path_hint_selected);
+        }
+    }
+
+    // Last, over the finished frame, so the highlight covers every surface --
+    // transcript, dock, overlays -- without each having to know about it.
+    if let Some(sel) = app.selection {
+        let area = f.area();
+        let buf = f.buffer_mut();
+        if std::mem::take(&mut app.copy_armed) {
+            let text = selection_text(buf, sel, area);
+            if !text.trim().is_empty() {
+                app.copied = Some((Instant::now(), text.lines().count()));
+                app.copy_request = Some(text);
+            }
+        }
+        for (row, c0, c1) in sel.spans(area.width) {
+            for col in c0..=c1 {
+                if let Some(cell) = buf.cell_mut((col, row)) {
+                    let style = cell.style().add_modifier(Modifier::REVERSED);
+                    cell.set_style(style);
+                }
+            }
         }
     }
 }
@@ -8031,6 +8278,16 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
     if let Some(picker) = &app.picker {
         return vec![Span::styled(picker.action_hint(), Style::new().dim())];
     }
+    // Briefly, and never over a prompt whose keys the user needs: a copy is
+    // invisible otherwise, and a transcript note would shift the rows the
+    // pointer is still sitting on.
+    if let Some(lines) = app.copy_notice() {
+        let plural = if lines == 1 { "" } else { "s" };
+        return vec![Span::styled(
+            format!(" copied {lines} line{plural}"),
+            Style::new().green().bold(),
+        )];
+    }
     let key_style = Style::new().cyan().bold();
     let queue_count = app.message_queue.len();
     let mut spans = match app.status {
@@ -8092,22 +8349,28 @@ mod tests {
         compact_tokens, finish_login, finish_update_install, load_image_file, message_text,
         note_update, open_config_screen,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
+        autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
         run_command, starting_call_lines, unescape_partial_json_string,
         running_group_row, split_reasoning, strip_system_xml_tags, subagent_activity,
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
         transcript_top_padding, rewind_to,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
-        SnapshotJob, Status, AGENT_SETTINGS, COMMAND_LABEL_MAX, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
-        KEY_BINDINGS, SLASH_COMMANDS, SPINNER,
+        SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
+        COMMAND_LABEL_MAX, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
+        KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER,
         SPINNER_ADVANCE_MS,
     };
     use std::time::{Duration, Instant};
     use ratatui::crossterm::event::{
         KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
     };
+    use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
-    use ratatui::{style::Modifier, text::Line};
+    use ratatui::{
+        style::{Modifier, Style},
+        text::Line,
+    };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -8119,6 +8382,27 @@ mod tests {
     /// A bare key press with no modifiers.
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn mouse_at(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    /// Press and release without moving: the gesture that toggles a region.
+    fn click(app: &mut App, column: u16, row: u16) {
+        handle_mouse(
+            app,
+            mouse_at(MouseEventKind::Down(MouseButton::Left), column, row),
+        );
+        handle_mouse(
+            app,
+            mouse_at(MouseEventKind::Up(MouseButton::Left), column, row),
+        );
     }
 
     fn test_app() -> App {
@@ -9415,6 +9699,40 @@ mod tests {
         assert_eq!(app.input, "first");
         assert_eq!(app.cursor, app.input.len());
         assert_eq!(app.status, Status::Idle);
+    }
+
+    #[test]
+    fn rewind_trims_recall_to_the_surviving_messages() {
+        let mut app = test_app();
+        app.thread_id = Some("t1".into());
+        app.history = vec![
+            json!({ "role": "user", "content": "first" }),
+            json!({ "role": "assistant", "content": "reply" }),
+            json!({ "role": "user", "content": "second" }),
+            json!({ "role": "assistant", "content": "reply two" }),
+            json!({ "role": "user", "content": "third" }),
+        ];
+        for text in ["first", "second", "third"] {
+            app.record_submitted(text);
+        }
+
+        // Cut just before the second user message: "second" and "third" are
+        // gone from the conversation, so they must be gone from recall too.
+        rewind_to(&mut app, 1, false);
+        assert_eq!(app.input_history, vec!["first"]);
+        // Rewind leaves the target message in the composer, and recall only
+        // starts from an empty one.
+        assert_eq!(app.input, "second");
+        app.input_clear();
+        assert!(app.recall_prev());
+        assert_eq!(app.input, "first");
+
+        // Rewinding to the very first message leaves nothing to recall, so Up
+        // falls through to scrollback again.
+        rewind_to(&mut app, 0, false);
+        assert!(app.input_history.is_empty());
+        app.input_clear();
+        assert!(!app.recall_prev());
     }
 
     #[test]
@@ -11476,27 +11794,11 @@ mod tests {
         app.last_scroll = 0;
         app.row_index = vec![Some(group_idx)];
 
-        handle_mouse(
-            &mut app,
-            MouseEvent {
-                kind: MouseEventKind::Down(MouseButton::Left),
-                column: 5,
-                row: 1,
-                modifiers: KeyModifiers::NONE,
-            },
-        );
+        click(&mut app, 5, 1);
         assert!(app.expanded.contains(&group_idx));
 
         // Clicking outside the viewport (past the bottom border) is a no-op.
-        handle_mouse(
-            &mut app,
-            MouseEvent {
-                kind: MouseEventKind::Down(MouseButton::Left),
-                column: 5,
-                row: 9,
-                modifiers: KeyModifiers::NONE,
-            },
-        );
+        click(&mut app, 5, 9);
         assert!(app.expanded.contains(&group_idx));
     }
 
@@ -11567,15 +11869,7 @@ mod tests {
         app.transcript_rect = Rect::new(0, 0, 80, 10);
         app.last_scroll = 0;
         app.row_index = vec![Some(idx), Some(idx), Some(idx)];
-        handle_mouse(
-            &mut app,
-            MouseEvent {
-                kind: MouseEventKind::Down(MouseButton::Left),
-                column: 5,
-                row: 2, // a detail row, not the header at row 1
-                modifiers: KeyModifiers::NONE,
-            },
-        );
+        click(&mut app, 5, 2); // a detail row, not the header at row 1
         assert!(app.expanded.is_empty(), "click on a detail row should collapse");
     }
 
@@ -11901,6 +12195,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resuming_restores_the_recall_history() {
+        let app = test_app();
+        let history = vec![
+            json!({ "role": "user", "content": "first" }),
+            json!({ "role": "assistant", "content": "reply" }),
+            json!({ "role": "user", "content": "second" }),
+        ];
+        super::super::cli_save_thread(&app.agent_dir, None, "saved-model", &history, None).unwrap();
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        // A line typed before the resume belongs to the session being replaced.
+        fresh.record_submitted("stale");
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+
+        assert_eq!(fresh.input_history, vec!["first", "second"]);
+        assert!(fresh.recall_prev(), "Up recalls instead of scrolling");
+        assert_eq!(fresh.input, "second");
+        assert!(fresh.recall_prev());
+        assert_eq!(fresh.input, "first");
+        assert_eq!(fresh.scrollback, 0, "recall must not scroll the transcript");
+    }
+
+    #[tokio::test]
     async fn apply_resume_notes_when_nothing_to_resume() {
         let mut app = test_app();
         apply_resume(&mut app, &ResumeTarget::Latest).await;
@@ -11949,20 +12267,241 @@ mod tests {
         assert_eq!(parse_command(""), ("", ""));
     }
 
-    #[tokio::test]
-    async fn ctrl_t_toggles_mouse_capture() {
+    #[test]
+    fn mouse_tracking_requests_buttons_wheel_and_held_drags() {
+        assert!(MOUSE_TRACK_ON.contains("?1000h"), "buttons and wheel");
+        assert!(MOUSE_TRACK_ON.contains("?1002h"), "drag while held");
+        assert!(MOUSE_TRACK_ON.contains("?1006h"), "SGR coordinates");
+        assert!(
+            !MOUSE_TRACK_ON.contains("1003"),
+            "any-motion would report every idle pointer move: {MOUSE_TRACK_ON:?}"
+        );
+        assert!(
+            ALT_SCROLL_SAVE_OFF.contains("?1007l"),
+            "the wheel must never arrive as arrow keys"
+        );
+        assert!(ALT_SCROLL_RESTORE.contains("?1007r"), "restore on exit");
+    }
+
+    #[test]
+    fn linear_selection_spans_whole_rows_between_the_ends() {
+        let sel = Selection {
+            anchor: (5, 1),
+            head: (2, 3),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(sel.spans(10), vec![(1, 5, 9), (2, 0, 9), (3, 0, 2)]);
+    }
+
+    #[test]
+    fn selection_spans_are_direction_independent() {
+        let forward = Selection {
+            anchor: (5, 1),
+            head: (2, 3),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+        let backward = Selection {
+            anchor: (2, 3),
+            head: (5, 1),
+            ..forward
+        };
+        assert_eq!(forward.spans(10), backward.spans(10));
+    }
+
+    #[test]
+    fn block_selection_spans_a_rectangle() {
+        let sel = Selection {
+            anchor: (6, 3),
+            head: (2, 1),
+            mode: SelectionMode::Block,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(sel.spans(10), vec![(1, 2, 6), (2, 2, 6), (3, 2, 6)]);
+    }
+
+    /// A block drag lifts one column out of a table without the neighbours a
+    /// linear drag would sweep up.
+    #[test]
+    fn selection_text_reads_cells_and_trims_row_padding() {
+        let area = Rect::new(0, 0, 12, 3);
+        let mut buf = Buffer::empty(area);
+        buf.set_string(0, 0, "alpha   one", Style::new());
+        buf.set_string(0, 1, "beta    two", Style::new());
+
+        let linear = Selection {
+            anchor: (0, 0),
+            head: (10, 1),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(selection_text(&buf, linear, area), "alpha   one\nbeta    two");
+
+        let block = Selection {
+            anchor: (8, 0),
+            head: (10, 1),
+            mode: SelectionMode::Block,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(selection_text(&buf, block, area), "one\ntwo");
+
+        // A row selected past its text keeps no trailing padding.
+        let padded = Selection {
+            anchor: (0, 0),
+            head: (11, 0),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(selection_text(&buf, padded, area), "alpha   one");
+    }
+
+    #[test]
+    fn a_drag_selects_instead_of_toggling_the_row_under_it() {
         let mut app = test_app();
-        assert!(!app.mouse_capture, "capture starts off so text is selectable");
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "foo" }),
+        });
+        let idx = app.tool_group.as_ref().expect("group open").idx;
+        app.transcript_rect = Rect::new(0, 0, 80, 10);
+        app.last_scroll = 0;
+        app.row_index = vec![Some(idx)];
+
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Down(MouseButton::Left), 5, 1),
+        );
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 30, 1),
+        );
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Up(MouseButton::Left), 30, 1),
+        );
+
+        assert!(app.expanded.is_empty(), "a drag must not expand the row");
+        assert!(app.copy_armed, "the release arms the copy");
+        let sel = app.selection.expect("selection held after release");
+        assert!(!sel.dragging);
+        assert_eq!(sel.spans(80), vec![(1, 5, 30)]);
+    }
+
+    #[test]
+    fn alt_drag_selects_a_block() {
+        let mut app = test_app();
+        handle_mouse(
+            &mut app,
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 5,
+                row: 1,
+                modifiers: KeyModifiers::ALT,
+            },
+        );
+        assert_eq!(
+            app.selection.expect("selection").mode,
+            SelectionMode::Block
+        );
+    }
+
+    #[test]
+    fn scrolling_drops_a_finished_selection() {
+        let mut app = test_app();
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Down(MouseButton::Left), 5, 1),
+        );
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 9, 1),
+        );
+        handle_mouse(&mut app, mouse_at(MouseEventKind::ScrollUp, 5, 1));
+        assert!(app.selection.is_none(), "content moved out from under it");
+    }
+
+    #[test]
+    fn a_held_drag_past_an_edge_scrolls_the_transcript() {
+        let mut app = test_app();
+        app.transcript_rect = Rect::new(0, 0, 80, 10);
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Down(MouseButton::Left), 5, 5),
+        );
+
+        // Above the top border: scroll back through history.
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 5, 0),
+        );
+        autoscroll_selection(&mut app);
+        autoscroll_selection(&mut app);
+        assert_eq!(app.scrollback, 2);
+
+        // Below the last body row: scroll back toward the newest output.
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 5, 9),
+        );
+        autoscroll_selection(&mut app);
+        assert_eq!(app.scrollback, 1);
+
+        // Inside the viewport, nothing moves.
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 5, 4),
+        );
+        autoscroll_selection(&mut app);
+        assert_eq!(app.scrollback, 1);
+
+        // A released drag stops scrolling even parked past the edge.
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Up(MouseButton::Left), 5, 0),
+        );
+        app.selection.as_mut().expect("selection").head = (5, 0);
+        autoscroll_selection(&mut app);
+        assert_eq!(app.scrollback, 1);
+    }
+
+    #[test]
+    fn copy_notice_expires() {
+        let mut app = test_app();
+        assert_eq!(app.copy_notice(), None);
+        app.copied = Some((Instant::now(), 3));
+        assert_eq!(app.copy_notice(), Some(3));
+        app.copied = Some((Instant::now() - COPY_NOTICE - Duration::from_millis(1), 3));
+        assert_eq!(app.copy_notice(), None);
+    }
+
+    #[tokio::test]
+    async fn mouse_tracking_has_no_toggle_hotkey() {
+        assert!(
+            !KEY_BINDINGS.iter().any(|(k, _)| k.contains("Ctrl-T")),
+            "mouse tracking is a config key now, not a hotkey"
+        );
+        assert!(
+            KEY_BINDINGS.iter().any(|(_, d)| d.contains("Select text")),
+            "the selection gesture still needs advertising"
+        );
+
+        // Ctrl-T is an ordinary unbound key: it must not type into the input.
+        let mut app = test_app();
         let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let mcp_servers: crate::core::state::SharedMcpServers =
             Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let mut current: Option<CurrentRun> = None;
         let key = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
-
         handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
-        assert!(app.mouse_capture);
-        handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
-        assert!(!app.mouse_capture);
+        assert!(app.input.is_empty(), "got: {:?}", app.input);
     }
 
     #[tokio::test]
