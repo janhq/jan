@@ -11,6 +11,7 @@ pub mod tokamak;
 mod tui;
 pub mod updater;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -23,6 +24,13 @@ use crate::core::threads::{
         get_thread_metadata_path,
     },
 };
+
+pub(crate) const PERSISTED_ASK_RESULT_TYPE: &str = "jan.ask_result";
+const RESUMED_ASK_RESULT_OPEN: &str = "<jan_ask_result>\n";
+
+pub(crate) fn resumed_ask_result_context(content: &str) -> String {
+    format!("{RESUMED_ASK_RESULT_OPEN}{content}\n</jan_ask_result>")
+}
 
 // ── Thread operations ──────────────────────────────────────────────────────
 
@@ -228,17 +236,40 @@ pub fn cli_save_thread(
     let now_ms = now.as_millis() as i64;
     let now_secs = now.as_secs_f64();
 
+    let ask_call_ids: HashSet<&str> = history
+        .iter()
+        .flat_map(|message| {
+            message
+                .get("tool_calls")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+        })
+        .filter(|call| {
+            call.get("function")
+                .and_then(|function| function.get("name"))
+                .and_then(serde_json::Value::as_str)
+                == Some("ask")
+        })
+        .filter_map(|call| call.get("id").and_then(serde_json::Value::as_str))
+        .collect();
     let messages: Vec<serde_json::Value> = history
         .iter()
-        .filter_map(|m| {
-            let role = m.get("role").and_then(|v| v.as_str())?;
-            let content = openai_content_text(m.get("content"));
+        .filter_map(|message| {
+            let role = message.get("role").and_then(serde_json::Value::as_str)?;
+            let content = openai_content_text(message.get("content"));
+            let is_ask_result = (role == "tool"
+                && message
+                    .get("tool_call_id")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|id| ask_call_ids.contains(id)))
+                || (role == "assistant" && content.starts_with(RESUMED_ASK_RESULT_OPEN));
             Some(serde_json::json!({
                 "id": uuid::Uuid::new_v4().to_string(),
                 "object": "thread.message",
                 "thread_id": id,
-                "role": role,
-                "type": "text",
+                "role": if is_ask_result { "tool" } else { role },
+                "type": if is_ask_result { PERSISTED_ASK_RESULT_TYPE } else { "text" },
                 "status": "ready",
                 "created_at": now_ms,
                 "completed_at": now_ms,

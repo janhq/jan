@@ -6231,8 +6231,7 @@ async fn apply_resume(app: &mut App, target: &ResumeTarget) {
 }
 
 /// Replace the live session with a saved thread's state: history, transcript,
-/// snapshots, goal, and model. Only user/assistant text is replayed (tool calls
-/// are not persisted as messages).
+/// snapshots, goal, and model. Ask answers are restored as hidden model context.
 async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     let full_id = thread.get("id").and_then(|v| v.as_str()).unwrap_or_default();
 
@@ -6280,8 +6279,20 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
 
     let mut count = 0;
     for msg in &messages {
-        let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("");
         let text = message_text(msg);
+        if msg.get("type").and_then(|value| value.as_str())
+            == Some(super::PERSISTED_ASK_RESULT_TYPE)
+        {
+            if !text.is_empty() {
+                app.history.push(serde_json::json!({
+                    "role": "assistant",
+                    "content": super::resumed_ask_result_context(&text),
+                }));
+            }
+            continue;
+        }
+
+        let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("");
         if text.is_empty() || !matches!(role, "user" | "assistant") {
             continue;
         }
@@ -11839,6 +11850,42 @@ mod tests {
                 .unwrap();
         assert_eq!(same, id);
         assert_eq!(super::super::list_threads_in(&app.agent_dir).unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn apply_resume_retains_an_ask_custom_answer_for_the_next_turn() {
+        let mut app = test_app();
+        let history = vec![
+            json!({ "role": "user", "content": "Ask me for a password." }),
+            json!({
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "id": "ask-password",
+                    "type": "function",
+                    "function": { "name": "ask", "arguments": "{}" }
+                }]
+            }),
+            json!({
+                "role": "tool",
+                "tool_call_id": "ask-password",
+                "content": r#"[{"id":"password","selected":[],"custom_input":"ember-7392"}]"#
+            }),
+            json!({ "role": "assistant", "content": "RECEIVED." }),
+        ];
+        let id =
+            super::super::cli_save_thread(&app.agent_dir, None, "saved-model", &history, None)
+                .unwrap();
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeTarget::Id(id)).await;
+
+        assert!(fresh.history.iter().any(|message| {
+            message.get("content").and_then(|value| value.as_str()).is_some_and(|content| {
+                content.contains("ember-7392") && content.contains("ask")
+            })
+        }));
     }
 
     #[tokio::test]
