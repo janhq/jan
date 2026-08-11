@@ -240,6 +240,16 @@ pub(crate) fn walk_markdown_files(dir: &Path, visit: &mut dyn FnMut(&Path)) {
     }
 }
 
+/// The machine-generated wrapper line for a skill/command invocation message.
+/// `cli::invocation_label` parses exactly this shape back into a compact
+/// transcript label on resume, so every producer uses this one helper and the
+/// parser's expectations cannot silently drift from what is written.
+pub(crate) fn invocation_wrapper(name: &str, kind: &str) -> String {
+    format!(
+        "[IMPORTANT: You have invoked the \"{name}\" {kind} - follow its instructions. The full {kind} content is loaded below.]"
+    )
+}
+
 /// Skills shipped by installed plugins, qualified with their plugin name.
 /// Each installed plugin is scanned conventionally: a `skills/` subdirectory
 /// (folder and flat forms, same rules as project skills) plus an optional
@@ -592,7 +602,8 @@ pub(crate) fn build_invocation_message(
         parse(&std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))?).body;
     let args = args.trim();
     let mut msg = format!(
-        "[IMPORTANT: You have invoked the \"{name}\" skill - follow its instructions. The full skill content is loaded below.]\n\n{body}"
+        "{}\n\n{body}",
+        invocation_wrapper(name, "skill")
     );
     // Folder skills (and single-skill plugins) may bundle files next to their
     // SKILL.md; announce that directory so relative paths resolve.

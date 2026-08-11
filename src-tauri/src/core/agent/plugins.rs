@@ -112,6 +112,10 @@ fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
     let Ok(rd) = std::fs::read_dir(&dir) else {
         return Vec::new();
     };
+    // Scan each artifact kind once; per-plugin counts filter the shared lists
+    // rather than re-walking the whole plugin tree per plugin.
+    let all_skills = skills::discover_plugins(root);
+    let all_commands = crate::core::agent::plugin_commands::discover(root);
     let mut out = Vec::new();
     for entry in rd.flatten() {
         let path = entry.path();
@@ -125,12 +129,12 @@ fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
             continue;
         }
         let manifest = read_manifest(&path);
-        let plugin_skills = skills::discover_plugins(root)
-            .into_iter()
+        let plugin_skills = all_skills
+            .iter()
             .filter(|e| e.plugin.as_deref() == Some(directory))
             .count();
-        let plugin_commands = crate::core::agent::commands::discover(root)
-            .into_iter()
+        let plugin_commands = all_commands
+            .iter()
             .filter(|e| e.plugin == directory)
             .count();
         let plugin_agents = crate::core::agent::subagent::count_plugin_agents(root, directory);
@@ -355,7 +359,7 @@ async fn install_git(
         .into_iter()
         .filter(|e| e.plugin.as_deref() == Some(stem.as_str()))
         .count();
-    let commands_count = crate::core::agent::commands::discover(root)
+    let commands_count = crate::core::agent::plugin_commands::discover(root)
         .into_iter()
         .filter(|e| e.plugin == stem)
         .count();

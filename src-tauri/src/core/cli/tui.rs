@@ -2179,7 +2179,7 @@ impl App {
         // Short-form ownership: a command's plain name is claimed by the
         // command - a skill of the same name loses its short form (explicit
         // `/command:` and `/skill:` forms always stay).
-        let commands = crate::core::agent::commands::catalog(&self.project_root, &enabled);
+        let commands = crate::core::agent::plugin_commands::catalog(&self.project_root, &enabled);
         let mut command_plain_counts: std::collections::HashMap<&str, usize> =
             std::collections::HashMap::new();
         let mut command_owned: std::collections::HashSet<&str> = std::collections::HashSet::new();
@@ -2584,7 +2584,7 @@ impl App {
     fn dispatch_command(&mut self, name: &str, args: &str) -> bool {
         let root = &self.project_root;
         let (msg, description) =
-            match crate::core::agent::commands::build_message(root, name, args) {
+            match crate::core::agent::plugin_commands::build_message(root, name, args) {
                 Ok(pair) => pair,
                 Err(_) => return false,
             };
@@ -7401,7 +7401,7 @@ async fn plugin_command(app: &mut App, arg: &str) {
                                 ));
                             }
                         }
-                        let commands = crate::core::agent::commands::discover(&root)
+                        let commands = crate::core::agent::plugin_commands::discover(&root)
                             .into_iter()
                             .filter(|e| e.plugin == directory)
                             .collect::<Vec<_>>();
