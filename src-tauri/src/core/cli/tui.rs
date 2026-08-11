@@ -766,6 +766,10 @@ struct App {
     /// expanding one that may sit above the pinned-to-bottom viewport).
     reveal: Option<usize>,
     input: String,
+    /// Composer entries submitted this session, oldest first, for Up/Down recall.
+    input_history: Vec<String>,
+    /// Position in `input_history` while recalling; `None` is the fresh buffer.
+    recall_pos: Option<usize>,
     /// Images staged by `/image`, flushed into the next submitted user message.
     pending_images: Vec<PendingImage>,
     /// Caret position as a byte index into `input` (always on a char boundary).
@@ -1063,6 +1067,8 @@ impl App {
             expanded: std::collections::HashSet::new(),
             reveal: None,
             input: String::new(),
+            input_history: Vec::new(),
+            recall_pos: None,
             pending_images: Vec::new(),
             cursor: 0,
             slash_selected: 0,
@@ -1508,6 +1514,72 @@ impl App {
         self.reset_slash_hint();
         self.path_hints.clear();
         self.path_hint_selected = 0;
+        self.reset_recall();
+    }
+
+    /// Leave recall: the next Up starts again from the newest entry.
+    fn reset_recall(&mut self) {
+        self.recall_pos = None;
+    }
+
+    /// Record a submitted line for recall, skipping a repeat of the newest entry.
+    fn record_submitted(&mut self, text: &str) {
+        if self.input_history.last().map(String::as_str) != Some(text) {
+            self.input_history.push(text.to_string());
+        }
+        self.reset_recall();
+    }
+
+    /// Replace the buffer with a recalled entry, caret at the end.
+    fn set_input(&mut self, text: String) {
+        self.input = text;
+        self.cursor = self.input.len();
+        self.reset_slash_hint();
+        self.path_hints.clear();
+        self.path_hint_selected = 0;
+    }
+
+    /// Up: step back through submitted messages. Recall only starts on an empty
+    /// buffer, so Up still scrolls the transcript while something is typed;
+    /// once recalling, it keeps stepping even though the buffer is now full.
+    /// Returns false when the key should fall through to scrollback.
+    fn recall_prev(&mut self) -> bool {
+        if self.input_history.is_empty() {
+            return false;
+        }
+        match self.recall_pos {
+            Some(pos) => {
+                let next = pos.saturating_sub(1);
+                self.recall_pos = Some(next);
+                self.set_input(self.input_history[next].clone());
+            }
+            None => {
+                if !self.input.is_empty() {
+                    return false;
+                }
+                let last = self.input_history.len() - 1;
+                self.recall_pos = Some(last);
+                self.set_input(self.input_history[last].clone());
+            }
+        }
+        true
+    }
+
+    /// Down: step forward through recalled messages; past the newest, the
+    /// composer returns to an empty new message (recall only ever starts from
+    /// an empty buffer, so there is no draft to restore). Returns false when
+    /// not recalling, so Down still scrolls the transcript.
+    fn recall_next(&mut self) -> bool {
+        let Some(pos) = self.recall_pos else {
+            return false;
+        };
+        if pos + 1 < self.input_history.len() {
+            self.recall_pos = Some(pos + 1);
+            self.set_input(self.input_history[pos + 1].clone());
+        } else {
+            self.input_clear();
+        }
+        true
     }
 
     fn input_insert(&mut self, c: char) {
@@ -4721,6 +4793,7 @@ async fn handle_key(
             let text = app.input.trim().to_string();
             app.input_clear();
             if !text.is_empty() {
+                app.record_submitted(&text);
                 if let Some(cmd) = text.strip_prefix('/') {
                     run_command(app, cmd).await;
                 } else {
@@ -4749,11 +4822,20 @@ async fn handle_key(
         KeyCode::Char(c) if !ctrl => {
             app.input_insert(c);
         }
+        // Up/Down recall submitted messages into the composer when there is
+        // something to recall; otherwise they scroll the transcript as before.
+        // PageUp/PageDown always scroll, so scrollback is never unreachable.
         KeyCode::Up | KeyCode::PageUp => {
+            if key.code == KeyCode::Up && app.recall_prev() {
+                return;
+            }
             let step = if key.code == KeyCode::PageUp { 10 } else { 1 };
             app.scrollback = app.scrollback.saturating_add(step);
         }
         KeyCode::Down | KeyCode::PageDown => {
+            if key.code == KeyCode::Down && app.recall_next() {
+                return;
+            }
             let step = if key.code == KeyCode::PageDown { 10 } else { 1 };
             app.scrollback = app.scrollback.saturating_sub(step);
         }
@@ -4881,7 +4963,8 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("Alt+Enter / Ctrl-J", "Insert a newline"),
     ("Esc / Ctrl-C", "Cancel the running turn"),
     ("Esc Esc", "Rewind to an earlier message"),
-    ("↑/↓", "Scroll the transcript"),
+    ("↑/↓", "Recall sent messages (scrolls while the input has text)"),
+    ("PgUp/PgDn", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
     ("Ctrl-T", "Toggle mouse capture (click-to-expand vs text select)"),
@@ -7933,7 +8016,7 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
                 key_style,
                 &[
                     ("Esc/Ctrl-C", "cancel"),
-                    ("↑/↓", "scroll"),
+                    ("PgUp/PgDn", "scroll"),
                     ("Ctrl-O", "expand all"),
                 ],
             );
@@ -9471,6 +9554,86 @@ mod tests {
         for ch in text.chars() {
             press(app, KeyCode::Char(ch), KeyModifiers::NONE).await;
         }
+    }
+
+    /// Submit `text` from the composer and drop back to idle, as a finished
+    /// turn would, so the next message starts from a fresh input box.
+    async fn submit_line(app: &mut App, text: &str) {
+        type_key_chars(app, text).await;
+        press(app, KeyCode::Enter, KeyModifiers::NONE).await;
+        app.status = Status::Idle;
+    }
+
+    #[tokio::test]
+    async fn up_recalls_submitted_messages_and_down_returns_to_an_empty_one() {
+        let mut app = test_app();
+        submit_line(&mut app, "first").await;
+        submit_line(&mut app, "second").await;
+
+        // With something typed, Up still scrolls the transcript.
+        type_key_chars(&mut app, "draft").await;
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "draft");
+        assert_eq!(app.scrollback, 1);
+
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "second");
+        assert_eq!(app.cursor, "second".len(), "caret sits at the end");
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "first");
+        // The oldest entry is the floor, not a wrap-around.
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "first");
+
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "second");
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "", "past the newest is a fresh message");
+        assert_eq!(app.scrollback, 1, "recall never scrolls the transcript");
+
+        // No longer recalling, so Down scrolls again.
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+        assert_eq!(app.scrollback, 0);
+    }
+
+    #[tokio::test]
+    async fn page_keys_still_scroll_when_there_is_history_to_recall() {
+        let mut app = test_app();
+        submit_line(&mut app, "first").await;
+        press(&mut app, KeyCode::PageUp, KeyModifiers::NONE).await;
+        assert_eq!(app.scrollback, 10);
+        assert!(app.input.is_empty(), "PageUp must not recall");
+        press(&mut app, KeyCode::PageDown, KeyModifiers::NONE).await;
+        assert_eq!(app.scrollback, 0);
+    }
+
+    #[tokio::test]
+    async fn a_recalled_message_is_editable_and_sends_as_a_new_one() {
+        let mut app = test_app();
+        submit_line(&mut app, "hello").await;
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        type_key_chars(&mut app, "!").await;
+        assert_eq!(app.input, "hello!");
+
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(app.input.is_empty());
+        assert!(app.recall_pos.is_none(), "sending leaves recall");
+        assert_eq!(app.input_history, vec!["hello", "hello!"]);
+        assert!(
+            transcript_text(&app).contains("hello!"),
+            "an edited recall is an ordinary user message"
+        );
+    }
+
+    /// A resend of the newest entry must not stack duplicates, or Up has to be
+    /// pressed once per repeat to get past them.
+    #[tokio::test]
+    async fn resending_the_same_message_keeps_one_history_entry() {
+        let mut app = test_app();
+        submit_line(&mut app, "again").await;
+        submit_line(&mut app, "again").await;
+        assert_eq!(app.input_history, vec!["again"]);
     }
 
     #[test]
