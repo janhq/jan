@@ -584,16 +584,6 @@ impl Row {
             _ => false,
         }
     }
-
-    /// Unstyled text of the row's source, for matching (`retain`).
-    fn plain_text(&self) -> String {
-        match &self.kind {
-            RowKind::Line(line) => line.spans.iter().map(|s| s.content.as_ref()).collect(),
-            RowKind::Markdown(text) => text.clone(),
-            RowKind::Tool { tag, label, .. } => format!("{tag} {label}"),
-            RowKind::Result { tag, content, .. } => format!("{tag} {content}"),
-        }
-    }
 }
 
 /// A committed `<think>` reasoning block, folded to a one-line summary row.
@@ -911,6 +901,15 @@ struct App {
     login_submit: Option<String>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
     update_requested: bool,
+    /// Compaction handed off to the loop, which spawns the summarizing model
+    /// call off the render loop. Taken once.
+    compact_request: Option<CompactKind>,
+    /// A compaction is in flight: the header and the input box show a throbber,
+    /// a second request is refused, and no run starts until it lands (its result
+    /// replaces `history`, so a run reading the old one would be clobbered).
+    compacting: Option<CompactKind>,
+    /// When the in-flight compaction started, for the elapsed counter.
+    compact_started: Option<Instant>,
     /// An install is in flight: `/update` is refused (two processes must not
     /// rewrite the same binary) and the footer shows progress.
     update_installing: bool,
@@ -1188,6 +1187,9 @@ impl App {
             login_submit: None,
             update_requested: false,
             update_installing: false,
+            compact_request: None,
+            compacting: None,
+            compact_started: None,
             scrollback: 0,
             want_start: false,
             turns_since_todos_closed: 0,
@@ -4062,6 +4064,12 @@ async fn chat_loop<B: Backend>(
         tokio::task::JoinHandle<Result<super::updater::UpdateOutcome, String>>,
     > = None;
 
+    // Compaction is a summarizing model call, so it runs off the render loop
+    // too; `compact_base` is the history length it was computed from.
+    let mut compact_task: Option<tokio::task::JoinHandle<Result<Vec<serde_json::Value>, String>>> =
+        None;
+    let mut compact_base = 0usize;
+
     match initial_task {
         Some(task) if !task.trim().is_empty() => app.submit_user(task.trim().to_string()),
         _ => app.note("type a message to start, or /help for commands"),
@@ -4110,6 +4118,29 @@ async fn chat_loop<B: Backend>(
             }
         }
 
+        // `/compact` (or the auto trigger) was requested: summarize off-loop.
+        // One at a time -- both request sites already refuse while one is in
+        // flight, and the result replaces `history` wholesale.
+        if compact_task.is_none() {
+            if let Some(kind) = app.compact_request.take() {
+                let args = args.clone();
+                let model = app.model.clone();
+                let history = app.history.clone();
+                compact_base = history.len();
+                app.compacting = Some(kind);
+                app.compact_started = Some(Instant::now());
+                compact_task = Some(tokio::spawn(async move {
+                    crate::core::agent::r#loop::compact_history(
+                        &args,
+                        &model,
+                        &history,
+                        kind.keep_recent(),
+                    )
+                    .await
+                }));
+            }
+        }
+
         // A turn finished under an active goal: run the (stateless) evaluator
         // before anything else. It either auto-submits the next turn (setting
         // want_start) or hands control back. Gated on an idle, run-free state so
@@ -4122,7 +4153,9 @@ async fn chat_loop<B: Backend>(
         // servers (if any) are connected, and the base snapshot (if any) is
         // captured. `submit_user` already flipped status to Running and reset
         // the counter.
-        if app.want_start && current.is_none() {
+        // A compaction in flight is also a gate: it replaces `history`, so a run
+        // started against the pre-compaction copy would be clobbered.
+        if app.want_start && current.is_none() && compact_task.is_none() {
             let base_ready = app.repo_root.is_none() || app.base_snapshot.is_some();
             if mcp_ready && base_ready {
                 app.want_start = false;
@@ -4214,6 +4247,9 @@ async fn chat_loop<B: Backend>(
             install = await_update_install(&mut update_install_task) => {
                 finish_update_install(app, install);
             }
+            compacted = await_compaction(&mut compact_task) => {
+                finish_compaction(app, compacted, compact_base);
+            }
             snap_res = await_snapshot(&mut snap_task) => {
                 match (snap_inflight.take(), snap_res) {
                     (Some(SnapshotJob::Base), Ok(sha)) => {
@@ -4241,44 +4277,11 @@ async fn chat_loop<B: Backend>(
                 Some(StreamEvent::Done { stop_reason, usage }) => {
                     app.on_done(stop_reason, usage);
                     current = None;
-                    // Auto-compact when approaching the context limit.
-                    if app.should_auto_compact() {
-                        let model = app.model.clone();
-                        let mut history = std::mem::take(&mut app.history);
-                        let before = history.len();
-                        // Show feedback immediately before the blocking model call.
-                        app.note("auto-compacting...");
-                        let compacted = crate::core::agent::r#loop::compact_history(
-                            args, &model, &history,
-                            crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
-                        )
-                        .await;
-                        // Remove the "auto-compacting..." note.
-                        app.transcript
-                            .retain(|row| !row.plain_text().contains("auto-compacting"));
-                        match compacted {
-                            Ok(c) if c.len() < before => {
-                                history = c;
-                                app.history = history;
-                                // Update token estimate from compacted content.
-                                app.tokens = estimate_token_count(&app.history);
-                                app.persist();
-                                app.note(&format!(
-                                    "auto-compacted {} -> {} messages (ctx {}K/{}K)",
-                                    before,
-                                    app.history.len(),
-                                    app.tokens / 1000,
-                                    app.context_window / 1000,
-                                ));
-                            }
-                            Ok(_) => {
-                                app.history = history;
-                            }
-                            Err(e) => {
-                                app.history = history;
-                                app.note(&format!("auto-compaction failed: {e}"));
-                            }
-                        }
+                    // Auto-compact when approaching the context limit. Handed to
+                    // the loop like `/compact` so the summarizing call runs off
+                    // the render loop.
+                    if app.should_auto_compact() && app.compacting.is_none() {
+                        app.compact_request = Some(CompactKind::Auto);
                     }
                 }
                 Some(StreamEvent::Error { code, message }) => {
@@ -5228,7 +5231,7 @@ async fn run_command(app: &mut App, line: &str) {
             clear_todos(app).await;
             app.note("started a new session");
         }
-        "compact" => compact_command(app).await,
+        "compact" => compact_command(app),
         "threads" | "list" => match super::list_threads_in(&app.agent_dir) {
             Ok(threads) if threads.is_empty() => {
                 app.note("no saved threads found");
@@ -5289,34 +5292,96 @@ async fn run_command(app: &mut App, line: &str) {
 /// Manually compact the conversation: summarize older turns, keeping the recent
 /// tail, then persist. Blocks the event loop for one model call; runs only while
 /// idle (the caller gates on `Status::Idle`).
-async fn compact_command(app: &mut App) {
-    let Some(args) = app.args.clone() else {
+fn compact_command(app: &mut App) {
+    if app.compacting.is_some() {
+        app.note("already compacting");
+        return;
+    }
+    if app.args.is_none() {
         app.note("compaction unavailable (no active session)");
         return;
+    }
+    app.compact_request = Some(CompactKind::Manual);
+}
+
+/// Which path asked for a compaction: `/compact` keeps a shorter tail than the
+/// automatic one and reports itself differently.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CompactKind {
+    Manual,
+    Auto,
+}
+
+impl CompactKind {
+    fn keep_recent(self) -> usize {
+        match self {
+            CompactKind::Manual => crate::core::agent::compaction::MANUAL_KEEP_RECENT,
+            CompactKind::Auto => crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            CompactKind::Manual => "compacting",
+            CompactKind::Auto => "auto-compacting",
+        }
+    }
+
+    fn done_label(self) -> &'static str {
+        match self {
+            CompactKind::Manual => "compacted",
+            CompactKind::Auto => "auto-compacted",
+        }
+    }
+}
+
+/// Await an in-flight compaction, parking forever when none is running so this
+/// can sit in the loop's `select!` unconditionally.
+async fn await_compaction(
+    task: &mut Option<tokio::task::JoinHandle<Result<Vec<serde_json::Value>, String>>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
     };
-    let before = app.history.len();
-    match crate::core::agent::r#loop::compact_history(
-        &args,
-        &app.model,
-        &app.history,
-        crate::core::agent::compaction::MANUAL_KEEP_RECENT,
-    )
-    .await
-    {
-        Ok(compacted) if compacted.len() < before => {
+    *task = None;
+    match joined {
+        Ok(inner) => inner,
+        Err(e) => Err(format!("compaction task failed: {e}")),
+    }
+}
+
+/// Apply a finished compaction. `base_len` is the history length the summary was
+/// computed from: anything appended since (a message submitted while the call was
+/// in flight) is carried over rather than dropped.
+fn finish_compaction(
+    app: &mut App,
+    result: Result<Vec<serde_json::Value>, String>,
+    base_len: usize,
+) {
+    let kind = app.compacting.take().unwrap_or(CompactKind::Manual);
+    app.compact_started = None;
+    match result {
+        Ok(mut compacted) if compacted.len() < base_len => {
+            compacted.extend(app.history.split_off(base_len.min(app.history.len())));
             app.history = compacted;
             app.persist();
             // Estimate tokens from compacted message content (~4 chars ≈ 1 token).
             app.tokens = estimate_token_count(&app.history);
             app.note(&format!(
-                "compacted {before} -> {} messages (ctx {}K/{}K)",
+                "{} {base_len} -> {} messages (ctx {}K/{}K)",
+                kind.done_label(),
                 app.history.len(),
                 app.tokens / 1000,
                 app.context_window / 1000,
             ));
         }
-        Ok(_) => app.note("nothing to compact yet"),
-        Err(e) => app.note(&format!("compaction failed: {e}")),
+        Ok(_) => {
+            if kind == CompactKind::Manual {
+                app.note("nothing to compact yet");
+            }
+        }
+        Err(e) => app.note(&format!("{} failed: {e}", kind.label())),
     }
 }
 
@@ -7761,7 +7826,9 @@ fn shimmer_spans(text: &str, palette: [Style; 3], frame: usize) -> Vec<Span<'sta
 }
 
 fn header(app: &App) -> Paragraph<'static> {
-    let (status, style): (String, Style) = if app.status == Status::Idle {
+    let (status, style): (String, Style) = if let Some(kind) = app.compacting {
+        (kind.label().to_string(), Style::new().magenta().bold())
+    } else if app.status == Status::Idle {
         ("ready".to_string(), Style::new().green())
     } else if !app.show_reasoning {
         // Reasoning folding is on: show the live thought state in place of the
@@ -8143,7 +8210,22 @@ fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
 
 fn input_box(app: &App) -> Paragraph<'static> {
     let block = Block::default();
-    if app.picker.is_some() {
+    if let Some(kind) = app.compacting.filter(|_| app.input.is_empty()) {
+        // Compaction puts nothing in the transcript while it runs, so the input
+        // row carries the throbber and the elapsed seconds.
+        let elapsed = app
+            .compact_started
+            .map(|t| format!(" {}", format_elapsed(t.elapsed().as_secs())))
+            .unwrap_or_default();
+        Paragraph::new(Line::from(vec![
+            Span::styled(format!("{} ", app.spinner()), Style::new().magenta()),
+            Span::styled(
+                format!("{} conversation…{elapsed}", kind.label()),
+                Style::new().dim().italic(),
+            ),
+        ]))
+        .block(block)
+    } else if app.picker.is_some() {
         Paragraph::new(Line::styled("selecting…", Style::new().dim().italic())).block(block)
     } else if app.status == Status::Running && app.input.is_empty() {
         // Show queue status when running with empty input
@@ -8346,7 +8428,8 @@ mod tests {
         diff_lines, Row, group_activity, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
         handle_ask_paste,
-        compact_tokens, finish_login, finish_update_install, load_image_file, message_text,
+        compact_tokens, finish_compaction, finish_login, finish_update_install, load_image_file,
+        message_text, CompactKind,
         note_update, open_config_screen,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
@@ -12513,6 +12596,75 @@ mod tests {
         assert!(text.contains("compaction unavailable"), "got: {text}");
         // History untouched when no session is attached.
         assert_eq!(app.history.len(), 1);
+        assert!(app.compact_request.is_none());
+    }
+
+    #[tokio::test]
+    async fn compact_command_is_refused_while_one_is_in_flight() {
+        let mut app = test_app();
+        app.compacting = Some(CompactKind::Auto);
+        run_command(&mut app, "compact").await;
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("already compacting"), "got: {text}");
+        assert!(app.compact_request.is_none());
+    }
+
+    #[test]
+    fn finish_compaction_keeps_messages_added_while_it_ran() {
+        let mut app = test_app();
+        app.compacting = Some(CompactKind::Manual);
+        app.compact_started = Some(Instant::now());
+        app.history = (0..5)
+            .map(|i| json!({ "role": "user", "content": format!("m{i}") }))
+            .collect();
+        // A message submitted while the summary was being generated.
+        let base_len = 4;
+        finish_compaction(
+            &mut app,
+            Ok(vec![json!({ "role": "user", "content": "summary" })]),
+            base_len,
+        );
+        let contents: Vec<String> = app
+            .history
+            .iter()
+            .map(|m| m["content"].as_str().unwrap_or_default().to_string())
+            .collect();
+        assert_eq!(contents, vec!["summary", "m4"], "tail must survive");
+        assert!(app.compacting.is_none());
+        assert!(app.compact_started.is_none());
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("compacted 4 -> 2 messages"), "got: {text}");
+    }
+
+    #[test]
+    fn finish_compaction_restores_idle_state_on_failure() {
+        let mut app = test_app();
+        app.compacting = Some(CompactKind::Auto);
+        app.history = vec![json!({ "role": "user", "content": "hi" })];
+        finish_compaction(&mut app, Err("upstream 500".into()), 1);
+        assert_eq!(app.history.len(), 1, "history must be left alone");
+        assert!(app.compacting.is_none(), "a failure must allow a retry");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("auto-compacting failed: upstream 500"), "got: {text}");
+    }
+
+    #[test]
+    fn a_running_compaction_shows_a_throbber() {
+        let mut app = test_app();
+        let idle = render_rows(&mut app, 80, 12).join("\n");
+        assert!(!idle.contains("compacting"), "got: {idle}");
+
+        app.compacting = Some(CompactKind::Manual);
+        app.compact_started = Some(Instant::now());
+        let out = render_rows(&mut app, 80, 12).join("\n");
+        assert!(
+            out.contains("compacting conversation"),
+            "the input row must say what is happening: {out}"
+        );
+        assert!(
+            out.contains(SPINNER[app.spinner_frame % SPINNER.len()]),
+            "the input row must carry the throbber: {out}"
+        );
     }
 
     fn start_subagent(app: &mut App, run_id: &str, name: &str) {
