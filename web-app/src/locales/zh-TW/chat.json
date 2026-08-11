@@ -9,5 +9,25 @@
   "clearHistory": "清除歷史記錄",
   "temporaryChat": "臨時聊天",
   "temporaryChatDescription": "開始一個不會儲存到聊天歷史記錄的臨時對話。",
-  "done": "Done"
+  "embeddings": {
+    "title": "正在準備您的文件",
+    "description": "正在為附件建立索引，以便搜尋及引用。大型文件可能需要一些時間。"
+  },
+  "actions": {
+    "regenerate": "重新產生回覆",
+    "continue": "繼續產生"
+  },
+  "done": "完成",
+  "webSources": "{{count}} 個來源",
+  "reasoning": {
+    "label": "推理中…",
+    "thinking": "思考中",
+    "usingTool": "正在使用 {{tool}}…",
+    "showFullTimeline": "顯示完整時間軸",
+    "showCurrentStep": "僅顯示目前步驟",
+    "thoughtForAWhile": "思考了幾秒鐘",
+    "thoughtFor": "思考了 {{duration}}",
+    "workedForAWhile": "處理了幾秒鐘",
+    "workedFor": "處理了 {{duration}}"
+  }
 }
