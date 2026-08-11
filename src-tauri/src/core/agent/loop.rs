@@ -3225,6 +3225,112 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ask_result_content_reaches_the_outgoing_request() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let asks = crate::core::agent::interaction::new_registry();
+        let mut invoker = build_prompting_invoker(root.clone(), tx.clone(), permissions);
+        invoker.ask_requests = Some(asks.clone());
+        let invoker = Arc::new(invoker);
+
+        // Script: the model first calls `ask`, then finishes with plain text.
+        let model = Arc::new(MockModel::new(vec![
+            json!({
+                "choices": [{
+                    "message": {
+                        "content": serde_json::Value::Null,
+                        "tool_calls": [{
+                            "id": "call_ask1",
+                            "type": "function",
+                            "function": {
+                                "name": "ask",
+                                "arguments": serde_json::to_string(&json!({
+                                    "questions": [{
+                                        "id": "scope",
+                                        "question": "Which scope?",
+                                        "options": [{"label": "Small"}, {"label": "Large"}]
+                                    }]
+                                })).unwrap()
+                            }
+                        }]
+                    },
+                    "finish_reason": "tool_calls"
+                }]
+            }),
+            json!({ "choices": [{ "message": { "content": "final answer" }, "finish_reason": "stop" }] }),
+        ]));
+        let mut budget = SessionBudget::new(None);
+        let convo = vec![json!({ "role": "user", "content": "use the ask tool" })];
+
+        let task = tokio::spawn({
+            let tx = tx.clone();
+            let model = model.clone();
+            let invoker = invoker.clone();
+            async move {
+                run_turn_cycle(
+                    &tx,
+                    &json!({}),
+                    "m",
+                    &[crate::core::agent::interaction::ask_tool_schema()],
+                    convo,
+                    0,
+                    &mut budget,
+                    model.as_ref(),
+                    invoker.as_ref(),
+                    crate::core::agent::plan::RunMode::Normal,
+                    None,
+                    None,
+                )
+                .await
+            }
+        });
+
+        // Answer the ask the way the TUI does: a user selection on the question.
+        let request_id = loop {
+            match rx.recv().await.unwrap() {
+                StreamEvent::AskRequest { request_id, .. } => break request_id,
+                _ => continue,
+            }
+        };
+        crate::core::agent::interaction::respond(
+            &asks,
+            &request_id,
+            Ok(vec![crate::core::agent::interaction::QuestionResult {
+                id: "scope".into(),
+                selected: vec!["Small".into()],
+                custom_input: None,
+            }]),
+        )
+        .await
+        .unwrap();
+
+        let result = task.await.unwrap();
+        assert!(result.is_ok(), "cycle failed: {result:?}");
+
+        // The request after the ask MUST carry the tool result with content.
+        let requests = model.requests.lock().unwrap();
+        assert!(
+            requests.len() >= 2,
+            "expected two outgoing requests, got {}",
+            requests.len()
+        );
+        let second = &requests[1];
+        let tool_msg = second["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("tool"))
+            .expect("tool result message present in second request");
+        let content = tool_msg["content"].as_str().expect("content is a string");
+        assert!(
+            content.contains("Small"),
+            "ask result content missing from outgoing request: {content}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
     async fn todo_unavailable_without_an_attached_session() {
         let root = unique_project_root();
         let (tx, _rx) = mpsc::unbounded_channel();
