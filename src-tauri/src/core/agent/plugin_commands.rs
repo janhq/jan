@@ -18,6 +18,9 @@ pub(crate) struct CommandEntry {
     pub description: String,
     /// The markdown file to read for the prompt template.
     pub file: PathBuf,
+    /// Placeholders the template accepts (`$1`..`$9`, `$ARGUMENTS`), surfaced
+    /// in the slash popup so the human knows what arguments do.
+    pub hints: Vec<String>,
 }
 
 /// A command file's parsed content: frontmatter description + body with the
@@ -53,11 +56,13 @@ pub(crate) fn discover(root: &Path) -> Vec<CommandEntry> {
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or_default();
+            let parsed = parse_command(&raw);
             out.push(CommandEntry {
                 name: name.to_string(),
                 plugin: plugin.to_string(),
-                description: parse_command(&raw).description,
+                description: parsed.description,
                 file: path.to_path_buf(),
+                hints: template_hints(&parsed.body),
             });
         });
     }
@@ -162,6 +167,20 @@ pub(crate) fn substitute(body: &str, args: &str) -> String {
     out
 }
 
+/// The placeholders a command template accepts (`$1`..`$9` then `$ARGUMENTS`),
+/// surfaced in the slash popup. Mirrors opencode's `hints()`: numbered
+/// placeholders first, `$ARGUMENTS` last.
+pub(crate) fn template_hints(body: &str) -> Vec<String> {
+    let mut out: Vec<String> = (1..=9)
+        .filter(|n| body.contains(&format!("${n}")))
+        .map(|n| format!("${n}"))
+        .collect();
+    if body.contains("$ARGUMENTS") {
+        out.push("$ARGUMENTS".to_string());
+    }
+    out
+}
+
 /// Split leading `---\n...\n---` YAML frontmatter from a command body,
 /// extracting the `description` (falling back to the first body line). Reuses
 /// the skill parser's tolerance for missing/unterminated fences.
@@ -196,19 +215,33 @@ mod tests {
         let root = temp_root("disc");
         let cmd_dir = plugins_dir(&root).join("release").join("commands");
         std::fs::create_dir_all(cmd_dir.join("git")).unwrap();
-        std::fs::write(cmd_dir.join("release.md"), "---\ndescription: Cut a release\n---\nDo it.")
-            .unwrap();
+        std::fs::write(
+            cmd_dir.join("release.md"),
+            "---\ndescription: Cut a release\n---\nRelease $1 for $ARGUMENTS.",
+        )
+        .unwrap();
         std::fs::write(cmd_dir.join("git").join("commit.md"), "commit body").unwrap();
         std::fs::write(cmd_dir.join("README.md"), "docs, not a command").unwrap();
         std::fs::write(cmd_dir.join(".hidden.md"), "skip me").unwrap();
 
-        let names: Vec<String> = discover(&root)
-            .into_iter()
-            .map(|e| e.name.clone())
-            .collect();
+        let discovered = discover(&root);
+        let names: Vec<String> = discovered.iter().map(|e| e.name.clone()).collect();
         assert_eq!(names, vec!["commit", "release"]);
-        assert!(discover(&root).iter().all(|e| e.plugin == "release"));
+        assert!(discovered.iter().all(|e| e.plugin == "release"));
+        // Placeholders in the template surface as hints, numbered first.
+        let release = discovered.iter().find(|e| e.name == "release").unwrap();
+        assert_eq!(release.hints, vec!["$1", "$ARGUMENTS"]);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn template_hints_find_numbered_and_arguments() {
+        assert_eq!(
+            template_hints("$1 then $2 and $ARGUMENTS"),
+            vec!["$1", "$2", "$ARGUMENTS"]
+        );
+        assert_eq!(template_hints("$ARGUMENTS only"), vec!["$ARGUMENTS"]);
+        assert_eq!(template_hints("plain body"), Vec::<String>::new());
     }
 
     #[test]

@@ -78,18 +78,15 @@ pub(crate) struct ParsedSkill {
     pub model_invocable: bool,
 }
 
-/// Split leading `---\n...\n---` YAML frontmatter from the markdown body.
-/// Tolerant: no opening/closing fence -> no frontmatter, whole input is body.
-pub(crate) fn parse(content: &str) -> ParsedSkill {
+/// Split leading `---\n...\n---` YAML frontmatter from a markdown body.
+/// Tolerant: no opening fence or an unterminated fence yields `(None, whole
+/// input)`. Shared by skill, plugin-command, and plugin-agent parsing so the
+/// fence rules never drift between the three.
+pub(crate) fn split_frontmatter(content: &str) -> (Option<String>, String) {
     let content = content.strip_prefix('\u{feff}').unwrap_or(content);
     let mut lines = content.lines();
     if lines.next().map(str::trim_end) != Some("---") {
-        return ParsedSkill {
-            description: None,
-            body: content.to_string(),
-            user_invocable: true,
-            model_invocable: true,
-        };
+        return (None, content.to_string());
     }
     let mut yaml = String::new();
     let mut body: Vec<&str> = Vec::new();
@@ -107,18 +104,25 @@ pub(crate) fn parse(content: &str) -> ParsedSkill {
         }
     }
     if !closed {
-        // Unterminated fence: treat the whole file as body (no frontmatter).
+        return (None, content.to_string());
+    }
+    (Some(yaml), body.join("\n").trim_start_matches('\n').to_string())
+}
+
+pub(crate) fn parse(content: &str) -> ParsedSkill {
+    let (yaml, body) = split_frontmatter(content);
+    let Some(yaml) = yaml else {
         return ParsedSkill {
             description: None,
-            body: content.to_string(),
+            body,
             user_invocable: true,
             model_invocable: true,
         };
-    }
+    };
     let fm = serde_yaml::from_str::<Frontmatter>(&yaml).unwrap_or_default();
     ParsedSkill {
         description: fm.description.map(|d| d.trim().to_string()),
-        body: body.join("\n").trim_start_matches('\n').to_string(),
+        body,
         user_invocable: fm.user_invocable.unwrap_or(true),
         model_invocable: !fm.disable_model_invocation.unwrap_or(false),
     }

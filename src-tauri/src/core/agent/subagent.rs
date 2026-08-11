@@ -317,34 +317,12 @@ struct PluginAgentFrontmatter {
 /// system_prompt)`. `None` when the file has no `---` frontmatter or no
 /// `name` — such files are not dispatchable.
 fn parse_plugin_agent(raw: &str) -> Option<(String, String, Option<Vec<String>>, String)> {
-    let raw = raw.strip_prefix('\u{feff}').unwrap_or(raw);
-    let mut lines = raw.lines();
-    if lines.next().map(str::trim_end) != Some("---") {
-        return None;
-    }
-    let mut yaml = String::new();
-    let mut body: Vec<&str> = Vec::new();
-    let mut closed = false;
-    for line in lines {
-        if !closed {
-            if line.trim_end() == "---" {
-                closed = true;
-                continue;
-            }
-            yaml.push_str(line);
-            yaml.push('\n');
-        } else {
-            body.push(line);
-        }
-    }
-    if !closed {
-        return None;
-    }
+    let (yaml, body) = crate::core::agent::skills::split_frontmatter(raw);
+    let yaml = yaml?;
     let fm: PluginAgentFrontmatter = serde_yaml::from_str(&yaml).unwrap_or_default();
     let name = fm.name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty())?;
     let description = fm.description.unwrap_or_default();
-    let system_prompt = body.join("\n").trim_start_matches('\n').to_string();
-    Some((name, description, map_claude_tools(&fm.tools), system_prompt))
+    Some((name, description, map_claude_tools(&fm.tools), body))
 }
 
 /// Claude Code tool names with a Jan equivalent, 1:1 where one exists. Unknown
