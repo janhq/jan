@@ -3077,6 +3077,38 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[tokio::test]
+    async fn ask_returns_custom_response_at_invoker_boundary() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let asks = crate::core::agent::interaction::new_registry();
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        invoker.ask_requests = Some(asks.clone());
+
+        let task = tokio::spawn(async move { invoker.invoke(&[ask_call()]).await.unwrap() });
+        let request_id = match rx.recv().await.unwrap() {
+            StreamEvent::AskRequest { request_id, .. } => request_id,
+            event => panic!("expected ask_request, got {event:?}"),
+        };
+        crate::core::agent::interaction::respond(
+            &asks,
+            &request_id,
+            Ok(vec![crate::core::agent::interaction::QuestionResult {
+                id: "scope".into(),
+                selected: Vec::new(),
+                custom_input: Some("custom answer".into()),
+            }]),
+        )
+        .await
+        .unwrap();
+
+        let out = task.await.unwrap();
+        let result: serde_json::Value = serde_json::from_str(&out[0].content).unwrap();
+        assert_eq!(result[0]["custom_input"], "custom answer");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     fn todo_call(id: &str, args: serde_json::Value) -> serde_json::Value {
         json!({
             "id": id,
