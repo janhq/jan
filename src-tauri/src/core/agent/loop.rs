@@ -1477,6 +1477,26 @@ fn requires_implicit_tool_choice(model_id: &str) -> bool {
     model_id.starts_with("deepseek-v4-")
 }
 
+/// Tokamak preview models ignore `role: "tool"` content. Their compatibility
+/// endpoint expects tool output as the next user message instead.
+fn requires_user_tool_results(model_id: &str) -> bool {
+    model_id == "tokamak-1-preview"
+}
+
+fn tool_result_message(model_id: &str, id: &str, content: &str) -> serde_json::Value {
+    if requires_user_tool_results(model_id) {
+        serde_json::json!({
+            "role": "user",
+            "content": format!(
+                "A tool returned:\n{content}\n\nContinue from this result. \
+                 Call another tool only if the next step requires it."
+            ),
+        })
+    } else {
+        serde_json::json!({ "role": "tool", "tool_call_id": id, "content": content })
+    }
+}
+
 
 /// Build one OpenAI chat-completion request from the current conversation.
 fn build_completion_request(
@@ -1767,31 +1787,23 @@ async fn run_turn_cycle(
             });
         }
 
-        // Record the assistant's tool-call turn using the standard OpenAI
-        // protocol: attach the `tool_calls` array here, and (below) feed each
-        // result back as a `role: "tool"` message carrying its `tool_call_id`.
-        //
-        // A prior workaround delivered tool results as `role: "user"` because
-        // some served models (observed with `tokamak-1-preview`) didn't attend
-        // to `role: "tool"` messages with large content. That is now fixed
-        // server-side: the tokamak-1-preview facade rewrites role:tool -> user
-        // for the specific model that needs it (scoped, content preserved), so
-        // the agent can speak standard OpenAI tool protocol on the wire again.
-        // See janhq/jan-internal#238.
-        if let Some(choice_message) = extract_choice_message(&completion) {
-            let assistant_content = choice_message
-                .get("content")
-                .cloned()
-                .unwrap_or(serde_json::Value::Null);
+        let assistant_content = extract_choice_message(&completion)
+            .and_then(|message| message.get("content"))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        if requires_user_tool_results(model_id) {
             conversation_messages.push(serde_json::json!({
                 "role": "assistant",
-                "content": assistant_content,
-                "tool_calls": tool_calls.clone()
+                "content": if assistant_content.is_null() {
+                    serde_json::json!("(calling tools)")
+                } else {
+                    assistant_content
+                },
             }));
         } else {
             conversation_messages.push(serde_json::json!({
                 "role": "assistant",
-                "content": serde_json::Value::Null,
+                "content": assistant_content,
                 "tool_calls": tool_calls.clone()
             }));
         }
@@ -1813,11 +1825,7 @@ async fn run_turn_cycle(
                     is_error: true,
                     diff: None,
                 });
-                conversation_messages.push(serde_json::json!({
-                    "role": "tool",
-                    "tool_call_id": id,
-                    "content": content
-                }));
+                conversation_messages.push(tool_result_message(model_id, &id, &content));
             }
             turn += 1;
             continue;
@@ -1825,9 +1833,9 @@ async fn run_turn_cycle(
 
         let tool_results = tools.invoke(&tool_calls).await?;
 
-        // Standard OpenAI tool protocol: each result is a `role: "tool"` message
-        // carrying its `tool_call_id` (see note above the assistant push -- the
-        // tokamak-1-preview facade handles models that can't attend to it).
+        // Most providers use the OpenAI `role: "tool"` protocol. Tokamak
+        // preview models need a user-message compatibility path so they retain
+        // the tool result instead of receiving an empty `<tool_result>` block.
         let tool_names: HashMap<&str, &str> = tool_calls
             .iter()
             .filter_map(|tc| {
@@ -1865,11 +1873,7 @@ async fn run_turn_cycle(
                 is_error,
                 diff,
             });
-            conversation_messages.push(serde_json::json!({
-                "role": "tool",
-                "tool_call_id": id,
-                "content": content
-            }));
+            conversation_messages.push(tool_result_message(model_id, &id, &content));
         }
         if todo_touched_this_batch {
             mutations_since_todo_touch = 0;
@@ -2130,6 +2134,43 @@ mod tests {
             }
         }
         assert!(saw_tool_call && saw_tool_result);
+    }
+
+    #[tokio::test]
+    async fn tokamak_preview_receives_tool_results_as_user_messages() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            tool_call_completion(),
+            json!({ "choices": [{ "message": { "content": "final answer" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "tokamak-1-preview",
+            &[],
+            vec![user_message("ask something")],
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        let messages = requests[1]["messages"].as_array().unwrap();
+        assert_eq!(messages[messages.len() - 1]["role"], "user");
+        assert_eq!(
+            messages[messages.len() - 1]["content"],
+            "A tool returned:\nMOCK_RESULT\n\nContinue from this result. Call another tool only if the next step requires it."
+        );
+        assert!(messages[messages.len() - 2].get("tool_calls").is_none());
     }
 
     #[tokio::test]

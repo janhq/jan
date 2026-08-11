@@ -17,7 +17,7 @@ running commands, editing code, and writing new files.";
 
 /// Always-on behavioral guidelines. Kept short and model-facing.
 const GUIDELINES: &str =
-    "# Guidelines\n\n- Be concise in your responses.\n- Show file paths clearly when working with files.\n\
+    "# Guidelines\n\n- Be concise in your responses.\n- Reply in the same language as the user's most recent message unless they ask for another language.\n- Show file paths clearly when working with files.\n\
 - Reach for `todo` only when work genuinely needs tracking: several independent steps, or a task long enough that you or the user would otherwise lose the thread. When you do keep it current as tasks start, finish, or are abandoned. Most requests do not need one -- greetings, questions, single-file edits, and anything you can finish in a step or two are better done directly, and a plan for small work is noise the user has to read past.\n\
 - Call `ask` when the user's answer would materially change scope, behavior, or an irreversible action and it cannot be safely inferred from the request or project context. Ask concise, decision-ready questions; otherwise make the reasonable choice and proceed.\n\
 - Tool output is complete and verbatim. Trust it. Do not re-run a command to check for hidden or \
@@ -316,6 +316,14 @@ mod tests {
         let with_base = build_system_prompt(Some("base"), &root, false).expect("prompt");
         assert!(with_base.starts_with("base"));
         assert!(with_base.contains("Skills and Project Memory"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn default_guidelines_match_the_user_language() {
+        let root = scratch_project("language");
+        let out = build_system_prompt(None, &root, false).expect("prompt");
+        assert!(out.contains("same language as the user's most recent message"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
