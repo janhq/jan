@@ -603,7 +603,10 @@ mod tests {
 
         set_agent_key(&path, "budget.max_tokens", Some(toml_edit::value(60i64))).expect("write");
         let raw = std::fs::read_to_string(&path).unwrap();
-        assert!(raw.contains("max_tokens = 60"), "written under [budget]: {raw}");
+        assert!(
+            raw.contains("max_tokens = 60"),
+            "written under [budget]: {raw}"
+        );
 
         set_agent_key(&path, "budget.max_tokens", None).expect("unset");
         let raw = std::fs::read_to_string(&path).unwrap();
@@ -625,16 +628,14 @@ mod tests {
     #[cfg(feature = "cli")]
     #[test]
     fn scaffold_template_leaves_session_budget_unset() {
-        let cfg: AgentToml =
-            toml::from_str(AGENT_TOML_TEMPLATE).expect("scaffold template parses");
+        let cfg: AgentToml = toml::from_str(AGENT_TOML_TEMPLATE).expect("scaffold template parses");
         assert_eq!(cfg.budget.max_tokens, None);
     }
 
     #[cfg(feature = "cli")]
     #[test]
     fn budget_max_tokens_parses_when_set() {
-        let cfg: AgentToml =
-            toml::from_str("[budget]\nmax_tokens = 200000\n").expect("parses");
+        let cfg: AgentToml = toml::from_str("[budget]\nmax_tokens = 200000\n").expect("parses");
         assert_eq!(cfg.budget.max_tokens, Some(200_000));
     }
 

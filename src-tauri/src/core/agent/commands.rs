@@ -14,20 +14,20 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::core::agent::events::StreamEvent;
 use crate::core::agent::git;
-use tauri_plugin_agent_tools::permissions::ToolPermissions;
+use crate::core::agent::plugins;
 use crate::core::agent::project::{
     agent_toml_path, ensure_project, load_agent_config, permissions_from,
     set_skills_enabled_in_agent_toml,
 };
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs};
 use crate::core::agent::skill_hub;
-use crate::core::agent::plugins;
 use crate::core::agent::skills as agent_skills;
-use tauri_plugin_agent_tools::skills::{self, SkillMeta};
-use tauri_plugin_agent_tools::workspace;
-use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
+use tauri_plugin_agent_tools::permissions::ToolPermissions;
+use tauri_plugin_agent_tools::skills::{self, SkillMeta};
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::workspace;
 
 /// Registry of in-flight agent runs keyed by client-supplied `run_id`, holding a
 /// one-shot cancel sender per run. Managed via `app.manage(AgentRuns::default())`.
@@ -232,10 +232,7 @@ pub async fn agent_skill_enabled_get(project: String) -> Result<Vec<String>, Str
 /// Set the project's enabled-skill whitelist. Empty = all skills enabled.
 /// Persisted to `[skills].enabled` in agent.toml (format-preserving).
 #[tauri::command]
-pub async fn agent_skill_enabled_set(
-    project: String,
-    enabled: Vec<String>,
-) -> Result<(), String> {
+pub async fn agent_skill_enabled_set(project: String, enabled: Vec<String>) -> Result<(), String> {
     let root = std::path::PathBuf::from(&project);
     ensure_project(&root)?;
     set_skills_enabled_in_agent_toml(&agent_toml_path(&root), &enabled).map_err(ui_error)

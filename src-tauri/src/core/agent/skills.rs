@@ -106,7 +106,10 @@ pub(crate) fn split_frontmatter(content: &str) -> (Option<String>, String) {
     if !closed {
         return (None, content.to_string());
     }
-    (Some(yaml), body.join("\n").trim_start_matches('\n').to_string())
+    (
+        Some(yaml),
+        body.join("\n").trim_start_matches('\n').to_string(),
+    )
 }
 
 pub(crate) fn parse(content: &str) -> ParsedSkill {
@@ -272,6 +275,12 @@ pub(crate) fn discover_plugins(root: &Path) -> Vec<SkillEntry> {
         let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
             continue;
         };
+        // Ignore interrupted `.installing-*` staging directories, matching the
+        // command/agent loaders: a partially-copied plugin must not leak its
+        // skills into the catalog during an install.
+        if plugin.starts_with(".installing-") {
+            continue;
+        }
         let mut tagged = Vec::new();
         for e in scan_skill_dir(&path.join("skills")) {
             tagged.push(SkillEntry {
@@ -605,10 +614,7 @@ pub(crate) fn build_invocation_message(
     let body =
         parse(&std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))?).body;
     let args = args.trim();
-    let mut msg = format!(
-        "{}\n\n{body}",
-        invocation_wrapper(name, "skill")
-    );
+    let mut msg = format!("{}\n\n{body}", invocation_wrapper(name, "skill"));
     // Folder skills (and single-skill plugins) may bundle files next to their
     // SKILL.md; announce that directory so relative paths resolve.
     if entry.is_folder {
@@ -996,6 +1002,22 @@ mod tests {
         // Project-only discovery stays project-only.
         let project_names: Vec<_> = discover(&root).into_iter().map(|e| e.name).collect();
         assert_eq!(project_names, vec!["deploy"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn discover_plugins_skips_installing_staging_dirs() {
+        let root = temp_root("stag");
+        // A completed plugin is discoverable.
+        plugin_skill(&root, "release", "prepare", "flat body");
+        // An interrupted install stage must not leak its skills.
+        let staging = plugins_dir(&root).join(".installing-12345");
+        std::fs::create_dir_all(staging.join("skills").join("half")).unwrap();
+        std::fs::write(staging.join("skills").join("half").join("SKILL.md"), "partial").unwrap();
+
+        let entries = discover_plugins(&root);
+        let names: Vec<String> = entries.iter().map(|e| qualified_name(e)).collect();
+        assert_eq!(names, vec!["release:prepare"]);
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -3162,7 +3162,10 @@ mod tests {
     #[test]
     fn session_budget_treats_zero_and_absent_as_no_ceiling() {
         assert_eq!(body_session_budget(&json!({})), None);
-        assert_eq!(body_session_budget(&json!({ "max_session_tokens": 0 })), None);
+        assert_eq!(
+            body_session_budget(&json!({ "max_session_tokens": 0 })),
+            None
+        );
         assert_eq!(
             body_session_budget(&json!({ "max_session_tokens": 128_000 })),
             Some(128_000)

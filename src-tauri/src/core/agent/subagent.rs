@@ -161,12 +161,10 @@ impl SubagentRegistry {
                     "project scope requires create_in; use create_in".to_string(),
                 ))
             }
-            SubagentScope::Plugin => {
-                return Err(SubagentError::Upstream(
-                    "plugin scope is read-only: plugin agents are managed via plugin install/remove"
-                        .to_string(),
-                ))
-            }
+            SubagentScope::Plugin => return Err(SubagentError::Upstream(
+                "plugin scope is read-only: plugin agents are managed via plugin install/remove"
+                    .to_string(),
+            )),
         };
         self.create_in(&dir, def, scope, overwrite)
     }
@@ -279,27 +277,25 @@ fn scan_agent_files(dir: &Path, visit: &mut dyn FnMut(&Path, &str)) {
 }
 
 fn scan_agent_dir(dir: &Path, out: &mut Vec<SubagentDefinition>) {
-    scan_agent_files(dir, &mut |path, raw| {
-        match parse_plugin_agent(raw) {
-            Some((name, description, tools, system_prompt)) => {
-                if validate_name(&name).is_err() {
-                    log::warn!("subagent: skipping plugin agent '{name}' (invalid name)");
-                    return;
-                }
-                out.push(SubagentDefinition {
-                    name,
-                    description,
-                    system_prompt,
-                    allowed_tools: tools,
-                    model: None,
-                    scope: SubagentScope::Plugin,
-                });
+    scan_agent_files(dir, &mut |path, raw| match parse_plugin_agent(raw) {
+        Some((name, description, tools, system_prompt)) => {
+            if validate_name(&name).is_err() {
+                log::warn!("subagent: skipping plugin agent '{name}' (invalid name)");
+                return;
             }
-            None => log::warn!(
-                "subagent: skipping plugin agent {} (missing frontmatter name)",
-                path.display()
-            ),
+            out.push(SubagentDefinition {
+                name,
+                description,
+                system_prompt,
+                allowed_tools: tools,
+                model: None,
+                scope: SubagentScope::Plugin,
+            });
         }
+        None => log::warn!(
+            "subagent: skipping plugin agent {} (missing frontmatter name)",
+            path.display()
+        ),
     });
 }
 
@@ -320,7 +316,10 @@ fn parse_plugin_agent(raw: &str) -> Option<(String, String, Option<Vec<String>>,
     let (yaml, body) = crate::core::agent::skills::split_frontmatter(raw);
     let yaml = yaml?;
     let fm: PluginAgentFrontmatter = serde_yaml::from_str(&yaml).unwrap_or_default();
-    let name = fm.name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty())?;
+    let name = fm
+        .name
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty())?;
     let description = fm.description.unwrap_or_default();
     Some((name, description, map_claude_tools(&fm.tools), body))
 }
@@ -1366,7 +1365,10 @@ mod tests {
         let def = vec!["read".to_string()];
         let p = perms_denying(&["skill_read"]);
         let out = intersect_allowed_tools(Some(&def), None, &p).unwrap();
-        assert_eq!(out, Some(vec!["read".to_string(), "skill_list".to_string()]));
+        assert_eq!(
+            out,
+            Some(vec!["read".to_string(), "skill_list".to_string()])
+        );
     }
 
     #[test]
@@ -2089,7 +2091,9 @@ mod tests {
     }
 
     fn plugin_agents_dir(root: &Path) -> PathBuf {
-        crate::core::agent::skills::plugins_dir(root).join("feature-dev").join("agents")
+        crate::core::agent::skills::plugins_dir(root)
+            .join("feature-dev")
+            .join("agents")
     }
 
     #[test]

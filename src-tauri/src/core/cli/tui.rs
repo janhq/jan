@@ -6,6 +6,7 @@
 //! inline workflow elements (turn steps, tool calls/results). Gated tool calls
 //! are approved interactively via the shared `PermissionRegistry`.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::future::pending;
 use std::io::{self, Write};
@@ -1140,6 +1141,12 @@ struct App {
     /// Set by Esc to hide the hint popup without clearing the buffer; cleared on
     /// the next keystroke that edits the input so typing re-shows it.
     slash_dismissed: bool,
+    /// Plugin command and skill metadata loaded before interactive rendering.
+    /// Refresh only after an in-app plugin mutation, never while drawing.
+    slash_catalog: SlashCatalog,
+    /// Filesystem-backed slash matches cached for the unchanged input buffer.
+    /// Rendering asks for these every tick, so discovery must not run per frame.
+    slash_matches_cache: RefCell<Option<(String, Vec<SlashMatch>)>>,
     /// File-path hint entries matching the current `@query` in the input buffer.
     path_hints: Vec<PathHintItem>,
     /// Highlighted row in the path-hint popup (clamped to matches).
@@ -1418,6 +1425,7 @@ impl App {
         project_root: PathBuf,
         repo_root: Option<PathBuf>,
     ) -> Self {
+        let slash_catalog = SlashCatalog::load(&project_root);
         Self {
             smol_model: model.clone(),
             model,
@@ -1462,6 +1470,8 @@ impl App {
             cursor: 0,
             slash_selected: 0,
             slash_dismissed: false,
+            slash_matches_cache: RefCell::new(None),
+            slash_catalog,
             path_hints: Vec::new(),
             path_hint_selected: 0,
             path_hint_dismissed: false,
@@ -2136,6 +2146,12 @@ impl App {
         self.slash_selected = 0;
         self.slash_dismissed = false;
         self.path_hint_dismissed = false;
+        self.slash_matches_cache.replace(None);
+    }
+
+    fn refresh_slash_catalog(&mut self) {
+        self.slash_catalog = SlashCatalog::load(&self.project_root);
+        self.slash_matches_cache.replace(None);
     }
 
     /// Slash commands and installed project skills whose name prefixes the
@@ -2153,9 +2169,20 @@ impl App {
         {
             return Vec::new();
         }
+        if let Some((input, matches)) = self.slash_matches_cache.borrow().as_ref() {
+            if input == &self.input {
+                return matches.clone();
+            }
+        }
+        let query: Vec<char> = self
+            .input
+            .trim_start_matches('/')
+            .chars()
+            .map(|c| c.to_ascii_lowercase())
+            .collect();
         let mut out: Vec<SlashMatch> = SLASH_COMMANDS
             .iter()
-            .filter(|c| c.name.starts_with(&self.input))
+            .filter(|c| slash_match_score(&query, c.name).is_some())
             .map(SlashMatch::Command)
             .collect();
         // A command wins a name collision: a skill named `cancel` is dropped
@@ -2179,19 +2206,29 @@ impl App {
         // Short-form ownership: a command's plain name is claimed by the
         // command - a skill of the same name loses its short form (explicit
         // `/command:` and `/skill:` forms always stay).
-        let commands = crate::core::agent::plugin_commands::catalog(&self.project_root, &enabled);
+        let commands = &self.slash_catalog.commands;
         let mut command_plain_counts: std::collections::HashMap<&str, usize> =
             std::collections::HashMap::new();
         let mut command_owned: std::collections::HashSet<&str> = std::collections::HashSet::new();
-        for cmd in &commands {
+        for cmd in commands {
+            if !SlashCatalog::command_enabled(cmd, &enabled) {
+                continue;
+            }
             command_owned.insert(cmd.name.as_str());
             *command_plain_counts.entry(cmd.name.as_str()).or_insert(0) += 1;
         }
-        for cmd in &commands {
+        for cmd in commands {
+            if !SlashCatalog::command_enabled(cmd, &enabled) {
+                continue;
+            }
             if !command_colon {
                 // Short form: built-in wins, ambiguity drops the form.
                 if taken.contains(&format!("/{}", cmd.name))
-                    || command_plain_counts.get(cmd.name.as_str()).copied().unwrap_or(0) > 1
+                    || command_plain_counts
+                        .get(cmd.name.as_str())
+                        .copied()
+                        .unwrap_or(0)
+                        > 1
                 {
                     continue;
                 }
@@ -2201,7 +2238,9 @@ impl App {
             } else {
                 format!("/{}", cmd.name)
             };
-            if name.starts_with(&self.input) && (command_colon || !taken.contains(&name)) {
+            if slash_match_score(&query, &name).is_some()
+                && (command_colon || !taken.contains(&name))
+            {
                 out.push(SlashMatch::PluginCommand {
                     name,
                     description: cmd.description.clone(),
@@ -2211,14 +2250,17 @@ impl App {
         }
         // User-invocable skills only: `user-invocable: false` skills stay out
         // of the human's popup (the agent can still fire them via skill_read).
-        let catalog = crate::core::agent::skills::user_catalog(&self.project_root, &enabled);
+        let catalog = &self.slash_catalog.skills;
         // Short-form ownership: a project skill owns its plain name; a plain
         // name shared by two plugins is ambiguous, so everyone loses the short
         // form (the explicit `/skill:<plugin>:<name>` form always stays).
         let mut project_names: std::collections::HashSet<&str> = std::collections::HashSet::new();
         let mut plugin_plain_counts: std::collections::HashMap<&str, usize> =
             std::collections::HashMap::new();
-        for meta in &catalog {
+        for meta in catalog {
+            if !SlashCatalog::skill_enabled(meta, &enabled) {
+                continue;
+            }
             if meta.plugin.is_none() {
                 project_names.insert(meta.name.as_str());
             } else {
@@ -2231,7 +2273,10 @@ impl App {
             }
         }
         let mut seen_short: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for meta in &catalog {
+        for meta in catalog {
+            if !SlashCatalog::skill_enabled(meta, &enabled) {
+                continue;
+            }
             if meta.plugin.is_some() {
                 let plain = meta
                     .name
@@ -2250,7 +2295,8 @@ impl App {
                     }
                 }
             } else if !skill_colon
-                && (!seen_short.insert(meta.name.clone()) || command_owned.contains(meta.name.as_str()))
+                && (!seen_short.insert(meta.name.clone())
+                    || command_owned.contains(meta.name.as_str()))
             {
                 continue;
             }
@@ -2269,8 +2315,7 @@ impl App {
                     .unwrap_or(&meta.name);
                 format!("/{plain}")
             };
-            if name.starts_with(&self.input)
-                && (skill_colon || !taken.contains(&name))
+            if slash_match_score(&query, &name).is_some() && (skill_colon || !taken.contains(&name))
             {
                 out.push(SlashMatch::Skill {
                     name,
@@ -2278,6 +2323,15 @@ impl App {
                 });
             }
         }
+        // Best match first: rank by fuzzy score, keeping collision/precedence
+        // order (commands before plugin commands before skills) on ties.
+        out.sort_by(|a, b| {
+            let sa = slash_match_score(&query, a.name()).unwrap_or(0);
+            let sb = slash_match_score(&query, b.name()).unwrap_or(0);
+            sb.cmp(&sa)
+        });
+        self.slash_matches_cache
+            .replace(Some((self.input.clone(), out.clone())));
         out
     }
 
@@ -2551,6 +2605,7 @@ impl App {
                 Ok(pair) => pair,
                 Err(_) => return false,
             };
+        self.ensure_base_snapshot();
         let args = args.trim();
         self.history
             .push(serde_json::json!({ "role": "user", "content": msg }));
@@ -2589,6 +2644,7 @@ impl App {
                 Ok(pair) => pair,
                 Err(_) => return false,
             };
+        self.ensure_base_snapshot();
         let args = args.trim();
         self.history
             .push(serde_json::json!({ "role": "user", "content": msg }));
@@ -6100,10 +6156,57 @@ struct SlashCommand {
     description: &'static str,
 }
 
+/// Slash popup metadata is intentionally loaded outside the render path.
+/// Plugin installation and removal explicitly refresh this snapshot.
+struct SlashCatalog {
+    commands: Vec<crate::core::agent::plugin_commands::CommandEntry>,
+    skills: Vec<crate::core::agent::skills::SkillMeta>,
+}
+
+impl SlashCatalog {
+    fn load(root: &std::path::Path) -> Self {
+        Self {
+            commands: crate::core::agent::plugin_commands::catalog(root, &[]),
+            // Keep every user-invocable skill here. The enabled whitelist is
+            // re-read below so edits to agent.toml take effect immediately.
+            skills: crate::core::agent::skills::user_catalog(root, &[]),
+        }
+    }
+
+    fn command_enabled(
+        command: &crate::core::agent::plugin_commands::CommandEntry,
+        enabled: &[String],
+    ) -> bool {
+        enabled.is_empty()
+            || enabled.iter().any(|entry| {
+                entry == &command.plugin
+                    || entry == &command.name
+                    || entry == &format!("{}:{}", command.plugin, command.name)
+            })
+    }
+
+    fn skill_enabled(meta: &crate::core::agent::skills::SkillMeta, enabled: &[String]) -> bool {
+        if enabled.is_empty() {
+            return true;
+        }
+        let plain = meta
+            .name
+            .rsplit_once(':')
+            .map(|(_, name)| name)
+            .unwrap_or(&meta.name);
+        enabled.iter().any(|entry| {
+            entry == &meta.name
+                || entry == plain
+                || meta.plugin.as_ref().is_some_and(|plugin| entry == plugin)
+        })
+    }
+}
+
 /// One row of the slash-command popup: a built-in command, an installed
 /// plugin command (`<plugin>/commands/<name>.md`), or an installed project
 /// skill (`.jan/agent/skills/<name>/SKILL.md`) offered by name so `/deploy`
 /// behaves like a command the user can tab-complete and run.
+#[derive(Clone)]
 enum SlashMatch {
     Command(&'static SlashCommand),
     /// A plugin command prompt template. `name` is the full invocation
@@ -6114,7 +6217,10 @@ enum SlashMatch {
         description: String,
         hints: Vec<String>,
     },
-    Skill { name: String, description: String },
+    Skill {
+        name: String,
+        description: String,
+    },
 }
 
 impl SlashMatch {
@@ -6126,6 +6232,137 @@ impl SlashMatch {
             SlashMatch::Skill { name, .. } => name,
         }
     }
+}
+
+/// Lowercased, slash-stripped query characters used to match slash popup
+/// rows. Matching is deliberately fuzzy so typos and partial names surface
+/// the right command/skill: a subsequence match ranks by how tightly it hugs
+/// the front of the name (prefix first, then contiguous runs, then sparse),
+/// and a near-miss within a small edit distance still shows up below real
+/// matches instead of vanishing.
+fn slash_match_score(query: &[char], name: &str) -> Option<u32> {
+    if query.is_empty() {
+        return Some(u32::MAX);
+    }
+    let stripped = name.trim_start_matches('/');
+    // Match against the full display name (`/command:plugin:name` or
+    // `/my-skill`), its last `:`-segment, and its last `-`-segment. This way a
+    // user typing the memorable tail of a longer name still lines up: e.g.
+    // `simplifyer` finds the `simplifier` in `/code-simplifier`.
+    let mut parts: Vec<String> = Vec::with_capacity(3);
+    parts.push(stripped.to_lowercase());
+    if let Some((_, last)) = stripped.rsplit_once(':') {
+        let last = last.to_lowercase();
+        if !last.is_empty() && !parts.contains(&last) {
+            parts.push(last);
+        }
+    }
+    if let Some((_, last)) = stripped.rsplit_once('-') {
+        let last = last.to_lowercase();
+        if !last.is_empty() && !parts.contains(&last) {
+            parts.push(last);
+        }
+    }
+
+    // A barely-started buffer (1-2 chars) matches as a prefix only, mirroring
+    // the old strict-prefix behaviour so it stays tight instead of surfacing
+    // every command that merely contains those two letters.
+    if query.len() < 3 {
+        let prefix: String = query.iter().collect();
+        return parts.iter().any(|p| p.starts_with(&prefix)).then_some(100);
+    }
+
+    // Subsequence match, scored by how tightly it hugs the front of the name.
+    let mut best: Option<u32> = None;
+    for part in &parts {
+        let chars: Vec<char> = part.chars().collect();
+        if let Some(s) = subseq_score(query, &chars) {
+            best = Some(best.map_or(s, |b| b.max(s)));
+        }
+    }
+    if let Some(b) = best {
+        return Some(b);
+    }
+
+    // No subsequence hit: for a longer query, still accept a close typo (e.g.
+    // `simplifyer` for `simplifier`), but rank it below every real subsequence
+    // match and scale the tolerance with query length so it stays a fallback,
+    // never a noise source for short input.
+    if query.len() >= 4 {
+        let max_edits = 2.min(query.len() / 4 + 1);
+        if parts
+            .iter()
+            .any(|p| edit_distance(query, &p.chars().collect::<Vec<char>>()) <= max_edits)
+        {
+            return Some(1);
+        }
+    }
+    None
+}
+
+/// Score how well `query` appears as a subsequence of `hay`, higher is
+/// better. Every start position is tried (not just the greedy one) so a
+/// transposed/typo'd query like `/rse` can find the `/resume` run starting at
+/// index 1 rather than only a sparse index-0 solution. Prefix and contiguous
+/// matches score highest; every contribution stays positive so any
+/// subsequence beats no match.
+fn subseq_score(query: &[char], hay: &[char]) -> Option<u32> {
+    if query.is_empty() {
+        return Some(0);
+    }
+    let mut best: Option<u32> = None;
+    for start in 0..hay.len() {
+        let mut total: u32 = 0;
+        let mut qi = 0usize;
+        let mut prev: Option<usize> = None;
+        let mut hi = start;
+        while qi < query.len() && hi < hay.len() {
+            if hay[hi] != query[qi] {
+                hi += 1;
+                continue;
+            }
+            let gap = hi.saturating_sub(prev.unwrap_or(start.saturating_sub(1)));
+            total += if hi == 0 {
+                100
+            } else if gap <= 1 {
+                20
+            } else {
+                20u32.saturating_sub((gap as u32) * 3).max(1)
+            };
+            prev = Some(hi);
+            qi += 1;
+            hi += 1;
+        }
+        if qi == query.len() {
+            best = Some(best.map_or(total, |b| b.max(total)));
+        }
+    }
+    best
+}
+
+/// Classic Levenshtein edit distance, used as a typo fallback so a slightly
+/// misspelled query still matches a command/skill name.
+fn edit_distance(a: &[char], b: &[char]) -> usize {
+    if b.is_empty() {
+        return a.len();
+    }
+    if a.is_empty() {
+        return b.len();
+    }
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for i in 1..=a.len() {
+        let mut cur = vec![0usize; b.len() + 1];
+        cur[0] = i;
+        for j in 1..=b.len() {
+            cur[j] = if a[i - 1] == b[j - 1] {
+                prev[j - 1]
+            } else {
+                1 + prev[j - 1].min(prev[j]).min(cur[j - 1])
+            };
+        }
+        prev = cur;
+    }
+    prev[b.len()]
 }
 
 const SLASH_COMMANDS: &[SlashCommand] = &[
@@ -6235,7 +6472,10 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("Alt+Enter / Ctrl-J", "Insert a newline"),
     ("Esc / Ctrl-C", "Cancel the running turn"),
     ("Esc Esc", "Rewind to an earlier message"),
-    ("↑/↓", "Recall sent messages (scrolls while the input has text)"),
+    (
+        "↑/↓",
+        "Recall sent messages (scrolls while the input has text)",
+    ),
     ("PgUp/PgDn", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
@@ -6566,7 +6806,6 @@ enum AgentSettingKind {
 
 const AGENT_SETTINGS: &[AgentSettingDef] = &[
     AgentSettingDef {
-
         key: "context_window",
         label: "context_window",
         desc: "context limit in tokens",
@@ -6614,7 +6853,10 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         key: "budget.max_tokens",
         label: "budget.max_tokens",
         desc: "token-spend ceiling per run; the only cap on run length",
-        kind: AgentSettingKind::Int { default: Some(128000), min: 0 },
+        kind: AgentSettingKind::Int {
+            default: Some(128000),
+            min: 0,
+        },
     },
     AgentSettingDef {
         key: "tools.default",
@@ -7381,10 +7623,7 @@ async fn plugin_command(app: &mut App, arg: &str) {
                     return;
                 }
                 for p in &plugins {
-                    app.push(Line::styled(
-                        summary_line(p),
-                        Style::new().cyan().bold(),
-                    ));
+                    app.push(Line::styled(summary_line(p), Style::new().cyan().bold()));
                 }
             } else {
                 match crate::core::agent::plugins::find_installed(&root, &rest) {
@@ -7425,10 +7664,7 @@ async fn plugin_command(app: &mut App, arg: &str) {
                         if !agents.is_empty() {
                             app.push(Line::styled("  agents:", Style::new().dim()));
                             for (name, _) in &agents {
-                                app.push(Line::styled(
-                                    format!("    {name}"),
-                                    Style::new().dim(),
-                                ));
+                                app.push(Line::styled(format!("    {name}"), Style::new().dim()));
                             }
                         }
                     }
@@ -7443,10 +7679,13 @@ async fn plugin_command(app: &mut App, arg: &str) {
                 return;
             }
             match crate::core::agent::plugins::install(&root, &rest).await {
-                Ok(p) => app.note(&format!(
-                    "installed plugin '{}' ({} skills)",
-                    p.name, p.skills
-                )),
+                Ok(p) => {
+                    app.refresh_slash_catalog();
+                    app.note(&format!(
+                        "installed plugin '{}' ({} skills)",
+                        p.name, p.skills
+                    ));
+                }
                 Err(e) => app.note(&e),
             }
         }
@@ -7456,7 +7695,10 @@ async fn plugin_command(app: &mut App, arg: &str) {
                 return;
             }
             match crate::core::agent::plugins::remove(&root, &rest) {
-                Ok(()) => app.note(&format!("removed plugin '{rest}'")),
+                Ok(()) => {
+                    app.refresh_slash_catalog();
+                    app.note(&format!("removed plugin '{rest}'"));
+                }
                 Err(e) => app.note(&e),
             }
         }
@@ -7974,7 +8216,10 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     // can re-submit (or edit) it after the rewind. Image-only content yields
     // no text.
     let fill = user_content_parts(
-        app.history.get(cut).and_then(|m| m.get("content")).unwrap_or(&serde_json::Value::Null),
+        app.history
+            .get(cut)
+            .and_then(|m| m.get("content"))
+            .unwrap_or(&serde_json::Value::Null),
     )
     .0;
 
@@ -8509,12 +8754,12 @@ fn draw(f: &mut Frame, app: &mut App) {
     // between the rule and the prompt. A zero-length slot collapses away, so a
     // session with neither todos nor subagents renders exactly as before.
     let raw = Layout::vertical([
-        Constraint::Length(1),                 // 0: header
-        Constraint::Min(1),                    // 1: body
-        Constraint::Length(panel_h),           // 2: status panel
-        Constraint::Length(1),                 // 3: separator rule
-        Constraint::Length(input_h),           // 4: input
-        Constraint::Length(1),                 // 5: path + key hints
+        Constraint::Length(1),       // 0: header
+        Constraint::Min(1),          // 1: body
+        Constraint::Length(panel_h), // 2: status panel
+        Constraint::Length(1),       // 3: separator rule
+        Constraint::Length(input_h), // 4: input
+        Constraint::Length(1),       // 5: path + key hints
     ])
     .split(f.area());
     let panel_area = raw[2];
@@ -9511,7 +9756,10 @@ fn agents_column(
     let (shown, hidden) = if panels.len() <= body {
         (panels.len(), 0)
     } else {
-        (body.saturating_sub(1), panels.len() - body.saturating_sub(1))
+        (
+            body.saturating_sub(1),
+            panels.len() - body.saturating_sub(1),
+        )
     };
     // Whatever is left over after one line each is spread evenly as detail.
     let per = (body - shown)
@@ -9563,7 +9811,10 @@ fn agents_column(
         // structured briefs whose first line is the summary.
         let brief = panel.task.lines().find(|l| !l.trim().is_empty());
         let activity = match panel.active.as_mut() {
-            Some(call) => Some((format!("{frame} {}", call.activity_label()), Style::new().cyan().dim())),
+            Some(call) => Some((
+                format!("{frame} {}", call.activity_label()),
+                Style::new().cyan().dim(),
+            )),
             None => panel
                 .calls
                 .last()
@@ -9862,7 +10113,10 @@ fn todo_pin(todos: &crate::core::agent::todo::TodoList) -> Line<'static> {
         };
         spans.push(Span::styled(label, Style::new().dim()));
     }
-    spans.push(Span::styled("   /todo".to_string(), Style::new().dark_gray()));
+    spans.push(Span::styled(
+        "   /todo".to_string(),
+        Style::new().dark_gray(),
+    ));
     Line::from(spans)
 }
 
@@ -9985,13 +10239,7 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
             let left_w = (width.saturating_sub(PANEL_GUTTER)) / 2;
             let right_w = width.saturating_sub(left_w + PANEL_GUTTER);
             let left = todo_column(&app.todos, left_w, rows);
-            let right = agents_column(
-                &mut app.subagents,
-                context_window,
-                right_w,
-                rows,
-                frame,
-            );
+            let right = agents_column(&mut app.subagents, context_window, right_w, rows, frame);
             join_columns(left, right, left_w)
         }
     }
@@ -10005,16 +10253,17 @@ const MAX_INPUT_ROWS: u16 = 8;
 /// editing, plus one row of air above the dock. The box is borderless, so the
 /// two rows this used to add on top of its content were simply blank.
 fn input_box_height(app: &App, width: u16) -> u16 {
-    let content = if app.picker.is_none() && !(app.status == Status::Running && app.input.is_empty()) {
-        let inner = width.saturating_sub(2).max(1);
-        let rows = Paragraph::new(input_content_lines(&app.input, app.cursor))
-            .wrap(Wrap { trim: false })
-            .line_count(inner)
-            .max(1) as u16;
-        rows.min(MAX_INPUT_ROWS)
-    } else {
-        1
-    };
+    let content =
+        if app.picker.is_none() && !(app.status == Status::Running && app.input.is_empty()) {
+            let inner = width.saturating_sub(2).max(1);
+            let rows = Paragraph::new(input_content_lines(&app.input, app.cursor))
+                .wrap(Wrap { trim: false })
+                .line_count(inner)
+                .max(1) as u16;
+            rows.min(MAX_INPUT_ROWS)
+        } else {
+            1
+        };
     content + 1
 }
 
@@ -10682,8 +10931,14 @@ mod tests {
                 .to_string()
         };
         let (w, n) = (table_row(&wide), table_row(&narrow));
-        assert!(w.chars().count() > n.chars().count(), "table did not reflow: {w:?} vs {n:?}");
-        assert!(n.chars().count() <= 46, "table overflows the narrow frame: {n:?}");
+        assert!(
+            w.chars().count() > n.chars().count(),
+            "table did not reflow: {w:?} vs {n:?}"
+        );
+        assert!(
+            n.chars().count() <= 46,
+            "table overflows the narrow frame: {n:?}"
+        );
     }
 
     /// The boxed diff panel is re-drawn at the current width, so its right
@@ -10711,11 +10966,17 @@ mod tests {
         let wide = border_width(&render_rows(&mut app, 100, 24));
         let narrow_rows = render_rows(&mut app, 50, 24);
         let narrow = border_width(&narrow_rows);
-        assert!(narrow < wide, "panel kept its old width: {narrow} vs {wide}");
+        assert!(
+            narrow < wide,
+            "panel kept its old width: {narrow} vs {wide}"
+        );
         assert!(narrow <= 50, "panel overflows the frame: {narrow}");
         // Every panel row still closes inside the frame, so the box reads as a box.
         for row in narrow_rows.iter().filter(|r| r.contains('│')) {
-            assert!(row.trim_end().chars().count() <= 50, "row overflows: {row:?}");
+            assert!(
+                row.trim_end().chars().count() <= 50,
+                "row overflows: {row:?}"
+            );
         }
     }
 
@@ -10801,8 +11062,14 @@ mod tests {
         };
         let narrow = label(&render_rows(&mut app, 40, 12));
         let wide = label(&render_rows(&mut app, 100, 12));
-        assert!(narrow.contains('…'), "narrow row was not elided: {narrow:?}");
-        assert!(narrow.chars().count() <= 40, "narrow row overflows: {narrow:?}");
+        assert!(
+            narrow.contains('…'),
+            "narrow row was not elided: {narrow:?}"
+        );
+        assert!(
+            narrow.chars().count() <= 40,
+            "narrow row overflows: {narrow:?}"
+        );
         assert!(
             wide.chars().count() > narrow.chars().count(),
             "row did not grow back: {wide:?}"
@@ -10836,8 +11103,6 @@ mod tests {
             render_rows(&mut app, w, h);
         }
     }
-
-
 
     #[test]
     fn always_label_is_command_scoped_for_exec() {
@@ -12462,7 +12727,11 @@ mod tests {
             "a fresh install must not start a turn with no model"
         );
         assert!(app.history.is_empty());
-        let text: String = row_lines(&app.transcript).iter().flat_map(|l| l.spans.clone()).map(|s| s.content.to_string()).collect();
+        let text: String = row_lines(&app.transcript)
+            .iter()
+            .flat_map(|l| l.spans.clone())
+            .map(|s| s.content.to_string())
+            .collect();
         assert!(text.contains("/login"), "{text}");
     }
 
@@ -12752,7 +13021,10 @@ mod tests {
         // stays reachable through the finished summary row (Ctrl-O).
         let out = render(&mut app);
         assert!(out.contains("cmd6"), "newest call shown: {out}");
-        assert!(!out.contains("cmd5") && !out.contains("cmd0"), "older calls elided: {out}");
+        assert!(
+            !out.contains("cmd5") && !out.contains("cmd0"),
+            "older calls elided: {out}"
+        );
     }
 
     #[test]
@@ -12894,7 +13166,10 @@ mod tests {
         // removed, the row hint flip back to (unset), the note rendered.
         press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
         let doc = std::fs::read_to_string(&toml_path).unwrap();
-        assert!(!doc.contains("context_window = 64000"), "key removed: {doc}");
+        assert!(
+            !doc.contains("context_window = 64000"),
+            "key removed: {doc}"
+        );
         assert!(transcript_text(&app).contains("context_window unset"));
         let picker = app.picker.as_ref().expect("picker stays open");
         let row = picker
@@ -13865,7 +14140,12 @@ mod tests {
         assert!(row.contains("✓"), "row: {row}");
         let detail: String = group_detail_lines(&app.groups[0], 80)
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
@@ -13959,7 +14239,10 @@ mod tests {
         });
         app.apply(StreamEvent::Step { index: 2, max: 8 });
         let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
-        let prose = rows.iter().position(|r| r.contains("check the README")).unwrap();
+        let prose = rows
+            .iter()
+            .position(|r| r.contains("check the README"))
+            .unwrap();
         let tool = rows.iter().position(|r| r.contains("Ran: grep")).unwrap();
         let after = rows.iter().position(|r| r.contains("Found it")).unwrap();
         assert!(prose < tool && tool < after, "rows: {rows:?}");
@@ -14000,7 +14283,9 @@ mod tests {
         let row = row_text(app.transcript.last().unwrap());
         assert!(row.contains("✓ Read 3 memory notes, 1 skill"), "row: {row}");
         // The model speaking closes the group without disturbing the row.
-        app.apply(StreamEvent::Token { text: "Done.".into() });
+        app.apply(StreamEvent::Token {
+            text: "Done.".into(),
+        });
         let row = row_text(app.transcript.last().unwrap());
         assert!(row.contains("✓ Read 3 memory notes, 1 skill"), "row: {row}");
     }
@@ -14485,7 +14770,10 @@ mod tests {
         });
         app.apply(StreamEvent::Step { index: 1, max: 8 });
         let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
-        let think_at = rows.iter().position(|r| r.contains("reasoning (1 line)")).unwrap();
+        let think_at = rows
+            .iter()
+            .position(|r| r.contains("reasoning (1 line)"))
+            .unwrap();
         let prose_at = rows.iter().position(|r| r.contains("Hi there!")).unwrap();
         assert!(think_at < prose_at);
         // A blank line must sit between the reasoning row and the prose.
@@ -14976,7 +15264,8 @@ mod tests {
     #[tokio::test]
     async fn apply_resume_renders_invocation_messages_compactly() {
         let mut app = test_app();
-        let body = "Build: $ARGUMENTS\n\nFull template body that must not leak into the transcript.";
+        let body =
+            "Build: $ARGUMENTS\n\nFull template body that must not leak into the transcript.";
         let history = vec![json!({
             "role": "user",
             "content": format!(
@@ -15506,7 +15795,10 @@ mod tests {
             assert!(out.contains(name), "missing {name}: {out}");
             assert!(out.contains(pct), "missing context share {pct}: {out}");
         }
-        assert!(out.contains("1t · 1r"), "missing compact call/request counts: {out}");
+        assert!(
+            out.contains("1t · 1r"),
+            "missing compact call/request counts: {out}"
+        );
         // Two agents -> one activity line each, so the block stays scannable.
         assert_eq!(
             rows.iter()
@@ -15534,7 +15826,10 @@ mod tests {
             .iter()
             .position(|r| r.contains("parent keeps talking"))
             .expect("prose row");
-        let panel = rows.iter().position(|r| r.contains("alpha")).expect("panel row");
+        let panel = rows
+            .iter()
+            .position(|r| r.contains("alpha"))
+            .expect("panel row");
         let input = rows
             .iter()
             .position(|r| r.contains("Type here to chat with agent"))
@@ -15542,7 +15837,8 @@ mod tests {
         assert!(prose < panel, "the panel is docked, not inline: {rows:?}");
         assert!(panel < input, "and it sits above the input: {rows:?}");
         assert!(
-            rows.iter().any(|r| r.contains("2 agents") || r.contains("1 agent")),
+            rows.iter()
+                .any(|r| r.contains("2 agents") || r.contains("1 agent")),
             "the fan-out is counted: {rows:?}"
         );
     }
@@ -15664,7 +15960,10 @@ mod tests {
             );
         }
         let out = render_rows(&mut app, 100, 20).join("\n");
-        assert!(out.contains("flappy-2d.html"), "destination should surface: {out}");
+        assert!(
+            out.contains("flappy-2d.html"),
+            "destination should surface: {out}"
+        );
         assert!(out.contains("0t · "), "still no completed call: {out}");
 
         // The completed call supersedes the in-progress row.
@@ -15781,7 +16080,12 @@ mod tests {
         assert_eq!(app.turn_prompt_tokens, 40_000);
 
         app.on_done("stop".into(), None);
-        let out: String = app.transcript.iter().map(row_text).collect::<Vec<_>>().join("\n");
+        let out: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(out.contains("40K"), "input tokens missing: {out}");
         assert!(out.contains("1.5K"), "summed output missing: {out}");
         assert!(out.contains("/s"), "rate missing: {out}");
@@ -16233,7 +16537,10 @@ mod tests {
         let rows = render_rows(&mut app, 80, 12);
         let dock = rows.last().unwrap();
         assert!(dock.trim_end().ends_with("stop_reason=stop"), "{dock:?}");
-        assert!(dock.contains("/tmp/repo"), "location keeps its place: {dock:?}");
+        assert!(
+            dock.contains("/tmp/repo"),
+            "location keeps its place: {dock:?}"
+        );
     }
 
     /// Working dir + branch share the single dock row below the input with the
@@ -16589,7 +16896,10 @@ mod tests {
         assert!(injected.contains("t1") && injected.contains("t2"));
         // The reminder is hidden: no user-authored `› ` row in the transcript.
         let rows: String = app.transcript.iter().map(row_text).collect();
-        assert!(!rows.contains("› "), "reminder must not render as a user row");
+        assert!(
+            !rows.contains("› "),
+            "reminder must not render as a user row"
+        );
     }
 
     #[test]
@@ -16878,7 +17188,10 @@ mod tests {
     fn multi_phase_plan_column_expands_only_the_active_phase() {
         use crate::core::agent::todo::TodoStatus::*;
         let todos = todos_from(vec![
-            ("backend", vec![("scaffold", Completed), ("routes", InProgress)]),
+            (
+                "backend",
+                vec![("scaffold", Completed), ("routes", InProgress)],
+            ),
             ("frontend", vec![("ui", Pending), ("polish", Pending)]),
         ]);
         let lines: Vec<String> = super::todo_column(&todos, 60, 8)
@@ -16889,9 +17202,14 @@ mod tests {
             lines[0].contains("Todos · 1/2") && lines[0].contains("backend 1/2"),
             "head names the phase and both progressions: {lines:?}"
         );
-        assert!(lines.iter().any(|l| l.contains("routes")), "active tasks shown: {lines:?}");
         assert!(
-            !lines.iter().any(|l| l.contains("ui") || l.contains("polish")),
+            lines.iter().any(|l| l.contains("routes")),
+            "active tasks shown: {lines:?}"
+        );
+        assert!(
+            !lines
+                .iter()
+                .any(|l| l.contains("ui") || l.contains("polish")),
             "inactive phase costs no rows: {lines:?}"
         );
     }
@@ -16904,8 +17222,14 @@ mod tests {
             vec![("shipped", Completed), ("dropped", Abandoned)],
         )]);
         let col = super::todo_column(&todos, 60, 8);
-        let done = col.iter().find(|l| line_text(l).contains("shipped")).unwrap();
-        let gone = col.iter().find(|l| line_text(l).contains("dropped")).unwrap();
+        let done = col
+            .iter()
+            .find(|l| line_text(l).contains("shipped"))
+            .unwrap();
+        let gone = col
+            .iter()
+            .find(|l| line_text(l).contains("dropped"))
+            .unwrap();
         // Completed: checked glyph + strikethrough.
         assert!(line_text(done).contains("☑"), "{:?}", line_text(done));
         assert!(crossed_out(done), "completed is struck through");
@@ -16942,11 +17266,19 @@ mod tests {
         };
 
         assert_eq!(crest_at(0), Some(0));
-        assert_eq!(crest_at(3), Some(3), "the crest advances one char per frame");
+        assert_eq!(
+            crest_at(3),
+            Some(3),
+            "the crest advances one char per frame"
+        );
         // Past the end of the word the crest is off-screen (the pause), then
         // the cycle restarts.
         assert_eq!(crest_at(8), None, "pause between sweeps");
-        assert_eq!(crest_at(8 + super::SHIMMER_PAUSE), Some(0), "sweep restarts");
+        assert_eq!(
+            crest_at(8 + super::SHIMMER_PAUSE),
+            Some(0),
+            "sweep restarts"
+        );
     }
 
     /// The animation is scoped to the state that needs it: a folded, streaming
@@ -16963,7 +17295,11 @@ mod tests {
         });
         assert!(app.is_thinking(), "open reasoning block");
         let rows = render_rows(&mut app, 60, 12);
-        assert!(rows[0].contains("[thinking]"), "label intact: {:?}", rows[0]);
+        assert!(
+            rows[0].contains("[thinking]"),
+            "label intact: {:?}",
+            rows[0]
+        );
 
         app.apply(StreamEvent::Token {
             text: "</think>done".into(),
@@ -16976,7 +17312,10 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: "<think>more".into(),
         });
-        assert!(!app.is_thinking(), "unfolded reasoning needs no badge motion");
+        assert!(
+            !app.is_thinking(),
+            "unfolded reasoning needs no badge motion"
+        );
     }
 
     /// Folded reasoning summaries and tool rows are one run of activity: a turn
@@ -16999,7 +17338,9 @@ mod tests {
         );
 
         // Prose is a different band and still gets its air.
-        app.apply(StreamEvent::Token { text: "an answer".into() });
+        app.apply(StreamEvent::Token {
+            text: "an answer".into(),
+        });
         app.flush_assistant();
         assert!(
             app.transcript.iter().any(Row::is_blank),
@@ -17017,7 +17358,11 @@ mod tests {
             .iter()
             .position(|r| r.contains("Type here to chat with agent"))
             .expect("input");
-        assert_eq!(input + 3, rows.len(), "input, one blank, then the dock: {rows:?}");
+        assert_eq!(
+            input + 3,
+            rows.len(),
+            "input, one blank, then the dock: {rows:?}"
+        );
         assert!(rows[input + 1].trim().is_empty());
         assert!(rows.last().unwrap().contains("/tmp/repo"));
     }
@@ -17028,18 +17373,27 @@ mod tests {
     fn todo_pin_reports_phase_and_progress() {
         use crate::core::agent::todo::TodoStatus::*;
         let multi = todos_from(vec![
-            ("backend", vec![("scaffold", Completed), ("routes", InProgress)]),
+            (
+                "backend",
+                vec![("scaffold", Completed), ("routes", InProgress)],
+            ),
             ("frontend", vec![("ui", Pending)]),
         ]);
         let text = line_text(&super::todo_pin(&multi));
         assert!(text.contains("Todos"), "{text}");
         assert!(text.contains("1/2"), "phase position: {text}");
-        assert!(text.contains("backend 1/2"), "active phase progress: {text}");
+        assert!(
+            text.contains("backend 1/2"),
+            "active phase progress: {text}"
+        );
         assert!(text.contains("/todo"), "editor hint: {text}");
 
         let single = todos_from(vec![("only", vec![("a", Completed), ("b", Pending)])]);
         let text = line_text(&super::todo_pin(&single));
-        assert!(text.contains("Todos · 1/2"), "single phase progress: {text}");
+        assert!(
+            text.contains("Todos · 1/2"),
+            "single phase progress: {text}"
+        );
     }
 
     /// A child's panel normally closes on its own `SubagentEnd`. A run that
@@ -17078,7 +17432,8 @@ mod tests {
             // Not silently: the child did work, so it gets the same kind of
             // summary row a clean end would leave, marked unfinished.
             assert!(
-                rows.iter().any(|r| r.contains("subagent alpha interrupted")),
+                rows.iter()
+                    .any(|r| r.contains("subagent alpha interrupted")),
                 "{finish}: unfinished child must be accounted for: {rows:?}"
             );
         }
@@ -17097,7 +17452,9 @@ mod tests {
         // Closed, but only just: still shown, and the deadline is now armed.
         let rows = render_rows(&mut app, 80, 20);
         assert!(rows.iter().any(|r| r.contains("Todos")), "{rows:?}");
-        let closed = app.todos_closed_at.expect("deadline armed on a closed plan");
+        let closed = app
+            .todos_closed_at
+            .expect("deadline armed on a closed plan");
 
         // Past the timeout: the dock gives the rows back, the list stays.
         app.todos_closed_at = closed.checked_sub(super::TODO_HIDE_AFTER);
@@ -17424,8 +17781,14 @@ mod tests {
         assert!(app.thread_id.is_none(), "must detach from the saved thread");
         assert_eq!(app.tokens, 0);
         let text: String = app.transcript.iter().map(row_text).collect();
-        assert!(!text.contains("old content"), "transcript not reset: {text}");
-        assert!(text.contains("started a new session"), "missing note: {text}");
+        assert!(
+            !text.contains("old content"),
+            "transcript not reset: {text}"
+        );
+        assert!(
+            text.contains("started a new session"),
+            "missing note: {text}"
+        );
     }
 
     #[test]
@@ -17481,6 +17844,33 @@ mod tests {
     }
 
     #[test]
+    fn slash_fuzzy_matches_transposed_and_typo_queries() {
+        // Reordered/omitted letters still surface the command: `threds` is a
+        // subsequence of `threads` (the `a` is missing).
+        let mut app = test_app();
+        app.input = "/threds".into();
+        assert!(
+            names(&app).contains(&"/threads".to_string()),
+            "transposed query surfaces the command: {:?}",
+            names(&app)
+        );
+        // A close typo: `simplifyer` differs from `simplifier` by one letter.
+        // No built-in is that close, so assert against the scorer directly.
+        let q: Vec<char> = "simplifyer".chars().collect();
+        assert!(
+            super::slash_match_score(&q, "/code-simplifier").is_some(),
+            "typo within tolerance should match"
+        );
+        // A distant query still hides.
+        let far: Vec<char> = "zzzzzz".chars().collect();
+        assert!(super::slash_match_score(&far, "/threads").is_none());
+        // A short query stays prefix-only (tight), not fuzzy.
+        let short: Vec<char> = "re".chars().collect();
+        assert!(super::slash_match_score(&short, "/threads").is_none());
+        assert!(super::slash_match_score(&short, "/resume").is_some());
+    }
+
+    #[test]
     fn slash_hidden_when_not_command_or_has_space() {
         let mut app = test_app();
         app.input = "hello".into();
@@ -17527,9 +17917,13 @@ mod tests {
         app.cursor = app.input.len();
         app.slash_dismissed = true;
         assert!(app.slash_matches().is_empty());
-        // Editing the buffer re-shows the popup.
+        // Editing the buffer re-shows the popup; fuzzy matching offers both
+        // commands whose name contains `res` as a subsequence, resume first.
         app.input_insert('s');
-        assert_eq!(names(&app), vec!["/resume".to_string()]);
+        assert_eq!(
+            names(&app),
+            vec!["/resume".to_string(), "/threads".to_string()]
+        );
     }
 
     #[test]
@@ -17547,6 +17941,17 @@ mod tests {
         // Unmatched prefix hides the skill row.
         app.input = "/zzz".into();
         assert!(!names(&app).iter().any(|n| n == "/deploy"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_popup_uses_startup_catalog_after_files_change() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        std::fs::remove_dir_all(root.join(".jan/agent/skills/deploy")).unwrap();
+        app.input = "/dep".into();
+
+        assert_eq!(names(&app), vec!["/deploy".to_string()]);
+
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -17647,7 +18052,10 @@ mod tests {
 
     /// A plugin with one command prompt template under the app's project root.
     fn plugin_command_in_app(root: &std::path::Path, plugin: &str, name: &str, content: &str) {
-        let dir = root.join(".jan/agent/plugins").join(plugin).join("commands");
+        let dir = root
+            .join(".jan/agent/plugins")
+            .join(plugin)
+            .join("commands");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(format!("{name}.md")), content).unwrap();
     }
@@ -17661,6 +18069,7 @@ mod tests {
             "feature-dev",
             "---\ndescription: Guided feature workflow\n---\nDo it with $ARGUMENTS.",
         );
+        app.refresh_slash_catalog();
         // Short form: the plain name is offered.
         app.input = "/fea".into();
         assert!(
@@ -17684,6 +18093,33 @@ mod tests {
     }
 
     #[test]
+    fn slash_popup_reuses_startup_catalog_until_refresh() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_command_in_app(
+            &root,
+            "feature-dev",
+            "feature-dev",
+            "---\ndescription: Guided feature workflow\n---\nDo it.",
+        );
+        app.refresh_slash_catalog();
+        app.input = "/feature".into();
+        assert!(names(&app).contains(&"/feature-dev".to_string()));
+
+        std::fs::remove_file(root.join(".jan/agent/plugins/feature-dev/commands/feature-dev.md"))
+            .unwrap();
+        app.input = "/fea".into();
+        app.reset_slash_hint();
+        assert!(
+            names(&app).contains(&"/feature-dev".to_string()),
+            "the startup catalog must not rediscover files after the input changes"
+        );
+
+        app.refresh_slash_catalog();
+        assert!(!names(&app).contains(&"/feature-dev".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn slash_matches_command_owns_short_form_over_skill() {
         let (mut app, root) = skill_test_app("prepare", "Project prep.");
         plugin_command_in_app(
@@ -17692,6 +18128,7 @@ mod tests {
             "prepare",
             "---\ndescription: Release prep\n---\nDo it.",
         );
+        app.refresh_slash_catalog();
         app.input = "/pre".into();
         let all = names(&app);
         assert_eq!(
@@ -17709,8 +18146,17 @@ mod tests {
     fn slash_matches_builtin_wins_over_command() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         plugin_command_in_app(&root, "x", "resume", "---\ndescription: r\n---\nDo it.");
+        app.refresh_slash_catalog();
         app.input = "/res".into();
-        assert_eq!(names(&app), vec!["/resume".to_string()], "built-in only");
+        let all = names(&app);
+        // Built-in wins the `/resume` collision: no `/command:x:resume` row and
+        // no skill row. `/threads` is a separate fuzzy hit (res is a
+        // subsequence of its name), not a collision.
+        assert_eq!(
+            all,
+            vec!["/resume".to_string(), "/threads".to_string()],
+            "built-in only"
+        );
         // The command is still reachable explicitly.
         app.input = "/command:".into();
         assert!(names(&app).contains(&"/command:x:resume".to_string()));
@@ -17737,13 +18183,40 @@ mod tests {
         assert!(
             last.get("content")
                 .and_then(|c| c.as_str())
-                .is_some_and(|c| c.contains("Build: add auth") && c.contains("feature-dev\" command")),
+                .is_some_and(
+                    |c| c.contains("Build: add auth") && c.contains("feature-dev\" command")
+                ),
             "substituted template in history: {last}"
         );
         // Unknown command returns false and does not dispatch.
         let before = app.history.len();
         assert!(!app.dispatch_command("nope", ""));
         assert_eq!(app.history.len(), before);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dispatch_command_arms_base_snapshot_before_starting() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_command_in_app(&root, "feature-dev", "feature-dev", "Build: $ARGUMENTS");
+        app.repo_root = Some(root.clone());
+
+        assert!(app.dispatch_command("feature-dev", "add auth"));
+        assert!(app.base_requested);
+        assert!(matches!(app.snap_queue.front(), Some(SnapshotJob::Base)));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dispatch_skill_arms_base_snapshot_before_starting() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.repo_root = Some(root.clone());
+
+        assert!(app.dispatch_skill("deploy", "staging"));
+        assert!(app.base_requested);
+        assert!(matches!(app.snap_queue.front(), Some(SnapshotJob::Base)));
+
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -17789,6 +18262,7 @@ mod tests {
     fn slash_matches_offer_plugin_skills() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         plugin_skill_in_app(&root, "release", "prepare", "Prep the release.");
+        app.refresh_slash_catalog();
         // Short form: the plain name is offered when it is unambiguous.
         app.input = "/pre".into();
         assert!(
@@ -17811,6 +18285,7 @@ mod tests {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         plugin_skill_in_app(&root, "release", "prepare", "Release prep.");
         plugin_skill_in_app(&root, "triage", "prepare", "Triage prep.");
+        app.refresh_slash_catalog();
         app.input = "/pre".into();
         let all = names(&app);
         assert!(
@@ -17829,6 +18304,7 @@ mod tests {
     fn slash_matches_project_skill_owns_short_form() {
         let (mut app, root) = skill_test_app("prepare", "Project prep.");
         plugin_skill_in_app(&root, "release", "prepare", "Plugin prep.");
+        app.refresh_slash_catalog();
         app.input = "/pre".into();
         let hits: Vec<_> = names(&app)
             .into_iter()

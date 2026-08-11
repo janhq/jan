@@ -69,7 +69,6 @@ pub(crate) fn discover(root: &Path) -> Vec<CommandEntry> {
     out.sort_by(|a, b| (&a.plugin, &a.name).cmp(&(&b.plugin, &b.name)));
     out
 }
-
 /// Commands offered to the human, honoring the `[skills].enabled` whitelist
 /// (plugin name, qualified `<plugin>:<name>`, or plain name enable a command;
 /// an empty whitelist enables everything).
@@ -90,9 +89,11 @@ pub(crate) fn catalog(root: &Path, enabled: &[String]) -> Vec<CommandEntry> {
 }
 
 /// Locate a command by the name a human typed: explicit `<plugin>:<name>`
-/// first, then a plain name that is unique across installed plugins.
-pub(crate) fn resolve(root: &Path, name: &str) -> Result<CommandEntry, String> {
-    let commands = discover(root);
+/// first, then a plain name that is unique across installed plugins. Filters
+/// through the `[skills].enabled` whitelist so disabled commands are not
+/// resolvable.
+pub(crate) fn resolve_from(root: &Path, name: &str, enabled: &[String]) -> Result<CommandEntry, String> {
+    let commands = catalog(root, enabled);
     if let Some((plugin, plain)) = name.split_once(':') {
         if let Some(entry) = commands
             .iter()
@@ -108,15 +109,28 @@ pub(crate) fn resolve(root: &Path, name: &str) -> Result<CommandEntry, String> {
     }
 }
 
+/// Locate a command ignoring the `[skills].enabled` whitelist (resolves any
+/// discovered command). Used for discovery/listing; runtime invocation uses
+/// [`resolve_from`] so disabled commands stay hidden.
+pub(crate) fn resolve(root: &Path, name: &str) -> Result<CommandEntry, String> {
+    resolve_from(root, name, &[])
+}
+
 /// Build the user message that runs a command: the invocation wrapper plus the
 /// body with `$ARGUMENTS`/`$N` placeholders substituted. Returns
 /// `(message, description)`, mirroring `skills::build_invocation_message`.
+/// Honors the `[skills].enabled` whitelist: a disabled plugin/command is
+/// rejected, matching the skill invocation path.
 pub(crate) fn build_message(
     root: &Path,
     name: &str,
     args: &str,
 ) -> Result<(String, String), String> {
-    let entry = resolve(root, name)?;
+    let enabled = crate::core::agent::project::load_agent_config(root)
+        .ok()
+        .map(|c| c.skills.enabled)
+        .unwrap_or_default();
+    let entry = resolve_from(root, name, &enabled)?;
     let raw = std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))?;
     let parsed = parse_command(&raw);
     let body = substitute(&parsed.body, args.trim());
@@ -152,7 +166,10 @@ pub(crate) fn substitute(body: &str, args: &str) -> String {
         let mut chars = tail.chars();
         if let Some(d) = chars.next().and_then(|c| c.to_digit(10)) {
             let after_digit = chars.as_str();
-            let next_ok = after_digit.chars().next().map_or(true, |c| !c.is_ascii_digit());
+            let next_ok = after_digit
+                .chars()
+                .next()
+                .map_or(true, |c| !c.is_ascii_digit());
             if (1..=9).contains(&d) && next_ok {
                 if let Some(word) = positional.get(d as usize - 1) {
                     out.push_str(word);
@@ -169,13 +186,33 @@ pub(crate) fn substitute(body: &str, args: &str) -> String {
 
 /// The placeholders a command template accepts (`$1`..`$9` then `$ARGUMENTS`),
 /// surfaced in the slash popup. Mirrors opencode's `hints()`: numbered
-/// placeholders first, `$ARGUMENTS` last.
+/// placeholders first, `$ARGUMENTS` last. A `$N` is only advertised when it
+/// would actually be substituted (so `$10`, `$11` are excluded, matching
+/// `substitute`'s guard), and `$ARGUMENTS` is only advertised when it is not
+/// part of a longer alphanumeric token such as `$ARGUMENTATION`.
 pub(crate) fn template_hints(body: &str) -> Vec<String> {
     let mut out: Vec<String> = (1..=9)
-        .filter(|n| body.contains(&format!("${n}")))
+        .filter(|n| {
+            let needle = format!("${n}");
+            body.match_indices(&needle)
+                .any(|(i, _)| {
+                    body[i + needle.len()..]
+                        .chars()
+                        .next()
+                        .map_or(true, |c| !c.is_ascii_digit())
+                })
+        })
         .map(|n| format!("${n}"))
         .collect();
-    if body.contains("$ARGUMENTS") {
+    let arguments_needed = body
+        .match_indices("$ARGUMENTS")
+        .any(|(i, _)| {
+            body[i + "$ARGUMENTS".len()..]
+                .chars()
+                .next()
+                .map_or(true, |c| !c.is_alphanumeric())
+        });
+    if arguments_needed {
         out.push("$ARGUMENTS".to_string());
     }
     out
@@ -186,9 +223,9 @@ pub(crate) fn template_hints(body: &str) -> Vec<String> {
 /// the skill parser's tolerance for missing/unterminated fences.
 fn parse_command(raw: &str) -> ParsedCommand {
     let parsed = crate::core::agent::skills::parse(raw);
-    let description = parsed.description.unwrap_or_else(|| {
-        crate::core::agent::skills::first_line(&parsed.body)
-    });
+    let description = parsed
+        .description
+        .unwrap_or_else(|| crate::core::agent::skills::first_line(&parsed.body));
     ParsedCommand {
         description,
         body: parsed.body,
@@ -332,6 +369,41 @@ mod tests {
             .map(|e| e.name)
             .collect();
         assert_eq!(names, vec!["prepare"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn template_hints_exclude_multi_digit_placeholders() {
+        // $10/$11 contain "$1"/"$2" but substitute() leaves them literal, so
+        // they must not be advertised as hints. Only the real $1..$9 show.
+        assert_eq!(template_hints("cost $10 per $1"), vec!["$1"]);
+        assert_eq!(template_hints("$10 $11"), Vec::<String>::new());
+        assert_eq!(template_hints("$ARGUMENTATION is like $ARGUMENTS"), vec!["$ARGUMENTS"]);
+    }
+
+    #[test]
+    fn build_message_enforces_disabled_whitelist() {
+        let root = temp_root("msg-disabled");
+        let cmd_dir = plugins_dir(&root).join("release").join("commands");
+        std::fs::create_dir_all(&cmd_dir).unwrap();
+        std::fs::write(cmd_dir.join("prepare.md"), "body").unwrap();
+        std::fs::create_dir_all(root.join(".jan").join("agent")).unwrap();
+
+        // With the command disabled (not in the whitelist), invocation errors,
+        // matching the skill path.
+        std::fs::write(
+            root.join(".jan").join("agent").join("agent.toml"),
+            "[skills]\nenabled = [\"some-other\"]\n",
+        )
+        .unwrap();
+        assert!(build_message(&root, "prepare", "").is_err());
+        // A command enabled by name resolves.
+        std::fs::write(
+            root.join(".jan").join("agent").join("agent.toml"),
+            "[skills]\nenabled = [\"prepare\"]\n",
+        )
+        .unwrap();
+        assert!(build_message(&root, "prepare", "").is_ok());
         let _ = std::fs::remove_dir_all(&root);
     }
 }

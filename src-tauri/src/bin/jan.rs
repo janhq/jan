@@ -9,6 +9,7 @@ use console::Style;
 
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
+use app_lib::core::agent::plugins::InstalledPlugin;
 use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use app_lib::core::cli::mcp::{self, split_kv, McpServerEntry};
 use app_lib::core::cli::run_report::OutputFormat;
@@ -18,7 +19,6 @@ use app_lib::core::cli::{
     cli_get_thread, cli_list_messages, cli_list_threads, cli_plugin_install, cli_plugin_list,
     cli_plugin_remove, cli_plugin_search, ResumeTarget, SessionFlags,
 };
-use app_lib::core::agent::plugins::InstalledPlugin;
 use std::fmt::Write as _;
 
 // ── Top-level CLI ──────────────────────────────────────────────────────────

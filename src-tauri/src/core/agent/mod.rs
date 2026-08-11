@@ -9,7 +9,6 @@
 // Tauri IPC surface for the desktop agent; the CLI drives the loop directly.
 #[cfg(not(feature = "cli"))]
 pub mod commands;
-pub mod plugin_commands;
 pub mod compaction;
 pub mod context;
 pub mod events;
@@ -22,6 +21,7 @@ pub mod interaction;
 pub mod r#loop;
 pub mod memory;
 pub mod plan;
+pub mod plugin_commands;
 pub mod plugins;
 pub mod project;
 pub mod session;
