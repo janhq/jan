@@ -270,6 +270,9 @@ struct CurrentRun {
 /// individual call and its result without re-fetching anything.
 struct GroupedCall {
     id: String,
+    /// Present-tense label (e.g. "Executing grep -n foo src/"), shown on the
+    /// live row while this is the group's only call.
+    activity: String,
     /// Past-tense finished label (e.g. "Ran grep -n foo src/").
     done: String,
     /// Raw result content, filled when the matching `ToolResult` arrives.
@@ -323,6 +326,16 @@ impl ToolGroup {
         }
     }
 
+    /// Live label for an open group: a lone call names itself (so a running
+    /// command reads as the command), several fall back to the counted
+    /// breakdown, where no single call describes the group.
+    fn activity(&self) -> String {
+        match self.calls.as_slice() {
+            [only] => only.activity.clone(),
+            _ => group_activity(&self.nouns),
+        }
+    }
+
     /// The group's row: present-tense `▸` only while it is open with a call in
     /// flight, otherwise a resolved tag plus past-tense summary. The label is
     /// stored untruncated; `Row::Tool` clamps it to the current draw width.
@@ -331,7 +344,7 @@ impl ToolGroup {
             return RowKind::Tool {
                 tag: "▸".to_string(),
                 tag_style: Style::new().cyan(),
-                label: group_activity(&self.nouns),
+                label: self.activity(),
                 label_style: Style::new().cyan().dim(),
                 reserve: TOOL_ROW_RESERVE,
             }
@@ -1273,43 +1286,39 @@ impl App {
         self.grouped_ids.insert(id.to_string());
         let call = GroupedCall {
             id: id.to_string(),
+            activity: label.clone(),
             done: done.clone(),
             content: None,
             is_error: false,
             diff: None,
         };
-        let extend = self.tool_group.as_mut().map(|g| {
+        let extend = self
+            .tool_group
+            .as_ref()
+            .is_some_and(|g| g.idx < self.transcript.len());
+        if extend {
+            let g = self.tool_group.as_mut().expect("group checked above");
             g.nouns.push((noun, is_read));
             g.calls.push(call);
-            g.idx
-        });
-        match extend {
-            Some(idx) if idx < self.transcript.len() => self.refresh_group_row(),
-            _ => {
-                self.gap(Kind::Tool);
-                self.push_row(RowKind::Tool {
-                    tag: "▸".to_string(),
-                    tag_style: Style::new().cyan(),
-                    label,
-                    label_style: Style::new().cyan().dim(),
-                    reserve: TOOL_ROW_RESERVE,
-                });
-                self.tool_group = Some(ToolGroup {
-                    idx: self.transcript.len() - 1,
-                    first_done: done.clone(),
-                    nouns: vec![(noun, is_read)],
-                    calls: vec![GroupedCall {
-                        id: id.to_string(),
-                        done,
-                        content: None,
-                        is_error: false,
-                        diff: None,
-                    }],
-                    started: Instant::now(),
-                    last_result_error: None,
-                });
-            }
+            self.refresh_group_row();
+            return;
         }
+        self.gap(Kind::Tool);
+        self.push_row(RowKind::Tool {
+            tag: "▸".to_string(),
+            tag_style: Style::new().cyan(),
+            label,
+            label_style: Style::new().cyan().dim(),
+            reserve: TOOL_ROW_RESERVE,
+        });
+        self.tool_group = Some(ToolGroup {
+            idx: self.transcript.len() - 1,
+            first_done: done,
+            nouns: vec![(noun, is_read)],
+            calls: vec![call],
+            started: Instant::now(),
+            last_result_error: None,
+        });
     }
 
     /// Rewrite the open group's row for its current state, leaving it open so
@@ -2939,8 +2948,10 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             if cmd.trim().is_empty() {
                 "Executing command".to_string()
             } else {
+                // Untruncated: the row clamps to the draw width, so the command
+                // fills the terminal rather than eliding at a fixed 80.
                 let collapsed = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-                format!("Executing: {}", truncate(&collapsed, COMMAND_LABEL_MAX))
+                format!("Executing: {collapsed}")
             }
         }
         "grep" | "search" => "Searching".to_string(),
@@ -3066,7 +3077,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
                 "Ran command".to_string()
             } else {
                 let collapsed = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-                format!("Ran: {}", truncate(&collapsed, COMMAND_LABEL_MAX))
+                format!("Ran: {collapsed}")
             }
         }
         "grep" | "search" => "Searched".to_string(),
@@ -3427,7 +3438,7 @@ fn group_activity(nouns: &[(&str, bool)]) -> String {
 fn running_group_row(group: &ToolGroup, spinner_frame: usize, width: u16) -> Line<'static> {
     let frame = SPINNER[spinner_frame % SPINNER.len()];
     let elapsed = group.started.elapsed().as_secs();
-    let text = format!("{} ({elapsed}s)", group_activity(&group.nouns));
+    let text = format!("{} ({elapsed}s)", group.activity());
     let max = (width as usize).saturating_sub(6).max(1);
     tool_row(frame, Style::new().cyan(), &truncate(&text, max), Style::new().cyan().dim())
 }
@@ -8087,7 +8098,7 @@ mod tests {
         tool_activity, tool_finished,
         transcript_top_padding, rewind_to,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
-        SnapshotJob, Status, AGENT_SETTINGS, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
+        SnapshotJob, Status, AGENT_SETTINGS, COMMAND_LABEL_MAX, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
         KEY_BINDINGS, SLASH_COMMANDS, SPINNER,
         SPINNER_ADVANCE_MS,
     };
@@ -9111,6 +9122,13 @@ mod tests {
             tool_activity("bash", &json!({ "command": "cargo test" })),
             "Executing: cargo test"
         );
+        // Kept whole: the row clamps to the draw width, so a long command fills
+        // the terminal instead of being cut at a fixed 80.
+        let long = format!("echo {}", "x".repeat(2 * COMMAND_LABEL_MAX));
+        assert_eq!(
+            tool_activity("bash", &json!({ "command": long })),
+            format!("Executing: {long}")
+        );
         assert_eq!(tool_activity("grep", &json!({ "pattern": "foo" })), "Searching");
         assert_eq!(
             tool_activity("read", &json!({ "path": "src/main.rs" })),
@@ -9127,6 +9145,13 @@ mod tests {
         assert_eq!(
             tool_finished("bash", &json!({ "command": "/usr/bin/grep -n foo src/" })),
             "Ran: /usr/bin/grep -n foo src/"
+        );
+        // Whole command on the finished row too, for the same reason as
+        // `tool_activity`: the row clamps to the draw width.
+        let long = format!("echo {}", "x".repeat(2 * COMMAND_LABEL_MAX));
+        assert_eq!(
+            tool_finished("bash", &json!({ "command": long })),
+            format!("Ran: {long}")
         );
         assert_eq!(tool_finished("grep", &json!({ "pattern": "foo" })), "Searched");
         assert_eq!(
@@ -11242,6 +11267,40 @@ mod tests {
         let text = line_text(&row);
         assert!(text.contains(SPINNER[2]), "{text}");
         assert!(text.contains("(0s)") || text.contains("(1s)"), "{text}");
+    }
+
+    /// A lone in-flight call is specific enough to name: the live row shows its
+    /// own label (the full command for bash), not the "running 1 command" count.
+    #[test]
+    fn running_single_call_row_names_the_call() {
+        let mut app = test_app();
+        let cmd = format!("grep -n foo {}", "src/very/long/path/".repeat(6));
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": cmd }),
+        });
+        let group = app.tool_group.as_ref().expect("group open");
+        let text = line_text(&running_group_row(group, 0, 200));
+        assert!(text.contains(&format!("Executing: {cmd}")), "{text}");
+        assert!(!text.contains("running 1 command"), "{text}");
+    }
+
+    /// Two or more calls in flight go back to the counted breakdown: no single
+    /// command describes the group.
+    #[test]
+    fn running_multi_call_row_falls_back_to_breakdown() {
+        let mut app = test_app();
+        for (id, cmd) in [("c1", "cargo test"), ("c2", "cargo clippy")] {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: "bash".into(),
+                args: json!({ "command": cmd }),
+            });
+        }
+        let group = app.tool_group.as_ref().expect("group open");
+        let text = line_text(&running_group_row(group, 0, 200));
+        assert!(text.contains("Running 2 commands"), "{text}");
     }
 
     #[test]
