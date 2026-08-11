@@ -2066,6 +2066,12 @@ impl App {
         if self.run_mode == crate::core::agent::plan::RunMode::Plan {
             body["run_mode"] = serde_json::to_value(self.run_mode).unwrap_or(serde_json::Value::Null);
         }
+        // Only an active `/goal` forces the model to stage a todo plan; a normal
+        // turn leaves that to its own judgement. Forwarded only while the goal
+        // runs, so an achieved or cleared goal reverts to an unchanged body.
+        if self.goal.as_ref().is_some_and(|g| g.is_active()) {
+            body["goal_mode"] = serde_json::json!(true);
+        }
         body
     }
 
@@ -14676,6 +14682,21 @@ mod tests {
             Some(64_000)
         );
         assert!(body.get("max_turns").is_none());
+    }
+
+    #[test]
+    fn body_flags_goal_mode_only_while_a_goal_runs() {
+        use crate::core::agent::goal::{GoalState, GoalStatus};
+        let mut app = test_app();
+        assert!(app.body().get("goal_mode").is_none());
+
+        app.goal = Some(GoalState::new("ship the release"));
+        assert_eq!(app.body().get("goal_mode").and_then(|v| v.as_bool()), Some(true));
+
+        if let Some(goal) = app.goal.as_mut() {
+            goal.status = GoalStatus::Achieved;
+        }
+        assert!(app.body().get("goal_mode").is_none());
     }
 }
 
