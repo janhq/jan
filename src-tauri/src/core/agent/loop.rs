@@ -1471,6 +1471,13 @@ async fn orchestrate_inner(
 /// overflowing request fails loudly instead of looping forever.
 const MAX_COMPACTION_ATTEMPTS: usize = 4;
 
+/// Direct DeepSeek v4 rejects every explicit `tool_choice` while thinking mode
+/// is enabled. Its implicit tool selection remains available when `tools` is sent.
+fn requires_implicit_tool_choice(model_id: &str) -> bool {
+    model_id.starts_with("deepseek-v4-")
+}
+
+
 /// Build one OpenAI chat-completion request from the current conversation.
 fn build_completion_request(
     model_id: &str,
@@ -1485,11 +1492,12 @@ fn build_completion_request(
         "messages".to_string(),
         serde_json::Value::Array(conversation_messages.to_vec()),
     );
-    let tool_choice = match forced_tool_choice {
-        Some(name) => serde_json::json!({ "type": "function", "function": { "name": name } }),
-        None => serde_json::json!("auto"),
-    };
-    completion_map.insert("tool_choice".to_string(), tool_choice);
+    if let Some(name) = forced_tool_choice.filter(|_| !requires_implicit_tool_choice(model_id)) {
+        completion_map.insert(
+            "tool_choice".to_string(),
+            serde_json::json!({ "type": "function", "function": { "name": name } }),
+        );
+    }
     if !openai_tools.is_empty() {
         completion_map.insert(
             "tools".to_string(),
@@ -2159,9 +2167,25 @@ mod tests {
             json!({ "type": "function", "function": { "name": "todo" } }),
             "the first turn's request must force the named tool"
         );
-        assert_eq!(
-            requests[1]["tool_choice"], "auto",
-            "later turns must not keep forcing the same tool"
+        assert!(
+            requests[1].get("tool_choice").is_none(),
+            "unforced turns must rely on the provider's implicit tool choice"
+        );
+    }
+
+    #[test]
+    fn deepseek_v4_uses_implicit_tool_choice_even_for_eager_todo() {
+        let request = build_completion_request(
+            "deepseek-v4-flash",
+            &[json!({ "role": "user", "content": "plan this work" })],
+            &[json!({ "type": "function", "function": { "name": "todo" } })],
+            &json!({}),
+            Some("todo"),
+        );
+
+        assert!(
+            request.get("tool_choice").is_none(),
+            "DeepSeek v4 thinking mode rejects every explicit tool_choice"
         );
     }
 
