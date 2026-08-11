@@ -462,6 +462,8 @@ struct PendingToolRow {
     id: String,
     idx: usize,
     label: String,
+    /// Past-tense label the row is rewritten to once its result lands.
+    done: String,
 }
 
 /// One committed transcript entry. Width-dependent entries keep their *source*
@@ -1505,6 +1507,32 @@ impl App {
         self.awaiting.clear();
     }
 
+    /// Rewrite a standalone tool row to its resolved form once its result lands:
+    /// past-tense label plus an outcome tag, matching how a tool group's row
+    /// resolves. Without this a finished `edit` keeps reading as "Editing X".
+    fn resolve_pending_row(&mut self, id: &str, is_error: bool) {
+        let Some(pos) = self.pending_rows.iter().position(|row| row.id == id) else {
+            return;
+        };
+        let row = self.pending_rows.remove(pos);
+        if row.idx >= self.transcript.len() {
+            return;
+        }
+        let (tag, tag_style) = if is_error {
+            ("✗", Style::new().red())
+        } else {
+            ("✓", Style::new().green())
+        };
+        self.transcript[row.idx] = RowKind::Tool {
+            tag: tag.to_string(),
+            tag_style,
+            label: row.done,
+            label_style: Style::new().dim(),
+            reserve: TOOL_ROW_RESERVE,
+        }
+        .into();
+    }
+
     /// Resolve every row still awaiting a result: the run ended (cancel, error,
     /// aborted stream) and no `ToolResult` is coming, so a `▸`/`✓` would read as
     /// work that is still running or that succeeded.
@@ -2316,6 +2344,7 @@ impl App {
                         id: id.clone(),
                         idx: self.transcript.len() - 1,
                         label,
+                        done,
                     });
                 } else {
                     // Commit any buffered prose OR reasoning the model emitted
@@ -2335,7 +2364,7 @@ impl App {
             } => {
                 // Clear the throbber for an awaited subagent once its result lands.
                 self.awaiting.retain(|(await_id, ..)| await_id != &id);
-                self.pending_rows.retain(|row| row.id != id);
+                self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
                 // reminder fired; let a later stop remind again if work is still
                 // open. Set unconditionally, before the grouped-call early return
@@ -3193,6 +3222,8 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         "find" | "glob" => "Found files".to_string(),
         "read" => format!("Read {}", base(s("path"))),
         "list" | "ls" => "Listed files".to_string(),
+        "write" => format!("Wrote {}", base(s("path"))),
+        "edit" => format!("Edited {}", base(s("path"))),
         "dispatch_subagent" => format!("Dispatched subagent: {}", s("subagent_name")),
         "await_subagent" => format!("Subagent {} returned", subagent_name_from_run_id(s("run_id"))),
         "create_subagent" => format!("Created subagent: {}", s("name")),
@@ -9532,6 +9563,14 @@ mod tests {
             "Read main.rs"
         );
         assert_eq!(tool_finished("list", &json!({})), "Listed files");
+        assert_eq!(
+            tool_finished("write", &json!({ "path": "src/main.rs" })),
+            "Wrote main.rs"
+        );
+        assert_eq!(
+            tool_finished("edit", &json!({ "path": "src/main.rs" })),
+            "Edited main.rs"
+        );
     }
 
     /// `web_search`/`web_fetch`/`ask`/`todo` used to fall through to the raw
@@ -11516,7 +11555,7 @@ mod tests {
         app.cancel_run();
         let row = row_text(&app.transcript[idx]);
         assert!(
-            row.contains("▸") && !row.contains("○"),
+            row.contains("✓ Edited foo.rs") && !row.contains("○"),
             "a resolved edit must keep its call row: {row}"
         );
     }
@@ -12233,8 +12272,35 @@ mod tests {
             .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(joined.contains("Editing a.txt"), "{joined}");
+        // The call row resolves to past tense once the result lands.
+        assert!(joined.contains("Edited a.txt"), "{joined}");
+        assert!(!joined.contains("Editing a.txt"), "{joined}");
         assert!(joined.contains('┌') && joined.contains('┘'), "{joined}");
+    }
+
+    #[test]
+    fn diff_tool_row_reads_present_tense_until_its_result_lands() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "write".into(),
+            args: json!({ "path": "a.txt", "content": "x" }),
+        });
+        assert!(row_text(app.transcript.last().unwrap()).contains("Writing a.txt"));
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "boom".into(),
+            is_error: true,
+            diff: None,
+        });
+        let joined: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(joined.contains("✗ Wrote a.txt"), "{joined}");
+        assert!(app.pending_rows.is_empty());
     }
 
     #[test]
