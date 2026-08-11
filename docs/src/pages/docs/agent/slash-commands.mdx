@@ -10,6 +10,13 @@ import { Callout } from 'nextra/components'
 
 Type `/` in the input to filter the list as you type. <kbd>Enter</kbd> runs the highlighted command.
 
+The filter is fuzzy: it matches the tail of a command or skill name, a subsequence of it, or a close
+typo, so you rarely need to type a name exactly. `/rse` finds `/resume`, and typing `/simplifyer`
+still lines up the `simplifier` in `/code-simplifier`. Built-ins, plugin commands, and skills all
+join the same list, ranked by how closely they match the start of the name. The first one or two
+characters match strictly as a prefix, so a barely-started buffer stays tight instead of surfacing
+every name that merely contains those letters.
+
 Installed project skills ([Skills](/docs/agent/skills)) join the same popup: typing `/deploy` matches a skill named `deploy` (magenta row, alongside the cyan commands), <kbd>Tab</kbd> completes it, and <kbd>Enter</kbd> tells the agent to follow the skill. Disabled skills (via `[skills].enabled`) are not offered, and neither are `user-invocable: false` skills - those stay agent-invoked only.
 
 Skills accept arguments, and there are two ways to invoke one:

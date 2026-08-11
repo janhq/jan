@@ -94,7 +94,9 @@ name (`release-tools`), one qualified skill (`release-tools:prepare`), or a plai
 A plugin's `commands/` directory is discovered as slash commands. Each markdown file is a prompt
 template: the frontmatter `description` feeds the slash popup, and the body is loaded into the
 conversation when you run the command. `$ARGUMENTS` is replaced with everything you typed after the
-command name, and `$1`..`$9` with the individual whitespace-separated words:
+command name, and `$1`..`$9` with the individual whitespace-separated words. A missing positional
+becomes empty, and `$10`-style tokens (and `$ARGUMENTATION`) are left literal so a body can talk
+about dollars; the popup only advertises placeholders that will actually be filled:
 
 ```bash
 /feature-dev add user authentication     # $ARGUMENTS = "add user authentication", $1 = "add"
@@ -102,8 +104,9 @@ command name, and `$1`..`$9` with the individual whitespace-separated words:
 
 Precedence in the slash namespace is built-in command, then plugin command, then skill, so a plugin
 command named `resume` never shadows the built-in `/resume` (the explicit `/command:<plugin>:<name>`
-form always works). Like skills, commands honor the `[skills].enabled` whitelist. The transcript
-shows one compact `[command:<name>]` row with your arguments.
+form always works). Like skills, commands honor the `[skills].enabled` whitelist: a command disabled
+there is not offered and cannot be fired, even by typing its name directly. The transcript shows one
+compact `[command:<name>]` row with your arguments.
 
 ## Plugin agents
 
