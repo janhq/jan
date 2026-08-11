@@ -554,6 +554,14 @@ pub(crate) fn is_context_overflow_error(err: &str) -> bool {
     err.contains(CONTEXT_OVERFLOW_MARKER)
 }
 
+/// True when the upstream rejected the model's tool call as incomplete (the
+/// facade's DSML guard: "upstream emitted an incomplete DSML tool call"). The
+/// truncated call never executed, so the request has no side effects and the
+/// loop can safely regenerate it once instead of killing the run.
+pub(crate) fn is_incomplete_tool_call_error(err: &str) -> bool {
+    err.contains("incomplete") && err.contains("tool call")
+}
+
 pub(crate) async fn stream_openai_chat_completions(
     client: &Client,
     upstream_url: &str,

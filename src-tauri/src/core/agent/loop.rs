@@ -1639,6 +1639,11 @@ async fn run_turn_cycle(
         let completion = {
             let mut keep_recent = crate::core::agent::compaction::DEFAULT_KEEP_RECENT;
             let mut attempts = 0usize;
+            // Regenerate once when the upstream rejects the model's tool call
+            // as incomplete (the facade's DSML guard). The truncated call
+            // never executed, so the request has no side effects and retrying
+            // is safe; the regenerated call usually completes (observed live).
+            let mut tool_call_regenerated = false;
             loop {
                 let request_value = build_completion_request(
                     model_id,
@@ -1649,6 +1654,15 @@ async fn run_turn_cycle(
                 );
                 match model.invoke(&request_value, events).await {
                     Ok(c) => break c,
+                    Err(e)
+                        if crate::core::agent::upstream::is_incomplete_tool_call_error(&e)
+                            && !tool_call_regenerated =>
+                    {
+                        log::info!(
+                            "agent: upstream rejected an incomplete tool call; regenerating once"
+                        );
+                        tool_call_regenerated = true;
+                    }
                     Err(e)
                         if crate::core::agent::upstream::is_context_overflow_error(&e)
                             && attempts < MAX_COMPACTION_ATTEMPTS =>
@@ -2569,6 +2583,96 @@ mod tests {
                 .pop_front()
                 .unwrap_or_else(|| Err("mock exhausted".to_string()))
         }
+    }
+
+    #[tokio::test]
+    async fn turn_cycle_regenerates_once_on_incomplete_tool_call() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        // First invoke: the facade's DSML guard rejects the truncated tool
+        // call. Second: a complete tool call. Third: the final answer.
+        let model = ResultQueueModel {
+            results: StdMutex::new(
+                vec![
+                    Err("Upstream stream error: upstream_error: upstream emitted an incomplete DSML tool call".to_string()),
+                    Ok(mutating_tool_call_completion("call_1", "bash")),
+                    Ok(json!({ "choices": [{ "message": { "content": "final answer" }, "finish_reason": "stop" }] })),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        };
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let convo = vec![json!({ "role": "user", "content": "run it" })];
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_ok(), "cycle failed: {result:?}");
+        // The regenerated tool call executed exactly once (MockTool echoes).
+        assert_eq!(tool.calls.lock().unwrap().len(), 1);
+        assert_eq!(
+            model.results.lock().unwrap().len(),
+            0,
+            "the queue must be fully consumed (exactly one retry)"
+        );
+    }
+
+    #[tokio::test]
+    async fn turn_cycle_gives_up_after_one_incomplete_tool_call_retry() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        // The upstream keeps rejecting: exactly two invokes (original + one
+        // retry), then the run surfaces the error.
+        let model = ResultQueueModel {
+            results: StdMutex::new(
+                vec![
+                    Err("Upstream stream error: upstream_error: upstream emitted an incomplete DSML tool call".to_string()),
+                    Err("Upstream stream error: upstream_error: upstream emitted an incomplete DSML tool call".to_string()),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        };
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let convo = vec![json!({ "role": "user", "content": "run it" })];
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_err(), "persistent rejection must fail the run");
+        assert_eq!(
+            model.results.lock().unwrap().len(),
+            0,
+            "queue consumed exactly twice, then the run stopped"
+        );
+        assert!(tool.calls.lock().unwrap().is_empty(), "no tool ran");
     }
 
     #[tokio::test]
