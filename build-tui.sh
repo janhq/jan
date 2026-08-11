@@ -41,8 +41,10 @@ build() {
     fi
 
     echo "==> Installing to $INSTALL_DIR/$BIN_NAME ..."
-    cp "$artifact" "$INSTALL_DIR/$BIN_NAME"
-    chmod +x "$INSTALL_DIR/$BIN_NAME"
+    local install_tmp
+    install_tmp="$(mktemp "$INSTALL_DIR/.${BIN_NAME}.XXXXXX")"
+    install -m 755 "$artifact" "$install_tmp"
+    mv -f "$install_tmp" "$INSTALL_DIR/$BIN_NAME"
 
     echo "==> Done: $INSTALL_DIR/$BIN_NAME"
     echo "    Make sure $INSTALL_DIR is in your PATH."
