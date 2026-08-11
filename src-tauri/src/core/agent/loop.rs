@@ -1654,6 +1654,10 @@ async fn run_turn_cycle(
     let mut mid_run_nudge_count: u32 = 0;
     // One-shot: asked the model to close out its todos before handing back.
     let mut closeout_nudged = false;
+    // Tokamak preview can otherwise repeat `ask` after receiving its answer as
+    // a compatibility user message. Hide only that tool for the immediately
+    // following completion, which requires the model to use the answer it has.
+    let mut suppress_ask_next_turn = false;
 
     while unlimited || turn < max_turns {
         let _ = events.send(StreamEvent::Step {
@@ -1668,10 +1672,23 @@ async fn run_turn_cycle(
             let mut keep_recent = crate::core::agent::compaction::DEFAULT_KEEP_RECENT;
             let mut attempts = 0usize;
             loop {
+                let filtered_tools = suppress_ask_next_turn.then(|| {
+                    openai_tools
+                        .iter()
+                        .filter(|tool| {
+                            tool.pointer("/function/name")
+                                .and_then(serde_json::Value::as_str)
+                                != Some("ask")
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>()
+                });
+                let tools_for_request = filtered_tools.as_deref().unwrap_or(openai_tools);
+                suppress_ask_next_turn = false;
                 let request_value = build_completion_request(
                     model_id,
                     &conversation_messages,
-                    openai_tools,
+                    tools_for_request,
                     json_body,
                     (turn == 0).then_some(force_first_tool).flatten(),
                 );
@@ -1852,6 +1869,7 @@ async fn run_turn_cycle(
         // `todo` at all means the list was just reconciled, regardless of
         // what else ran alongside it.
         let mut todo_touched_this_batch = false;
+        let mut completed_ask = false;
         for outcome in tool_results {
             let ToolOutcome { id, content, diff } = outcome;
             // A `bash` call that exits non-zero isn't prefixed "ERROR" (that
@@ -1864,6 +1882,8 @@ async fn run_turn_cycle(
             let name = tool_names.get(id.as_str()).copied().unwrap_or("");
             if name == "todo" {
                 todo_touched_this_batch = true;
+            } else if name == "ask" && !is_error {
+                completed_ask = true;
             } else if !is_error && matches!(name, "bash" | "write" | "edit") {
                 mutations_since_todo_touch += 1;
             }
@@ -1874,6 +1894,9 @@ async fn run_turn_cycle(
                 diff,
             });
             conversation_messages.push(tool_result_message(model_id, &id, &content));
+        }
+        if completed_ask {
+            suppress_ask_next_turn = true;
         }
         if todo_touched_this_batch {
             mutations_since_todo_touch = 0;
@@ -2083,6 +2106,22 @@ mod tests {
         })
     }
 
+    fn named_tool_call_completion(name: &str) -> serde_json::Value {
+        json!({
+            "choices": [{
+                "message": {
+                    "content": serde_json::Value::Null,
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": { "name": name, "arguments": "{}" }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        })
+    }
+
     #[tokio::test]
     async fn turn_cycle_executes_tool_then_returns_final() {
         let (tx, mut rx) = mpsc::unbounded_channel();
@@ -2171,6 +2210,39 @@ mod tests {
             "A tool returned:\nMOCK_RESULT\n\nContinue from this result. Call another tool only if the next step requires it."
         );
         assert!(messages[messages.len() - 2].get("tool_calls").is_none());
+    }
+
+    #[tokio::test]
+    async fn tokamak_preview_cannot_immediately_repeat_ask() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            named_tool_call_completion("ask"),
+            json!({ "choices": [{ "message": { "content": "final answer" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let ask_tool = json!({ "type": "function", "function": { "name": "ask" } });
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "tokamak-1-preview",
+            &[ask_tool],
+            vec![user_message("ask something")],
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[1].get("tools").is_none());
     }
 
     #[tokio::test]
