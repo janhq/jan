@@ -250,7 +250,7 @@ fn load_plugin_agents(project_root: &Path, out: &mut Vec<SubagentDefinition>) {
         if plugin.starts_with(".installing-") {
             continue;
         }
-        scan_agent_dir(&path.join("agents"), plugin, out);
+        scan_agent_dir(&path.join("agents"), out);
     }
 }
 
@@ -267,33 +267,18 @@ pub(crate) fn count_plugin_agents(root: &Path, plugin: &str) -> usize {
 }
 
 /// Recursively visit every agent markdown file under `dir`, applying the
-/// loader's skip rules (READMEs, dotfiles, non-`.md` files). Malformed files
-/// still reach the visitor; parsing happens in the caller.
+/// loader's skip rules (READMEs, dotfiles, non-`.md` files) via the shared
+/// walker. Malformed files still reach the visitor; parsing happens in the
+/// caller, and unreadable files are skipped.
 fn scan_agent_files(dir: &Path, visit: &mut dyn FnMut(&Path, &str)) {
-    let Ok(rd) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in rd.flatten() {
-        let path = entry.path();
-        let Ok(ft) = entry.file_type() else { continue };
-        if ft.is_dir() {
-            scan_agent_files(&path, visit);
-            continue;
+    crate::core::agent::skills::walk_markdown_files(dir, &mut |path| {
+        if let Ok(raw) = std::fs::read_to_string(path) {
+            visit(path, &raw);
         }
-        if !ft.is_file() || path.extension().and_then(|e| e.to_str()) != Some("md") {
-            continue;
-        }
-        let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        if file_name.starts_with('.') || file_name.eq_ignore_ascii_case("README.md") {
-            continue;
-        }
-        if let Ok(raw) = std::fs::read_to_string(&path) {
-            visit(&path, &raw);
-        }
-    }
+    });
 }
 
-fn scan_agent_dir(dir: &Path, plugin: &str, out: &mut Vec<SubagentDefinition>) {
+fn scan_agent_dir(dir: &Path, out: &mut Vec<SubagentDefinition>) {
     scan_agent_files(dir, &mut |path, raw| {
         match parse_plugin_agent(raw) {
             Some((name, description, tools, system_prompt)) => {

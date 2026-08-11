@@ -2730,6 +2730,16 @@ impl App {
         }
     }
 
+    /// One compact transcript row for a persisted skill/command invocation:
+    /// the label only, never the template body (see `super::invocation_label`).
+    fn push_invocation_label(&mut self, label: String) {
+        self.gap(Kind::User);
+        self.push(Line::from(vec![
+            Span::styled("› ", Style::new().light_magenta().bold()),
+            Span::styled(label, Style::new().cyan().bold()),
+        ]));
+    }
+
     /// Stage the OS clipboard's image for the next message, noting the result.
     fn attach_clipboard_image(&mut self) {
         match clipboard_image() {
@@ -8088,13 +8098,7 @@ fn rebuild_transcript(app: &mut App) {
             // Same compact treatment as resume: invocation templates are stored
             // verbatim in history but must not flood the transcript.
             match super::invocation_label(&text) {
-                Some(label) => {
-                    app.gap(Kind::User);
-                    app.push(Line::from(vec![
-                        Span::styled("› ", Style::new().light_magenta().bold()),
-                        Span::styled(label, Style::new().cyan().bold()),
-                    ]));
-                }
+                Some(label) => app.push_invocation_label(label),
                 None => app.push_user_line(&text, &images),
             }
         } else if role == "assistant" {

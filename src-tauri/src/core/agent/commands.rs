@@ -73,47 +73,22 @@ pub(crate) fn discover(root: &Path) -> Vec<CommandEntry> {
         if plugin.starts_with(".installing-") {
             continue;
         }
-        scan_command_dir(&path.join("commands"), plugin, &mut out);
+        crate::core::agent::skills::walk_markdown_files(&path.join("commands"), &mut |path| {
+            let raw = std::fs::read_to_string(path).unwrap_or_default();
+            let name = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default();
+            out.push(CommandEntry {
+                name: name.to_string(),
+                plugin: plugin.to_string(),
+                description: parse_command(&raw).description,
+                file: path.to_path_buf(),
+            });
+        });
     }
     out.sort_by(|a, b| (&a.plugin, &a.name).cmp(&(&b.plugin, &b.name)));
     out
-}
-
-fn scan_command_dir(dir: &Path, plugin: &str, out: &mut Vec<CommandEntry>) {
-    let Ok(rd) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in rd.flatten() {
-        let path = entry.path();
-        let Ok(ft) = entry.file_type() else { continue };
-        if ft.is_dir() {
-            scan_command_dir(&path, plugin, out);
-            continue;
-        }
-        if !ft.is_file() || path.extension().and_then(|e| e.to_str()) != Some("md") {
-            continue;
-        }
-        let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if file_name.starts_with('.') {
-            continue;
-        }
-        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if stem.eq_ignore_ascii_case("README") {
-            continue;
-        }
-        let raw = std::fs::read_to_string(&path).unwrap_or_default();
-        let description = parse_command(&raw).description;
-        out.push(CommandEntry {
-            name: stem.to_string(),
-            plugin: plugin.to_string(),
-            description,
-            file: path,
-        });
-    }
 }
 
 /// Commands offered to the human, honoring the `[skills].enabled` whitelist
@@ -138,15 +113,16 @@ pub(crate) fn catalog(root: &Path, enabled: &[String]) -> Vec<CommandEntry> {
 /// Locate a command by the name a human typed: explicit `<plugin>:<name>`
 /// first, then a plain name that is unique across installed plugins.
 pub(crate) fn resolve(root: &Path, name: &str) -> Result<CommandEntry, String> {
+    let commands = discover(root);
     if let Some((plugin, plain)) = name.split_once(':') {
-        if let Some(entry) = discover(root)
-            .into_iter()
+        if let Some(entry) = commands
+            .iter()
             .find(|e| e.plugin == plugin && e.name == plain)
         {
-            return Ok(entry);
+            return Ok(entry.clone());
         }
     }
-    let mut matches = discover(root).into_iter().filter(|e| e.name == name);
+    let mut matches = commands.into_iter().filter(|e| e.name == name);
     match (matches.next(), matches.next()) {
         (Some(only), None) => Ok(only),
         _ => Err(format!("ERROR: command '{name}' not found")),

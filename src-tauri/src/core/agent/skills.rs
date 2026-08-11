@@ -205,6 +205,41 @@ pub(crate) fn plugins_dir(root: &Path) -> PathBuf {
     root.join(".jan").join("agent").join("plugins")
 }
 
+/// Recursively yield every `*.md` file under `dir`, skipping dotfiles and
+/// `README` files (any case). Callers read each file themselves so read-failure
+/// handling stays with them. Shared by plugin command and plugin agent
+/// discovery.
+pub(crate) fn walk_markdown_files(dir: &Path, visit: &mut dyn FnMut(&Path)) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        let Ok(ft) = entry.file_type() else { continue };
+        if ft.is_dir() {
+            walk_markdown_files(&path, visit);
+            continue;
+        }
+        if !ft.is_file() || path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if file_name.starts_with('.') {
+            continue;
+        }
+        if path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .is_some_and(|s| s.eq_ignore_ascii_case("README"))
+        {
+            continue;
+        }
+        visit(&path);
+    }
+}
+
 /// Skills shipped by installed plugins, qualified with their plugin name.
 /// Each installed plugin is scanned conventionally: a `skills/` subdirectory
 /// (folder and flat forms, same rules as project skills) plus an optional

@@ -58,7 +58,7 @@ fn migrate_from_candidates(canonical: &Path, candidates: Vec<PathBuf>) -> std::i
     Ok(())
 }
 
-fn legacy_app_config_candidate_paths(app_data_dir: &Path) -> Vec<PathBuf> {
+fn legacy_app_config_candidate_paths(_app_data_dir: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
     if let Some(bundle_dir) = resolve_bundle_app_data_dir() {
@@ -70,7 +70,7 @@ fn legacy_app_config_candidate_paths(app_data_dir: &Path) -> Vec<PathBuf> {
         let package_name = env!("CARGO_PKG_NAME");
         if let Some(config_dir) = dirs::config_dir() {
             let legacy = config_dir.join(package_name).join(CONFIGURATION_FILE_NAME);
-            if legacy != app_data_dir.join(CONFIGURATION_FILE_NAME) {
+            if legacy != _app_data_dir.join(CONFIGURATION_FILE_NAME) {
                 paths.push(legacy);
             }
         }

@@ -318,14 +318,6 @@ pub(crate) fn catalog(root: &Path, enabled: &[String]) -> Vec<SkillMeta> {
     side_catalog(root, enabled, |p| p.model_invocable)
 }
 
-/// User-invocable skills: what the slash popup offers and `/skill:<name>`
-/// dispatches. Skills with `user-invocable: false` (Claude Code convention)
-/// are excluded — the human must not be able to fire them; the agent still
-/// can. Both sides of the popup share this list.
-pub(crate) fn user_catalog(root: &Path, enabled: &[String]) -> Vec<SkillMeta> {
-    side_catalog(root, enabled, |p| p.user_invocable)
-}
-
 /// Raw SKILL.md text (frontmatter included) for the editor.
 pub fn read_raw(store: &Path, name: &str) -> Result<String, String> {
     let entry = resolve(store, name)?;
@@ -342,67 +334,6 @@ pub fn read_body(store: &Path, name: &str) -> Result<String, String> {
         Err(_) if is_default_jan_skill(name) => Ok(parse(DEFAULT_JAN_SKILL).body),
         Err(error) => Err(error),
     }
-}
-
-/// Parse a `/skill:<name>` invocation in a user draft.
-///
-/// Returns `(name, args)` for:
-///   - the leading form (`/skill:deploy staging` -> `deploy`, `staging`), and
-///   - a mid-prompt token (`fix the bug /skill:deploy focus on auth` ->
-///     `deploy`, with the surrounding prose collapsed into `args`).
-///
-/// Mid-prompt detection is skipped when the draft starts with another slash
-/// command (`/compact /skill:foo` is a command argument, not an invocation) or
-/// a local-execution sigil (`!cmd` / `$ cmd`), whose bodies routinely contain
-/// `/skill:` references that are not meant as skill invocations.
-pub(crate) fn parse_invocation(text: &str) -> Option<(String, String)> {
-    let trimmed = text.trim_start();
-    if let Some(rest) = trimmed.strip_prefix("/skill:") {
-        let name = rest.split_whitespace().next()?;
-        if name.is_empty() {
-            return None;
-        }
-        let args = rest[name.len()..].trim();
-        return Some((name.to_string(), args.to_string()));
-    }
-    if trimmed.starts_with('/') || trimmed.starts_with('!') || trimmed.starts_with('$') {
-        return None;
-    }
-    // Mid-prompt: `/skill:<name>` preceded by start/space and followed by
-    // space/end. The name excludes `/` so a path like `/skill:foo/bar` is not
-    // an invocation.
-    let bytes = text.as_bytes();
-    let mut search_from = 0;
-    while search_from < text.len() {
-        let Some(rel) = text[search_from..].find("/skill:") else {
-            return None;
-        };
-        let start = search_from + rel;
-        let prev_ok = start == 0 || bytes[start - 1].is_ascii_whitespace();
-        let after = start + "/skill:".len();
-        let name_end = text[after..]
-            .find(|c: char| c.is_whitespace() || c == '/')
-            .map(|i| after + i)
-            .unwrap_or(text.len());
-        let name = &text[after..name_end];
-        let next_ok = name_end == text.len()
-            || text[name_end..]
-                .chars()
-                .next()
-                .is_some_and(char::is_whitespace);
-        if prev_ok && next_ok && !name.is_empty() {
-            let before = text[..start].trim_end();
-            let after_part = text[name_end..].trim_start();
-            let args = [before, after_part]
-                .into_iter()
-                .filter(|p| !p.is_empty())
-                .collect::<Vec<_>>()
-                .join(" ");
-            return Some((name.to_string(), args));
-        }
-        search_from = (start + 1).max(name_end);
-    }
-    None
 }
 
 /// Create or overwrite a skill. Existing skills are written in place (preserving
@@ -514,44 +445,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_invocation_leading_and_mid_prompt_forms() {
-        // Leading form: name + args.
-        let (name, args) = parse_invocation("/skill:deploy staging --force").unwrap();
-        assert_eq!(name, "deploy");
-        assert_eq!(args, "staging --force");
-        // Bare leading form.
-        let (name, args) = parse_invocation("/skill:deploy").unwrap();
-        assert_eq!(name, "deploy");
-        assert_eq!(args, "");
-        // Mid-prompt: surrounding prose collapses into args.
-        let (name, args) =
-            parse_invocation("fix the auth flow /skill:deploy focus on security").unwrap();
-        assert_eq!(name, "deploy");
-        assert_eq!(args, "fix the auth flow focus on security");
-        // Token at the end: only the prose before it.
-        let (name, args) = parse_invocation("fix the auth flow /skill:deploy").unwrap();
-        assert_eq!(name, "deploy");
-        assert_eq!(args, "fix the auth flow");
-        // Trailing token with nothing before.
-        let (name, args) = parse_invocation("/skill:deploy harden").unwrap();
-        assert_eq!(name, "deploy");
-        assert_eq!(args, "harden");
-    }
-
-    #[test]
-    fn parse_invocation_skips_commands_sigils_and_paths() {
-        // Another slash command takes precedence.
-        assert!(parse_invocation("/compact /skill:deploy").is_none());
-        // Local-execution sigils pass through.
-        assert!(parse_invocation("!run /skill:deploy now").is_none());
-        assert!(parse_invocation("$ python /skill:deploy.py").is_none());
-        // A path-like token is not an invocation.
-        assert!(parse_invocation("see /skill:foo/bar for details").is_none());
-        // Unknown/plain text has no token.
-        assert!(parse_invocation("just some words").is_none());
-    }
-
-    #[test]
     fn parse_invocation_flags_from_frontmatter() {
         // Default: both sides.
         let p = parse("---\ndescription: d\n---\nbody");
@@ -571,7 +464,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_and_user_catalog_split_invocation_sides() {
+    fn catalog_respects_invocation_flags() {
         let root = std::env::temp_dir().join(format!(
             "jan_skills_sides_{}",
             std::time::SystemTime::UNIX_EPOCH
@@ -594,11 +487,6 @@ mod tests {
 
         let model: Vec<_> = catalog(&root, &[]).into_iter().map(|m| m.name).collect();
         assert_eq!(model, vec!["both", "model_only"], "model side: {model:?}");
-        let user: Vec<_> = user_catalog(&root, &[])
-            .into_iter()
-            .map(|m| m.name)
-            .collect();
-        assert_eq!(user, vec!["both", "user_only"], "user side: {user:?}");
 
         // Both flags still visible to the management list.
         let all = list_meta(&root);
@@ -614,50 +502,6 @@ mod tests {
                 .find(|m| m.name == "user_only")
                 .unwrap()
                 .model_invocable
-        );
-
-        // User invocation refuses model-only skills.
-        assert!(build_invocation_message(&root, "model_only", "").is_err());
-        assert!(build_invocation_message(&root, "user_only", "").is_ok());
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn build_invocation_message_injects_body_and_args() {
-        let root = std::env::temp_dir().join(format!(
-            "jan_skills_inv_{}",
-            std::time::SystemTime::UNIX_EPOCH
-                .elapsed()
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(skills_dir(&root).join("deploy")).unwrap();
-        std::fs::write(
-            skills_dir(&root).join("deploy").join("SKILL.md"),
-            "---\ndescription: Ship it\n---\n\n# Deploy\n\nRun the script.\n",
-        )
-        .unwrap();
-
-        let (msg, description) = build_invocation_message(&root, "deploy", "staging").unwrap();
-        assert_eq!(description, "Ship it");
-        assert!(
-            msg.contains("You have invoked the \"deploy\" skill"),
-            "{msg}"
-        );
-        assert!(msg.contains("# Deploy\n\nRun the script."), "body: {msg}");
-        assert!(msg.contains("Skill directory:"), "folder announced: {msg}");
-        assert!(msg.contains("User: staging"), "{msg}");
-
-        // Unknown or disabled skills are rejected.
-        assert!(build_invocation_message(&root, "nope", "").is_err());
-        std::fs::write(
-            root.join(".jan").join("agent").join("agent.toml"),
-            "[skills]\nenabled = [\"other\"]\n",
-        )
-        .unwrap();
-        assert!(
-            build_invocation_message(&root, "deploy", "").is_err(),
-            "disabled"
         );
         let _ = std::fs::remove_dir_all(&root);
     }
