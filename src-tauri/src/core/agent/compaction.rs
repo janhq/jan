@@ -196,6 +196,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn summary_request_preserves_tool_calls_and_file_results() {
+        let model = StubModel {
+            summary: "CONDENSED".into(),
+            calls: StdMutex::new(0),
+            requests: tokio::sync::Mutex::new(Vec::new()),
+        };
+        let input = vec![
+            json!({ "role": "system", "content": "sys" }),
+            json!({ "role": "user", "content": "Update the configuration." }),
+            json!({
+                "role": "assistant",
+                "content": Value::Null,
+                "tool_calls": [{
+                    "id": "write-1",
+                    "type": "function",
+                    "function": {
+                        "name": "write",
+                        "arguments": "{\"path\":\"config.toml\",\"content\":\"updated\"}"
+                    }
+                }]
+            }),
+            json!({
+                "role": "tool",
+                "tool_call_id": "write-1",
+                "content": "Wrote config.toml"
+            }),
+            json!({ "role": "assistant", "content": "Configuration updated." }),
+        ];
+
+        compact_conversation(&input, "m", &model, 2).await;
+
+        let requests = model.requests.lock().await;
+        let messages = requests[0]["messages"].as_array().unwrap();
+        assert_eq!(&messages[..input.len()], input.as_slice());
+        assert_eq!(messages.last().unwrap()["content"], SUMMARY_SYSTEM_PROMPT);
+    }
+
+    #[tokio::test]
     async fn falls_back_to_note_when_summarizer_fails() {
         let input = convo(20);
         let out = compact_conversation(&input, "m", &FailingModel, 4).await;
