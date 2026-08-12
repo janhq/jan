@@ -530,6 +530,7 @@ const BANNER_INDENT: u16 = 2;
 /// behind `/help` (see `SLASH_COMMANDS`).
 const BANNER_HINTS: &[(&str, &str)] = &[
     ("/help", "commands"),
+    ("/init", "onboard this project"),
     ("/model", "switch model"),
     ("/resume", "reopen a session"),
     ("Ctrl-D", "quit"),
@@ -2194,6 +2195,20 @@ impl App {
     }
 
     fn submit_user(&mut self, text: String) {
+        self.submit_user_text(text, true)
+    }
+
+    /// Start a user turn whose text the model sees but the transcript never
+    /// shows. For commands that expand into a long canned prompt (`/init`): the
+    /// command's own note already says what is happening, and pasting the
+    /// prompt body into the transcript is noise. Hidden turns leave
+    /// `pending_images` staged for the user's next real message rather than
+    /// attaching them to a prompt they did not write.
+    fn submit_user_hidden(&mut self, text: String) {
+        self.submit_user_text(text, false)
+    }
+
+    fn submit_user_text(&mut self, text: String, display: bool) {
         if self.model.is_empty() {
             self.note("not signed in — run /login to sign in to Tokamak first");
             return;
@@ -2205,7 +2220,11 @@ impl App {
             return;
         }
         self.ensure_base_snapshot();
-        let images = std::mem::take(&mut self.pending_images);
+        let images = if display {
+            std::mem::take(&mut self.pending_images)
+        } else {
+            Vec::new()
+        };
         let names: Vec<String> = images.iter().map(|i| i.name.clone()).collect();
         // Resolve @path file references before sending
         let (clean_text, injected_contents) =
@@ -2216,13 +2235,15 @@ impl App {
             format!("{clean_text}\n\n---\nReferenced file contents:\n\n{injected_contents}")
         };
         self.history.push(build_user_message(&final_text, &images));
-        self.push_user_line(&text, &names);
-        // The typed text, not `final_text`: `@path` expansions are context for
-        // the model, and the row never showed them.
-        self.display_log.push(DisplayEntry::User {
-            text: text.clone(),
-            images: names,
-        });
+        if display {
+            self.push_user_line(&text, &names);
+            // The typed text, not `final_text`: `@path` expansions are context
+            // for the model, and the row never showed them.
+            self.display_log.push(DisplayEntry::User {
+                text: text.clone(),
+                images: names,
+            });
+        }
         self.begin_turn();
         // A fresh user turn is new context: allow the next boundary to remind
         // again even if the open work is unchanged (dedup is "twice in a row"),
@@ -4366,6 +4387,11 @@ pub async fn run(
     if app.model.is_empty() {
         app.note("not signed in — run /login to sign in to Tokamak, or `jan config set` to configure a provider manually");
     }
+    // Only when there is nothing to load: a project that already has JAN.md needs
+    // no invitation, and the splash hint covers re-running /init deliberately.
+    if !crate::core::agent::context::has_context_file(&app.project_root) {
+        app.note("no JAN.md here — run /init to study this project and write one");
+    }
     // A failed resume is not fatal: the note explains why and the blank session
     // the user already has stays usable.
     if let Some(target) = &resume {
@@ -5698,22 +5724,23 @@ multi-step recipe exists. Do not invent skills to fill space.\n\n\
 true beyond this session and not already stated in the code.\n\n\
 Then report what you wrote and why, briefly.";
 
-/// `/init`: hand the model the onboarding task as an ordinary user turn, so it
-/// runs with the normal toolset, permission gate, and transcript. Idle-only,
-/// like the other commands that start a turn -- queueing it behind a running
-/// turn would have it survey a project mid-change.
+/// `/init`: hand the model the onboarding task as a user turn, so it runs with
+/// the normal toolset, permission gate, and transcript. The prompt body itself
+/// is hidden -- the note below is what the user asked for, the canned text is
+/// not. Idle-only, like the other commands that start a turn -- queueing it
+/// behind a running turn would have it survey a project mid-change.
 fn init_command(app: &mut App) {
     if app.status != Status::Idle {
         app.note("/init is only available while idle");
         return;
     }
-    let existing = app.project_root.join("JAN.md").exists();
+    let existing = crate::core::agent::context::has_context_file(&app.project_root);
     app.note(if existing {
         "◈ init · reviewing JAN.md, skills, and memory for this project"
     } else {
         "◈ init · studying the project to write JAN.md, skills, and memory"
     });
-    app.submit_user(INIT_PROMPT.to_string());
+    app.submit_user_hidden(INIT_PROMPT.to_string());
 }
 
 /// Manually compact the conversation: summarize older turns, keeping the recent
@@ -10923,6 +10950,33 @@ mod tests {
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
+    /// The canned prompt is plumbing: the note announces `/init`, and neither
+    /// the transcript nor the replayable journal carries the prompt body.
+    #[test]
+    fn init_keeps_the_prompt_out_of_the_transcript() {
+        let mut app = test_app();
+        app.pending_images.push(super::PendingImage {
+            name: "shot.png".into(),
+            data_url: "data:image/png;base64,AA".into(),
+        });
+        super::init_command(&mut app);
+        let text: String = row_lines(&app.transcript)
+            .iter()
+            .flat_map(|l| l.spans.clone())
+            .map(|s| s.content.to_string())
+            .collect();
+        assert!(!text.contains("Onboard yourself"), "{text}");
+        assert!(text.contains("init ·"), "{text}");
+        assert!(
+            !app.display_log
+                .iter()
+                .any(|e| matches!(e, DisplayEntry::User { .. })),
+            "a hidden turn must not journal a user row"
+        );
+        assert_eq!(app.pending_images.len(), 1, "staged images stay staged");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
     /// Surveying a project while a turn is mid-change would onboard against a
     /// moving target, so the command declines rather than queueing.
     #[test]
@@ -15696,6 +15750,33 @@ mod tests {
             joined.contains(super::super::updater::build_version()),
             "{joined}"
         );
+    }
+
+    /// `/init` is the first thing a new project wants and is invisible unless
+    /// promoted, so the splash lists it beside `/help`.
+    #[test]
+    fn banner_promotes_init() {
+        let mut app = test_app();
+        app.push_banner("--safe", true);
+        let joined = banner_text(&app, 90).join("\n");
+        assert!(joined.contains("/init"), "{joined}");
+        assert!(joined.contains("onboard this project"), "{joined}");
+    }
+
+    /// The invitation is conditional on the same rule the system prompt uses, so
+    /// an already-onboarded project (its own JAN.md, or an ancestor's) is quiet.
+    #[test]
+    fn init_invitation_tracks_whether_the_project_has_instructions() {
+        let root = std::env::temp_dir().join(format!("jan_init_invite_{}", std::process::id()));
+        let nested = root.join("pkg");
+        std::fs::create_dir_all(&nested).unwrap();
+        assert!(!crate::core::agent::context::has_context_file(&nested));
+        std::fs::write(root.join("JAN.md"), "ROOT_RULES").unwrap();
+        assert!(
+            crate::core::agent::context::has_context_file(&nested),
+            "an ancestor's JAN.md already onboards this project"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

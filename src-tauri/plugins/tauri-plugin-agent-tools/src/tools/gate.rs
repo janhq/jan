@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
-    command_touches_restricted_agent_path, escapes_project, is_restricted_agent_path,
+    command_touches_hidden_jan_path, escapes_project, is_hidden_jan_path,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -105,10 +105,22 @@ impl SessionGrants {
     }
 }
 
+/// Why a call was refused outright. The reason reaches the model, and the two
+/// cases need different wording: a policy deny is something the user can edit in
+/// `agent.toml`, while a hidden path is structural -- telling the model to check
+/// a deny list would send it reading a file that is itself hidden.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DenyReason {
+    /// `[tools] deny` in agent.toml names this tool.
+    Policy,
+    /// The call reaches `<project>/.jan`, which is hidden from every tool.
+    Hidden,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Decision {
     Allow,
-    HardDeny,
+    HardDeny(DenyReason),
     Prompt(PromptKind),
 }
 
@@ -127,25 +139,25 @@ pub fn resolve_decision(
     grants: &SessionGrants,
 ) -> Decision {
     if perms.is_denied(tool.name) {
-        return Decision::HardDeny;
+        return Decision::HardDeny(DenyReason::Policy);
     }
-    // Nothing under .jan/agent/ is reachable: skills/memory only through their
-    // dedicated tools, agent.toml and the dir listing not at all. Checked ahead
-    // of allow rules so an allowed tool name cannot bypass it.
-    let hits_restricted = tool.path_args.iter().any(|key| {
+    // Nothing under .jan is reachable: skills/memory only through their
+    // dedicated tools, config, threads and the dir listing not at all. Checked
+    // ahead of allow rules so an allowed tool name cannot bypass it.
+    let hits_hidden = tool.path_args.iter().any(|key| {
         args.get(key)
             .and_then(|v| v.as_str())
-            .map(|p| is_restricted_agent_path(project_root, p))
+            .map(|p| is_hidden_jan_path(project_root, p))
             .unwrap_or(false)
     });
-    let exec_hits_restricted = tool.capability == Capability::Exec
+    let exec_hits_hidden = tool.capability == Capability::Exec
         && args
             .get("command")
             .and_then(|v| v.as_str())
-            .map(|c| command_touches_restricted_agent_path(project_root, c))
+            .map(|c| command_touches_hidden_jan_path(project_root, c))
             .unwrap_or(false);
-    if hits_restricted || exec_hits_restricted {
-        return Decision::HardDeny;
+    if hits_hidden || exec_hits_hidden {
+        return Decision::HardDeny(DenyReason::Hidden);
     }
     if perms.is_allowed(tool.name) {
         return Decision::Allow;
@@ -306,7 +318,11 @@ mod tests {
             &perms,
             &grants,
         );
-        assert_eq!(d, Decision::HardDeny, "deny in agent.toml must win for web tools");
+        assert_eq!(
+            d,
+            Decision::HardDeny(DenyReason::Policy),
+            "deny in agent.toml must win for web tools"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -326,7 +342,11 @@ mod tests {
                 &perms,
                 &grants,
             );
-            assert_eq!(d, Decision::HardDeny, "{tool} on agent.toml must be denied");
+            assert_eq!(
+                d,
+                Decision::HardDeny(DenyReason::Hidden),
+                "{tool} on agent.toml must be denied"
+            );
         }
         // bash referencing it is denied too.
         let d = resolve_decision(
@@ -336,7 +356,7 @@ mod tests {
             &perms,
             &grants,
         );
-        assert_eq!(d, Decision::HardDeny);
+        assert_eq!(d, Decision::HardDeny(DenyReason::Hidden));
         // The instructions file is an ordinary project file at the root.
         std::fs::write(root.join("JAN.md"), b"x").unwrap();
         let d = resolve_decision(
@@ -531,7 +551,11 @@ mod tests {
                     &perms,
                     &grants,
                 );
-                assert_eq!(d, Decision::HardDeny, "{tool} on {path} must be denied");
+                assert_eq!(
+                    d,
+                    Decision::HardDeny(DenyReason::Hidden),
+                    "{tool} on {path} must be denied"
+                );
             }
         }
         let _ = std::fs::remove_dir_all(&root);
@@ -561,7 +585,7 @@ mod tests {
             &denied,
             &grants,
         );
-        assert_eq!(d, Decision::HardDeny);
+        assert_eq!(d, Decision::HardDeny(DenyReason::Policy));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -577,7 +601,7 @@ mod tests {
             &perms,
             &grants,
         );
-        assert_eq!(d, Decision::HardDeny);
+        assert_eq!(d, Decision::HardDeny(DenyReason::Policy));
         let _ = std::fs::remove_dir_all(&root);
     }
 
