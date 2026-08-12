@@ -39,6 +39,7 @@ use markdown::{
     format_markdown_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
 };
 
+use super::journal::{self, DisplayEntry};
 use super::{sort_threads_recent, AgentSession, ResumeTarget, SessionLimits};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
@@ -826,6 +827,13 @@ struct App {
     /// not lines: width-dependent entries keep their source and re-render on
     /// resize (see `Row`).
     transcript: Vec<Row>,
+    /// What was rendered, in emission order, so a resumed session gets its
+    /// reasoning and tool calls back. `history` cannot serve this: reasoning is
+    /// kept out of it and tool calls are flattened away on save. Dumped off the
+    /// render loop by `persist`, replayed by `replay_display_log`.
+    display_log: Vec<DisplayEntry>,
+    /// Background journal writer, created on the first dump and joined on exit.
+    journal_writer: Option<journal::Writer>,
     /// In-progress assistant text for the current turn, flushed on the next
     /// step/tool/terminal event.
     assistant_buf: String,
@@ -1161,6 +1169,8 @@ impl App {
             history: Vec::new(),
             thread_id: None,
             transcript: Vec::new(),
+            display_log: Vec::new(),
+            journal_writer: None,
             assistant_buf: String::new(),
             tool_group: None,
             grouped_ids: std::collections::HashSet::new(),
@@ -1282,6 +1292,7 @@ impl App {
         self.base_requested = false;
         self.last_esc = None;
         self.transcript.clear();
+        self.display_log.clear();
         self.tool_group = None;
         self.grouped_ids.clear();
         self.starting.clear();
@@ -1349,6 +1360,12 @@ impl App {
         }
         // Model prose ends the current run of tool calls.
         self.finalize_tool_group();
+        // Journaled with its `<think>` markers intact: this is the only place the
+        // reasoning exists (it is kept out of `history` on purpose), and the
+        // replay folds it exactly as the live turn did.
+        self.display_log.push(DisplayEntry::Assistant {
+            text: text.clone(),
+        });
         self.push_assistant_blocks(&text);
     }
 
@@ -1478,6 +1495,11 @@ impl App {
     /// the row can expand back to it (like a tool group). `finished` separates a
     /// clean `SubagentEnd` from a child the run ended out from under.
     fn push_subagent_summary(&mut self, name: &str, calls: Vec<String>, finished: bool) {
+        self.display_log.push(DisplayEntry::Subagent {
+            name: name.to_string(),
+            calls: calls.clone(),
+            finished,
+        });
         let total = calls.len();
         let noun = if total == 1 { "call" } else { "calls" };
         let verb = if finished { "finished" } else { "interrupted" };
@@ -1937,6 +1959,12 @@ impl App {
         };
         self.history.push(build_user_message(&final_text, &images));
         self.push_user_line(&text, &names);
+        // The typed text, not `final_text`: `@path` expansions are context for
+        // the model, and the row never showed them.
+        self.display_log.push(DisplayEntry::User {
+            text: text.clone(),
+            images: names,
+        });
         self.begin_turn();
         // A fresh user turn is new context: allow the next boundary to remind
         // again even if the open work is unchanged (dedup is "twice in a row"),
@@ -2237,9 +2265,32 @@ impl App {
             &self.history,
             self.thread_metadata(),
         ) {
-            Ok(id) => self.thread_id = Some(id),
+            Ok(id) => {
+                self.thread_id = Some(id);
+                self.dump_display_log();
+            }
             Err(e) => self.detail = format!("save failed: {e}"),
         }
+    }
+
+    /// Hand the rendered transcript to the writer thread, so a turn boundary (or
+    /// a cancel) leaves a resumable journal without a frame paying for the write.
+    fn dump_display_log(&mut self) {
+        let Some(id) = self.thread_id.clone() else {
+            return;
+        };
+        let path = journal::journal_path(&self.agent_dir, &id);
+        self.journal_writer
+            .get_or_insert_with(journal::Writer::new)
+            .dump(path, self.display_log.clone());
+    }
+
+    /// Wait for queued journal dumps to reach disk (session exit, tests).
+    fn join_journal(&mut self) {
+        if let Some(writer) = self.journal_writer.as_mut() {
+            writer.join();
+        }
+        self.journal_writer = None;
     }
 
     /// Switch the active model and remember it in the project's agent.toml so it
@@ -2307,6 +2358,23 @@ impl App {
                 // The full call (with parsed args) supersedes its in-progress
                 // throbber.
                 self.starting.retain(|c| c.id != id);
+                // Commit buffered prose/reasoning before anything else: every
+                // branch below does it anyway (so the timeline stays in emission
+                // order), and doing it here keeps the journal in that order too
+                // -- text that preceded the call, then the call. `flush_assistant`
+                // no-ops on an empty buffer, so silent consecutive calls still
+                // fold into one group row.
+                self.flush_assistant();
+                // `await_subagent` renders a live throbber that its result
+                // clears, so journaling the call would replay a spinner nothing
+                // ever stops; its result row is journaled below either way.
+                if name != "await_subagent" {
+                    self.display_log.push(DisplayEntry::ToolCall {
+                        id: id.clone(),
+                        name: name.clone(),
+                        args: args.clone(),
+                    });
+                }
                 // Track todo activity this turn so the reminder policy can tell
                 // an engaged turn (mutated todos) from a stalled one.
                 if name == "todo" {
@@ -2316,11 +2384,6 @@ impl App {
                 // (advanced each render tick) instead of a static grouped row,
                 // cleared when its result arrives.
                 if name == "await_subagent" {
-                    // Commit any buffered reasoning/prose the model emitted
-                    // before awaiting so it folds to its summary row instead of
-                    // lingering fully expanded in the live tail behind the
-                    // throbber (matches the grouped-call path below).
-                    self.flush_assistant();
                     let run_id = args.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
                     let sub = subagent_name_from_run_id(run_id).to_string();
                     self.awaiting.push((id, run_id.to_string(), sub));
@@ -2339,7 +2402,6 @@ impl App {
                     }
                     // Diff-producing tools render standalone (call row & panel).
                     self.finalize_tool_group();
-                    self.flush_assistant();
                     self.gap(Kind::Tool);
                     self.push_row(RowKind::Tool {
                         tag: "▸".to_string(),
@@ -2355,12 +2417,6 @@ impl App {
                         done,
                     });
                 } else {
-                    // Commit any buffered prose OR reasoning the model emitted
-                    // before this call so the timeline stays in emission order
-                    // (pre-tool thinking renders above the tool row, not stranded
-                    // in the live tail below it). `flush_assistant` no-ops on an
-                    // empty buffer, so truly silent consecutive calls still fold.
-                    self.flush_assistant();
                     self.push_grouped_call(&id, &name, label, done);
                 }
             }
@@ -2372,6 +2428,12 @@ impl App {
             } => {
                 // Clear the throbber for an awaited subagent once its result lands.
                 self.awaiting.retain(|(await_id, ..)| await_id != &id);
+                self.display_log.push(DisplayEntry::ToolResult {
+                    id: id.clone(),
+                    content: content.clone(),
+                    is_error,
+                    diff: diff.clone(),
+                });
                 let resolved = self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
                 // reminder fired; let a later stop remind again if work is still
@@ -2651,9 +2713,10 @@ impl App {
         // `SubagentEnd`.
         self.close_live_subagents();
         let answer = self.take_answer();
-        if !answer.is_empty() {
+        let wire = answer_without_reasoning(&answer);
+        if !wire.is_empty() {
             self.history
-                .push(serde_json::json!({ "role": "assistant", "content": answer.clone() }));
+                .push(serde_json::json!({ "role": "assistant", "content": wire }));
         }
         // A closing receipt for the turn: when, how much context went up, how
         // much came back, how long it took, how fast. Cheap to skim, and the
@@ -2834,7 +2897,7 @@ impl App {
         // preceding tool calls stay in the transcript, and record the partial
         // answer in history so the next turn and a later /resume both see it.
         self.abort_tool_rows();
-        let answer = self.take_answer();
+        let answer = answer_without_reasoning(&self.take_answer());
         if !answer.is_empty() {
             self.history
                 .push(serde_json::json!({ "role": "assistant", "content": answer }));
@@ -3669,6 +3732,18 @@ fn has_answer_text(buf: &str) -> bool {
         .any(|(reasoning, seg)| !reasoning && !seg.trim().is_empty())
 }
 
+/// `text` with its reasoning removed, for the copy that goes into `history`.
+/// Reasoning is display-only and must never be resent to the model (see
+/// `SseAccumulator`); the display journal is what keeps it for a resume.
+fn answer_without_reasoning(text: &str) -> String {
+    split_reasoning(text)
+        .into_iter()
+        .filter_map(|(reasoning, seg)| (!reasoning).then_some(seg))
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
 /// A leading markdown list/blockquote marker (`> `, `- `, `1. `), stripped
 /// before checking whether a line reads as a question.
 fn markdown_prefix_re() -> &'static regex::Regex {
@@ -4065,6 +4140,10 @@ pub async fn run(
         &mcp_servers,
     )
     .await;
+
+    // The last turn's journal may still be queued on the writer thread; a
+    // process that exits now would lose it, and with it that turn's resume.
+    app.join_journal();
 
     let _ = disable_raw_mode();
     let _ = execute!(
@@ -6498,6 +6577,10 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     .0;
 
     app.history.truncate(cut);
+    // The journal is keyed by its own user entries, not by history indices: it
+    // holds rows (tool calls, reasoning) that history never had.
+    app.display_log
+        .truncate(journal::truncate_at_user(&app.display_log, target));
     app.checkpoints.retain(|c| c.user_index < target);
     rebuild_transcript(app);
     rebuild_recall(app);
@@ -6531,7 +6614,65 @@ fn rebuild_recall(app: &mut App) {
     }
 }
 
-/// Re-render the transcript from the current `history` after a rewind.
+/// Replay a display journal through the very paths that rendered it live, so a
+/// resumed or rewound transcript keeps its reasoning, tool rows and diff panels.
+/// The replayed events journal themselves again, so `entries` is reinstated as
+/// the log afterwards instead of whatever the replay appended.
+fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
+    for entry in &entries {
+        match entry {
+            DisplayEntry::User { text, images } => {
+                app.finalize_tool_group();
+                app.push_user_line(text, images);
+            }
+            // Through `flush_assistant`, not `push_assistant_blocks`: the prose
+            // is also what closes the preceding run of grouped calls. Rendering
+            // the blocks directly leaves the group open, so every later call
+            // folds back into one row that is never committed -- the whole turn's
+            // tool calls then render as nothing at all.
+            DisplayEntry::Assistant { text } => {
+                app.assistant_buf = text.clone();
+                app.flush_assistant();
+            }
+            DisplayEntry::ToolCall { id, name, args } => app.apply(StreamEvent::ToolCall {
+                id: id.clone(),
+                name: name.clone(),
+                args: args.clone(),
+            }),
+            DisplayEntry::ToolResult {
+                id,
+                content,
+                is_error,
+                diff,
+            } => app.apply(StreamEvent::ToolResult {
+                id: id.clone(),
+                content: content.clone(),
+                is_error: *is_error,
+                diff: diff.clone(),
+            }),
+            DisplayEntry::Subagent {
+                name,
+                calls,
+                finished,
+            } => {
+                app.finalize_tool_group();
+                app.push_subagent_summary(name, calls.clone(), *finished);
+            }
+        }
+    }
+    // A replay is rendering, not work: the calls it re-renders must not stage
+    // files for the next checkpoint, leave a call awaiting a diff, or read as
+    // todo activity in the turn that follows.
+    app.finalize_tool_group();
+    app.turn_touched.clear();
+    app.diff_paths.clear();
+    app.todo_call_this_turn = false;
+    app.display_log = entries;
+}
+
+/// Re-render the transcript after a rewind: from the display journal when there
+/// is one (so the kept turns keep their reasoning and tool rows), else from the
+/// `history` the rewind left behind.
 fn rebuild_transcript(app: &mut App) {
     app.transcript.clear();
     app.tool_group = None;
@@ -6545,6 +6686,10 @@ fn rebuild_transcript(app: &mut App) {
     app.reveal = None;
     app.assistant_buf.clear();
     app.last_kind = Kind::None;
+    if !app.display_log.is_empty() {
+        let logged = std::mem::take(&mut app.display_log);
+        return replay_display_log(app, logged);
+    }
     let history = app.history.clone();
     for m in &history {
         let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("");
@@ -6624,21 +6769,27 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
         app.model = model.to_string();
     }
 
-    let mut count = 0;
-    for msg in &messages {
-        let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("");
-        let text = message_text(msg);
-        if text.is_empty() || !matches!(role, "user" | "assistant") {
-            continue;
-        }
-        app.history
-            .push(serde_json::json!({ "role": role, "content": text }));
-        if role == "user" {
-            app.push_user_line(&text, &[]);
-        } else {
-            app.push_assistant_blocks(&text);
-        }
-        count += 1;
+    // The journal holds what was rendered (reasoning, tool rows, diffs); the
+    // messages hold what the model is sent. Prefer the journal for the
+    // transcript, and fall back to replaying the messages for a thread saved
+    // before journaling (or whose journal was lost).
+    let logged = journal::read_journal(&journal::journal_path(&app.agent_dir, full_id));
+    app.history = super::rebuild_wire_history(&messages);
+    let count = app
+        .history
+        .iter()
+        .filter(|m| {
+            matches!(
+                m.get("role").and_then(|v| v.as_str()),
+                Some("user" | "assistant")
+            )
+        })
+        .count();
+    app.display_log.clear();
+    if logged.is_empty() {
+        rebuild_transcript(app);
+    } else {
+        replay_display_log(app, logged);
     }
     // Recall follows the conversation, so the replaced session's lines go with
     // it and the resumed thread's come back.
@@ -8523,6 +8674,7 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
 #[cfg(test)]
 mod tests {
     use super::SessionLimits;
+    use super::{journal, DisplayEntry};
     use super::{
         age_closed_todos, apply_resume, assistant_is_awaiting_user_answer, build_user_message,
         clipboard_path,
@@ -12527,6 +12679,226 @@ mod tests {
         assert_eq!(summarize_result("a    b\tc", 80), "a b c");
         // Truncates the head to max.
         assert_eq!(summarize_result("abcdefgh", 4), "abc…");
+    }
+
+    /// Run one turn that reasons, calls a diff-producing tool, and answers,
+    /// leaving it persisted (messages + journal) in `app.agent_dir`.
+    fn record_full_turn(app: &mut App) {
+        app.submit_user("do it".to_string());
+        app.apply(StreamEvent::Token {
+            text: "<think>my private reasoning</think>".into(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "write".into(),
+            args: json!({ "path": "a.txt", "content": "x" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "wrote 1 line".into(),
+            is_error: false,
+            diff: Some("@@ created file @@\n+    1 | x".into()),
+        });
+        app.apply(StreamEvent::MessagesUpdated {
+            messages: vec![
+                json!({ "role": "user", "content": "do it" }),
+                json!({ "role": "assistant", "content": "", "tool_calls": [{
+                    "id": "c1",
+                    "type": "function",
+                    "function": { "name": "write", "arguments": "{\"path\":\"a.txt\"}" },
+                }]}),
+                json!({ "role": "tool", "tool_call_id": "c1", "content": "wrote 1 line" }),
+            ],
+        });
+        app.apply(StreamEvent::Token {
+            text: "Answer.".into(),
+        });
+        app.on_done("stop".into(), None);
+        app.join_journal();
+    }
+
+    #[tokio::test]
+    async fn resume_restores_reasoning_tool_rows_and_diffs() {
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        let live: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+        let resumed: String = fresh
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert_eq!(fresh.reasoning_blocks.len(), 1, "folded reasoning is back");
+        assert!(resumed.contains("reasoning (1 line)"), "{resumed}");
+        assert!(resumed.contains("✓ Wrote a.txt"), "tool row: {resumed}");
+        assert!(
+            resumed.contains("@@ created file @@") && resumed.contains("+    1 | x"),
+            "diff panel: {resumed}"
+        );
+        assert!(resumed.contains("Answer."), "{resumed}");
+        // Every rendered row returns; the turn receipt (`↑ tokens ⏱ elapsed`) is
+        // deliberately transient, like notes and permission prompts.
+        assert!(
+            live.lines()
+                .filter(|l| !l.contains('⏱'))
+                .all(|l| resumed.contains(l.trim_end())),
+            "every live row must come back\nlive:\n{live}\nresumed:\n{resumed}"
+        );
+        // Expanding the restored reasoning row reveals its full detail, so the
+        // journal carried the text and not just the summary count.
+        fresh.toggle_regions();
+        let expanded = render_rows(&mut fresh, 60, 30).join("\n");
+        assert!(expanded.contains("my private reasoning"), "{expanded}");
+    }
+
+    /// The common shape: several grouped calls (bash, not the standalone
+    /// edit/write rows), each run separated by the model's prose. Live, the
+    /// prose is what closes each group; a replay must close them the same way or
+    /// every call folds into one row that is never committed.
+    #[tokio::test]
+    async fn resume_restores_grouped_tool_calls_between_prose() {
+        let mut app = test_app();
+        app.submit_user("check it".to_string());
+        for (i, cmd) in ["git status", "git log -1"].iter().enumerate() {
+            app.apply(StreamEvent::Token {
+                text: format!("<think>step {i}</think>"),
+            });
+            app.apply(StreamEvent::ToolCall {
+                id: format!("c{i}"),
+                name: "bash".into(),
+                args: json!({ "command": cmd }),
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: format!("c{i}"),
+                content: "output".into(),
+                is_error: false,
+                diff: None,
+            });
+            app.apply(StreamEvent::Token {
+                text: format!("Ran {cmd}.\n"),
+            });
+        }
+        app.on_done("stop".into(), None);
+        app.join_journal();
+        let live: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(live.contains("git status") && live.contains("git log -1"), "{live}");
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+        let resumed: String = fresh
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            resumed.contains("git status") && resumed.contains("git log -1"),
+            "both grouped calls must come back as their own rows:\n{resumed}"
+        );
+        assert!(
+            fresh.tool_group.is_none(),
+            "no group may be left open after a replay"
+        );
+        assert_eq!(fresh.groups.len(), 2, "one closed group per run of calls");
+        // Expanding a restored group row still shows the call and its output.
+        fresh.toggle_regions();
+        let expanded = render_rows(&mut fresh, 80, 40).join("\n");
+        assert!(expanded.contains("output"), "{expanded}");
+    }
+
+    #[tokio::test]
+    async fn resume_restores_the_model_side_tool_calls() {
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        assert!(
+            !serde_json::to_string(&app.history).unwrap().contains("<think>"),
+            "reasoning must not be resent to the model: {:?}",
+            app.history
+        );
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+
+        assert_eq!(fresh.history, app.history, "the wire conversation round-trips");
+        let called = fresh
+            .history
+            .iter()
+            .find(|m| m.get("tool_calls").is_some())
+            .expect("the call the model made is back");
+        assert_eq!(called["tool_calls"][0]["id"], "c1");
+        let result = fresh
+            .history
+            .iter()
+            .find(|m| m["role"] == "tool")
+            .expect("its result is back");
+        assert_eq!(result["tool_call_id"], "c1");
+        assert_eq!(result["content"], "wrote 1 line");
+    }
+
+    #[tokio::test]
+    async fn resume_falls_back_to_messages_without_a_journal() {
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        let id = app.thread_id.clone().expect("saved");
+        std::fs::remove_file(journal::journal_path(&app.agent_dir, &id)).unwrap();
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+        let resumed: String = fresh
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(resumed.contains("do it") && resumed.contains("Answer."), "{resumed}");
+        assert!(fresh.display_log.is_empty(), "nothing to journal from");
+    }
+
+    #[tokio::test]
+    async fn rewind_keeps_the_kept_turns_tool_rows() {
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        app.submit_user("and again".to_string());
+        app.apply(StreamEvent::Token {
+            text: "Second answer.".into(),
+        });
+        app.on_done("stop".into(), None);
+
+        rewind_to(&mut app, 1, false);
+        let after: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(after.contains("✓ Wrote a.txt"), "first turn keeps its rows: {after}");
+        assert!(after.contains("@@ created file @@"), "{after}");
+        assert!(!after.contains("Second answer."), "rewound turn is gone: {after}");
+        assert!(
+            !app.display_log
+                .iter()
+                .any(|e| matches!(e, DisplayEntry::User { text, .. } if text == "and again")),
+            "the journal is truncated with the conversation"
+        );
+        assert_eq!(app.input, "and again", "the rewound message returns to the input");
     }
 
     #[tokio::test]

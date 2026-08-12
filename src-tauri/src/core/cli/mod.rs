@@ -2,6 +2,7 @@
 //!
 //! This module is only compiled when the `cli` feature is enabled.
 
+pub mod journal;
 pub mod login;
 pub mod mcp;
 pub mod providers;
@@ -233,7 +234,7 @@ pub fn cli_save_thread(
         .filter_map(|m| {
             let role = m.get("role").and_then(|v| v.as_str())?;
             let content = openai_content_text(m.get("content"));
-            Some(serde_json::json!({
+            let mut record = serde_json::json!({
                 "id": uuid::Uuid::new_v4().to_string(),
                 "object": "thread.message",
                 "thread_id": id,
@@ -243,7 +244,16 @@ pub fn cli_save_thread(
                 "created_at": now_ms,
                 "completed_at": now_ms,
                 "content": [{ "type": "text", "text": { "value": content, "annotations": [] } }],
-            }))
+            });
+            // Carry the wire fields the text form cannot express, so a resumed
+            // conversation still shows the model the tools it ran. Extra keys on
+            // a `thread.message`; the desktop reads `role` and `content`.
+            for key in ["tool_calls", "tool_call_id"] {
+                if let Some(v) = m.get(key) {
+                    record[key] = v.clone();
+                }
+            }
+            Some(record)
         })
         .collect();
     write_messages_to_file(&messages, &get_messages_path(base, &id))?;
@@ -287,6 +297,82 @@ pub fn cli_save_thread(
 /// default in the model-resolution order). `agent_dir` is `<project>/.jan/agent`.
 pub fn cli_set_project_model(agent_dir: &std::path::Path, model: &str) -> Result<(), String> {
     set_model_in_agent_toml(&agent_dir.join("agent.toml"), model)
+}
+
+/// Stands in for a tool result that never reached disk, so the call it answers
+/// stays valid. Says what happened rather than inventing an outcome.
+const MISSING_TOOL_RESULT: &str =
+    "(result not saved: the session ended before this call's output was recorded)";
+
+/// Rebuild the wire conversation from persisted `thread.message` records: the
+/// user/assistant text plus the tool calls and results that text cannot express,
+/// so a resumed model sees the work it did instead of only its own answers.
+///
+/// Tool pairing is enforced, because an OpenAI-compatible upstream rejects a
+/// conversation where it is broken: a result whose call is gone is dropped, and a
+/// call whose result is missing (a crash between the two) gets the placeholder
+/// above. Roles the agent owns (`system`) and messages carrying neither text nor
+/// calls are left out.
+pub(crate) fn rebuild_wire_history(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    fn answer_open(out: &mut Vec<serde_json::Value>, open: &mut Vec<String>) {
+        for id in open.drain(..) {
+            out.push(serde_json::json!({
+                "role": "tool",
+                "tool_call_id": id,
+                "content": MISSING_TOOL_RESULT,
+            }));
+        }
+    }
+
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    let mut open: Vec<String> = Vec::new();
+    for m in messages {
+        let role = m.get("role").and_then(|v| v.as_str()).unwrap_or_default();
+        let text = thread_message_text(m);
+        if role == "tool" {
+            let id = m
+                .get("tool_call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            if let Some(pos) = open.iter().position(|open_id| open_id == id) {
+                open.remove(pos);
+                out.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": id,
+                    "content": text,
+                }));
+            }
+            continue;
+        }
+        if !matches!(role, "user" | "assistant") {
+            continue;
+        }
+        // A new turn: whatever the previous assistant left unanswered is closed
+        // out first, so calls and results stay adjacent and paired.
+        answer_open(&mut out, &mut open);
+        let calls = m
+            .get("tool_calls")
+            .filter(|v| v.as_array().is_some_and(|a| !a.is_empty()));
+        if text.is_empty() && calls.is_none() {
+            continue;
+        }
+        let mut msg = serde_json::json!({ "role": role, "content": text });
+        if let Some(calls) = calls {
+            msg["tool_calls"] = calls.clone();
+            open = calls
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|c| c.get("id").and_then(|v| v.as_str()))
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+        }
+        out.push(msg);
+    }
+    answer_open(&mut out, &mut open);
+    out
 }
 
 /// Text of a persisted `thread.message` (content parts carry `text.value`) or of
@@ -762,9 +848,9 @@ struct ResumedSession {
     history: Vec<serde_json::Value>,
 }
 
-/// Load a saved thread's user/assistant turns for continuation. Tool calls are
-/// not replayed (they are not persisted as messages), matching `/resume` in the
-/// TUI. Errors describe why nothing could be resumed; the caller starts fresh.
+/// Load a saved thread's conversation for continuation, tool calls and results
+/// included (see `rebuild_wire_history`), matching `/resume` in the TUI. Errors
+/// describe why nothing could be resumed; the caller starts fresh.
 fn load_resume_history(
     agent_dir: &std::path::Path,
     target: &ResumeTarget,
@@ -779,17 +865,7 @@ fn load_resume_history(
     if skipped > 0 {
         eprintln!("(skipped {skipped} unreadable message(s) in the resumed session)");
     }
-    let history = messages
-        .iter()
-        .filter_map(|m| {
-            let role = m.get("role").and_then(|v| v.as_str())?;
-            if !matches!(role, "user" | "assistant") {
-                return None;
-            }
-            let text = thread_message_text(m);
-            (!text.is_empty()).then(|| serde_json::json!({ "role": role, "content": text }))
-        })
-        .collect();
+    let history = rebuild_wire_history(&messages);
     Ok(ResumedSession { thread_id, history })
 }
 
@@ -1234,6 +1310,77 @@ mod tests {
                 .history,
             extended
         );
+    }
+
+    fn call(id: &str, name: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "type": "function",
+            "function": { "name": name, "arguments": "{\"path\":\"a.txt\"}" },
+        })
+    }
+
+    #[test]
+    fn tool_calls_and_results_survive_a_save_resume_cycle() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let history = vec![
+            serde_json::json!({ "role": "user", "content": "do it" }),
+            serde_json::json!({ "role": "assistant", "content": "", "tool_calls": [call("c1", "write")] }),
+            serde_json::json!({ "role": "tool", "tool_call_id": "c1", "content": "wrote 1 line" }),
+            serde_json::json!({ "role": "assistant", "content": "Done." }),
+        ];
+        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
+
+        let resumed = load_resume_history(base, &ResumeTarget::Latest).unwrap();
+        assert_eq!(resumed.thread_id, id);
+        assert_eq!(
+            resumed.history, history,
+            "the model must see the tools it ran, not just its own text"
+        );
+    }
+
+    #[test]
+    fn a_call_whose_result_was_never_saved_gets_one() {
+        // A crash between the call and its result leaves the pair broken, and an
+        // OpenAI-compatible upstream rejects an unanswered `tool_call_id`.
+        let messages = vec![
+            serde_json::json!({ "role": "assistant", "content": "", "tool_calls": [call("c1", "write"), call("c2", "read")] }),
+            serde_json::json!({ "role": "tool", "tool_call_id": "c1", "content": "ok" }),
+            serde_json::json!({ "role": "user", "content": "next" }),
+        ];
+        let out = rebuild_wire_history(&messages);
+        assert_eq!(out.len(), 4);
+        assert_eq!(out[2]["role"], "tool");
+        assert_eq!(out[2]["tool_call_id"], "c2");
+        assert!(
+            out[2]["content"].as_str().unwrap().contains("not saved"),
+            "the gap is stated, not invented: {}",
+            out[2]["content"]
+        );
+        assert_eq!(out[3]["role"], "user");
+    }
+
+    #[test]
+    fn an_orphan_tool_message_is_dropped() {
+        let messages = vec![
+            serde_json::json!({ "role": "tool", "tool_call_id": "gone", "content": "stale" }),
+            serde_json::json!({ "role": "user", "content": "hi" }),
+        ];
+        let out = rebuild_wire_history(&messages);
+        assert_eq!(out.len(), 1, "a result with no call would be rejected");
+        assert_eq!(out[0]["role"], "user");
+    }
+
+    #[test]
+    fn rebuild_drops_messages_that_carry_nothing() {
+        let messages = vec![
+            serde_json::json!({ "role": "assistant", "content": "" }),
+            serde_json::json!({ "role": "user", "content": "hi" }),
+            serde_json::json!({ "role": "system", "content": "ignored" }),
+        ];
+        let out = rebuild_wire_history(&messages);
+        assert_eq!(out, vec![serde_json::json!({ "role": "user", "content": "hi" })]);
     }
 
     #[test]
