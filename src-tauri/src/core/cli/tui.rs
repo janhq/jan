@@ -145,6 +145,41 @@ enum Kind {
     Meta,
 }
 
+/// Gutter glyph for a system line. A category with its own established glyph
+/// (`◎` for a goal) passes that instead, so the column always carries exactly
+/// one marker.
+const SYSTEM_GLYPH: &str = "•";
+
+/// Gutter glyph for goal-loop lines, matching the header's `◎ /goal` badge.
+const GOAL_GLYPH: &str = "◎";
+
+/// How loud a system line is. The only thing that varies between them, so it is
+/// a parameter rather than a colour picked at each of the ~90 call sites.
+#[derive(Copy, Clone, PartialEq)]
+enum Level {
+    /// A dim acknowledgement or status note.
+    Info,
+    /// Something the user should notice but that needs no action.
+    Warn,
+    /// A failed turn, tool or command.
+    Error,
+    /// Work that completed successfully.
+    Good,
+}
+
+impl Level {
+    /// `(gutter, body)` styles. The gutter always carries colour so the marker
+    /// is scannable down the left edge even when the body is dim.
+    fn styles(self) -> (Style, Style) {
+        match self {
+            Level::Info => (Style::new().light_blue(), Style::new().dim()),
+            Level::Warn => (Style::new().yellow(), Style::new().yellow()),
+            Level::Error => (Style::new().red().bold(), Style::new().red().bold()),
+            Level::Good => (Style::new().green(), Style::new().green().bold()),
+        }
+    }
+}
+
 /// Blocks that read as one run of activity and so need no blank between them.
 /// A turn alternating folded reasoning summaries with tool rows was spending a
 /// blank line on every switch, which is most of the turn.
@@ -1486,10 +1521,28 @@ impl App {
         self.last_kind = Kind::None;
     }
 
-    fn note(&mut self, text: &str) {
+    /// Append a line the *app* is saying, in its own gutter column. Every other
+    /// transcript class owns one (`› ` user, `│ ` tool, `┊ ` reasoning), so
+    /// without it a note is indistinguishable from model prose. `glyph` names the
+    /// category and `level` carries severity.
+    fn system_marked(&mut self, glyph: &str, level: Level, text: &str) {
         self.scrollback = 0;
         self.gap(Kind::Meta);
-        self.push(Line::styled(text.to_string(), Style::new().dim()));
+        let (gutter, body) = level.styles();
+        self.push(Line::from(vec![
+            Span::styled(format!("{glyph} "), gutter),
+            Span::styled(text.to_string(), body),
+        ]));
+    }
+
+    fn system(&mut self, level: Level, text: &str) {
+        self.system_marked(SYSTEM_GLYPH, level, text);
+    }
+
+    /// A dim informational note: the common case, and what every `/command`
+    /// acknowledgement and background result goes through.
+    fn note(&mut self, text: &str) {
+        self.system(Level::Info, text);
     }
 
     fn flush_assistant(&mut self) {
@@ -2131,11 +2184,7 @@ impl App {
     fn submit_reminder(&mut self, text: String) {
         self.history
             .push(serde_json::json!({ "role": "user", "content": text }));
-        self.gap(Kind::Meta);
-        self.push(Line::styled(
-            "◈ todo reminder — unfinished work, continuing".to_string(),
-            Style::new().dim(),
-        ));
+        self.note("todo reminder — unfinished work, continuing");
         self.begin_turn();
         self.want_start = true;
         self.persist();
@@ -2909,8 +2958,7 @@ impl App {
             } else {
                 format!("finished early (stop_reason={stop_reason})")
             };
-            self.gap(Kind::Meta);
-            self.push(Line::styled(msg, Style::new().yellow().bold()));
+            self.system(Level::Warn, &msg);
         }
         self.checkpoint_turn();
         // A turn just completed under an active goal: count it and queue an
@@ -2952,12 +3000,7 @@ impl App {
         } else {
             format!("{code}: {message}")
         };
-        self.gap(Kind::Meta);
-        self.push(Line::styled(
-            format!("error: {message}"),
-            Style::new().red().bold(),
-        ));
-        self.scrollback = 0;
+        self.system(Level::Error, &format!("error: {message}"));
         // An errored turn halts the goal loop; the user decides how to recover.
         self.goal_eval_pending = false;
         if let Some(goal) = self.goal.as_ref() {
@@ -3007,20 +3050,21 @@ impl App {
                     }
                     let turns = self.goal.as_ref().map(|g| g.turns).unwrap_or(0);
                     let elapsed = self.goal.as_ref().map(|g| g.elapsed_secs()).unwrap_or(0);
-                    self.gap(Kind::Meta);
-                    self.push(Line::styled(
-                        format!(
-                            "◎ goal achieved in {turns} turn(s), {}",
-                            fmt_duration(elapsed)
-                        ),
-                        Style::new().green().bold(),
-                    ));
+                    self.system_marked(
+                        GOAL_GLYPH,
+                        Level::Good,
+                        &format!("goal achieved in {turns} turn(s), {}", fmt_duration(elapsed)),
+                    );
                     self.push(Line::styled(format!("  {}", v.reason), Style::new().dim()));
                     self.persist();
                 } else {
                     // Goal unmet: surface the reason as guidance and start the
                     // next turn automatically, no user prompt needed.
-                    self.note(&format!("◎ goal not met: {} — continuing", v.reason));
+                    self.system_marked(
+                        GOAL_GLYPH,
+                        Level::Info,
+                        &format!("goal not met: {} — continuing", v.reason),
+                    );
                     let prompt =
                         crate::core::agent::goal::continuation_prompt(&goal.condition, &v.reason);
                     self.submit_user(prompt);
@@ -3057,8 +3101,7 @@ impl App {
         self.close_live_subagents();
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
-        self.gap(Kind::Meta);
-        self.push(Line::styled("cancelled", Style::new().yellow()));
+        self.system(Level::Warn, "cancelled");
         // A cancel stops the goal loop mid-flight; the goal itself is kept so
         // the user can inspect it (/goal) or clear it (/goal clear).
         self.goal_eval_pending = false;
@@ -5053,10 +5096,7 @@ async fn handle_key(
             // already shows the call proceeded, so an "allowed" line is
             // pure noise once granted.
             if matches!(d, PermissionDecision::Deny) {
-                app.push(Line::styled(
-                    format!("• denied: {}", pending.summary()),
-                    Style::new().red(),
-                ));
+                app.system(Level::Error, &format!("denied: {}", pending.summary()));
             }
             if let Some(sender) = registry.lock().await.remove(&pending.request_id) {
                 let _ = sender.send(d);
@@ -5491,8 +5531,7 @@ async fn run_command(app: &mut App, line: &str) {
     let (name, arg) = parse_command(line);
     match name {
         "" | "help" | "?" => {
-            app.gap(Kind::Meta);
-            app.push(Line::styled("commands:".to_string(), Style::new().dim()));
+            app.note("commands:");
             for c in SLASH_COMMANDS {
                 let sig = if c.hint.is_empty() {
                     c.name.to_string()
@@ -5504,8 +5543,7 @@ async fn run_command(app: &mut App, line: &str) {
                     Style::new().dim(),
                 ));
             }
-            app.gap(Kind::Meta);
-            app.push(Line::styled("keys:".to_string(), Style::new().dim()));
+            app.note("keys:");
             for (keys, description) in KEY_BINDINGS {
                 app.push(Line::styled(
                     format!("  {keys:18} {description}"),
@@ -5531,11 +5569,7 @@ async fn run_command(app: &mut App, line: &str) {
             Ok(mut threads) => {
                 sort_threads_recent(&mut threads);
                 let base = app.agent_dir.clone();
-                app.gap(Kind::Meta);
-                app.push(Line::styled(
-                    format!("{} saved thread(s):", threads.len()),
-                    Style::new().dim(),
-                ));
+                app.note(&format!("{} saved thread(s):", threads.len()));
                 for t in &threads {
                     let id = t.get("id").and_then(|v| v.as_str()).unwrap_or("?");
                     let title =
@@ -5547,7 +5581,7 @@ async fn run_command(app: &mut App, line: &str) {
                     ]));
                 }
                 app.push(Line::styled(
-                    "resume with /resume".to_string(),
+                    "  resume with /resume".to_string(),
                     Style::new().dim(),
                 ));
             }
@@ -6241,11 +6275,7 @@ fn show_goal_status(app: &mut App) {
         GoalStatus::Active => "active",
         GoalStatus::Achieved => "achieved",
     };
-    app.gap(Kind::Meta);
-    app.push(Line::styled(
-        format!("◎ goal [{state}]"),
-        Style::new().cyan().bold(),
-    ));
+    app.system_marked(GOAL_GLYPH, Level::Info, &format!("goal [{state}]"));
     app.push(Line::styled(
         format!("  condition: {}", goal.condition),
         Style::new().dim(),
@@ -6412,11 +6442,7 @@ fn open_mcp_picker(app: &mut App) {
 /// just handed to the browser, so a headless or remote session can still be
 /// completed by hand.
 fn open_login_prompt(app: &mut App) {
-    app.gap(Kind::Meta);
-    app.push(Line::styled(
-        "sign in to Tokamak and create an API key:".to_string(),
-        Style::new().dim(),
-    ));
+    app.note("sign in to Tokamak and create an API key:");
     app.push(Line::styled(
         format!("  {}", super::tokamak::API_KEYS_URL),
         Style::new().cyan(),
@@ -8864,7 +8890,7 @@ mod tests {
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
     use ratatui::{
-        style::{Modifier, Style},
+        style::{Color, Modifier, Style},
         text::Line,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
@@ -15611,6 +15637,79 @@ mod tests {
         }
         assert_eq!(super::hint_rows(pairs, 200).len(), 1, "one row when it fits");
     }
+    /// Spans of the last committed transcript row, as `(text, style)`.
+    fn last_row(app: &App) -> Vec<(String, Style)> {
+        app.transcript
+            .last()
+            .expect("a row")
+            .lines(80)
+            .remove(0)
+            .spans
+            .iter()
+            .map(|s| (s.content.to_string(), s.style))
+            .collect()
+    }
+
+    #[test]
+    fn every_transcript_class_owns_a_distinct_gutter() {
+        let mut app = test_app();
+
+        app.note("conversation cleared");
+        assert_eq!(last_row(&app)[0].0, "\u{2022} ", "system note");
+
+        app.push_user_line("do it", &[]);
+        assert_eq!(last_row(&app)[0].0, "\u{203a} ", "user message");
+
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({"command": "ls"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.finalize_tool_group();
+        assert_eq!(last_row(&app)[0].0, "\u{2502} ", "tool row");
+
+        // Model prose is the one class with no gutter, which is what makes the
+        // others readable as "not the model".
+        app.assistant_buf = "Done.".into();
+        app.flush_assistant();
+        let prose = last_row(&app);
+        assert!(
+            !prose[0].0.starts_with('\u{2022}') && !prose[0].0.starts_with('\u{203a}'),
+            "prose took a gutter: {prose:?}"
+        );
+    }
+
+    #[test]
+    fn severity_colours_the_gutter_and_the_body() {
+        let mut app = test_app();
+
+        app.note("saved");
+        let info = last_row(&app);
+        assert_eq!(info[0].1.fg, Some(Color::LightBlue), "info gutter");
+        assert!(info[1].1.add_modifier.contains(Modifier::DIM), "info body");
+
+        app.system(super::Level::Warn, "finished early");
+        assert_eq!(last_row(&app)[0].1.fg, Some(Color::Yellow));
+
+        app.system(super::Level::Error, "denied: rm -rf /");
+        let err = last_row(&app);
+        assert_eq!(err[0].1.fg, Some(Color::Red));
+        assert!(err[1].1.add_modifier.contains(Modifier::BOLD), "{err:?}");
+
+        // A category with its own glyph keeps it, so the column never carries
+        // two markers.
+        app.system_marked(super::GOAL_GLYPH, super::Level::Good, "goal achieved");
+        let goal = last_row(&app);
+        assert_eq!(goal[0].0, "\u{25ce} ");
+        assert_eq!(goal[0].1.fg, Some(Color::Green));
+    }
+
 }
 
 
