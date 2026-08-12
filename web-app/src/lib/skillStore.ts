@@ -24,7 +24,7 @@ export type { SkillMeta }
  *
  * The project scope deliberately keeps using the core `agent_skill_*` commands
  * rather than the plugin's. They are not redundant: `agent_skill_write` also runs
- * `ensure_project`, which scaffolds `agent.toml` and `AGENT.md`. That format is
+ * `ensure_project`, which scaffolds `agent.toml`. That format is
  * owned by `core::agent::project`, and the plugin must not learn to write it --
  * owning no config format is what let the toolset be extracted at all. Routing
  * project writes through guest-js would silently drop the scaffold.

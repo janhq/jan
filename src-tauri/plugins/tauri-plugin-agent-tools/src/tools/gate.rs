@@ -129,9 +129,9 @@ pub fn resolve_decision(
     if perms.is_denied(tool.name) {
         return Decision::HardDeny;
     }
-    // Only the agent's own skills/memory/AGENT.md are reachable under .jan/agent/.
-    // Any other path there (agent.toml, the dir listing) is off-limits to every
-    // tool, ahead of allow rules so an allowed tool name cannot bypass it.
+    // Nothing under .jan/agent/ is reachable: skills/memory only through their
+    // dedicated tools, agent.toml and the dir listing not at all. Checked ahead
+    // of allow rules so an allowed tool name cannot bypass it.
     let hits_restricted = tool.path_args.iter().any(|key| {
         args.get(key)
             .and_then(|v| v.as_str())
@@ -337,11 +337,11 @@ mod tests {
             &grants,
         );
         assert_eq!(d, Decision::HardDeny);
-        // AGENT.md remains readable.
-        std::fs::write(root.join(".jan/agent/AGENT.md"), b"x").unwrap();
+        // The instructions file is an ordinary project file at the root.
+        std::fs::write(root.join("JAN.md"), b"x").unwrap();
         let d = resolve_decision(
             lookup("read").unwrap(),
-            &json!({"path": ".jan/agent/AGENT.md"}),
+            &json!({"path": "JAN.md"}),
             &root,
             &perms,
             &grants,

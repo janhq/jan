@@ -131,7 +131,6 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
 # show_reasoning = false  # expand  reasoning in the transcript (Ctrl-O still toggles)
-instructions_file = "AGENT.md"
 
 # Project-local provider override. Wins over ~/.jan/config.toml and any
 # provider inherited from Jan Desktop's settings.json. Most projects don't
@@ -173,9 +172,6 @@ enabled = []
 # always | relevance
 inject = "always"
 "#;
-
-const AGENT_MD_TEMPLATE: &str =
-    "# Agent Instructions\n\nDescribe how this project's agent should behave.\n";
 
 /// Path to `<project_root>/.jan/agent/agent.toml`.
 pub(crate) fn agent_toml_path(project_root: &Path) -> PathBuf {
@@ -240,10 +236,14 @@ pub(crate) fn permissions_from(cfg: &AgentToml) -> ToolPermissions {
     )
 }
 
-/// Ensure a usable `.jan/agent/{agent.toml, AGENT.md, skills/, memory/}` exists
-/// under `project_root`, creating only the pieces that don't already exist.
+/// Ensure a usable `.jan/agent/{agent.toml, skills/, memory/}` exists under
+/// `project_root`, creating only the pieces that don't already exist.
 /// Idempotent and clobber-safe: preserves user edits on re-runs. Auto-managed
 /// on both the CLI and desktop agent-run paths (there is no explicit init step).
+///
+/// The project instructions file (`<project_root>/JAN.md`) is deliberately not
+/// scaffolded: an empty placeholder costs prompt space and teaches nothing, so
+/// it is written by `/init` or by hand.
 pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
     if !project_root.is_dir() {
         return Err(format!(
@@ -261,11 +261,6 @@ pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
     if !toml_path.exists() {
         std::fs::write(&toml_path, AGENT_TOML_TEMPLATE)
             .map_err(|e| format!("Failed to write {}: {e}", toml_path.display()))?;
-    }
-    let md_path = agent_dir.join("AGENT.md");
-    if !md_path.exists() {
-        std::fs::write(&md_path, AGENT_MD_TEMPLATE)
-            .map_err(|e| format!("Failed to write {}: {e}", md_path.display()))?;
     }
 
     Ok(agent_dir)
@@ -450,12 +445,24 @@ mod tests {
         assert!(!root.exists(), "must not create the missing project dir");
     }
 
+    /// The instructions file lives at the project root as `JAN.md` and is the
+    /// user's (or `/init`'s) to create -- the scaffold must not plant an empty
+    /// one under `.jan/agent/`, which nothing reads.
+    #[test]
+    fn ensure_does_not_scaffold_an_instructions_file() {
+        let root = unique_root("no_instructions");
+        let dir = ensure_project(&root).expect("ensure");
+        assert!(!dir.join("AGENT.md").exists());
+        assert!(!root.join("JAN.md").exists());
+        assert!(!AGENT_TOML_TEMPLATE.contains("instructions_file"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn ensure_creates_artifacts_and_is_idempotent() {
         let root = unique_root("ensure");
         let dir = ensure_project(&root).expect("ensure");
         assert!(dir.join("agent.toml").exists());
-        assert!(dir.join("AGENT.md").exists());
         assert!(dir.join("skills").is_dir());
         assert!(dir.join("memory").is_dir());
 
