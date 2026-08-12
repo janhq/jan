@@ -39,6 +39,7 @@ use markdown::{
     format_markdown_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
 };
 
+use super::brand;
 use super::journal::{self, DisplayEntry};
 use super::{sort_threads_recent, AgentSession, ResumeTarget, SessionLimits};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
@@ -467,6 +468,131 @@ struct PendingToolRow {
     done: String,
 }
 
+/// What the session opens with: the `jan` wordmark plus the facts a first-time
+/// reader needs (which model, which project, how tool calls are approved) and
+/// the commands to go on with. Held as data rather than rendered lines so the
+/// row re-lays out at the draw width like every other width-dependent row.
+struct Banner {
+    version: &'static str,
+    model: String,
+    project: String,
+    branch: Option<String>,
+    /// How tool calls are approved this session (sandboxed, or `--safe`).
+    tools: String,
+    /// False when `--task` already seeded the first message, so the splash does
+    /// not invite one.
+    awaiting_first_message: bool,
+}
+
+/// Indent shared by every splash row, matching `jan --help`.
+const BANNER_INDENT: u16 = 2;
+
+/// Commands worth putting in front of a first-time reader. The full list is
+/// behind `/help` (see `SLASH_COMMANDS`).
+const BANNER_HINTS: &[(&str, &str)] = &[
+    ("/help", "commands"),
+    ("/model", "switch model"),
+    ("/resume", "reopen a session"),
+    ("Ctrl-D", "quit"),
+];
+
+fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
+    let accent = Style::new().yellow().bold();
+    let label = Style::new().dark_gray();
+    let dim = Style::new().dim();
+    let indent = " ".repeat(BANNER_INDENT as usize);
+    let mut out: Vec<Line<'static>> = Vec::new();
+
+    // A clipped wordmark reads as breakage, so a narrow terminal gets the name
+    // as text instead.
+    if width >= brand::LOGO_WIDTH + BANNER_INDENT * 2 {
+        for art in brand::LOGO {
+            out.push(Line::styled(format!("{indent}{art}"), accent));
+        }
+        out.push(Line::raw(""));
+        out.push(Line::styled(
+            format!("{indent}interactive agent console · v{}", banner.version),
+            dim,
+        ));
+    } else {
+        out.push(Line::from(vec![
+            Span::styled(format!("{indent}jan"), accent),
+            Span::styled(format!(" v{}", banner.version), dim),
+        ]));
+    }
+    out.push(Line::raw(""));
+
+    let value_max = width.saturating_sub(BANNER_INDENT + 10).max(8) as usize;
+    let mut field = |name: &str, value: String| {
+        out.push(Line::from(vec![
+            Span::styled(format!("{indent}{name:<8}"), label),
+            Span::styled(truncate(&value, value_max), dim),
+        ]));
+    };
+    field("model", banner.model.clone());
+    // Repeated from the dock on purpose: the tools act on this directory, and a
+    // `jan` started in the wrong one is the mistake worth catching before the
+    // first message, not in a dim one-line footer.
+    let location = match &banner.branch {
+        Some(branch) => format!("{} ⎇ {branch}", banner.project),
+        None => banner.project.clone(),
+    };
+    field("project", location);
+    field("tools", banner.tools.clone());
+    out.push(Line::raw(""));
+
+    for row in hint_rows(BANNER_HINTS, width) {
+        out.push(row);
+    }
+    if banner.awaiting_first_message {
+        let long = "type a message to start";
+        let invite = if width as usize >= BANNER_INDENT as usize + long.len() {
+            long
+        } else {
+            "type a message"
+        };
+        out.push(Line::styled(format!("{indent}{invite}"), dim));
+    }
+    out
+}
+
+/// Pack `(key, label)` hints into as few indented rows as `width` allows, so a
+/// narrow terminal wraps between hints instead of mid-hint.
+fn hint_rows(pairs: &[(&str, &str)], width: u16) -> Vec<Line<'static>> {
+    let key_style = Style::new().cyan().bold();
+    // `hint_spans` opens with one space; the splash indents by two.
+    let row = |group: &[(&str, &str)]| {
+        let mut spans = vec![Span::raw(" ")];
+        spans.extend(hint_spans(key_style, group));
+        Line::from(spans)
+    };
+    let mut groups: Vec<Vec<(&str, &str)>> = Vec::new();
+    let mut group: Vec<(&str, &str)> = Vec::new();
+    for pair in pairs {
+        group.push(*pair);
+        if row_width(&row(&group)) > width as usize && group.len() > 1 {
+            group.pop();
+            groups.push(std::mem::take(&mut group));
+            group.push(*pair);
+        }
+    }
+    if !group.is_empty() {
+        groups.push(group);
+    }
+    groups
+        .into_iter()
+        .map(|group| {
+            let full = row(&group);
+            if row_width(&full) <= width as usize {
+                return full;
+            }
+            // A hint too wide even on its own keeps its key and drops the
+            // description; the key is the part the user has to type.
+            row(&group.iter().map(|(key, _)| (*key, "")).collect::<Vec<_>>())
+        })
+        .collect()
+}
+
 /// One committed transcript entry. Width-dependent entries keep their *source*
 /// rather than rendered lines, so a terminal resize re-lays them out at the new
 /// width instead of leaving tables, boxed diffs and truncated labels sized for
@@ -489,6 +615,9 @@ enum RowKind {
     Line(Line<'static>),
     /// Assistant prose, re-wrapped through markdown at the draw width.
     Markdown(String),
+    /// The opening splash, re-laid out at the draw width (the wordmark is
+    /// dropped and the hints re-packed on a terminal too narrow for them).
+    Banner(Box<Banner>),
     /// A tool call/summary row, re-truncated to `width - reserve`.
     Tool {
         tag: String,
@@ -538,6 +667,7 @@ impl Row {
         match &self.kind {
             RowKind::Line(line) => vec![line.clone()],
             RowKind::Markdown(text) => format_markdown_lines(text, width),
+            RowKind::Banner(banner) => banner_lines(banner, width),
             RowKind::Tool {
                 tag,
                 tag_style,
@@ -1338,6 +1468,25 @@ impl App {
         self.copied
             .filter(|(at, _)| at.elapsed() < COPY_NOTICE)
             .map(|(_, lines)| lines)
+    }
+
+    /// Open the session with the splash: the wordmark, this session's model,
+    /// project and approval mode, and where to go next.
+    fn push_banner(&mut self, tools: &str, awaiting_first_message: bool) {
+        let banner = Banner {
+            version: super::updater::build_version(),
+            model: if self.model.is_empty() {
+                "not signed in".to_string()
+            } else {
+                self.model.clone()
+            },
+            project: tilde_path(&self.project_root),
+            branch: self.git_branch.clone(),
+            tools: tools.to_string(),
+            awaiting_first_message,
+        };
+        self.gap(Kind::Meta);
+        self.push_row(RowKind::Banner(Box::new(banner)));
     }
 
     fn note(&mut self, text: &str) {
@@ -4104,13 +4253,19 @@ pub async fn run(
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
     // shows immediately; a resumed thread overrides this via restore_run_mode.
     app.run_mode = args.run_mode;
+    let seeded = initial_task
+        .as_deref()
+        .is_some_and(|t| !t.trim().is_empty());
+    app.push_banner(
+        if args.auto_approve {
+            "auto-approved inside the OS sandbox (start with --safe to be asked first)"
+        } else {
+            "--safe: writes, shell commands and MCP tool calls need approval"
+        },
+        !seeded,
+    );
     if app.model.is_empty() {
         app.note("not signed in — run /login to sign in to Tokamak, or `jan config set` to configure a provider manually");
-    }
-    if args.auto_approve {
-        app.note("tool calls are auto-approved inside the OS sandbox; start with --safe to be asked first");
-    } else {
-        app.note("--safe: writes, shell commands, and MCP tool calls need approval");
     }
     // A failed resume is not fatal: the note explains why and the blank session
     // the user already has stays usable.
@@ -4209,9 +4364,10 @@ async fn chat_loop<B: Backend>(
         None;
     let mut compact_base = 0usize;
 
-    match initial_task {
-        Some(task) if !task.trim().is_empty() => app.submit_user(task.trim().to_string()),
-        _ => app.note("type a message to start, or /help for commands"),
+    // Nothing to say when there is no seed message: the splash already invites
+    // the first one (`Banner::awaiting_first_message`).
+    if let Some(task) = initial_task.filter(|t| !t.trim().is_empty()) {
+        app.submit_user(task.trim().to_string());
     }
 
     while !app.should_quit {
@@ -8644,9 +8800,9 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
         }
         Status::Idle => {
             // Idle is the default state, so a cheat sheet here is permanent
-            // noise. Discovery is already covered without it: the transcript
-            // opens with "type a message to start, or /help for commands", and
-            // `/help` carries the full list (see `KEY_BINDINGS`). Keep only the
+            // noise. Discovery is already covered without it: the session opens
+            // with the splash (`Banner`, which names `/help`), and `/help`
+            // carries the full list (see `KEY_BINDINGS`). Keep only the
             // leading pad `hint_spans` emits, so a queue count or detail suffix
             // lands in the same column as the other states.
             let mut s = vec![Span::raw(" ")];
@@ -8676,7 +8832,7 @@ mod tests {
     use super::SessionLimits;
     use super::{journal, DisplayEntry};
     use super::{
-        age_closed_todos, apply_resume, assistant_is_awaiting_user_answer, build_user_message,
+        age_closed_todos, apply_resume, assistant_is_awaiting_user_answer, brand, build_user_message,
         clipboard_path,
         diff_lines, Row, group_activity, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
@@ -15350,6 +15506,89 @@ mod tests {
             goal.status = GoalStatus::Achieved;
         }
         assert!(app.body().get("goal_mode").is_none());
+    }
+
+    /// The splash row's rendered text at `width`, one string per line.
+    fn banner_text(app: &App, width: u16) -> Vec<String> {
+        app.transcript
+            .iter()
+            .flat_map(|row| row.lines(width))
+            .map(|l| l.spans.iter().map(|s| s.content.to_string()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn banner_opens_with_the_wordmark_and_this_sessions_facts() {
+        let mut app = test_app();
+        app.model = "tokamak-1-preview".into();
+        app.git_branch = Some("fix/tui-panel-width".into());
+        app.push_banner("auto-approved inside the OS sandbox", true);
+
+        let text = banner_text(&app, 90);
+        let joined = text.join("\n");
+        assert!(
+            text.iter().any(|l| l.contains(brand::LOGO[0].trim())),
+            "the wordmark is missing:\n{joined}"
+        );
+        assert!(joined.contains("tokamak-1-preview"), "{joined}");
+        assert!(joined.contains("/tmp/repo"), "{joined}");
+        assert!(joined.contains("fix/tui-panel-width"), "{joined}");
+        assert!(joined.contains("auto-approved inside the OS sandbox"), "{joined}");
+        assert!(joined.contains("/help"), "{joined}");
+        assert!(joined.contains("type a message to start"), "{joined}");
+        assert!(
+            joined.contains(super::super::updater::build_version()),
+            "{joined}"
+        );
+    }
+
+    #[test]
+    fn a_seeded_session_is_not_invited_to_type() {
+        let mut app = test_app();
+        app.push_banner("--safe", false);
+        let joined = banner_text(&app, 90).join("\n");
+        assert!(!joined.contains("type a message to start"), "{joined}");
+        assert!(joined.contains("--safe"), "{joined}");
+    }
+
+    #[test]
+    fn a_narrow_terminal_gets_the_name_instead_of_a_clipped_wordmark() {
+        let mut app = test_app();
+        app.push_banner("--safe", true);
+
+        let wide = banner_text(&app, 90).join("\n");
+        assert!(wide.contains('█'), "{wide}");
+
+        // Same row, re-laid out: the source is data, not rendered lines.
+        let narrow = banner_text(&app, 24);
+        let joined = narrow.join("\n");
+        assert!(!joined.contains('█'), "{joined}");
+        assert!(joined.contains("jan"), "{joined}");
+        for line in &narrow {
+            assert!(
+                line.chars().count() <= 24,
+                "row overflows a 24-column terminal: {line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn hints_wrap_between_pairs_never_mid_pair() {
+        let pairs = super::BANNER_HINTS;
+        let rows = super::hint_rows(pairs, 30);
+        assert!(rows.len() > 1, "narrow width must wrap");
+        for row in &rows {
+            assert!(row_width(row) <= 30 || row.spans.len() <= 3, "{row:?}");
+        }
+        let all: String = rows
+            .iter()
+            .flat_map(|r| r.spans.iter().map(|s| s.content.to_string()))
+            .collect();
+        for (key, label) in pairs {
+            assert!(all.contains(key), "dropped {key}");
+            assert!(all.contains(label), "dropped {label}");
+        }
+        assert_eq!(super::hint_rows(pairs, 200).len(), 1, "one row when it fits");
     }
 }
 

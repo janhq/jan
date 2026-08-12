@@ -2,6 +2,7 @@
 //!
 //! This module is only compiled when the `cli` feature is enabled.
 
+pub mod brand;
 pub mod journal;
 pub mod login;
 pub mod mcp;
