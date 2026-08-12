@@ -66,6 +66,15 @@ pub(crate) fn load_context_files(project_root: &Path) -> Option<String> {
     Some(block)
 }
 
+/// Whether this project has usable instructions, by the same rule the system
+/// prompt uses: a non-empty `JAN.md` at the root or in any ancestor. Drives the
+/// `/init` invitation on the CLI splash, so an ancestor's file (a monorepo root)
+/// correctly counts as already onboarded.
+#[cfg(feature = "cli")]
+pub(crate) fn has_context_file(project_root: &Path) -> bool {
+    load_context_files(project_root).is_some()
+}
+
 /// Built-in guide teaching the model the skills/memory file conventions. Always
 /// injected for project runs so the model can read and maintain both without
 /// prior knowledge. Embedded in the binary at compile time.

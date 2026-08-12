@@ -292,7 +292,14 @@ pub async fn execute_tool(
         &SessionGrants::default(),
     ) {
         Decision::Allow => {}
-        Decision::HardDeny => {
+        Decision::HardDeny(gate::DenyReason::Hidden) => {
+            return Err(format!(
+                "tool '{name}' is denied: {} is the agent's own state directory and is hidden",
+                crate::tools::sandbox::JAN_DIR
+            )
+            .into());
+        }
+        Decision::HardDeny(gate::DenyReason::Policy) => {
             return Err(format!("tool '{name}' is denied by policy").into());
         }
         // An exec prompt asks the user to vouch for a command that could reach
@@ -812,7 +819,7 @@ mod tests {
         .await
         .expect_err("agent config must be hard-denied");
         assert!(
-            err.message.contains("denied by policy"),
+            err.message.contains("is hidden"),
             "unexpected: {}",
             err.message
         );

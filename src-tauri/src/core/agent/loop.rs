@@ -15,7 +15,7 @@ use tokio::sync::{mpsc, Mutex};
 
 use crate::core::agent::events::{StreamEvent, Usage};
 use crate::core::agent::session::SessionBudget;
-use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::tools::gate::{DenyReason, PermissionDecision};
 use crate::core::agent::upstream::{
     collect_mcp_openai_tools, copy_optional_chat_params, execute_mcp_tool_calls,
     extract_choice_message, extract_tool_calls, load_assistant_config, parse_openai_messages,
@@ -566,6 +566,25 @@ fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
     )
 }
 
+/// Message for a call that reached the hidden agent state directory. Says the
+/// path does not exist *for the agent* and that retrying is pointless: pointing
+/// at a deny list would send the model reading a file that is hidden too.
+fn hidden_path_msg(name: &str) -> String {
+    format!(
+        "ERROR: tool '{name}' refused: '{}' is the agent's own state directory and is not part of \
+         the project. It is hidden from every tool -- do not try to reach it another way. Skills \
+         and memory are available through the skill_*/memory_* tools.",
+        tauri_plugin_agent_tools::tools::sandbox::JAN_DIR
+    )
+}
+
+fn hard_deny_msg(name: &str, reason: DenyReason, project_root: &std::path::Path) -> String {
+    match reason {
+        DenyReason::Policy => denied_by_policy_msg(name, project_root),
+        DenyReason::Hidden => hidden_path_msg(name),
+    }
+}
+
 /// Rejection message for a mutation-capable tool call attempted in
 /// `RunMode::Plan`. Authoritative: the tool never actually runs.
 fn plan_mode_read_only_msg(name: &str) -> String {
@@ -714,8 +733,8 @@ impl ToolInvoker for CompositeToolInvoker {
                 &snapshot,
             );
             // Auto-approval suppresses every prompt (sandbox escape, write, exec) but
-            // still honors HardDeny, so the `.jan/agent` restricted-path invariant
-            // and explicit agent.toml denies hold.
+            // still honors HardDeny, so the hidden `.jan` invariant and explicit
+            // agent.toml denies hold.
             let decision = match decision {
                 Decision::Prompt(_) if self.auto_approve => Decision::Allow,
                 other => other,
@@ -747,7 +766,9 @@ impl ToolInvoker for CompositeToolInvoker {
             }
             let (text, diff) = match decision {
                 Decision::Allow => execute_builtin_with_diff(tool, &args, &self.tool_context()).await,
-                Decision::HardDeny => (denied_by_policy_msg(name, &self.project_root), None),
+                Decision::HardDeny(reason) => {
+                    (hard_deny_msg(name, reason, &self.project_root), None)
+                }
                 Decision::Prompt(kind) => {
                     let request_id = next_permission_id();
                     let (tx, rx) = tokio::sync::oneshot::channel();

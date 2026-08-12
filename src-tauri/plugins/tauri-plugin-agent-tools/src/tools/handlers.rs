@@ -15,7 +15,7 @@ use crate::memory;
 use crate::skills;
 use crate::tools::jail;
 use crate::tools::proc;
-use crate::tools::sandbox::{escapes_project, is_restricted_agent_path};
+use crate::tools::sandbox::{escapes_project, is_hidden_jan_path};
 use crate::tools::{BuiltinTool, ToolContext};
 
 const MAX_BYTES: usize = 64 * 1024;
@@ -523,6 +523,11 @@ async fn ls(args: &serde_json::Value, root: &Path) -> String {
     loop {
         match entries.next_entry().await {
             Ok(Some(entry)) => {
+                // Hidden state is omitted, not reported-then-denied: an entry the
+                // agent can never open is only an invitation to try.
+                if is_hidden_jan_path(root, &entry.path().to_string_lossy()) {
+                    continue;
+                }
                 let mut name = entry.file_name().to_string_lossy().into_owned();
                 if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
                     name.push('/');
@@ -647,7 +652,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
 
     // No confinement available means no shell: running unsandboxed would give the
     // command the whole machine, which is never what the caller asked for.
-    let mut policy = jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
+    let mut policy = jail::Policy::new(root, ctx.allow_network)
+        .with_home_readonly(ctx.home_readonly)
+        .with_hide_root(&root.join(crate::tools::sandbox::JAN_DIR));
     if let Some(mask) = ctx.mask_root {
         policy = policy.with_mask_root(mask);
     }
@@ -974,7 +981,7 @@ async fn find(args: &serde_json::Value, root: &Path) -> String {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(true) {
                 continue;
             }
-            if is_restricted_agent_path(&root_owned, &entry.path().to_string_lossy()) {
+            if is_hidden_jan_path(&root_owned, &entry.path().to_string_lossy()) {
                 continue;
             }
             let rel = rel_to(&base, entry.path());
@@ -1094,7 +1101,7 @@ async fn grep(args: &serde_json::Value, root: &Path) -> String {
                 if entry.file_type().map(|t| t.is_dir()).unwrap_or(true) {
                     continue;
                 }
-                if is_restricted_agent_path(&root_owned, &entry.path().to_string_lossy()) {
+                if is_hidden_jan_path(&root_owned, &entry.path().to_string_lossy()) {
                     continue;
                 }
                 if !search_file(entry.path(), &base) {
@@ -1686,6 +1693,21 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Hidden means absent from the listing, not present-but-unopenable: an
+    /// entry the agent can never read is only an invitation to try.
+    #[tokio::test]
+    async fn ls_omits_the_hidden_jan_dir() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join(".jan/agent")).unwrap();
+        std::fs::write(root.join("src.rs"), b"x").unwrap();
+        std::fs::write(root.join("JAN.md"), b"x").unwrap();
+        let out = execute_builtin(lookup("ls").unwrap(), &json!({}), &root).await;
+        assert!(out.contains("src.rs"), "unexpected: {out}");
+        assert!(out.contains("JAN.md"), "unexpected: {out}");
+        assert!(!out.contains(".jan/"), "must not list the agent state dir: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[tokio::test]
     async fn find_glob_respects_gitignore() {
         let root = unique_root();
@@ -1709,11 +1731,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn find_does_not_leak_restricted_agent_tree() {
+    async fn find_does_not_leak_the_hidden_jan_tree() {
         let root = unique_root();
         std::fs::create_dir_all(root.join(".jan/agent/threads/t1")).unwrap();
         std::fs::write(root.join(".jan/agent/threads/t1/thread.json"), b"{}").unwrap();
         std::fs::write(root.join(".jan/agent/agent.toml"), b"[tools]\n").unwrap();
+        // Directly under `.jan`, outside `agent/`: hidden by the same rule.
+        std::fs::write(root.join(".jan/stray.txt"), b"x").unwrap();
         std::fs::write(root.join("JAN.md"), b"instructions").unwrap();
         std::fs::write(root.join("README.md"), b"x").unwrap();
         let out =
@@ -1734,11 +1758,15 @@ mod tests {
             !out.contains("agent.toml"),
             "must not leak agent config: {out}"
         );
+        assert!(
+            !out.contains("stray.txt"),
+            "the whole .jan dir is hidden, not just agent/: {out}"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
-    async fn grep_does_not_leak_restricted_agent_contents() {
+    async fn grep_does_not_leak_hidden_jan_contents() {
         let root = unique_root();
         std::fs::create_dir_all(root.join(".jan/agent/threads/t1")).unwrap();
         std::fs::write(
