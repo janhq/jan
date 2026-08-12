@@ -1018,13 +1018,13 @@ fn build_run_system_prompt(
     }
 }
 
-/// System-prompt addendum on a session's first substantive message: without
-/// it, the model only ever reaches for `todo` once told explicitly that it
-/// has the tool, instead of proactively planning a multi-step request the
-/// way a plan laid out up front would help with. Paired with a forced
-/// `tool_choice` on that same first turn (see `should_suggest_eager_todo_plan`
+/// System-prompt addendum for a `/goal` run with no staged plan: an unattended
+/// loop that keeps firing turns until a condition is met needs the phased list
+/// up front, both to work through and for the user to read on return. Paired
+/// with a forced `tool_choice` on that turn (see `should_force_goal_todo_plan`
 /// and its caller), so this is a real requirement, not a suggestion the model
-/// can silently skip -- the imperative wording matches that guarantee.
+/// can silently skip -- the imperative wording matches that guarantee. Normal
+/// turns never get it: there the model decides when a list is worth keeping.
 const EAGER_TODO_PROMPT_ADDENDUM: &str = "Before substantial work on this request, create a \
 phased todo. You MUST call `todo` first in this turn with a single `init` op covering \
 investigation through implementation and verification, not just the next step. Keep each task \
@@ -1034,20 +1034,20 @@ top-level `phase`/`task` strings, which are for later ops (start/done/drop), not
 `todo` succeeds, continue the request in the same turn.";
 
 /// Upkeep half of the todo guidance, applied on every turn that has a non-empty
-/// list rather than only a session's first message. The init addendum above
-/// fires once and never again (see `should_suggest_eager_todo_plan`), so a
-/// resumed or multi-turn session would otherwise carry a list the model was
-/// never told to maintain -- which is exactly how a run ends reading 0/N with
-/// every task finished but still marked pending.
+/// list, in every mode -- including a list the model staged on its own. The
+/// init addendum above only ever fires under `/goal`, so a normal or resumed
+/// session would otherwise carry a list the model was never told to maintain --
+/// which is exactly how a run ends reading 0/N with every task finished but
+/// still marked pending.
 const TODO_UPKEEP_PROMPT_ADDENDUM: &str = "You have an active todo list. Keep it honest as you \
 work: the moment you finish a task call `todo` with `done` for it (or `drop` if you are skipping \
 it), before moving on to the next one. Do not leave finished work sitting as pending, and do not \
 batch the close-out to the end of the turn.";
 
-/// Which todo addendum this turn needs, if any: the init guidance on a
-/// session's first substantive message, otherwise the upkeep guidance whenever
-/// a list already exists. `None` when there is nothing to say (no list, and not
-/// a first-message candidate). Subagent/plan-mode gating is the caller's.
+/// Which todo addendum this turn needs, if any: the init guidance on a `/goal`
+/// turn with no plan staged, otherwise the upkeep guidance whenever a list
+/// already exists. `None` when there is nothing to say (no list, and not a
+/// goal run). Subagent/plan-mode gating is the caller's.
 async fn todo_prompt_addendum(
     eager_todo_plan: bool,
     todo_registry: &Option<crate::core::agent::todo::TodoRegistry>,
@@ -1062,41 +1062,22 @@ async fn todo_prompt_addendum(
     has_todos.then_some(TODO_UPKEEP_PROMPT_ADDENDUM)
 }
 
-/// True on a session's first substantive user message: exactly one user-role
-/// message in the conversation so far (this one), no todos staged yet, and
-/// the prompt looks like actual multi-step work rather than a greeting,
-/// acknowledgement, or a bare question/exclamation a phased plan would be
-/// overkill for.
-async fn should_suggest_eager_todo_plan(
-    conversation_messages: &[serde_json::Value],
+/// True when this turn should be forced to stage a plan: a `/goal` run whose
+/// list is still empty. Forcing is deliberately limited to goal mode -- an
+/// unattended loop needs a plan to work against, while an ordinary turn is the
+/// model's call, and a phased list for small work is noise the user reads past.
+/// Requires a registry: without one the `todo` tool is never advertised, so
+/// forcing `tool_choice` on it would name a tool the request does not carry.
+async fn should_force_goal_todo_plan(
+    goal_mode: bool,
     todo_registry: &Option<crate::core::agent::todo::TodoRegistry>,
 ) -> bool {
-    let user_turns = conversation_messages
-        .iter()
-        .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))
-        .count();
-    if user_turns != 1 {
-        return false;
-    }
-    let Some(prompt_text) = latest_user_text(conversation_messages) else {
-        return false;
-    };
-    let trimmed = prompt_text.trim_end();
-    if ['?', '！', '？', '!'].iter().any(|c| trimmed.ends_with(*c)) {
-        return false;
-    }
-    // A greeting, thanks, or one-line aside ("hi", "ok thanks") is not work a
-    // phased plan helps with. Require enough words to look like an actual
-    // request; the shortest real task prompts ("fix the login bug") clear this,
-    // while chit-chat does not. A word-count floor, not a keyword blocklist, so
-    // it never has to enumerate every possible pleasantry.
-    const MIN_SUBSTANTIVE_WORDS: usize = 4;
-    if trimmed.split_whitespace().count() < MIN_SUBSTANTIVE_WORDS {
+    if !goal_mode {
         return false;
     }
     match todo_registry {
         Some(registry) => registry.lock().await.is_empty(),
-        None => true,
+        None => false,
     }
 }
 
@@ -1193,9 +1174,17 @@ async fn orchestrate_inner(
     // Child (subagent) runs are excluded via `system_prompt_override`, the
     // same gate the memory-recall block above uses to distinguish a
     // top-level run from a subagent's isolated context.
+    // `/goal` is a per-request flag like `run_mode`: the TUI sets it while a
+    // goal is active, and nothing else does, so every other surface (a plain
+    // turn, `jan cli agent run`, a subagent) leaves the model free to reach for
+    // `todo` on its own.
+    let goal_mode = json_body
+        .get("goal_mode")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let eager_todo_plan = run_mode != crate::core::agent::plan::RunMode::Plan
         && system_prompt_override.is_none()
-        && should_suggest_eager_todo_plan(&conversation_messages, todo_registry).await;
+        && should_force_goal_todo_plan(goal_mode, todo_registry).await;
     let system_prompt = if run_mode == crate::core::agent::plan::RunMode::Plan {
         let addendum = crate::core::agent::plan::plan_mode_prompt_addendum();
         Some(match system_prompt {
@@ -1730,11 +1719,36 @@ async fn run_turn_cycle(
             return Ok(completion);
         }
 
+        // The session budget is exhausted. This is a soft stop, not an error:
+        // a subagent that inherits the parent's remaining budget must hand back
+        // its partial progress (as an assistant message) so the parent can act
+        // on it, instead of the run hard-failing and losing the work. Tool
+        // calls are not executed; nothing further is spent against the ceiling.
         if budget.exhausted() {
-            return Err(format!(
-                "session token budget exhausted ({} tokens) before resolving tool calls",
-                budget.spent()
-            ));
+            let partial = extract_choice_message(&completion)
+                .and_then(|m| m.get("content").and_then(|c| c.as_str()))
+                .unwrap_or("")
+                .to_string();
+            let stop_note = format!(
+                "[session token budget exhausted ({} tokens)] Partial progress so far:\n\
+                 {}",
+                budget.spent(),
+                if partial.is_empty() {
+                    "(none yet reported)".to_string()
+                } else {
+                    partial
+                }
+            );
+            conversation_messages.push(serde_json::json!({
+                "role": "assistant",
+                "content": stop_note,
+            }));
+            let _ = events.send(StreamEvent::MessagesUpdated {
+                messages: conversation_messages.clone(),
+            });
+            return Ok(serde_json::json!({
+                "choices": [{ "message": { "content": stop_note }, "finish_reason": "stop" }]
+            }));
         }
 
         for tc in &tool_calls {
@@ -1971,10 +1985,6 @@ mod tests {
         }
     }
 
-    fn user_message(text: &str) -> serde_json::Value {
-        json!({ "role": "user", "content": text })
-    }
-
     fn empty_todo_registry() -> crate::core::agent::todo::TodoRegistry {
         std::sync::Arc::new(tokio::sync::Mutex::new(
             crate::core::agent::todo::TodoList::default(),
@@ -1992,47 +2002,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn eager_todo_plan_suggested_on_first_substantive_message() {
-        let convo = vec![user_message("build a flappy bird clone")];
-        assert!(should_suggest_eager_todo_plan(&convo, &Some(empty_todo_registry())).await);
-        assert!(should_suggest_eager_todo_plan(&convo, &None).await);
+    async fn goal_todo_plan_forced_while_a_goal_has_no_plan() {
+        assert!(should_force_goal_todo_plan(true, &Some(empty_todo_registry())).await);
     }
 
     #[tokio::test]
-    async fn eager_todo_plan_not_suggested_for_a_bare_question() {
-        let convo = vec![user_message("what's the capital of France?")];
-        assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
-        let convo = vec![user_message("nice work!")];
-        assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
+    async fn goal_todo_plan_not_forced_once_the_plan_is_staged() {
+        assert!(!should_force_goal_todo_plan(true, &Some(staged_todo_registry())).await);
     }
 
     #[tokio::test]
-    async fn eager_todo_plan_not_suggested_for_a_short_greeting() {
-        // Punctuation-free chit-chat must not force a todo plan: the word-count
-        // floor catches greetings and acks that the `?`/`!` check misses.
-        for msg in ["hi", "hello", "hey there", "ok thanks"] {
-            let convo = vec![user_message(msg)];
-            assert!(
-                !should_suggest_eager_todo_plan(&convo, &None).await,
-                "short greeting should not trigger eager todo: {msg:?}"
-            );
-        }
+    async fn goal_todo_plan_never_forced_outside_goal_mode() {
+        assert!(!should_force_goal_todo_plan(false, &Some(empty_todo_registry())).await);
     }
 
     #[tokio::test]
-    async fn eager_todo_plan_not_suggested_once_todos_exist() {
-        let convo = vec![user_message("keep going")];
-        assert!(!should_suggest_eager_todo_plan(&convo, &Some(staged_todo_registry())).await);
+    async fn goal_todo_plan_not_forced_without_a_registry() {
+        // No registry means the `todo` tool is never advertised, so forcing it
+        // would name a tool the request does not carry.
+        assert!(!should_force_goal_todo_plan(true, &None).await);
     }
 
     #[tokio::test]
-    async fn eager_todo_plan_not_suggested_past_the_first_user_turn() {
-        let convo = vec![
-            user_message("build a flappy bird clone"),
-            json!({ "role": "assistant", "content": "on it" }),
-            user_message("also add a high score screen"),
-        ];
-        assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
+    async fn todo_addendum_is_upkeep_only_outside_goal_mode() {
+        let staged = Some(staged_todo_registry());
+        assert_eq!(
+            todo_prompt_addendum(false, &staged).await,
+            Some(TODO_UPKEEP_PROMPT_ADDENDUM)
+        );
+        assert_eq!(
+            todo_prompt_addendum(false, &Some(empty_todo_registry())).await,
+            None
+        );
     }
 
     #[test]
@@ -2520,8 +2521,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn turn_cycle_stops_when_budget_exhausted() {
-        let (tx, _rx) = mpsc::unbounded_channel();
+    async fn turn_cycle_soft_stops_when_budget_exhausted() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let mut over_budget = tool_call_completion();
         over_budget["usage"] = json!({ "total_tokens": 100 });
         let model = MockModel::new(vec![over_budget]);
@@ -2529,7 +2530,7 @@ mod tests {
         let mut budget = SessionBudget::new(Some(50));
         let convo = vec![json!({ "role": "user", "content": "hi" })];
 
-        let err = run_turn_cycle(
+        let result = run_turn_cycle(
             &tx,
             &json!({}),
             "m",
@@ -2544,12 +2545,28 @@ mod tests {
             None,
         )
         .await
-        .unwrap_err();
+        .expect("budget exhaustion is a soft stop, not an error");
 
-        assert!(err.contains("budget"), "unexpected error: {err}");
+        let final_text = extract_choice_message(&result)
+            .and_then(|m| m.get("content").and_then(|c| c.as_str()))
+            .unwrap_or_default();
+        let spent = budget.spent();
+        assert!(
+            final_text.contains("budget")
+                && final_text.contains(&spent.to_string()),
+            "soft stop should describe the exhausted budget ({spent} tokens): {final_text}",
+        );
         assert!(
             tool.calls.lock().unwrap().is_empty(),
             "tool must not run once budget is exhausted"
+        );
+        // A MessagesUpdated is published so live surfaces (and the replay
+        // session) see the partial conversation before the soft stop.
+        assert!(
+            std::iter::from_fn(|| rx.try_recv().ok()).any(
+                |ev| matches!(ev, StreamEvent::MessagesUpdated { .. })
+            ),
+            "expected a MessagesUpdated event on soft stop"
         );
     }
 

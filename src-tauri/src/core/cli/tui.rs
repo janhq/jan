@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 use std::future::pending;
-use std::io;
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,11 +17,11 @@ use super::path_refs;
 
 use ratatui::crossterm::{
     event::{
-        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
-        EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton,
-        MouseEvent, MouseEventKind,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, Event, KeyCode,
+        KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
     },
     execute,
+    style::Print,
     terminal::{
         disable_raw_mode, enable_raw_mode, BeginSynchronizedUpdate, EndSynchronizedUpdate,
         EnterAlternateScreen, LeaveAlternateScreen,
@@ -44,6 +44,85 @@ use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs, PermissionRegistry};
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+
+/// Mouse tracking, hand-rolled instead of crossterm's `EnableMouseCapture`,
+/// which also turns on any-motion reporting (1003) -- a stream of events for
+/// every idle pointer move. Buttons and the wheel (1000) plus motion *while a
+/// button is held* (1002), with SGR coordinates (1006), is exactly what
+/// drag-to-select needs and nothing more.
+const MOUSE_TRACK_ON: &str = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
+/// Alternate scroll (1007) makes the terminal translate the wheel into arrow
+/// keys, which the composer reads as message-history recall -- so it is saved
+/// and forced off for the session, then restored on exit. Needed whether or not
+/// tracking is on, since with tracking off the wheel would otherwise type.
+const ALT_SCROLL_SAVE_OFF: &str = "\x1b[?1007s\x1b[?1007l";
+const ALT_SCROLL_RESTORE: &str = "\x1b[?1007r";
+
+/// How long the dock advertises a finished copy.
+const COPY_NOTICE: Duration = Duration::from_millis(1500);
+/// Terminals cap the OSC 52 payload they will accept; past this the sequence is
+/// skipped and the in-process clipboard is the only path.
+const OSC52_MAX_BYTES: usize = 100_000;
+
+/// Which cells a drag covers. `Linear` follows reading order, taking whole rows
+/// between the endpoints; `Block` takes the rectangle between them, for lifting
+/// one column out of a table or a diff without its `+`/`-` markers. Alt held as
+/// the drag starts picks `Block`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SelectionMode {
+    Linear,
+    Block,
+}
+
+/// A mouse selection in frame cell coordinates. The TUI owns selection outright
+/// because mouse tracking takes it away from the terminal: without this, a drag
+/// with tracking on would do nothing at all.
+#[derive(Debug, Clone, Copy)]
+struct Selection {
+    anchor: (u16, u16),
+    head: (u16, u16),
+    mode: SelectionMode,
+    /// Button still held, so edge auto-scroll may run.
+    dragging: bool,
+    /// The pointer moved since the press. A press that never moves is a click
+    /// (expand a tool row), not a selection.
+    moved: bool,
+}
+
+impl Selection {
+    fn new(at: (u16, u16), mode: SelectionMode) -> Self {
+        Self {
+            anchor: at,
+            head: at,
+            mode,
+            dragging: true,
+            moved: false,
+        }
+    }
+
+    /// Covered cells as `(row, first_col, last_col)`, inclusive on both ends and
+    /// clipped to `width`. Ordered top to bottom regardless of drag direction.
+    fn spans(&self, width: u16) -> Vec<(u16, u16, u16)> {
+        let last = width.saturating_sub(1);
+        let (a, h) = (self.anchor, self.head);
+        match self.mode {
+            SelectionMode::Block => {
+                let (c0, c1) = (a.0.min(h.0).min(last), a.0.max(h.0).min(last));
+                (a.1.min(h.1)..=a.1.max(h.1)).map(|r| (r, c0, c1)).collect()
+            }
+            SelectionMode::Linear => {
+                let (start, end) = if (a.1, a.0) <= (h.1, h.0) { (a, h) } else { (h, a) };
+                (start.1..=end.1)
+                    .map(|r| {
+                        let c0 = if r == start.1 { start.0.min(last) } else { 0 };
+                        let c1 = if r == end.1 { end.0.min(last) } else { last };
+                        (r, c0, c1)
+                    })
+                    .collect()
+            }
+        }
+    }
+}
 
 #[derive(Debug, PartialEq)]
 enum Status {
@@ -270,6 +349,9 @@ struct CurrentRun {
 /// individual call and its result without re-fetching anything.
 struct GroupedCall {
     id: String,
+    /// Present-tense label (e.g. "Executing grep -n foo src/"), shown on the
+    /// live row while this is the group's only call.
+    activity: String,
     /// Past-tense finished label (e.g. "Ran grep -n foo src/").
     done: String,
     /// Raw result content, filled when the matching `ToolResult` arrives.
@@ -323,6 +405,16 @@ impl ToolGroup {
         }
     }
 
+    /// Live label for an open group: a lone call names itself (so a running
+    /// command reads as the command), several fall back to the counted
+    /// breakdown, where no single call describes the group.
+    fn activity(&self) -> String {
+        match self.calls.as_slice() {
+            [only] => only.activity.clone(),
+            _ => group_activity(&self.nouns),
+        }
+    }
+
     /// The group's row: present-tense `▸` only while it is open with a call in
     /// flight, otherwise a resolved tag plus past-tense summary. The label is
     /// stored untruncated; `Row::Tool` clamps it to the current draw width.
@@ -331,7 +423,7 @@ impl ToolGroup {
             return RowKind::Tool {
                 tag: "▸".to_string(),
                 tag_style: Style::new().cyan(),
-                label: group_activity(&self.nouns),
+                label: self.activity(),
                 label_style: Style::new().cyan().dim(),
                 reserve: TOOL_ROW_RESERVE,
             }
@@ -370,6 +462,8 @@ struct PendingToolRow {
     id: String,
     idx: usize,
     label: String,
+    /// Past-tense label the row is rewritten to once its result lands.
+    done: String,
 }
 
 /// One committed transcript entry. Width-dependent entries keep their *source*
@@ -402,11 +496,12 @@ enum RowKind {
         label_style: Style,
         reserve: u16,
     },
-    /// A tool result summary plus its optional boxed diff panel.
+    /// A tool result summary plus its optional boxed diff panel. `content` is
+    /// `None` when the call row above already says the same thing.
     Result {
         tag: &'static str,
         tag_style: Style,
-        content: String,
+        content: Option<String>,
         diff: Option<String>,
         /// Path of the edited file, for diff syntax highlighting.
         lang: Option<String>,
@@ -465,11 +560,16 @@ impl Row {
                 lang,
             } => {
                 let max = width.saturating_sub(8).max(1) as usize;
-                let mut out = vec![Line::from(vec![
-                    Span::styled("│   ", Style::new().dark_gray()),
-                    Span::styled(format!("{tag} "), *tag_style),
-                    Span::styled(summarize_result(content, max), Style::new().dim()),
-                ])];
+                let mut out: Vec<Line<'static>> = content
+                    .iter()
+                    .map(|c| {
+                        Line::from(vec![
+                            Span::styled("│   ", Style::new().dark_gray()),
+                            Span::styled(format!("{tag} "), *tag_style),
+                            Span::styled(summarize_result(c, max), Style::new().dim()),
+                        ])
+                    })
+                    .collect();
                 if let Some(diff) = diff {
                     out.extend(diff_lines(
                         diff,
@@ -490,16 +590,6 @@ impl Row {
         match &self.kind {
             RowKind::Line(line) => line.spans.iter().all(|s| s.content.trim().is_empty()),
             _ => false,
-        }
-    }
-
-    /// Unstyled text of the row's source, for matching (`retain`).
-    fn plain_text(&self) -> String {
-        match &self.kind {
-            RowKind::Line(line) => line.spans.iter().map(|s| s.content.as_ref()).collect(),
-            RowKind::Markdown(text) => text.clone(),
-            RowKind::Tool { tag, label, .. } => format!("{tag} {label}"),
-            RowKind::Result { tag, content, .. } => format!("{tag} {content}"),
         }
     }
 }
@@ -819,6 +909,15 @@ struct App {
     login_submit: Option<String>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
     update_requested: bool,
+    /// Compaction handed off to the loop, which spawns the summarizing model
+    /// call off the render loop. Taken once.
+    compact_request: Option<CompactKind>,
+    /// A compaction is in flight: the header and the input box show a throbber,
+    /// a second request is refused, and no run starts until it lands (its result
+    /// replaces `history`, so a run reading the old one would be clobbered).
+    compacting: Option<CompactKind>,
+    /// When the in-flight compaction started, for the elapsed counter.
+    compact_started: Option<Instant>,
     /// An install is in flight: `/update` is refused (two processes must not
     /// rewrite the same binary) and the footer shows progress.
     update_installing: bool,
@@ -892,11 +991,16 @@ struct App {
     /// When the current run started, so the header can show elapsed time.
     /// `None` while idle.
     run_started: Option<Instant>,
-    /// Whether the terminal's mouse capture should be on (click-to-expand) or
-    /// off (native text selection/copy). Toggled by Ctrl-T; `chat_loop` diffs
-    /// this against its previous value each tick to (de)activate it, since
-    /// crossterm's enable/disable calls need the real terminal handle.
-    mouse_capture: bool,
+    /// Mouse selection, live or finished. Cleared by any key, wheel notch or
+    /// fresh press.
+    selection: Option<Selection>,
+    /// Set when a drag ends: the next `draw` lifts the text out of the buffer it
+    /// just rendered (only `draw` holds one) and hands it to `chat_loop`.
+    copy_armed: bool,
+    /// Selected text waiting to reach the clipboard.
+    copy_request: Option<String>,
+    /// (when, line count) of the last copy, for the transient dock notice.
+    copied: Option<(Instant, usize)>,
     /// Messages queued while a run is in progress, dequeued automatically
     /// when the current turn finishes.
     message_queue: std::collections::VecDeque<String>,
@@ -1091,6 +1195,9 @@ impl App {
             login_submit: None,
             update_requested: false,
             update_installing: false,
+            compact_request: None,
+            compacting: None,
+            compact_started: None,
             scrollback: 0,
             want_start: false,
             turns_since_todos_closed: 0,
@@ -1111,7 +1218,10 @@ impl App {
             last_scroll: 0,
             row_index: Vec::new(),
             run_started: None,
-            mouse_capture: false,
+            selection: None,
+            copy_armed: false,
+            copy_request: None,
+            copied: None,
             message_queue: std::collections::VecDeque::new(),
             todos: crate::core::agent::todo::TodoList::default(),
             todo_call_this_turn: false,
@@ -1205,6 +1315,20 @@ impl App {
     }
 
     /// Append a dim single-line status note (command output, cancel, errors).
+    /// Drop any selection, and with it a copy armed but not yet lifted out of a
+    /// frame -- otherwise it would fire against whatever is selected next.
+    fn clear_selection(&mut self) {
+        self.selection = None;
+        self.copy_armed = false;
+    }
+
+    /// Line count of a copy recent enough to still advertise, if any.
+    fn copy_notice(&self) -> Option<usize> {
+        self.copied
+            .filter(|(at, _)| at.elapsed() < COPY_NOTICE)
+            .map(|(_, lines)| lines)
+    }
+
     fn note(&mut self, text: &str) {
         self.scrollback = 0;
         self.gap(Kind::Meta);
@@ -1273,43 +1397,39 @@ impl App {
         self.grouped_ids.insert(id.to_string());
         let call = GroupedCall {
             id: id.to_string(),
+            activity: label.clone(),
             done: done.clone(),
             content: None,
             is_error: false,
             diff: None,
         };
-        let extend = self.tool_group.as_mut().map(|g| {
+        let extend = self
+            .tool_group
+            .as_ref()
+            .is_some_and(|g| g.idx < self.transcript.len());
+        if extend {
+            let g = self.tool_group.as_mut().expect("group checked above");
             g.nouns.push((noun, is_read));
             g.calls.push(call);
-            g.idx
-        });
-        match extend {
-            Some(idx) if idx < self.transcript.len() => self.refresh_group_row(),
-            _ => {
-                self.gap(Kind::Tool);
-                self.push_row(RowKind::Tool {
-                    tag: "▸".to_string(),
-                    tag_style: Style::new().cyan(),
-                    label,
-                    label_style: Style::new().cyan().dim(),
-                    reserve: TOOL_ROW_RESERVE,
-                });
-                self.tool_group = Some(ToolGroup {
-                    idx: self.transcript.len() - 1,
-                    first_done: done.clone(),
-                    nouns: vec![(noun, is_read)],
-                    calls: vec![GroupedCall {
-                        id: id.to_string(),
-                        done,
-                        content: None,
-                        is_error: false,
-                        diff: None,
-                    }],
-                    started: Instant::now(),
-                    last_result_error: None,
-                });
-            }
+            self.refresh_group_row();
+            return;
         }
+        self.gap(Kind::Tool);
+        self.push_row(RowKind::Tool {
+            tag: "▸".to_string(),
+            tag_style: Style::new().cyan(),
+            label,
+            label_style: Style::new().cyan().dim(),
+            reserve: TOOL_ROW_RESERVE,
+        });
+        self.tool_group = Some(ToolGroup {
+            idx: self.transcript.len() - 1,
+            first_done: done,
+            nouns: vec![(noun, is_read)],
+            calls: vec![call],
+            started: Instant::now(),
+            last_result_error: None,
+        });
     }
 
     /// Rewrite the open group's row for its current state, leaving it open so
@@ -1391,6 +1511,34 @@ impl App {
             self.push_subagent_summary(&panel.name, panel.calls, false);
         }
         self.awaiting.clear();
+    }
+
+    /// Rewrite a standalone tool row to its resolved form once its result lands:
+    /// past-tense label plus an outcome tag, matching how a tool group's row
+    /// resolves. Without this a finished `edit` keeps reading as "Editing X".
+    /// Returns whether the row was found and rewritten.
+    fn resolve_pending_row(&mut self, id: &str, is_error: bool) -> bool {
+        let Some(pos) = self.pending_rows.iter().position(|row| row.id == id) else {
+            return false;
+        };
+        let row = self.pending_rows.remove(pos);
+        if row.idx >= self.transcript.len() {
+            return false;
+        }
+        let (tag, tag_style) = if is_error {
+            ("✗", Style::new().red())
+        } else {
+            ("✓", Style::new().green())
+        };
+        self.transcript[row.idx] = RowKind::Tool {
+            tag: tag.to_string(),
+            tag_style,
+            label: row.done,
+            label_style: Style::new().dim(),
+            reserve: TOOL_ROW_RESERVE,
+        }
+        .into();
+        true
     }
 
     /// Resolve every row still awaiting a result: the run ended (cancel, error,
@@ -1954,6 +2102,12 @@ impl App {
         if self.run_mode == crate::core::agent::plan::RunMode::Plan {
             body["run_mode"] = serde_json::to_value(self.run_mode).unwrap_or(serde_json::Value::Null);
         }
+        // Only an active `/goal` forces the model to stage a todo plan; a normal
+        // turn leaves that to its own judgement. Forwarded only while the goal
+        // runs, so an achieved or cleared goal reverts to an unchanged body.
+        if self.goal.as_ref().is_some_and(|g| g.is_active()) {
+            body["goal_mode"] = serde_json::json!(true);
+        }
         body
     }
 
@@ -2198,6 +2352,7 @@ impl App {
                         id: id.clone(),
                         idx: self.transcript.len() - 1,
                         label,
+                        done,
                     });
                 } else {
                     // Commit any buffered prose OR reasoning the model emitted
@@ -2217,7 +2372,7 @@ impl App {
             } => {
                 // Clear the throbber for an awaited subagent once its result lands.
                 self.awaiting.retain(|(await_id, ..)| await_id != &id);
-                self.pending_rows.retain(|row| row.id != id);
+                let resolved = self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
                 // reminder fired; let a later stop remind again if work is still
                 // open. Set unconditionally, before the grouped-call early return
@@ -2244,6 +2399,11 @@ impl App {
                     ("✓", Style::new().green())
                 };
                 let lang = diff.is_some().then(|| self.diff_paths.remove(&id)).flatten();
+                // The resolved call row above already names the tool and file in
+                // past tense, so a successful "Applied N edit(s) to X" only
+                // repeats it; the diff is the informative part. Errors keep their
+                // text -- the row says nothing about why the call failed.
+                let content = (!(resolved && !is_error && diff.is_some())).then_some(content);
                 self.gap(Kind::Tool);
                 self.push_row(RowKind::Result {
                     tag,
@@ -2939,8 +3099,10 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             if cmd.trim().is_empty() {
                 "Executing command".to_string()
             } else {
+                // Untruncated: the row clamps to the draw width, so the command
+                // fills the terminal rather than eliding at a fixed 80.
                 let collapsed = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-                format!("Executing: {}", truncate(&collapsed, COMMAND_LABEL_MAX))
+                format!("Executing: {collapsed}")
             }
         }
         "grep" | "search" => "Searching".to_string(),
@@ -3066,13 +3228,15 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
                 "Ran command".to_string()
             } else {
                 let collapsed = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-                format!("Ran: {}", truncate(&collapsed, COMMAND_LABEL_MAX))
+                format!("Ran: {collapsed}")
             }
         }
         "grep" | "search" => "Searched".to_string(),
         "find" | "glob" => "Found files".to_string(),
         "read" => format!("Read {}", base(s("path"))),
         "list" | "ls" => "Listed files".to_string(),
+        "write" => format!("Wrote {}", base(s("path"))),
+        "edit" => format!("Edited {}", base(s("path"))),
         "dispatch_subagent" => format!("Dispatched subagent: {}", s("subagent_name")),
         "await_subagent" => format!("Subagent {} returned", subagent_name_from_run_id(s("run_id"))),
         "create_subagent" => format!("Created subagent: {}", s("name")),
@@ -3427,7 +3591,7 @@ fn group_activity(nouns: &[(&str, bool)]) -> String {
 fn running_group_row(group: &ToolGroup, spinner_frame: usize, width: u16) -> Line<'static> {
     let frame = SPINNER[spinner_frame % SPINNER.len()];
     let elapsed = group.started.elapsed().as_secs();
-    let text = format!("{} ({elapsed}s)", group_activity(&group.nouns));
+    let text = format!("{} ({elapsed}s)", group.activity());
     let max = (width as usize).saturating_sub(6).max(1);
     tool_row(frame, Style::new().cyan(), &truncate(&text, max), Style::new().cyan().dim())
 }
@@ -3829,10 +3993,13 @@ pub async fn run(
 
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
-    // Mouse capture stays off by default so terminal text is selectable/copyable
-    // (Ctrl-T enables click-to-expand). `chat_loop` diffs against
-    // `app.mouse_capture` and enables it on the first tick if the user toggles.
     execute!(stdout, EnterAlternateScreen, EnableBracketedPaste).map_err(|e| e.to_string())?;
+    let mut modes = String::from(ALT_SCROLL_SAVE_OFF);
+    if crate::core::agent::global_config::mouse_enabled() {
+        modes.push_str(MOUSE_TRACK_ON);
+    }
+    let _ = stdout.write_all(modes.as_bytes());
+    let _ = stdout.flush();
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
 
@@ -3894,6 +4061,7 @@ pub async fn run(
         terminal.backend_mut(),
         DisableBracketedPaste,
         DisableMouseCapture,
+        Print(ALT_SCROLL_RESTORE),
         LeaveAlternateScreen,
     );
     let _ = terminal.show_cursor();
@@ -3920,10 +4088,6 @@ async fn chat_loop<B: Backend>(
 ) -> Result<(), String> {
     let mut current: Option<CurrentRun> = None;
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
-    // Mirrors app.mouse_capture; `run` sets the real terminal to the same
-    // state before this loop starts, so both start in sync.
-    let mut mouse_capture_active = false;
-
     // Active MCP servers connect in the background; gate the first run on them
     // so the model's tools (collected once per run) are ready.
     let mut mcp_ready = mcp_task.is_none();
@@ -3949,6 +4113,12 @@ async fn chat_loop<B: Backend>(
     let mut update_install_task: Option<
         tokio::task::JoinHandle<Result<super::updater::UpdateOutcome, String>>,
     > = None;
+
+    // Compaction is a summarizing model call, so it runs off the render loop
+    // too; `compact_base` is the history length it was computed from.
+    let mut compact_task: Option<tokio::task::JoinHandle<Result<Vec<serde_json::Value>, String>>> =
+        None;
+    let mut compact_base = 0usize;
 
     match initial_task {
         Some(task) if !task.trim().is_empty() => app.submit_user(task.trim().to_string()),
@@ -3998,6 +4168,29 @@ async fn chat_loop<B: Backend>(
             }
         }
 
+        // `/compact` (or the auto trigger) was requested: summarize off-loop.
+        // One at a time -- both request sites already refuse while one is in
+        // flight, and the result replaces `history` wholesale.
+        if compact_task.is_none() {
+            if let Some(kind) = app.compact_request.take() {
+                let args = args.clone();
+                let model = app.model.clone();
+                let history = app.history.clone();
+                compact_base = history.len();
+                app.compacting = Some(kind);
+                app.compact_started = Some(Instant::now());
+                compact_task = Some(tokio::spawn(async move {
+                    crate::core::agent::r#loop::compact_history(
+                        &args,
+                        &model,
+                        &history,
+                        kind.keep_recent(),
+                    )
+                    .await
+                }));
+            }
+        }
+
         // A turn finished under an active goal: run the (stateless) evaluator
         // before anything else. It either auto-submits the next turn (setting
         // want_start) or hands control back. Gated on an idle, run-free state so
@@ -4010,7 +4203,9 @@ async fn chat_loop<B: Backend>(
         // servers (if any) are connected, and the base snapshot (if any) is
         // captured. `submit_user` already flipped status to Running and reset
         // the counter.
-        if app.want_start && current.is_none() {
+        // A compaction in flight is also a gate: it replaces `history`, so a run
+        // started against the pre-compaction copy would be clobbered.
+        if app.want_start && current.is_none() && compact_task.is_none() {
             let base_ready = app.repo_root.is_none() || app.base_snapshot.is_some();
             if mcp_ready && base_ready {
                 app.want_start = false;
@@ -4028,13 +4223,18 @@ async fn chat_loop<B: Backend>(
         // Wrap the repaint in synchronized-output (`\x1b[?2026h/l`) so the
         // terminal buffers the whole frame and flips it atomically, eliminating
         // tearing. Written straight to stdout (not the generic `Backend`) for the
-        // same reason mouse-capture toggles are: `chat_loop` is generic over B
-        // for TestBackend, which isn't `io::Write`. ratatui already diffs the
+        // same reason the clipboard write below is: `chat_loop` is generic over
+        // B for TestBackend, which isn't `io::Write`. ratatui already diffs the
         // buffer and emits ANSI only for changed cells.
         let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
         let draw_result = terminal.draw(|f| draw(f, app)).map_err(|e| e.to_string());
         let _ = execute!(io::stdout(), EndSynchronizedUpdate);
         draw_result?;
+        // Outside the synchronized block: `draw` only extracts the text, so the
+        // OSC 52 write can't land in the middle of a frame.
+        if let Some(text) = app.copy_request.take() {
+            copy_to_clipboard(&text);
+        }
 
         tokio::select! {
             _ = ticker.tick() => {
@@ -4044,20 +4244,11 @@ async fn chat_loop<B: Backend>(
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     match event::read() {
                         Ok(Event::Key(key)) => {
+                            // Typing moves the content under a highlight, and the
+                            // copy already happened on release.
+                            app.clear_selection();
                             if !handle_ask_key(app, key, ask_requests).await {
                                 handle_key(app, key, registry, &mut current, mcp_servers).await;
-                            }
-                            if app.mouse_capture != mouse_capture_active {
-                                mouse_capture_active = app.mouse_capture;
-                                // Written straight to stdout (not through the generic
-                                // `Backend`) since chat_loop is generic over B for
-                                // testability with TestBackend, which isn't io::Write.
-                                let mut stdout = io::stdout();
-                                let _ = if mouse_capture_active {
-                                    execute!(stdout, EnableMouseCapture)
-                                } else {
-                                    execute!(stdout, DisableMouseCapture)
-                                };
                             }
                         }
                         Ok(Event::Paste(text)) => {
@@ -4106,6 +4297,9 @@ async fn chat_loop<B: Backend>(
             install = await_update_install(&mut update_install_task) => {
                 finish_update_install(app, install);
             }
+            compacted = await_compaction(&mut compact_task) => {
+                finish_compaction(app, compacted, compact_base);
+            }
             snap_res = await_snapshot(&mut snap_task) => {
                 match (snap_inflight.take(), snap_res) {
                     (Some(SnapshotJob::Base), Ok(sha)) => {
@@ -4133,44 +4327,11 @@ async fn chat_loop<B: Backend>(
                 Some(StreamEvent::Done { stop_reason, usage }) => {
                     app.on_done(stop_reason, usage);
                     current = None;
-                    // Auto-compact when approaching the context limit.
-                    if app.should_auto_compact() {
-                        let model = app.model.clone();
-                        let mut history = std::mem::take(&mut app.history);
-                        let before = history.len();
-                        // Show feedback immediately before the blocking model call.
-                        app.note("auto-compacting...");
-                        let compacted = crate::core::agent::r#loop::compact_history(
-                            args, &model, &history,
-                            crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
-                        )
-                        .await;
-                        // Remove the "auto-compacting..." note.
-                        app.transcript
-                            .retain(|row| !row.plain_text().contains("auto-compacting"));
-                        match compacted {
-                            Ok(c) if c.len() < before => {
-                                history = c;
-                                app.history = history;
-                                // Update token estimate from compacted content.
-                                app.tokens = estimate_token_count(&app.history);
-                                app.persist();
-                                app.note(&format!(
-                                    "auto-compacted {} -> {} messages (ctx {}K/{}K)",
-                                    before,
-                                    app.history.len(),
-                                    app.tokens / 1000,
-                                    app.context_window / 1000,
-                                ));
-                            }
-                            Ok(_) => {
-                                app.history = history;
-                            }
-                            Err(e) => {
-                                app.history = history;
-                                app.note(&format!("auto-compaction failed: {e}"));
-                            }
-                        }
+                    // Auto-compact when approaching the context limit. Handed to
+                    // the loop like `/compact` so the summarizing call runs off
+                    // the render loop.
+                    if app.should_auto_compact() && app.compacting.is_none() {
+                        app.compact_request = Some(CompactKind::Auto);
                     }
                 }
                 Some(StreamEvent::Error { code, message }) => {
@@ -4211,41 +4372,145 @@ async fn chat_loop<B: Backend>(
     Ok(())
 }
 
-/// A left click on a folded row (tool group / reasoning block / subagent
-/// summary) toggles its detail, the same as Ctrl-O but for a single region.
-/// Ignores clicks outside the transcript viewport or on rows that aren't a
-/// region's own summary row (detail lines, blank padding, etc).
+/// Wheel, drag-to-select and click-to-expand. Press/release are split: the
+/// toggle fires on release and only when the pointer never moved, so a drag that
+/// starts on a folded row selects text instead of expanding it.
 fn handle_mouse(app: &mut App, mouse: MouseEvent) {
     // Wheel scrolls the transcript (clamped to `max_back` on the next draw);
-    // one notch matches a single arrow-key step.
+    // one notch matches a single arrow-key step. Scrolling moves the content out
+    // from under a finished selection, so it drops one.
     match mouse.kind {
         MouseEventKind::ScrollUp => {
+            app.clear_selection();
             app.scrollback = app.scrollback.saturating_add(1);
-            return;
         }
         MouseEventKind::ScrollDown => {
+            app.clear_selection();
             app.scrollback = app.scrollback.saturating_sub(1);
-            return;
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            app.copy_armed = false;
+            let mode = if mouse.modifiers.contains(KeyModifiers::ALT) {
+                SelectionMode::Block
+            } else {
+                SelectionMode::Linear
+            };
+            app.selection = Some(Selection::new((mouse.column, mouse.row), mode));
+        }
+        MouseEventKind::Drag(MouseButton::Left) => {
+            if let Some(sel) = app.selection.as_mut() {
+                let at = (mouse.column, mouse.row);
+                sel.moved |= at != sel.anchor;
+                sel.head = at;
+            }
+        }
+        MouseEventKind::Up(MouseButton::Left) => {
+            let Some(sel) = app.selection.as_mut() else {
+                return;
+            };
+            sel.dragging = false;
+            if sel.moved {
+                // The text lives in the rendered buffer, which only `draw` has;
+                // it copies on the next frame (<=50ms).
+                app.copy_armed = true;
+            } else {
+                app.clear_selection();
+                click_region(app, mouse.column, mouse.row);
+            }
         }
         _ => {}
     }
-    if !matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
-        return;
-    }
+}
+
+/// A click that never became a drag: expand or collapse the region whose summary
+/// row it landed on. Ignores clicks outside the transcript viewport or on rows
+/// that aren't a region's own summary row (detail lines, blank padding, etc).
+fn click_region(app: &mut App, column: u16, row: u16) {
     let rect = app.transcript_rect;
-    if mouse.column < rect.x
-        || mouse.column >= rect.x + rect.width
-        || mouse.row <= rect.y
-        || mouse.row >= rect.y + rect.height.saturating_sub(1)
+    if column < rect.x
+        || column >= rect.x + rect.width
+        || row <= rect.y
+        || row >= rect.y + rect.height.saturating_sub(1)
     {
         return;
     }
     // Top border consumes one row; the rest maps 1:1 onto `row_index` since
     // summary rows are pre-truncated to the viewport width and never wrap.
-    let body_row = (mouse.row - rect.y - 1) as usize;
+    let body_row = (row - rect.y - 1) as usize;
     let absolute = app.last_scroll as usize + body_row;
     if let Some(Some(idx)) = app.row_index.get(absolute) {
         app.toggle_region(*idx);
+    }
+}
+
+/// Extend a held drag past the top or bottom edge of the transcript by scrolling
+/// a row per frame toward the pointer. Only nudges `scrollback`; `draw` clamps it
+/// and shifts the anchor by however much the view actually moved.
+fn autoscroll_selection(app: &mut App) {
+    let Some(sel) = app.selection.filter(|s| s.dragging) else {
+        return;
+    };
+    let rect = app.transcript_rect;
+    if rect.height <= 2 {
+        return;
+    }
+    if sel.head.1 <= rect.y {
+        app.scrollback = app.scrollback.saturating_add(1);
+    } else if sel.head.1 >= rect.y + rect.height.saturating_sub(1) {
+        app.scrollback = app.scrollback.saturating_sub(1);
+    }
+}
+
+/// Lift the selected cells out of a rendered frame. Rows are joined with
+/// newlines and stripped of trailing padding, so a copied command pastes as the
+/// command and not as the width of the terminal.
+fn selection_text(buf: &Buffer, sel: Selection, area: Rect) -> String {
+    sel.spans(area.width)
+        .into_iter()
+        .filter(|(row, _, _)| *row < area.height)
+        .map(|(row, c0, c1)| {
+            // Wide glyphs park an empty symbol in their second cell, so plain
+            // concatenation already reconstructs them.
+            let line: String = (c0..=c1)
+                .filter_map(|col| buf.cell((col, row)))
+                .map(|cell| cell.symbol())
+                .collect();
+            line.trim_end().to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Put a selection on the system clipboard by both routes available to a TUI:
+/// `arboard`, which serves it for as long as this process runs, and OSC 52,
+/// which hands it to the terminal emulator so it survives `jan` exiting and
+/// crosses an ssh/tmux session. OSC 52 goes second so that where it is supported
+/// the terminal ends up owning the selection.
+fn copy_to_clipboard(text: &str) {
+    let owned = text.to_string();
+    std::thread::spawn(move || {
+        let Ok(mut clip) = arboard::Clipboard::new() else {
+            return;
+        };
+        // X11/Wayland ownership lives with the setter, so this thread parks
+        // inside `wait()` until something else claims the clipboard; returning
+        // immediately would drop the text on the floor.
+        #[cfg(target_os = "linux")]
+        {
+            use arboard::SetExtLinux;
+            let _ = clip.set().wait().text(owned);
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = clip.set_text(owned);
+        }
+    });
+    if text.len() <= OSC52_MAX_BYTES {
+        use base64::Engine;
+        let payload = base64::engine::general_purpose::STANDARD.encode(text);
+        let mut out = io::stdout();
+        let _ = write!(out, "\x1b]52;c;{payload}\x07");
+        let _ = out.flush();
     }
 }
 
@@ -4486,18 +4751,6 @@ async fn handle_key(
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let ctrl_c = ctrl && key.code == KeyCode::Char('c');
     let ctrl_d = ctrl && key.code == KeyCode::Char('d');
-
-    // Global: toggle mouse capture so the terminal's native text selection
-    // works (crossterm's mouse capture otherwise claims all mouse input).
-    if ctrl && key.code == KeyCode::Char('t') {
-        app.mouse_capture = !app.mouse_capture;
-        app.note(if app.mouse_capture {
-            "mouse capture on: click to expand"
-        } else {
-            "mouse capture off: drag to select/copy text (Ctrl-T to re-enable)"
-        });
-        return;
-    }
 
     // The `/login` prompt owns the keyboard while open: every keystroke is part
     // of a secret being typed, so none of it may reach the input box or the
@@ -4979,7 +5232,7 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("PgUp/PgDn", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
-    ("Ctrl-T", "Toggle mouse capture (click-to-expand vs text select)"),
+    ("Drag", "Select text, copied on release (Alt+drag for a block)"),
     ("Ctrl-D", "Quit"),
 ];
 
@@ -5028,7 +5281,7 @@ async fn run_command(app: &mut App, line: &str) {
             clear_todos(app).await;
             app.note("started a new session");
         }
-        "compact" => compact_command(app).await,
+        "compact" => compact_command(app),
         "threads" | "list" => match super::list_threads_in(&app.agent_dir) {
             Ok(threads) if threads.is_empty() => {
                 app.note("no saved threads found");
@@ -5089,34 +5342,96 @@ async fn run_command(app: &mut App, line: &str) {
 /// Manually compact the conversation: summarize older turns, keeping the recent
 /// tail, then persist. Blocks the event loop for one model call; runs only while
 /// idle (the caller gates on `Status::Idle`).
-async fn compact_command(app: &mut App) {
-    let Some(args) = app.args.clone() else {
+fn compact_command(app: &mut App) {
+    if app.compacting.is_some() {
+        app.note("already compacting");
+        return;
+    }
+    if app.args.is_none() {
         app.note("compaction unavailable (no active session)");
         return;
+    }
+    app.compact_request = Some(CompactKind::Manual);
+}
+
+/// Which path asked for a compaction: `/compact` keeps a shorter tail than the
+/// automatic one and reports itself differently.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CompactKind {
+    Manual,
+    Auto,
+}
+
+impl CompactKind {
+    fn keep_recent(self) -> usize {
+        match self {
+            CompactKind::Manual => crate::core::agent::compaction::MANUAL_KEEP_RECENT,
+            CompactKind::Auto => crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            CompactKind::Manual => "compacting",
+            CompactKind::Auto => "auto-compacting",
+        }
+    }
+
+    fn done_label(self) -> &'static str {
+        match self {
+            CompactKind::Manual => "compacted",
+            CompactKind::Auto => "auto-compacted",
+        }
+    }
+}
+
+/// Await an in-flight compaction, parking forever when none is running so this
+/// can sit in the loop's `select!` unconditionally.
+async fn await_compaction(
+    task: &mut Option<tokio::task::JoinHandle<Result<Vec<serde_json::Value>, String>>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
     };
-    let before = app.history.len();
-    match crate::core::agent::r#loop::compact_history(
-        &args,
-        &app.model,
-        &app.history,
-        crate::core::agent::compaction::MANUAL_KEEP_RECENT,
-    )
-    .await
-    {
-        Ok(compacted) if compacted.len() < before => {
+    *task = None;
+    match joined {
+        Ok(inner) => inner,
+        Err(e) => Err(format!("compaction task failed: {e}")),
+    }
+}
+
+/// Apply a finished compaction. `base_len` is the history length the summary was
+/// computed from: anything appended since (a message submitted while the call was
+/// in flight) is carried over rather than dropped.
+fn finish_compaction(
+    app: &mut App,
+    result: Result<Vec<serde_json::Value>, String>,
+    base_len: usize,
+) {
+    let kind = app.compacting.take().unwrap_or(CompactKind::Manual);
+    app.compact_started = None;
+    match result {
+        Ok(mut compacted) if compacted.len() < base_len => {
+            compacted.extend(app.history.split_off(base_len.min(app.history.len())));
             app.history = compacted;
             app.persist();
             // Estimate tokens from compacted message content (~4 chars ≈ 1 token).
             app.tokens = estimate_token_count(&app.history);
             app.note(&format!(
-                "compacted {before} -> {} messages (ctx {}K/{}K)",
+                "{} {base_len} -> {} messages (ctx {}K/{}K)",
+                kind.done_label(),
                 app.history.len(),
                 app.tokens / 1000,
                 app.context_window / 1000,
             ));
         }
-        Ok(_) => app.note("nothing to compact yet"),
-        Err(e) => app.note(&format!("compaction failed: {e}")),
+        Ok(_) => {
+            if kind == CompactKind::Manual {
+                app.note("nothing to compact yet");
+            }
+        }
+        Err(e) => app.note(&format!("{} failed: {e}", kind.label())),
     }
 }
 
@@ -6175,6 +6490,7 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     app.history.truncate(cut);
     app.checkpoints.retain(|c| c.user_index < target);
     rebuild_transcript(app);
+    rebuild_recall(app);
     app.status = Status::Idle;
     app.run_started = None;
     app.scrollback = 0;
@@ -6183,6 +6499,26 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     app.cursor = app.input.len();
     app.note(&format!("rewound to message #{}", target + 1));
     app.persist();
+}
+
+/// Rebuild Up/Down recall from `history`, the conversation being the one source
+/// of truth for it. Anything that replaces or truncates the conversation
+/// (resume, rewind) calls this, so recall can never offer a message the thread
+/// no longer contains -- nor lose the ones it does.
+fn rebuild_recall(app: &mut App) {
+    app.input_history.clear();
+    app.reset_recall();
+    let texts: Vec<String> = app
+        .history
+        .iter()
+        .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+        .filter_map(|m| m.get("content"))
+        .map(|c| user_content_parts(c).0)
+        .filter(|t| !t.is_empty())
+        .collect();
+    for text in texts {
+        app.record_submitted(&text);
+    }
 }
 
 /// Re-render the transcript from the current `history` after a rewind.
@@ -6294,6 +6630,9 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
         }
         count += 1;
     }
+    // Recall follows the conversation, so the replaced session's lines go with
+    // it and the resumed thread's come back.
+    rebuild_recall(app);
 
     let title = thread
         .get("title")
@@ -6306,24 +6645,45 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     }
 }
 
-/// Infer an image MIME type from a file extension, defaulting to PNG.
-fn image_mime(path: &str) -> &'static str {
+/// Largest image accepted from a path or the clipboard, before base64 (which
+/// inflates it by 4/3).
+const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+
+/// Infer an image MIME type from a file extension. `None` when the extension is
+/// not a known image type.
+fn image_mime_of(path: &str) -> Option<&'static str> {
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
     match ext.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        _ => "image/png",
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        _ => None,
     }
+}
+
+/// Infer an image MIME type from a file extension, defaulting to PNG.
+fn image_mime(path: &str) -> &'static str {
+    image_mime_of(path).unwrap_or("image/png")
 }
 
 /// Read an image file into a `PendingImage` (base64 data URL + basename).
 fn load_image_file(path: &str) -> Result<PendingImage, String> {
     use base64::Engine;
+    let len = std::fs::metadata(path)
+        .map_err(|e| format!("{path}: {e}"))?
+        .len();
+    if len > MAX_IMAGE_BYTES {
+        return Err(format!(
+            "{path}: too large ({} MB, max {} MB)",
+            len / (1024 * 1024),
+            MAX_IMAGE_BYTES / (1024 * 1024)
+        ));
+    }
     let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
     if bytes.is_empty() {
         return Err(format!("{path}: empty file"));
@@ -6366,6 +6726,17 @@ fn clipboard_path(text: &str) -> Option<String> {
     String::from_utf8(out).ok().filter(|p| !p.is_empty())
 }
 
+/// Load the first loadable image out of a clipboard file list, skipping entries
+/// that are missing, oversized, or not a known image type -- the list is
+/// whatever the user copied, not necessarily an image.
+fn load_first_file_image(files: &[PathBuf]) -> Option<PendingImage> {
+    files.iter().find_map(|p| {
+        let path = p.to_str()?;
+        image_mime_of(path)?;
+        load_image_file(path).ok()
+    })
+}
+
 /// Read an image from the OS clipboard into a `PendingImage`. Prefers raw image
 /// data (PNG-encoding it); falls back to treating clipboard text as an image
 /// file path or `file://` URI (as file managers and browsers put on the
@@ -6380,6 +6751,15 @@ fn clipboard_image() -> Result<PendingImage, String> {
                 if std::path::Path::new(&path).is_file() {
                     return load_image_file(&path);
                 }
+            }
+            // macOS Finder copies publish a file URL, not raster data.
+            if let Some(img) = clip
+                .get()
+                .file_list()
+                .ok()
+                .and_then(|files| load_first_file_image(&files))
+            {
+                return Ok(img);
             }
             return Err(image_err.to_string());
         }
@@ -6493,6 +6873,9 @@ fn draw(f: &mut Frame, app: &mut App) {
     // session idle -- the loop redraws on its tick either way, and ratatui
     // emits nothing until the panel actually changes.
     app.refresh_todo_deadline();
+    // Before the layout reads `scrollback`: a drag held past an edge keeps
+    // pulling content into view a row per frame.
+    autoscroll_selection(app);
     let input_h = input_box_height(app, f.area().width);
     // Live state -- the plan and the running fan-out -- is docked, not woven
     // into the transcript: it describes *now*, and it is what the eye wants
@@ -6706,6 +7089,15 @@ fn draw(f: &mut Frame, app: &mut App) {
     app.scrollback = app.scrollback.min(max_back);
     let scroll = max_back - app.scrollback;
     f.render_widget(body.scroll((scroll, 0)), chunks[1]);
+    // The anchor is a screen cell, so content moving under it has to move it
+    // too, or an auto-scrolled drag would keep re-selecting the same rows.
+    if let Some(sel) = app.selection.as_mut().filter(|s| s.dragging) {
+        let delta = scroll as i32 - app.last_scroll as i32;
+        if delta != 0 {
+            sel.anchor.1 = (sel.anchor.1 as i32 - delta).clamp(0, u16::MAX as i32) as u16;
+            sel.moved = true;
+        }
+    }
     app.transcript_rect = chunks[1];
     app.last_scroll = scroll;
     app.row_index = row_index;
@@ -6801,6 +7193,28 @@ fn draw(f: &mut Frame, app: &mut App) {
                 height,
             };
             draw_path_hints(f, rect, &app.path_hints, app.path_hint_selected);
+        }
+    }
+
+    // Last, over the finished frame, so the highlight covers every surface --
+    // transcript, dock, overlays -- without each having to know about it.
+    if let Some(sel) = app.selection {
+        let area = f.area();
+        let buf = f.buffer_mut();
+        if std::mem::take(&mut app.copy_armed) {
+            let text = selection_text(buf, sel, area);
+            if !text.trim().is_empty() {
+                app.copied = Some((Instant::now(), text.lines().count()));
+                app.copy_request = Some(text);
+            }
+        }
+        for (row, c0, c1) in sel.spans(area.width) {
+            for col in c0..=c1 {
+                if let Some(cell) = buf.cell_mut((col, row)) {
+                    let style = cell.style().add_modifier(Modifier::REVERSED);
+                    cell.set_style(style);
+                }
+            }
         }
     }
 }
@@ -7503,7 +7917,9 @@ fn shimmer_spans(text: &str, palette: [Style; 3], frame: usize) -> Vec<Span<'sta
 }
 
 fn header(app: &App) -> Paragraph<'static> {
-    let (status, style): (String, Style) = if app.status == Status::Idle {
+    let (status, style): (String, Style) = if let Some(kind) = app.compacting {
+        (kind.label().to_string(), Style::new().magenta().bold())
+    } else if app.status == Status::Idle {
         ("ready".to_string(), Style::new().green())
     } else if !app.show_reasoning {
         // Reasoning folding is on: show the live thought state in place of the
@@ -7885,7 +8301,22 @@ fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
 
 fn input_box(app: &App) -> Paragraph<'static> {
     let block = Block::default();
-    if app.picker.is_some() {
+    if let Some(kind) = app.compacting.filter(|_| app.input.is_empty()) {
+        // Compaction puts nothing in the transcript while it runs, so the input
+        // row carries the throbber and the elapsed seconds.
+        let elapsed = app
+            .compact_started
+            .map(|t| format!(" {}", format_elapsed(t.elapsed().as_secs())))
+            .unwrap_or_default();
+        Paragraph::new(Line::from(vec![
+            Span::styled(format!("{} ", app.spinner()), Style::new().magenta()),
+            Span::styled(
+                format!("{} conversation…{elapsed}", kind.label()),
+                Style::new().dim().italic(),
+            ),
+        ]))
+        .block(block)
+    } else if app.picker.is_some() {
         Paragraph::new(Line::styled("selecting…", Style::new().dim().italic())).block(block)
     } else if app.status == Status::Running && app.input.is_empty() {
         // Show queue status when running with empty input
@@ -8020,6 +8451,16 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
     if let Some(picker) = &app.picker {
         return vec![Span::styled(picker.action_hint(), Style::new().dim())];
     }
+    // Briefly, and never over a prompt whose keys the user needs: a copy is
+    // invisible otherwise, and a transcript note would shift the rows the
+    // pointer is still sitting on.
+    if let Some(lines) = app.copy_notice() {
+        let plural = if lines == 1 { "" } else { "s" };
+        return vec![Span::styled(
+            format!(" copied {lines} line{plural}"),
+            Style::new().green().bold(),
+        )];
+    }
     let key_style = Style::new().cyan().bold();
     let queue_count = app.message_queue.len();
     let mut spans = match app.status {
@@ -8078,25 +8519,33 @@ mod tests {
         diff_lines, Row, group_activity, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
         handle_ask_paste,
-        compact_tokens, finish_login, finish_update_install, load_image_file, message_text,
+        compact_tokens, finish_compaction, finish_login, finish_update_install,
+        image_mime_of, load_first_file_image, load_image_file, MAX_IMAGE_BYTES,
+        message_text, CompactKind,
         note_update, open_config_screen,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
+        autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
         run_command, starting_call_lines, unescape_partial_json_string,
         running_group_row, split_reasoning, strip_system_xml_tags, subagent_activity,
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
         transcript_top_padding, rewind_to,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
-        SnapshotJob, Status, AGENT_SETTINGS, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
-        KEY_BINDINGS, SLASH_COMMANDS, SPINNER,
+        SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
+        COMMAND_LABEL_MAX, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
+        KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER,
         SPINNER_ADVANCE_MS,
     };
     use std::time::{Duration, Instant};
     use ratatui::crossterm::event::{
         KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
     };
+    use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
-    use ratatui::{style::Modifier, text::Line};
+    use ratatui::{
+        style::{Modifier, Style},
+        text::Line,
+    };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -8108,6 +8557,27 @@ mod tests {
     /// A bare key press with no modifiers.
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn mouse_at(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    /// Press and release without moving: the gesture that toggles a region.
+    fn click(app: &mut App, column: u16, row: u16) {
+        handle_mouse(
+            app,
+            mouse_at(MouseEventKind::Down(MouseButton::Left), column, row),
+        );
+        handle_mouse(
+            app,
+            mouse_at(MouseEventKind::Up(MouseButton::Left), column, row),
+        );
     }
 
     fn test_app() -> App {
@@ -8384,6 +8854,60 @@ mod tests {
         for row in narrow_rows.iter().filter(|r| r.contains('│')) {
             assert!(row.trim_end().chars().count() <= 50, "row overflows: {row:?}");
         }
+    }
+
+    /// A standalone diff row already names the file in past tense, so the
+    /// tool's own "Applied N edit(s) to <path>" summary must not repeat it.
+    #[test]
+    fn standalone_diff_result_drops_the_redundant_summary_line() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "e1".into(),
+            name: "edit".into(),
+            args: json!({"path": "src/core/cli/tui.rs"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "e1".into(),
+            content: "Applied 1 edit(s) to src/core/cli/tui.rs".into(),
+            is_error: false,
+            diff: Some("@@ edit 1/1 @@\n-a\n+b".into()),
+        });
+        let rows = render_rows(&mut app, 100, 24);
+        assert!(
+            rows.iter().any(|r| r.contains("Edited tui.rs")),
+            "call row lost: {rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|r| r.contains("Applied 1 edit(s)")),
+            "duplicate summary line: {rows:?}"
+        );
+        assert!(
+            rows.iter().any(|r| r.contains('┌')),
+            "diff panel lost: {rows:?}"
+        );
+    }
+
+    /// A failed edit's row only says "Edited <file>" with a cross, so the error
+    /// text is the only place the reason survives and must still render.
+    #[test]
+    fn failed_diff_result_keeps_its_error_text() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "e1".into(),
+            name: "edit".into(),
+            args: json!({"path": "src/main.rs"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "e1".into(),
+            content: "ERROR: src/main.rs: edit 1: old_string not found".into(),
+            is_error: true,
+            diff: None,
+        });
+        let rows = render_rows(&mut app, 100, 24);
+        assert!(
+            rows.iter().any(|r| r.contains("old_string not found")),
+            "error text lost: {rows:?}"
+        );
     }
 
     /// A tool row's label is stored untruncated and clamped at draw time, so it
@@ -9111,6 +9635,13 @@ mod tests {
             tool_activity("bash", &json!({ "command": "cargo test" })),
             "Executing: cargo test"
         );
+        // Kept whole: the row clamps to the draw width, so a long command fills
+        // the terminal instead of being cut at a fixed 80.
+        let long = format!("echo {}", "x".repeat(2 * COMMAND_LABEL_MAX));
+        assert_eq!(
+            tool_activity("bash", &json!({ "command": long })),
+            format!("Executing: {long}")
+        );
         assert_eq!(tool_activity("grep", &json!({ "pattern": "foo" })), "Searching");
         assert_eq!(
             tool_activity("read", &json!({ "path": "src/main.rs" })),
@@ -9128,12 +9659,27 @@ mod tests {
             tool_finished("bash", &json!({ "command": "/usr/bin/grep -n foo src/" })),
             "Ran: /usr/bin/grep -n foo src/"
         );
+        // Whole command on the finished row too, for the same reason as
+        // `tool_activity`: the row clamps to the draw width.
+        let long = format!("echo {}", "x".repeat(2 * COMMAND_LABEL_MAX));
+        assert_eq!(
+            tool_finished("bash", &json!({ "command": long })),
+            format!("Ran: {long}")
+        );
         assert_eq!(tool_finished("grep", &json!({ "pattern": "foo" })), "Searched");
         assert_eq!(
             tool_finished("read", &json!({ "path": "src/main.rs" })),
             "Read main.rs"
         );
         assert_eq!(tool_finished("list", &json!({})), "Listed files");
+        assert_eq!(
+            tool_finished("write", &json!({ "path": "src/main.rs" })),
+            "Wrote main.rs"
+        );
+        assert_eq!(
+            tool_finished("edit", &json!({ "path": "src/main.rs" })),
+            "Edited main.rs"
+        );
     }
 
     /// `web_search`/`web_fetch`/`ask`/`todo` used to fall through to the raw
@@ -9305,6 +9851,56 @@ mod tests {
     }
 
     #[test]
+    fn load_first_file_image_skips_unloadable_entries() {
+        let dir = std::env::temp_dir();
+        let id = uuid::Uuid::new_v4();
+        let existing = dir.join(format!("jan_list_{id}.png"));
+        std::fs::write(&existing, [1u8, 2, 3, 4]).unwrap();
+        let missing = dir.join(format!("jan_missing_{id}.png"));
+        let not_image = dir.join(format!("jan_doc_{id}.pdf"));
+        std::fs::write(&not_image, [1u8, 2, 3, 4]).unwrap();
+        let empty = dir.join(format!("jan_empty_{id}.png"));
+        std::fs::write(&empty, []).unwrap();
+
+        // Skips missing, non-image and unloadable entries, keeping the basename.
+        let list = [
+            missing.clone(),
+            not_image.clone(),
+            empty.clone(),
+            existing.clone(),
+        ];
+        let img = load_first_file_image(&list).unwrap();
+        assert!(img.data_url.starts_with("data:image/png;base64,"));
+        assert_eq!(img.name, existing.file_name().unwrap().to_str().unwrap());
+
+        // Nothing loadable in the list yields nothing.
+        assert!(load_first_file_image(&[missing, not_image.clone(), empty.clone()]).is_none());
+
+        for p in [existing, not_image, empty] {
+            std::fs::remove_file(&p).ok();
+        }
+    }
+
+    #[test]
+    fn image_mime_of_rejects_non_image_extensions() {
+        assert_eq!(image_mime_of("a.png"), Some("image/png"));
+        assert_eq!(image_mime_of("a.JPG"), Some("image/jpeg"));
+        assert!(image_mime_of("a.pdf").is_none());
+        assert!(image_mime_of("noext").is_none());
+    }
+
+    #[test]
+    fn load_image_file_rejects_oversized() {
+        let path = std::env::temp_dir().join(format!("jan_big_{}.png", uuid::Uuid::new_v4()));
+        let f = std::fs::File::create(&path).unwrap();
+        f.set_len(MAX_IMAGE_BYTES + 1).unwrap();
+        drop(f);
+        let err = load_image_file(path.to_str().unwrap()).err().unwrap();
+        assert!(err.contains("too large"), "{err}");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
     fn load_image_file_rejects_empty() {
         let path = std::env::temp_dir().join(format!("jan_empty_{}.png", uuid::Uuid::new_v4()));
         std::fs::write(&path, []).unwrap();
@@ -9390,6 +9986,40 @@ mod tests {
         assert_eq!(app.input, "first");
         assert_eq!(app.cursor, app.input.len());
         assert_eq!(app.status, Status::Idle);
+    }
+
+    #[test]
+    fn rewind_trims_recall_to_the_surviving_messages() {
+        let mut app = test_app();
+        app.thread_id = Some("t1".into());
+        app.history = vec![
+            json!({ "role": "user", "content": "first" }),
+            json!({ "role": "assistant", "content": "reply" }),
+            json!({ "role": "user", "content": "second" }),
+            json!({ "role": "assistant", "content": "reply two" }),
+            json!({ "role": "user", "content": "third" }),
+        ];
+        for text in ["first", "second", "third"] {
+            app.record_submitted(text);
+        }
+
+        // Cut just before the second user message: "second" and "third" are
+        // gone from the conversation, so they must be gone from recall too.
+        rewind_to(&mut app, 1, false);
+        assert_eq!(app.input_history, vec!["first"]);
+        // Rewind leaves the target message in the composer, and recall only
+        // starts from an empty one.
+        assert_eq!(app.input, "second");
+        app.input_clear();
+        assert!(app.recall_prev());
+        assert_eq!(app.input, "first");
+
+        // Rewinding to the very first message leaves nothing to recall, so Up
+        // falls through to scrollback again.
+        rewind_to(&mut app, 0, false);
+        assert!(app.input_history.is_empty());
+        app.input_clear();
+        assert!(!app.recall_prev());
     }
 
     #[test]
@@ -11084,7 +11714,7 @@ mod tests {
         app.cancel_run();
         let row = row_text(&app.transcript[idx]);
         assert!(
-            row.contains("▸") && !row.contains("○"),
+            row.contains("✓ Edited foo.rs") && !row.contains("○"),
             "a resolved edit must keep its call row: {row}"
         );
     }
@@ -11242,6 +11872,40 @@ mod tests {
         let text = line_text(&row);
         assert!(text.contains(SPINNER[2]), "{text}");
         assert!(text.contains("(0s)") || text.contains("(1s)"), "{text}");
+    }
+
+    /// A lone in-flight call is specific enough to name: the live row shows its
+    /// own label (the full command for bash), not the "running 1 command" count.
+    #[test]
+    fn running_single_call_row_names_the_call() {
+        let mut app = test_app();
+        let cmd = format!("grep -n foo {}", "src/very/long/path/".repeat(6));
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": cmd }),
+        });
+        let group = app.tool_group.as_ref().expect("group open");
+        let text = line_text(&running_group_row(group, 0, 200));
+        assert!(text.contains(&format!("Executing: {cmd}")), "{text}");
+        assert!(!text.contains("running 1 command"), "{text}");
+    }
+
+    /// Two or more calls in flight go back to the counted breakdown: no single
+    /// command describes the group.
+    #[test]
+    fn running_multi_call_row_falls_back_to_breakdown() {
+        let mut app = test_app();
+        for (id, cmd) in [("c1", "cargo test"), ("c2", "cargo clippy")] {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: "bash".into(),
+                args: json!({ "command": cmd }),
+            });
+        }
+        let group = app.tool_group.as_ref().expect("group open");
+        let text = line_text(&running_group_row(group, 0, 200));
+        assert!(text.contains("Running 2 commands"), "{text}");
     }
 
     #[test]
@@ -11417,27 +12081,11 @@ mod tests {
         app.last_scroll = 0;
         app.row_index = vec![Some(group_idx)];
 
-        handle_mouse(
-            &mut app,
-            MouseEvent {
-                kind: MouseEventKind::Down(MouseButton::Left),
-                column: 5,
-                row: 1,
-                modifiers: KeyModifiers::NONE,
-            },
-        );
+        click(&mut app, 5, 1);
         assert!(app.expanded.contains(&group_idx));
 
         // Clicking outside the viewport (past the bottom border) is a no-op.
-        handle_mouse(
-            &mut app,
-            MouseEvent {
-                kind: MouseEventKind::Down(MouseButton::Left),
-                column: 5,
-                row: 9,
-                modifiers: KeyModifiers::NONE,
-            },
-        );
+        click(&mut app, 5, 9);
         assert!(app.expanded.contains(&group_idx));
     }
 
@@ -11508,15 +12156,7 @@ mod tests {
         app.transcript_rect = Rect::new(0, 0, 80, 10);
         app.last_scroll = 0;
         app.row_index = vec![Some(idx), Some(idx), Some(idx)];
-        handle_mouse(
-            &mut app,
-            MouseEvent {
-                kind: MouseEventKind::Down(MouseButton::Left),
-                column: 5,
-                row: 2, // a detail row, not the header at row 1
-                modifiers: KeyModifiers::NONE,
-            },
-        );
+        click(&mut app, 5, 2); // a detail row, not the header at row 1
         assert!(app.expanded.is_empty(), "click on a detail row should collapse");
     }
 
@@ -11791,8 +12431,35 @@ mod tests {
             .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(joined.contains("Editing a.txt"), "{joined}");
+        // The call row resolves to past tense once the result lands.
+        assert!(joined.contains("Edited a.txt"), "{joined}");
+        assert!(!joined.contains("Editing a.txt"), "{joined}");
         assert!(joined.contains('┌') && joined.contains('┘'), "{joined}");
+    }
+
+    #[test]
+    fn diff_tool_row_reads_present_tense_until_its_result_lands() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "write".into(),
+            args: json!({ "path": "a.txt", "content": "x" }),
+        });
+        assert!(row_text(app.transcript.last().unwrap()).contains("Writing a.txt"));
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "boom".into(),
+            is_error: true,
+            diff: None,
+        });
+        let joined: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(joined.contains("✗ Wrote a.txt"), "{joined}");
+        assert!(app.pending_rows.is_empty());
     }
 
     #[test]
@@ -11839,6 +12506,30 @@ mod tests {
                 .unwrap();
         assert_eq!(same, id);
         assert_eq!(super::super::list_threads_in(&app.agent_dir).unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn resuming_restores_the_recall_history() {
+        let app = test_app();
+        let history = vec![
+            json!({ "role": "user", "content": "first" }),
+            json!({ "role": "assistant", "content": "reply" }),
+            json!({ "role": "user", "content": "second" }),
+        ];
+        super::super::cli_save_thread(&app.agent_dir, None, "saved-model", &history, None).unwrap();
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        // A line typed before the resume belongs to the session being replaced.
+        fresh.record_submitted("stale");
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+
+        assert_eq!(fresh.input_history, vec!["first", "second"]);
+        assert!(fresh.recall_prev(), "Up recalls instead of scrolling");
+        assert_eq!(fresh.input, "second");
+        assert!(fresh.recall_prev());
+        assert_eq!(fresh.input, "first");
+        assert_eq!(fresh.scrollback, 0, "recall must not scroll the transcript");
     }
 
     #[tokio::test]
@@ -11890,20 +12581,241 @@ mod tests {
         assert_eq!(parse_command(""), ("", ""));
     }
 
-    #[tokio::test]
-    async fn ctrl_t_toggles_mouse_capture() {
+    #[test]
+    fn mouse_tracking_requests_buttons_wheel_and_held_drags() {
+        assert!(MOUSE_TRACK_ON.contains("?1000h"), "buttons and wheel");
+        assert!(MOUSE_TRACK_ON.contains("?1002h"), "drag while held");
+        assert!(MOUSE_TRACK_ON.contains("?1006h"), "SGR coordinates");
+        assert!(
+            !MOUSE_TRACK_ON.contains("1003"),
+            "any-motion would report every idle pointer move: {MOUSE_TRACK_ON:?}"
+        );
+        assert!(
+            ALT_SCROLL_SAVE_OFF.contains("?1007l"),
+            "the wheel must never arrive as arrow keys"
+        );
+        assert!(ALT_SCROLL_RESTORE.contains("?1007r"), "restore on exit");
+    }
+
+    #[test]
+    fn linear_selection_spans_whole_rows_between_the_ends() {
+        let sel = Selection {
+            anchor: (5, 1),
+            head: (2, 3),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(sel.spans(10), vec![(1, 5, 9), (2, 0, 9), (3, 0, 2)]);
+    }
+
+    #[test]
+    fn selection_spans_are_direction_independent() {
+        let forward = Selection {
+            anchor: (5, 1),
+            head: (2, 3),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+        let backward = Selection {
+            anchor: (2, 3),
+            head: (5, 1),
+            ..forward
+        };
+        assert_eq!(forward.spans(10), backward.spans(10));
+    }
+
+    #[test]
+    fn block_selection_spans_a_rectangle() {
+        let sel = Selection {
+            anchor: (6, 3),
+            head: (2, 1),
+            mode: SelectionMode::Block,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(sel.spans(10), vec![(1, 2, 6), (2, 2, 6), (3, 2, 6)]);
+    }
+
+    /// A block drag lifts one column out of a table without the neighbours a
+    /// linear drag would sweep up.
+    #[test]
+    fn selection_text_reads_cells_and_trims_row_padding() {
+        let area = Rect::new(0, 0, 12, 3);
+        let mut buf = Buffer::empty(area);
+        buf.set_string(0, 0, "alpha   one", Style::new());
+        buf.set_string(0, 1, "beta    two", Style::new());
+
+        let linear = Selection {
+            anchor: (0, 0),
+            head: (10, 1),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(selection_text(&buf, linear, area), "alpha   one\nbeta    two");
+
+        let block = Selection {
+            anchor: (8, 0),
+            head: (10, 1),
+            mode: SelectionMode::Block,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(selection_text(&buf, block, area), "one\ntwo");
+
+        // A row selected past its text keeps no trailing padding.
+        let padded = Selection {
+            anchor: (0, 0),
+            head: (11, 0),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(selection_text(&buf, padded, area), "alpha   one");
+    }
+
+    #[test]
+    fn a_drag_selects_instead_of_toggling_the_row_under_it() {
         let mut app = test_app();
-        assert!(!app.mouse_capture, "capture starts off so text is selectable");
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "foo" }),
+        });
+        let idx = app.tool_group.as_ref().expect("group open").idx;
+        app.transcript_rect = Rect::new(0, 0, 80, 10);
+        app.last_scroll = 0;
+        app.row_index = vec![Some(idx)];
+
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Down(MouseButton::Left), 5, 1),
+        );
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 30, 1),
+        );
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Up(MouseButton::Left), 30, 1),
+        );
+
+        assert!(app.expanded.is_empty(), "a drag must not expand the row");
+        assert!(app.copy_armed, "the release arms the copy");
+        let sel = app.selection.expect("selection held after release");
+        assert!(!sel.dragging);
+        assert_eq!(sel.spans(80), vec![(1, 5, 30)]);
+    }
+
+    #[test]
+    fn alt_drag_selects_a_block() {
+        let mut app = test_app();
+        handle_mouse(
+            &mut app,
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 5,
+                row: 1,
+                modifiers: KeyModifiers::ALT,
+            },
+        );
+        assert_eq!(
+            app.selection.expect("selection").mode,
+            SelectionMode::Block
+        );
+    }
+
+    #[test]
+    fn scrolling_drops_a_finished_selection() {
+        let mut app = test_app();
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Down(MouseButton::Left), 5, 1),
+        );
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 9, 1),
+        );
+        handle_mouse(&mut app, mouse_at(MouseEventKind::ScrollUp, 5, 1));
+        assert!(app.selection.is_none(), "content moved out from under it");
+    }
+
+    #[test]
+    fn a_held_drag_past_an_edge_scrolls_the_transcript() {
+        let mut app = test_app();
+        app.transcript_rect = Rect::new(0, 0, 80, 10);
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Down(MouseButton::Left), 5, 5),
+        );
+
+        // Above the top border: scroll back through history.
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 5, 0),
+        );
+        autoscroll_selection(&mut app);
+        autoscroll_selection(&mut app);
+        assert_eq!(app.scrollback, 2);
+
+        // Below the last body row: scroll back toward the newest output.
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 5, 9),
+        );
+        autoscroll_selection(&mut app);
+        assert_eq!(app.scrollback, 1);
+
+        // Inside the viewport, nothing moves.
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 5, 4),
+        );
+        autoscroll_selection(&mut app);
+        assert_eq!(app.scrollback, 1);
+
+        // A released drag stops scrolling even parked past the edge.
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Up(MouseButton::Left), 5, 0),
+        );
+        app.selection.as_mut().expect("selection").head = (5, 0);
+        autoscroll_selection(&mut app);
+        assert_eq!(app.scrollback, 1);
+    }
+
+    #[test]
+    fn copy_notice_expires() {
+        let mut app = test_app();
+        assert_eq!(app.copy_notice(), None);
+        app.copied = Some((Instant::now(), 3));
+        assert_eq!(app.copy_notice(), Some(3));
+        app.copied = Some((Instant::now() - COPY_NOTICE - Duration::from_millis(1), 3));
+        assert_eq!(app.copy_notice(), None);
+    }
+
+    #[tokio::test]
+    async fn mouse_tracking_has_no_toggle_hotkey() {
+        assert!(
+            !KEY_BINDINGS.iter().any(|(k, _)| k.contains("Ctrl-T")),
+            "mouse tracking is a config key now, not a hotkey"
+        );
+        assert!(
+            KEY_BINDINGS.iter().any(|(_, d)| d.contains("Select text")),
+            "the selection gesture still needs advertising"
+        );
+
+        // Ctrl-T is an ordinary unbound key: it must not type into the input.
+        let mut app = test_app();
         let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let mcp_servers: crate::core::state::SharedMcpServers =
             Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let mut current: Option<CurrentRun> = None;
         let key = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
-
         handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
-        assert!(app.mouse_capture);
-        handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
-        assert!(!app.mouse_capture);
+        assert!(app.input.is_empty(), "got: {:?}", app.input);
     }
 
     #[tokio::test]
@@ -11915,6 +12827,75 @@ mod tests {
         assert!(text.contains("compaction unavailable"), "got: {text}");
         // History untouched when no session is attached.
         assert_eq!(app.history.len(), 1);
+        assert!(app.compact_request.is_none());
+    }
+
+    #[tokio::test]
+    async fn compact_command_is_refused_while_one_is_in_flight() {
+        let mut app = test_app();
+        app.compacting = Some(CompactKind::Auto);
+        run_command(&mut app, "compact").await;
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("already compacting"), "got: {text}");
+        assert!(app.compact_request.is_none());
+    }
+
+    #[test]
+    fn finish_compaction_keeps_messages_added_while_it_ran() {
+        let mut app = test_app();
+        app.compacting = Some(CompactKind::Manual);
+        app.compact_started = Some(Instant::now());
+        app.history = (0..5)
+            .map(|i| json!({ "role": "user", "content": format!("m{i}") }))
+            .collect();
+        // A message submitted while the summary was being generated.
+        let base_len = 4;
+        finish_compaction(
+            &mut app,
+            Ok(vec![json!({ "role": "user", "content": "summary" })]),
+            base_len,
+        );
+        let contents: Vec<String> = app
+            .history
+            .iter()
+            .map(|m| m["content"].as_str().unwrap_or_default().to_string())
+            .collect();
+        assert_eq!(contents, vec!["summary", "m4"], "tail must survive");
+        assert!(app.compacting.is_none());
+        assert!(app.compact_started.is_none());
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("compacted 4 -> 2 messages"), "got: {text}");
+    }
+
+    #[test]
+    fn finish_compaction_restores_idle_state_on_failure() {
+        let mut app = test_app();
+        app.compacting = Some(CompactKind::Auto);
+        app.history = vec![json!({ "role": "user", "content": "hi" })];
+        finish_compaction(&mut app, Err("upstream 500".into()), 1);
+        assert_eq!(app.history.len(), 1, "history must be left alone");
+        assert!(app.compacting.is_none(), "a failure must allow a retry");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("auto-compacting failed: upstream 500"), "got: {text}");
+    }
+
+    #[test]
+    fn a_running_compaction_shows_a_throbber() {
+        let mut app = test_app();
+        let idle = render_rows(&mut app, 80, 12).join("\n");
+        assert!(!idle.contains("compacting"), "got: {idle}");
+
+        app.compacting = Some(CompactKind::Manual);
+        app.compact_started = Some(Instant::now());
+        let out = render_rows(&mut app, 80, 12).join("\n");
+        assert!(
+            out.contains("compacting conversation"),
+            "the input row must say what is happening: {out}"
+        );
+        assert!(
+            out.contains(SPINNER[app.spinner_frame % SPINNER.len()]),
+            "the input row must carry the throbber: {out}"
+        );
     }
 
     fn start_subagent(app: &mut App, run_id: &str, name: &str) {
@@ -13926,6 +14907,21 @@ mod tests {
             Some(64_000)
         );
         assert!(body.get("max_turns").is_none());
+    }
+
+    #[test]
+    fn body_flags_goal_mode_only_while_a_goal_runs() {
+        use crate::core::agent::goal::{GoalState, GoalStatus};
+        let mut app = test_app();
+        assert!(app.body().get("goal_mode").is_none());
+
+        app.goal = Some(GoalState::new("ship the release"));
+        assert_eq!(app.body().get("goal_mode").and_then(|v| v.as_bool()), Some(true));
+
+        if let Some(goal) = app.goal.as_mut() {
+            goal.status = GoalStatus::Achieved;
+        }
+        assert!(app.body().get("goal_mode").is_none());
     }
 }
 
