@@ -186,6 +186,62 @@ fn wrap_spans(spans: Vec<Span<'static>>, max: usize) -> Vec<Vec<Span<'static>>> 
     out
 }
 
+/// Like `wrap_spans`, but breaking at a space where one is in reach so prose
+/// does not split mid-word. A token longer than `max` is still split hard, since
+/// there is nowhere else to break it. Used by the system rows, whose gutter has
+/// to line up under itself on every continuation.
+pub(super) fn wrap_spans_at_words(
+    spans: Vec<Span<'static>>,
+    max: usize,
+) -> Vec<Vec<Span<'static>>> {
+    let max = max.max(1);
+    // Per-character styles: the wrap points are character positions, and each
+    // span's style has to survive being cut at one.
+    let cells: Vec<(char, Style)> = spans
+        .iter()
+        .flat_map(|s| {
+            let style = s.style;
+            s.content.chars().map(move |c| (c, style))
+        })
+        .collect();
+    let mut out: Vec<Vec<Span<'static>>> = Vec::new();
+    let mut start = 0;
+    while start < cells.len() {
+        let mut end = (start + max).min(cells.len());
+        if end < cells.len() {
+            if let Some(space) = cells[start..end].iter().rposition(|(c, _)| *c == ' ') {
+                if space > 0 {
+                    end = start + space;
+                }
+            }
+        }
+        out.push(merge_cells(&cells[start..end]));
+        start = end;
+        // Swallow the break's spaces so a continuation does not open with them.
+        while matches!(cells.get(start), Some((' ', _))) {
+            start += 1;
+        }
+    }
+    if out.is_empty() {
+        out.push(Vec::new());
+    }
+    out
+}
+
+/// Re-collapse per-character cells into one span per run of equal style.
+fn merge_cells(cells: &[(char, Style)]) -> Vec<Span<'static>> {
+    let mut runs: Vec<(String, Style)> = Vec::new();
+    for (c, style) in cells {
+        match runs.last_mut() {
+            Some((text, run_style)) if run_style == style => text.push(*c),
+            _ => runs.push((c.to_string(), *style)),
+        }
+    }
+    runs.into_iter()
+        .map(|(text, style)| Span::styled(text, style))
+        .collect()
+}
+
 /// Heading ladder. Weight and hue carry the level -- no `#` markers and no
 /// filled background, so headings sit in the same palette as the rest of the
 /// transcript (cyan accent, `dark_gray` structure).
@@ -731,7 +787,8 @@ fn group_by_style(chars: &[(char, Style)]) -> Vec<(Style, String)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_markdown_lines, render_table};
+    use super::{format_markdown_lines, render_table, wrap_spans_at_words};
+    use ratatui::prelude::*;
 
     fn line_text(line: &ratatui::text::Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
@@ -1294,4 +1351,39 @@ mod tests {
             .iter()
             .all(|l| joined(std::slice::from_ref(l)).chars().count() <= 30));
     }
+    #[test]
+    fn wrap_at_words_breaks_on_spaces_and_keeps_styles() {
+        let spans = vec![
+            Span::styled("3f7a91c2  ", Style::new().cyan()),
+            Span::raw("fix the failing test in the parser"),
+        ];
+        let rows = wrap_spans_at_words(spans, 20);
+        let text: Vec<String> = rows
+            .iter()
+            .map(|r| r.iter().map(|s| s.content.to_string()).collect())
+            .collect();
+        assert!(rows.len() > 1, "{text:?}");
+        for row in &text {
+            assert!(row.chars().count() <= 20, "{text:?}");
+        }
+        // No word is cut, and nothing is lost.
+        let joined = text.join(" ");
+        assert!(joined.contains("failing"), "{text:?}");
+        assert!(joined.contains("parser"), "{text:?}");
+        // The lead span's style survives the split.
+        assert_eq!(rows[0][0].style.fg, Some(Color::Cyan));
+    }
+
+    #[test]
+    fn wrap_at_words_splits_a_token_longer_than_the_width() {
+        let long = "supercalifragilistic";
+        let rows = wrap_spans_at_words(vec![Span::raw(long)], 8);
+        assert_eq!(rows.len(), 3, "a token with no space must still fit");
+        let joined: String = rows
+            .iter()
+            .flat_map(|r| r.iter().map(|s| s.content.to_string()))
+            .collect();
+        assert_eq!(joined, long);
+    }
+
 }

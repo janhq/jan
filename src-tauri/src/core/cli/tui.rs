@@ -153,6 +153,11 @@ const SYSTEM_GLYPH: &str = "•";
 /// Gutter glyph for goal-loop lines, matching the header's `◎ /goal` badge.
 const GOAL_GLYPH: &str = "◎";
 
+/// Gutter for the body rows of a multi-line system block. Distinct from the tool
+/// rows' `│` and the reasoning rows' `┊`, so three stacked blocks stay tellable
+/// apart at a glance.
+const SYSTEM_CONT: &str = "┆";
+
 /// How loud a system line is. The only thing that varies between them, so it is
 /// a parameter rather than a colour picked at each of the ~90 call sites.
 #[derive(Copy, Clone, PartialEq)]
@@ -652,6 +657,17 @@ enum RowKind {
     /// The opening splash, re-laid out at the draw width (the wordmark is
     /// dropped and the hints re-packed on a terminal too narrow for them).
     Banner(Box<Banner>),
+    /// A line the app is saying: `glyph` in the gutter column, body wrapped at
+    /// the draw width, so the gutter owns the left edge of the whole row instead
+    /// of only its first line. `cont` is what a wrapped continuation puts in the
+    /// column: an edge glyph repeats, a marker glyph gives way to blanks (a
+    /// second `•` would read as a second note).
+    System {
+        glyph: &'static str,
+        cont: &'static str,
+        gutter: Style,
+        body: Vec<Span<'static>>,
+    },
     /// A tool call/summary row, re-truncated to `width - reserve`.
     Tool {
         tag: String,
@@ -702,6 +718,28 @@ impl Row {
             RowKind::Line(line) => vec![line.clone()],
             RowKind::Markdown(text) => format_markdown_lines(text, width),
             RowKind::Banner(banner) => banner_lines(banner, width),
+            RowKind::System {
+                glyph,
+                cont,
+                gutter,
+                body,
+            } => {
+                let lead = glyph.chars().count() + 1;
+                let max = width.saturating_sub(lead as u16).max(8) as usize;
+                markdown::wrap_spans_at_words(body.clone(), max)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, spans)| {
+                        let mark = if i == 0 { *glyph } else { *cont };
+                        let mut row = vec![Span::styled(
+                            format!("{mark:<width$}", width = lead),
+                            *gutter,
+                        )];
+                        row.extend(spans);
+                        Line::from(row)
+                    })
+                    .collect()
+            }
             RowKind::Tool {
                 tag,
                 tag_style,
@@ -1489,7 +1527,6 @@ impl App {
         self.reminder_awaiting_progress = false;
     }
 
-    /// Append a dim single-line status note (command output, cancel, errors).
     /// Drop any selection, and with it a copy armed but not yet lifted out of a
     /// frame -- otherwise it would fire against whatever is selected next.
     fn clear_selection(&mut self) {
@@ -1525,14 +1562,16 @@ impl App {
     /// transcript class owns one (`› ` user, `│ ` tool, `┊ ` reasoning), so
     /// without it a note is indistinguishable from model prose. `glyph` names the
     /// category and `level` carries severity.
-    fn system_marked(&mut self, glyph: &str, level: Level, text: &str) {
+    fn system_marked(&mut self, glyph: &'static str, level: Level, text: &str) {
         self.scrollback = 0;
         self.gap(Kind::Meta);
         let (gutter, body) = level.styles();
-        self.push(Line::from(vec![
-            Span::styled(format!("{glyph} "), gutter),
-            Span::styled(text.to_string(), body),
-        ]));
+        self.push_row(RowKind::System {
+            glyph,
+            cont: " ",
+            gutter,
+            body: vec![Span::styled(text.to_string(), body)],
+        });
     }
 
     fn system(&mut self, level: Level, text: &str) {
@@ -1543,6 +1582,26 @@ impl App {
     /// acknowledgement and background result goes through.
     fn note(&mut self, text: &str) {
         self.system(Level::Info, text);
+    }
+
+    /// A body row of a multi-line system block (`/help`, `/threads`, a goal
+    /// status), under the header its `system*` call pushed. The gutter keeps
+    /// running so the block reads as one unit instead of leaving its body
+    /// unattributed, and the body starts in the header's column.
+    ///
+    /// Fixed dim styling rather than the header's `Level`: blocks are
+    /// informational -- a warning or an error is a single line.
+    fn system_detail(&mut self, body: Vec<Span<'static>>) {
+        self.push_row(RowKind::System {
+            glyph: SYSTEM_CONT,
+            cont: SYSTEM_CONT,
+            gutter: Style::new().dark_gray(),
+            body,
+        });
+    }
+
+    fn system_detail_text(&mut self, text: &str) {
+        self.system_detail(vec![Span::styled(text.to_string(), Style::new().dim())]);
     }
 
     fn flush_assistant(&mut self) {
@@ -3055,7 +3114,7 @@ impl App {
                         Level::Good,
                         &format!("goal achieved in {turns} turn(s), {}", fmt_duration(elapsed)),
                     );
-                    self.push(Line::styled(format!("  {}", v.reason), Style::new().dim()));
+                    self.system_detail_text(&v.reason);
                     self.persist();
                 } else {
                     // Goal unmet: surface the reason as guidance and start the
@@ -5538,17 +5597,11 @@ async fn run_command(app: &mut App, line: &str) {
                 } else {
                     format!("{} {}", c.name, c.hint)
                 };
-                app.push(Line::styled(
-                    format!("  {sig:18} {}", c.description),
-                    Style::new().dim(),
-                ));
+                app.system_detail_text(&format!("{sig:18} {}", c.description));
             }
             app.note("keys:");
             for (keys, description) in KEY_BINDINGS {
-                app.push(Line::styled(
-                    format!("  {keys:18} {description}"),
-                    Style::new().dim(),
-                ));
+                app.system_detail_text(&format!("{keys:18} {description}"));
             }
         }
         "clear" => {
@@ -5575,15 +5628,12 @@ async fn run_command(app: &mut App, line: &str) {
                     let title =
                         thread_display_name(&base, id, t.get("title").and_then(|v| v.as_str()));
                     let short: String = id.chars().take(8).collect();
-                    app.push(Line::from(vec![
-                        Span::styled(format!("  {short}  "), Style::new().cyan()),
+                    app.system_detail(vec![
+                        Span::styled(format!("{short}  "), Style::new().cyan()),
                         Span::raw(title),
-                    ]));
+                    ]);
                 }
-                app.push(Line::styled(
-                    "  resume with /resume".to_string(),
-                    Style::new().dim(),
-                ));
+                app.system_detail_text("resume with /resume");
             }
             Err(e) => app.note(&format!("failed to list threads: {e}")),
         },
@@ -6276,27 +6326,18 @@ fn show_goal_status(app: &mut App) {
         GoalStatus::Achieved => "achieved",
     };
     app.system_marked(GOAL_GLYPH, Level::Info, &format!("goal [{state}]"));
-    app.push(Line::styled(
-        format!("  condition: {}", goal.condition),
-        Style::new().dim(),
-    ));
-    app.push(Line::styled(
-        format!(
-            "  turns: {}   duration: {}",
-            goal.turns,
-            fmt_duration(goal.elapsed_secs())
-        ),
-        Style::new().dim(),
+    app.system_detail_text(&format!("condition: {}", goal.condition));
+    app.system_detail_text(&format!(
+        "turns: {}   duration: {}",
+        goal.turns,
+        fmt_duration(goal.elapsed_secs())
     ));
     let reason = if goal.last_reason.is_empty() {
         "(not evaluated yet)"
     } else {
         &goal.last_reason
     };
-    app.push(Line::styled(
-        format!("  evaluator: {reason}"),
-        Style::new().dim(),
-    ));
+    app.system_detail_text(&format!("evaluator: {reason}"));
 }
 
 /// Set a new goal from `condition` and immediately start a turn toward it (the
@@ -6443,15 +6484,15 @@ fn open_mcp_picker(app: &mut App) {
 /// completed by hand.
 fn open_login_prompt(app: &mut App) {
     app.note("sign in to Tokamak and create an API key:");
-    app.push(Line::styled(
-        format!("  {}", super::tokamak::API_KEYS_URL),
+    app.system_detail(vec![Span::styled(
+        super::tokamak::API_KEYS_URL,
         Style::new().cyan(),
-    ));
+    )]);
     let browser = match super::tokamak::open_api_keys_page() {
-        Ok(()) => "  opening that page in your browser".to_string(),
-        Err(e) => format!("  open that URL yourself ({e})"),
+        Ok(()) => "opening that page in your browser".to_string(),
+        Err(e) => format!("open that URL yourself ({e})"),
     };
-    app.push(Line::styled(browser, Style::new().dim()));
+    app.system_detail_text(&browser);
     app.login = Some(LoginPrompt::new());
 }
 
@@ -15708,6 +15749,72 @@ mod tests {
         let goal = last_row(&app);
         assert_eq!(goal[0].0, "\u{25ce} ");
         assert_eq!(goal[0].1.fg, Some(Color::Green));
+    }
+
+    #[tokio::test]
+    async fn probe_blocks() {
+        let mut app = test_app();
+        app.note("conversation cleared");
+        run_command(&mut app, "help").await;
+        for l in render_rows(&mut app, 84, 40) { println!("|{}", l.trim_end()); }
+    }
+
+    /// Every rendered line of the last row, as plain text.
+    fn last_row_lines(app: &App, width: u16) -> Vec<String> {
+        app.transcript
+            .last()
+            .expect("a row")
+            .lines(width)
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.to_string()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn a_wrapped_note_indents_instead_of_repeating_its_marker() {
+        let mut app = test_app();
+        app.note("not signed in - run /login to sign in to Tokamak, or jan config set to configure a provider manually");
+
+        let lines = last_row_lines(&app, 60);
+        assert!(lines.len() > 1, "expected a wrap: {lines:?}");
+        assert!(lines[0].starts_with("\u{2022} "), "{lines:?}");
+        for line in &lines[1..] {
+            assert!(
+                line.starts_with("  ") && !line.starts_with('\u{2022}'),
+                "a continuation must not read as a second note: {line:?}"
+            );
+        }
+        // Wrapped at a space, not mid-word.
+        assert!(
+            lines.iter().all(|l| !l.ends_with("Tokam") && !l.ends_with("provi")),
+            "{lines:?}"
+        );
+        assert!(lines.iter().all(|l| l.chars().count() <= 60), "{lines:?}");
+    }
+
+    #[test]
+    fn a_wrapped_block_body_keeps_its_edge() {
+        let mut app = test_app();
+        app.note("commands:");
+        app.system_detail_text("/plan [exit|text]  Enter read-only plan mode, optionally seeding it with a message");
+
+        let lines = last_row_lines(&app, 50);
+        assert!(lines.len() > 1, "expected a wrap: {lines:?}");
+        for line in &lines {
+            assert!(
+                line.starts_with("\u{2506} "),
+                "the block's left edge breaks on a wrap: {line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn system_rows_relay_out_on_a_resize() {
+        let mut app = test_app();
+        app.system_detail_text("a fairly long block body that has to wrap somewhere sensible");
+        let (wide, narrow) = (last_row_lines(&app, 90), last_row_lines(&app, 30));
+        assert_eq!(wide.len(), 1, "{wide:?}");
+        assert!(narrow.len() > 1, "{narrow:?}");
     }
 
 }
