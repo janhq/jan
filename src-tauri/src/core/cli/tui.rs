@@ -4595,19 +4595,7 @@ async fn chat_loop<B: Backend>(
                                 handle_key(app, key, registry, &mut current, mcp_servers).await;
                             }
                         }
-                        Ok(Event::Paste(text)) => {
-                            if let Some(prompt) = app.login.as_mut() {
-                                // A pasted API key belongs to the login field,
-                                // not the chat composer (where it would echo).
-                                prompt.paste(&text);
-                            } else if !app.ask_queue.is_empty() {
-                                handle_ask_paste(app, &text);
-                            } else {
-                                for c in text.chars() {
-                                    app.input_insert(c);
-                                }
-                            }
-                        }
+                        Ok(event @ Event::Paste(_)) => route_paste_event(app, event),
                         // `handle_ask_mouse` mutates app state, so it stays in the
                         // arm body rather than a match guard that hides the effect.
                         #[allow(clippy::collapsible_match)]
@@ -4974,7 +4962,25 @@ async fn handle_ask_key(
     true
 }
 
-/// Route bracketed paste to the active custom answer instead of the chat composer.
+/// Route a bracketed paste event to the active input owner.
+fn route_paste_event(app: &mut App, event: Event) {
+    let Event::Paste(text) = event else {
+        return;
+    };
+    if let Some(prompt) = app.login.as_mut() {
+        // A pasted API key belongs to the login field, not the chat composer
+        // (where it would echo).
+        prompt.paste(&text);
+    } else if !app.ask_queue.is_empty() {
+        handle_ask_paste(app, &text);
+    } else {
+        for c in text.chars() {
+            app.input_insert(c);
+        }
+    }
+}
+
+/// Append bracketed paste to the active custom answer only.
 fn handle_ask_paste(app: &mut App, text: &str) {
     if let Some(ask) = app.ask_queue.front_mut() {
         if ask.editing_custom {
@@ -8905,7 +8911,7 @@ mod tests {
         clipboard_path,
         diff_lines, Row, group_activity, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
-        handle_ask_paste,
+        route_paste_event,
         compact_tokens, finish_compaction, finish_login, finish_update_install,
         image_mime_of, load_first_file_image, load_image_file, MAX_IMAGE_BYTES,
         message_text, CompactKind,
@@ -8926,7 +8932,8 @@ mod tests {
     };
     use std::time::{Duration, Instant};
     use ratatui::crossterm::event::{
-        KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+        Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
+        MouseEventKind,
     };
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
@@ -9607,7 +9614,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ask_paste_routes_to_custom_editor() {
+    async fn ask_paste_event_prefers_login_over_active_custom_editor() {
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+        });
+
+        press_ask(&mut app, &registry, KeyCode::Down).await;
+        press_ask(&mut app, &registry, KeyCode::Down).await;
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        assert!(app.ask_queue.front().unwrap().editing_custom);
+        app.login = Some(super::LoginPrompt::new());
+
+        route_paste_event(&mut app, Event::Paste("tokamak-api-key".into()));
+
+        assert_eq!(app.login.as_ref().unwrap().input, "tokamak-api-key");
+        assert!(app.ask_queue.front().unwrap().custom_input.is_empty());
+        assert!(app.input.is_empty(), "paste leaked into chat composer");
+    }
+
+    #[tokio::test]
+    async fn ask_paste_event_resolves_custom_response() {
         let mut app = test_app();
         let registry = crate::core::agent::interaction::new_registry();
         let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
@@ -9621,7 +9651,8 @@ mod tests {
         press_ask(&mut app, &registry, KeyCode::Enter).await;
         assert!(app.ask_queue.front().unwrap().editing_custom);
 
-        handle_ask_paste(&mut app, "pasted answer");
+        route_paste_event(&mut app, Event::Paste("pasted answer".into()));
+
         assert_eq!(
             app.ask_queue.front().unwrap().custom_input,
             "pasted answer"
@@ -9632,6 +9663,31 @@ mod tests {
         let answers = receiver.await.unwrap().unwrap();
         assert_eq!(answers[0].custom_input.as_deref(), Some("pasted answer"));
         assert!(app.ask_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn ask_paste_event_does_not_leak_during_option_selection() {
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+        });
+
+        route_paste_event(&mut app, Event::Paste("must not become chat".into()));
+
+        assert!(app.ask_queue.front().unwrap().custom_input.is_empty());
+        assert!(app.input.is_empty(), "paste leaked into chat composer");
+    }
+
+    #[test]
+    fn paste_event_routes_to_chat_composer_without_login_or_ask() {
+        let mut app = test_app();
+
+        route_paste_event(&mut app, Event::Paste("chat text".into()));
+
+        assert_eq!(app.input, "chat text");
     }
 
     #[test]
