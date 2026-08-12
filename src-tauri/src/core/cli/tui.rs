@@ -469,12 +469,11 @@ struct PendingToolRow {
 }
 
 /// What the session opens with: the `jan` wordmark plus the facts a first-time
-/// reader needs (which model, which project, how tool calls are approved) and
-/// the commands to go on with. Held as data rather than rendered lines so the
-/// row re-lays out at the draw width like every other width-dependent row.
+/// reader needs (which project, how tool calls are approved) and the commands to
+/// go on with. Held as data rather than rendered lines so the row re-lays out at
+/// the draw width like every other width-dependent row.
 struct Banner {
     version: &'static str,
-    model: String,
     project: String,
     branch: Option<String>,
     /// How tool calls are approved this session (sandboxed, or `--safe`).
@@ -529,10 +528,10 @@ fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
             Span::styled(truncate(&value, value_max), dim),
         ]));
     };
-    field("model", banner.model.clone());
-    // Repeated from the dock on purpose: the tools act on this directory, and a
-    // `jan` started in the wrong one is the mistake worth catching before the
-    // first message, not in a dim one-line footer.
+    // No `model` row: the header leads with it, bold, two rows above. The
+    // location is a different case -- the dock's copy is dim and easy to miss,
+    // and the tools act on that directory, so a `jan` started in the wrong one
+    // is the mistake worth catching before the first message.
     let location = match &banner.branch {
         Some(branch) => format!("{} ⎇ {branch}", banner.project),
         None => banner.project.clone(),
@@ -1470,16 +1469,11 @@ impl App {
             .map(|(_, lines)| lines)
     }
 
-    /// Open the session with the splash: the wordmark, this session's model,
-    /// project and approval mode, and where to go next.
+    /// Open the session with the splash: the wordmark, this session's project
+    /// and approval mode, and where to go next.
     fn push_banner(&mut self, tools: &str, awaiting_first_message: bool) {
         let banner = Banner {
             version: super::updater::build_version(),
-            model: if self.model.is_empty() {
-                "not signed in".to_string()
-            } else {
-                self.model.clone()
-            },
             project: tilde_path(&self.project_root),
             branch: self.git_branch.clone(),
             tools: tools.to_string(),
@@ -1487,6 +1481,9 @@ impl App {
         };
         self.gap(Kind::Meta);
         self.push_row(RowKind::Banner(Box::new(banner)));
+        // Whatever follows -- a startup note, or the first message -- gets a
+        // blank line off the splash instead of butting against its last row.
+        self.last_kind = Kind::None;
     }
 
     fn note(&mut self, text: &str) {
@@ -8258,10 +8255,15 @@ fn header(app: &App) -> Paragraph<'static> {
         .run_started
         .map(|t| format!("  {}", format_elapsed(t.elapsed().as_secs())))
         .unwrap_or_default();
-    let mut spans = vec![
-        Span::styled(" jan agent ", Style::new().on_blue().white().bold()),
-        Span::raw(format!("  {}  ", app.model)),
-    ];
+    // No name chip: the splash names the app (see `Banner`), and the header's
+    // columns are better spent on state that changes. The model leads instead,
+    // bold so the row still has an anchor on the left; an unset model says so
+    // rather than opening the row with blanks.
+    let mut spans = vec![if app.model.is_empty() {
+        Span::styled(" no model  ", Style::new().red().bold())
+    } else {
+        Span::styled(format!(" {}  ", app.model), Style::new().bold())
+    }];
     // Wall-clock (local) segment, mirroring the reference status line's leading
     // HH:MM:SS. Shown only while a run is active: a clock that ticks once per
     // second repaints the screen every second, which clears the terminal's text
@@ -15530,7 +15532,9 @@ mod tests {
             text.iter().any(|l| l.contains(brand::LOGO[0].trim())),
             "the wordmark is missing:\n{joined}"
         );
-        assert!(joined.contains("tokamak-1-preview"), "{joined}");
+        // The model is the header's job, not the splash's (it would otherwise
+        // appear twice on the first screen).
+        assert!(!joined.contains("tokamak-1-preview"), "{joined}");
         assert!(joined.contains("/tmp/repo"), "{joined}");
         assert!(joined.contains("fix/tui-panel-width"), "{joined}");
         assert!(joined.contains("auto-approved inside the OS sandbox"), "{joined}");
@@ -15570,6 +15574,23 @@ mod tests {
                 "row overflows a 24-column terminal: {line:?}"
             );
         }
+    }
+
+    #[test]
+    fn header_leads_with_the_model_not_a_name_chip() {
+        let mut app = test_app();
+        app.model = "tokamak-1-preview".into();
+        let top = render_rows(&mut app, 60, 12).remove(0);
+        assert!(
+            top.starts_with(" tokamak-1-preview"),
+            "the name chip is back: {top:?}"
+        );
+        // The freed columns are what let the status survive a 60-column frame.
+        assert!(top.contains("[ready]"), "{top:?}");
+
+        app.model.clear();
+        let top = render_rows(&mut app, 60, 12).remove(0);
+        assert!(top.starts_with(" no model"), "{top:?}");
     }
 
     #[test]
