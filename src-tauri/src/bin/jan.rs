@@ -312,32 +312,11 @@ enum ModelsCommands {
 
 /// Build a left-aligned, bright-yellow ASCII logo for the help header.
 fn make_logo() -> String {
-    // "JAN" in ANSI Shadow block letters
-    let lines = [
-        r"     ██╗ █████╗ ███╗  ██╗",
-        r"     ██║██╔══██╗████╗ ██║",
-        r"     ██║███████║██╔██╗██║",
-        r"██   ██║██╔══██║██║╚████║",
-        r"╚█████╔╝██║  ██║██║ ╚███║",
-        r" ╚════╝ ╚═╝  ╚═╝╚═╝  ╚══╝",
-    ];
-
-    // Fixed left-aligned indent (2 spaces)
-    let indent = "  ";
-
     let yellow = Style::new().yellow().bold();
-
-    let mut out: Vec<String> = Vec::new();
-
-    // Add padding at top
-    out.push(String::new());
-    out.push(String::new());
-
-    // Logo lines
-    for l in &lines {
-        out.push(format!("{}{}", indent, yellow.apply_to(l)));
+    let mut out = vec![String::new(), String::new()];
+    for l in app_lib::core::cli::brand::LOGO {
+        out.push(format!("  {}", yellow.apply_to(l)));
     }
-
     out.join("\n")
 }
 
