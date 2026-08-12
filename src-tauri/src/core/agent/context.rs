@@ -25,25 +25,23 @@ missing output: when output is cut it always carries an explicit `[output trunca
 its absence means you have everything. A command's `[exit N]` line is the authoritative result -- \
 `[exit 0]` is success even if there is text on stderr (many tools write normal status there).";
 
-/// Context-file names discovered by walking from the project root up to the
-/// filesystem root, most general (top ancestor) first so the nearest file wins.
-const CONTEXT_FILE_NAMES: &[&str] = &["AGENTS.md", "CLAUDE.md"];
+/// The one instructions file Jan reads, discovered by walking from the project
+/// root up to the filesystem root. Another agent's file (`AGENTS.md`,
+/// `CLAUDE.md`) is deliberately not ingested: only what a user wrote for Jan --
+/// by hand or through `/init` -- becomes authoritative project context.
+const CONTEXT_FILE_NAME: &str = "JAN.md";
 
-/// Ingest project instruction files (`AGENTS.md` / `CLAUDE.md`) from the project
-/// root and its ancestors, wrapped in a `<project_context>` block so the model
-/// treats them as authoritative project instructions. Returns None when none
-/// exist. At most one file per directory (first match by `CONTEXT_FILE_NAMES`).
+/// Ingest `JAN.md` from the project root and its ancestors, wrapped in a
+/// `<project_context>` block so the model treats them as authoritative project
+/// instructions. Returns None when none exist.
 pub(crate) fn load_context_files(project_root: &Path) -> Option<String> {
     let mut files: Vec<(std::path::PathBuf, String)> = Vec::new();
     let mut dir = Some(project_root);
     while let Some(current) = dir {
-        for name in CONTEXT_FILE_NAMES {
-            let path = current.join(name);
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if !content.trim().is_empty() {
-                    files.push((path, content));
-                }
-                break;
+        let path = current.join(CONTEXT_FILE_NAME);
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if !content.trim().is_empty() {
+                files.push((path, content));
             }
         }
         dir = current.parent();
@@ -339,8 +337,8 @@ mod tests {
         let root = scratch_project("ctxfiles");
         let nested = root.join("sub");
         std::fs::create_dir_all(&nested).unwrap();
-        std::fs::write(root.join("AGENTS.md"), "ROOT_RULES").unwrap();
-        std::fs::write(nested.join("CLAUDE.md"), "NESTED_RULES").unwrap();
+        std::fs::write(root.join("JAN.md"), "ROOT_RULES").unwrap();
+        std::fs::write(nested.join("JAN.md"), "NESTED_RULES").unwrap();
 
         let block = load_context_files(&nested).expect("context block");
         assert!(block.starts_with("<project_context>"));

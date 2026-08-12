@@ -1714,7 +1714,7 @@ mod tests {
         std::fs::create_dir_all(root.join(".jan/agent/threads/t1")).unwrap();
         std::fs::write(root.join(".jan/agent/threads/t1/thread.json"), b"{}").unwrap();
         std::fs::write(root.join(".jan/agent/agent.toml"), b"[tools]\n").unwrap();
-        std::fs::write(root.join(".jan/agent/AGENT.md"), b"instructions").unwrap();
+        std::fs::write(root.join("JAN.md"), b"instructions").unwrap();
         std::fs::write(root.join("README.md"), b"x").unwrap();
         let out =
             execute_builtin(lookup("find").unwrap(), &json!({"pattern": "**/*"}), &root).await;
@@ -1723,8 +1723,8 @@ mod tests {
             "should include project file: {out}"
         );
         assert!(
-            out.contains(".jan/agent/AGENT.md"),
-            "AGENT.md is readable, should be listed: {out}"
+            out.contains("JAN.md"),
+            "the root instructions file is an ordinary project file: {out}"
         );
         assert!(
             !out.contains("thread.json"),

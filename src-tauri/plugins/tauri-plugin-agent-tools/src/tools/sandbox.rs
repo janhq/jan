@@ -18,11 +18,12 @@ pub fn escapes_project(project_root: &Path, raw: &str) -> Result<bool, String> {
     Ok(!resolved.starts_with(&root))
 }
 
-/// True iff `raw` resolves inside `<project_root>/.jan/agent/` to anything other
-/// than the `AGENT.md` instructions file. The `skills/` and `memory/` workspaces
-/// are reachable only through the dedicated skill_*/memory_* tools, never general
-/// read/write/edit/ls/find/grep/bash; agent.toml and any other config are fully
-/// off-limits. So the general filesystem tools see only AGENT.md under .jan/agent/.
+/// True iff `raw` resolves inside `<project_root>/.jan/agent/`. The `skills/`
+/// and `memory/` workspaces are reachable only through the dedicated
+/// skill_*/memory_* tools, never general read/write/edit/ls/find/grep/bash;
+/// agent.toml and any other config are fully off-limits. The project
+/// instructions file is `<project_root>/JAN.md`, an ordinary project file, so
+/// the whole agent dir is opaque to the general filesystem tools.
 pub fn is_restricted_agent_path(project_root: &Path, raw: &str) -> bool {
     let Ok(root) = project_root.canonicalize() else {
         return false;
@@ -35,11 +36,7 @@ pub fn is_restricted_agent_path(project_root: &Path, raw: &str) -> bool {
     let Ok(resolved) = canonicalize_lenient(&abs) else {
         return false;
     };
-    let agent = root.join(".jan").join("agent");
-    if !resolved.starts_with(&agent) {
-        return false;
-    }
-    resolved != agent.join("AGENT.md")
+    resolved.starts_with(root.join(".jan").join("agent"))
 }
 
 /// True iff a shell command references a restricted agent path (best-effort token
@@ -156,12 +153,11 @@ mod tests {
 
 
     #[test]
-    fn restricted_agent_path_covers_config_but_not_approved_surface() {
+    fn restricted_agent_path_covers_the_whole_agent_dir() {
         let root = unique_root();
         std::fs::create_dir_all(root.join(".jan/agent/skills")).unwrap();
         std::fs::create_dir_all(root.join(".jan/agent/memory")).unwrap();
         std::fs::write(root.join(".jan/agent/agent.toml"), b"x").unwrap();
-        std::fs::write(root.join(".jan/agent/AGENT.md"), b"x").unwrap();
         // Restricted: agent.toml, the agent dir listing, unknown config files.
         assert!(is_restricted_agent_path(&root, ".jan/agent/agent.toml"));
         assert!(is_restricted_agent_path(&root, "./.jan/agent/agent.toml"));
@@ -175,9 +171,14 @@ mod tests {
         // are restricted from the general filesystem tools too.
         assert!(is_restricted_agent_path(&root, ".jan/agent/skills/deploy.md"));
         assert!(is_restricted_agent_path(&root, ".jan/agent/memory/notes.md"));
-        // Only AGENT.md and unrelated project files stay reachable.
-        assert!(!is_restricted_agent_path(&root, ".jan/agent/AGENT.md"));
+        // Nothing under .jan/agent/ is reachable; the instructions file now
+        // lives at the project root as JAN.md, an ordinary project file.
+        assert!(is_restricted_agent_path(&root, ".jan/agent/AGENT.md"));
+        assert!(!is_restricted_agent_path(&root, "JAN.md"));
         assert!(!is_restricted_agent_path(&root, "src/main.rs"));
+        // The `.jan` dir itself is not restricted: threads and other project
+        // state outside `agent/` were never part of this carve-out.
+        assert!(!is_restricted_agent_path(&root, ".jan"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -194,10 +195,11 @@ mod tests {
             &root,
             "grep foo < .jan/agent/agent.toml"
         ));
-        assert!(!command_touches_restricted_agent_path(
+        assert!(command_touches_restricted_agent_path(
             &root,
             "cat .jan/agent/AGENT.md"
         ));
+        assert!(!command_touches_restricted_agent_path(&root, "cat JAN.md"));
         assert!(!command_touches_restricted_agent_path(&root, "ls -la src"));
         let _ = std::fs::remove_dir_all(&root);
     }

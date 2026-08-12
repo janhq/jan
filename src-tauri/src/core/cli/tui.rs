@@ -5495,6 +5495,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Clear the conversation",
     },
     SlashCommand {
+        name: "/init",
+        hint: "",
+        description: "Study the project, then write JAN.md, skills, and memory",
+    },
+    SlashCommand {
         name: "/compact",
         hint: "",
         description: "Summarize older turns to free up context",
@@ -5663,12 +5668,52 @@ async fn run_command(app: &mut App, line: &str) {
         "config" => open_config_screen(app),
         "settings" => settings_command(app, arg),
         "goal" => goal_command(app, arg),
+        "init" => init_command(app),
         "plan" => plan_command(app, arg),
         "todo" => todo_command(app, arg).await,
         "cancel" => cancel_command(app, arg),
         "quit" | "exit" => app.should_quit = true,
         other => app.note(&format!("unknown command '/{other}' (try /help)")),
     }
+}
+
+/// The `/init` prompt. Onboarding a project means producing the three things a
+/// later session reads back: the root `JAN.md` (ingested as project context),
+/// skills for repeatable workflows, and memory for durable facts. Phrased as a
+/// task for the model rather than executed here -- only the model can read the
+/// project and judge what is worth writing down.
+const INIT_PROMPT: &str = "Onboard yourself to this project so future sessions start informed.\n\n\
+1. Study the project first. Read the README and any contributor docs, map the directory layout, and \
+find the real build, test, lint, and type-check commands (from the manifests and CI config, not from \
+guesswork). Note the conventions the code actually follows.\n\n\
+2. Write `JAN.md` in the project root. It is the only instructions file loaded into your system \
+prompt, and it is loaded every session, so it must earn its tokens: the commands to build/test/lint, \
+the architecture a newcomer cannot infer from the tree, and the conventions worth enforcing. Skip \
+anything obvious from a directory listing, and do not pad it. If `JAN.md` already exists, read it and \
+correct what has drifted instead of rewriting it wholesale.\n\n\
+3. Write skills with `skill_write` for the project's repeatable procedures -- releasing, running \
+migrations, adding a module, debugging a subsystem -- one skill per procedure, only where a real \
+multi-step recipe exists. Do not invent skills to fill space.\n\n\
+4. Record durable project facts with `memory_write`: decisions, constraints, and gotchas that are \
+true beyond this session and not already stated in the code.\n\n\
+Then report what you wrote and why, briefly.";
+
+/// `/init`: hand the model the onboarding task as an ordinary user turn, so it
+/// runs with the normal toolset, permission gate, and transcript. Idle-only,
+/// like the other commands that start a turn -- queueing it behind a running
+/// turn would have it survey a project mid-change.
+fn init_command(app: &mut App) {
+    if app.status != Status::Idle {
+        app.note("/init is only available while idle");
+        return;
+    }
+    let existing = app.project_root.join("JAN.md").exists();
+    app.note(if existing {
+        "◈ init · reviewing JAN.md, skills, and memory for this project"
+    } else {
+        "◈ init · studying the project to write JAN.md, skills, and memory"
+    });
+    app.submit_user(INIT_PROMPT.to_string());
 }
 
 /// Manually compact the conversation: summarize older turns, keeping the recent
@@ -5799,7 +5844,6 @@ struct AgentSettingDef {
 
 enum AgentSettingKind {
     Int { default: Option<u64>, min: u64 },
-    Text { default: &'static str },
     /// Exact-match choice: Enter writes one of `options`, cleared field
     /// unsets. Covers the `read-only | deny | allow` and `always | relevance`
     /// toggles that hand-editing agent.toml previously required.
@@ -5833,12 +5877,6 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         label: "max_parallel_subagents",
         desc: "subagents that may run at once; extra dispatches queue FIFO",
         kind: AgentSettingKind::Int { default: Some(10), min: 1 },
-    },
-    AgentSettingDef {
-        key: "instructions_file",
-        label: "instructions_file",
-        desc: "markdown injected into the system prompt",
-        kind: AgentSettingKind::Text { default: "AGENT.md" },
     },
     AgentSettingDef {
         key: "budget.max_tokens",
@@ -6023,13 +6061,6 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                                 return;
                             }
                         }
-                    }
-                }
-                AgentSettingKind::Text { .. } => {
-                    if prompt.input.trim().is_empty() {
-                        None
-                    } else {
-                        Some(toml_edit::value(prompt.input.trim().to_string()))
                     }
                 }
                 AgentSettingKind::Enum { options, default } => {
@@ -7811,7 +7842,6 @@ fn draw_settings_prompt(
                     .unwrap_or_else(|| "unset".to_string());
                 format!("default: {d} · valid: >= {min}")
             }
-            AgentSettingKind::Text { default } => format!("default: {default}"),
             AgentSettingKind::Enum { options, default } => {
                 format!("default: {default} · valid: {}", options.join(" | "))
             }
@@ -8050,9 +8080,6 @@ fn draw_picker(
                         .map(|d| d.to_string())
                         .unwrap_or_else(|| "unset".to_string());
                     format!("default: {d} · valid: >= {min} · current: {current}")
-                }
-                AgentSettingKind::Text { default } => {
-                    format!("default: {default} · current: {current}")
                 }
                 AgentSettingKind::Enum { options, default } => {
                     format!(
@@ -10885,6 +10912,30 @@ mod tests {
     }
 
     #[test]
+    fn init_starts_a_turn_covering_all_three_artifacts() {
+        let mut app = test_app();
+        super::init_command(&mut app);
+        assert!(app.want_start, "/init must start a turn");
+        let sent = app.history.last().expect("user message").to_string();
+        assert!(sent.contains("JAN.md"), "{sent}");
+        assert!(sent.contains("skill_write"), "{sent}");
+        assert!(sent.contains("memory_write"), "{sent}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// Surveying a project while a turn is mid-change would onboard against a
+    /// moving target, so the command declines rather than queueing.
+    #[test]
+    fn init_declines_while_a_turn_is_running() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        super::init_command(&mut app);
+        assert!(app.history.is_empty());
+        assert!(app.message_queue.is_empty());
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
     fn successful_login_closes_the_prompt_and_adopts_a_runnable_model() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let mut app = test_app();
@@ -11363,28 +11414,6 @@ mod tests {
             .expect("error recorded");
         assert!(err.contains("not an integer"), "{err}");
         assert_eq!(std::fs::read_to_string(&toml_path).unwrap(), "[agent]\n");
-        let _ = std::fs::remove_dir_all(&app.agent_dir);
-    }
-
-    #[test]
-    fn settings_prompt_edits_text_key() {
-        let mut app = test_app();
-        std::fs::create_dir_all(&app.agent_dir).unwrap();
-        let toml_path = app.agent_dir.join("agent.toml");
-        std::fs::write(&toml_path, "[agent]\n").unwrap();
-
-        let def = AGENT_SETTINGS
-            .iter()
-            .find(|d| d.key == "instructions_file")
-            .unwrap();
-        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
-        for ch in "AGENTS.md".chars() {
-            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
-        }
-        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
-        assert!(app.settings_prompt.is_none());
-        let doc = std::fs::read_to_string(&toml_path).unwrap();
-        assert!(doc.contains("instructions_file = \"AGENTS.md\""), "{doc}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 

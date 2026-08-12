@@ -87,9 +87,9 @@ describe('skillStore', () => {
       })
     })
 
-    // agent_skill_write also runs ensure_project, scaffolding agent.toml and
-    // AGENT.md. The plugin owns no config format and cannot write them, so
-    // routing this through guest-js would silently drop the scaffold.
+    // agent_skill_write also runs ensure_project, scaffolding agent.toml. The
+    // plugin owns no config format and cannot write it, so routing this through
+    // guest-js would silently drop the scaffold.
     it('writes through the core command so the project scaffold is preserved', async () => {
       await writeSkill(scope, 'lint', 'text')
       expect(invoke).toHaveBeenCalledWith('agent_skill_write', {
