@@ -496,11 +496,12 @@ enum RowKind {
         label_style: Style,
         reserve: u16,
     },
-    /// A tool result summary plus its optional boxed diff panel.
+    /// A tool result summary plus its optional boxed diff panel. `content` is
+    /// `None` when the call row above already says the same thing.
     Result {
         tag: &'static str,
         tag_style: Style,
-        content: String,
+        content: Option<String>,
         diff: Option<String>,
         /// Path of the edited file, for diff syntax highlighting.
         lang: Option<String>,
@@ -559,11 +560,16 @@ impl Row {
                 lang,
             } => {
                 let max = width.saturating_sub(8).max(1) as usize;
-                let mut out = vec![Line::from(vec![
-                    Span::styled("│   ", Style::new().dark_gray()),
-                    Span::styled(format!("{tag} "), *tag_style),
-                    Span::styled(summarize_result(content, max), Style::new().dim()),
-                ])];
+                let mut out: Vec<Line<'static>> = content
+                    .iter()
+                    .map(|c| {
+                        Line::from(vec![
+                            Span::styled("│   ", Style::new().dark_gray()),
+                            Span::styled(format!("{tag} "), *tag_style),
+                            Span::styled(summarize_result(c, max), Style::new().dim()),
+                        ])
+                    })
+                    .collect();
                 if let Some(diff) = diff {
                     out.extend(diff_lines(
                         diff,
@@ -1510,13 +1516,14 @@ impl App {
     /// Rewrite a standalone tool row to its resolved form once its result lands:
     /// past-tense label plus an outcome tag, matching how a tool group's row
     /// resolves. Without this a finished `edit` keeps reading as "Editing X".
-    fn resolve_pending_row(&mut self, id: &str, is_error: bool) {
+    /// Returns whether the row was found and rewritten.
+    fn resolve_pending_row(&mut self, id: &str, is_error: bool) -> bool {
         let Some(pos) = self.pending_rows.iter().position(|row| row.id == id) else {
-            return;
+            return false;
         };
         let row = self.pending_rows.remove(pos);
         if row.idx >= self.transcript.len() {
-            return;
+            return false;
         }
         let (tag, tag_style) = if is_error {
             ("✗", Style::new().red())
@@ -1531,6 +1538,7 @@ impl App {
             reserve: TOOL_ROW_RESERVE,
         }
         .into();
+        true
     }
 
     /// Resolve every row still awaiting a result: the run ended (cancel, error,
@@ -2364,7 +2372,7 @@ impl App {
             } => {
                 // Clear the throbber for an awaited subagent once its result lands.
                 self.awaiting.retain(|(await_id, ..)| await_id != &id);
-                self.resolve_pending_row(&id, is_error);
+                let resolved = self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
                 // reminder fired; let a later stop remind again if work is still
                 // open. Set unconditionally, before the grouped-call early return
@@ -2391,6 +2399,11 @@ impl App {
                     ("✓", Style::new().green())
                 };
                 let lang = diff.is_some().then(|| self.diff_paths.remove(&id)).flatten();
+                // The resolved call row above already names the tool and file in
+                // past tense, so a successful "Applied N edit(s) to X" only
+                // repeats it; the diff is the informative part. Errors keep their
+                // text -- the row says nothing about why the call failed.
+                let content = (!(resolved && !is_error && diff.is_some())).then_some(content);
                 self.gap(Kind::Tool);
                 self.push_row(RowKind::Result {
                     tag,
@@ -8841,6 +8854,60 @@ mod tests {
         for row in narrow_rows.iter().filter(|r| r.contains('│')) {
             assert!(row.trim_end().chars().count() <= 50, "row overflows: {row:?}");
         }
+    }
+
+    /// A standalone diff row already names the file in past tense, so the
+    /// tool's own "Applied N edit(s) to <path>" summary must not repeat it.
+    #[test]
+    fn standalone_diff_result_drops_the_redundant_summary_line() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "e1".into(),
+            name: "edit".into(),
+            args: json!({"path": "src/core/cli/tui.rs"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "e1".into(),
+            content: "Applied 1 edit(s) to src/core/cli/tui.rs".into(),
+            is_error: false,
+            diff: Some("@@ edit 1/1 @@\n-a\n+b".into()),
+        });
+        let rows = render_rows(&mut app, 100, 24);
+        assert!(
+            rows.iter().any(|r| r.contains("Edited tui.rs")),
+            "call row lost: {rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|r| r.contains("Applied 1 edit(s)")),
+            "duplicate summary line: {rows:?}"
+        );
+        assert!(
+            rows.iter().any(|r| r.contains('┌')),
+            "diff panel lost: {rows:?}"
+        );
+    }
+
+    /// A failed edit's row only says "Edited <file>" with a cross, so the error
+    /// text is the only place the reason survives and must still render.
+    #[test]
+    fn failed_diff_result_keeps_its_error_text() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "e1".into(),
+            name: "edit".into(),
+            args: json!({"path": "src/main.rs"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "e1".into(),
+            content: "ERROR: src/main.rs: edit 1: old_string not found".into(),
+            is_error: true,
+            diff: None,
+        });
+        let rows = render_rows(&mut app, 100, 24);
+        assert!(
+            rows.iter().any(|r| r.contains("old_string not found")),
+            "error text lost: {rows:?}"
+        );
     }
 
     /// A tool row's label is stored untruncated and clamped at draw time, so it
