@@ -21,11 +21,10 @@ pub(crate) const DEFAULT_KEEP_RECENT: usize = 8;
 #[cfg(feature = "cli")]
 pub(crate) const MANUAL_KEEP_RECENT: usize = 2;
 
-const SUMMARY_SYSTEM_PROMPT: &str = "You are compacting an AI agent conversation that grew too long for \
-the model's context window. Summarize the messages below into a dense, factual brief that preserves \
-everything needed to continue the task: the user's goals and constraints, decisions made, files and \
-commands touched with their outcomes, and any unresolved questions. Omit pleasantries and redundant \
-tool output. Write only the summary.";
+const SUMMARY_SYSTEM_PROMPT: &str = "Summarize the preceding AI agent conversation into a dense, \
+factual brief that preserves everything needed to continue the task: the user's goals and constraints, \
+decisions made, files and commands touched with their outcomes, and any unresolved questions. Omit \
+pleasantries and redundant tool output. Write only the summary.";
 
 const FALLBACK_NOTE: &str = "[Earlier conversation was omitted to fit the model's context window.]";
 
@@ -60,9 +59,8 @@ pub(crate) async fn compact_conversation(
         return messages.to_vec();
     }
 
-    let dropped = &rest[..cut];
     let kept = &rest[cut..];
-    let summary = summarize(dropped, model_id, model).await;
+    let summary = summarize(messages, model_id, model).await;
 
     let mut out = Vec::with_capacity(system_msgs.len() + 1 + kept.len());
     out.extend_from_slice(system_msgs);
@@ -74,13 +72,15 @@ pub(crate) async fn compact_conversation(
     out
 }
 
-async fn summarize(dropped: &[Value], model_id: &str, model: &dyn ModelInvoker) -> String {
+async fn summarize(messages: &[Value], model_id: &str, model: &dyn ModelInvoker) -> String {
+    let mut request_messages = messages.to_vec();
+    request_messages.push(json!({
+        "role": "user",
+        "content": SUMMARY_SYSTEM_PROMPT,
+    }));
     let request = json!({
         "model": model_id,
-        "messages": [
-            { "role": "system", "content": SUMMARY_SYSTEM_PROMPT },
-            { "role": "user", "content": serialize_messages(dropped) }
-        ]
+        "messages": request_messages,
     });
     // Discard the summarizer's streamed tokens: a dropped receiver means these
     // never reach the user-facing event stream.
@@ -97,44 +97,6 @@ async fn summarize(dropped: &[Value], model_id: &str, model: &dyn ModelInvoker) 
     }
 }
 
-/// Render dropped messages as plain text for the summarizer, capped so a very
-/// large prefix cannot itself overflow the summarization request; the most
-/// recent (most relevant) content is kept when truncating.
-fn serialize_messages(messages: &[Value]) -> String {
-    const MAX_CHARS: usize = 120_000;
-    let mut lines: Vec<String> = Vec::with_capacity(messages.len());
-    for msg in messages {
-        let r = role(msg);
-        let content = match msg.get("content") {
-            Some(Value::String(s)) => s.clone(),
-            Some(Value::Null) | None => String::new(),
-            Some(other) => other.to_string(),
-        };
-        let mut line = format!("{r}: {content}");
-        if let Some(calls) = msg.get("tool_calls").and_then(|v| v.as_array()) {
-            let names: Vec<&str> = calls
-                .iter()
-                .filter_map(|c| c.get("function").and_then(|f| f.get("name")).and_then(|n| n.as_str()))
-                .collect();
-            if !names.is_empty() {
-                line.push_str(&format!(" [tool_calls: {}]", names.join(", ")));
-            }
-        }
-        lines.push(line);
-    }
-    let joined = lines.join("\n");
-    if joined.len() > MAX_CHARS {
-        let start = joined.len() - MAX_CHARS;
-        // Snap to a char boundary so the slice is valid UTF-8.
-        let start = (start..joined.len())
-            .find(|i| joined.is_char_boundary(*i))
-            .unwrap_or(joined.len());
-        format!("[...older content truncated...]\n{}", &joined[start..])
-    } else {
-        joined
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,14 +106,16 @@ mod tests {
     struct StubModel {
         summary: String,
         calls: StdMutex<usize>,
+        requests: tokio::sync::Mutex<Vec<Value>>,
     }
     #[async_trait]
     impl ModelInvoker for StubModel {
         async fn invoke(
             &self,
-            _request: &Value,
+            request: &Value,
             _events: &mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
         ) -> Result<Value, String> {
+            self.requests.lock().await.push(request.clone());
             *self.calls.lock().unwrap() += 1;
             Ok(json!({ "choices": [{ "message": { "content": self.summary.clone() } }] }))
         }
@@ -180,7 +144,11 @@ mod tests {
 
     #[tokio::test]
     async fn noop_when_nothing_to_compact() {
-        let model = StubModel { summary: "S".into(), calls: StdMutex::new(0) };
+        let model = StubModel {
+            summary: "S".into(),
+            calls: StdMutex::new(0),
+            requests: tokio::sync::Mutex::new(Vec::new()),
+        };
         let input = convo(4);
         let out = compact_conversation(&input, "m", &model, DEFAULT_KEEP_RECENT).await;
         assert_eq!(out, input);
@@ -189,7 +157,11 @@ mod tests {
 
     #[tokio::test]
     async fn compacts_and_preserves_system_and_tail() {
-        let model = StubModel { summary: "CONDENSED".into(), calls: StdMutex::new(0) };
+        let model = StubModel {
+            summary: "CONDENSED".into(),
+            calls: StdMutex::new(0),
+            requests: tokio::sync::Mutex::new(Vec::new()),
+        };
         let input = convo(20);
         let out = compact_conversation(&input, "m", &model, 4).await;
 
@@ -205,6 +177,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn summary_request_appends_the_compaction_prompt() {
+        let model = StubModel {
+            summary: "CONDENSED".into(),
+            calls: StdMutex::new(0),
+            requests: tokio::sync::Mutex::new(Vec::new()),
+        };
+        let input = convo(20);
+
+        compact_conversation(&input, "m", &model, 4).await;
+
+        let requests = model.requests.lock().await;
+        let messages = requests[0]["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), input.len() + 1);
+        assert_eq!(&messages[..input.len()], input.as_slice());
+        assert_eq!(messages.last().unwrap()["role"], "user");
+        assert_eq!(messages.last().unwrap()["content"], SUMMARY_SYSTEM_PROMPT);
+    }
+
+    #[tokio::test]
     async fn falls_back_to_note_when_summarizer_fails() {
         let input = convo(20);
         let out = compact_conversation(&input, "m", &FailingModel, 4).await;
@@ -214,7 +205,11 @@ mod tests {
 
     #[tokio::test]
     async fn tail_never_starts_with_orphan_tool_result() {
-        let model = StubModel { summary: "S".into(), calls: StdMutex::new(0) };
+        let model = StubModel {
+            summary: "S".into(),
+            calls: StdMutex::new(0),
+            requests: tokio::sync::Mutex::new(Vec::new()),
+        };
         let mut input = vec![json!({ "role": "system", "content": "sys" })];
         for i in 0..6 {
             input.push(json!({ "role": "user", "content": format!("u{i}") }));
@@ -228,6 +223,10 @@ mod tests {
         // advance it so the kept tail does not begin with a tool message.
         let out = compact_conversation(&input, "m", &model, 4).await;
         let first_kept = &out[2];
-        assert_ne!(role(first_kept), "tool", "kept tail must not start with a tool result");
+        assert_ne!(
+            role(first_kept),
+            "tool",
+            "kept tail must not start with a tool result"
+        );
     }
 }
