@@ -126,7 +126,8 @@ fn has_open_fence(text: &str) -> bool {
 /// language tag (when present) as a dim header row and the body
 /// syntax-highlighted. Long lines wrap rather than truncate: dropping the tail
 /// of a line of code loses the part that usually matters most.
-fn render_code_block(body: &[&str], lang: &str, max: usize, plain: bool) -> Vec<Line<'static>> {
+fn render_code_block(body: &[&str], lang: &str, width: usize, plain: bool) -> Vec<Line<'static>> {
+    let max = super::panel_inner(width, "");
     let mut rows: Vec<Line<'static>> = Vec::with_capacity(body.len() + 1);
     if !lang.is_empty() {
         rows.push(Line::styled(
@@ -146,7 +147,7 @@ fn render_code_block(body: &[&str], lang: &str, max: usize, plain: bool) -> Vec<
             rows.push(Line::from(chunk));
         }
     }
-    super::boxed_panel(rows, max, "")
+    super::boxed_panel(rows, width, "")
 }
 
 /// Break a styled row into chunks of at most `max` columns, splitting spans
@@ -530,9 +531,8 @@ impl Renderer {
             TagEnd::CodeBlock => {
                 if let Some(c) = self.code.take() {
                     let body: Vec<&str> = c.body.lines().collect();
-                    let max = (self.width as usize).saturating_sub(4);
                     let plain = self.plain_code_block == Some(self.code_blocks_seen);
-                    let panel = render_code_block(&body, &c.lang, max, plain);
+                    let panel = render_code_block(&body, &c.lang, self.width as usize, plain);
                     self.out.extend(panel);
                 }
             }

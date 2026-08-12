@@ -216,7 +216,7 @@ impl Pending {
         match &self.diff {
             Some(d) => diff_lines(
                 d,
-                (inner as usize).saturating_sub(4).max(1),
+                inner as usize,
                 DIFF_PREVIEW_MAX_ROWS,
                 "",
                 self.path.as_deref(),
@@ -573,7 +573,7 @@ impl Row {
                 if let Some(diff) = diff {
                     out.extend(diff_lines(
                         diff,
-                        max,
+                        width as usize,
                         DIFF_MAX_ROWS,
                         "│     ",
                         lang.as_deref(),
@@ -2931,17 +2931,19 @@ const DIFF_DEL_BG: Color = Color::Rgb(66, 26, 30);
 /// `+` rows on a green background and `-` rows on a red one across the whole row
 /// (so the change reads as a band), `@@` headers dim-cyan. Every row keeps its
 /// syntax highlighting, changed or not; only the background says what happened.
-/// Content is truncated to `max` and each row padded so the right border aligns.
+/// Content is truncated to what `width` leaves after the gutter and the frame,
+/// and each row padded so the right border aligns.
 /// Collapses to `max_rows` with a `(+N more)` tail before the closing rule.
 /// `gutter` indents the panel (tool-row alignment under a result; empty in the
 /// prompt).
 fn diff_lines(
     diff: &str,
-    max: usize,
+    width: usize,
     max_rows: usize,
     gutter: &'static str,
     lang: Option<&str>,
 ) -> Vec<Line<'static>> {
+    let max = panel_inner(width, gutter);
     let all: Vec<&str> = diff.lines().collect();
     let shown = all.len().min(max_rows);
     let truncated = all.len() > shown;
@@ -3001,7 +3003,7 @@ fn diff_lines(
             Style::new().dim(),
         ));
     }
-    boxed_panel(rows, max, gutter)
+    boxed_panel(rows, width, gutter)
 }
 
 /// Split a diff row into its leading marker and the code after it. A `@@` hunk
@@ -3021,20 +3023,28 @@ fn row_width(row: &Line<'_>) -> usize {
     row.spans.iter().map(|s| s.content.chars().count()).sum()
 }
 
+/// Content columns a panel of total `width` has left after its gutter and the
+/// four the frame spends (`│ ` and ` │`). Callers size their rows with this so
+/// the closing border lands inside the terminal instead of wrapping onto a line
+/// of its own.
+pub(super) fn panel_inner(width: usize, gutter: &str) -> usize {
+    width.saturating_sub(gutter.chars().count() + 4).max(1)
+}
+
 /// Frame styled rows in a light box, right-padded to the widest row (clamped to
-/// `max`). Rows carry their own spans so style can vary within a row (syntax
-/// highlighting); `gutter` prefixes every line to indent the panel. A row's
-/// line-level style is folded into its spans, since the framed line replaces it
-/// with the border's own style, and a row-level background also fills the
-/// interior padding so a highlighted row reads as a band from border to border
-/// rather than stopping at the end of its text.
-fn boxed_panel(rows: Vec<Line<'static>>, max: usize, gutter: &'static str) -> Vec<Line<'static>> {
+/// what `width` leaves for content). Rows carry their own spans so style can vary
+/// within a row (syntax highlighting); `gutter` prefixes every line to indent the
+/// panel. A row's line-level style is folded into its spans, since the framed
+/// line replaces it with the border's own style, and a row-level background also
+/// fills the interior padding so a highlighted row reads as a band from border to
+/// border rather than stopping at the end of its text.
+fn boxed_panel(rows: Vec<Line<'static>>, width: usize, gutter: &'static str) -> Vec<Line<'static>> {
     let inner = rows
         .iter()
         .map(row_width)
         .max()
         .unwrap_or(0)
-        .clamp(1, max.max(1));
+        .clamp(1, panel_inner(width, gutter));
     let border = Style::new().dark_gray();
     let mut out = Vec::with_capacity(rows.len() + 2);
     out.push(Line::from(vec![
@@ -3544,7 +3554,7 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
                 ]));
             }
             if let Some(diff) = &call.diff {
-                for line in diff_lines(diff, max, DIFF_MAX_ROWS, cont_gutter, None) {
+                for line in diff_lines(diff, width as usize, DIFF_MAX_ROWS, cont_gutter, None) {
                     out.push(line);
                 }
             }
@@ -8530,7 +8540,8 @@ mod tests {
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
         transcript_top_padding, rewind_to,
-        user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
+        row_width, user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind,
+        ResumeTarget, RowKind,
         SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
         COMMAND_LABEL_MAX, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
         KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER,
@@ -11416,6 +11427,51 @@ mod tests {
             "bottom: {}",
             line_text(out.last().unwrap())
         );
+    }
+
+    /// The panel is sized to the width it is drawn at: gutter, frame and content
+    /// together have to fit, or the closing border wraps onto a line of its own
+    /// and the box reads as double-spaced with no right edge.
+    #[test]
+    fn a_boxed_diff_fits_the_draw_width() {
+        let long = format!("+    1 | {}", "x".repeat(300));
+        for gutter in ["", "│   ", "│     ", "│       "] {
+            for width in [40usize, 80, 163] {
+                for line in diff_lines(&long, width, DIFF_MAX_ROWS, gutter, None) {
+                    assert!(
+                        row_width(&line) <= width,
+                        "gutter {:?} at width {width}: row is {} wide: {:?}",
+                        gutter,
+                        row_width(&line),
+                        line_text(&line)
+                    );
+                }
+            }
+        }
+    }
+
+    /// Same, through the row that actually renders in the transcript: the result
+    /// row owns both the gutter and the width, so its diff must fit unaided.
+    #[test]
+    fn a_result_row_diff_fits_the_draw_width() {
+        let row: Row = RowKind::Result {
+            tag: "✓",
+            tag_style: Style::new().green(),
+            content: Some("Wrote notes.md".into()),
+            diff: Some(format!("@@ created file @@\n+    1 | {}", "y".repeat(300))),
+            lang: None,
+        }
+        .into();
+        for width in [40u16, 80, 163] {
+            for line in row.lines(width) {
+                assert!(
+                    row_width(&line) <= width as usize,
+                    "width {width}: row is {} wide: {:?}",
+                    row_width(&line),
+                    line_text(&line)
+                );
+            }
+        }
     }
 
     fn plus_rows(n: usize) -> String {
