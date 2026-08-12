@@ -6632,24 +6632,45 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     }
 }
 
-/// Infer an image MIME type from a file extension, defaulting to PNG.
-fn image_mime(path: &str) -> &'static str {
+/// Largest image accepted from a path or the clipboard, before base64 (which
+/// inflates it by 4/3).
+const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+
+/// Infer an image MIME type from a file extension. `None` when the extension is
+/// not a known image type.
+fn image_mime_of(path: &str) -> Option<&'static str> {
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
     match ext.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        _ => "image/png",
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        _ => None,
     }
+}
+
+/// Infer an image MIME type from a file extension, defaulting to PNG.
+fn image_mime(path: &str) -> &'static str {
+    image_mime_of(path).unwrap_or("image/png")
 }
 
 /// Read an image file into a `PendingImage` (base64 data URL + basename).
 fn load_image_file(path: &str) -> Result<PendingImage, String> {
     use base64::Engine;
+    let len = std::fs::metadata(path)
+        .map_err(|e| format!("{path}: {e}"))?
+        .len();
+    if len > MAX_IMAGE_BYTES {
+        return Err(format!(
+            "{path}: too large ({} MB, max {} MB)",
+            len / (1024 * 1024),
+            MAX_IMAGE_BYTES / (1024 * 1024)
+        ));
+    }
     let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
     if bytes.is_empty() {
         return Err(format!("{path}: empty file"));
@@ -6692,6 +6713,17 @@ fn clipboard_path(text: &str) -> Option<String> {
     String::from_utf8(out).ok().filter(|p| !p.is_empty())
 }
 
+/// Load the first loadable image out of a clipboard file list, skipping entries
+/// that are missing, oversized, or not a known image type -- the list is
+/// whatever the user copied, not necessarily an image.
+fn load_first_file_image(files: &[PathBuf]) -> Option<PendingImage> {
+    files.iter().find_map(|p| {
+        let path = p.to_str()?;
+        image_mime_of(path)?;
+        load_image_file(path).ok()
+    })
+}
+
 /// Read an image from the OS clipboard into a `PendingImage`. Prefers raw image
 /// data (PNG-encoding it); falls back to treating clipboard text as an image
 /// file path or `file://` URI (as file managers and browsers put on the
@@ -6706,6 +6738,15 @@ fn clipboard_image() -> Result<PendingImage, String> {
                 if std::path::Path::new(&path).is_file() {
                     return load_image_file(&path);
                 }
+            }
+            // macOS Finder copies publish a file URL, not raster data.
+            if let Some(img) = clip
+                .get()
+                .file_list()
+                .ok()
+                .and_then(|files| load_first_file_image(&files))
+            {
+                return Ok(img);
             }
             return Err(image_err.to_string());
         }
@@ -8465,7 +8506,8 @@ mod tests {
         diff_lines, Row, group_activity, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
         handle_ask_paste,
-        compact_tokens, finish_compaction, finish_login, finish_update_install, load_image_file,
+        compact_tokens, finish_compaction, finish_login, finish_update_install,
+        image_mime_of, load_first_file_image, load_image_file, MAX_IMAGE_BYTES,
         message_text, CompactKind,
         note_update, open_config_screen,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
@@ -9738,6 +9780,56 @@ mod tests {
         let img = load_image_file(path.to_str().unwrap()).unwrap();
         assert!(img.data_url.starts_with("data:image/png;base64,"));
         assert!(img.name.ends_with(".png"));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn load_first_file_image_skips_unloadable_entries() {
+        let dir = std::env::temp_dir();
+        let id = uuid::Uuid::new_v4();
+        let existing = dir.join(format!("jan_list_{id}.png"));
+        std::fs::write(&existing, [1u8, 2, 3, 4]).unwrap();
+        let missing = dir.join(format!("jan_missing_{id}.png"));
+        let not_image = dir.join(format!("jan_doc_{id}.pdf"));
+        std::fs::write(&not_image, [1u8, 2, 3, 4]).unwrap();
+        let empty = dir.join(format!("jan_empty_{id}.png"));
+        std::fs::write(&empty, []).unwrap();
+
+        // Skips missing, non-image and unloadable entries, keeping the basename.
+        let list = [
+            missing.clone(),
+            not_image.clone(),
+            empty.clone(),
+            existing.clone(),
+        ];
+        let img = load_first_file_image(&list).unwrap();
+        assert!(img.data_url.starts_with("data:image/png;base64,"));
+        assert_eq!(img.name, existing.file_name().unwrap().to_str().unwrap());
+
+        // Nothing loadable in the list yields nothing.
+        assert!(load_first_file_image(&[missing, not_image.clone(), empty.clone()]).is_none());
+
+        for p in [existing, not_image, empty] {
+            std::fs::remove_file(&p).ok();
+        }
+    }
+
+    #[test]
+    fn image_mime_of_rejects_non_image_extensions() {
+        assert_eq!(image_mime_of("a.png"), Some("image/png"));
+        assert_eq!(image_mime_of("a.JPG"), Some("image/jpeg"));
+        assert!(image_mime_of("a.pdf").is_none());
+        assert!(image_mime_of("noext").is_none());
+    }
+
+    #[test]
+    fn load_image_file_rejects_oversized() {
+        let path = std::env::temp_dir().join(format!("jan_big_{}.png", uuid::Uuid::new_v4()));
+        let f = std::fs::File::create(&path).unwrap();
+        f.set_len(MAX_IMAGE_BYTES + 1).unwrap();
+        drop(f);
+        let err = load_image_file(path.to_str().unwrap()).err().unwrap();
+        assert!(err.contains("too large"), "{err}");
         std::fs::remove_file(&path).ok();
     }
 
