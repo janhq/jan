@@ -319,6 +319,19 @@ mod tests {
         assert!(file_remove("never-stored").is_ok());
     }
 
+    /// The Secret Service backend is async underneath, and `load_provider_keys`
+    /// is sync and reached from async CLI paths (`cli::providers`). zbus's
+    /// `tokio` `block_on` drives a runtime of its own, which panics when it is
+    /// already inside one; the `async-io` feature must be what is selected.
+    #[tokio::test]
+    async fn keyring_read_survives_being_called_inside_a_runtime() {
+        let _tmp = TempDataFolder::new();
+        // A prior test may have latched the keyring off, which would skip the
+        // very path under test.
+        KEYRING_DOWN.store(false, Ordering::Relaxed);
+        assert!(load_provider_keys("never-stored-provider").is_empty());
+    }
+
     /// A stored key must persist across reloads (restarts) and only disappear on
     /// an explicit remove — never as a side effect of provider-config churn.
     /// Regression guard for keys being wiped during boot reconciliation.

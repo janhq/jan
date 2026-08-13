@@ -184,10 +184,19 @@ clap = { version = "4", features = ["derive"] }
 env_logger = { version = "0.11", optional = true }
 indicatif = { version = "0.17", optional = true }
 console = { version = "0.15", optional = true }
+# The Secret Service backend must be `async-secret-service` (zbus, pure Rust),
+# not `sync-secret-service`: the latter pulls `libdbus-sys`, whose `DT_NEEDED`
+# on libdbus-1.so.3 is resolved before `main`, so a headless host without the
+# D-Bus runtime cannot even exec `jan` -- the encrypted-file fallback in
+# `core::server::provider_secrets` never gets a chance to run. `async-io`
+# rather than `tokio`: zbus's `tokio` `block_on` drives a runtime of its own,
+# which panics when called from inside one, and the keyring is read from async
+# CLI paths.
 keyring = { version = "3", features = [
     "apple-native",
     "windows-native",
-    "sync-secret-service",
+    "async-secret-service",
+    "async-io",
     "crypto-rust",
 ] }
 aes-gcm = "0.10"
