@@ -83,11 +83,64 @@ jan cli agent run --safe "run the migration"   # approve each step
 | `--resume[=ID]` | Resume the most recent session, or one by id |
 | `-c`, `--continue` | Resume the most recent session |
 | `--provider`, `--api-key` | Credential overrides for this run |
+| `--output-format <FORMAT>` | `text` (default) streams the answer; `json` prints one result object |
 
 <Callout type="info">
 `run` takes a positional task, so a space-separated `--resume ID` would swallow it. Write the value
 form with an equals sign: `--resume=3f7a91c2`.
 </Callout>
+
+#### JSON output
+
+`--output-format json` suppresses the streamed answer and prints a single object on stdout when the
+run finishes. Progress and diagnostics still go to stderr, so stdout is safe to pipe into `jq`.
+
+```bash
+jan cli agent run --output-format json "review auth.rs" | jq -r .result
+```
+
+```json
+{
+  "type": "result",
+  "is_error": false,
+  "result": "APPROVED: the retry loop is correct...",
+  "stop_reason": "end_turn",
+  "session_id": "3f7a91c2",
+  "model": "tokamak-1-preview",
+  "num_turns": 3,
+  "duration_ms": 48213,
+  "usage": { "prompt_tokens": 9011, "completion_tokens": 655, "total_tokens": 9666 }
+}
+```
+
+A failed run adds an `error` object, sets `stop_reason` to `error`, and reports whatever the model
+had said before it broke as `result`:
+
+```json
+{
+  "type": "result",
+  "is_error": true,
+  "result": "I started reviewing auth.rs and...",
+  "stop_reason": "error",
+  "error": { "code": "upstream_error", "message": "[400] tool_choice does not match any of the specified tools" },
+  "session_id": null,
+  "model": "tokamak-1-preview",
+  "num_turns": 1,
+  "duration_ms": 1204,
+  "usage": { "prompt_tokens": 8123, "completion_tokens": 0, "total_tokens": 8123 }
+}
+```
+
+| Field | Notes |
+| --- | --- |
+| `result` | The final answer, or the partial answer of the turn that failed. Reasoning is stripped |
+| `stop_reason` | The upstream finish reason, or `error` |
+| `error.code` | `context_overflow`, `upstream_error`, `setup_error`, or the raw code |
+| `session_id` | Short session id for `--resume`. `null` when the run failed before producing one |
+| `num_turns` | Agent turns taken. Subagent turns are not counted |
+| `usage` | Summed over every request the run made, subagents included |
+
+The process exit code is unchanged: `0` on success, `1` on failure.
 
 ### `step`
 

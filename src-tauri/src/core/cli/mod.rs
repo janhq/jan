@@ -8,6 +8,7 @@ pub mod login;
 pub mod mcp;
 pub mod providers;
 mod path_refs;
+pub mod run_report;
 mod secret_input;
 pub mod tokamak;
 mod tui;
@@ -457,6 +458,7 @@ use crate::core::agent::r#loop::{
 };
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
+use crate::core::cli::run_report::{OutputFormat, RunReport};
 use crate::core::mcp::models::McpSettings;
 use std::collections::HashMap;
 use std::io::Write as _;
@@ -581,6 +583,7 @@ pub fn cli_agent_config_list() -> Result<serde_json::Value, String> {
 
 /// Autonomous run: as many turns as the task needs, bounded only by the
 /// session token budget.
+#[allow(clippy::too_many_arguments)]
 pub async fn cli_agent_run(
     project: &str,
     task: &str,
@@ -588,8 +591,19 @@ pub async fn cli_agent_run(
     overrides: ProviderOverrides,
     auto_approve: bool,
     resume: Option<ResumeTarget>,
+    format: OutputFormat,
 ) -> Result<(), String> {
-    run_agent_loop(project, task, model, false, overrides, auto_approve, resume).await
+    run_agent_loop(
+        project,
+        task,
+        model,
+        false,
+        overrides,
+        auto_approve,
+        resume,
+        format,
+    )
+    .await
 }
 
 /// Single-turn run for debugging: the one place a turn cap is still applied,
@@ -601,7 +615,17 @@ pub async fn cli_agent_step(
     overrides: ProviderOverrides,
     auto_approve: bool,
 ) -> Result<(), String> {
-    run_agent_loop(project, task, model, true, overrides, auto_approve, None).await
+    run_agent_loop(
+        project,
+        task,
+        model,
+        true,
+        overrides,
+        auto_approve,
+        None,
+        OutputFormat::Text,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -942,6 +966,7 @@ fn short_id(id: &str) -> String {
     id.chars().take(8).collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_agent_loop(
     project: &str,
     task: &str,
@@ -950,14 +975,10 @@ async fn run_agent_loop(
     overrides: ProviderOverrides,
     auto_approve: bool,
     resume: Option<ResumeTarget>,
+    format: OutputFormat,
 ) -> Result<(), String> {
-    let PreparedRun {
-        args,
-        body,
-        permission_requests,
-        mcp_task,
-        persist,
-    } = prepare_agent_run(
+    let started = std::time::Instant::now();
+    let prepared = prepare_agent_run(
         project,
         task,
         model_override,
@@ -965,7 +986,29 @@ async fn run_agent_loop(
         overrides,
         auto_approve,
         resume,
-    )?;
+    );
+    // A setup failure never reaches the event stream, so a JSON consumer would
+    // otherwise get an empty stdout and have to parse the human error off stderr.
+    let PreparedRun {
+        args,
+        body,
+        permission_requests,
+        mcp_task,
+        persist,
+    } = match prepared {
+        Ok(prepared) => prepared,
+        Err(e) => {
+            if format.is_json() {
+                print_report(RunReport::setup_failure(&e).finish(
+                    None,
+                    "",
+                    started.elapsed().as_millis(),
+                    None,
+                ));
+            }
+            return Err(e);
+        }
+    };
 
     // Block until active MCP servers connect, so tools (collected once per run)
     // are present on the first turn.
@@ -985,28 +1028,96 @@ async fn run_agent_loop(
     }
 
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
+    // The report is folded in both formats from the same stream the printer
+    // reads, so the JSON envelope can never disagree with the text output.
     let printer = tokio::spawn(async move {
+        let mut report = RunReport::default();
         while let Some(ev) = rx.recv().await {
-            print_event(ev, &permission_requests).await;
+            report.observe(&ev);
+            if format.is_json() {
+                resolve_permission_silently(ev, &permission_requests).await;
+            } else {
+                print_event(ev, &permission_requests).await;
+            }
         }
+        report
     });
 
     let result = run_orchestration_streamed(&tx, &body, &args).await;
     drop(tx);
-    let _ = printer.await;
+    let report = printer.await.unwrap_or_default();
 
     // Write the turn back so the session stays continuable with --resume.
+    let PersistTarget {
+        agent_dir,
+        thread_id,
+        model,
+        mut history,
+    } = persist;
+    let mut session_id = thread_id.clone();
+    let mut final_text = None;
     if let Ok(completion) = result.as_ref() {
-        let PersistTarget { agent_dir, thread_id, model, mut history } = persist;
-        if let Some(text) = completion_text(completion) {
-            history.push(serde_json::json!({ "role": "assistant", "content": text }));
+        final_text = completion_text(completion);
+        if let Some(text) = final_text.as_ref() {
+            history.push(serde_json::json!({ "role": "assistant", "content": text.clone() }));
         }
         match cli_save_thread(&agent_dir, thread_id.as_deref(), &model, &history, None) {
-            Ok(id) => eprintln!("\x1b[2m[session {} - resume with `jan --resume={}`]\x1b[0m", short_id(&id), short_id(&id)),
+            Ok(id) => {
+                if !format.is_json() {
+                    eprintln!(
+                        "\x1b[2m[session {} - resume with `jan --resume={}`]\x1b[0m",
+                        short_id(&id),
+                        short_id(&id)
+                    );
+                }
+                session_id = Some(id);
+            }
             Err(e) => eprintln!("(could not save session: {e})"),
         }
     }
+    if format.is_json() {
+        print_report(report.finish(
+            session_id.as_deref().map(short_id).as_deref(),
+            &model,
+            started.elapsed().as_millis(),
+            final_text.as_deref(),
+        ));
+    }
     result.map(|_| ())
+}
+
+/// Write the result envelope to stdout, the only thing `--output-format json`
+/// puts there. Pretty-printed: these are read by people at least as often as by
+/// programs, and `jq` does not care either way.
+fn print_report(report: run_report::RunResult) {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).unwrap_or_default()
+    );
+}
+
+/// Answer a permission request without printing progress, for the JSON format.
+/// Leaving it unanswered would wedge the run: the loop waits on the reply.
+/// Every other event is silent -- stdout belongs to the envelope.
+async fn resolve_permission_silently(ev: StreamEvent, registry: &PermissionRegistry) {
+    if let StreamEvent::PermissionRequest {
+        request_id,
+        tool_name,
+        capability,
+        path,
+        command,
+        ..
+    } = ev
+    {
+        let detail = command
+            .map(|c| format!(" ({c})"))
+            .or_else(|| path.map(|p| format!(" on {p}")))
+            .unwrap_or_default();
+        let decision = prompt_permission(tool_name, capability, detail).await;
+        if let Some(sender) = registry.lock().await.remove(&request_id) {
+            let _ = sender.send(decision);
+        }
+    }
 }
 
 /// Assistant text of a chat-completion response, if any.

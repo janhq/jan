@@ -4111,7 +4111,7 @@ fn has_answer_text(buf: &str) -> bool {
 /// `text` with its reasoning removed, for the copy that goes into `history`.
 /// Reasoning is display-only and must never be resent to the model (see
 /// `SseAccumulator`); the display journal is what keeps it for a resume.
-fn answer_without_reasoning(text: &str) -> String {
+pub(crate) fn answer_without_reasoning(text: &str) -> String {
     split_reasoning(text)
         .into_iter()
         .filter_map(|(reasoning, seg)| (!reasoning).then_some(seg))
