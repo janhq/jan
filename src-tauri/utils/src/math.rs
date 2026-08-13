@@ -31,22 +31,13 @@ pub fn calculate_exponential_backoff_delay(attempt: u32) -> u64 {
         let hash = hasher.finish();
 
         // Convert hash to jitter value in range [-jitter_range, +jitter_range]
-        let jitter_offset = (hash % (jitter_range * 2)) as i64 - jitter_range as i64;
-        jitter_offset
+        (hash % (jitter_range * 2)) as i64 - jitter_range as i64
     } else {
         0
     };
 
     // Apply jitter while ensuring delay stays positive and within bounds
-    let final_delay = cmp::max(
-        100, // Minimum 100ms delay
-        cmp::min(
-            MCP_MAX_RESTART_DELAY_MS,
-            (capped_delay as i64 + jitter) as u64,
-        ),
-    );
-
-    final_delay
+    ((capped_delay as i64 + jitter) as u64).clamp(100, MCP_MAX_RESTART_DELAY_MS)
 }
 
 #[cfg(test)]
@@ -60,13 +51,13 @@ mod tests {
         let delay3 = calculate_exponential_backoff_delay(3);
         
         // First attempt should be around base delay (1000ms) ± jitter
-        assert!(delay1 >= 100 && delay1 <= 2000);
+        assert!((100..=2000).contains(&delay1));
         
         // Second attempt should be roughly double
-        assert!(delay2 >= 1000 && delay2 <= 4000);
+        assert!((1000..=4000).contains(&delay2));
         
         // Third attempt should be roughly quadruple
-        assert!(delay3 >= 2000 && delay3 <= 6000);
+        assert!((2000..=6000).contains(&delay3));
         
         // Generally increasing pattern
         assert!(delay1 < delay3);
@@ -128,6 +119,6 @@ mod tests {
         assert_eq!(MCP_BACKOFF_MULTIPLIER, 2.0);
         
         // Max should be greater than base
-        assert!(MCP_MAX_RESTART_DELAY_MS > MCP_BASE_RESTART_DELAY_MS);
+        const { assert!(MCP_MAX_RESTART_DELAY_MS > MCP_BASE_RESTART_DELAY_MS) };
     }
 }

@@ -487,7 +487,7 @@ models = ["gpt-4o"]
             set_provider("openai", ProviderUpdate { api_key: Some("sk-1".into()), ..Default::default() }).unwrap();
             assert!(remove_provider("openai").expect("remove"));
             assert!(!remove_provider("openai").expect("remove again"));
-            assert!(load_global_config().unwrap().get("openai").is_none());
+            assert!(!load_global_config().unwrap().contains_key("openai"));
         });
     }
 

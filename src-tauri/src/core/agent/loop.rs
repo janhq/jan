@@ -2146,10 +2146,8 @@ mod tests {
                         saw_tool_call = true;
                     }
                 }
-                StreamEvent::ToolResult { content, .. } => {
-                    if content == "MOCK_RESULT" {
-                        saw_tool_result = true;
-                    }
+                StreamEvent::ToolResult { content, .. } if content == "MOCK_RESULT" => {
+                    saw_tool_result = true;
                 }
                 _ => {}
             }
