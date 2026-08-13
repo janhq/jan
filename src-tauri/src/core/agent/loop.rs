@@ -1495,10 +1495,16 @@ fn build_completion_request(
         "messages".to_string(),
         serde_json::Value::Array(conversation_messages.to_vec()),
     );
-    let tool_choice = match forced_tool_choice {
-        Some(name) => serde_json::json!({ "type": "function", "function": { "name": name } }),
-        None => serde_json::json!("auto"),
-    };
+    let tool_choice = forced_tool_choice
+        .filter(|name| {
+            openai_tools
+                .iter()
+                .any(|tool| tool["function"]["name"].as_str() == Some(*name))
+        })
+        .map_or_else(
+            || serde_json::json!("auto"),
+            |name| serde_json::json!({ "type": "function", "function": { "name": name } }),
+        );
     completion_map.insert("tool_choice".to_string(), tool_choice);
     if !openai_tools.is_empty() {
         completion_map.insert(
@@ -2161,7 +2167,7 @@ mod tests {
             &tx,
             &json!({}),
             "m",
-            &[],
+            &[crate::core::agent::todo::todo_tool_schema()],
             convo,
             8,
             &mut budget,
@@ -2184,6 +2190,27 @@ mod tests {
         assert_eq!(
             requests[1]["tool_choice"], "auto",
             "later turns must not keep forcing the same tool"
+        );
+    }
+
+    #[test]
+    fn forced_tool_choice_requires_an_advertised_tool() {
+        let messages = vec![user_message("build a flappy bird clone")];
+        let ask_only = vec![crate::core::agent::interaction::ask_tool_schema()];
+
+        let ask_request =
+            build_completion_request("m", &messages, &ask_only, &json!({}), Some("todo"));
+        assert_eq!(
+            ask_request["tool_choice"], "auto",
+            "a named tool_choice must not select a tool omitted from tools"
+        );
+
+        let todo = crate::core::agent::todo::todo_tool_schema();
+        let todo_request =
+            build_completion_request("m", &messages, &[todo], &json!({}), Some("todo"));
+        assert_eq!(
+            todo_request["tool_choice"],
+            json!({ "type": "function", "function": { "name": "todo" } })
         );
     }
 
