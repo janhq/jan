@@ -2193,7 +2193,7 @@ mod tests {
 
     #[test]
     fn forced_tool_choice_requires_an_advertised_tool() {
-        let messages = vec![user_message("build a flappy bird clone")];
+        let messages = vec![json!({ "role": "user", "content": "build a flappy bird clone" })];
         let ask_only = vec![crate::core::agent::interaction::ask_tool_schema()];
 
         let ask_request =
@@ -3199,8 +3199,7 @@ mod tests {
         .unwrap();
 
         let out = task.await.unwrap();
-        let result: serde_json::Value = serde_json::from_str(&out[0].content).unwrap();
-        assert_eq!(result[0]["custom_input"], "custom answer");
+        assert_eq!(out[0].content, "User response for \"scope\": custom answer");
         let _ = std::fs::remove_dir_all(&root);
     }
 
