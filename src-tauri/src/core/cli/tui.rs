@@ -15191,6 +15191,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn apply_resume_retains_an_ask_custom_answer_for_the_next_turn() {
+        let mut app = test_app();
+        let history = vec![
+            json!({ "role": "user", "content": "Ask me for a password." }),
+            json!({
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "id": "ask-password",
+                    "type": "function",
+                    "function": { "name": "ask", "arguments": "{}" }
+                }]
+            }),
+            json!({
+                "role": "tool",
+                "tool_call_id": "ask-password",
+                "content": r#"[{"id":"password","selected":[],"custom_input":"ember-7392"}]"#
+            }),
+            json!({ "role": "assistant", "content": "RECEIVED." }),
+        ];
+        let id =
+            super::super::cli_save_thread(&app.agent_dir, None, "saved-model", &history, None)
+                .unwrap();
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeTarget::Id(id)).await;
+
+        let answer = fresh
+            .history
+            .iter()
+            .find(|message| {
+                message.get("role").and_then(|value| value.as_str()) == Some("tool")
+                    && message.get("tool_call_id").and_then(|value| value.as_str())
+                        == Some("ask-password")
+            })
+            .expect("the custom ask answer must remain paired with its tool call");
+        assert!(
+            answer
+                .get("content")
+                .and_then(|value| value.as_str())
+                .is_some_and(|content| content.contains("ember-7392"))
+        );
+        assert!(fresh.history.iter().any(|message| {
+            message.get("tool_calls").and_then(|value| value.as_array()).is_some_and(|calls| {
+                calls.iter().any(|call| {
+                    call.get("function")
+                        .and_then(|function| function.get("name"))
+                        .and_then(|name| name.as_str())
+                        == Some("ask")
+                })
+            })
+        }));
+    }
+
+    #[tokio::test]
     async fn apply_resume_notes_when_nothing_to_resume() {
         let mut app = test_app();
         apply_resume(&mut app, &ResumeTarget::Latest).await;
