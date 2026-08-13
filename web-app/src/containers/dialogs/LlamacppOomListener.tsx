@@ -91,11 +91,12 @@ export default function LlamacppOomListener() {
         // cross-report each other's percentage. Cowork's own Record, not
         // useAppState's — see useCodeRun.loadingModels for why they're kept
         // separate rather than shared with chat's thread-keyed one.
-        const { llamacppRuns } = useCodeRun.getState()
+        const { llamacppRuns, setSessionModelLoadProgress, setSessionLoadingModel } =
+          useCodeRun.getState()
         for (const [sid, modelId] of Object.entries(llamacppRuns)) {
           if (modelId !== model) continue
-          useCodeRun.getState().setSessionModelLoadProgress(sid, progress)
-          useCodeRun.getState().setSessionLoadingModel(sid, true)
+          setSessionModelLoadProgress(sid, progress)
+          setSessionLoadingModel(sid, true)
         }
       }
     ).catch((e) => {
