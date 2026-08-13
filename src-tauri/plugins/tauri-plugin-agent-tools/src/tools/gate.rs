@@ -672,6 +672,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::join_absolute_paths)]
     fn write_escaping_project_prompts_write_escape() {
         let root = unique_root();
         let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
