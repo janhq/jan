@@ -1129,6 +1129,17 @@ struct App {
     compacting: Option<CompactKind>,
     /// When the in-flight compaction started, for the elapsed counter.
     compact_started: Option<Instant>,
+    /// The in-flight compaction was triggered by a context-overflow error, so
+    /// the errored turn is resumed once it lands.
+    retry_after_compact: bool,
+    /// Overflow retries spent in the current user turn, capped so a model that
+    /// overflows no matter how small the context cannot spin forever.
+    overflow_retries: u8,
+    /// False once a prompt the provider *accepted* exceeded `context_window`,
+    /// which proves the configured value wrong. Nothing then divides by it: the
+    /// gauge drops its denominator, the subagent share is hidden, and proactive
+    /// compaction stands down in favour of the loop's reactive path.
+    context_window_trusted: bool,
     /// An install is in flight: `/update` is refused (two processes must not
     /// rewrite the same binary) and the footer shows progress.
     update_installing: bool,
@@ -1411,6 +1422,9 @@ impl App {
             compact_request: None,
             compacting: None,
             compact_started: None,
+            retry_after_compact: false,
+            overflow_retries: 0,
+            context_window_trusted: true,
             scrollback: 0,
             want_start: false,
             turns_since_todos_closed: 0,
@@ -2254,6 +2268,9 @@ impl App {
         self.last_todo_reminder = None;
         self.reminder_count = 0;
         self.reminder_awaiting_progress = false;
+        // A fresh turn gets a fresh overflow-recovery budget: the previous
+        // turn's failures say nothing about this one's size.
+        self.overflow_retries = 0;
         self.want_start = true;
         self.persist();
     }
@@ -2851,6 +2868,7 @@ impl App {
                     // Keep the header's context gauge live during the turn
                     // instead of jumping only when the run ends.
                     self.tokens = prompt + usage.completion_tokens.unwrap_or(0);
+                    self.observe_prompt_tokens(prompt);
                 }
             }
             StreamEvent::Done { .. } | StreamEvent::Error { .. } => {}
@@ -3063,10 +3081,55 @@ impl App {
         self.persist();
     }
 
-    /// Whether auto-compaction should trigger after a turn completes.
+    /// Whether auto-compaction should trigger after a turn completes. Requires
+    /// a window worth measuring against: with the configured one disproven,
+    /// this would fire on every remaining turn of the session.
     fn should_auto_compact(&self) -> bool {
         let limit = self.context_window.saturating_sub(self.reserve_tokens);
-        self.tokens > limit && self.tokens > 0 && self.history.len() > 4
+        self.context_window_trusted
+            && self.tokens > limit
+            && self.tokens > 0
+            && self.history.len() > 4
+    }
+
+    /// Fold an accepted request's prompt size into the session's view of the
+    /// context window. `context_window` is a guess (`[agent].context_window`,
+    /// default 128K) with nothing tying it to the model actually in use, so a
+    /// prompt the provider served proves it wrong when it exceeds it -- the
+    /// real window is at least this big. How much bigger is unknowable from
+    /// here, so nothing is invented: the value is simply no longer used as a
+    /// denominator, and the user is told once how to set it.
+    fn observe_prompt_tokens(&mut self, prompt_tokens: u64) {
+        if !self.context_window_trusted || prompt_tokens <= self.context_window {
+            return;
+        }
+        self.context_window_trusted = false;
+        self.note(&format!(
+            "a {}K prompt exceeded the configured {}K context window: set [agent].context_window in agent.toml",
+            (prompt_tokens + 500) / 1000,
+            self.context_window / 1000,
+        ));
+    }
+
+    /// Queue a compaction and a retry for a context-overflow error, reporting
+    /// whether recovery was taken up. Declines when the error is something
+    /// else, the turn's retry budget is spent, a compaction is already in
+    /// flight, or there is too little history for compaction to shrink -- in
+    /// those cases a retry would re-send the request that just failed.
+    fn request_overflow_recovery(&mut self, message: &str) -> bool {
+        if !crate::core::agent::upstream::is_context_overflow_error(message)
+            || self.overflow_retries >= MAX_OVERFLOW_RETRIES
+            || self.compacting.is_some()
+            || self.history.len() <= 4
+        {
+            return false;
+        }
+        self.overflow_retries += 1;
+        self.retry_after_compact = true;
+        self.compact_request = Some(CompactKind::Auto);
+        self.detail = "context overflow: compacting".to_string();
+        self.note("context overflow: compacting and retrying the turn");
+        true
     }
 
     fn on_error(&mut self, code: String, message: String) {
@@ -3081,6 +3144,20 @@ impl App {
             format!("{code}: {message}")
         };
         self.system(Level::Error, &format!("error: {message}"));
+        // A context overflow is the one error the session can recover from by
+        // itself: compact, then resume the turn that failed. The goal loop and
+        // the message queue are left alone until the retry resolves, so neither
+        // acts on a turn that is about to run again.
+        if self.request_overflow_recovery(&message) {
+            return;
+        }
+        self.halt_turn();
+    }
+
+    /// Hand control back after a turn ended abnormally. Also reached from
+    /// `finish_compaction` when an overflow recovery is abandoned, so the two
+    /// paths cannot drift.
+    fn halt_turn(&mut self) {
         // An errored turn halts the goal loop; the user decides how to recover.
         self.goal_eval_pending = false;
         if let Some(goal) = self.goal.as_ref() {
@@ -3200,29 +3277,59 @@ fn truncate(s: &str, max: usize) -> String {
     format!("{head}…")
 }
 
-/// Summarize tool output to one transcript line: first non-empty line with its
-/// internal whitespace collapsed, truncated to `max`, plus a `(+N lines)`
-/// suffix when more follow.
-/// Rough token count from message content characters (~4 chars ≈ 1 token).
+/// Per-message envelope (role, delimiters) in the estimate below, the usual
+/// OpenAI-accounting constant.
+const TOKENS_PER_MESSAGE: u64 = 4;
+
+/// Rough token count (~4 chars per token) for a history the provider has not
+/// reported usage for: the window between a compaction and the next response.
+/// Counts what actually goes on the wire -- text content including multimodal
+/// text parts, tool-call names and arguments, tool-result ids -- so a
+/// tool-heavy history is not scored as empty. Image parts are left out: their
+/// cost is a provider-specific function of resolution, and inventing a number
+/// there is worse than omitting one.
 fn estimate_token_count(messages: &[serde_json::Value]) -> u64 {
     let mut total_chars: usize = 0;
     for msg in messages {
-        if let Some(content) = msg.get("content").and_then(|c| c.as_str()) {
-            total_chars += content.len();
-        }
-        if let Some(calls) = msg.get("tool_calls") {
-            if let Some(arr) = calls.as_array() {
-                for call in arr {
-                    if let Some(args) = call.get("arguments") {
-                        total_chars += args.to_string().len();
-                    }
+        match msg.get("content") {
+            Some(serde_json::Value::String(text)) => total_chars += text.len(),
+            Some(serde_json::Value::Array(parts)) => {
+                for part in parts {
+                    total_chars += part
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .map_or(0, str::len);
                 }
             }
+            _ => {}
         }
+        for call in msg
+            .get("tool_calls")
+            .and_then(|c| c.as_array())
+            .into_iter()
+            .flatten()
+        {
+            // Arguments live under `function`, not on the call itself.
+            if let Some(f) = call.get("function") {
+                total_chars += f.get("name").and_then(|n| n.as_str()).map_or(0, str::len);
+                total_chars += f
+                    .get("arguments")
+                    .and_then(|a| a.as_str())
+                    .map_or(0, str::len);
+            }
+        }
+        total_chars += msg
+            .get("tool_call_id")
+            .and_then(|v| v.as_str())
+            .map_or(0, str::len);
     }
-    (total_chars / 4).max(1) as u64
+    let envelope = TOKENS_PER_MESSAGE * messages.len() as u64;
+    ((total_chars / 4) as u64 + envelope).max(1)
 }
 
+/// Summarize tool output to one transcript line: first non-empty line with its
+/// internal whitespace collapsed, truncated to `max`, plus a `(+N lines)`
+/// suffix when more follow.
 fn summarize_result(s: &str, max: usize) -> String {
     let mut lines = s.lines().filter(|l| !l.trim().is_empty());
     let first = lines.next().unwrap_or("");
@@ -5758,6 +5865,11 @@ fn compact_command(app: &mut App) {
     app.compact_request = Some(CompactKind::Manual);
 }
 
+/// Compact-and-retry attempts allowed per user turn. The loop already retries
+/// within a single request (`MAX_COMPACTION_ATTEMPTS`); this bounds the outer
+/// recovery so a model that overflows at any size still hands control back.
+const MAX_OVERFLOW_RETRIES: u8 = 2;
+
 /// Which path asked for a compaction: `/compact` keeps a shorter tail than the
 /// automatic one and reports itself differently.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -5815,6 +5927,7 @@ fn finish_compaction(
 ) {
     let kind = app.compacting.take().unwrap_or(CompactKind::Manual);
     app.compact_started = None;
+    let retrying = std::mem::take(&mut app.retry_after_compact);
     match result {
         Ok(mut compacted) if compacted.len() < base_len => {
             compacted.extend(app.history.split_off(base_len.min(app.history.len())));
@@ -5829,13 +5942,30 @@ fn finish_compaction(
                 app.tokens / 1000,
                 app.context_window / 1000,
             ));
+            // The turn this compaction was queued for died on an overflow
+            // error: resume it now that the history it failed on is smaller.
+            if retrying {
+                app.begin_turn();
+                app.want_start = true;
+            }
         }
         Ok(_) => {
             if kind == CompactKind::Manual {
                 app.note("nothing to compact yet");
             }
+            // Nothing shrank, so the retry would re-send the request that
+            // already overflowed. Hand control back instead.
+            if retrying {
+                app.note("nothing left to compact: the turn cannot be retried");
+                app.halt_turn();
+            }
         }
-        Err(e) => app.note(&format!("{} failed: {e}", kind.label())),
+        Err(e) => {
+            app.note(&format!("{} failed: {e}", kind.label()));
+            if retrying {
+                app.halt_turn();
+            }
+        }
     }
 }
 
@@ -8231,8 +8361,11 @@ fn agents_column(
             let mut stats = format!("  {}t · {}r", panel.calls.len(), panel.requests);
             // Only once the child has reported usage; "0%" before its first
             // response would read as a stalled agent rather than a starting one.
+            // `context_window` arrives as 0 when the session has disproven it,
+            // and the share is clamped: a child on a model with a larger window
+            // than the parent's config would otherwise report past 100%.
             if panel.prompt_tokens > 0 && context_window > 0 {
-                let pct = panel.prompt_tokens as f64 / context_window as f64 * 100.0;
+                let pct = (panel.prompt_tokens as f64 / context_window as f64 * 100.0).min(100.0);
                 stats.push_str(&format!(" · {pct:.1}%"));
             }
             spans.push(Span::styled(stats, dim));
@@ -8358,6 +8491,10 @@ fn shimmer_spans(text: &str, palette: [Style; 3], frame: usize) -> Vec<Span<'sta
 }
 
 fn header(app: &App) -> Paragraph<'static> {
+    Paragraph::new(Line::from(header_spans(app)))
+}
+
+fn header_spans(app: &App) -> Vec<Span<'static>> {
     let (status, style): (String, Style) = if let Some(kind) = app.compacting {
         (kind.label().to_string(), Style::new().magenta().bold())
     } else if app.status == Status::Idle {
@@ -8403,15 +8540,17 @@ fn header(app: &App) -> Paragraph<'static> {
         ));
     }
     spans.push(Span::raw(format!("  {turn}")));
-    if app.tokens > 0 {
-        spans.push(Span::raw(format!(
+    // The denominator is dropped once an accepted prompt has disproven the
+    // configured window: `ctx 143K/128K` is not a gauge, it is a contradiction.
+    match (app.tokens, app.context_window_trusted) {
+        // Round to nearest K for display clarity.
+        (0, true) => spans.push(Span::raw(format!("ctx 0/{}K  ", app.context_window / 1000))),
+        (n, true) => spans.push(Span::raw(format!(
             "ctx {}K/{}K  ",
-            // Round to nearest K for display clarity.
-            (app.tokens + 500) / 1000,
+            (n + 500) / 1000,
             app.context_window / 1000
-        )));
-    } else {
-        spans.push(Span::raw(format!("ctx 0/{}K  ", app.context_window / 1000)));
+        ))),
+        (n, false) => spans.push(Span::raw(format!("ctx {}K  ", (n + 500) / 1000))),
     }
     spans.push(Span::styled(elapsed, Style::new().dim()));
     // Output rate segment: last completed turn's tokens/sec, cached so it holds
@@ -8456,7 +8595,7 @@ fn header(app: &App) -> Paragraph<'static> {
     } else {
         spans.push(Span::styled(format!("[{status}]"), style));
     }
-    Paragraph::new(Line::from(spans))
+    spans
 }
 
 /// One task row: ` <glyph> <text>`, styled by status. Pending is dim,
@@ -8631,7 +8770,13 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
         return Vec::new();
     }
     let frame = app.spinner();
-    let context_window = app.context_window;
+    // 0 is the columns' "unknown window" encoding: they suppress the share
+    // rather than divide by a value the session has already disproven.
+    let context_window = if app.context_window_trusted {
+        app.context_window
+    } else {
+        0
+    };
     let has_todos = !app.todos.is_empty() && !app.todos_expired();
     let has_agents = !app.subagents.is_empty();
     match (has_todos, has_agents) {
@@ -8968,7 +9113,8 @@ mod tests {
         route_paste_event,
         compact_tokens, finish_compaction, finish_login, finish_update_install,
         image_mime_of, load_first_file_image, load_image_file, MAX_IMAGE_BYTES,
-        message_text, CompactKind,
+        message_text, CompactKind, MAX_OVERFLOW_RETRIES,
+        estimate_token_count, header_spans, status_panel, SubagentPanel,
         note_update, open_config_screen,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
@@ -15670,6 +15816,213 @@ mod tests {
         }
         // limit = u64::MAX - 16384 ≈ u64::MAX, so tokens=120K is well below
         assert!(!app.should_auto_compact());
+    }
+
+    fn overflow_error() -> String {
+        format!(
+            "[{}] Upstream returned HTTP 400: context_length_exceeded",
+            crate::core::agent::upstream::CONTEXT_OVERFLOW_MARKER
+        )
+    }
+
+    fn app_with_history(n: usize) -> App {
+        let mut app = test_app();
+        for i in 0..n {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        app
+    }
+
+    #[test]
+    fn context_overflow_error_queues_a_compaction_and_retry() {
+        let mut app = app_with_history(6);
+        app.on_error("upstream_error".into(), overflow_error());
+        assert_eq!(
+            app.compact_request,
+            Some(CompactKind::Auto),
+            "an overflow must queue a compaction instead of going idle"
+        );
+        assert!(app.retry_after_compact, "the turn must be retried");
+        assert!(!app.want_start, "the retry waits for the compaction to land");
+    }
+
+    #[test]
+    fn ordinary_error_does_not_queue_a_compaction() {
+        let mut app = app_with_history(6);
+        app.on_error("upstream_error".into(), "invalid api key".into());
+        assert_eq!(app.compact_request, None);
+        assert!(!app.retry_after_compact);
+    }
+
+    #[test]
+    fn overflow_on_a_short_history_does_not_retry() {
+        // Nothing to compact: retrying would just re-send the same request.
+        let mut app = app_with_history(2);
+        app.on_error("upstream_error".into(), overflow_error());
+        assert_eq!(app.compact_request, None);
+        assert!(!app.retry_after_compact);
+    }
+
+    #[test]
+    fn compaction_after_an_overflow_restarts_the_turn() {
+        let mut app = app_with_history(6);
+        app.on_error("upstream_error".into(), overflow_error());
+        app.compacting = app.compact_request.take();
+        let compacted = vec![serde_json::json!({ "role": "system", "content": "summary" })];
+        finish_compaction(&mut app, Ok(compacted), 7);
+        assert!(app.want_start, "a landed compaction resumes the errored turn");
+        assert!(!app.retry_after_compact);
+        assert_eq!(app.status, Status::Running);
+    }
+
+    #[test]
+    fn a_no_op_compaction_after_an_overflow_does_not_retry() {
+        // Compaction could not shrink the history, so a retry would overflow
+        // again on exactly the same request.
+        let mut app = app_with_history(6);
+        app.on_error("upstream_error".into(), overflow_error());
+        app.compacting = app.compact_request.take();
+        let unchanged = app.history.clone();
+        let base = unchanged.len();
+        finish_compaction(&mut app, Ok(unchanged), base);
+        assert!(!app.want_start);
+        assert!(!app.retry_after_compact);
+    }
+
+    #[test]
+    fn repeated_overflows_stop_retrying_within_one_turn() {
+        let mut app = app_with_history(6);
+        for _ in 0..MAX_OVERFLOW_RETRIES {
+            app.on_error("upstream_error".into(), overflow_error());
+            assert!(app.retry_after_compact);
+            app.compacting = app.compact_request.take();
+            let shorter = app.history[..app.history.len() - 1].to_vec();
+            let base = app.history.len();
+            finish_compaction(&mut app, Ok(shorter), base);
+        }
+        app.on_error("upstream_error".into(), overflow_error());
+        assert_eq!(
+            app.compact_request, None,
+            "the retry budget is spent for this turn"
+        );
+        assert!(!app.retry_after_compact);
+    }
+
+    #[test]
+    fn a_new_user_turn_rearms_the_overflow_retry_budget() {
+        let mut app = app_with_history(6);
+        app.overflow_retries = MAX_OVERFLOW_RETRIES;
+        app.submit_user("next".into());
+        assert_eq!(app.overflow_retries, 0);
+    }
+
+    fn usage_of(prompt: u64, completion: u64) -> Usage {
+        Usage {
+            prompt_tokens: Some(prompt),
+            completion_tokens: Some(completion),
+            total_tokens: Some(prompt + completion),
+        }
+    }
+
+    #[test]
+    fn estimate_counts_tool_call_arguments() {
+        // Arguments live at `function.arguments`; reading `arguments` off the
+        // call itself scored every tool-heavy history as empty.
+        let args = "x".repeat(4_000);
+        let with_calls = vec![serde_json::json!({
+            "role": "assistant",
+            "content": serde_json::Value::Null,
+            "tool_calls": [{
+                "id": "c1",
+                "function": { "name": "bash", "arguments": args }
+            }]
+        })];
+        assert!(
+            estimate_token_count(&with_calls) >= 1_000,
+            "tool-call arguments must be counted: {}",
+            estimate_token_count(&with_calls)
+        );
+    }
+
+    #[test]
+    fn estimate_counts_multimodal_text_parts() {
+        let msgs = vec![serde_json::json!({
+            "role": "user",
+            "content": [{ "type": "text", "text": "y".repeat(4_000) }]
+        })];
+        assert!(estimate_token_count(&msgs) >= 1_000);
+    }
+
+    #[test]
+    fn an_accepted_prompt_above_the_window_stops_trusting_it() {
+        let mut app = test_app();
+        assert!(app.context_window_trusted);
+        app.apply(StreamEvent::TurnUsage {
+            usage: usage_of(200_000, 100),
+        });
+        assert!(
+            !app.context_window_trusted,
+            "a prompt the provider accepted proves the configured window wrong"
+        );
+        // The gauge has no denominator it can trust, so it must not divide.
+        assert!(!app.should_auto_compact(), "and it must not compact on it");
+    }
+
+    #[test]
+    fn a_prompt_within_the_window_keeps_it_trusted() {
+        let mut app = test_app();
+        app.apply(StreamEvent::TurnUsage {
+            usage: usage_of(50_000, 100),
+        });
+        assert!(app.context_window_trusted);
+    }
+
+    #[test]
+    fn header_drops_the_denominator_once_the_window_is_untrusted() {
+        let mut app = test_app();
+        app.apply(StreamEvent::TurnUsage {
+            usage: usage_of(200_000, 100),
+        });
+        let text: String = header_spans(&app)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect::<String>();
+        assert!(text.contains("ctx 200K"), "usage still shown: {text}");
+        assert!(
+            !text.contains("/128K"),
+            "a disproven window must not be a denominator: {text}"
+        );
+    }
+
+    #[test]
+    fn subagent_share_is_suppressed_when_the_window_is_untrusted() {
+        let mut app = test_app();
+        app.subagents.push(SubagentPanel {
+            run_id: "r".into(),
+            name: "alpha".into(),
+            task: "t".into(),
+            calls: Vec::new(),
+            requests: 1,
+            prompt_tokens: 200_000,
+            active: None,
+            queued: false,
+            waiting: 0,
+        });
+        app.apply(StreamEvent::TurnUsage {
+            usage: usage_of(200_000, 100),
+        });
+        let rows = status_panel(&mut app, 120, 8);
+        let text: String = rows
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect::<String>();
+        assert!(
+            !text.contains('%'),
+            "no share against a wrong window: {text}"
+        );
     }
 
     #[test]
