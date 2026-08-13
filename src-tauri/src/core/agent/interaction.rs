@@ -139,6 +139,23 @@ impl AskRequest {
         }
         Ok(())
     }
+
+    pub(crate) fn render_results(&self, results: &[QuestionResult]) -> String {
+        results
+            .iter()
+            .map(|result| {
+                let answer = result
+                    .custom_input
+                    .clone()
+                    .unwrap_or_else(|| result.selected.join(", "));
+                format!(
+                    "User response for {}: {answer}",
+                    serde_json::to_string(&result.id).expect("question ids serialize")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 pub(crate) fn ask_tool_schema() -> Value {
