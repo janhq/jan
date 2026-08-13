@@ -96,9 +96,12 @@ vi.mock('@/hooks/useTokensCount', () => ({
 vi.mock('@/hooks/useAssistant', () => ({
   useAssistant: () => ({
     loading: false,
-    currentAssistant: { id: 'a1', avatar: '' },
+    currentAssistant: { id: 'a1', name: 'Global assistant', avatar: '' },
     setCurrentAssistant: vi.fn(),
-    assistants: [{ id: 'a1', avatar: '' }],
+    assistants: [
+      { id: 'a1', name: 'Global assistant', avatar: '' },
+      { id: 'a2', name: 'Project assistant', avatar: '' },
+    ],
   }),
 }))
 
@@ -336,6 +339,14 @@ describe('ChatInput', () => {
     expect(ta).toHaveAttribute('placeholder', 'common:placeholder.chatInput')
     // send button is present
     expect(document.querySelector('[data-test-id="send-message-button"]')).toBeTruthy()
+  })
+
+  it('shows the project assistant for a new conversation', () => {
+    renderInput({ projectId: 'project-1', projectAssistantId: 'a2' })
+
+    expect(
+      screen.getByRole('button', { name: 'Switch assistant' })
+    ).toHaveTextContent('Project assistant')
   })
 
   it('disables the send button when prompt is empty', () => {
