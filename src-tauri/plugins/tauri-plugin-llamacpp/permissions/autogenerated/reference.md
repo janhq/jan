@@ -18,13 +18,9 @@ Default permissions for the llamacpp plugin
 - `allow-adopt-router`
 - `allow-get-devices`
 - `allow-generate-api-key`
-- `allow-is-process-running`
 - `allow-ensure-session-ready`
-- `allow-get-random-port`
 - `allow-find-session-by-model`
 - `allow-get-loaded-models`
-- `allow-get-all-sessions`
-- `allow-get-session-by-model`
 - `allow-read-gguf-metadata`
 - `allow-estimate-kv-cache-size`
 - `allow-get-model-size`
@@ -428,32 +424,6 @@ Denies the generate_api_key command without any pre-configured scope.
 <tr>
 <td>
 
-`llamacpp:allow-get-all-sessions`
-
-</td>
-<td>
-
-Enables the get_all_sessions command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-get-all-sessions`
-
-</td>
-<td>
-
-Denies the get_all_sessions command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
 `llamacpp:allow-get-backend-dir`
 
 </td>
@@ -610,32 +580,6 @@ Denies the get_model_size command without any pre-configured scope.
 <tr>
 <td>
 
-`llamacpp:allow-get-random-port`
-
-</td>
-<td>
-
-Enables the get_random_port command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-get-random-port`
-
-</td>
-<td>
-
-Denies the get_random_port command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
 `llamacpp:allow-get-router-info`
 
 </td>
@@ -655,32 +599,6 @@ Enables the get_router_info command without any pre-configured scope.
 <td>
 
 Denies the get_router_info command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:allow-get-session-by-model`
-
-</td>
-<td>
-
-Enables the get_session_by_model command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-get-session-by-model`
-
-</td>
-<td>
-
-Denies the get_session_by_model command without any pre-configured scope.
 
 </td>
 </tr>
@@ -785,32 +703,6 @@ Enables the is_model_supported command without any pre-configured scope.
 <td>
 
 Denies the is_model_supported command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:allow-is-process-running`
-
-</td>
-<td>
-
-Enables the is_process_running command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-is-process-running`
-
-</td>
-<td>
-
-Denies the is_process_running command without any pre-configured scope.
 
 </td>
 </tr>
@@ -941,32 +833,6 @@ Enables the prioritize_backends command without any pre-configured scope.
 <td>
 
 Denies the prioritize_backends command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:allow-probe-backend-load`
-
-</td>
-<td>
-
-Enables the probe_backend_load command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-probe-backend-load`
-
-</td>
-<td>
-
-Denies the probe_backend_load command without any pre-configured scope.
 
 </td>
 </tr>

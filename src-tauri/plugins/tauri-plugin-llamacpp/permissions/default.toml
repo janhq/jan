@@ -18,13 +18,9 @@ permissions = [
     "allow-adopt-router",
     "allow-get-devices",
     "allow-generate-api-key",
-    "allow-is-process-running",
     "allow-ensure-session-ready",
-    "allow-get-random-port",
     "allow-find-session-by-model",
     "allow-get-loaded-models",
-    "allow-get-all-sessions",
-    "allow-get-session-by-model",
 
     # GGUF commands
     "allow-read-gguf-metadata",
