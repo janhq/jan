@@ -453,9 +453,7 @@ impl CompositeToolInvoker {
         }
         match receiver.await {
             Ok(Ok(results)) => match request.validate_results(&results) {
-                Ok(()) => serde_json::to_string(&results).unwrap_or_else(|error| {
-                    format!("ERROR: could not encode ask response: {error}")
-                }),
+                Ok(()) => request.render_results(&results),
                 Err(error) => format!("ERROR: invalid ask response: {error}"),
             },
             Ok(Err(AskError::Cancelled)) | Err(_) => {
@@ -3104,7 +3102,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ask_waits_for_and_returns_a_structured_response() {
+    async fn ask_waits_for_and_returns_model_readable_response() {
         let root = unique_project_root();
         let (tx, mut rx) = mpsc::unbounded_channel();
         let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
@@ -3136,9 +3134,41 @@ mod tests {
         .unwrap();
 
         let out = task.await.unwrap();
-        let result: serde_json::Value = serde_json::from_str(&out[0].content).unwrap();
-        assert_eq!(result[0]["id"], "scope");
-        assert_eq!(result[0]["selected"][0], "Small");
+        assert_eq!(out[0].content, "User response for \"scope\": Small");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn ask_returns_custom_response_as_clear_model_text() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let asks = crate::core::agent::interaction::new_registry();
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        invoker.ask_requests = Some(asks.clone());
+
+        let task = tokio::spawn(async move { invoker.invoke(&[ask_call()]).await.unwrap() });
+        let request_id = match rx.recv().await.unwrap() {
+            StreamEvent::AskRequest { request_id, .. } => request_id,
+            event => panic!("expected ask_request, got {event:?}"),
+        };
+        crate::core::agent::interaction::respond(
+            &asks,
+            &request_id,
+            Ok(vec![crate::core::agent::interaction::QuestionResult {
+                id: "scope".into(),
+                selected: Vec::new(),
+                custom_input: Some("CUSTOM-SENTINEL-4829".into()),
+            }]),
+        )
+        .await
+        .unwrap();
+
+        let out = task.await.unwrap();
+        assert_eq!(
+            out[0].content,
+            "User response for \"scope\": CUSTOM-SENTINEL-4829"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
