@@ -195,6 +195,19 @@ async function resolveThinkingBudgetTokens(
   return tokensForThinkingBudgetLevel(rawLevel, contextSize || 8192)
 }
 
+export function effectiveContextWindow(
+  configuredContextTokens: number,
+  liveContextTokens: number | undefined,
+  contextShiftEnabled: boolean
+): number {
+  return contextShiftEnabled &&
+    typeof liveContextTokens === 'number' &&
+    liveContextTokens > 0
+    ? liveContextTokens
+    : configuredContextTokens
+}
+
+
 /**
  * Coerce a schema-node slot into a valid sub-schema. Some tool generators
  * emit shorthand like `{ "properties": { "foo": "string" } }` instead of
@@ -1266,15 +1279,36 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       return isNaN(n) ? undefined : n
     })()
 
-    const maxContextTokens = (() => {
+    const configuredContextTokens = (() => {
       const raw = inferenceParams.max_context_tokens
       return typeof raw === 'number' ? raw : (Number(raw) || 0)
     })()
+    const contextShiftEnabled =
+      providerId === 'llamacpp' &&
+      provider.settings?.some(
+        (setting) =>
+          setting.key === 'ctx_shift' &&
+          setting.controller_props?.value === true
+      ) === true
+    let liveContextTokens: number | undefined
+    if (contextShiftEnabled) {
+      try {
+        liveContextTokens = (
+          await getLlamacppExtension()?.getModelProps?.(modelId)
+        )?.nCtx
+      } catch {
+        // The router has not loaded the model yet. Preserve the configured limit.
+      }
+    }
+    const maxContextTokens = effectiveContextWindow(
+      configuredContextTokens,
+      liveContextTokens,
+      contextShiftEnabled
+    )
     const autoCompact =
       inferenceParams.auto_compact === true ||
       inferenceParams.auto_compact === 'true'
 
-    // Auto-trim or auto-compact conversation history when max_context_tokens is configured
     let effectiveMessages = messagesToConvert
     if (maxContextTokens > 0) {
       const contextConfig: ContextManagerConfig = {
@@ -1283,11 +1317,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         autoCompact: !!autoCompact,
       }
 
+      // Context Shift only shifts llama.cpp's KV cache after generation starts.
+      // Keep the submitted chat history under the live router context window first.
       const systemPromptTokens = effectiveSystem
         ? estimateTokens(effectiveSystem) + 4
         : 0
-
-      if (autoCompact && this.model) {
+      if (autoCompact && !contextShiftEnabled && this.model) {
         const compactResult = await compactMessages(
           messagesToConvert,
           contextConfig,
