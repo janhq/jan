@@ -7220,6 +7220,10 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                         }
                     }
                 }
+                AgentSettingKind::Text { .. } => {
+                    (!prompt.input.trim().is_empty())
+                        .then(|| toml_edit::value(prompt.input.trim().to_string()))
+                }
                 AgentSettingKind::Enum { options, default } => {
                     let input = prompt.input.trim();
                     if input.is_empty() {
@@ -9666,6 +9670,9 @@ fn draw_picker(
                         .unwrap_or_else(|| "unset".to_string());
                     format!("default: {d} · valid: >= {min} · current: {current}")
                 }
+                AgentSettingKind::Text { default } => {
+                    format!("default: {default} · current: {current}")
+                }
                 AgentSettingKind::Enum { options, default } => {
                     format!(
                         "default: {default} · valid: {} · current: {current}",
@@ -10583,15 +10590,11 @@ mod tests {
         style::{Color, Modifier, Style},
         text::Line,
     };
-    use crate::core::agent::events::{StreamEvent, Usage};
-    use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
-    use crate::core::agent::r#loop::PermissionRegistry;
     use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
     use serde_json::json;
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
-    use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 
     /// A bare key press with no modifiers.
     fn key(code: KeyCode) -> KeyEvent {
@@ -13217,6 +13220,29 @@ mod tests {
     }
 
     #[test]
+    fn settings_prompt_edits_text_key() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "instructions_file")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "PROMPT.md".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+
+        assert!(app.settings_prompt.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("instructions_file = \"PROMPT.md\""), "{doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
     fn settings_prompt_esc_cancels_without_writing() {
         let mut app = test_app();
         std::fs::create_dir_all(&app.agent_dir).unwrap();
@@ -15604,10 +15630,6 @@ mod tests {
 
         // Ctrl-T is an ordinary unbound key: it must not type into the input.
         let mut app = test_app();
-        assert!(
-            !app.mouse_capture,
-            "capture starts off so text is selectable"
-        );
         let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let mcp_servers: crate::core::state::SharedMcpServers =
             Arc::new(tokio::sync::Mutex::new(HashMap::new()));

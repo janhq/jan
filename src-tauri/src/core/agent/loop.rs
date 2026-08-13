@@ -31,7 +31,6 @@ use crate::core::{
     mcp::models::McpSettings,
     state::{ProviderConfig, SharedMcpServers},
 };
-use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 
 /// In-flight permission prompts keyed by `request_id`, shared between the loop
 /// (which inserts a one-shot sender before awaiting) and the respond command
