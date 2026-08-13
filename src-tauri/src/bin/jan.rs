@@ -10,6 +10,7 @@ use console::Style;
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
+use app_lib::core::cli::run_report::OutputFormat;
 use app_lib::core::cli::{
     cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
@@ -208,6 +209,10 @@ enum AgentCommands {
         providers: ProviderArgs,
         #[command(flatten)]
         resume: ResumeRunArgs,
+        /// `text` streams the answer as it arrives; `json` prints one result
+        /// object on stdout when the run finishes
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        output_format: OutputFormat,
     },
     /// Run a single turn (debugging)
     Step {
@@ -449,6 +454,7 @@ async fn handle_agent(cmd: AgentCommands) {
             safe,
             providers,
             resume,
+            output_format,
         } => {
             cli_agent_run(
                 &project,
@@ -457,6 +463,7 @@ async fn handle_agent(cmd: AgentCommands) {
                 providers.into_overrides(),
                 !safe,
                 resume.into_target(),
+                output_format,
             )
             .await
         }
@@ -621,6 +628,44 @@ mod tests {
     fn safe_flag_parses_and_defaults_off() {
         assert!(!Cli::parse_from(["jan"]).safe);
         assert!(Cli::parse_from(["jan", "--safe"]).safe);
+    }
+
+    /// Parse `jan cli agent run <task> <extra...>` and pull out its output format.
+    fn parsed_output_format(extra: &[&str]) -> OutputFormat {
+        let mut argv = vec!["jan", "cli", "agent", "run", "task"];
+        argv.extend_from_slice(extra);
+        match Cli::parse_from(argv).command {
+            Some(Commands::Cli {
+                cmd:
+                    CliCommands::Agent {
+                        cmd: AgentCommands::Run { output_format, .. },
+                    },
+            }) => output_format,
+            _ => panic!("expected `cli agent run`"),
+        }
+    }
+
+    #[test]
+    fn output_format_parses_and_defaults_to_text() {
+        assert_eq!(parsed_output_format(&[]), OutputFormat::Text);
+        assert_eq!(
+            parsed_output_format(&["--output-format", "json"]),
+            OutputFormat::Json
+        );
+        assert_eq!(
+            parsed_output_format(&["--output-format=text"]),
+            OutputFormat::Text
+        );
+        assert!(Cli::try_parse_from([
+            "jan",
+            "cli",
+            "agent",
+            "run",
+            "task",
+            "--output-format",
+            "yaml"
+        ])
+        .is_err());
     }
 
     #[test]

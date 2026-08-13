@@ -1680,6 +1680,13 @@ async fn run_turn_cycle(
                             attempts + 1
                         );
                         conversation_messages = compacted;
+                        // Publish now, not at the end of the run: a retry that
+                        // never recovers returns Err, and an unpublished
+                        // compaction leaves the client holding the oversized
+                        // history that every later turn would re-overflow on.
+                        let _ = events.send(StreamEvent::MessagesUpdated {
+                            messages: conversation_messages.clone(),
+                        });
                         keep_recent = (keep_recent / 2).max(2);
                         attempts += 1;
                     }
@@ -2642,6 +2649,76 @@ mod tests {
 
         assert_eq!(result["choices"][0]["message"]["content"], "final");
         assert!(tool.calls.lock().unwrap().is_empty());
+    }
+
+    /// A run that never recovers from overflow still has to hand its compacted
+    /// conversation to the client: without it the session keeps the oversized
+    /// history and every later turn re-overflows by construction.
+    #[tokio::test]
+    async fn turn_cycle_publishes_compacted_history_before_giving_up() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let overflow = || {
+            Err(format!(
+                "[{}] Upstream returned HTTP 400: context_length_exceeded",
+                crate::core::agent::upstream::CONTEXT_OVERFLOW_MARKER
+            ))
+        };
+        let summary = || Ok(json!({ "choices": [{ "message": { "content": "SUMMARY" } }] }));
+        let model = ResultQueueModel {
+            results: StdMutex::new(
+                vec![
+                    overflow(),
+                    summary(),
+                    overflow(),
+                    summary(),
+                    overflow(),
+                    summary(),
+                    overflow(),
+                    summary(),
+                    overflow(),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        };
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let mut convo = vec![json!({ "role": "system", "content": "sys" })];
+        for i in 0..60 {
+            let r = if i % 2 == 0 { "user" } else { "assistant" };
+            convo.push(json!({ "role": r, "content": format!("m{i}") }));
+        }
+        let original_len = convo.len();
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_err(), "a persistent overflow must still fail");
+        drop(tx);
+        let mut published: Option<usize> = None;
+        while let Ok(ev) = rx.try_recv() {
+            if let StreamEvent::MessagesUpdated { messages } = ev {
+                published = Some(messages.len());
+            }
+        }
+        let len = published.expect("compaction must publish MessagesUpdated");
+        assert!(
+            len < original_len,
+            "published history must be shorter than the overflowing one ({len} vs {original_len})"
+        );
     }
 
     #[tokio::test]
