@@ -294,11 +294,7 @@ async fn test_get_server_summaries_with_capabilities_in_active_config() {
     let result = get_server_summaries(state).await;
     assert!(result.is_ok());
     let summaries = result.unwrap();
-    assert_eq!(
-        summaries.len(),
-        1,
-        "enabled server appears even when disconnected"
-    );
+    assert_eq!(summaries.len(), 1, "enabled server appears even when disconnected");
     assert_eq!(summaries[0].name, "filesystem");
     assert_eq!(summaries[0].capabilities, vec!["filesystem", "files"]);
     assert_eq!(summaries[0].description, "Read and write local files");
@@ -376,11 +372,7 @@ async fn test_get_tools_falls_back_to_last_known_when_server_enabled_but_disconn
     let result = get_tools(app.handle().clone(), state).await;
     assert!(result.is_ok());
     let tools = result.unwrap();
-    assert_eq!(
-        tools.len(),
-        1,
-        "disconnected-but-enabled server's last-known tools still present"
-    );
+    assert_eq!(tools.len(), 1, "disconnected-but-enabled server's last-known tools still present");
     assert_eq!(tools[0].name, "web_search_exa");
     assert_eq!(tools[0].server, "exa");
 }
@@ -416,10 +408,7 @@ async fn test_get_tools_omits_disabled_server_even_with_stale_last_known_entry()
 
     let result = get_tools(app.handle().clone(), state).await;
     assert!(result.is_ok());
-    assert!(
-        result.unwrap().is_empty(),
-        "disabled server must not contribute stale tools"
-    );
+    assert!(result.unwrap().is_empty(), "disabled server must not contribute stale tools");
 }
 
 // ============================================================================

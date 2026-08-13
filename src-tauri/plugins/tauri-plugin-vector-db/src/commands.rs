@@ -1,5 +1,7 @@
-use crate::db::{self, AttachmentFileInfo, MemoryHit, MinimalChunkInput, SearchResult};
 use crate::{VectorDBError, VectorDBState};
+use crate::db::{
+    self, AttachmentFileInfo, MemoryHit, MinimalChunkInput, SearchResult,
+};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -29,20 +31,12 @@ pub async fn get_status(state: State<'_, VectorDBState>) -> Result<Status, Vecto
 
     // Verbose version for startup diagnostics
     let ann = {
-        if conn
-            .execute(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])",
-                [],
-            )
-            .is_ok()
-        {
+        if conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])", []).is_ok() {
             let _ = conn.execute("DROP TABLE IF EXISTS temp.temp_vec", []);
             println!("[VectorDB] ✓ sqlite-vec already loaded");
             true
         } else {
-            unsafe {
-                let _ = conn.load_extension_enable();
-            }
+            unsafe { let _ = conn.load_extension_enable(); }
             let paths = db::possible_sqlite_vec_paths();
             println!("[VectorDB] Trying {} bundled paths...", paths.len());
             let mut found = false;
@@ -66,14 +60,7 @@ pub async fn get_status(state: State<'_, VectorDBState>) -> Result<Status, Vecto
         }
     };
 
-    println!(
-        "[VectorDB] ANN status: {}",
-        if ann {
-            "AVAILABLE ✓"
-        } else {
-            "NOT AVAILABLE ✗"
-        }
-    );
+    println!("[VectorDB] ANN status: {}", if ann { "AVAILABLE ✓" } else { "NOT AVAILABLE ✗" });
     Ok(Status { ann_available: ann })
 }
 
@@ -89,15 +76,9 @@ pub async fn create_collection<R: tauri::Runtime>(
 
     let has_ann = db::create_schema(&conn, dimension)?;
     if has_ann {
-        println!(
-            "[VectorDB] ✓ Collection '{}' created with ANN support",
-            name
-        );
+        println!("[VectorDB] ✓ Collection '{}' created with ANN support", name);
     } else {
-        println!(
-            "[VectorDB] ⚠ Collection '{}' created WITHOUT ANN support (will use linear search)",
-            name
-        );
+        println!("[VectorDB] ⚠ Collection '{}' created WITHOUT ANN support (will use linear search)", name);
     }
     Ok(())
 }
@@ -161,15 +142,7 @@ pub async fn search_collection<R: tauri::Runtime>(
     let path = db::collection_path(&state.base_dir, &collection);
     let conn = db::open_or_init_conn(&path)?;
     let vec_loaded = db::try_load_sqlite_vec(&conn);
-    db::search_collection(
-        &conn,
-        &query_embedding,
-        limit,
-        threshold,
-        mode,
-        vec_loaded,
-        file_ids,
-    )
+    db::search_collection(&conn, &query_embedding, limit, threshold, mode, vec_loaded, file_ids)
 }
 
 #[tauri::command]

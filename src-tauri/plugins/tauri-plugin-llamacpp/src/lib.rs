@@ -7,8 +7,8 @@ use tauri::{
 
 mod backend;
 pub mod cleanup;
-mod commands;
 pub mod deps_analyzer;
+mod commands;
 mod device;
 mod error;
 mod gguf;
@@ -96,10 +96,17 @@ mod permission_tests {
 
     #[test]
     fn every_registered_command_has_a_permission() {
-        let handlers = names_between(include_str!("lib.rs"), "tauri::generate_handler![", "])");
+        let handlers = names_between(
+            include_str!("lib.rs"),
+            "tauri::generate_handler![",
+            "])",
+        );
         let declared = names_between(include_str!("../build.rs"), "COMMANDS: &[&str] = &[", "];");
 
-        let missing: Vec<_> = handlers.iter().filter(|c| !declared.contains(c)).collect();
+        let missing: Vec<_> = handlers
+            .iter()
+            .filter(|c| !declared.contains(c))
+            .collect();
         assert!(
             missing.is_empty(),
             "commands registered but absent from build.rs COMMANDS (they will \

@@ -103,10 +103,7 @@ mod tests {
 
     #[test]
     fn computes_a_percentage_when_the_total_is_known() {
-        assert_eq!(
-            tool_progress("s", &params(25.0, Some(50.0))).percent,
-            Some(50.0)
-        );
+        assert_eq!(tool_progress("s", &params(25.0, Some(50.0))).percent, Some(50.0));
     }
 
     #[test]

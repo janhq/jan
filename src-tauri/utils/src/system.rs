@@ -719,11 +719,7 @@ mod tests {
     fn find_rocm_paths_returns_existing_dirs() {
         let rp = find_rocm_paths();
         for p in rp.lib_paths.iter().chain(rp.bin_paths.iter()) {
-            assert!(
-                Path::new(p).exists(),
-                "Returned ROCm path should exist: {}",
-                p
-            );
+            assert!(Path::new(p).exists(), "Returned ROCm path should exist: {}", p);
         }
     }
 

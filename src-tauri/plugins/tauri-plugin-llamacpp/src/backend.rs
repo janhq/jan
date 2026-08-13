@@ -918,12 +918,8 @@ pub fn check_backend_installed(
     jan_data_folder: String,
     is_windows: bool,
 ) -> bool {
-    let exe_path = PathBuf::from(get_backend_exe_path(
-        backend,
-        version,
-        jan_data_folder,
-        is_windows,
-    ));
+    let exe_path =
+        PathBuf::from(get_backend_exe_path(backend, version, jan_data_folder, is_windows));
     exe_path.exists()
 }
 
@@ -1026,7 +1022,8 @@ fn verify_backend_dependencies(
 
     // A lib may be resolved by one binary but missing for another — keep only
     // libs that no binary resolved.
-    let mut truly_missing: Vec<String> = missing.difference(&resolved).cloned().collect();
+    let mut truly_missing: Vec<String> =
+        missing.difference(&resolved).cloned().collect();
     let mut resolved_vec: Vec<String> = resolved.into_iter().collect();
     truly_missing.sort();
     resolved_vec.sort();
@@ -1054,12 +1051,8 @@ pub async fn verify_backend_installation(
     jan_data_folder: String,
     is_windows: bool,
 ) -> Result<BackendVerificationResult, crate::error::LlamacppError> {
-    let exe_path = PathBuf::from(get_backend_exe_path(
-        backend.clone(),
-        version.clone(),
-        jan_data_folder.clone(),
-        is_windows,
-    ));
+    let exe_path =
+        PathBuf::from(get_backend_exe_path(backend.clone(), version.clone(), jan_data_folder.clone(), is_windows));
     if !exe_path.exists() {
         return Err(crate::error::LlamacppError::new(
             crate::error::ErrorCode::BinaryNotFound,
@@ -1077,18 +1070,17 @@ pub async fn verify_backend_installation(
         });
     }
     // Libs sit next to the exe (build/bin/ when present); backend_dir is too high.
-    let bin_dir = exe_path.parent().map(PathBuf::from).unwrap_or_else(|| {
-        PathBuf::from(get_backend_dir(backend.clone(), version, jan_data_folder))
-    });
+    let bin_dir = exe_path
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(get_backend_dir(backend.clone(), version, jan_data_folder)));
     tokio::task::spawn_blocking(move || verify_backend_dependencies(&bin_dir, &exe_path, &backend))
         .await
-        .map_err(|e| {
-            crate::error::LlamacppError::new(
-                crate::error::ErrorCode::InternalError,
-                "Dependency verification task panicked".into(),
-                Some(e.to_string()),
-            )
-        })?
+        .map_err(|e| crate::error::LlamacppError::new(
+            crate::error::ErrorCode::InternalError,
+            "Dependency verification task panicked".into(),
+            Some(e.to_string()),
+        ))?
 }
 
 // ============================================================================
@@ -1122,8 +1114,8 @@ fn build_http_client(proxy: Option<&ProxyConfig>) -> Result<reqwest::Client, Str
 
     if let Some(cfg) = proxy {
         if !cfg.url.trim().is_empty() {
-            let mut p =
-                reqwest::Proxy::all(&cfg.url).map_err(|e| format!("Invalid proxy URL: {}", e))?;
+            let mut p = reqwest::Proxy::all(&cfg.url)
+                .map_err(|e| format!("Invalid proxy URL: {}", e))?;
             if let (Some(u), Some(pw)) = (&cfg.username, &cfg.password) {
                 if !u.is_empty() {
                     p = p.basic_auth(u, pw);
@@ -1248,12 +1240,14 @@ pub fn build_backend_download_items(
 
     // Official Windows HIP assets ship as .zip (e.g. win-hip-radeon-x64.zip);
     // Jan's own win-hip-common_cpus-x64 and all other backends are .tar.gz.
-    let archive_ext =
-        if os_type == "windows" && backend.contains("hip") && !backend.contains("common_cpus") {
-            "zip"
-        } else {
-            "tar.gz"
-        };
+    let archive_ext = if os_type == "windows"
+        && backend.contains("hip")
+        && !backend.contains("common_cpus")
+    {
+        "zip"
+    } else {
+        "tar.gz"
+    };
 
     // Base URL for the main backend archive
     let backend_url = match source.as_str() {
@@ -1277,7 +1271,8 @@ pub fn build_backend_download_items(
 
     // CUDA runtime items
     if backend.contains("cu11.7") || backend.contains("cuda-11") {
-        let already_installed = check_cuda_installed_internal(&backend_dir, "11.7", &os_type);
+        let already_installed =
+            check_cuda_installed_internal(&backend_dir, "11.7", &os_type);
         if !already_installed {
             let cuda_url = match source.as_str() {
                 "github" => format!(
@@ -1296,7 +1291,8 @@ pub fn build_backend_download_items(
             });
         }
     } else if backend.contains("cu12.0") || backend.contains("cuda-12") {
-        let already_installed = check_cuda_installed_internal(&backend_dir, "12.0", &os_type);
+        let already_installed =
+            check_cuda_installed_internal(&backend_dir, "12.0", &os_type);
         if !already_installed {
             let cuda_url = match source.as_str() {
                 "github" => format!(
@@ -1315,7 +1311,8 @@ pub fn build_backend_download_items(
             });
         }
     } else if backend.contains("cuda-13") {
-        let already_installed = check_cuda_installed_internal(&backend_dir, "13.0", &os_type);
+        let already_installed =
+            check_cuda_installed_internal(&backend_dir, "13.0", &os_type);
         if !already_installed {
             let cuda_url = match source.as_str() {
                 "github" => format!(
@@ -2103,10 +2100,7 @@ mod tests {
         let llamacpp_idx = names.iter().position(|n| n == "llamacpp").unwrap();
         let backends_idx = names.iter().position(|n| n == "backends").unwrap();
         let version_idx = names.iter().position(|n| n == "b7523").unwrap();
-        let backend_idx = names
-            .iter()
-            .position(|n| n == "linux-common_cpus-x64")
-            .unwrap();
+        let backend_idx = names.iter().position(|n| n == "linux-common_cpus-x64").unwrap();
         assert!(llamacpp_idx < backends_idx);
         assert!(backends_idx < version_idx);
         assert!(version_idx < backend_idx);
@@ -2297,24 +2291,12 @@ mod tests {
 
     #[test]
     fn test_is_virtual_windows_dll() {
-        assert!(crate::deps_analyzer::is_virtual_windows_dll(
-            "api-ms-win-core-memory-l1-1-0.dll"
-        ));
-        assert!(crate::deps_analyzer::is_virtual_windows_dll(
-            "API-MS-WIN-CORE-LIBRARYLOADER-L1-2-0.DLL"
-        ));
-        assert!(crate::deps_analyzer::is_virtual_windows_dll(
-            "ext-ms-win-ntuser-draw-l1-1-0.dll"
-        ));
-        assert!(!crate::deps_analyzer::is_virtual_windows_dll(
-            "KERNEL32.dll"
-        ));
-        assert!(!crate::deps_analyzer::is_virtual_windows_dll(
-            "libcuda.so.1"
-        ));
-        assert!(!crate::deps_analyzer::is_virtual_windows_dll(
-            "libvulkan.so.1"
-        ));
+        assert!(crate::deps_analyzer::is_virtual_windows_dll("api-ms-win-core-memory-l1-1-0.dll"));
+        assert!(crate::deps_analyzer::is_virtual_windows_dll("API-MS-WIN-CORE-LIBRARYLOADER-L1-2-0.DLL"));
+        assert!(crate::deps_analyzer::is_virtual_windows_dll("ext-ms-win-ntuser-draw-l1-1-0.dll"));
+        assert!(!crate::deps_analyzer::is_virtual_windows_dll("KERNEL32.dll"));
+        assert!(!crate::deps_analyzer::is_virtual_windows_dll("libcuda.so.1"));
+        assert!(!crate::deps_analyzer::is_virtual_windows_dll("libvulkan.so.1"));
     }
 
     // -------------------------------------------------------------------------
@@ -2503,10 +2485,7 @@ pub async fn verify_file_sha512(path: String, expected: String) -> Result<bool, 
         return Ok(true);
     }
     if expected.len() != 128 {
-        log::warn!(
-            "Malformed SHA-512 digest (expected 128 hex chars, got {}), skipping verification",
-            expected.len()
-        );
+        log::warn!("Malformed SHA-512 digest (expected 128 hex chars, got {}), skipping verification", expected.len());
         return Ok(true);
     }
 
@@ -2518,9 +2497,7 @@ pub async fn verify_file_sha512(path: String, expected: String) -> Result<bool, 
         let mut hasher = Sha512::new();
         let mut buf = vec![0u8; 1024 * 1024];
         loop {
-            let n = file
-                .read(&mut buf)
-                .map_err(|e| format!("{}: {}", path, e))?;
+            let n = file.read(&mut buf).map_err(|e| format!("{}: {}", path, e))?;
             if n == 0 {
                 break;
             }

@@ -49,13 +49,13 @@ mod tests {
         let delay1 = calculate_exponential_backoff_delay(1);
         let delay2 = calculate_exponential_backoff_delay(2);
         let delay3 = calculate_exponential_backoff_delay(3);
-
+        
         // First attempt should be around base delay (1000ms) ± jitter
         assert!(delay1 >= 100 && delay1 <= 2000);
-
+        
         // Second attempt should be roughly double
         assert!(delay2 >= 1000 && delay2 <= 4000);
-
+        
         // Third attempt should be roughly quadruple
         assert!(delay3 >= 2000 && delay3 <= 6000);
         // Generally increasing pattern
@@ -75,12 +75,7 @@ mod tests {
         // Even with jitter, should never go below minimum
         for attempt in 1..=10 {
             let delay = calculate_exponential_backoff_delay(attempt);
-            assert!(
-                delay >= 100,
-                "Delay {} for attempt {} is below minimum",
-                delay,
-                attempt
-            );
+            assert!(delay >= 100, "Delay {} for attempt {} is below minimum", delay, attempt);
         }
     }
 
@@ -90,7 +85,7 @@ mod tests {
         let delay1_a = calculate_exponential_backoff_delay(5);
         let delay1_b = calculate_exponential_backoff_delay(5);
         assert_eq!(delay1_a, delay1_b);
-
+        
         let delay2_a = calculate_exponential_backoff_delay(10);
         let delay2_b = calculate_exponential_backoff_delay(10);
         assert_eq!(delay2_a, delay2_b);
@@ -103,12 +98,12 @@ mod tests {
         for attempt in 1..=8 {
             delays.push(calculate_exponential_backoff_delay(attempt));
         }
-
+        
         // Should not exceed maximum
         for delay in &delays {
             assert!(*delay <= MCP_MAX_RESTART_DELAY_MS);
         }
-
+        
         // Earlier attempts should generally be smaller than later ones
         // (allowing some variance due to jitter)
         assert!(delays[0] < delays[6]); // 1st vs 7th attempt
@@ -121,7 +116,7 @@ mod tests {
         assert_eq!(MCP_BASE_RESTART_DELAY_MS, 1000);
         assert_eq!(MCP_MAX_RESTART_DELAY_MS, 30000);
         assert_eq!(MCP_BACKOFF_MULTIPLIER, 2.0);
-
+        
         // Max should be greater than base
         const { assert!(MCP_MAX_RESTART_DELAY_MS > MCP_BASE_RESTART_DELAY_MS) };
     }

@@ -847,11 +847,8 @@ mod tests {
     fn parse_hosted_result_text_surfaces_errors() {
         let err = "{\"error\":{\"code\":-32000,\"message\":\"boom\"}}";
         assert!(parse_hosted_result_text(err).is_err());
-        let tool_err =
-            "{\"result\":{\"isError\":true,\"content\":[{\"type\":\"text\",\"text\":\"bad\"}]}}";
-        assert!(parse_hosted_result_text(tool_err)
-            .unwrap_err()
-            .contains("bad"));
+        let tool_err = "{\"result\":{\"isError\":true,\"content\":[{\"type\":\"text\",\"text\":\"bad\"}]}}";
+        assert!(parse_hosted_result_text(tool_err).unwrap_err().contains("bad"));
     }
 
     #[test]

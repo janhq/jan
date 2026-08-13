@@ -17,9 +17,7 @@ use std::sync::Arc;
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::Mutex;
 
-use crate::core::server::converters::{
-    converter_for, SseAccumulator, StreamState, UpstreamConverter,
-};
+use crate::core::server::converters::{converter_for, SseAccumulator, StreamState, UpstreamConverter};
 use crate::core::{
     mcp::models::McpSettings,
     state::{ProviderConfig, ServerHandle, SharedMcpServers},
@@ -2224,12 +2222,8 @@ async fn proxy_request(
                             forward_converted_stream(response.bytes_stream(), sender, converter)
                                 .await;
                         } else {
-                            forward_converted_non_streaming(
-                                response.bytes().await,
-                                sender,
-                                converter,
-                            )
-                            .await;
+                            forward_converted_non_streaming(response.bytes().await, sender, converter)
+                                .await;
                         }
                     });
                     return Ok(builder.body(body).unwrap());

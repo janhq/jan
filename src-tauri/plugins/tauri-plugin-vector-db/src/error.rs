@@ -20,3 +20,4 @@ impl From<serde_json::Error> for VectorDBError {
         VectorDBError::DatabaseError(err.to_string())
     }
 }
+

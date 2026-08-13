@@ -66,9 +66,7 @@ pub fn migrate_mcp_servers(
         }
     }
     if mcp_version < 4 {
-        log::info!(
-            "Migrating MCP schema version 4: Removing default Exa MCP (native web search cutover)"
-        );
+        log::info!("Migrating MCP schema version 4: Removing default Exa MCP (native web search cutover)");
         if let Err(e) = remove_exa_server(app_handle) {
             log::error!("Failed to remove Exa MCP server: {e}");
         }

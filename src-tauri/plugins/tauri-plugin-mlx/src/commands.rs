@@ -141,7 +141,10 @@ pub async fn load_mlx_model_impl(
                         || line_lower.contains("ready to accept")
                         || line_lower.contains("server started and listening on")
                     {
-                        log::info!("MLX server appears to be ready based on stdout: '{}'", line);
+                        log::info!(
+                            "MLX server appears to be ready based on stdout: '{}'",
+                            line
+                        );
                         let _ = stdout_ready_tx.send(true).await;
                     }
                 }
@@ -177,7 +180,10 @@ pub async fn load_mlx_model_impl(
                             || line_lower.contains("server listening on")
                             || line_lower.contains("server started and listening on")
                         {
-                            log::info!("MLX model appears to be ready based on logs: '{}'", line);
+                            log::info!(
+                                "MLX model appears to be ready based on logs: '{}'",
+                                line
+                            );
                             let _ = ready_tx.send(true).await;
                         }
                     }
@@ -196,9 +202,9 @@ pub async fn load_mlx_model_impl(
     if let Some(status) = child.try_wait()? {
         if !status.success() {
             let stderr_output = stderr_task.await.unwrap_or_else(|e| {
-                log::warn!("MLX stderr task join failed: {e}");
-                String::new()
-            });
+                        log::warn!("MLX stderr task join failed: {e}");
+                        String::new()
+                    });
             log::error!("MLX server failed early with code {:?}", status);
             log::error!("{}", stderr_output);
             return Err(MlxError::from_stderr(&stderr_output).into());
