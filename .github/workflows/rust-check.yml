@@ -1,0 +1,107 @@
+name: Rust Check
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - dev
+
+concurrency:
+  group: rust-check-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The desktop and CLI feature sets are mutually exclusive configs of the same
+  # crate, so neither one alone proves the other compiles.
+  app:
+    name: app (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: desktop
+            features: test-tauri
+            targets: --all-targets
+            tauri: true
+          # Test targets are only exercised in the desktop config, and a
+          # headless runner cannot link them here anyway.
+          - name: cli
+            features: cli
+            targets: --lib --bins
+            tauri: false
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.name }}
+
+      - name: Install Tauri dependencies
+        if: matrix.tauri
+        run: |
+          sudo apt update
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
+
+      - name: Create Tauri resource stubs
+        if: matrix.tauri
+        run: ./scripts/stub-tauri-resources.sh
+
+      - name: cargo check
+        run: |
+          cargo check --locked --manifest-path src-tauri/Cargo.toml \
+            --no-default-features --features ${{ matrix.features }} ${{ matrix.targets }}
+
+      - name: cargo clippy
+        run: |
+          cargo clippy --locked --manifest-path src-tauri/Cargo.toml \
+            --no-default-features --features ${{ matrix.features }} ${{ matrix.targets }} \
+            -- -D warnings
+
+  # Each plugin and src-tauri/utils is its own workspace, so checking the app
+  # crate compiles them as path dependencies but never lints them. No --locked
+  # here: Cargo.lock is gitignored and only some of these crates commit one.
+  crates:
+    name: ${{ matrix.crate }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # tauri-plugin-mlx is Apple-Silicon-only and is a macOS target
+        # dependency, not part of any Linux build.
+        crate:
+          - plugins/tauri-plugin-agent-tools
+          - plugins/tauri-plugin-hardware
+          - plugins/tauri-plugin-llamacpp
+          - plugins/tauri-plugin-rag
+          - plugins/tauri-plugin-vector-db
+          - plugins/tauri-plugin-websearch
+          - utils
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri/${{ matrix.crate }}
+
+      - name: Install Tauri dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
+
+      - name: cargo check
+        run: cargo check --manifest-path src-tauri/${{ matrix.crate }}/Cargo.toml --all-targets
+
+      - name: cargo clippy
+        run: cargo clippy --manifest-path src-tauri/${{ matrix.crate }}/Cargo.toml --all-targets -- -D warnings

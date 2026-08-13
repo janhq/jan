@@ -48,26 +48,41 @@ jobs:
         with:
           toolchain: stable
 
+      # `libdbus-1-dev` used to be required here because keyring's
+      # `sync-secret-service` backend links libdbus. That backend is gone (it is
+      # now the pure-Rust `async-secret-service`), and installing the dev
+      # package would hide a regression: the build would keep succeeding while
+      # producing a binary that cannot start on a host without libdbus at all.
+      # `pkg-config` stays for openssl-sys.
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev pkg-config
+          sudo apt-get install -y pkg-config
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Assert no GUI crates
+      # The CLI must stay free of Tauri/GTK: this runner has no libwebkit2gtk,
+      # so a regression here would surface as a confusing linker error later.
+      # `dbus`/`libdbus-sys` arrive via keyring's `sync-secret-service` backend;
+      # it is pinned to the pure-Rust `async-secret-service` (zbus) instead.
+      #
+      # `cargo tree -i` exits 0 with "nothing to print" for a crate that is in
+      # Cargo.lock but not in *this* feature graph, so the exit code alone does
+      # not answer the question -- the previous form of this check could not
+      # fail. A non-zero exit means the crate is not in the lockfile at all,
+      # which is also a pass.
+      - name: Assert no GUI or D-Bus crates in the CLI dependency graph
         run: |
           cd src-tauri
-          if cargo tree --no-default-features --features cli -i tauri >/dev/null 2>&1 || \
-             cargo tree --no-default-features --features cli -i gtk >/dev/null 2>&1 || \
-             cargo tree --no-default-features --features cli -i gdk >/dev/null 2>&1 || \
-             cargo tree --no-default-features --features cli -i muda >/dev/null 2>&1 || \
-             cargo tree --no-default-features --features cli -i wry >/dev/null 2>&1 || \
-             cargo tree --no-default-features --features cli -i webkit2gtk >/dev/null 2>&1; then
-            echo "GUI crate leaked into the CLI dependency graph" >&2
+          for crate in tauri gtk gdk muda wry webkit2gtk dbus libdbus-sys dbus-secret-service; do
+            out=$(cargo tree --no-default-features --features cli -e normal \
+              --target x86_64-unknown-linux-gnu -i "$crate" 2>&1) || continue
+            case "$out" in *"nothing to print"*) continue ;; esac
+            echo "::error::$crate is back in the jan CLI dependency graph"
+            echo "$out" | head -20
             exit 1
-          fi
+          done
 
       - name: Build CLI binary
         env:
@@ -76,6 +91,29 @@ jobs:
         run: |
           cd src-tauri
           cargo build --no-default-features --features cli --bin jan --release
+
+      # The crate blocklist above only catches names somebody thought to list.
+      # This catches any new dynamic dependency whatever its source: a NEEDED
+      # entry is resolved by the loader before `main`, so a host without that
+      # library cannot exec `jan` at all and no runtime fallback can rescue it.
+      # That is exactly how a missing libdbus-1.so.3 broke headless installs.
+      - name: Assert the CLI binary links no unexpected shared libraries
+        run: |
+          # `comm` requires both inputs collated identically, hence LC_ALL=C.
+          export LC_ALL=C
+          readelf -d src-tauri/target/release/jan \
+            | sed -n 's/.*NEEDED.*\[\(.*\)\].*/\1/p' | sort -u > needed.txt
+          echo "linked:"; sed 's/^/  /' needed.txt
+          # libssl/libcrypto come from reqwest's default native-tls backend.
+          # They are versioned sonames, so the binary still fails on a host with
+          # a different OpenSSL; switching reqwest to rustls-tls would drop them.
+          printf '%s\n' ld-linux-x86-64.so.2 libc.so.6 libcrypto.so.3 \
+            libgcc_s.so.1 libm.so.6 libssl.so.3 | sort -u > allowed.txt
+          unexpected=$(comm -23 needed.txt allowed.txt)
+          if [ -n "$unexpected" ]; then
+            echo "::error::CLI binary gained an unexpected shared library dependency: $(echo $unexpected)"
+            exit 1
+          fi
 
       - name: Strip binary
         run: strip src-tauri/target/release/jan
