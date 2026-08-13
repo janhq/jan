@@ -402,6 +402,32 @@ Denies the force_kill_router_tree command without any pre-configured scope.
 <tr>
 <td>
 
+`llamacpp:allow-force-stop-model`
+
+</td>
+<td>
+
+Enables the force_stop_model command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-force-stop-model`
+
+</td>
+<td>
+
+Denies the force_stop_model command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `llamacpp:allow-generate-api-key`
 
 </td>
