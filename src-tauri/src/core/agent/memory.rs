@@ -62,10 +62,7 @@ pub(crate) fn retrieve_block(project_root: &Path, query: &str) -> Option<String>
         .into_iter()
         .map(|h| {
             let text = if h.text.chars().count() > MAX_EXCERPT_CHARS {
-                format!(
-                    "{}...",
-                    h.text.chars().take(MAX_EXCERPT_CHARS).collect::<String>()
-                )
+                format!("{}...", h.text.chars().take(MAX_EXCERPT_CHARS).collect::<String>())
             } else {
                 h.text
             };

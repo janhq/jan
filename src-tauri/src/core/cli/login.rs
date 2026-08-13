@@ -20,9 +20,7 @@ const KEY_PROMPT: &str = "Paste your Tokamak API key: ";
 /// to show the sign-in notice in and nobody to act on it. No-op otherwise --
 /// an interactive run with no provider proceeds and the TUI shows its own
 /// notice instead of forcing a login flow here.
-pub fn reject_headless_without_provider(
-    project_root: Option<&std::path::Path>,
-) -> Result<(), String> {
+pub fn reject_headless_without_provider(project_root: Option<&std::path::Path>) -> Result<(), String> {
     if super::providers::has_usable_provider(project_root) {
         return Ok(());
     }
@@ -173,11 +171,7 @@ mod tests {
 
     #[test]
     fn report_survives_every_model_count() {
-        for models in [
-            Vec::new(),
-            vec!["m".to_string()],
-            vec!["a".into(), "b".into()],
-        ] {
+        for models in [Vec::new(), vec!["m".to_string()], vec!["a".into(), "b".into()]] {
             report(&tokamak::Login {
                 models,
                 config_path: std::path::PathBuf::from("/tmp/config.toml"),

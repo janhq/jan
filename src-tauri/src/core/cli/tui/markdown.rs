@@ -24,11 +24,7 @@ pub(super) fn format_assistant_lines(text: &str, width: u16) -> Vec<Line<'static
 /// `[thinking]` header state; once the tag closes (or prose begins) the rest
 /// renders as usual. When folding is off this is identical to
 /// `format_assistant_lines`, so the existing live-tail tests hold.
-pub(super) fn live_assistant_lines(
-    text: &str,
-    width: u16,
-    fold_reasoning: bool,
-) -> Vec<Line<'static>> {
+pub(super) fn live_assistant_lines(text: &str, width: u16, fold_reasoning: bool) -> Vec<Line<'static>> {
     if !fold_reasoning {
         return format_assistant_lines(text, width);
     }

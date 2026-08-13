@@ -592,7 +592,10 @@ mod tests {
         assert_eq!(list.open_summary(), None, "empty list has no open work");
         list.init(vec![phase("Build", &["a", "b"])]).unwrap();
         // 'a' is promoted to in-progress, 'b' stays pending.
-        assert_eq!(list.open_summary().unwrap(), "→ [Build] a\n• [Build] b");
+        assert_eq!(
+            list.open_summary().unwrap(),
+            "→ [Build] a\n• [Build] b"
+        );
         list.done(Target::All).unwrap();
         assert_eq!(
             list.open_summary(),

@@ -184,11 +184,9 @@ fn load_raw() -> Result<GlobalConfigToml, String> {
 /// since it holds API keys.
 fn write_raw(config: &GlobalConfigToml) -> Result<PathBuf, String> {
     let dir = global_jan_dir()?;
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
     let path = dir.join("config.toml");
-    let body =
-        toml::to_string_pretty(config).map_err(|e| format!("Failed to serialize config: {e}"))?;
+    let body = toml::to_string_pretty(config).map_err(|e| format!("Failed to serialize config: {e}"))?;
     std::fs::write(&path, &body).map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
     restrict_permissions(&path);
     Ok(path)
@@ -264,8 +262,7 @@ pub(crate) fn remove_provider(name: &str) -> Result<bool, String> {
 /// yet. Idempotent and clobber-safe: never overwrites an existing file.
 pub(crate) fn ensure_global_config() -> Result<PathBuf, String> {
     let dir = global_jan_dir()?;
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
     let path = dir.join("config.toml");
     if !path.exists() {
         std::fs::write(&path, GLOBAL_CONFIG_TEMPLATE)
@@ -361,10 +358,7 @@ models = ["gpt-4o"]
             let configs = load_global_config().expect("load");
             let openai = configs.get("openai").expect("openai present");
             assert_eq!(openai.api_key.as_deref(), Some("sk-abc"));
-            assert_eq!(
-                openai.base_url.as_deref(),
-                Some("https://api.openai.com/v1")
-            );
+            assert_eq!(openai.base_url.as_deref(), Some("https://api.openai.com/v1"));
             assert_eq!(openai.models, vec!["gpt-4o".to_string()]);
         });
     }
@@ -394,10 +388,7 @@ models = ["gpt-4o"]
             let configs = load_global_config().expect("load");
             let openai = configs.get("openai").expect("present");
             assert_eq!(openai.api_key.as_deref(), Some("sk-1"));
-            assert_eq!(
-                openai.base_url.as_deref(),
-                Some("https://api.openai.com/v1")
-            );
+            assert_eq!(openai.base_url.as_deref(), Some("https://api.openai.com/v1"));
             assert_eq!(openai.models, vec!["gpt-4o".to_string()]);
         });
     }
@@ -415,33 +406,16 @@ models = ["gpt-4o"]
                 },
             )
             .unwrap();
-            set_provider(
-                "anthropic",
-                ProviderUpdate {
-                    api_key: Some("sk-ant".into()),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+            set_provider("anthropic", ProviderUpdate { api_key: Some("sk-ant".into()), ..Default::default() }).unwrap();
             // Update only the openai key; base_url + models must survive.
-            set_provider(
-                "openai",
-                ProviderUpdate {
-                    api_key: Some("sk-2".into()),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+            set_provider("openai", ProviderUpdate { api_key: Some("sk-2".into()), ..Default::default() }).unwrap();
 
             let configs = load_global_config().expect("load");
             let openai = configs.get("openai").unwrap();
             assert_eq!(openai.api_key.as_deref(), Some("sk-2"));
             assert_eq!(openai.base_url.as_deref(), Some("https://a"));
             assert_eq!(openai.models, vec!["gpt-4o".to_string()]);
-            assert_eq!(
-                configs.get("anthropic").unwrap().api_key.as_deref(),
-                Some("sk-ant")
-            );
+            assert_eq!(configs.get("anthropic").unwrap().api_key.as_deref(), Some("sk-ant"));
         });
     }
 
@@ -462,14 +436,7 @@ models = ["gpt-4o"]
     #[test]
     fn default_model_derives_from_first_provider_model() {
         with_temp_home(|_| {
-            set_provider(
-                "openai",
-                ProviderUpdate {
-                    models: Some(vec!["gpt-4o".into()]),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+            set_provider("openai", ProviderUpdate { models: Some(vec!["gpt-4o".into()]), ..Default::default() }).unwrap();
             assert_eq!(default_model().expect("default").as_deref(), Some("gpt-4o"));
         });
     }
@@ -484,36 +451,16 @@ models = ["gpt-4o"]
                 "default_model = \"claude-sonnet-5\"\n[providers.openai]\nmodels = [\"gpt-4o\"]\n",
             )
             .unwrap();
-            assert_eq!(
-                default_model().expect("default").as_deref(),
-                Some("claude-sonnet-5")
-            );
+            assert_eq!(default_model().expect("default").as_deref(), Some("claude-sonnet-5"));
         });
     }
 
     #[test]
     fn default_model_derivation_is_deterministic_by_provider_name() {
         with_temp_home(|_| {
-            set_provider(
-                "zeta",
-                ProviderUpdate {
-                    models: Some(vec!["z-model".into()]),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-            set_provider(
-                "alpha",
-                ProviderUpdate {
-                    models: Some(vec!["a-model".into()]),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-            assert_eq!(
-                default_model().expect("default").as_deref(),
-                Some("a-model")
-            );
+            set_provider("zeta", ProviderUpdate { models: Some(vec!["z-model".into()]), ..Default::default() }).unwrap();
+            set_provider("alpha", ProviderUpdate { models: Some(vec!["a-model".into()]), ..Default::default() }).unwrap();
+            assert_eq!(default_model().expect("default").as_deref(), Some("a-model"));
         });
     }
 
@@ -523,14 +470,7 @@ models = ["gpt-4o"]
             let path = global_config_path().unwrap();
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, "default_model = \"m1\"\n").unwrap();
-            set_provider(
-                "openai",
-                ProviderUpdate {
-                    api_key: Some("sk".into()),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+            set_provider("openai", ProviderUpdate { api_key: Some("sk".into()), ..Default::default() }).unwrap();
             assert_eq!(default_model().expect("default").as_deref(), Some("m1"));
         });
     }
@@ -550,33 +490,20 @@ models = ["gpt-4o"]
         with_temp_home(|_| {
             set_provider(
                 "tokamak",
-                ProviderUpdate {
-                    api_key: Some("tk".into()),
-                    ..Default::default()
-                },
+                ProviderUpdate { api_key: Some("tk".into()), ..Default::default() },
             )
             .unwrap();
             assert!(!set_default_model_if_unset("  ").expect("blank"));
             assert!(set_default_model_if_unset("m1").expect("set"));
             let configs = load_global_config().expect("load");
-            assert_eq!(
-                configs.get("tokamak").unwrap().api_key.as_deref(),
-                Some("tk")
-            );
+            assert_eq!(configs.get("tokamak").unwrap().api_key.as_deref(), Some("tk"));
         });
     }
 
     #[test]
     fn remove_provider_reports_presence() {
         with_temp_home(|_| {
-            set_provider(
-                "openai",
-                ProviderUpdate {
-                    api_key: Some("sk-1".into()),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+            set_provider("openai", ProviderUpdate { api_key: Some("sk-1".into()), ..Default::default() }).unwrap();
             assert!(remove_provider("openai").expect("remove"));
             assert!(!remove_provider("openai").expect("remove again"));
             assert!(!load_global_config().unwrap().contains_key("openai"));
@@ -591,20 +518,10 @@ models = ["gpt-4o"]
             let path = global_config_path().unwrap();
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, "[providers.groq]\napi_key = \"gk\"\n").unwrap();
-            set_provider(
-                "openai",
-                ProviderUpdate {
-                    api_key: Some("sk".into()),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+            set_provider("openai", ProviderUpdate { api_key: Some("sk".into()), ..Default::default() }).unwrap();
             let configs = load_global_config().unwrap();
             assert_eq!(configs.get("groq").unwrap().api_key.as_deref(), Some("gk"));
-            assert_eq!(
-                configs.get("openai").unwrap().api_key.as_deref(),
-                Some("sk")
-            );
+            assert_eq!(configs.get("openai").unwrap().api_key.as_deref(), Some("sk"));
         });
     }
 }

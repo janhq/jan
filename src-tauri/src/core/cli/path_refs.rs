@@ -306,7 +306,9 @@ pub fn search_files_sync(
     }
 
     // Sort: directories first, then by name
-    results.sort_by(|a, b| b.2.cmp(&a.2).then(a.1.cmp(&b.1)));
+    results.sort_by(|a, b| {
+        b.2.cmp(&a.2).then(a.1.cmp(&b.1))
+    });
 
     if results.len() > max_results {
         results.truncate(max_results);
@@ -472,10 +474,7 @@ mod tests {
         );
         assert_eq!(last_ref_start("see (@README.md)"), Some("see (".len()));
         // Last of several qualifying references wins.
-        assert_eq!(
-            last_ref_start("check @a and @b"),
-            Some("check @a and ".len())
-        );
+        assert_eq!(last_ref_start("check @a and @b"), Some("check @a and ".len()));
         // A bare trailing `@` is still a hint trigger (empty query).
         assert_eq!(last_ref_start("@"), Some(0));
         assert_eq!(last_ref_start("check @"), Some(6));

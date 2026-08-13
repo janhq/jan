@@ -12,7 +12,8 @@ use futures::future::join_all;
 
 use tauri_plugin_agent_tools::{skills, workspace};
 
-const TREE_URL: &str = "https://api.github.com/repos/anthropics/skills/git/trees/main?recursive=1";
+const TREE_URL: &str =
+    "https://api.github.com/repos/anthropics/skills/git/trees/main?recursive=1";
 const RAW_BASE: &str = "https://raw.githubusercontent.com/anthropics/skills/main/";
 const SKILLS_PREFIX: &str = "skills/";
 const USER_AGENT: &str = "jan-agent-skill-import";

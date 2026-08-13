@@ -232,7 +232,10 @@ pub async fn agent_skill_enabled_get(project: String) -> Result<Vec<String>, Str
 /// Set the project's enabled-skill whitelist. Empty = all skills enabled.
 /// Persisted to `[skills].enabled` in agent.toml (format-preserving).
 #[tauri::command]
-pub async fn agent_skill_enabled_set(project: String, enabled: Vec<String>) -> Result<(), String> {
+pub async fn agent_skill_enabled_set(
+    project: String,
+    enabled: Vec<String>,
+) -> Result<(), String> {
     let root = std::path::PathBuf::from(&project);
     ensure_project(&root)?;
     set_skills_enabled_in_agent_toml(&agent_toml_path(&root), &enabled).map_err(ui_error)

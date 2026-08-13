@@ -136,7 +136,8 @@ impl ToolOutcome {
 
 #[async_trait]
 pub(crate) trait ToolInvoker: Send + Sync {
-    async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String>;
+    async fn invoke(&self, tool_calls: &[serde_json::Value])
+        -> Result<Vec<ToolOutcome>, String>;
 }
 
 struct HttpModelInvoker {
@@ -171,7 +172,10 @@ struct McpToolInvoker {
 
 #[async_trait]
 impl ToolInvoker for McpToolInvoker {
-    async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String> {
+    async fn invoke(
+        &self,
+        tool_calls: &[serde_json::Value],
+    ) -> Result<Vec<ToolOutcome>, String> {
         let results = execute_mcp_tool_calls(
             tool_calls,
             &self.tool_to_server,
@@ -477,8 +481,7 @@ impl CompositeToolInvoker {
                 let mut registry = SubagentRegistry::load(&self.project_root);
                 match registry.create_in(&dir, def.clone(), scope, overwrite) {
                     Ok(shadows) => {
-                        let mut msg =
-                            format!("Created {scope_label}-scope subagent '{}'.", def.name);
+                        let mut msg = format!("Created {scope_label}-scope subagent '{}'.", def.name);
                         if shadows {
                             msg.push_str(
                                 " Note: it shadows a user-scope subagent of the same name.",
@@ -537,7 +540,8 @@ impl CompositeToolInvoker {
     async fn handle_todo_tool(&self, args: &serde_json::Value) -> String {
         use crate::core::agent::todo::{parse_target, render_result, TodoPhase};
         let Some(registry) = &self.todo_registry else {
-            return "ERROR [todo_unavailable]: todo tool requires an attached session".to_string();
+            return "ERROR [todo_unavailable]: todo tool requires an attached session"
+                .to_string();
         };
         let op = args.get("op").and_then(|v| v.as_str()).unwrap_or("");
         let mut list = registry.lock().await;
@@ -547,11 +551,7 @@ impl CompositeToolInvoker {
                     list_val
                         .iter()
                         .map(|p| {
-                            let name = p
-                                .get("phase")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string();
+                            let name = p.get("phase").and_then(|v| v.as_str()).unwrap_or("").to_string();
                             let items = p
                                 .get("items")
                                 .and_then(|v| v.as_array())
@@ -606,12 +606,7 @@ impl CompositeToolInvoker {
                 let items: Vec<String> = args
                     .get("items")
                     .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str())
-                            .map(String::from)
-                            .collect()
-                    })
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(String::from).collect())
                     .unwrap_or_default();
                 if phase.is_empty() || items.is_empty() {
                     return "ERROR: append requires 'phase' and non-empty 'items'".to_string();
@@ -625,9 +620,7 @@ impl CompositeToolInvoker {
             Ok(()) => {
                 let snapshot = list.clone();
                 drop(list);
-                let _ = self.events.send(StreamEvent::TodoUpdate {
-                    list: snapshot.clone(),
-                });
+                let _ = self.events.send(StreamEvent::TodoUpdate { list: snapshot.clone() });
                 render_result(&snapshot)
             }
             Err(error) => format!("ERROR: {error}"),
@@ -671,7 +664,10 @@ fn plan_mode_read_only_msg(name: &str) -> String {
 
 #[async_trait]
 impl ToolInvoker for CompositeToolInvoker {
-    async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String> {
+    async fn invoke(
+        &self,
+        tool_calls: &[serde_json::Value],
+    ) -> Result<Vec<ToolOutcome>, String> {
         use tauri_plugin_agent_tools::tools::{
             gate::{resolve_decision, Decision, PromptKind},
             handlers::{execute_builtin_with_diff, preview_diff},
@@ -725,11 +721,7 @@ impl ToolInvoker for CompositeToolInvoker {
             // Subagent tools are handled ahead of the fs/exec gate and the MCP
             // fallback: they orchestrate nested runs, not filesystem access.
             if crate::core::agent::subagent::is_subagent_tool(name) {
-                let id = tc
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 // Plan mode blocks subagent dispatch (a subagent could mutate).
                 // They are not advertised in Plan; this is defense in depth
                 // against a stale tool schema. Auto-approval cannot override.
@@ -748,11 +740,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 continue;
             }
             if !is_builtin(name) {
-                let id = tc
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 // Plan mode blocks all MCP tools: their capability is arbitrary
                 // and unknowable, so they are never advertised in Plan and are
                 // hard-denied here as defense in depth. Auto-approval cannot override.
@@ -1275,10 +1263,7 @@ async fn orchestrate_inner(
         }
     }
     // Always tell the model today's date, including isolated child runs.
-    let date_line = format!(
-        "Today's date is {}.",
-        chrono::Local::now().format("%Y-%m-%d")
-    );
+    let date_line = format!("Today's date is {}.", chrono::Local::now().format("%Y-%m-%d"));
     let system_prompt = match system_prompt {
         Some(sys) => format!("{date_line}\n\n{sys}"),
         None => date_line,
@@ -1416,10 +1401,9 @@ async fn orchestrate_inner(
         if args.subagents_enabled && run_mode != crate::core::agent::plan::RunMode::Plan {
             if let Some(root) = project_root {
                 let registry = crate::core::agent::subagent::SubagentRegistry::load(root);
-                for schema in crate::core::agent::subagent::subagent_tool_schemas(
-                    &registry,
-                    *max_parallel_subagents,
-                ) {
+                for schema in
+                    crate::core::agent::subagent::subagent_tool_schemas(&registry, *max_parallel_subagents)
+                {
                     let name = schema["function"]["name"].as_str().unwrap_or_default();
                     if permissions.is_denied(name) {
                         continue;
@@ -1527,9 +1511,7 @@ async fn orchestrate_inner(
             permission_requests: permission_requests.clone(),
             ask_requests: ask_requests.clone(),
             todo_registry: todo_registry.clone(),
-            grants: std::sync::Mutex::new(
-                tauri_plugin_agent_tools::tools::gate::SessionGrants::default(),
-            ),
+            grants: std::sync::Mutex::new(tauri_plugin_agent_tools::tools::gate::SessionGrants::default()),
             subagents,
             auto_approve: *auto_approve,
             run_mode,
@@ -1557,11 +1539,9 @@ async fn orchestrate_inner(
         }
         if index_memory {
             if let Ok(completion) = &result {
-                if let Some(answer) = extract_choice_message(completion).and_then(|m| {
-                    m.get("content")
-                        .and_then(|c| c.as_str())
-                        .map(str::to_string)
-                }) {
+                if let Some(answer) = extract_choice_message(completion)
+                    .and_then(|m| m.get("content").and_then(|c| c.as_str()).map(str::to_string))
+                {
                     crate::core::agent::memory::index_message(root, "assistant", &answer);
                 }
             }
@@ -1981,11 +1961,7 @@ async fn run_turn_cycle(
         // sees the error and retries with a shorter response next turn.
         if stop_reason_of(&completion) == "length" {
             for tc in &tool_calls {
-                let id = tc
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let content =
                     "ERROR: response truncated (finish_reason=length); tool-call arguments are \
                      incomplete and were not executed. Retry with a shorter response."
@@ -2185,10 +2161,7 @@ mod tests {
         std::sync::Arc::new(tokio::sync::Mutex::new(TodoList {
             phases: vec![TodoPhase {
                 name: "P".into(),
-                tasks: vec![TodoItem {
-                    content: "t1".into(),
-                    status: TodoStatus::Pending,
-                }],
+                tasks: vec![TodoItem { content: "t1".into(), status: TodoStatus::Pending }],
             }],
         }))
     }
@@ -2427,10 +2400,7 @@ mod tests {
         std::sync::Arc::new(tokio::sync::Mutex::new(TodoList {
             phases: vec![TodoPhase {
                 name: "P".into(),
-                tasks: vec![TodoItem {
-                    content: "t1".into(),
-                    status: TodoStatus::InProgress,
-                }],
+                tasks: vec![TodoItem { content: "t1".into(), status: TodoStatus::InProgress }],
             }],
         }))
     }
@@ -2464,14 +2434,10 @@ mod tests {
         let mut responses: Vec<serde_json::Value> = (0..13)
             .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "bash"))
             .collect();
-        responses.push(
-            json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
-        );
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
         // The task is still open at that first stop, so the close-out nudge
         // spends one more turn before the loop hands back; answer it too.
-        responses.push(
-            json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
-        );
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
         let model = MockModel::new(responses);
         let tool = MockTool::default();
         let mut budget = SessionBudget::new(None);
@@ -2497,15 +2463,9 @@ mod tests {
 
         let requests = model.requests.lock().unwrap();
         let nudges = nudge_message_count(requests.last().expect("at least one request"));
-        assert!(
-            nudges >= 1,
-            "expected a mid-run nudge after 12+ mutating calls"
-        );
+        assert!(nudges >= 1, "expected a mid-run nudge after 12+ mutating calls");
         // MID_RUN_NUDGE_MAX_PER_CYCLE is local to run_turn_cycle; mirror it here.
-        assert!(
-            nudges <= 2,
-            "must not exceed the per-cycle nudge cap, saw {nudges}"
-        );
+        assert!(nudges <= 2, "must not exceed the per-cycle nudge cap, saw {nudges}");
     }
 
     /// A resumed/multi-turn session still needs the upkeep instruction: the
@@ -2570,7 +2530,9 @@ mod tests {
 
         let requests = model.requests.lock().unwrap();
         assert_eq!(requests.len(), 2, "one extra turn for the close-out ask");
-        let closeouts = requests.last().expect("second request")["messages"]
+        let closeouts = requests
+            .last()
+            .expect("second request")["messages"]
             .as_array()
             .expect("messages")
             .iter()
@@ -2621,9 +2583,7 @@ mod tests {
         let mut responses: Vec<serde_json::Value> = (0..13)
             .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "bash"))
             .collect();
-        responses.push(
-            json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
-        );
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
         let model = MockModel::new(responses);
         let tool = MockTool::default();
         let mut budget = SessionBudget::new(None);
@@ -2647,12 +2607,7 @@ mod tests {
         .await
         .unwrap();
         assert!(
-            model
-                .requests
-                .lock()
-                .unwrap()
-                .iter()
-                .all(|r| !request_has_nudge(r)),
+            model.requests.lock().unwrap().iter().all(|r| !request_has_nudge(r)),
             "plan mode must never get a mid-run nudge"
         );
     }
@@ -2667,14 +2622,10 @@ mod tests {
             .collect();
         responses.push(mutating_tool_call_completion("mid", "todo"));
         responses.extend((0..6).map(|i| mutating_tool_call_completion(&format!("b{i}"), "edit")));
-        responses.push(
-            json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
-        );
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
         // The task is still open at that first stop, so the close-out nudge
         // spends one more turn before the loop hands back; answer it too.
-        responses.push(
-            json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
-        );
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
         let model = MockModel::new(responses);
         let tool = MockTool::default();
         let mut budget = SessionBudget::new(None);
@@ -2698,12 +2649,7 @@ mod tests {
         .await
         .unwrap();
         assert!(
-            model
-                .requests
-                .lock()
-                .unwrap()
-                .iter()
-                .all(|r| !request_has_nudge(r)),
+            model.requests.lock().unwrap().iter().all(|r| !request_has_nudge(r)),
             "a todo touch partway through must reset the mutation counter"
         );
     }
@@ -2720,11 +2666,7 @@ mod tests {
             Ok(tool_calls
                 .iter()
                 .map(|tc| {
-                    let id = tc
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
+                    let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     ToolOutcome::plain(id, self.content.clone())
                 })
                 .collect())
@@ -2753,9 +2695,7 @@ mod tests {
             bash_call_completion(),
             json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
         ]);
-        let tool = FixedTool {
-            content: content.to_string(),
-        };
+        let tool = FixedTool { content: content.to_string() };
         let mut budget = SessionBudget::new(None);
         run_turn_cycle(
             &tx,
@@ -2888,22 +2828,9 @@ mod tests {
             convo.push(json!({ "role": r, "content": format!("m{i}") }));
         }
 
-        let result = run_turn_cycle(
-            &tx,
-            &json!({}),
-            "m",
-            &[],
-            convo,
-            8,
-            &mut budget,
-            &model,
-            &tool,
-            crate::core::agent::plan::RunMode::Normal,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
+            .await
+            .unwrap();
 
         assert_eq!(result["choices"][0]["message"]["content"], "final");
         assert!(tool.calls.lock().unwrap().is_empty());
@@ -3094,22 +3021,9 @@ mod tests {
         let mut budget = SessionBudget::new(None);
         let convo = vec![json!({ "role": "user", "content": "hi" })];
 
-        let result = run_turn_cycle(
-            &tx,
-            &json!({}),
-            "m",
-            &[],
-            convo,
-            8,
-            &mut budget,
-            &model,
-            &tool,
-            crate::core::agent::plan::RunMode::Normal,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
+            .await
+            .unwrap();
 
         assert_eq!(result["choices"][0]["message"]["content"], "recovered");
         assert!(
@@ -3131,22 +3045,9 @@ mod tests {
 
         // max_turns = 0 means unbounded: it must not error out and must keep
         // going past the tool-call turn to return the final answer.
-        let result = run_turn_cycle(
-            &tx,
-            &json!({}),
-            "m",
-            &[],
-            convo,
-            0,
-            &mut budget,
-            &model,
-            &tool,
-            crate::core::agent::plan::RunMode::Normal,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 0, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
+            .await
+            .unwrap();
 
         assert_eq!(result["choices"][0]["message"]["content"], "done");
     }
@@ -3161,10 +3062,7 @@ mod tests {
     #[test]
     fn session_budget_treats_zero_and_absent_as_no_ceiling() {
         assert_eq!(body_session_budget(&json!({})), None);
-        assert_eq!(
-            body_session_budget(&json!({ "max_session_tokens": 0 })),
-            None
-        );
+        assert_eq!(body_session_budget(&json!({ "max_session_tokens": 0 })), None);
         assert_eq!(
             body_session_budget(&json!({ "max_session_tokens": 128_000 })),
             Some(128_000)
@@ -3393,8 +3291,11 @@ mod tests {
     fn cli_tool_context_allows_network() {
         let root = std::path::PathBuf::from("/tmp/jan-net-check");
         let (tx, _rx) = mpsc::unbounded_channel();
-        let invoker =
-            build_prompting_invoker(root, tx, Arc::new(tokio::sync::Mutex::new(HashMap::new())));
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
         assert!(
             invoker.tool_context().allow_network,
             "CLI shell must keep its network namespace"
@@ -3408,8 +3309,11 @@ mod tests {
     fn cli_tool_context_reads_home() {
         let root = std::path::PathBuf::from("/tmp/jan-home-check");
         let (tx, _rx) = mpsc::unbounded_channel();
-        let invoker =
-            build_prompting_invoker(root, tx, Arc::new(tokio::sync::Mutex::new(HashMap::new())));
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
         assert!(
             invoker.tool_context().home_readonly,
             "CLI shell must read $HOME"
@@ -3424,8 +3328,11 @@ mod tests {
     fn desktop_tool_context_withholds_home() {
         let root = std::path::PathBuf::from("/tmp/jan-home-check");
         let (tx, _rx) = mpsc::unbounded_channel();
-        let invoker =
-            build_prompting_invoker(root, tx, Arc::new(tokio::sync::Mutex::new(HashMap::new())));
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
         assert!(!invoker.tool_context().home_readonly);
     }
 
@@ -3436,8 +3343,11 @@ mod tests {
     fn desktop_tool_context_withholds_network() {
         let root = std::path::PathBuf::from("/tmp/jan-net-check");
         let (tx, _rx) = mpsc::unbounded_channel();
-        let invoker =
-            build_prompting_invoker(root, tx, Arc::new(tokio::sync::Mutex::new(HashMap::new())));
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
         assert!(!invoker.tool_context().allow_network);
     }
 
@@ -3521,17 +3431,10 @@ mod tests {
 
         // An unknown (non-builtin) name stands in for an MCP tool a stale schema
         // could still surface; it must be denied before any dispatch.
-        let out = invoker
-            .invoke(&[tool_call("m1", "some_mcp_tool")])
-            .await
-            .unwrap();
+        let out = invoker.invoke(&[tool_call("m1", "some_mcp_tool")]).await.unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(
-            out[0].content.contains("plan_mode_read_only"),
-            "{}",
-            out[0].content
-        );
+        assert!(out[0].content.contains("plan_mode_read_only"), "{}", out[0].content);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3549,11 +3452,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(
-            out[0].content.contains("plan_mode_read_only"),
-            "{}",
-            out[0].content
-        );
+        assert!(out[0].content.contains("plan_mode_read_only"), "{}", out[0].content);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3593,10 +3492,7 @@ mod tests {
                 .and_then(|x| serde_json::from_value::<RunMode>(x.clone()).ok())
         };
         assert_eq!(from_body(json!({"run_mode": "plan"})), Some(RunMode::Plan));
-        assert_eq!(
-            from_body(json!({"run_mode": "normal"})),
-            Some(RunMode::Normal)
-        );
+        assert_eq!(from_body(json!({"run_mode": "normal"})), Some(RunMode::Normal));
         assert_eq!(from_body(json!({})), None);
     }
 
@@ -3868,11 +3764,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(
-            !out[0].content.starts_with("ERROR"),
-            "got: {}",
-            out[0].content
-        );
+        assert!(!out[0].content.starts_with("ERROR"), "got: {}", out[0].content);
         let result: crate::core::agent::todo::TodoList =
             serde_json::from_str(&out[0].content).unwrap();
         assert_eq!(result.active().unwrap().1.content, "a");
@@ -3894,7 +3786,10 @@ mod tests {
         invoker.todo_registry = Some(todos.clone());
 
         invoker
-            .invoke(&[todo_call("t1", json!({"op": "init", "items": ["a", "b"]}))])
+            .invoke(&[todo_call(
+                "t1",
+                json!({"op": "init", "items": ["a", "b"]}),
+            )])
             .await
             .unwrap();
         let _ = rx.recv().await; // drain init's TodoUpdate
@@ -3903,11 +3798,7 @@ mod tests {
             .invoke(&[todo_call("t2", json!({"op": "done", "task": "a"}))])
             .await
             .unwrap();
-        assert!(
-            !out[0].content.starts_with("ERROR"),
-            "got: {}",
-            out[0].content
-        );
+        assert!(!out[0].content.starts_with("ERROR"), "got: {}", out[0].content);
         let result: crate::core::agent::todo::TodoList =
             serde_json::from_str(&out[0].content).unwrap();
         assert_eq!(result.active().unwrap().1.content, "b");
@@ -3934,11 +3825,7 @@ mod tests {
             .invoke(&[todo_call("t2", json!({"op": "rm", "task": "missing"}))])
             .await
             .unwrap();
-        assert!(
-            out[0].content.starts_with("ERROR"),
-            "got: {}",
-            out[0].content
-        );
+        assert!(out[0].content.starts_with("ERROR"), "got: {}", out[0].content);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3960,11 +3847,7 @@ mod tests {
                 "function": { "name": "read", "arguments": format!("{{\"path\":\"{path}\"}}") }
             })
         };
-        let calls = vec![
-            read("r1", "a.txt"),
-            read("r2", "b.txt"),
-            read("r3", "c.txt"),
-        ];
+        let calls = vec![read("r1", "a.txt"), read("r2", "b.txt"), read("r3", "c.txt")];
         let out = invoker.invoke(&calls).await.unwrap();
 
         assert_eq!(out.len(), 3);
@@ -3997,11 +3880,7 @@ mod tests {
         responder.await.unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(
-            !out[0].content.starts_with("ERROR"),
-            "unexpected: {}",
-            out[0].content
-        );
+        assert!(!out[0].content.starts_with("ERROR"), "unexpected: {}", out[0].content);
         assert_eq!(std::fs::read_to_string(root.join("out.txt")).unwrap(), "hi");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -4017,11 +3896,7 @@ mod tests {
         let out = invoker.invoke(&[write_call()]).await.unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(
-            !out[0].content.starts_with("ERROR"),
-            "unexpected: {}",
-            out[0].content
-        );
+        assert!(!out[0].content.starts_with("ERROR"), "unexpected: {}", out[0].content);
         assert_eq!(std::fs::read_to_string(root.join("out.txt")).unwrap(), "hi");
         // No permission prompt should have been emitted.
         assert!(
@@ -4050,11 +3925,7 @@ mod tests {
         responder.await.unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(
-            out[0].content.contains("denied by user"),
-            "got: {}",
-            out[0].content
-        );
+        assert!(out[0].content.contains("denied by user"), "got: {}", out[0].content);
         assert!(!root.join("out.txt").exists());
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -4083,11 +3954,7 @@ mod tests {
         };
 
         let out1 = invoker.invoke(&[write_call()]).await.unwrap();
-        assert!(
-            !out1[0].content.starts_with("ERROR"),
-            "first: {}",
-            out1[0].content
-        );
+        assert!(!out1[0].content.starts_with("ERROR"), "first: {}", out1[0].content);
 
         let second = json!({
             "id": "c2",
@@ -4098,11 +3965,7 @@ mod tests {
             }
         });
         let out2 = invoker.invoke(&[second]).await.unwrap();
-        assert!(
-            !out2[0].content.starts_with("ERROR"),
-            "second: {}",
-            out2[0].content
-        );
+        assert!(!out2[0].content.starts_with("ERROR"), "second: {}", out2[0].content);
 
         drop(invoker); // close events channel so responder loop ends
         responder.await.unwrap();
@@ -4137,18 +4000,11 @@ mod tests {
             })
         };
 
-        let out = invoker
-            .invoke(&[mcp_call("m1", "web_search_exa")])
-            .await
-            .unwrap();
+        let out = invoker.invoke(&[mcp_call("m1", "web_search_exa")]).await.unwrap();
         responder.await.unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(
-            out[0].content.contains("denied by user"),
-            "got: {}",
-            out[0].content
-        );
+        assert!(out[0].content.contains("denied by user"), "got: {}", out[0].content);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -4210,19 +4066,14 @@ mod tests {
     #[test]
     fn read_only_project_still_advertises_mcp_tools() {
         use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
-        let mut tools =
-            vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
+        let mut tools = vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
         let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
         // The scaffolded CLI project default: read-only, no allow-list.
         let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
 
         retain_advertisable_mcp_tools(&mut tools, &mut map, &perms);
 
-        assert_eq!(
-            tools.len(),
-            1,
-            "read-only must not suppress MCP advertisement"
-        );
+        assert_eq!(tools.len(), 1, "read-only must not suppress MCP advertisement");
         assert!(map.contains_key("web_search_exa"));
     }
 
@@ -4248,26 +4099,19 @@ mod tests {
 
         assert_eq!(tools.len(), 1);
         assert!(map.contains_key("web_search_exa"));
-        assert!(
-            !map.contains_key("dangerous_write"),
-            "deny-list must still prune"
-        );
+        assert!(!map.contains_key("dangerous_write"), "deny-list must still prune");
     }
 
     #[test]
     fn deny_default_advertises_no_mcp_tools() {
         use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
-        let mut tools =
-            vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
+        let mut tools = vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
         let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
         let perms = ToolPermissions::new(PermissionDefault::Deny, &[], &[], &[]);
 
         retain_advertisable_mcp_tools(&mut tools, &mut map, &perms);
 
-        assert!(
-            tools.is_empty(),
-            "default=deny must lock down MCP advertisement"
-        );
+        assert!(tools.is_empty(), "default=deny must lock down MCP advertisement");
         assert!(map.is_empty());
     }
 }

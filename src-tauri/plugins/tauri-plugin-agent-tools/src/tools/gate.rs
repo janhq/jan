@@ -488,11 +488,7 @@ mod tests {
                 &perms,
                 &grants,
             );
-            assert_eq!(
-                d,
-                Decision::Prompt(PromptKind::Exec),
-                "must reprompt: {cmd}"
-            );
+            assert_eq!(d, Decision::Prompt(PromptKind::Exec), "must reprompt: {cmd}");
         }
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -598,8 +594,7 @@ mod tests {
             assert_eq!(d, Decision::Allow, "{name} should auto-allow");
         }
         // Explicit deny in agent.toml still overrides the auto-allow.
-        let denied =
-            ToolPermissions::new(PermissionDefault::ReadOnly, &[], &s(&["memory_write"]), &[]);
+        let denied = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &s(&["memory_write"]), &[]);
         let d = resolve_decision(
             lookup("memory_write").unwrap(),
             &json!({"name": "x", "content": "y"}),

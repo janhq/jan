@@ -1432,10 +1432,7 @@ mod tests {
             &[json!({"old_string": "two", "new_string": "TWO"})],
             "one\ntwo\nthree",
         );
-        assert_eq!(
-            d,
-            "     1 | one\n-    2 | two\n+    2 | TWO\n     3 | three"
-        );
+        assert_eq!(d, "     1 | one\n-    2 | two\n+    2 | TWO\n     3 | three");
     }
 
     /// Two edits far apart in one call: each hunk carries its own file context
@@ -1750,10 +1747,7 @@ mod tests {
             &ctx,
         )
         .await;
-        assert!(
-            out.starts_with("ERROR: refused to write outside"),
-            "got: {out}"
-        );
+        assert!(out.starts_with("ERROR: refused to write outside"), "got: {out}");
         assert!(!root.parent().unwrap().join("escape.txt").exists());
 
         let out = super::execute_builtin(
@@ -1762,10 +1756,7 @@ mod tests {
             &ctx,
         )
         .await;
-        assert!(
-            out.starts_with("ERROR: refused to edit outside"),
-            "got: {out}"
-        );
+        assert!(out.starts_with("ERROR: refused to edit outside"), "got: {out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

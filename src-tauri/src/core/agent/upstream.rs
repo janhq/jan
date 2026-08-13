@@ -151,17 +151,15 @@ pub(crate) fn repair_dangling_tool_calls(messages: &mut Vec<serde_json::Value>) 
         // isn't a tool reply.
         let mut answered: std::collections::HashSet<&str> = std::collections::HashSet::new();
         let mut j = i + 1;
-        while j < messages.len() && messages[j].get("role").and_then(|v| v.as_str()) == Some("tool")
+        while j < messages.len()
+            && messages[j].get("role").and_then(|v| v.as_str()) == Some("tool")
         {
             if let Some(id) = messages[j].get("tool_call_id").and_then(|v| v.as_str()) {
                 answered.insert(id);
             }
             j += 1;
         }
-        let missing: Vec<&String> = ids
-            .iter()
-            .filter(|id| !answered.contains(id.as_str()))
-            .collect();
+        let missing: Vec<&String> = ids.iter().filter(|id| !answered.contains(id.as_str())).collect();
         for id in &missing {
             messages.insert(
                 j,
@@ -342,27 +340,28 @@ pub(crate) async fn collect_mcp_openai_tools(
     // Probe every server concurrently so one slow/hanging server can't serialize
     // the whole collection behind its timeout (previously each server waited out
     // the full timeout before the next was contacted).
-    let listings =
-        futures_util::future::join_all(servers.iter().map(|(server_name, service)| async move {
-            let result =
-                match tokio::time::timeout(timeout_duration, service.list_all_tools()).await {
-                    Ok(Ok(tools)) => Some(tools),
-                    Ok(Err(e)) => {
-                        log::warn!("MCP server {} failed to list tools: {}", server_name, e);
-                        None
-                    }
-                    Err(_) => {
-                        log::warn!(
-                            "Listing MCP tools timed out after {} seconds on server {}",
-                            timeout_duration.as_secs(),
-                            server_name
-                        );
-                        None
-                    }
-                };
+    let listings = futures_util::future::join_all(servers.iter().map(|(server_name, service)| {
+        async move {
+            let result = match tokio::time::timeout(timeout_duration, service.list_all_tools()).await
+            {
+                Ok(Ok(tools)) => Some(tools),
+                Ok(Err(e)) => {
+                    log::warn!("MCP server {} failed to list tools: {}", server_name, e);
+                    None
+                }
+                Err(_) => {
+                    log::warn!(
+                        "Listing MCP tools timed out after {} seconds on server {}",
+                        timeout_duration.as_secs(),
+                        server_name
+                    );
+                    None
+                }
+            };
             (server_name.clone(), result)
-        }))
-        .await;
+        }
+    }))
+    .await;
 
     for (server_name, tools) in listings {
         let Some(tools) = tools else { continue };
@@ -956,10 +955,12 @@ mod tests {
             },
         );
 
-        let (url, _keys) =
-            resolve_upstream_for_model("sentence-transformer-mini", Arc::new(Mutex::new(configs)))
-                .await
-                .expect("the API server provider is reachable");
+        let (url, _keys) = resolve_upstream_for_model(
+            "sentence-transformer-mini",
+            Arc::new(Mutex::new(configs)),
+        )
+        .await
+        .expect("the API server provider is reachable");
         assert_eq!(url, "http://127.0.0.1:1337/v1/chat/completions");
     }
 
@@ -1065,14 +1066,8 @@ mod tests {
         assert_eq!(messages.len(), 4);
         assert_eq!(messages[2]["role"], "tool");
         assert_eq!(messages[2]["tool_call_id"], "toolu_ask");
-        assert!(messages[2]["content"]
-            .as_str()
-            .unwrap()
-            .starts_with("ERROR"));
-        assert_eq!(
-            messages[3]["content"],
-            "next message, no reply ever recorded"
-        );
+        assert!(messages[2]["content"].as_str().unwrap().starts_with("ERROR"));
+        assert_eq!(messages[3]["content"], "next message, no reply ever recorded");
     }
 
     #[test]
@@ -1119,12 +1114,8 @@ mod tests {
         assert!(is_context_overflow_body(
             "{\"error\":{\"code\":\"context_length_exceeded\"}}"
         ));
-        assert!(is_context_overflow_body(
-            "This model's maximum context length is 8192 tokens"
-        ));
-        assert!(is_context_overflow_body(
-            "prompt is too long: 210000 tokens > 200000"
-        ));
+        assert!(is_context_overflow_body("This model's maximum context length is 8192 tokens"));
+        assert!(is_context_overflow_body("prompt is too long: 210000 tokens > 200000"));
         assert!(is_context_overflow_body(
             "the request exceeds the available context size"
         ));
@@ -1141,9 +1132,7 @@ mod tests {
     fn overflow_marker_round_trips() {
         let err = format!("[{CONTEXT_OVERFLOW_MARKER}] Upstream returned HTTP 400: ...");
         assert!(is_context_overflow_error(&err));
-        assert!(!is_context_overflow_error(
-            "Upstream returned HTTP 500: boom"
-        ));
+        assert!(!is_context_overflow_error("Upstream returned HTTP 500: boom"));
     }
 
     #[test]
@@ -1211,10 +1200,7 @@ mod tests {
         while let Ok(StreamEvent::Token { text }) = rx.try_recv() {
             tokens.push(text);
         }
-        assert_eq!(
-            tokens,
-            vec!["<think>", "let me ", "think", "</think>", "answer"]
-        );
+        assert_eq!(tokens, vec!["<think>", "let me ", "think", "</think>", "answer"]);
     }
 
     #[test]
@@ -1353,7 +1339,10 @@ mod tests {
     fn mid_stream_error_falls_back_to_message_without_type() {
         let (tx, _rx) = sink();
         let mut acc = SseAccumulator::default();
-        acc.ingest(&json!({ "error": { "message": "boom" } }).to_string(), &tx);
+        acc.ingest(
+            &json!({ "error": { "message": "boom" } }).to_string(),
+            &tx,
+        );
         assert_eq!(acc.error.as_deref(), Some("boom"));
     }
 

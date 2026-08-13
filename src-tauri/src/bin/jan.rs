@@ -1179,7 +1179,7 @@ mod tests {
                 cmd: PluginCommands::List { json, .. }
             }) if json
         ));
-    }
+}
 
     #[test]
     fn split_kv_rejects_without_separator() {
