@@ -451,18 +451,6 @@
           "markdownDescription": "Denies the force_kill_router_tree command without any pre-configured scope."
         },
         {
-          "description": "Enables the force_stop_model command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-force-stop-model",
-          "markdownDescription": "Enables the force_stop_model command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the force_stop_model command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-force-stop-model",
-          "markdownDescription": "Denies the force_stop_model command without any pre-configured scope."
-        },
-        {
           "description": "Enables the generate_api_key command without any pre-configured scope.",
           "type": "string",
           "const": "allow-generate-api-key",
@@ -713,6 +701,18 @@
           "type": "string",
           "const": "deny-prioritize-backends",
           "markdownDescription": "Denies the prioritize_backends command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the probe_backend_load command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-probe-backend-load",
+          "markdownDescription": "Enables the probe_backend_load command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the probe_backend_load command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-probe-backend-load",
+          "markdownDescription": "Denies the probe_backend_load command without any pre-configured scope."
         },
         {
           "description": "Enables the read_gguf_metadata command without any pre-configured scope.",
