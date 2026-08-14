@@ -2186,6 +2186,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn built_in_jan_skill_is_available_without_project_skills() {
+        let root = unique_root();
+
+        let list = execute_builtin(lookup("skill_list").unwrap(), &json!({}), &root).await;
+        assert!(list.contains("jan — Use when"), "unexpected list: {list}");
+
+        let body = execute_builtin(
+            lookup("skill_read").unwrap(),
+            &json!({"name": "jan"}),
+            &root,
+        )
+        .await;
+        assert!(body.starts_with("# Jan"), "unexpected body: {body}");
+        assert!(body.contains("## Start"), "unexpected body: {body}");
+        assert!(body.contains("## Customize"), "unexpected body: {body}");
+        assert!(body.contains("`jan --help`"), "unexpected body: {body}");
+        assert!(body.contains("source builds"), "unexpected body: {body}");
+        assert!(
+            body.split_whitespace().count() <= 100,
+            "default skill should stay concise: {body}"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
     async fn skill_tools_hide_disabled_skills() {
         let root = unique_root();
         execute_builtin(

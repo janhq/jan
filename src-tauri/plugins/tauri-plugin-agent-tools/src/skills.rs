@@ -19,6 +19,13 @@ use crate::workspace::{store_dir, workspace_filename};
 
 const KIND: &str = "skills";
 
+const DEFAULT_JAN_SKILL_NAME: &str = "jan";
+const DEFAULT_JAN_SKILL: &str = include_str!("default_jan_skill.md");
+
+fn is_default_jan_skill(name: &str) -> bool {
+    safe_stem(name).ok().as_deref() == Some(DEFAULT_JAN_SKILL_NAME)
+}
+
 /// `<store_root>/skills`.
 pub fn skills_dir(store: &Path) -> PathBuf {
     store_dir(store, KIND)
@@ -201,6 +208,14 @@ fn describe(parsed: &ParsedSkill) -> String {
         .unwrap_or_else(|| first_line(&parsed.body))
 }
 
+fn default_jan_skill_meta() -> SkillMeta {
+    let parsed = parse(DEFAULT_JAN_SKILL);
+    SkillMeta {
+        name: DEFAULT_JAN_SKILL_NAME.to_string(),
+        description: describe(&parsed),
+    }
+}
+
 /// Metadata for every discovered skill (name + description) — for the UI list.
 /// Keeps empty stubs so the user can see and edit them.
 pub fn list_meta(store: &Path) -> Vec<SkillMeta> {
@@ -218,14 +233,14 @@ pub fn list_meta(store: &Path) -> Vec<SkillMeta> {
 
 /// Skills worth advertising in the system prompt: name + description, skipping
 /// skills with neither a description nor a body. This is the progressive-
-/// disclosure catalog — the model calls `skill_read` to load a body on demand.
+/// disclosure catalog - the model calls `skill_read` to load a body on demand.
 ///
 /// `enabled` is a whitelist of skill names; an empty list means "all skills"
 /// (backward-compatible with the agent.toml scaffold, which ships `enabled = []`).
 pub fn catalog(store: &Path, enabled: &[String]) -> Vec<SkillMeta> {
     let allow: Option<std::collections::HashSet<&str>> =
         (!enabled.is_empty()).then(|| enabled.iter().map(String::as_str).collect());
-    discover(store)
+    let mut skills = discover(store)
         .into_iter()
         .filter_map(|e| {
             if let Some(allow) = &allow {
@@ -243,7 +258,16 @@ pub fn catalog(store: &Path, enabled: &[String]) -> Vec<SkillMeta> {
                 description,
             })
         })
-        .collect()
+        .collect::<Vec<_>>();
+    if is_enabled(enabled, DEFAULT_JAN_SKILL_NAME)
+        && !skills
+            .iter()
+            .any(|skill| skill.name == DEFAULT_JAN_SKILL_NAME)
+    {
+        skills.push(default_jan_skill_meta());
+    }
+    skills.sort_by(|a, b| a.name.cmp(&b.name));
+    skills
 }
 
 /// Raw SKILL.md text (frontmatter included) for the editor.
@@ -252,10 +276,16 @@ pub fn read_raw(store: &Path, name: &str) -> Result<String, String> {
     std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))
 }
 
-/// A skill's markdown body with the frontmatter fence stripped — what the
+/// A skill's markdown body with the frontmatter fence stripped - what the
 /// `skill_read` tool hands the model when it loads a skill on demand.
 pub fn read_body(store: &Path, name: &str) -> Result<String, String> {
-    Ok(parse(&read_raw(store, name)?).body)
+    match resolve(store, name) {
+        Ok(entry) => std::fs::read_to_string(&entry.file)
+            .map(|content| parse(&content).body)
+            .map_err(|e| format!("ERROR: {e}")),
+        Err(_) if is_default_jan_skill(name) => Ok(parse(DEFAULT_JAN_SKILL).body),
+        Err(error) => Err(error),
+    }
 }
 
 /// Create or overwrite a skill. Existing skills are written in place (preserving
@@ -369,13 +399,46 @@ mod tests {
         write(&root, "a", "body a").unwrap();
         write(&root, "b", "body b").unwrap();
 
-        // Empty whitelist = all skills.
-        assert_eq!(catalog(&root, &[]).len(), 2);
+        // Empty whitelist = all project skills plus the built-in Jan skill.
+        assert_eq!(catalog(&root, &[]).len(), 3);
 
-        // Non-empty whitelist restricts to the listed names.
+        // Non-empty whitelist restricts every skill, including the default.
         let only_a = catalog(&root, &["a".to_string()]);
         assert_eq!(only_a.len(), 1);
         assert_eq!(only_a[0].name, "a");
+        let only_jan = catalog(&root, &["jan".to_string()]);
+        assert_eq!(only_jan.len(), 1);
+        assert_eq!(only_jan[0].name, "jan");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn default_jan_skill_is_safe_to_read_and_project_skills_override_it() {
+        let root = std::env::temp_dir().join(format!(
+            "jan_default_skill_{}",
+            std::time::SystemTime::UNIX_EPOCH
+                .elapsed()
+                .unwrap()
+                .as_nanos()
+        ));
+        assert!(read_body(&root, "jan").unwrap().contains("## Start"));
+        assert!(read_body(&root, "../jan").is_err());
+
+        write(
+            &root,
+            "jan",
+            "---\ndescription: Custom Jan guidance\n---\ncustom body",
+        )
+        .unwrap();
+        assert_eq!(read_body(&root, "jan").unwrap(), "custom body");
+        assert_eq!(
+            catalog(&root, &[])
+                .into_iter()
+                .find(|skill| skill.name == "jan")
+                .unwrap()
+                .description,
+            "Custom Jan guidance"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

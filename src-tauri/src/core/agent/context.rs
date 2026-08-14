@@ -237,9 +237,11 @@ mod tests {
     }
 
     #[test]
-    fn no_skills_dir_yields_none() {
+    fn built_in_jan_skill_is_advertised_without_project_skills() {
         let root = scratch_project("nodir");
-        assert!(load_skills(&root).is_none());
+        let block = load_skills(&root).expect("built-in skills block");
+        assert!(block.contains("## Skill: jan"));
+        assert!(block.contains("Use when"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
