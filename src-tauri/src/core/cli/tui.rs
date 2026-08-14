@@ -416,21 +416,30 @@ impl Picker {
 
     fn title(&self) -> String {
         let title = match self.kind {
-            PickerKind::ResumeThread => " resume thread ",
-            PickerKind::SelectModel => " select model ",
-            PickerKind::LoginMethod | PickerKind::LoginProvider => " sign in ",
-            PickerKind::ToggleMcp => " mcp servers ",
-            PickerKind::RewindMessage => " rewind to message ",
-            PickerKind::RewindScope => " restore ",
-            PickerKind::ViewConfig => " provider config ",
-            PickerKind::AgentSettings => " agent settings ",
-            PickerKind::ProviderSettings => " providers ",
-            PickerKind::Todo => " todo ",
+            PickerKind::ResumeThread => " resume thread ".to_string(),
+            PickerKind::SelectModel => " select model ".to_string(),
+            PickerKind::LoginProvider => " sign in ".to_string(),
+            PickerKind::LoginMethod => {
+                let provider = self
+                    .provider
+                    .as_deref()
+                    .and_then(crate::core::cli::auth::provider_by_id)
+                    .map(|definition| definition.name)
+                    .unwrap_or("provider");
+                format!(" {provider} sign in ")
+            }
+            PickerKind::ToggleMcp => " mcp servers ".to_string(),
+            PickerKind::RewindMessage => " rewind to message ".to_string(),
+            PickerKind::RewindScope => " restore ".to_string(),
+            PickerKind::ViewConfig => " provider config ".to_string(),
+            PickerKind::AgentSettings => " agent settings ".to_string(),
+            PickerKind::ProviderSettings => " providers ".to_string(),
+            PickerKind::Todo => " todo ".to_string(),
         };
         if self.kind == PickerKind::SelectModel && !self.query.is_empty() {
             format!("{title} - {}", self.query)
         } else {
-            title.to_string()
+            title
         }
     }
 
@@ -438,9 +447,8 @@ impl Picker {
         match self.kind {
             PickerKind::ResumeThread => " ↑/↓ select   Enter resume   Esc cancel",
             PickerKind::SelectModel => " type to filter   ↑/↓ select   Enter choose   Esc cancel",
-            PickerKind::LoginMethod | PickerKind::LoginProvider => {
-                " ↑/↓ select   Enter continue   Esc cancel"
-            }
+            PickerKind::LoginProvider => " ↑/↓ select   Enter continue   Esc cancel",
+            PickerKind::LoginMethod => " ↑/↓ select   Enter continue   Esc back to providers",
             PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   a add   e edit   d delete   Esc close",
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
@@ -6974,6 +6982,11 @@ async fn handle_key(
                     PickerKind::Todo => {}
                 }
             }
+            KeyCode::Esc if picker.kind == PickerKind::LoginMethod && !ctrl => {
+                let provider = picker.provider.clone();
+                app.picker = None;
+                open_login_picker_at(app, provider.as_deref());
+            }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
                 app.picker = None;
             }
@@ -9403,6 +9416,10 @@ fn open_mcp_picker(app: &mut App) {
 }
 
 fn open_login_picker(app: &mut App) {
+    open_login_picker_at(app, None);
+}
+
+fn open_login_picker_at(app: &mut App, selected_provider: Option<&str>) {
     let items = crate::core::cli::auth::provider_catalog()
         .into_iter()
         .map(|provider| {
@@ -9419,11 +9436,14 @@ fn open_login_picker(app: &mut App) {
                 checkbox: None,
             }
         })
-        .collect();
+        .collect::<Vec<_>>();
+    let selected = selected_provider
+        .and_then(|provider| items.iter().position(|item| item.value == provider))
+        .unwrap_or(0);
     app.picker = Some(Picker {
         kind: PickerKind::LoginProvider,
         items,
-        selected: 0,
+        selected,
         all_items: Vec::new(),
         query: String::new(),
         provider: None,
@@ -15359,6 +15379,29 @@ mod tests {
         assert!(app.login_submit.is_none());
         assert!(app.account_login_submit.is_none());
         assert!(!app.account_login_active);
+    }
+    #[tokio::test]
+    async fn login_method_picker_shows_provider_context_and_esc_returns_to_providers() {
+        let mut app = test_app();
+        super::open_login_method_picker(&mut app, "openai");
+
+        let picker = app.picker.as_ref().expect("method picker must open");
+        assert!(picker.title().contains("Codex"), "{}", picker.title());
+        assert!(
+            picker.action_hint().contains("back to providers"),
+            "{}",
+            picker.action_hint()
+        );
+
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+
+        let picker = app.picker.as_ref().expect("Esc must return to providers");
+        assert_eq!(picker.kind, PickerKind::LoginProvider);
+        assert_eq!(picker.items[picker.selected].value, "openai");
+        assert_eq!(
+            picker.items.len(),
+            crate::core::cli::auth::provider_catalog().len()
+        );
     }
 
     #[tokio::test]
