@@ -4,9 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
-use crate::tools::sandbox::{
-    command_touches_hidden_jan_path, escapes_project, is_hidden_jan_path,
-};
+use crate::tools::sandbox::{command_touches_hidden_jan_path, escapes_project, is_hidden_jan_path};
 use crate::tools::{BuiltinTool, Capability};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -135,6 +133,7 @@ pub fn resolve_decision(
     tool: &BuiltinTool,
     args: &serde_json::Value,
     project_root: &Path,
+    scratch: Option<&Path>,
     perms: &ToolPermissions,
     grants: &SessionGrants,
 ) -> Decision {
@@ -172,7 +171,7 @@ pub fn resolve_decision(
             let escapes = tool.path_args.iter().any(|key| {
                 args.get(key)
                     .and_then(|v| v.as_str())
-                    .map(|p| escapes_project(project_root, p).unwrap_or(true))
+                    .map(|p| escapes_project(project_root, scratch, p).unwrap_or(true))
                     .unwrap_or(false)
             });
             if !escapes || grants.covers(PromptKind::ReadEscape) {
@@ -194,7 +193,7 @@ pub fn resolve_decision(
             let escapes = tool.path_args.iter().any(|key| {
                 args.get(key)
                     .and_then(|v| v.as_str())
-                    .map(|p| escapes_project(project_root, p).unwrap_or(true))
+                    .map(|p| escapes_project(project_root, scratch, p).unwrap_or(true))
                     .unwrap_or(false)
             });
             if escapes {
@@ -264,6 +263,7 @@ mod tests {
             lookup("read").unwrap(),
             &json!({"path": "inner.txt"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -280,6 +280,7 @@ mod tests {
             lookup("read").unwrap(),
             &json!({"path": "../x"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -297,6 +298,7 @@ mod tests {
                 lookup(tool).unwrap(),
                 &json!({}),
                 &root,
+                None,
                 &perms,
                 &grants,
             );
@@ -315,6 +317,7 @@ mod tests {
             lookup("web_search").unwrap(),
             &json!({}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -339,6 +342,7 @@ mod tests {
                 lookup(tool).unwrap(),
                 &json!({ "path": ".jan/agent/agent.toml" }),
                 &root,
+                None,
                 &perms,
                 &grants,
             );
@@ -353,6 +357,7 @@ mod tests {
             lookup("bash").unwrap(),
             &json!({"command": "cat .jan/agent/agent.toml"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -363,6 +368,7 @@ mod tests {
             lookup("read").unwrap(),
             &json!({"path": "JAN.md"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -379,6 +385,7 @@ mod tests {
             lookup("write").unwrap(),
             &json!({"path": "out.txt"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -395,6 +402,7 @@ mod tests {
             lookup("bash").unwrap(),
             &json!({"command": "ls"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -411,6 +419,7 @@ mod tests {
             lookup("bash").unwrap(),
             &json!({"job_id": "bash-0"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -439,6 +448,7 @@ mod tests {
             lookup("bash").unwrap(),
             &json!({"command": "git push"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -449,6 +459,7 @@ mod tests {
             lookup("bash").unwrap(),
             &json!({"command": "rm -rf /"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -473,6 +484,7 @@ mod tests {
                 lookup("bash").unwrap(),
                 &json!({ "command": cmd }),
                 &root,
+                None,
                 &perms,
                 &grants,
             );
@@ -493,6 +505,7 @@ mod tests {
                 lookup("bash").unwrap(),
                 &json!({ "command": cmd }),
                 &root,
+                None,
                 &perms,
                 &grants,
             );
@@ -513,6 +526,7 @@ mod tests {
             lookup("bash").unwrap(),
             &json!({"command": "sudo   systemctl restart nginx"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -523,6 +537,7 @@ mod tests {
             lookup("bash").unwrap(),
             &json!({"command": "sudo rm -rf /"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -548,6 +563,7 @@ mod tests {
                     lookup(tool).unwrap(),
                     &json!({ "path": path }),
                     &root,
+                    None,
                     &perms,
                     &grants,
                 );
@@ -571,6 +587,7 @@ mod tests {
                 lookup(name).unwrap(),
                 &json!({"name": "x", "content": "y"}),
                 &root,
+                None,
                 &perms,
                 &grants,
             );
@@ -582,6 +599,7 @@ mod tests {
             lookup("memory_write").unwrap(),
             &json!({"name": "x", "content": "y"}),
             &root,
+            None,
             &denied,
             &grants,
         );
@@ -598,6 +616,7 @@ mod tests {
             lookup("write").unwrap(),
             &json!({"path": "out.txt"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -614,6 +633,7 @@ mod tests {
             lookup("write").unwrap(),
             &json!({"path": "out.txt"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -631,6 +651,7 @@ mod tests {
             lookup("write").unwrap(),
             &json!({"path": "out.txt"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -648,6 +669,7 @@ mod tests {
             lookup("read").unwrap(),
             &json!({"path": "../x"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -664,6 +686,7 @@ mod tests {
             lookup("write").unwrap(),
             &json!({"path": "sub/new.txt"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -682,6 +705,7 @@ mod tests {
                 lookup("write").unwrap(),
                 &json!({"path": path}),
                 &root,
+                None,
                 &perms,
                 &grants,
             );
@@ -700,6 +724,7 @@ mod tests {
             lookup("write").unwrap(),
             &json!({"path": "../x"}),
             &root,
+            None,
             &perms,
             &grants,
         );
@@ -716,6 +741,7 @@ mod tests {
             lookup("read").unwrap(),
             &json!({"path": "../x"}),
             &root,
+            None,
             &perms,
             &grants,
         );

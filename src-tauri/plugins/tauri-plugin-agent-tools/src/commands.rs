@@ -289,6 +289,7 @@ pub async fn execute_tool(
         tool,
         &args,
         &root,
+        Some(&scratch),
         &ToolPermissions::default(),
         &SessionGrants::default(),
     ) {
@@ -490,14 +491,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&data);
     }
 
-    /// A write that escapes the sandbox (absolute or `..`) must be refused on the
-    /// desktop surface, just like an escaping read -- it could reach host files.
+    /// A write that escapes the sandbox (absolute or `..`) must be refused on
+    /// the desktop surface, just like an escaping read -- it could reach host
+    /// files. A `/tmp` path is the exception: it is the session scratch, bound
+    /// over the sandbox's `/tmp`, and is a valid (scratch-backed) write.
     #[tokio::test]
     async fn escaping_writes_are_refused() {
         let data = unique_data_folder();
         let df = data.to_string_lossy().to_string();
 
-        for path in ["../escape.txt", "/tmp/jan_cmd_escape.txt"] {
+        for path in ["../escape.txt", "/etc/hosts", "/home/akarshan/.bashrc"] {
             let err = execute_tool(
                 df.clone(),
                 T1.into(),
@@ -515,6 +518,24 @@ mod tests {
                 err.message
             );
         }
+
+        // A `/tmp` write is the session scratch (not a host escape) and succeeds.
+        let res = execute_tool(
+            df.clone(),
+            T1.into(),
+            None,
+            "write".into(),
+            json!({"path": "/tmp/jan_cmd_scratch.txt", "content": "x"}),
+            None,
+            None,
+        )
+        .await
+        .expect("a /tmp write is the session scratch and must succeed");
+        assert!(
+            res.content.starts_with("Created /tmp/jan_cmd_scratch.txt"),
+            "got: {}",
+            res.content
+        );
 
         // An in-sandbox write still succeeds, so we didn't over-tighten.
         let res = execute_tool(
@@ -659,7 +680,9 @@ mod tests {
     }
 
     /// Thread isolation: each conversation gets its own sandbox, and neither a
-    /// relative nor an absolute path reaches the other's scratch files.
+    /// relative climb-out nor a sibling-thread absolute path reaches the other's
+    /// scratch files. `/tmp` is the agent's own (per-thread) scratch, so a read
+    /// of `/tmp` from a different thread resolves to that thread's empty scratch.
     #[tokio::test]
     async fn one_thread_cannot_read_another_threads_files() {
         let data = unique_data_folder();
@@ -668,19 +691,44 @@ mod tests {
         thread_workspace_path(df.clone(), T2.into()).await.unwrap();
         std::fs::write(one.join("secret.txt"), b"classified").unwrap();
 
-        for path in [
+        // A relative climb-out reaches the sibling thread's workspace and is an
+        // escape, so it must prompt (and is refused on this surface).
+        let err = execute_tool(
+            df.clone(),
+            T2.into(),
+            None,
+            "read".into(),
             json!({"path": "../thread-one/secret.txt"}),
-            json!({"path": one.join("secret.txt").to_string_lossy()}),
-        ] {
-            let err = execute_tool(df.clone(), T2.into(), None, "read".into(), path, None, None)
-                .await
-                .expect_err("cross-thread read must be refused");
-            assert!(
-                err.message.contains("needs user approval"),
-                "unexpected: {}",
-                err.message
-            );
-        }
+            None,
+            None,
+        )
+        .await
+        .expect_err("a relative climb-out to a sibling thread must be refused");
+        assert!(
+            err.message.contains("needs user approval"),
+            "unexpected: {}",
+            err.message
+        );
+
+        // `/tmp` is the per-thread scratch: T1's scratch (written by its shell) is
+        // not visible to T2, whose own scratch is empty.
+        std::fs::write(
+            crate::workspace::scratch_dir(T1).join("secret.txt"),
+            b"classified",
+        )
+        .unwrap();
+        let out = execute_tool(
+            df.clone(),
+            T2.into(),
+            None,
+            "read".into(),
+            json!({"path": "/tmp/secret.txt"}),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(out.is_error, "T2 sees an empty scratch, got: {}", out.content);
         let _ = std::fs::remove_dir_all(&data);
     }
 
@@ -735,20 +783,24 @@ mod tests {
             .unwrap();
         thread_workspace_path(df.clone(), T1.into()).await.unwrap();
 
-        let store = resolve_store(&df, None);
-        for path in [
+        // A relative climb out of the thread sandbox toward the store is an
+        // escape and must be refused.
+        let err = execute_tool(
+            df.clone(),
+            T1.into(),
+            None,
+            "read".into(),
             json!({"path": "../../memory/prefs.md"}),
-            json!({"path": workspace::store_dir(&store, "memory").join("prefs.md").to_string_lossy()}),
-        ] {
-            let err = execute_tool(df.clone(), T1.into(), None, "read".into(), path, None, None)
-                .await
-                .expect_err("memory must be unreachable from the sandbox");
-            assert!(
-                err.message.contains("needs user approval"),
-                "unexpected: {}",
-                err.message
-            );
-        }
+            None,
+            None,
+        )
+        .await
+        .expect_err("memory must be unreachable from the sandbox");
+        assert!(
+            err.message.contains("needs user approval"),
+            "unexpected: {}",
+            err.message
+        );
         let _ = std::fs::remove_dir_all(&data);
     }
 

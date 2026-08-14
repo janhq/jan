@@ -738,6 +738,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 tool,
                 &args,
                 &self.project_root,
+                Some(self.scratch_root.as_path()),
                 &self.permissions,
                 &snapshot,
             );
@@ -760,10 +761,12 @@ impl ToolInvoker for CompositeToolInvoker {
                 let enabled = self.enabled_skills.clone();
                 let allow_network = self.allow_network;
                 let allow_home_read = self.allow_home_read;
+                let scratch = self.scratch_root.clone();
                 read_futures.push(async move {
                     let ctx = ToolContext::new(&root, &store, &enabled)
                         .with_network(allow_network)
-                        .with_home_readonly(allow_home_read);
+                        .with_home_readonly(allow_home_read)
+                        .with_scratch_root(&scratch);
                     let (text, diff) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
                         id,
