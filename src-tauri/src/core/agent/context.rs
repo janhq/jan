@@ -143,6 +143,32 @@ in its own window and returns only the distilled answer. Dispatch independent su
 their work doesn't depend on each other, then `await_subagent` each. Do inline work yourself for small, \
 targeted tasks where delegating would cost more than it saves.";
 
+/// System-prompt addendum for a `/goal` run with no staged plan: an unattended
+/// loop that keeps firing turns until a condition is met needs the phased list
+/// up front, both to work through and for the user to read on return. Paired
+/// with a forced `tool_choice` on that turn (see `should_force_goal_todo_plan`
+/// and its caller), so this is a real requirement, not a suggestion the model
+/// can silently skip -- the imperative wording matches that guarantee. Normal
+/// turns never get it: there the model decides when a list is worth keeping.
+pub(crate) const EAGER_TODO_PROMPT_ADDENDUM: &str = "Before substantial work on this request, create a \
+phased todo. You MUST call `todo` first in this turn with a single `init` op covering \
+investigation through implementation and verification, not just the next step. Keep each task \
+to a concise, specific 5-10 word label; `init` only accepts phase names and task-label strings, \
+passed as the `list` argument (e.g. `list: [{phase: \"Setup\", items: [\"...\"]}]`) -- never as \
+top-level `phase`/`task` strings, which are for later ops (start/done/drop), not init. After \
+`todo` succeeds, continue the request in the same turn.";
+
+/// Upkeep half of the todo guidance, applied on every turn that has a non-empty
+/// list, in every mode -- including a list the model staged on its own. The
+/// init addendum above only ever fires under `/goal`, so a normal or resumed
+/// session would otherwise carry a list the model was never told to maintain --
+/// which is exactly how a run ends reading 0/N with every task finished but
+/// still marked pending.
+pub(crate) const TODO_UPKEEP_PROMPT_ADDENDUM: &str = "You have an active todo list. Keep it honest as you \
+work: the moment you finish a task call `todo` with `done` for it (or `drop` if you are skipping \
+it), before moving on to the next one. Do not leave finished work sitting as pending, and do not \
+batch the close-out to the end of the turn.";
+
 /// Build a compact runtime environment block injected into the system prompt at
 /// session start so the agent is grounded from turn one. Mirrors the
 /// `<workstation>` / cwd / date context blocks that harnesses like this one
