@@ -9328,24 +9328,22 @@ fn open_login_method_picker(app: &mut App, provider: &str) {
     let Some(definition) = crate::core::cli::auth::provider_by_id(provider) else {
         return app.note("selected provider is unavailable");
     };
-    let items = definition
-        .available_methods()
-        .into_iter()
-        .map(|method| match method {
-            crate::core::cli::auth::AuthMethod::ApiKey => PickerItem {
-                value: "api_key".to_string(),
-                label: "sign in with an API key".to_string(),
-                hint: Some(definition.api_key.hint.to_string()),
-                checkbox: None,
-            },
-            crate::core::cli::auth::AuthMethod::AccountOAuth => PickerItem {
-                value: "account".to_string(),
-                label: "sign in with an account".to_string(),
-                hint: Some("sign in in your browser".to_string()),
-                checkbox: None,
-            },
-        })
-        .collect();
+    let mut items = vec![PickerItem {
+        value: "api_key".to_string(),
+        label: "sign in with an API key".to_string(),
+        hint: Some(definition.api_key.hint.to_string()),
+        checkbox: None,
+    }];
+    if crate::core::cli::auth::account::AccountProvider::from_credential_provider(definition.id)
+        .is_some()
+    {
+        items.push(PickerItem {
+            value: "account".to_string(),
+            label: "sign in with an account".to_string(),
+            hint: Some("sign in in your browser".to_string()),
+            checkbox: None,
+        });
+    }
     app.picker = Some(Picker {
         kind: PickerKind::LoginMethod,
         items,
@@ -9355,10 +9353,10 @@ fn open_login_method_picker(app: &mut App, provider: &str) {
 }
 
 fn open_account_login(app: &mut App, provider: &str) {
-    let provider = match provider {
-        "openai" => crate::core::cli::auth::account::AccountProvider::Codex,
-        "anthropic" => crate::core::cli::auth::account::AccountProvider::Claude,
-        _ => return app.note("selected account is unavailable"),
+    let Some(provider) =
+        crate::core::cli::auth::account::AccountProvider::from_credential_provider(provider)
+    else {
+        return app.note("selected account is unavailable");
     };
     match crate::core::cli::auth::account::begin(provider) {
         Ok(login) => {
@@ -14902,6 +14900,83 @@ mod tests {
             assert!(!rendered.contains("secret-model"), "{rendered}");
             assert!(!rendered.contains("api-keys"), "{rendered}");
         });
+    }
+
+    #[tokio::test]
+    async fn login_method_picker_offers_account_only_for_account_login_providers() {
+        let expectations = [
+            ("openai", vec!["api_key", "account"]),
+            ("anthropic", vec!["api_key", "account"]),
+            ("opencode", vec!["api_key"]),
+            ("deepseek", vec!["api_key"]),
+            ("tokamak", vec!["api_key"]),
+        ];
+
+        for (provider, expected_methods) in expectations {
+            let mut app = test_app();
+            super::open_login_method_picker(&mut app, provider);
+
+            let picker = app
+                .picker
+                .as_ref()
+                .expect("provider selection must open its method picker");
+            assert_eq!(picker.kind, PickerKind::LoginMethod);
+            assert_eq!(picker.provider.as_deref(), Some(provider));
+            assert_eq!(
+                picker
+                    .items
+                    .iter()
+                    .map(|item| item.value.as_str())
+                    .collect::<Vec<_>>(),
+                expected_methods,
+                "{provider} must expose only its supported sign-in methods"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn login_method_picker_routes_account_and_api_key_from_explicit_provider_state() {
+        for provider in ["openai", "anthropic"] {
+            let mut app = test_app();
+            super::open_login_method_picker(&mut app, provider);
+            {
+                let picker = app.picker.as_mut().unwrap();
+                picker.selected = picker
+                    .items
+                    .iter()
+                    .position(|item| item.value == "account")
+                    .expect("account method must be present");
+            }
+
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+
+            assert!(app.account_login_active, "{provider} must start account sign-in");
+            assert!(app.account_login_submit.is_some());
+            assert!(app.login.is_none());
+        }
+
+        for provider in ["openai", "anthropic", "opencode", "deepseek", "tokamak"] {
+            let mut app = test_app();
+            super::open_login_method_picker(&mut app, provider);
+            {
+                let picker = app.picker.as_mut().unwrap();
+                assert_eq!(picker.provider.as_deref(), Some(provider));
+                picker.selected = picker
+                    .items
+                    .iter()
+                    .position(|item| item.value == "api_key")
+                    .expect("API-key method must be present");
+            }
+
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+
+            let prompt = app.login.as_mut().expect("API-key method must open masked prompt");
+            assert_eq!(prompt.provider, provider);
+            prompt.paste("provider-secret");
+            assert_eq!(prompt.masked(), "***************");
+            assert!(app.account_login_submit.is_none());
+            assert!(!app.account_login_active);
+        }
     }
 
     #[tokio::test]

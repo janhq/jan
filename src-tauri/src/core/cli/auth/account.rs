@@ -18,7 +18,7 @@ impl AccountProvider {
         }
     }
 
-    fn from_credential_provider(provider: &str) -> Option<Self> {
+    pub(crate) fn from_credential_provider(provider: &str) -> Option<Self> {
         match provider {
             "openai" => Some(Self::Codex),
             "anthropic" => Some(Self::Claude),
