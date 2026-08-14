@@ -633,6 +633,25 @@ fn hint_rows(pairs: &[(&str, &str)], width: u16) -> Vec<Line<'static>> {
         .collect()
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Counts `Row::lines` calls, so a test can assert that `draw` materializes
+    /// a viewport's worth of rows rather than the whole transcript.
+    static ROW_CLONES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Rows a `Paragraph` occupies once it word-wraps `lines` at `width`, measured
+/// with the same wrap the body uses so the two cannot disagree. ratatui wraps
+/// each `Line` independently and never merges across them, so summing this over
+/// a run of rows equals measuring their concatenation -- which is what lets
+/// `draw` add up cached per-row heights instead of wrapping the whole session.
+fn wrapped_height(lines: Vec<Line<'static>>, width: u16) -> u16 {
+    Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .line_count(width.max(1))
+        .min(u16::MAX as usize) as u16
+}
+
 /// One committed transcript entry. Width-dependent entries keep their *source*
 /// rather than rendered lines, so a terminal resize re-lays them out at the new
 /// width instead of leaving tables, boxed diffs and truncated labels sized for
@@ -648,7 +667,16 @@ struct Row {
     /// is laid out on every frame, so without this a long session would
     /// re-parse its markdown and re-highlight its diffs 20 times a second;
     /// only a width change invalidates the entry.
-    cache: std::cell::RefCell<Option<(u16, Vec<Line<'static>>)>>,
+    cache: std::cell::RefCell<Option<RowRender>>,
+}
+
+/// A row's rendered lines plus the height they occupy once the body
+/// `Paragraph` word-wraps them. `height` is what lets `draw` locate the visible
+/// window without materializing (let alone wrapping) the rows above it.
+struct RowRender {
+    width: u16,
+    lines: Vec<Line<'static>>,
+    height: u16,
 }
 
 enum RowKind {
@@ -704,14 +732,35 @@ impl Row {
     }
 
     fn lines(&self, width: u16) -> Vec<Line<'static>> {
-        if let Some((cached_width, lines)) = self.cache.borrow().as_ref() {
-            if *cached_width == width {
-                return lines.clone();
-            }
+        #[cfg(test)]
+        ROW_CLONES.with(|n| n.set(n.get() + 1));
+        self.fill(width);
+        self.cache
+            .borrow()
+            .as_ref()
+            .map(|r| r.lines.clone())
+            .unwrap_or_default()
+    }
+
+    /// Wrapped height at `width`, without cloning the row's lines. `draw` calls
+    /// this for every row on every frame and `lines` only for the visible few,
+    /// so this must stay O(1) once the row is cached.
+    fn height(&self, width: u16) -> u16 {
+        self.fill(width);
+        self.cache.borrow().as_ref().map_or(0, |r| r.height)
+    }
+
+    fn fill(&self, width: u16) {
+        if self.cache.borrow().as_ref().is_some_and(|r| r.width == width) {
+            return;
         }
         let lines = self.render(width);
-        *self.cache.borrow_mut() = Some((width, lines.clone()));
-        lines
+        let height = wrapped_height(lines.clone(), width);
+        *self.cache.borrow_mut() = Some(RowRender {
+            width,
+            lines,
+            height,
+        });
     }
 
     fn render(&self, width: u16) -> Vec<Line<'static>> {
@@ -1201,14 +1250,13 @@ struct App {
     /// Transcript viewport rect from the last draw, for mapping mouse clicks
     /// to rows.
     transcript_rect: Rect,
-    /// Wrapped-line scroll offset from the last draw (`0` = top), in the same
-    /// coordinate space as `row_index`.
+    /// Wrapped-line scroll offset from the last draw (`0` = top). Only the
+    /// selection anchor uses it now, to follow content that moved under it.
     last_scroll: u16,
-    /// Rendered-row -> source transcript index from the last draw (`None` for
-    /// synthetic rows: awaiting throbbers, live subagent panels, streaming
-    /// prose). Assumes summary rows never wrap (they're pre-truncated to the
-    /// viewport width), so a click's rendered row maps directly here without
-    /// needing wrap-aware layout math.
+    /// Body screen row -> source transcript index from the last draw (`None`
+    /// for synthetic rows: top padding, awaiting throbbers, streaming prose).
+    /// One entry per visible row, in wrapped coordinates, so a click maps
+    /// straight through even where a row wrapped.
     row_index: Vec<Option<usize>>,
     /// When the current run started, so the header can show elapsed time.
     /// `None` while idle.
@@ -4946,11 +4994,10 @@ fn click_region(app: &mut App, column: u16, row: u16) {
     {
         return;
     }
-    // Top border consumes one row; the rest maps 1:1 onto `row_index` since
-    // summary rows are pre-truncated to the viewport width and never wrap.
+    // Top border consumes one row; the rest maps 1:1 onto `row_index`, which is
+    // built in the body's own wrapped screen coordinates.
     let body_row = (row - rect.y - 1) as usize;
-    let absolute = app.last_scroll as usize + body_row;
-    if let Some(Some(idx)) = app.row_index.get(absolute) {
+    if let Some(Some(idx)) = app.row_index.get(body_row) {
         app.toggle_region(*idx);
     }
 }
@@ -7474,6 +7521,40 @@ fn transcript_top_padding(total: u16, inner_h: u16) -> u16 {
     inner_h.saturating_sub(total)
 }
 
+/// One contiguous run of body lines. A committed transcript row is held by
+/// index alone, so its cached lines are cloned only when the viewport reaches
+/// it; volatile content -- a running group's spinner row, expanded detail, the
+/// streaming tail -- is rebuilt every frame regardless and carries its lines
+/// inline.
+struct Segment {
+    idx: Option<usize>,
+    height: u16,
+    lines: Option<Vec<Line<'static>>>,
+}
+
+impl Segment {
+    fn eager(idx: Option<usize>, lines: Vec<Line<'static>>, width: u16) -> Segment {
+        Segment {
+            idx,
+            height: wrapped_height(lines.clone(), width),
+            lines: Some(lines),
+        }
+    }
+}
+
+/// Whether the body currently ends on a blank line, so `draw` knows if the
+/// streaming tail needs a separator above it. Reads the last rendered line
+/// rather than the last row's source, since a row renders to several lines.
+fn trailing_blank(tail: &[Line<'static>], transcript: &[Row], width: u16) -> bool {
+    let blank = |line: &Line<'static>| line.spans.iter().all(|s| s.content.trim().is_empty());
+    match tail.last() {
+        Some(line) => blank(line),
+        None => transcript
+            .last()
+            .is_none_or(|row| row.lines(width).last().is_none_or(blank)),
+    }
+}
+
 /// Rows the status panel may take, given the frame it has to share. The
 /// conversation is the point of the screen, so the panel is what gives way: it
 /// gets what is left after the header, rule, input, dock and
@@ -7553,28 +7634,42 @@ fn draw(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    let mut lines: Vec<Line<'static>> = Vec::with_capacity(app.transcript.len());
-    // Parallel to `lines`: which transcript index (if any) owns each rendered
-    // row, so a mouse click can be mapped back to a region to toggle.
-    let mut row_index: Vec<Option<usize>> = Vec::with_capacity(app.transcript.len());
-    let mut reveal_at: Option<usize> = None;
+    // ---- Measure ----
+    // Every committed row contributes only its *height* here, read from the row
+    // cache in O(1); the rows the viewport actually shows are the only ones
+    // materialized and word-wrapped, in the pass below. Laying the whole
+    // session out every frame is what made a long transcript crawl: the body
+    // Paragraph wrapped all of it twice (once to count, once to render), so the
+    // per-frame cost tracked history rather than what was on screen.
+    let mut segs: Vec<Segment> = Vec::with_capacity(app.transcript.len() + 8);
+    let mut content_h: u16 = 0;
+    let mut reveal_at: Option<u16> = None;
     let frame = app.spinner();
     for (i, row) in app.transcript.iter().enumerate() {
         if app.reveal == Some(i) {
-            reveal_at = Some(lines.len());
+            reveal_at = Some(content_h);
         }
         // Every committed row re-renders at the current width, so a resize
-        // re-flows prose, re-boxes diffs and re-truncates labels.
-        let rendered = match app
+        // re-flows prose, re-boxes diffs and re-truncates labels. The running
+        // group's row animates, so it can never come from the row cache.
+        let seg = match app
             .tool_group
             .as_ref()
             .filter(|g| g.idx == i && g.is_running())
         {
-            Some(g) => vec![running_group_row(g, app.spinner_frame, width)],
-            None => row.lines(width),
+            Some(g) => Segment::eager(
+                Some(i),
+                vec![running_group_row(g, app.spinner_frame, width)],
+                width,
+            ),
+            None => Segment {
+                idx: Some(i),
+                height: row.height(width),
+                lines: None,
+            },
         };
-        row_index.extend(std::iter::repeat_n(Some(i), rendered.len()));
-        lines.extend(rendered);
+        content_h = content_h.saturating_add(seg.height);
+        segs.push(seg);
         if app.expanded.contains(&i) {
             // Detail rows map back to the same owning idx (not `None`), so a
             // click anywhere in an expanded block collapses it -- not just on
@@ -7602,26 +7697,27 @@ fn draw(f: &mut Frame, app: &mut App) {
                         .map(|block| block.detail_lines(width))
                 });
             if let Some(detail) = detail {
-                row_index.extend(std::iter::repeat_n(Some(i), detail.len()));
-                lines.extend(detail);
+                let seg = Segment::eager(Some(i), detail, width);
+                content_h = content_h.saturating_add(seg.height);
+                segs.push(seg);
             }
         }
     }
+
+    // Streaming prose and the awaiting throbbers have no transcript index; they
+    // are rebuilt every frame and ride along as one trailing segment.
+    let mut tail: Vec<Line<'static>> = Vec::new();
     if !app.assistant_buf.is_empty() {
-        let tail = live_assistant_lines(&app.assistant_buf, width, !app.show_reasoning);
-        if !tail.is_empty() {
+        let live = live_assistant_lines(&app.assistant_buf, width, !app.show_reasoning);
+        if !live.is_empty() {
             // Mirror flush_assistant's `gap(Kind::Prose)` so the separator above
             // streaming prose is present live, not only once it's finalized.
-            let last_blank = lines
-                .last()
-                .map(|l| l.spans.iter().all(|s| s.content.trim().is_empty()))
-                .unwrap_or(true);
-            if !last_blank {
-                lines.push(Line::raw(""));
+            if !trailing_blank(&tail, &app.transcript, width) {
+                tail.push(Line::raw(""));
             }
             // Live tail: same renderer as finalized messages, so an open
             // (unterminated) <think> block dims and grows during streaming.
-            lines.extend(tail);
+            tail.extend(live);
         }
     }
     // Awaiting throbbers render last: below the assistant's reasoning/message
@@ -7635,17 +7731,13 @@ fn draw(f: &mut Frame, app: &mut App) {
         .filter(|(_, run_id, _)| !app.subagents.iter().any(|p| &p.run_id == run_id))
         .map(|(_, _, name)| name)
         .collect();
-    if !orphaned.is_empty() || !app.starting.is_empty() {
-        let last_blank = lines
-            .last()
-            .map(|l| l.spans.iter().all(|s| s.content.trim().is_empty()))
-            .unwrap_or(true);
-        if !last_blank {
-            lines.push(Line::raw(""));
-        }
+    if (!orphaned.is_empty() || !app.starting.is_empty())
+        && !trailing_blank(&tail, &app.transcript, width)
+    {
+        tail.push(Line::raw(""));
     }
     for name in orphaned {
-        lines.push(tool_row(
+        tail.push(tool_row(
             frame,
             Style::new().cyan(),
             &format!("Awaiting subagent: {name}"),
@@ -7656,53 +7748,32 @@ fn draw(f: &mut Frame, app: &mut App) {
     // trails the prose until the full call (with args) arrives and renders its
     // own row.
     for call in &mut app.starting {
-        lines.extend(starting_call_lines(call, frame));
+        tail.extend(starting_call_lines(call, frame));
     }
-    // Streaming prose and awaiting throbbers above have no transcript index;
-    // they're all appended after the transcript loop.
-    row_index.resize(lines.len(), None);
+    if !tail.is_empty() {
+        let seg = Segment::eager(None, tail, width);
+        content_h = content_h.saturating_add(seg.height);
+        segs.push(seg);
+    }
 
     // TOP border only: the rule under the transcript is now its own row below
     // the todo HUD (see the layout above), not this block's bottom border.
-    let block = Block::default().borders(Borders::TOP);
     let inner_h = chunks[1].height.saturating_sub(1);
-
-    // Wrapping only grows the line count, so if the unwrapped count already
-    // fills the viewport no padding is possible; skip the measuring clone and
-    // keep the long-transcript path allocation-free.
-    let pad = if (lines.len() as u16) < inner_h {
-        let total = Paragraph::new(lines.clone())
-            .wrap(Wrap { trim: false })
-            .block(block.clone())
-            .line_count(width)
-            .min(u16::MAX as usize) as u16;
-        transcript_top_padding(total, inner_h)
-    } else {
-        0
-    };
+    let pad = transcript_top_padding(content_h, inner_h);
     if pad > 0 {
-        let mut padded = vec![Line::raw(""); pad as usize];
-        padded.append(&mut lines);
-        lines = padded;
-        reveal_at = reveal_at.map(|n| n + pad as usize);
-        let mut padded_idx = vec![None; pad as usize];
-        padded_idx.append(&mut row_index);
-        row_index = padded_idx;
+        segs.insert(
+            0,
+            Segment {
+                idx: None,
+                height: pad,
+                lines: Some(vec![Line::raw(""); pad as usize]),
+            },
+        );
+        reveal_at = reveal_at.map(|n| n.saturating_add(pad));
     }
-
-    // Wrapped-content offset of the row we want scrolled into view, in the same
-    // coordinate space as `scroll` (TOP/BOTTOM borders don't affect wrapping).
-    let reveal_scroll = reveal_at.map(|n| {
-        Paragraph::new(lines[..n].to_vec())
-            .wrap(Wrap { trim: false })
-            .line_count(width)
-            .min(u16::MAX as usize) as u16
-    });
-
-    let body = Paragraph::new(lines).wrap(Wrap { trim: false }).block(block);
-    let total = body.line_count(width).min(u16::MAX as usize) as u16;
+    let total = content_h.saturating_add(pad);
     let max_back = total.saturating_sub(inner_h);
-    if let Some(target) = reveal_scroll {
+    if let Some(target) = reveal_at {
         // Position the region near the top of the viewport; clamps to pinned
         // bottom when it is already close enough to the end.
         app.scrollback = max_back.saturating_sub(target);
@@ -7710,7 +7781,48 @@ fn draw(f: &mut Frame, app: &mut App) {
     app.reveal = None;
     app.scrollback = app.scrollback.min(max_back);
     let scroll = max_back - app.scrollback;
-    f.render_widget(body.scroll((scroll, 0)), chunks[1]);
+
+    // ---- Materialize the visible window ----
+    // Only segments overlapping [scroll, scroll + inner_h) are cloned, so the
+    // Paragraph below wraps a viewport's worth of lines instead of the session.
+    let end = scroll.saturating_add(inner_h);
+    let mut visible: Vec<Line<'static>> = Vec::new();
+    // Parallel to the *screen* rows of the body, in wrapped coordinates: which
+    // transcript index (if any) owns each one, so a mouse click can be mapped
+    // back to a region to toggle.
+    let mut row_index: Vec<Option<usize>> = Vec::with_capacity(inner_h as usize);
+    let mut first_start: Option<u16> = None;
+    let mut at: u16 = 0;
+    for seg in segs {
+        let seg_end = at.saturating_add(seg.height);
+        if seg_end > scroll && at < end {
+            first_start.get_or_insert(at);
+            visible.extend(match seg.lines {
+                Some(lines) => lines,
+                // Committed rows are cloned out of the cache only here.
+                None => seg
+                    .idx
+                    .and_then(|i| app.transcript.get(i))
+                    .map(|row| row.lines(width))
+                    .unwrap_or_default(),
+            });
+            let visible_rows = seg_end.min(end).saturating_sub(at.max(scroll));
+            row_index.extend(std::iter::repeat_n(seg.idx, visible_rows as usize));
+        }
+        at = seg_end;
+        if at >= end {
+            break;
+        }
+    }
+    row_index.resize(inner_h as usize, None);
+
+    // What the body still has to skip inside the first partially-scrolled
+    // segment; everything before it was never materialized.
+    let offset = scroll.saturating_sub(first_start.unwrap_or(scroll));
+    let body = Paragraph::new(visible)
+        .wrap(Wrap { trim: false })
+        .block(Block::default().borders(Borders::TOP));
+    f.render_widget(body.scroll((offset, 0)), chunks[1]);
     // The anchor is a screen cell, so content moving under it has to move it
     // too, or an auto-scrolled drag would keep re-selecting the same rows.
     if let Some(sel) = app.selection.as_mut().filter(|s| s.dragging) {
@@ -16433,8 +16545,57 @@ mod tests {
         assert!(narrow.len() > 1, "{narrow:?}");
     }
 
+
+
+    /// The transcript is laid out on every 50ms tick, so any per-frame work
+    /// proportional to history (rather than to the viewport) compounds into an
+    /// unusable session. `draw` must materialize only the rows on screen.
+    #[test]
+    fn draw_materializes_only_the_visible_rows() {
+        let mut app = test_app();
+        for i in 0..4000 {
+            app.transcript.push(
+                RowKind::Markdown(format!(
+                    "Turn {i}: lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                ))
+                .into(),
+            );
+        }
+        // Warm every row's cache so the count below reflects steady-state
+        // frames, not the first layout at a new width.
+        render_rows(&mut app, 100, 40);
+        super::ROW_CLONES.with(|n| n.set(0));
+        render_rows(&mut app, 100, 40);
+        let cloned = super::ROW_CLONES.with(|n| n.get());
+        assert!(
+            cloned <= 64,
+            "a frame cloned {cloned} rows out of 4000; draw is laying out the \
+             whole transcript instead of the viewport"
+        );
+    }
+
+    /// `row_index` is in wrapped screen coordinates, so a click still maps to
+    /// the row it landed on even when earlier rows wrapped to several lines.
+    #[test]
+    fn click_maps_through_wrapped_rows() {
+        let mut app = test_app();
+        // Wraps to ~4 lines at width 40, so an unwrapped index would drift.
+        app.transcript
+            .push(RowKind::Line(Line::raw("w".repeat(150))).into());
+        for i in 0..5 {
+            app.transcript
+                .push(RowKind::Line(Line::raw(format!("row {i}"))).into());
+        }
+        render_rows(&mut app, 40, 20);
+        let rect = app.transcript_rect;
+        let last = app.transcript.len() - 1;
+        // Bottom-pinned, so the final body row is the last transcript row.
+        let bottom = rect.y + rect.height - 1;
+        super::click_region(&mut app, rect.x + 1, bottom);
+        assert_eq!(
+            app.row_index.get((bottom - rect.y - 1) as usize),
+            Some(&Some(last)),
+            "the last body row must map to the last transcript row"
+        );
+    }
 }
-
-
-
-
