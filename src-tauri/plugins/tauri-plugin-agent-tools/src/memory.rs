@@ -54,6 +54,60 @@ pub async fn read(store: &Path, name: &str) -> Result<String, String> {
         .map_err(|e| format!("ERROR: {e}"))
 }
 
+/// A memory note's summary line: the first non-empty, non-heading body line,
+/// capped. Mirrors skills' catalog: models see one line per note at session
+/// start and load the rest on demand with `memory_read`.
+fn describe(content: &str) -> String {
+    content
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| {
+            if l.chars().count() > 120 {
+                l.chars().take(120).collect::<String>()
+            } else {
+                l.to_string()
+            }
+        })
+        .unwrap_or_default()
+}
+
+/// Memory notes worth advertising in the system prompt: name + summary line, in
+/// sorted order, skipping notes with neither a name nor a summary. This is the
+/// progressive-disclosure catalog - the model calls `memory_read` to load a
+/// note on demand. Sync (std::fs) so the sync `context::load_memory_catalog`
+/// can call it directly; the async `memory_*` tools share the same store.
+pub fn catalog(store: &Path) -> Vec<(String, String)> {
+    let dir = memory_dir(store);
+    let Ok(rd) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut notes: Vec<(String, String)> = rd
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let path = e.path();
+            if path.extension().and_then(|x| x.to_str()) != Some("md") {
+                return None;
+            }
+            let name = path.file_stem().and_then(|s| s.to_str());
+            let body = std::fs::read_to_string(&path).ok();
+            match (name, body) {
+                (Some(name), Some(body)) => {
+                    let description = describe(&body);
+                    if name.is_empty() && description.is_empty() {
+                        None
+                    } else {
+                        Some((name.to_string(), description))
+                    }
+                }
+                _ => None,
+            }
+        })
+        .collect();
+    notes.sort_by(|a, b| a.0.cmp(&b.0));
+    notes
+}
+
 /// Create or overwrite a note. Returns the filename written, so callers can
 /// phrase their own result message. Parent directories are created as needed.
 pub async fn write(store: &Path, name: &str, content: &str) -> Result<String, String> {
@@ -131,6 +185,47 @@ mod tests {
     async fn read_missing_note_errors() {
         let root = unique_root();
         assert!(read(&root, "nope").await.is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn catalog_lists_sorted_notes_with_summaries() {
+        let root = unique_root();
+        std::fs::create_dir_all(memory_dir(&root)).unwrap();
+        std::fs::write(
+            memory_dir(&root).join("decisions.md"),
+            "# Decisions\nWe use Yarn not npm.",
+        )
+        .unwrap();
+        std::fs::write(memory_dir(&root).join("prefs.md"), "Keep it minimal.").unwrap();
+        std::fs::write(memory_dir(&root).join("notes.txt"), "ignored").unwrap();
+
+        let notes = catalog(&root);
+        assert_eq!(
+            notes,
+            vec![
+                ("decisions".to_string(), "We use Yarn not npm.".to_string()),
+                ("prefs".to_string(), "Keep it minimal.".to_string()),
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn catalog_lists_notes_even_without_a_summary_line() {
+        let root = unique_root();
+        std::fs::create_dir_all(memory_dir(&root)).unwrap();
+        std::fs::write(memory_dir(&root).join("empty.md"), "   \n# Only headings\n").unwrap();
+
+        // A curated note is worth advertising by name even if it has no prose.
+        assert_eq!(catalog(&root), vec![("empty".to_string(), String::new())]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn catalog_missing_dir_is_empty() {
+        let root = unique_root();
+        assert!(catalog(&root).is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
 }

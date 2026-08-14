@@ -7,7 +7,7 @@ use std::path::Path;
 use chrono::Local;
 
 use crate::core::agent::git;
-use tauri_plugin_agent_tools::{skills, workspace};
+use tauri_plugin_agent_tools::{memory, skills, workspace};
 
 /// Default persona used only when no assistant instructions are supplied, so a
 /// bare project run still opens with a role statement instead of "# Working
@@ -184,6 +184,30 @@ Shell: `{shell}`\n\
     )
 }
 
+/// A catalog of curated memory notes (names + one-line summaries), injected so
+/// the model can read a note on demand with `memory_read`. None when no note
+/// exists. Mirrors `load_skills`: progressive disclosure, not full bodies.
+pub(crate) fn load_memory_catalog(project_root: &Path) -> Option<String> {
+    let entries = memory::catalog(&workspace::project_store(project_root));
+    if entries.is_empty() {
+        return None;
+    }
+    let list = entries
+        .iter()
+        .map(|(name, description)| {
+            if description.is_empty() {
+                format!("- `{name}` - no summary")
+            } else {
+                format!("- `{name}` - {description}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some(format!(
+        "# Available Memories\n\nDurable facts recorded in this project. Read a note's full contents with `memory_read` when it is relevant to the current task.\n\n{list}"
+    ))
+}
+
 /// Assemble the project system prompt: the optional base prompt, the always-on
 /// built-in skills/memory guide, then any project-authored skills. The guide is
 /// always present for project runs, so this never returns None.
@@ -214,6 +238,9 @@ pub(crate) fn build_system_prompt(
     if let Some(skills) = load_skills(project_root) {
         blocks.push(skills);
     }
+    if let Some(memory) = load_memory_catalog(project_root) {
+        blocks.push(memory);
+    }
     Some(blocks.join("\n\n"))
 }
 
@@ -232,6 +259,12 @@ mod tests {
 
     fn write_skill(root: &Path, name: &str, body: &str) {
         let dir = root.join(".jan").join("agent").join("skills");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(name), body).unwrap();
+    }
+
+    fn write_memory(root: &Path, name: &str, body: &str) {
+        let dir = root.join(".jan").join("agent").join("memory");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(name), body).unwrap();
     }
@@ -277,6 +310,32 @@ mod tests {
         // Progressive disclosure: the body stays out of the prompt until read.
         assert!(!block.contains("SECRET_BODY_MARKER"));
         assert!(block.contains("skill_read"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn memory_catalog_advertises_summary_not_full_body() {
+        let root = scratch_project("memcatalog");
+        write_memory(&root, "decisions.md", "We use Yarn not npm.\nSECRET_BODY_MARKER follow-up detail.");
+        write_memory(&root, "prefs.md", "Keep it minimal.");
+        write_memory(&root, "ignored.txt", "not markdown");
+
+        let block = load_memory_catalog(&root).expect("memory block");
+        assert!(block.starts_with("# Available Memories"));
+        assert!(block.contains("- `decisions` - We use Yarn not npm."));
+        assert!(block.contains("- `prefs` - Keep it minimal."));
+        // Progressive disclosure: only the first line is advertised; the rest
+        // of the body stays out until memory_read.
+        assert!(!block.contains("SECRET_BODY_MARKER"));
+        assert!(block.contains("memory_read"));
+        assert!(!block.contains("ignored.txt"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn memory_catalog_is_none_when_no_notes() {
+        let root = scratch_project("memnone");
+        assert!(load_memory_catalog(&root).is_none());
         let _ = std::fs::remove_dir_all(&root);
     }
 

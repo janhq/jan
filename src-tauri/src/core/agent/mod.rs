@@ -19,7 +19,6 @@ pub mod interaction;
 pub mod global_config;
 pub mod git;
 pub mod r#loop;
-pub mod memory;
 pub mod plan;
 pub mod project;
 pub mod session;
