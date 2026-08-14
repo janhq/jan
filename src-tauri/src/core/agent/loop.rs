@@ -1015,32 +1015,6 @@ fn build_run_system_prompt(
     }
 }
 
-/// System-prompt addendum for a `/goal` run with no staged plan: an unattended
-/// loop that keeps firing turns until a condition is met needs the phased list
-/// up front, both to work through and for the user to read on return. Paired
-/// with a forced `tool_choice` on that turn (see `should_force_goal_todo_plan`
-/// and its caller), so this is a real requirement, not a suggestion the model
-/// can silently skip -- the imperative wording matches that guarantee. Normal
-/// turns never get it: there the model decides when a list is worth keeping.
-const EAGER_TODO_PROMPT_ADDENDUM: &str = "Before substantial work on this request, create a \
-phased todo. You MUST call `todo` first in this turn with a single `init` op covering \
-investigation through implementation and verification, not just the next step. Keep each task \
-to a concise, specific 5-10 word label; `init` only accepts phase names and task-label strings, \
-passed as the `list` argument (e.g. `list: [{phase: \"Setup\", items: [\"...\"]}]`) -- never as \
-top-level `phase`/`task` strings, which are for later ops (start/done/drop), not init. After \
-`todo` succeeds, continue the request in the same turn.";
-
-/// Upkeep half of the todo guidance, applied on every turn that has a non-empty
-/// list, in every mode -- including a list the model staged on its own. The
-/// init addendum above only ever fires under `/goal`, so a normal or resumed
-/// session would otherwise carry a list the model was never told to maintain --
-/// which is exactly how a run ends reading 0/N with every task finished but
-/// still marked pending.
-const TODO_UPKEEP_PROMPT_ADDENDUM: &str = "You have an active todo list. Keep it honest as you \
-work: the moment you finish a task call `todo` with `done` for it (or `drop` if you are skipping \
-it), before moving on to the next one. Do not leave finished work sitting as pending, and do not \
-batch the close-out to the end of the turn.";
-
 /// Which todo addendum this turn needs, if any: the init guidance on a `/goal`
 /// turn with no plan staged, otherwise the upkeep guidance whenever a list
 /// already exists. `None` when there is nothing to say (no list, and not a
@@ -1050,13 +1024,13 @@ async fn todo_prompt_addendum(
     todo_registry: &Option<crate::core::agent::todo::TodoRegistry>,
 ) -> Option<&'static str> {
     if eager_todo_plan {
-        return Some(EAGER_TODO_PROMPT_ADDENDUM);
+        return Some(crate::core::agent::context::EAGER_TODO_PROMPT_ADDENDUM);
     }
     let has_todos = match todo_registry {
         Some(registry) => !registry.lock().await.is_empty(),
         None => false,
     };
-    has_todos.then_some(TODO_UPKEEP_PROMPT_ADDENDUM)
+    has_todos.then_some(crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM)
 }
 
 /// True when this turn should be forced to stage a plan: a `/goal` run whose
@@ -1147,13 +1121,6 @@ async fn orchestrate_inner(
         project_root.as_deref(),
         *subagents_enabled,
     );
-    // Always tell the model today's date, including isolated child runs.
-    let date_line = format!("Today's date is {}.", chrono::Local::now().format("%Y-%m-%d"));
-    let system_prompt = match system_prompt {
-        Some(sys) => format!("{date_line}\n\n{sys}"),
-        None => date_line,
-    };
-    let system_prompt = Some(system_prompt);
     // Child (subagent) runs are excluded via `system_prompt_override`, the
     // same gate the memory-recall block above uses to distinguish a
     // top-level run from a subagent's isolated context.
@@ -2007,7 +1974,7 @@ mod tests {
         let staged = Some(staged_todo_registry());
         assert_eq!(
             todo_prompt_addendum(false, &staged).await,
-            Some(TODO_UPKEEP_PROMPT_ADDENDUM)
+            Some(crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM)
         );
         assert_eq!(
             todo_prompt_addendum(false, &Some(empty_todo_registry())).await,
@@ -2262,12 +2229,12 @@ mod tests {
         let registry = Some(todo_registry_with_open_task());
         // Not a first-message candidate (eager_todo_plan == false), list exists.
         let addendum = todo_prompt_addendum(false, &registry).await;
-        assert_eq!(addendum, Some(TODO_UPKEEP_PROMPT_ADDENDUM));
+        assert_eq!(addendum, Some(crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM));
 
         // A first substantive message gets the init guidance instead.
         assert_eq!(
             todo_prompt_addendum(true, &registry).await,
-            Some(EAGER_TODO_PROMPT_ADDENDUM)
+            Some(crate::core::agent::context::EAGER_TODO_PROMPT_ADDENDUM)
         );
     }
 
