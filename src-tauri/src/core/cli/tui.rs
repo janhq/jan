@@ -1382,6 +1382,8 @@ struct App {
     account_login_submit: Option<crate::core::cli::auth::account::AccountLogin>,
     /// Whether an account sign-in remains active and may complete.
     account_login_active: bool,
+    /// Provider id for the active account sign-in, kept so failures can name it.
+    account_login_provider: Option<String>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
     update_requested: bool,
     /// Compaction handed off to the loop, which spawns the summarizing model
@@ -1746,6 +1748,7 @@ impl App {
             login_submit: None,
             account_login_submit: None,
             account_login_active: false,
+            account_login_provider: None,
             update_requested: false,
             update_installing: false,
             compact_request: None,
@@ -6159,13 +6162,7 @@ async fn chat_loop<B: Backend>(
                 }
             }
             account_login = await_account_login(&mut account_login_task) => {
-                app.account_login_active = false;
-                match account_login {
-                    Ok(provider) => app.note(&format!(
-                        "signed in to {provider}; use /model <id> to select a model"
-                    )),
-                    Err(error) => app.note(&format!("account sign-in failed: {error}")),
-                }
+                finish_account_login(app, account_login);
             }
             update = await_update_check(&mut update_task) => {
                 note_update(app, update);
@@ -6551,7 +6548,6 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     if cancel {
         app.login = None;
         app.login_submit = None;
-        app.note("sign-in cancelled (run /login again any time)");
         return;
     }
     // Ctrl-V: terminals deliver a normal paste as `Event::Paste`, but some send
@@ -6987,7 +6983,7 @@ async fn handle_key(
             if app.account_login_active {
                 app.account_login_active = false;
                 app.account_login_submit = None;
-                app.note("account sign-in cancelled");
+                app.account_login_provider = None;
                 return;
             }
             // Esc cancels a run or clears typed input; it never quits (that's
@@ -9356,15 +9352,17 @@ fn open_account_login(app: &mut App, provider: &str) {
     let Some(provider) =
         crate::core::cli::auth::account::AccountProvider::from_credential_provider(provider)
     else {
-        return app.note("selected account is unavailable");
+        return app.note(&format!("{provider} sign-in failed: selected account is unavailable"));
     };
+    let provider_id = provider.credential_provider();
     match crate::core::cli::auth::account::begin(provider) {
         Ok(login) => {
             app.account_login_active = true;
+            app.account_login_provider = Some(provider_id.to_string());
             app.account_login_submit = Some(login);
             app.note("opening sign-in in your browser...");
         }
-        Err(error) => app.note(&format!("could not start account sign-in: {error}")),
+        Err(error) => app.note(&format!("{provider_id} sign-in failed: {error}")),
     }
 }
 
@@ -9424,36 +9422,53 @@ fn finish_login(
     match result {
         Ok(login) => {
             app.login = None;
-            app.note(&format!(
-                "signed in to {} - {} model(s) available, configuration saved to {}",
-                login.provider,
-                login.models.len(),
-                login.config_path.display()
-            ));
+            app.note(&login_success_message(&login.provider));
             adopt_login_model(app, &login);
         }
         Err(error) => {
-            let message = match error {
-                crate::core::cli::auth::LoginError::InvalidKey(message)
-                | crate::core::cli::auth::LoginError::Unavailable(message)
-                | crate::core::cli::auth::LoginError::Persist(message)
-                | crate::core::cli::auth::LoginError::OAuth(message) => message,
-                crate::core::cli::auth::LoginError::Unauthorized => {
-                    "that API key was not accepted".to_string()
-                }
-                crate::core::cli::auth::LoginError::RateLimited => {
-                    "that API key is rate limited - wait and try again".to_string()
-                }
-            };
             if let Some(prompt) = app.login.as_mut() {
+                let provider = prompt.provider.clone();
                 prompt.verifying = false;
                 prompt.input.clear();
-                prompt.error = Some(message);
-            } else {
-                app.note("sign-in failed");
+                prompt.error = Some(login_error_message(&provider, error));
             }
         }
     }
+}
+
+fn finish_account_login(app: &mut App, result: Result<String, String>) {
+    app.account_login_active = false;
+    let pending_provider = app.account_login_provider.take();
+    match result {
+        Ok(provider) => app.note(&login_success_message(&provider)),
+        Err(error) => {
+            let provider = pending_provider.unwrap_or_else(|| "account".to_string());
+            app.note(&format!("{provider} sign-in failed: {error}"));
+        }
+    }
+}
+
+fn login_success_message(provider: &str) -> String {
+    format!("signed in to {provider}. Use /model to select a model.")
+}
+
+fn login_error_message(
+    provider: &str,
+    error: crate::core::cli::auth::LoginError,
+) -> String {
+    let message = match error {
+        crate::core::cli::auth::LoginError::InvalidKey(message)
+        | crate::core::cli::auth::LoginError::Unavailable(message)
+        | crate::core::cli::auth::LoginError::Persist(message)
+        | crate::core::cli::auth::LoginError::OAuth(message) => message,
+        crate::core::cli::auth::LoginError::Unauthorized => {
+            "that API key was not accepted".to_string()
+        }
+        crate::core::cli::auth::LoginError::RateLimited => {
+            "that API key is rate limited - wait and try again".to_string()
+        }
+    };
+    format!("{provider} sign-in failed: {message}")
 }
 
 fn adopt_login_model(app: &mut App, login: &crate::core::cli::auth::LoginResult) {
@@ -9462,7 +9477,8 @@ fn adopt_login_model(app: &mut App, login: &crate::core::cli::auth::LoginResult)
         return;
     }
     if let Some(model) = login.models.first() {
-        app.set_model(model.clone());
+        app.model = model.clone();
+        let _ = super::cli_set_project_model(&app.agent_dir, &app.model);
     }
 }
 
@@ -12195,7 +12211,7 @@ mod tests {
         diff_lines, Row, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
         route_paste_event,
-        compact_tokens, finish_compaction, finish_login, finish_update_install,
+        compact_tokens, finish_account_login, finish_compaction, finish_login, finish_update_install,
         image_mime_of, load_first_file_image, load_image_file, MAX_IMAGE_BYTES,
         message_text, CompactKind, MAX_OVERFLOW_RETRIES,
         estimate_token_count, header_spans, status_panel, SubagentPanel,
@@ -15114,6 +15130,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn login_prompt_esc_cancels_without_outcome_message() {
+        let mut app = test_app();
+        super::open_login_prompt(&mut app, "tokamak");
+        let before = app.transcript.len();
+
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+
+        assert!(app.login.is_none(), "Esc must close the prompt");
+        assert!(app.login_submit.is_none());
+        assert_eq!(app.transcript.len(), before, "cancellation must stay silent");
+    }
+
+    #[tokio::test]
     async fn esc_cancels_a_pending_account_sign_in() {
         let mut app = test_app();
         super::open_account_login(&mut app, "openai");
@@ -15124,7 +15153,11 @@ mod tests {
 
         assert!(!app.account_login_active);
         assert!(app.account_login_submit.is_none());
+        assert!(!transcript_text(&app).contains("cancelled"));
+        assert!(!transcript_text(&app).contains("failed"));
+        assert!(!transcript_text(&app).contains("signed in"));
     }
+
 
     #[tokio::test]
     async fn login_stays_cancellable_while_verifying() {
@@ -15162,7 +15195,72 @@ mod tests {
         let prompt = app.login.as_ref().expect("prompt stays open to retry");
         assert!(!prompt.verifying);
         assert!(prompt.input.is_empty());
-        assert_eq!(prompt.error.as_deref(), Some("Tokamak rejected that API key."));
+        assert_eq!(
+            prompt.error.as_deref(),
+            Some("tokamak sign-in failed: Tokamak rejected that API key.")
+        );
+    }
+
+    #[test]
+    fn successful_api_key_login_reports_only_model_guidance() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            app.login = Some(super::LoginPrompt::new("tokamak"));
+
+            finish_login(
+                &mut app,
+                Ok(crate::core::cli::auth::LoginResult {
+                    provider: "tokamak".into(),
+                    models: vec!["tokamak-1-preview".into(), "tokamak-1-mini".into()],
+                    config_path: std::path::PathBuf::from("/tmp/config.toml"),
+                    default_model: Some("tokamak-1-preview".into()),
+                }),
+            );
+
+            let text = transcript_text(&app);
+            assert!(text.contains("signed in to tokamak. Use /model to select a model."), "{text}");
+            assert!(!text.contains("model(s)"), "{text}");
+            assert!(!text.contains("/tmp/config.toml"), "{text}");
+            assert!(!text.contains("tokamak-1-preview"), "{text}");
+        });
+    }
+
+    #[test]
+    fn failed_api_key_login_reports_provider_safe_error_without_key() {
+        let mut app = test_app();
+        super::open_login_prompt(&mut app, "tokamak");
+        app.login.as_mut().unwrap().paste("tk-secret-do-not-render");
+
+        finish_login(
+            &mut app,
+            Err(crate::core::cli::auth::LoginError::Unauthorized),
+        );
+
+        let prompt = app.login.as_ref().expect("prompt stays open to retry");
+        assert_eq!(
+            prompt.error.as_deref(),
+            Some("tokamak sign-in failed: that API key was not accepted")
+        );
+        let screen = render_rows(&mut app, 80, 24).join("\n");
+        assert!(screen.contains("tokamak sign-in failed"), "{screen}");
+        assert!(!screen.contains("tk-secret-do-not-render"), "{screen}");
+    }
+
+    #[test]
+    fn account_login_completion_reports_matching_success_and_failure_outcomes() {
+        let mut app = test_app();
+
+        finish_account_login(&mut app, Ok("openai".to_string()));
+        let text = transcript_text(&app);
+        assert!(text.contains("signed in to openai. Use /model to select a model."), "{text}");
+        assert!(!text.contains("/model <id>"), "{text}");
+
+        let mut app = test_app();
+        app.account_login_provider = Some("anthropic".to_string());
+        finish_account_login(&mut app, Err("the redirect state did not match".to_string()));
+        let text = transcript_text(&app);
+        assert!(text.contains("anthropic sign-in failed: the redirect state did not match"), "{text}");
+        assert!(!text.contains("signed in to anthropic"), "{text}");
     }
 
     #[test]

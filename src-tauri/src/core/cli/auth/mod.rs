@@ -22,12 +22,6 @@ pub enum Transport {
     Anthropic,
 }
 
-/// How a user can authenticate with a provider.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AuthMethod {
-    ApiKey,
-    AccountOAuth,
-}
 
 /// Non-secret guidance for minting an API key.
 #[derive(Debug, Clone)]
@@ -45,10 +39,10 @@ pub enum OAuthGrant {
     DeviceCode,
 }
 
-/// A Jan-owned, provider-issued OAuth registration. `provider_catalog()` keeps
-/// this `None` for every provider until Jan actually holds an issued
-/// registration with an approved redirect URI and permitted scopes; that is
-/// the single gate deciding whether "Sign in with account" is offered.
+/// Optional catalog metadata for a Jan-owned, provider-issued OAuth
+/// registration. Account-login availability is intentionally mapped in
+/// [`account::AccountProvider`]; do not infer login UI capabilities from this
+/// placeholder metadata.
 #[derive(Debug, Clone)]
 pub struct OAuthRegistration {
     pub client_id: &'static str,
@@ -69,22 +63,11 @@ pub struct ProviderDefinition {
     pub default_base_url: String,
     pub transport: Transport,
     pub api_key: ApiKeyMetadata,
-    /// `None` means account login is NOT offered. This is a security boundary,
-    /// not a disabled control: a missing registration hides the method.
+    /// Optional non-secret OAuth metadata. This is not an account-login
+    /// capability switch; see [`account::AccountProvider`].
     pub oauth: Option<OAuthRegistration>,
 }
 
-impl ProviderDefinition {
-    /// The authentication methods this provider may offer, in display order.
-    /// Account login appears only when an issued Jan registration exists.
-    pub fn available_methods(&self) -> Vec<AuthMethod> {
-        let mut methods = vec![AuthMethod::ApiKey];
-        if self.oauth.is_some() {
-            methods.push(AuthMethod::AccountOAuth);
-        }
-        methods
-    }
-}
 
 /// The providers the TUI `/login` flow offers, in picker order.
 pub fn provider_catalog() -> Vec<ProviderDefinition> {
@@ -190,19 +173,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalog_hides_account_login_without_an_issued_registration() {
-        let catalog = provider_catalog();
-        let claude = catalog.iter().find(|p| p.id == "anthropic").unwrap();
-        assert_eq!(claude.available_methods(), vec![AuthMethod::ApiKey]);
-        // No production entry carries a registration until Jan holds one.
-        for provider in &catalog {
-            assert!(provider.oauth.is_none(), "{} must not offer OAuth", provider.id);
-            assert_eq!(
-                provider.available_methods(),
-                vec![AuthMethod::ApiKey],
-                "{} must offer API key only",
-                provider.id
-            );
+    fn catalog_has_no_oauth_registration_metadata_until_issued() {
+        for provider in provider_catalog() {
+            assert!(provider.oauth.is_none(), "{} must not invent OAuth metadata", provider.id);
         }
     }
 
@@ -217,16 +190,4 @@ mod tests {
         assert!(provider_by_id("nope").is_none());
     }
 
-    #[test]
-    fn available_methods_includes_account_login_when_registered() {
-        let mut provider = provider_catalog()[0].clone();
-        provider.oauth = Some(OAuthRegistration {
-            client_id: "jan-test",
-            authorization_url: "https://auth.example.com/authorize",
-            token_url: "https://auth.example.com/token",
-            scopes: &["model.read"],
-            grant: OAuthGrant::AuthorizationCodePkce,
-        });
-        assert_eq!(provider.available_methods(), vec![AuthMethod::ApiKey, AuthMethod::AccountOAuth]);
-    }
 }
