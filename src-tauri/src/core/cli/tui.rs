@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::future::pending;
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -356,7 +357,9 @@ impl Pending {
 enum PickerKind {
     ResumeThread,
     SelectModel,
+    LoginMethod,
     LoginProvider,
+    LoginAccountProvider,
     ToggleMcp,
     /// Double-Esc rewind: pick a past user message to roll back to.
     RewindMessage,
@@ -392,7 +395,8 @@ impl Picker {
         match self.kind {
             PickerKind::ResumeThread => " resume thread ",
             PickerKind::SelectModel => " select model ",
-            PickerKind::LoginProvider => " sign in ",
+            PickerKind::LoginMethod => " sign in ",
+            PickerKind::LoginProvider | PickerKind::LoginAccountProvider => " sign in ",
             PickerKind::ToggleMcp => " mcp servers ",
             PickerKind::RewindMessage => " rewind to message ",
             PickerKind::RewindScope => " restore ",
@@ -407,8 +411,10 @@ impl Picker {
         match self.kind {
             PickerKind::ResumeThread => " ↑/↓ select   Enter resume   Esc cancel",
             PickerKind::SelectModel => " ↑/↓ select   Enter choose   Esc cancel",
+            PickerKind::LoginMethod | PickerKind::LoginProvider | PickerKind::LoginAccountProvider => {
+                " ↑/↓ select   Enter continue   Esc cancel"
+            }
             PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   a add   e edit   d delete   Esc close",
-            PickerKind::LoginProvider => " ↑/↓ select   Enter continue   Esc cancel",
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
@@ -1372,6 +1378,10 @@ struct App {
     probed_models: std::collections::HashSet<String>,
     /// Key handed off to the loop to verify off the render loop. Taken once.
     login_submit: Option<(String, String)>,
+    /// Account sign-in handed off to the loop after its local callback is ready.
+    account_login_submit: Option<crate::core::cli::auth::account::AccountLogin>,
+    /// Whether an account sign-in remains active and may complete.
+    account_login_active: bool,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
     update_requested: bool,
     /// Compaction handed off to the loop, which spawns the summarizing model
@@ -1734,6 +1744,8 @@ impl App {
             provider_prompt: None,
             probed_models: std::collections::HashSet::new(),
             login_submit: None,
+            account_login_submit: None,
+            account_login_active: false,
             update_requested: false,
             update_installing: false,
             compact_request: None,
@@ -5544,6 +5556,17 @@ async fn await_login(
     }
 }
 
+async fn await_account_login(
+    task: &mut Option<tokio::task::JoinHandle<Result<String, String>>>,
+) -> Result<String, String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    joined.map_err(|e| format!("account sign-in task failed: {e}"))?
+}
+
 /// How often the dock's branch indicator re-reads `HEAD`, so a checkout made
 /// outside the TUI (another terminal, an editor) shows up without needing a
 /// restart. Cheap (`rev-parse --abbrev-ref HEAD`) but still shells out, so this
@@ -5904,6 +5927,8 @@ async fn chat_loop<B: Backend>(
         >,
     > = None;
 
+    let mut account_login_task: Option<tokio::task::JoinHandle<Result<String, String>>> = None;
+
     // The update check is a network round trip, so it runs off the render loop
     // and notes itself whenever it lands rather than delaying the first frame.
     let mut update_task = Some(tokio::spawn(super::updater::available_update()));
@@ -5959,6 +5984,25 @@ async fn chat_loop<B: Backend>(
                 task.abort();
             }
         }
+        if !app.account_login_active {
+            if let Some(task) = account_login_task.take() {
+                task.abort();
+            }
+        }
+
+        if account_login_task.is_none() {
+            if let Some(login) = app.account_login_submit.take() {
+                account_login_task = Some(tokio::spawn(async move {
+                    let listener = crate::core::cli::auth::account::bind_callback(&login).await?;
+                    open_browser(&login.authorization_url)?;
+                    let provider =
+                        crate::core::cli::auth::account::complete_callback_login(listener, login)
+                            .await?;
+                    Ok(provider.credential_provider().to_string())
+                }));
+            }
+        }
+
 
         // A key was submitted at the `/login` prompt: verify it off-loop. One at
         // a time - the prompt is read-only while `verifying`.
@@ -6109,6 +6153,13 @@ async fn chat_loop<B: Backend>(
                 finish_login(app, login_res);
                 if login_ok {
                     reload_provider_configs(app).await;
+                }
+            }
+            account_login = await_account_login(&mut account_login_task) => {
+                app.account_login_active = false;
+                match account_login {
+                    Ok(provider) => app.note(&format!("signed in to {provider}")),
+                    Err(error) => app.note(&format!("account sign-in failed: {error}")),
                 }
             }
             update = await_update_check(&mut update_task) => {
@@ -6800,7 +6851,15 @@ async fn handle_key(
                 match kind {
                     PickerKind::ResumeThread => resume_thread(app, &value).await,
                     PickerKind::SelectModel => app.set_model(value),
+                    PickerKind::LoginMethod => {
+                        if value == "account" {
+                            open_account_provider_picker(app);
+                        } else {
+                            open_api_key_provider_picker(app);
+                        }
+                    }
                     PickerKind::LoginProvider => open_login_prompt(app, &value),
+                    PickerKind::LoginAccountProvider => open_account_login(app, &value),
                     PickerKind::ToggleMcp => {}
                     PickerKind::RewindMessage => {
                         if let Ok(idx) = value.parse::<usize>() {
@@ -9224,11 +9283,46 @@ fn open_mcp_picker(app: &mut App) {
     });
 }
 
-/// Open the `/login` prompt: send the user to Tokamak's API-keys page and wait
-/// for the key they paste back. The URL is always written to the transcript, not
-/// just handed to the browser, so a headless or remote session can still be
-/// completed by hand.
 fn open_login_picker(app: &mut App) {
+    app.picker = Some(Picker {
+        kind: PickerKind::LoginMethod,
+        items: vec![
+            PickerItem {
+                value: "account".to_string(),
+                label: "sign in with an account".to_string(),
+                hint: Some("use a Codex or Claude subscription".to_string()),
+                checkbox: None,
+            },
+            PickerItem {
+                value: "api_key".to_string(),
+                label: "sign in with an API key".to_string(),
+                hint: Some("for OpenCode, DeepSeek, Tokamak, or API billing".to_string()),
+                checkbox: None,
+            },
+        ],
+        selected: 0,
+    });
+}
+
+fn open_account_provider_picker(app: &mut App) {
+    let items = crate::core::cli::auth::provider_catalog()
+        .into_iter()
+        .filter(|provider| matches!(provider.id, "openai" | "anthropic"))
+        .map(|provider| PickerItem {
+            value: provider.id.to_string(),
+            label: provider.name.to_string(),
+            hint: Some("sign in in your browser".to_string()),
+            checkbox: None,
+        })
+        .collect();
+    app.picker = Some(Picker {
+        kind: PickerKind::LoginAccountProvider,
+        items,
+        selected: 0,
+    });
+}
+
+fn open_api_key_provider_picker(app: &mut App) {
     let items = crate::core::cli::auth::provider_catalog()
         .into_iter()
         .map(|provider| PickerItem {
@@ -9243,6 +9337,40 @@ fn open_login_picker(app: &mut App) {
         items,
         selected: 0,
     });
+}
+
+fn open_account_login(app: &mut App, provider: &str) {
+    let provider = match provider {
+        "openai" => crate::core::cli::auth::account::AccountProvider::Codex,
+        "anthropic" => crate::core::cli::auth::account::AccountProvider::Claude,
+        _ => return app.note("selected account is unavailable"),
+    };
+    match crate::core::cli::auth::account::begin(provider) {
+        Ok(login) => {
+            app.account_login_active = true;
+            app.account_login_submit = Some(login);
+            app.note("opening sign-in in your browser...");
+        }
+        Err(error) => app.note(&format!("could not start account sign-in: {error}")),
+    }
+}
+
+fn open_browser(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let mut command = Command::new("open");
+    #[cfg(target_os = "linux")]
+    let mut command = Command::new("xdg-open");
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("cmd");
+        command.args(["/C", "start"]);
+        command
+    };
+    command
+        .arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|_| "could not open the browser".to_string())
 }
 
 fn logout_command(app: &mut App, provider: &str) {
@@ -14634,19 +14762,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn login_opens_the_provider_picker() {
+    async fn login_starts_with_account_or_api_key_and_limits_account_providers() {
         let mut app = test_app();
         run_command(&mut app, "login").await;
 
-        let picker = app.picker.as_ref().expect("/login must open a provider picker");
+        let picker = app.picker.as_ref().expect("/login must open a method picker");
         assert_eq!(
             picker.items.iter().map(|item| item.value.as_str()).collect::<Vec<_>>(),
-            vec!["openai", "anthropic", "opencode", "deepseek", "tokamak"]
+            vec!["account", "api_key"]
         );
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        let picker = app.picker.as_ref().expect("account login must open its provider picker");
         assert_eq!(
-            app.login.as_ref().map(|prompt| prompt.provider.as_str()),
-            Some("openai")
+            picker.items.iter().map(|item| item.value.as_str()).collect::<Vec<_>>(),
+            vec!["openai", "anthropic"]
         );
     }
 

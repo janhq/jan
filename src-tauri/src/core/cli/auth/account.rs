@@ -19,11 +19,13 @@ impl AccountProvider {
     }
 }
 
+#[derive(Clone)]
 pub struct AccountLogin {
     pub authorization_url: String,
     pub redirect_uri: &'static str,
     pub state: String,
     pub verifier: String,
+    provider: AccountProvider,
     client_id: &'static str,
     token_endpoint: String,
 }
@@ -71,6 +73,7 @@ pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
         redirect_uri,
         state,
         verifier,
+        provider,
         client_id,
         token_endpoint: token_endpoint.to_string(),
     })
@@ -126,6 +129,21 @@ pub async fn accept_callback(
     };
     let _ = stream.write_all(response.as_bytes()).await;
     result
+}
+
+pub async fn bind_callback(login: &AccountLogin) -> Result<tokio::net::TcpListener, String> {
+    let redirect = url::Url::parse(login.redirect_uri).map_err(|_| "the callback URL was invalid".to_string())?;
+    let port = redirect
+        .port_or_known_default()
+        .ok_or_else(|| "the callback URL did not include a port".to_string())?;
+    tokio::net::TcpListener::bind(("127.0.0.1", port))
+        .await
+        .map_err(|_| "could not start the local sign-in callback".to_string())
+}
+
+pub async fn wait_for_browser_callback(login: &AccountLogin) -> Result<String, String> {
+    let listener = bind_callback(login).await?;
+    accept_callback(listener, login).await
 }
 
 fn token_request_body(login: &AccountLogin, code: &str) -> std::collections::BTreeMap<String, String> {
@@ -196,6 +214,21 @@ pub fn store(provider: AccountProvider, token: &OAuthToken) -> Result<(), String
         provider.credential_provider(),
         &Credential::OAuthToken(token.clone()),
     )
+}
+
+pub async fn complete_browser_login(login: AccountLogin) -> Result<AccountProvider, String> {
+    let listener = bind_callback(&login).await?;
+    complete_callback_login(listener, login).await
+}
+
+pub async fn complete_callback_login(
+    listener: tokio::net::TcpListener,
+    login: AccountLogin,
+) -> Result<AccountProvider, String> {
+    let code = accept_callback(listener, &login).await?;
+    let token = exchange(&login, &code).await?;
+    store(login.provider, &token)?;
+    Ok(login.provider)
 }
 #[cfg(test)]
 mod tests {
