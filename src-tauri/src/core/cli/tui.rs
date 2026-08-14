@@ -2855,7 +2855,7 @@ impl App {
 
     fn submit_user_text(&mut self, text: String, display: bool) {
         if self.model.is_empty() {
-            self.note("not signed in — run /login to sign in to Tokamak first");
+            self.note("not signed in — run /login to choose a provider first");
             return;
         }
         // If a turn is already in progress, enqueue the message instead
@@ -5757,7 +5757,7 @@ pub async fn run(
         !seeded,
     );
     if app.model.is_empty() {
-        app.note("not signed in — run /login to sign in to Tokamak, or `jan config set` to configure a provider manually");
+        app.note("not signed in — run /login to choose a provider");
     }
     // Only when there is nothing to load: a project that already has JAN.md needs
     // no invitation, and the splash hint covers re-running /init deliberately.
@@ -7404,7 +7404,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/login",
         hint: "",
-        description: "Sign in to Tokamak and save the API key",
+        description: "Sign in to a provider",
     },
     SlashCommand {
         name: "/logout",
@@ -9349,20 +9349,30 @@ fn open_login_method_picker(app: &mut App, provider: &str) {
 }
 
 fn open_account_login(app: &mut App, provider: &str) {
+    open_account_login_with_begin(app, provider, crate::core::cli::auth::account::begin);
+}
+
+fn open_account_login_with_begin(
+    app: &mut App,
+    provider: &str,
+    begin: impl FnOnce(
+        crate::core::cli::auth::account::AccountProvider,
+    ) -> Result<crate::core::cli::auth::account::AccountLogin, String>,
+) {
     let Some(provider) =
         crate::core::cli::auth::account::AccountProvider::from_credential_provider(provider)
     else {
         return app.note(&format!("{provider} sign-in failed: selected account is unavailable"));
     };
     let provider_id = provider.credential_provider();
-    match crate::core::cli::auth::account::begin(provider) {
+    match begin(provider) {
         Ok(login) => {
             app.account_login_active = true;
             app.account_login_provider = Some(provider_id.to_string());
             app.account_login_submit = Some(login);
             app.note("opening sign-in in your browser...");
         }
-        Err(error) => app.note(&format!("{provider_id} sign-in failed: {error}")),
+        Err(_) => app.note(&account_login_error_message(provider_id)),
     }
 }
 
@@ -14801,6 +14811,31 @@ mod tests {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/login"));
     }
 
+    #[tokio::test]
+    async fn help_login_copy_describes_provider_sign_in_without_stale_tokamak_key_copy() {
+        let mut app = test_app();
+
+        run_command(&mut app, "help").await;
+
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("/login"), "{text}");
+        assert!(text.contains("Sign in to a provider"), "{text}");
+        assert!(!text.contains("Sign in to Tokamak"), "{text}");
+        assert!(!text.contains("save the API key"), "{text}");
+    }
+
+    #[test]
+    fn login_empty_state_points_to_provider_picker_without_stale_tokamak_copy() {
+        let mut app = test_app();
+        app.model.clear();
+
+        app.submit_user("hello".to_string());
+
+        let text = transcript_text(&app);
+        assert!(text.contains("not signed in — run /login to choose a provider"), "{text}");
+        assert!(!text.contains("Tokamak"), "{text}");
+    }
+
     fn with_isolated_login_state<T>(f: impl FnOnce() -> T) -> T {
         let _guard = crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK
             .lock()
@@ -15327,6 +15362,25 @@ mod tests {
         assert!(!text.contains("model.write"), "{text}");
         assert!(!text.contains("claude-3"), "{text}");
         assert!(!text.contains("invalid_grant"), "{text}");
+    }
+
+    #[test]
+    fn account_login_begin_failure_uses_safe_provider_message() {
+        let mut app = test_app();
+
+        super::open_account_login_with_begin(&mut app, "anthropic", |_| {
+            Err("could not create callback from /Users/alice/.jan/config.toml with client_secret=sk-secret-do-not-render".to_string())
+        });
+
+        let text = transcript_text(&app);
+        assert!(
+            text.contains("anthropic sign-in failed: could not complete browser sign-in"),
+            "{text}"
+        );
+        assert!(!text.contains("/Users/alice/.jan/config.toml"), "{text}");
+        assert!(!text.contains("sk-secret-do-not-render"), "{text}");
+        assert!(!app.account_login_active);
+        assert!(app.account_login_submit.is_none());
     }
 
     #[test]
@@ -23128,7 +23182,7 @@ mod tests {
     #[test]
     fn a_wrapped_note_indents_instead_of_repeating_its_marker() {
         let mut app = test_app();
-        app.note("not signed in - run /login to sign in to Tokamak, or jan config set to configure a provider manually");
+        app.note("not signed in - run /login to choose a provider before sending your first message");
 
         let lines = last_row_lines(&app, 60);
         assert!(lines.len() > 1, "expected a wrap: {lines:?}");
