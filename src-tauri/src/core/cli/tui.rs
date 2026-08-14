@@ -962,11 +962,68 @@ impl PendingAsk {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReasoningEffort {
+    Low,
+    Medium,
+    High,
+    XHigh,
+}
+
+impl ReasoningEffort {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::XHigh => "xhigh",
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
+            "high" => Some(Self::High),
+            "xhigh" => Some(Self::XHigh),
+            _ => None,
+        }
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::Low => Self::Medium,
+            Self::Medium => Self::High,
+            Self::High => Self::XHigh,
+            Self::XHigh => Self::Low,
+        }
+    }
+}
+
+impl std::fmt::Display for ReasoningEffort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// OpenAI models known to accept the `reasoning_effort` chat parameter. Model
+/// catalogs only expose IDs, not parameter capabilities, so keep this
+/// conservative rather than sending a rejected field to every provider.
+fn model_supports_reasoning_effort(model: &str) -> bool {
+    let model = model.rsplit('/').next().unwrap_or(model).to_ascii_lowercase();
+    model.starts_with("gpt-5")
+        || model.starts_with("o1")
+        || model.starts_with("o3")
+        || model.starts_with("o4")
+}
+
 struct App {
     model: String,
     /// Fast model for the `smol` role, used by `/goal` evaluation. Defaults to
     /// `model` when no smol model is configured.
     smol_model: String,
+    /// Reasoning depth requested for the next model turn.
+    reasoning_effort: ReasoningEffort,
     /// Active `/goal`, if any: the loop keeps firing turns until the evaluator
     /// judges the condition met. Persisted with the thread so it survives
     /// restart/resume. `None` = no goal.
@@ -1360,6 +1417,7 @@ impl App {
         Self {
             smol_model: model.clone(),
             model,
+            reasoning_effort: ReasoningEffort::Medium,
             goal: None,
             goal_eval_pending: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
@@ -2416,6 +2474,9 @@ impl App {
         if let Some(max) = self.max_tokens {
             body["max_tokens"] = serde_json::json!(max);
         }
+        if model_supports_reasoning_effort(&self.model) {
+            body["reasoning_effort"] = serde_json::json!(self.reasoning_effort.as_str());
+        }
         // Live plan-mode toggle: the backend reads this per turn and falls back
         // to the session default when absent. Only forwarded in Plan so normal
         // turns keep an unchanged body.
@@ -2589,10 +2650,35 @@ impl App {
     /// persists across sessions.
     fn set_model(&mut self, model: String) {
         self.model = model;
-        match super::cli_set_project_model(&self.agent_dir, &self.model) {
-            Ok(()) => self.note(&format!("model set to {}", self.model)),
-            Err(e) => self.note(&format!("model set to {} (not saved: {e})", self.model)),
+        let effort_unavailable = !model_supports_reasoning_effort(&self.model);
+        if effort_unavailable {
+            self.reasoning_effort = ReasoningEffort::Medium;
         }
+        let suffix = if effort_unavailable {
+            "; reasoning effort unavailable"
+        } else {
+            ""
+        };
+        match super::cli_set_project_model(&self.agent_dir, &self.model) {
+            Ok(()) => self.note(&format!("model set to {}{suffix}", self.model)),
+            Err(e) => self.note(&format!(
+                "model set to {}{suffix} (not saved: {e})",
+                self.model
+            )),
+        }
+    }
+
+    fn set_reasoning_effort(&mut self, effort: ReasoningEffort) {
+        if !model_supports_reasoning_effort(&self.model) {
+            self.note(&format!("reasoning effort unavailable for {}", self.model));
+            return;
+        }
+        self.reasoning_effort = effort;
+        self.note(&format!("reasoning effort: {effort}"));
+    }
+
+    fn cycle_reasoning_effort(&mut self) {
+        self.set_reasoning_effort(self.reasoning_effort.next());
     }
 
     /// Non-terminal stream events. `Done`/`Error` are handled by the loop since
@@ -5568,6 +5654,9 @@ async fn handle_key(
         KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
             app.input_insert('\n');
         }
+        KeyCode::F(4) => {
+            app.cycle_reasoning_effort();
+        }
         KeyCode::Char('j') if ctrl => {
             app.input_insert('\n');
         }
@@ -5715,6 +5804,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Switch model (bare: pick interactively)",
     },
     SlashCommand {
+        name: "/effort",
+        hint: "[low|medium|high|xhigh]",
+        description: "Set reasoning effort for supported models (bare: status)",
+    },
+    SlashCommand {
         name: "/mcp",
         hint: "",
         description: "Enable/disable MCP servers",
@@ -5764,6 +5858,7 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("PgUp/PgDn", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
+    ("F4", "Cycle reasoning effort"),
     ("Drag", "Select text, copied on release (Alt+drag for a block)"),
     ("Ctrl-D", "Quit"),
 ];
@@ -5840,6 +5935,20 @@ async fn run_command(app: &mut App, line: &str) {
                 open_model_picker(app);
             } else {
                 app.set_model(arg.to_string());
+            }
+        }
+        "effort" => {
+            if arg.is_empty() {
+                let status = if model_supports_reasoning_effort(&app.model) {
+                    app.reasoning_effort.to_string()
+                } else {
+                    "unavailable".into()
+                };
+                app.note(&format!("reasoning effort: {status}"));
+            } else if let Some(effort) = ReasoningEffort::parse(arg) {
+                app.set_reasoning_effort(effort);
+            } else {
+                app.note("usage: /effort [low|medium|high|xhigh]");
             }
         }
         "mcp" => open_mcp_picker(app),
@@ -7229,6 +7338,9 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     {
         app.model = model.to_string();
     }
+    if !model_supports_reasoning_effort(&app.model) {
+        app.reasoning_effort = ReasoningEffort::Medium;
+    }
 
     // The journal holds what was rendered (reasoning, tool rows, diffs); the
     // messages hold what the model is sent. Prefer the journal for the
@@ -8575,6 +8687,12 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
     } else {
         Span::styled(format!(" {}  ", app.model), Style::new().bold())
     }];
+    if model_supports_reasoning_effort(&app.model) {
+        spans.push(Span::styled(
+            format!(" effort {}  ", app.reasoning_effort),
+            Style::new().dim(),
+        ));
+    }
     // Wall-clock (local) segment, mirroring the reference status line's leading
     // HH:MM:SS. Shown only while a run is active: a clock that ticks once per
     // second repaints the screen every second, which clears the terminal's text
@@ -9171,7 +9289,7 @@ mod tests {
         tool_activity, tool_finished,
         transcript_top_padding, rewind_to,
         row_width, user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind,
-        ResumeTarget, RowKind,
+        ReasoningEffort, ResumeTarget, RowKind,
         SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
         COMMAND_LABEL_MAX, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
         KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER,
@@ -9244,6 +9362,63 @@ mod tests {
             std::path::PathBuf::from("/tmp/repo"),
             None,
         )
+    }
+
+    #[test]
+    fn effort_defaults_to_medium_and_is_forwarded_for_reasoning_models() {
+        let mut app = test_app();
+        app.model = "gpt-5".into();
+
+        assert_eq!(app.reasoning_effort, ReasoningEffort::Medium);
+        assert_eq!(app.body()["reasoning_effort"], "medium");
+    }
+
+    #[test]
+    fn effort_is_omitted_for_models_without_reasoning_effort_support() {
+        let mut app = test_app();
+        app.model = "gpt-4o".into();
+
+        assert!(app.body().get("reasoning_effort").is_none());
+    }
+
+    #[tokio::test]
+    async fn effort_command_and_shortcut_update_supported_model() {
+        let mut app = test_app();
+        app.model = "gpt-5".into();
+
+        run_command(&mut app, "effort high").await;
+        assert_eq!(app.reasoning_effort, ReasoningEffort::High);
+
+        press(&mut app, KeyCode::F(4), KeyModifiers::NONE).await;
+        assert_eq!(app.reasoning_effort, ReasoningEffort::XHigh);
+    }
+
+    #[tokio::test]
+    async fn unsupported_model_switch_resets_effort_and_never_forwards_it() {
+        let mut app = test_app();
+        app.model = "gpt-5".into();
+        app.reasoning_effort = ReasoningEffort::High;
+        app.history.push(serde_json::json!({"role": "user", "content": "keep"}));
+
+        app.set_model("gpt-4o".into());
+        run_command(&mut app, "effort low").await;
+
+        assert_eq!(app.reasoning_effort, ReasoningEffort::Medium);
+        assert_eq!(app.history, vec![serde_json::json!({"role": "user", "content": "keep"})]);
+        assert!(app.body().get("reasoning_effort").is_none());
+        assert!(transcript_text(&app).contains("reasoning effort unavailable"));
+    }
+
+    #[test]
+    fn header_shows_effort_only_for_supported_models() {
+        let mut app = test_app();
+        app.model = "gpt-5".into();
+        let supported = render_rows(&mut app, 100, 12).join("\n");
+        assert!(supported.contains("effort medium"), "{supported}");
+
+        app.model = "gpt-4o".into();
+        let unsupported = render_rows(&mut app, 100, 12).join("\n");
+        assert!(!unsupported.contains("effort"), "{unsupported}");
     }
 
     /// Draw `app` into an off-screen terminal and return its rows as strings.

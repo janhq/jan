@@ -316,6 +316,7 @@ pub(crate) fn copy_optional_chat_params(
         "top_p",
         "top_k",
         "max_tokens",
+        "reasoning_effort",
         "stop_sequences",
         "stop",
         "frequency_penalty",
@@ -924,6 +925,16 @@ mod tests {
         mpsc::UnboundedReceiver<StreamEvent>,
     ) {
         mpsc::unbounded_channel()
+    }
+
+    #[test]
+    fn copies_reasoning_effort_to_the_upstream_request() {
+        let from = json!({ "reasoning_effort": "high" });
+        let mut into = serde_json::Map::new();
+
+        copy_optional_chat_params(&from, &mut into);
+
+        assert_eq!(into.get("reasoning_effort"), Some(&json!("high")));
     }
 
     /// A model served both by a Jan desktop API server (reachable over HTTP) and
