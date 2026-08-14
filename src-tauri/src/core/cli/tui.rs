@@ -8604,10 +8604,10 @@ fn turn_stats_line(prompt_tokens: u64, output_tokens: u64, elapsed: Duration) ->
     Line::from(spans)
 }
 
-/// `YYYY-MM-DD HH:MM:SS` in local time, without pulling in a date library:
+/// `YYYY-MM-DD HH:MM` in local time, without pulling in a date library:
 /// `chrono` is already a dependency, so this is just the formatting choice.
 fn local_timestamp() -> String {
-    chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    chrono::Local::now().format("%Y-%m-%d %H:%M").to_string()
 }
 
 fn format_elapsed(secs: u64) -> String {
@@ -8688,13 +8688,14 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         Span::styled(format!(" {}  ", app.model), Style::new().bold())
     }];
     // Wall-clock (local) segment, mirroring the reference status line's leading
-    // HH:MM:SS. Shown only while a run is active: a clock that ticks once per
-    // second repaints the screen every second, which clears the terminal's text
-    // selection mid-drag. An idle frame must be fully static so the transcript
-    // stays selectable/copyable (the 50ms ticker then emits no output at all).
+    // HH:MM. Shown only while a run is active: a clock that ticks once per
+    // minute repaints the screen only on the minute, which clears the terminal's
+    // text selection mid-drag less often. An idle frame must be fully static so
+    // the transcript stays selectable/copyable (the 50ms ticker then emits no
+    // output at all).
     if app.run_started.is_some() {
         spans.push(Span::styled(
-            format!("  {}", chrono::Local::now().format("%H:%M:%S")),
+            format!("  {}", chrono::Local::now().format("%H:%M")),
             Style::new().dim(),
         ));
     }
