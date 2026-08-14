@@ -1,18 +1,28 @@
 ---
 name: jan
-description: Use when onboarding users to Jan Agent or explaining where to customize models, providers, project settings, and skills.
+description: Use when onboarding users to Jan Agent or explaining project and global configuration, skills, memory, providers, and MCP servers.
 ---
 # Jan Agent
 
-Use this to onboard users to Jan Agent and customize their workspace.
+Run `jan` in a folder. That CWD is the project root; `--project DIR` selects another root.
 
-## Start
+## Project state
 
-- Read [Jan Docs](https://jan.ai/docs) and [Jan releases](https://github.com/janhq/jan/releases).
-- Check installed CLI behavior with `jan --version`, `jan --help`, then relevant subcommand help.
-- Use the docs for current UI, update, and source-build guidance.
+`<project>/.jan/agent/` is created on first use:
 
-## Customize
+- `agent.toml`: model, provider override, budget, tools, and skills.
+- `AGENT.md`: always-on project instructions.
+- `skills/<name>/SKILL.md` or `skills/<name>.md`: reusable procedures.
+- `memory/`: durable project facts. `threads/`: saved sessions. `subagents/`: reusable agents.
 
-- Desktop: use Settings. Project Agent: inspect `.jan/agent/agent.toml` for models, providers, permissions, and budgets.
-- Manage project skills with `skill_list`, `skill_read`, and `skill_write`.
+Run `jan cli agent status --project .` to scaffold it. Commit `agent.toml`, `AGENT.md`, `skills/`, and `subagents/`; gitignore `threads/`.
+
+## Global state
+
+- `~/.jan/config.toml`: provider configuration and credentials.
+- `<JAN_DATA_FOLDER>/mcp_config.json`: MCP servers. Desktop: **Settings → MCP Servers**.
+- `<JAN_DATA_FOLDER>/agent-workspace/`: Desktop-global `skills/`, `memory/`, and `threads/`. `JAN_DATA_FOLDER` or the Desktop data-folder setting selects the root.
+
+## References
+
+[Project config](https://jan.ai/docs/agent/project-config) · [Skills](https://jan.ai/docs/agent/skills) · [MCP servers](https://jan.ai/docs/desktop/integrations/mcp-servers)
