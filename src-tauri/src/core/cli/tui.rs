@@ -9441,15 +9441,19 @@ fn finish_account_login(app: &mut App, result: Result<String, String>) {
     let pending_provider = app.account_login_provider.take();
     match result {
         Ok(provider) => app.note(&login_success_message(&provider)),
-        Err(error) => {
+        Err(_) => {
             let provider = pending_provider.unwrap_or_else(|| "account".to_string());
-            app.note(&format!("{provider} sign-in failed: {error}"));
+            app.note(&account_login_error_message(&provider));
         }
     }
 }
 
 fn login_success_message(provider: &str) -> String {
     format!("signed in to {provider}. Use /model to select a model.")
+}
+
+fn account_login_error_message(provider: &str) -> String {
+    format!("{provider} sign-in failed: could not complete browser sign-in")
 }
 
 fn login_error_message(
@@ -15297,8 +15301,32 @@ mod tests {
         app.account_login_provider = Some("anthropic".to_string());
         finish_account_login(&mut app, Err("the redirect state did not match".to_string()));
         let text = transcript_text(&app);
-        assert!(text.contains("anthropic sign-in failed: the redirect state did not match"), "{text}");
+        assert!(text.contains("anthropic sign-in failed: could not complete browser sign-in"), "{text}");
         assert!(!text.contains("signed in to anthropic"), "{text}");
+    }
+
+    #[test]
+    fn account_login_failure_sanitizes_callback_and_secret_details() {
+        let mut app = test_app();
+        app.account_login_provider = Some("anthropic".to_string());
+
+        finish_account_login(
+            &mut app,
+            Err("could not save provider configuration to /Users/alice/.jan/config.toml after callback code=callback-code-do-not-render with client_secret=sk-secret-do-not-render access_token=tok-secret-do-not-render scope=openid profile model.write model=claude-3 provider_payload={\"error\":\"invalid_grant\"}".to_string()),
+        );
+
+        let text = transcript_text(&app);
+        assert!(
+            text.contains("anthropic sign-in failed: could not complete browser sign-in"),
+            "{text}"
+        );
+        assert!(!text.contains("/Users/alice/.jan/config.toml"), "{text}");
+        assert!(!text.contains("callback-code-do-not-render"), "{text}");
+        assert!(!text.contains("sk-secret-do-not-render"), "{text}");
+        assert!(!text.contains("tok-secret-do-not-render"), "{text}");
+        assert!(!text.contains("model.write"), "{text}");
+        assert!(!text.contains("claude-3"), "{text}");
+        assert!(!text.contains("invalid_grant"), "{text}");
     }
 
     #[test]
