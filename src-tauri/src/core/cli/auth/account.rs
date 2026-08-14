@@ -13,6 +13,7 @@ pub struct AccountLogin {
     pub redirect_uri: &'static str,
     pub state: String,
     pub verifier: String,
+    client_id: &'static str,
 }
 
 pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
@@ -56,6 +57,7 @@ pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
         redirect_uri,
         state,
         verifier,
+        client_id,
     })
 }
 
@@ -78,6 +80,19 @@ pub fn parse_callback(raw: &str, expected_state: &str) -> Result<String, String>
         .find_map(|(key, value)| (key == "code").then_some(value.into_owned()))
         .filter(|code| !code.is_empty())
         .ok_or_else(|| "the redirect URL is missing its authorization code".to_string())
+}
+
+fn token_request_body(login: &AccountLogin, code: &str) -> std::collections::BTreeMap<String, String> {
+    [
+        ("grant_type", "authorization_code".to_string()),
+        ("client_id", login.client_id.to_string()),
+        ("code", code.to_string()),
+        ("code_verifier", login.verifier.clone()),
+        ("redirect_uri", login.redirect_uri.to_string()),
+    ]
+    .into_iter()
+    .map(|(key, value)| (key.to_string(), value))
+    .collect()
 }
 
 #[cfg(test)]
@@ -128,5 +143,17 @@ mod tests {
             &login.state
         )
         .is_err());
+    }
+
+    #[test]
+    fn token_exchange_binds_code_to_the_original_pkce_request() {
+        let login = begin(AccountProvider::Claude).unwrap();
+        let fields = token_request_body(&login, "authorization-code");
+
+        assert_eq!(fields.get("grant_type"), Some(&"authorization_code".to_string()));
+        assert_eq!(fields.get("code"), Some(&"authorization-code".to_string()));
+        assert_eq!(fields.get("code_verifier"), Some(&login.verifier));
+        assert_eq!(fields.get("redirect_uri"), Some(&login.redirect_uri.to_string()));
+        assert!(fields.get("client_id").is_some());
     }
 }
