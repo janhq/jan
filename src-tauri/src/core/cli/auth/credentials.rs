@@ -103,21 +103,18 @@ fn secret_key(provider: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    /// `provider_secrets` reads process-wide env and a latched keyring flag, so
-    /// tests that redirect them must not run concurrently.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    use crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK;
+    use std::sync::MutexGuard;
 
     struct TempSecrets {
-        _guard: std::sync::MutexGuard<'static, ()>,
+        _guard: MutexGuard<'static, ()>,
         prev_data_folder: Option<String>,
         _dir: tempfile::TempDir,
     }
 
     impl TempSecrets {
         fn new() -> Self {
-            let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let guard = SECRET_STORE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
             let dir = tempfile::tempdir().unwrap();
             let prev_data_folder = std::env::var("JAN_DATA_FOLDER").ok();
             std::env::set_var("JAN_DATA_FOLDER", dir.path());

@@ -375,7 +375,31 @@ pub fn load_provider_configs(
     }
 
     apply_overrides(&mut configs, overrides);
+    seed_from_credential_store(&mut configs);
     Ok(configs)
+}
+
+/// Fill a login-created provider's key chain from the auth credential store
+/// when neither persisted configuration nor CLI/env overrides supplied a key.
+/// The login flow writes only non-secret metadata to config, so without this
+/// seeding a signed-in provider would resolve keyless at runtime and every
+/// request would 401. OAuth credentials are resolved by the transport layer
+/// and deliberately not seeded here.
+fn seed_from_credential_store(configs: &mut HashMap<String, ProviderConfig>) {
+    use crate::core::cli::auth::CredentialStore;
+    for (name, cfg) in configs.iter_mut() {
+        if !cfg.bearer_key_chain().is_empty() {
+            continue;
+        }
+        let Ok(Some(credential)) = CredentialStore::load(name) else {
+            continue;
+        };
+        let Some(key) = credential.as_api_key() else {
+            continue;
+        };
+        cfg.api_key = Some(key.to_string());
+        cfg.api_keys = vec![key.to_string()];
+    }
 }
 
 /// Layer in providers from Desktop's `settings.json` that Global doesn't
@@ -1072,6 +1096,90 @@ mod tests {
                 .block_on(fetch_missing_models(None, &mut probed))
                 .expect("second fetch");
             assert!(!again, "already-probed provider is not re-fetched");
+        });
+    }
+
+    /// Redirects the secret store (data folder + forced file fallback) for the
+    /// duration of `f`. `JAN_DATA_FOLDER` is process-wide, so tests touching it
+    /// must not run concurrently.
+    fn with_temp_secrets<T>(f: impl FnOnce() -> T) -> T {
+        let _guard = crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let prev = std::env::var("JAN_DATA_FOLDER").ok();
+        std::env::set_var("JAN_DATA_FOLDER", dir.path());
+        crate::core::server::provider_secrets::force_file_secrets();
+        let result = f();
+        match &prev {
+            Some(v) => std::env::set_var("JAN_DATA_FOLDER", v),
+            None => std::env::remove_var("JAN_DATA_FOLDER"),
+        }
+        result
+    }
+
+    #[test]
+    fn runtime_uses_secret_store_when_non_secret_config_has_no_key() {
+        use crate::core::agent::global_config::{set_provider, with_temp_home, ProviderUpdate};
+        use crate::core::cli::auth::{Credential, CredentialStore};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                // The login flow writes only non-secret metadata to config.
+                set_provider(
+                    "deepseek",
+                    ProviderUpdate {
+                        api_key: None,
+                        clear_api_key: true,
+                        base_url: Some("https://mock/v1".into()),
+                        models: Some(vec!["deepseek-chat".into()]),
+                        api_type: None,
+                    },
+                )
+                .unwrap();
+                CredentialStore::store("deepseek", &Credential::ApiKey("sk-live".into())).unwrap();
+
+                let configs = load_provider_configs(None, &ProviderOverrides::default()).unwrap();
+                assert_eq!(
+                    configs.get("deepseek").unwrap().bearer_key_chain(),
+                    vec!["sk-live".to_string()]
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn secret_store_never_overrides_an_explicit_override_key() {
+        use crate::core::agent::global_config::{set_provider, with_temp_home, ProviderUpdate};
+        use crate::core::cli::auth::{Credential, CredentialStore};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                set_provider(
+                    "deepseek",
+                    ProviderUpdate {
+                        api_key: None,
+                        clear_api_key: true,
+                        base_url: Some("https://mock/v1".into()),
+                        models: Some(vec!["deepseek-chat".into()]),
+                        api_type: None,
+                    },
+                )
+                .unwrap();
+                CredentialStore::store("deepseek", &Credential::ApiKey("sk-stored".into())).unwrap();
+
+                // A CLI/env override is the most explicit, most ephemeral signal
+                // and must win over the persisted secret.
+                let overrides = ProviderOverrides {
+                    provider: Some("deepseek".into()),
+                    api_key: Some("sk-flag".into()),
+                };
+                let configs = load_provider_configs(None, &overrides).unwrap();
+                assert_eq!(
+                    configs.get("deepseek").unwrap().bearer_key_chain(),
+                    vec!["sk-flag".to_string()]
+                );
+            });
         });
     }
 }

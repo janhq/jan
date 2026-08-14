@@ -88,6 +88,9 @@ struct GlobalProviderEntry {
 #[derive(Debug, Default, Clone)]
 pub(crate) struct ProviderUpdate {
     pub api_key: Option<String>,
+    /// Clear any legacy plaintext key in the entry. Used by the login flow so
+    /// a stale key never shadows the secret-store credential it just wrote.
+    pub clear_api_key: bool,
     pub base_url: Option<String>,
     /// `Some(vec)` replaces the model list; `Some(empty)` clears it.
     pub models: Option<Vec<String>>,
@@ -260,6 +263,9 @@ pub(crate) fn set_provider(name: &str, update: ProviderUpdate) -> Result<PathBuf
     if let Some(api_key) = update.api_key {
         // An explicit empty key clears the stored one; `None` leaves it as is.
         entry.api_key = (!api_key.is_empty()).then_some(api_key);
+    }
+    if update.clear_api_key {
+        entry.api_key = None;
     }
     if let Some(base_url) = update.base_url {
         entry.base_url = Some(base_url);
@@ -463,6 +469,7 @@ models = ["gpt-4o"]
                 "openai",
                 ProviderUpdate {
                     api_key: Some("sk-1".into()),
+                    clear_api_key: false,
                     base_url: Some("https://api.openai.com/v1".into()),
                     models: Some(vec!["gpt-4o".into()]),
                     api_type: None,
@@ -484,6 +491,7 @@ models = ["gpt-4o"]
                 "openai",
                 ProviderUpdate {
                     api_key: Some("sk-1".into()),
+                    clear_api_key: false,
                     base_url: Some("https://a".into()),
                     models: Some(vec!["gpt-4o".into()]),
                     api_type: None,

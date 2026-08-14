@@ -35,6 +35,9 @@ const NONCE_LEN: usize = 12;
 /// Serializes read-modify-write on the fallback file.
 static FILE_LOCK: Mutex<()> = Mutex::new(());
 
+#[cfg(test)]
+pub(crate) static SECRET_STORE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
 /// Latched on the first infrastructure-level keyring failure (D-Bus timeout,
 /// platform/storage-access failure). Once set, every secret op skips the
 /// keyring and goes straight to the encrypted file fallback for the rest of the
@@ -273,9 +276,6 @@ mod tests {
     use super::*;
     use std::sync::MutexGuard;
 
-    /// `resolve_jan_data_folder` reads process-wide env, so tests that redirect
-    /// it must not run concurrently.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     struct TempDataFolder {
         _guard: MutexGuard<'static, ()>,
@@ -285,7 +285,7 @@ mod tests {
 
     impl TempDataFolder {
         fn new() -> Self {
-            let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let guard = SECRET_STORE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
             let dir = tempfile::tempdir().unwrap();
             let prev_data_folder = std::env::var("JAN_DATA_FOLDER").ok();
             // Portable override: XDG_DATA_HOME only redirects on Linux, so

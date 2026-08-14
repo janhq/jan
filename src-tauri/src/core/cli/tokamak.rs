@@ -40,14 +40,7 @@ pub struct Login {
 /// with interior whitespace is a mis-paste (partial selection, wrapped line)
 /// that would otherwise fail as a confusing 401.
 pub fn sanitize_key(raw: &str) -> Result<String, String> {
-    let key = raw.trim();
-    if key.is_empty() {
-        return Err("no API key entered".to_string());
-    }
-    if key.chars().any(char::is_whitespace) {
-        return Err("that key contains spaces or line breaks - copy it again".to_string());
-    }
-    Ok(key.to_string())
+    super::auth::providers::LoginService::sanitize_key(raw)
 }
 
 /// Verify `api_key` against Tokamak and return the model ids it grants access
@@ -91,6 +84,7 @@ fn persist(api_key: &str, models: Vec<String>) -> Result<Login, String> {
         PROVIDER,
         ProviderUpdate {
             api_key: Some(api_key.to_string()),
+            clear_api_key: false,
             base_url: Some(BASE_URL.to_string()),
             models: Some(models.clone()),
             api_type: None,
@@ -147,28 +141,8 @@ fn snippet(body: &str) -> String {
 /// the "N models" report are stable across calls. Accepts the OpenAI shape
 /// (`{"data":[{"id":...}]}`) plus the bare-array and array-of-strings variants
 /// smaller gateways serve.
-pub(crate) fn parse_models(value: &serde_json::Value) -> Vec<String> {
-    let entries = value
-        .get("data")
-        .and_then(|d| d.as_array())
-        .or_else(|| value.as_array());
-    let Some(entries) = entries else {
-        return Vec::new();
-    };
-    let mut ids: Vec<String> = entries
-        .iter()
-        .filter_map(|entry| {
-            entry
-                .as_str()
-                .or_else(|| entry.get("id").and_then(|id| id.as_str()))
-        })
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
-        .map(String::from)
-        .collect();
-    ids.sort();
-    ids.dedup();
-    ids
+fn parse_models(value: &serde_json::Value) -> Vec<String> {
+    super::auth::providers::parse_models(value)
 }
 
 /// Open the API-keys page in the user's browser. `Err` means the caller must

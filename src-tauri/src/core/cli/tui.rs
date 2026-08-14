@@ -356,6 +356,7 @@ impl Pending {
 enum PickerKind {
     ResumeThread,
     SelectModel,
+    LoginProvider,
     ToggleMcp,
     /// Double-Esc rewind: pick a past user message to roll back to.
     RewindMessage,
@@ -391,6 +392,7 @@ impl Picker {
         match self.kind {
             PickerKind::ResumeThread => " resume thread ",
             PickerKind::SelectModel => " select model ",
+            PickerKind::LoginProvider => " sign in ",
             PickerKind::ToggleMcp => " mcp servers ",
             PickerKind::RewindMessage => " rewind to message ",
             PickerKind::RewindScope => " restore ",
@@ -406,6 +408,7 @@ impl Picker {
             PickerKind::ResumeThread => " ↑/↓ select   Enter resume   Esc cancel",
             PickerKind::SelectModel => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   a add   e edit   d delete   Esc close",
+            PickerKind::LoginProvider => " ↑/↓ select   Enter continue   Esc cancel",
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
@@ -431,6 +434,7 @@ struct PickerItem {
 /// echoing it. Verification runs off the render loop (see `login_task` in
 /// `chat_loop`), so `verifying` marks the window where the prompt is read-only.
 struct LoginPrompt {
+    provider: String,
     /// The key as typed/pasted. Never rendered verbatim -- see `masked`.
     input: String,
     /// Why the previous attempt failed, shown above the field.
@@ -439,8 +443,9 @@ struct LoginPrompt {
 }
 
 impl LoginPrompt {
-    fn new() -> Self {
+    fn new(provider: impl Into<String>) -> Self {
         Self {
+            provider: provider.into(),
             input: String::new(),
             error: None,
             verifying: false,
@@ -1366,7 +1371,7 @@ struct App {
     /// request timeout -- so only unprobed providers are fetched once.
     probed_models: std::collections::HashSet<String>,
     /// Key handed off to the loop to verify off the render loop. Taken once.
-    login_submit: Option<String>,
+    login_submit: Option<(String, String)>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
     update_requested: bool,
     /// Compaction handed off to the loop, which spawns the summarizing model
@@ -5520,8 +5525,12 @@ async fn await_snapshot(
 /// Await an in-flight `/login` verification, parking forever when none is
 /// running so this can sit in the loop's `select!` unconditionally.
 async fn await_login(
-    task: &mut Option<tokio::task::JoinHandle<Result<super::tokamak::Login, String>>>,
-) -> Result<super::tokamak::Login, String> {
+    task: &mut Option<
+        tokio::task::JoinHandle<
+            Result<crate::core::cli::auth::LoginResult, crate::core::cli::auth::LoginError>,
+        >,
+    >,
+) -> Result<crate::core::cli::auth::LoginResult, crate::core::cli::auth::LoginError> {
     let joined = match task.as_mut() {
         Some(h) => h.await,
         None => return pending().await,
@@ -5529,7 +5538,9 @@ async fn await_login(
     *task = None;
     match joined {
         Ok(inner) => inner,
-        Err(e) => Err(format!("sign-in task failed: {e}")),
+        Err(e) => Err(crate::core::cli::auth::LoginError::Unavailable(format!(
+            "sign-in task failed: {e}"
+        ))),
     }
 }
 
@@ -5888,7 +5899,9 @@ async fn chat_loop<B: Backend>(
     // `/login` key verification: an HTTP round trip, so it runs off the render
     // loop and the prompt keeps repainting ("verifying...") while it's in flight.
     let mut login_task: Option<
-        tokio::task::JoinHandle<Result<super::tokamak::Login, String>>,
+        tokio::task::JoinHandle<
+            Result<crate::core::cli::auth::LoginResult, crate::core::cli::auth::LoginError>,
+        >,
     > = None;
 
     // The update check is a network round trip, so it runs off the render loop
@@ -5948,12 +5961,18 @@ async fn chat_loop<B: Backend>(
         }
 
         // A key was submitted at the `/login` prompt: verify it off-loop. One at
-        // a time -- the prompt is read-only while `verifying`.
+        // a time - the prompt is read-only while `verifying`.
         if login_task.is_none() {
-            if let Some(key) = app.login_submit.take() {
-                login_task = Some(tokio::spawn(
-                    async move { super::tokamak::login(&key).await },
-                ));
+            if let Some((provider, key)) = app.login_submit.take() {
+                login_task = Some(tokio::spawn(async move {
+                    let definition = crate::core::cli::auth::provider_by_id(&provider)
+                        .ok_or_else(|| crate::core::cli::auth::LoginError::InvalidKey(
+                            "selected provider is unavailable".to_string(),
+                        ))?;
+                    crate::core::cli::auth::providers::LoginService
+                        .login_with_api_key(&definition, &key)
+                        .await
+                }));
             }
         }
 
@@ -6504,11 +6523,13 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         return;
     }
     match key.code {
-        KeyCode::Enter => match super::tokamak::sanitize_key(&prompt.input) {
+        KeyCode::Enter => match crate::core::cli::auth::providers::LoginService::sanitize_key(
+            &prompt.input,
+        ) {
             Ok(key) => {
                 prompt.verifying = true;
                 prompt.error = None;
-                app.login_submit = Some(key);
+                app.login_submit = Some((prompt.provider.clone(), key));
             }
             Err(e) => {
                 prompt.input.clear();
@@ -6779,6 +6800,7 @@ async fn handle_key(
                 match kind {
                     PickerKind::ResumeThread => resume_thread(app, &value).await,
                     PickerKind::SelectModel => app.set_model(value),
+                    PickerKind::LoginProvider => open_login_prompt(app, &value),
                     PickerKind::ToggleMcp => {}
                     PickerKind::RewindMessage => {
                         if let Ok(idx) = value.parse::<usize>() {
@@ -7321,6 +7343,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Sign in to Tokamak and save the API key",
     },
     SlashCommand {
+        name: "/logout",
+        hint: "<provider>",
+        description: "Remove a saved provider credential and configuration",
+    },
+    SlashCommand {
         name: "/config",
         hint: "",
         description: "View provider config (~/.jan/config.toml)",
@@ -7437,7 +7464,8 @@ async fn run_command(app: &mut App, line: &str) {
         }
         "mcp" => open_mcp_picker(app),
         "plugin" => plugin_command(app, arg).await,
-        "login" => open_login_prompt(app),
+        "login" => open_login_picker(app),
+        "logout" => logout_command(app, arg),
         "update" => update_command(app),
         "config" => open_config_screen(app),
         "settings" => settings_command(app, arg),
@@ -9200,54 +9228,96 @@ fn open_mcp_picker(app: &mut App) {
 /// for the key they paste back. The URL is always written to the transcript, not
 /// just handed to the browser, so a headless or remote session can still be
 /// completed by hand.
-fn open_login_prompt(app: &mut App) {
-    app.note("sign in to Tokamak and create an API key:");
-    app.system_detail(vec![Span::styled(
-        super::tokamak::API_KEYS_URL,
-        Style::new().cyan(),
-    )]);
-    let browser = match super::tokamak::open_api_keys_page() {
-        Ok(()) => "opening that page in your browser".to_string(),
-        Err(e) => format!("open that URL yourself ({e})"),
-    };
-    app.system_detail_text(&browser);
-    app.login = Some(LoginPrompt::new());
+fn open_login_picker(app: &mut App) {
+    let items = crate::core::cli::auth::provider_catalog()
+        .into_iter()
+        .map(|provider| PickerItem {
+            value: provider.id.to_string(),
+            label: provider.name.to_string(),
+            hint: Some(provider.api_key.hint.to_string()),
+            checkbox: None,
+        })
+        .collect();
+    app.picker = Some(Picker {
+        kind: PickerKind::LoginProvider,
+        items,
+        selected: 0,
+    });
 }
 
-/// Apply a finished verification. Success persists the key and, when the session
-/// is pointed at a model this account cannot serve, moves it onto one that works
-/// -- otherwise signing in would appear to do nothing on the next message.
-fn finish_login(app: &mut App, result: Result<super::tokamak::Login, String>) {
+fn logout_command(app: &mut App, provider: &str) {
+    if provider.trim().is_empty() {
+        return app.note("usage: /logout <provider>");
+    }
+    let owned_model = crate::core::agent::global_config::load_global_config()
+        .ok()
+        .and_then(|configs| configs.get(provider).cloned())
+        .is_some_and(|config| config.models.iter().any(|model| model == &app.model));
+    match crate::core::cli::auth::providers::LoginService.logout(provider) {
+        Ok(()) => {
+            if owned_model {
+                app.set_model(String::new());
+            }
+            app.note(&format!("signed out of {provider}"));
+        }
+        Err(error) => app.note(&format!("could not sign out: {error:?}")),
+    }
+}
+
+fn open_login_prompt(app: &mut App, provider: &str) {
+    let Some(definition) = crate::core::cli::auth::provider_by_id(provider) else {
+        return app.note("selected provider is unavailable");
+    };
+    app.note(&format!("sign in to {} with an API key:", definition.name));
+    app.system_detail(vec![Span::styled(
+        definition.api_key.keys_url,
+        Style::new().cyan(),
+    )]);
+    app.login = Some(LoginPrompt::new(provider));
+}
+
+fn finish_login(
+    app: &mut App,
+    result: Result<crate::core::cli::auth::LoginResult, crate::core::cli::auth::LoginError>,
+) {
     match result {
         Ok(login) => {
             app.login = None;
             app.note(&format!(
-                "signed in to Tokamak - {} model(s) available, key saved to {}",
+                "signed in to {} - {} model(s) available, configuration saved to {}",
+                login.provider,
                 login.models.len(),
                 login.config_path.display()
             ));
             adopt_login_model(app, &login);
         }
-        Err(e) => {
-            // Keep the prompt open with the reason: a rejected key is usually a
-            // partial paste, and reopening from scratch loses that context.
+        Err(error) => {
+            let message = match error {
+                crate::core::cli::auth::LoginError::InvalidKey(message)
+                | crate::core::cli::auth::LoginError::Unavailable(message)
+                | crate::core::cli::auth::LoginError::Persist(message)
+                | crate::core::cli::auth::LoginError::OAuth(message) => message,
+                crate::core::cli::auth::LoginError::Unauthorized => {
+                    "that API key was not accepted".to_string()
+                }
+                crate::core::cli::auth::LoginError::RateLimited => {
+                    "that API key is rate limited - wait and try again".to_string()
+                }
+            };
             if let Some(prompt) = app.login.as_mut() {
                 prompt.verifying = false;
                 prompt.input.clear();
-                prompt.error = Some(e);
+                prompt.error = Some(message);
             } else {
-                app.note(&format!("sign-in failed: {e}"));
+                app.note("sign-in failed");
             }
         }
     }
 }
 
-/// Point the session at a Tokamak model when the current one is not runnable.
-/// A model that already resolves is left alone: `/login` is also used to refresh
-/// an expired key, which must not silently switch models.
-fn adopt_login_model(app: &mut App, login: &super::tokamak::Login) {
+fn adopt_login_model(app: &mut App, login: &crate::core::cli::auth::LoginResult) {
     let runnable = super::providers::list_provider_models(Some(&app.project_root));
-    if runnable.iter().any(|(_, m)| *m == app.model) {
+    if runnable.iter().any(|(_, model)| *model == app.model) {
         return;
     }
     if let Some(model) = login.models.first() {
@@ -10544,16 +10614,16 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
 fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
     let dim = Style::new().dark_gray();
     let max = width.max(1) as usize;
-    let mut lines: Vec<Line<'static>> = wrap_spans_hard(
-        vec![
-            Span::styled("get a key at ", dim),
-            Span::styled(super::tokamak::API_KEYS_URL, Style::new().cyan()),
-        ],
-        max,
-    )
-    .into_iter()
-    .map(Line::from)
-    .collect();
+    let definition = crate::core::cli::auth::provider_by_id(&prompt.provider);
+    let name = definition.as_ref().map_or("provider", |provider| provider.name);
+    let keys_url = definition
+        .as_ref()
+        .map_or("", |provider| provider.api_key.keys_url);
+
+    let mut lines = vec![Line::from(vec![
+        Span::styled("get a key at ", dim),
+        Span::styled(keys_url.to_string(), Style::new().cyan()),
+    ])];
     if let Some(error) = &prompt.error {
         lines.extend(
             wrap_text(error, Style::new().red(), max)
@@ -13063,7 +13133,7 @@ mod tests {
         press_ask(&mut app, &registry, KeyCode::Down).await;
         press_ask(&mut app, &registry, KeyCode::Enter).await;
         assert!(app.ask_queue.front().unwrap().editing_custom);
-        app.login = Some(super::LoginPrompt::new());
+        app.login = Some(super::LoginPrompt::new("tokamak"));
 
         route_paste_event(&mut app, Event::Paste("tokamak-api-key".into()));
 
@@ -14564,10 +14634,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn login_prompt_captures_keys_and_never_renders_the_key() {
+    async fn login_opens_the_provider_picker() {
         let mut app = test_app();
         run_command(&mut app, "login").await;
-        assert!(app.login.is_some(), "/login must open the prompt");
+
+        let picker = app.picker.as_ref().expect("/login must open a provider picker");
+        assert_eq!(
+            picker.items.iter().map(|item| item.value.as_str()).collect::<Vec<_>>(),
+            vec!["openai", "anthropic", "opencode", "deepseek", "tokamak"]
+        );
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(
+            app.login.as_ref().map(|prompt| prompt.provider.as_str()),
+            Some("openai")
+        );
+    }
+
+    #[tokio::test]
+    async fn login_prompt_captures_keys_and_never_renders_the_key() {
+        let mut app = test_app();
+        super::open_login_prompt(&mut app, "tokamak");
+        assert!(app.login.is_some(), "provider selection must open the prompt");
 
         type_key_chars(&mut app, "tk-secret").await;
         // Keystrokes are the key, not chat input.
@@ -14578,7 +14665,7 @@ mod tests {
 
         let rows = render_rows(&mut app, 80, 24);
         let screen = rows.join("\n");
-        assert!(screen.contains("tokamak sign-in"), "{screen}");
+        assert!(screen.contains("Tokamak sign-in"), "{screen}");
         assert!(
             !screen.contains("tk-secret"),
             "the key must never be rendered:\n{screen}"
@@ -14588,18 +14675,21 @@ mod tests {
     #[tokio::test]
     async fn login_enter_hands_a_trimmed_key_to_the_loop() {
         let mut app = test_app();
-        run_command(&mut app, "login").await;
+        super::open_login_prompt(&mut app, "tokamak");
         app.login.as_mut().unwrap().paste("  tk-abc\n");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
 
-        assert_eq!(app.login_submit.as_deref(), Some("tk-abc"));
+        assert_eq!(
+            app.login_submit.as_ref(),
+            Some(&("tokamak".to_string(), "tk-abc".to_string()))
+        );
         assert!(app.login.as_ref().unwrap().verifying);
     }
 
     #[tokio::test]
     async fn login_rejects_a_mispasted_key_before_any_request() {
         let mut app = test_app();
-        run_command(&mut app, "login").await;
+        super::open_login_prompt(&mut app, "tokamak");
         type_key_chars(&mut app, "tk-abc def").await;
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
 
@@ -14617,7 +14707,7 @@ mod tests {
     #[tokio::test]
     async fn login_backspace_edits_and_esc_cancels() {
         let mut app = test_app();
-        run_command(&mut app, "login").await;
+        super::open_login_prompt(&mut app, "tokamak");
         type_key_chars(&mut app, "tk-ab").await;
         press(&mut app, KeyCode::Backspace, KeyModifiers::NONE).await;
         assert_eq!(app.login.as_ref().unwrap().input, "tk-a");
@@ -14630,7 +14720,7 @@ mod tests {
     #[tokio::test]
     async fn login_stays_cancellable_while_verifying() {
         let mut app = test_app();
-        run_command(&mut app, "login").await;
+        super::open_login_prompt(&mut app, "tokamak");
         app.login.as_mut().unwrap().paste("tk-abc");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
         app.login_submit.take();
@@ -14649,12 +14739,17 @@ mod tests {
     #[tokio::test]
     async fn failed_verification_keeps_the_prompt_open_with_the_reason() {
         let mut app = test_app();
-        run_command(&mut app, "login").await;
+        super::open_login_prompt(&mut app, "tokamak");
         app.login.as_mut().unwrap().paste("tk-abc");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
         app.login_submit.take();
 
-        finish_login(&mut app, Err("Tokamak rejected that API key.".to_string()));
+        finish_login(
+            &mut app,
+            Err(crate::core::cli::auth::LoginError::Unavailable(
+                "Tokamak rejected that API key.".to_string(),
+            )),
+        );
         let prompt = app.login.as_ref().expect("prompt stays open to retry");
         assert!(!prompt.verifying);
         assert!(prompt.input.is_empty());
@@ -14727,10 +14822,11 @@ mod tests {
     fn successful_login_closes_the_prompt_and_adopts_a_runnable_model() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let mut app = test_app();
-            app.login = Some(super::LoginPrompt::new());
+            app.login = Some(super::LoginPrompt::new("tokamak"));
             finish_login(
                 &mut app,
-                Ok(crate::core::cli::tokamak::Login {
+                Ok(crate::core::cli::auth::LoginResult {
+                    provider: "tokamak".into(),
                     models: vec!["tokamak-1-preview".into(), "tokamak-1-mini".into()],
                     config_path: std::path::PathBuf::from("/tmp/config.toml"),
                     default_model: Some("tokamak-1-preview".into()),
@@ -14750,6 +14846,7 @@ mod tests {
                 "tokamak",
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("tk".into()),
+                    clear_api_key: false,
                     base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
                     models: Some(vec!["m".into()]),
                     api_type: None,
@@ -14758,10 +14855,11 @@ mod tests {
             .expect("seed provider");
 
             let mut app = test_app();
-            app.login = Some(super::LoginPrompt::new());
+            app.login = Some(super::LoginPrompt::new("tokamak"));
             finish_login(
                 &mut app,
-                Ok(crate::core::cli::tokamak::Login {
+                Ok(crate::core::cli::auth::LoginResult {
+                    provider: "tokamak".into(),
                     models: vec!["tokamak-1-preview".into()],
                     config_path: std::path::PathBuf::from("/tmp/config.toml"),
                     default_model: None,
@@ -14848,7 +14946,7 @@ mod tests {
 
     #[test]
     fn masked_key_is_bounded() {
-        let mut prompt = super::LoginPrompt::new();
+        let mut prompt = super::LoginPrompt::new("tokamak");
         prompt.paste(&"k".repeat(200));
         assert_eq!(prompt.masked().chars().count(), 32);
         prompt.verifying = true;

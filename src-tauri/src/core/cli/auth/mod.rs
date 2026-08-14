@@ -8,6 +8,7 @@
 //! [`crate::core::server::provider_secrets`] only.
 
 pub mod credentials;
+pub mod providers;
 
 use std::path::PathBuf;
 
@@ -64,7 +65,7 @@ pub struct ProviderDefinition {
     /// Display name shown in pickers.
     pub name: &'static str,
     /// Default API endpoint (an OpenAI-compatible root or the Anthropic `/v1`).
-    pub default_base_url: &'static str,
+    pub default_base_url: String,
     pub transport: Transport,
     pub api_key: ApiKeyMetadata,
     /// `None` means account login is NOT offered. This is a security boundary,
@@ -85,72 +86,73 @@ impl ProviderDefinition {
 }
 
 /// The providers the TUI `/login` flow offers, in picker order.
-pub fn provider_catalog() -> &'static [ProviderDefinition] {
-    &CATALOG
+pub fn provider_catalog() -> Vec<ProviderDefinition> {
+    let catalog = vec![
+        ProviderDefinition {
+            id: "openai",
+            name: "Codex",
+            default_base_url: "https://api.openai.com/v1".to_string(),
+            transport: Transport::OpenAi,
+            api_key: ApiKeyMetadata {
+                keys_url: "https://platform.openai.com/account/api-keys",
+                hint: "get a key at platform.openai.com/account/api-keys",
+            },
+            oauth: None,
+        },
+        ProviderDefinition {
+            id: "anthropic",
+            name: "Claude",
+            default_base_url: "https://api.anthropic.com/v1".to_string(),
+            transport: Transport::Anthropic,
+            api_key: ApiKeyMetadata {
+                keys_url: "https://console.anthropic.com/settings/keys",
+                hint: "get a key at console.anthropic.com/settings/keys",
+            },
+            oauth: None,
+        },
+        ProviderDefinition {
+            id: "opencode",
+            name: "OpenCode",
+            default_base_url: "https://opencode.ai/zen/v1".to_string(),
+            transport: Transport::OpenAi,
+            api_key: ApiKeyMetadata {
+                keys_url: "https://opencode.ai/docs",
+                hint: "see opencode.ai/docs for how to get a key",
+            },
+            oauth: None,
+        },
+        ProviderDefinition {
+            id: "deepseek",
+            name: "DeepSeek",
+            default_base_url: "https://api.deepseek.com/v1".to_string(),
+            transport: Transport::OpenAi,
+            api_key: ApiKeyMetadata {
+                keys_url: "https://platform.deepseek.com/api_keys",
+                hint: "get a key at platform.deepseek.com/api_keys",
+            },
+            oauth: None,
+        },
+        ProviderDefinition {
+            id: "tokamak",
+            name: "Tokamak",
+            default_base_url: "https://api.tokamak.sh/v1".to_string(),
+            transport: Transport::OpenAi,
+            api_key: ApiKeyMetadata {
+                keys_url: "https://tokamak.sh/settings/api-keys",
+                hint: "get a key at tokamak.sh/settings/api-keys",
+            },
+            oauth: None,
+        },
+    ];
+    catalog
 }
 
-static CATALOG: [ProviderDefinition; 5] = [
-    ProviderDefinition {
-        id: "openai",
-        name: "Codex",
-        default_base_url: "https://api.openai.com/v1",
-        transport: Transport::OpenAi,
-        api_key: ApiKeyMetadata {
-            keys_url: "https://platform.openai.com/account/api-keys",
-            hint: "get a key at platform.openai.com/account/api-keys",
-        },
-        oauth: None,
-    },
-    ProviderDefinition {
-        id: "anthropic",
-        name: "Claude",
-        default_base_url: "https://api.anthropic.com/v1",
-        transport: Transport::Anthropic,
-        api_key: ApiKeyMetadata {
-            keys_url: "https://console.anthropic.com/settings/keys",
-            hint: "get a key at console.anthropic.com/settings/keys",
-        },
-        oauth: None,
-    },
-    ProviderDefinition {
-        id: "opencode",
-        name: "OpenCode",
-        default_base_url: "https://opencode.ai/zen/v1",
-        transport: Transport::OpenAi,
-        api_key: ApiKeyMetadata {
-            keys_url: "https://opencode.ai/docs",
-            hint: "see opencode.ai/docs for how to get a key",
-        },
-        oauth: None,
-    },
-    ProviderDefinition {
-        id: "deepseek",
-        name: "DeepSeek",
-        default_base_url: "https://api.deepseek.com/v1",
-        transport: Transport::OpenAi,
-        api_key: ApiKeyMetadata {
-            keys_url: "https://platform.deepseek.com/api_keys",
-            hint: "get a key at platform.deepseek.com/api_keys",
-        },
-        oauth: None,
-    },
-    ProviderDefinition {
-        id: "tokamak",
-        name: "Tokamak",
-        default_base_url: "https://api.tokamak.sh/v1",
-        transport: Transport::OpenAi,
-        api_key: ApiKeyMetadata {
-            keys_url: "https://tokamak.sh/settings/api-keys",
-            hint: "get a key at tokamak.sh/settings/api-keys",
-        },
-        oauth: None,
-    },
-];
 
 /// The catalog entry for `id`, if any.
-pub fn provider_by_id(id: &str) -> Option<&'static ProviderDefinition> {
-    provider_catalog().iter().find(|p| p.id == id)
+pub fn provider_by_id(id: &str) -> Option<ProviderDefinition> {
+    provider_catalog().into_iter().find(|p| p.id == id)
 }
+
 
 /// Non-secret outcome of a successful login, safe to render and report.
 #[derive(Debug, Clone, PartialEq)]
@@ -192,7 +194,7 @@ mod tests {
         let claude = catalog.iter().find(|p| p.id == "anthropic").unwrap();
         assert_eq!(claude.available_methods(), vec![AuthMethod::ApiKey]);
         // No production entry carries a registration until Jan holds one.
-        for provider in catalog {
+        for provider in &catalog {
             assert!(provider.oauth.is_none(), "{} must not offer OAuth", provider.id);
             assert_eq!(
                 provider.available_methods(),
