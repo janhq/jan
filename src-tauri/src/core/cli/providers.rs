@@ -13,8 +13,7 @@
 //!    env fallback via [`ProviderOverrides::with_env`]) win over all of the
 //!    above - the most explicit, most ephemeral signal.
 
-use std::collections::HashMap;
-use std::time::Duration;
+use std::{collections::HashMap, path::Path};
 
 use crate::core::agent::global_config::load_global_config;
 use crate::core::agent::project::ProviderSection;
@@ -129,6 +128,27 @@ pub fn has_usable_provider(project_root: Option<&std::path::Path>) -> bool {
             false
         }
     }
+}
+
+/// Whether `provider` has a stored credential or resolves to a usable config.
+pub fn provider_is_signed_in(project_root: Option<&Path>, provider: &str) -> bool {
+    if matches!(
+        crate::core::cli::auth::CredentialStore::load(provider),
+        Ok(Some(_))
+    ) {
+        return true;
+    }
+
+    let overrides = ProviderOverrides {
+        provider: Some(provider.to_string()),
+        api_key: None,
+    }
+    .with_env();
+
+    load_provider_configs(project_root, &overrides)
+        .ok()
+        .and_then(|configs| configs.get(provider).map(is_usable))
+        .unwrap_or(false)
 }
 
 fn is_usable(config: &ProviderConfig) -> bool {
@@ -1116,6 +1136,78 @@ mod tests {
             None => std::env::remove_var("JAN_DATA_FOLDER"),
         }
         result
+    }
+
+    #[test]
+    fn provider_is_signed_in_when_api_key_credential_exists() {
+        use crate::core::agent::global_config::with_temp_home;
+        use crate::core::cli::auth::{Credential, CredentialStore};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                CredentialStore::store("deepseek", &Credential::ApiKey("sk-live".into())).unwrap();
+
+                assert!(provider_is_signed_in(None, "deepseek"));
+            });
+        });
+    }
+
+    #[test]
+    fn provider_is_signed_in_when_oauth_credential_exists() {
+        use crate::core::agent::global_config::with_temp_home;
+        use crate::core::cli::auth::{Credential, CredentialStore, OAuthToken};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                CredentialStore::store(
+                    "anthropic",
+                    &Credential::OAuthToken(OAuthToken {
+                        access_token: "access".into(),
+                        refresh_token: Some("refresh".into()),
+                        expires_at: Some(1_800_000_000),
+                        token_type: "Bearer".into(),
+                        scopes: vec!["model.read".into()],
+                    }),
+                )
+                .unwrap();
+
+                assert!(provider_is_signed_in(None, "anthropic"));
+            });
+        });
+    }
+
+    #[test]
+    fn provider_is_not_signed_in_without_credential_or_usable_config() {
+        use crate::core::agent::global_config::with_temp_home;
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                assert!(!provider_is_signed_in(None, "deepseek"));
+            });
+        });
+    }
+
+    #[test]
+    fn provider_is_signed_in_when_resolved_config_is_usable() {
+        use crate::core::agent::global_config::{set_provider, with_temp_home, ProviderUpdate};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                set_provider(
+                    "jan",
+                    ProviderUpdate {
+                        api_key: None,
+                        clear_api_key: true,
+                        base_url: Some("http://localhost:1337/v1".into()),
+                        models: Some(vec!["jan-local".into()]),
+                        api_type: None,
+                    },
+                )
+                .unwrap();
+
+                assert!(provider_is_signed_in(None, "jan"));
+            });
+        });
     }
 
     #[test]
