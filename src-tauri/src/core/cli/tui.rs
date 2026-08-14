@@ -9458,9 +9458,13 @@ fn login_error_message(
 ) -> String {
     let message = match error {
         crate::core::cli::auth::LoginError::InvalidKey(message)
-        | crate::core::cli::auth::LoginError::Unavailable(message)
-        | crate::core::cli::auth::LoginError::Persist(message)
-        | crate::core::cli::auth::LoginError::OAuth(message) => message,
+        | crate::core::cli::auth::LoginError::Unavailable(message) => message,
+        crate::core::cli::auth::LoginError::Persist(_) => {
+            "could not save sign-in securely".to_string()
+        }
+        crate::core::cli::auth::LoginError::OAuth(_) => {
+            "could not complete browser sign-in".to_string()
+        }
         crate::core::cli::auth::LoginError::Unauthorized => {
             "that API key was not accepted".to_string()
         }
@@ -15244,6 +15248,40 @@ mod tests {
         let screen = render_rows(&mut app, 80, 24).join("\n");
         assert!(screen.contains("tokamak sign-in failed"), "{screen}");
         assert!(!screen.contains("tk-secret-do-not-render"), "{screen}");
+    }
+
+    #[test]
+    fn login_error_message_sanitizes_persistence_failure_details() {
+        let message = super::login_error_message(
+            "tokamak",
+            crate::core::cli::auth::LoginError::Persist(
+                "could not save provider configuration to /Users/alice/.jan/config.toml with key tk-secret-do-not-render".to_string(),
+            ),
+        );
+
+        assert_eq!(
+            message,
+            "tokamak sign-in failed: could not save sign-in securely"
+        );
+        assert!(!message.contains("/Users/alice/.jan/config.toml"), "{message}");
+        assert!(!message.contains("tk-secret-do-not-render"), "{message}");
+    }
+
+    #[test]
+    fn login_error_message_sanitizes_oauth_failure_details() {
+        let message = super::login_error_message(
+            "anthropic",
+            crate::core::cli::auth::LoginError::OAuth(
+                "callback contained code=sk-secret-do-not-render from /Users/alice/.jan/config.toml".to_string(),
+            ),
+        );
+
+        assert_eq!(
+            message,
+            "anthropic sign-in failed: could not complete browser sign-in"
+        );
+        assert!(!message.contains("/Users/alice/.jan/config.toml"), "{message}");
+        assert!(!message.contains("sk-secret-do-not-render"), "{message}");
     }
 
     #[test]
