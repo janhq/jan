@@ -89,6 +89,7 @@ fn alt_scroll_restore() -> &'static str {
     }
 }
 
+const ACCOUNT_CALLBACK_TIMEOUT: Duration = Duration::from_secs(300);
 /// How long the dock advertises a finished copy.
 const COPY_NOTICE: Duration = Duration::from_millis(1500);
 /// Terminals cap the OSC 52 payload they will accept; past this the sequence is
@@ -5995,9 +5996,12 @@ async fn chat_loop<B: Backend>(
                 account_login_task = Some(tokio::spawn(async move {
                     let listener = crate::core::cli::auth::account::bind_callback(&login).await?;
                     open_browser(&login.authorization_url)?;
-                    let provider =
-                        crate::core::cli::auth::account::complete_callback_login(listener, login)
-                            .await?;
+                    let provider = tokio::time::timeout(
+                        ACCOUNT_CALLBACK_TIMEOUT,
+                        crate::core::cli::auth::account::complete_callback_login(listener, login),
+                    )
+                    .await
+                    .map_err(|_| "account sign-in timed out".to_string())??;
                     Ok(provider.credential_provider().to_string())
                 }));
             }
