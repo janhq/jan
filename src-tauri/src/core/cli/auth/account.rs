@@ -340,6 +340,22 @@ pub async fn complete_callback_login(
     let code = accept_callback(listener, &login).await?;
     let token = exchange(&login, &code).await?;
     store(login.provider, &token)?;
+    let definition = crate::core::cli::auth::provider_by_id(login.provider.credential_provider())
+        .ok_or_else(|| "selected account is unavailable".to_string())?;
+    if let Err(error) = crate::core::agent::global_config::set_provider(
+        definition.id,
+        crate::core::agent::global_config::ProviderUpdate {
+            api_key: None,
+            clear_api_key: true,
+            base_url: Some(definition.default_base_url),
+            models: None,
+            api_type: matches!(definition.transport, crate::core::cli::auth::Transport::Anthropic)
+                .then_some("anthropic".to_string()),
+        },
+    ) {
+        let _ = CredentialStore::delete(login.provider.credential_provider());
+        return Err(format!("could not save the provider configuration: {error}"));
+    }
     Ok(login.provider)
 }
 #[cfg(test)]
