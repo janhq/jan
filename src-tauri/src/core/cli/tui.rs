@@ -360,7 +360,6 @@ enum PickerKind {
     SelectModel,
     LoginMethod,
     LoginProvider,
-    LoginAccountProvider,
     ToggleMcp,
     /// Double-Esc rewind: pick a past user message to roll back to.
     RewindMessage,
@@ -389,6 +388,7 @@ struct Picker {
     /// `d` on the same row confirms it. `None` = nothing armed. Resets on
     /// navigation so an unrelated keypress can never delete by accident.
     armed_delete: Option<usize>,
+    provider: Option<String>,
 }
 
 impl Picker {
@@ -396,8 +396,7 @@ impl Picker {
         match self.kind {
             PickerKind::ResumeThread => " resume thread ",
             PickerKind::SelectModel => " select model ",
-            PickerKind::LoginMethod => " sign in ",
-            PickerKind::LoginProvider | PickerKind::LoginAccountProvider => " sign in ",
+            PickerKind::LoginMethod | PickerKind::LoginProvider => " sign in ",
             PickerKind::ToggleMcp => " mcp servers ",
             PickerKind::RewindMessage => " rewind to message ",
             PickerKind::RewindScope => " restore ",
@@ -412,7 +411,7 @@ impl Picker {
         match self.kind {
             PickerKind::ResumeThread => " ↑/↓ select   Enter resume   Esc cancel",
             PickerKind::SelectModel => " ↑/↓ select   Enter choose   Esc cancel",
-            PickerKind::LoginMethod | PickerKind::LoginProvider | PickerKind::LoginAccountProvider => {
+            PickerKind::LoginMethod | PickerKind::LoginProvider => {
                 " ↑/↓ select   Enter continue   Esc cancel"
             }
             PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   a add   e edit   d delete   Esc close",
@@ -6853,25 +6852,23 @@ async fn handle_key(
             KeyCode::Enter => {
                 let kind = picker.kind;
                 let value = picker.items[picker.selected].value.clone();
+                let provider = picker.provider.clone();
                 app.picker = None;
                 match kind {
                     PickerKind::ResumeThread => resume_thread(app, &value).await,
                     PickerKind::SelectModel => app.set_model(value),
-                    PickerKind::LoginMethod => {
-                        if value == "account" {
-                            open_account_provider_picker(app);
-                        } else {
-                            open_api_key_provider_picker(app);
-                        }
-                    }
-                    PickerKind::LoginProvider => open_login_prompt(app, &value),
-                    PickerKind::LoginAccountProvider => open_account_login(app, &value),
-                    PickerKind::ToggleMcp => {}
+                    PickerKind::LoginMethod => match (provider.as_deref(), value.as_str()) {
+                        (Some(provider), "account") => open_account_login(app, provider),
+                        (Some(provider), "api_key") => open_login_prompt(app, provider),
+                        _ => app.note("selected sign-in method is unavailable"),
+                    },
+                    PickerKind::LoginProvider => open_login_method_picker(app, &value),
+                    PickerKind::ToggleMcp => {},
                     PickerKind::RewindMessage => {
                         if let Ok(idx) = value.parse::<usize>() {
                             open_rewind_scope(app, idx);
                         }
-                    }
+                    },
                     PickerKind::RewindScope => {
                         if let Some(idx) = app.rewind_target.take() {
                             rewind_to(app, idx, value == "workspace");
@@ -8367,6 +8364,7 @@ fn open_settings_screen(app: &mut App) {
         items: build_agent_settings_items(&toml_path),
         selected: 0,
         armed_delete: None,
+        provider: None,
     });
 }
 
@@ -8410,6 +8408,7 @@ fn open_provider_settings(app: &mut App) {
         items,
         selected: 0,
         armed_delete: None,
+        provider: None,
     });
 }
 
@@ -8865,6 +8864,7 @@ fn open_todo_picker(app: &mut App) {
         items: build_todo_items(&app.todos),
         selected: 0,
         armed_delete: None,
+        provider: None,
     });
 }
 
@@ -9216,6 +9216,7 @@ fn open_thread_picker(app: &mut App) {
                     items,
                     selected: 0,
                     armed_delete: None,
+                    provider: None,
                 });
             }
         }
@@ -9267,6 +9268,7 @@ async fn open_model_picker(app: &mut App) {
         items,
         selected,
         armed_delete: None,
+        provider: None,
     });
 }
 
@@ -9292,62 +9294,63 @@ fn open_mcp_picker(app: &mut App) {
         items,
         selected: 0,
         armed_delete: None,
+        provider: None,
     });
 }
 
 fn open_login_picker(app: &mut App) {
-    app.picker = Some(Picker {
-        kind: PickerKind::LoginMethod,
-        items: vec![
-            PickerItem {
-                value: "account".to_string(),
-                label: "sign in with an account".to_string(),
-                hint: Some("use a Codex or Claude subscription".to_string()),
-                checkbox: None,
-            },
-            PickerItem {
-                value: "api_key".to_string(),
-                label: "sign in with an API key".to_string(),
-                hint: Some("for OpenCode, DeepSeek, Tokamak, or API billing".to_string()),
-                checkbox: None,
-            },
-        ],
-        selected: 0,
-    });
-}
-
-fn open_account_provider_picker(app: &mut App) {
     let items = crate::core::cli::auth::provider_catalog()
         .into_iter()
-        .filter(|provider| matches!(provider.id, "openai" | "anthropic"))
-        .map(|provider| PickerItem {
-            value: provider.id.to_string(),
-            label: provider.name.to_string(),
-            hint: Some("sign in in your browser".to_string()),
-            checkbox: None,
-        })
-        .collect();
-    app.picker = Some(Picker {
-        kind: PickerKind::LoginAccountProvider,
-        items,
-        selected: 0,
-    });
-}
-
-fn open_api_key_provider_picker(app: &mut App) {
-    let items = crate::core::cli::auth::provider_catalog()
-        .into_iter()
-        .map(|provider| PickerItem {
-            value: provider.id.to_string(),
-            label: provider.name.to_string(),
-            hint: Some(provider.api_key.hint.to_string()),
-            checkbox: None,
+        .map(|provider| {
+            let status =
+                if super::providers::provider_is_signed_in(Some(&app.project_root), provider.id) {
+                    "signed in"
+                } else {
+                    "not signed in"
+                };
+            PickerItem {
+                value: provider.id.to_string(),
+                label: format!("{} ({})", provider.name, provider.id),
+                hint: Some(status.to_string()),
+                checkbox: None,
+            }
         })
         .collect();
     app.picker = Some(Picker {
         kind: PickerKind::LoginProvider,
         items,
         selected: 0,
+        provider: None,
+    });
+}
+
+fn open_login_method_picker(app: &mut App, provider: &str) {
+    let Some(definition) = crate::core::cli::auth::provider_by_id(provider) else {
+        return app.note("selected provider is unavailable");
+    };
+    let items = definition
+        .available_methods()
+        .into_iter()
+        .map(|method| match method {
+            crate::core::cli::auth::AuthMethod::ApiKey => PickerItem {
+                value: "api_key".to_string(),
+                label: "sign in with an API key".to_string(),
+                hint: Some(definition.api_key.hint.to_string()),
+                checkbox: None,
+            },
+            crate::core::cli::auth::AuthMethod::AccountOAuth => PickerItem {
+                value: "account".to_string(),
+                label: "sign in with an account".to_string(),
+                hint: Some("sign in in your browser".to_string()),
+                checkbox: None,
+            },
+        })
+        .collect();
+    app.picker = Some(Picker {
+        kind: PickerKind::LoginMethod,
+        items,
+        selected: 0,
+        provider: Some(definition.id.to_string()),
     });
 }
 
@@ -9532,6 +9535,7 @@ fn open_config_screen(app: &mut App) {
         items,
         selected: 0,
         armed_delete: None,
+        provider: None,
     });
 }
 
@@ -9674,6 +9678,7 @@ fn open_rewind_picker(app: &mut App) {
         items,
         selected,
         armed_delete: None,
+        provider: None,
     });
 }
 
@@ -9700,6 +9705,7 @@ fn open_rewind_scope(app: &mut App, user_index: usize) {
         items,
         selected: 0,
         armed_delete: None,
+        provider: None,
     });
 }
 
@@ -14773,22 +14779,196 @@ mod tests {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/login"));
     }
 
-    #[tokio::test]
-    async fn login_starts_with_account_or_api_key_and_limits_account_providers() {
-        let mut app = test_app();
-        run_command(&mut app, "login").await;
+    fn with_isolated_login_state<T>(f: impl FnOnce() -> T) -> T {
+        let _guard = crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let prev_data_folder = std::env::var_os("JAN_DATA_FOLDER");
+        std::env::set_var("JAN_DATA_FOLDER", dir.path());
+        crate::core::server::provider_secrets::force_file_secrets();
 
-        let picker = app.picker.as_ref().expect("/login must open a method picker");
-        assert_eq!(
-            picker.items.iter().map(|item| item.value.as_str()).collect::<Vec<_>>(),
-            vec!["account", "api_key"]
+        let mut env_vars = vec!["JAN_API_KEY".to_string()];
+        env_vars.extend(
+            crate::core::cli::auth::provider_catalog()
+                .into_iter()
+                .map(|provider| format!("{}_API_KEY", provider.id.to_ascii_uppercase())),
         );
+        let prev_env: Vec<(String, Option<std::ffi::OsString>)> = env_vars
+            .into_iter()
+            .map(|var| {
+                let prev = std::env::var_os(&var);
+                std::env::remove_var(&var);
+                (var, prev)
+            })
+            .collect();
+
+        let result = crate::core::agent::global_config::with_temp_home(|_| f());
+
+        match prev_data_folder {
+            Some(value) => std::env::set_var("JAN_DATA_FOLDER", value),
+            None => std::env::remove_var("JAN_DATA_FOLDER"),
+        }
+        for (var, value) in prev_env {
+            match value {
+                Some(value) => std::env::set_var(var, value),
+                None => std::env::remove_var(var),
+            }
+        }
+        result
+    }
+
+    #[test]
+    fn login_opens_catalog_provider_status_picker_without_secret_hints() {
+        with_isolated_login_state(|| {
+            crate::core::agent::global_config::set_provider(
+                "deepseek",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("sk-status-secret".into()),
+                    clear_api_key: false,
+                    base_url: Some("https://api.deepseek.com/v1".into()),
+                    models: Some(vec!["secret-model".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let mut app = test_app();
+            super::open_login_picker(&mut app);
+
+            let picker = app
+                .picker
+                .as_ref()
+                .expect("/login must open a provider picker");
+            assert_eq!(picker.kind, PickerKind::LoginProvider);
+
+            let catalog = crate::core::cli::auth::provider_catalog();
+            assert_eq!(
+                picker
+                    .items
+                    .iter()
+                    .map(|item| item.value.as_str())
+                    .collect::<Vec<_>>(),
+                catalog.iter().map(|provider| provider.id).collect::<Vec<_>>()
+            );
+            assert_eq!(
+                picker
+                    .items
+                    .iter()
+                    .map(|item| item.label.as_str())
+                    .collect::<Vec<_>>(),
+                catalog
+                    .iter()
+                    .map(|provider| format!("{} ({})", provider.name, provider.id))
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                picker
+                    .items
+                    .iter()
+                    .map(|item| item.hint.as_deref())
+                    .collect::<Vec<_>>(),
+                catalog
+                    .iter()
+                    .map(|provider| {
+                        if provider.id == "deepseek" {
+                            Some("signed in")
+                        } else {
+                            Some("not signed in")
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            );
+            assert!(
+                picker
+                    .items
+                    .iter()
+                    .all(|item| matches!(item.hint.as_deref(), Some("signed in" | "not signed in")))
+            );
+
+            let rendered = picker
+                .items
+                .iter()
+                .flat_map(|item| {
+                    [
+                        item.value.as_str(),
+                        item.label.as_str(),
+                        item.hint.as_deref().unwrap_or_default(),
+                    ]
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(!rendered.contains("sk-status-secret"), "{rendered}");
+            assert!(!rendered.contains("secret-model"), "{rendered}");
+            assert!(!rendered.contains("api-keys"), "{rendered}");
+        });
+    }
+
+    #[tokio::test]
+    async fn login_provider_enter_opens_scoped_method_picker_then_api_key_prompt() {
+        let mut app = test_app();
+        super::open_login_picker(&mut app);
+        let tokamak_index = crate::core::cli::auth::provider_catalog()
+            .iter()
+            .position(|provider| provider.id == "tokamak")
+            .unwrap();
+
+        {
+            let picker = app
+                .picker
+                .as_mut()
+                .expect("/login must open a provider picker");
+            assert_eq!(
+                picker
+                    .items
+                    .iter()
+                    .map(|item| item.value.as_str())
+                    .collect::<Vec<_>>(),
+                crate::core::cli::auth::provider_catalog()
+                    .iter()
+                    .map(|provider| provider.id)
+                    .collect::<Vec<_>>()
+            );
+            picker.selected = tokamak_index;
+        }
+
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
-        let picker = app.picker.as_ref().expect("account login must open its provider picker");
+        let picker = app
+            .picker
+            .as_ref()
+            .expect("provider selection must open its method picker");
+        assert_eq!(picker.kind, PickerKind::LoginMethod);
+        assert_eq!(picker.provider.as_deref(), Some("tokamak"));
         assert_eq!(
-            picker.items.iter().map(|item| item.value.as_str()).collect::<Vec<_>>(),
-            vec!["openai", "anthropic"]
+            picker
+                .items
+                .iter()
+                .map(|item| item.value.as_str())
+                .collect::<Vec<_>>(),
+            vec!["api_key"]
         );
+
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(
+            app.login.as_ref().map(|prompt| prompt.provider.as_str()),
+            Some("tokamak")
+        );
+        assert!(app.login_submit.is_none());
+        assert!(!app.account_login_active);
+    }
+
+    #[tokio::test]
+    async fn login_provider_picker_esc_cancels_without_mutation() {
+        let mut app = test_app();
+        super::open_login_picker(&mut app);
+
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+
+        assert!(app.picker.is_none());
+        assert!(app.login.is_none());
+        assert!(app.login_submit.is_none());
+        assert!(app.account_login_submit.is_none());
+        assert!(!app.account_login_active);
     }
 
     #[tokio::test]
