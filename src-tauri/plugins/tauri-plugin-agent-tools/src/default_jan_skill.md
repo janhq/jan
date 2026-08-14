@@ -20,9 +20,9 @@ Run `jan cli agent status --project .` to scaffold it. Commit `agent.toml`, `AGE
 ## Global state
 
 - `~/.jan/config.toml`: provider configuration and credentials.
-- `<JAN_DATA_FOLDER>/mcp_config.json`: MCP servers. Desktop: **Settings → MCP Servers**.
+- `<JAN_DATA_FOLDER>/mcp_config.json`: MCP servers. Desktop: **Settings > MCP Servers**.
 - `<JAN_DATA_FOLDER>/agent-workspace/`: Desktop-global `skills/`, `memory/`, and `threads/`. `JAN_DATA_FOLDER` or the Desktop data-folder setting selects the root.
 
 ## References
 
-[Project config](https://jan.ai/docs/agent/project-config) · [Skills](https://jan.ai/docs/agent/skills) · [MCP servers](https://jan.ai/docs/desktop/integrations/mcp-servers)
+[Project config](https://jan.ai/docs/agent/project-config) | [Skills](https://jan.ai/docs/agent/skills) | [MCP servers](https://jan.ai/docs/desktop/integrations/mcp-servers)
