@@ -2,12 +2,21 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
-use super::OAuthToken;
+use super::{Credential, CredentialStore, OAuthToken};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccountProvider {
     Codex,
     Claude,
+}
+
+impl AccountProvider {
+    pub const fn credential_provider(self) -> &'static str {
+        match self {
+            Self::Codex => "openai",
+            Self::Claude => "anthropic",
+        }
+    }
 }
 
 pub struct AccountLogin {
@@ -181,6 +190,13 @@ pub async fn exchange(login: &AccountLogin, code: &str) -> Result<OAuthToken, St
         scopes: token.scope.split_whitespace().map(str::to_string).collect(),
     })
 }
+
+pub fn store(provider: AccountProvider, token: &OAuthToken) -> Result<(), String> {
+    CredentialStore::store(
+        provider.credential_provider(),
+        &Credential::OAuthToken(token.clone()),
+    )
+}
 #[cfg(test)]
 mod tests {
 
@@ -294,5 +310,34 @@ mod tests {
 
         assert_eq!(accept_callback(listener, &login).await.unwrap(), "authorization-code");
         client.await.unwrap();
+    }
+
+    #[test]
+    fn exchanged_token_is_scoped_to_its_account_provider() {
+        use crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK;
+
+        let _guard = SECRET_STORE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let directory = tempfile::tempdir().unwrap();
+        let previous = std::env::var("JAN_DATA_FOLDER").ok();
+        std::env::set_var("JAN_DATA_FOLDER", directory.path());
+        crate::core::server::provider_secrets::force_file_secrets();
+
+        let token = OAuthToken {
+            access_token: "access".into(),
+            refresh_token: Some("refresh".into()),
+            expires_at: Some(1_800_000_000),
+            token_type: "Bearer".into(),
+            scopes: vec!["profile".into()],
+        };
+        store(AccountProvider::Claude, &token).unwrap();
+        assert_eq!(
+            crate::core::cli::auth::CredentialStore::load("anthropic").unwrap(),
+            Some(crate::core::cli::auth::Credential::OAuthToken(token))
+        );
+
+        match previous {
+            Some(value) => std::env::set_var("JAN_DATA_FOLDER", value),
+            None => std::env::remove_var("JAN_DATA_FOLDER"),
+        }
     }
 }
