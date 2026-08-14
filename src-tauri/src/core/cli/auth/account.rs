@@ -82,10 +82,41 @@ pub fn parse_callback(raw: &str, expected_state: &str) -> Result<String, String>
     if state != expected_state {
         return Err("the redirect state did not match".to_string());
     }
+
     url.query_pairs()
         .find_map(|(key, value)| (key == "code").then_some(value.into_owned()))
         .filter(|code| !code.is_empty())
         .ok_or_else(|| "the redirect URL is missing its authorization code".to_string())
+}
+pub async fn accept_callback(
+    listener: tokio::net::TcpListener,
+    login: &AccountLogin,
+) -> Result<String, String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let (mut stream, _) = listener
+        .accept()
+        .await
+        .map_err(|_| "could not receive the account callback".to_string())?;
+    let mut request = [0; 8192];
+    let read = stream
+        .read(&mut request)
+        .await
+        .map_err(|_| "could not read the account callback".to_string())?;
+    let target = std::str::from_utf8(&request[..read])
+        .ok()
+        .and_then(|request| request.lines().next())
+        .and_then(|line| line.split_whitespace().nth(1))
+        .ok_or_else(|| "the account callback was malformed".to_string())?;
+    let callback = format!("{}/{}", login.redirect_uri.trim_end_matches('/'), target.trim_start_matches('/'));
+    let result = parse_callback(&callback, &login.state);
+    let response = if result.is_ok() {
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: 71\r\nConnection: close\r\n\r\n<html><body>Sign-in completed. You can close this window.</body></html>"
+    } else {
+        "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: 57\r\nConnection: close\r\n\r\n<html><body>Sign-in could not be verified.</body></html>"
+    };
+    let _ = stream.write_all(response.as_bytes()).await;
+    result
 }
 
 fn token_request_body(login: &AccountLogin, code: &str) -> std::collections::BTreeMap<String, String> {
@@ -243,5 +274,25 @@ mod tests {
         assert_eq!(token.token_type, "Bearer");
         assert_eq!(token.scopes, vec!["profile", "offline_access"]);
         assert!(token.expires_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn loopback_listener_accepts_matching_callback() {
+        use tokio::io::AsyncWriteExt;
+
+        let login = begin(AccountProvider::Codex).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let callback = format!(
+            "GET /auth/callback?code=authorization-code&state={} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n",
+            login.state
+        );
+        let client = tokio::spawn(async move {
+            let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+            stream.write_all(callback.as_bytes()).await.unwrap();
+        });
+
+        assert_eq!(accept_callback(listener, &login).await.unwrap(), "authorization-code");
+        client.await.unwrap();
     }
 }
