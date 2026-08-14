@@ -1006,12 +1006,13 @@ impl std::fmt::Display for ReasoningEffort {
     }
 }
 
-/// OpenAI models known to accept the `reasoning_effort` chat parameter. Model
-/// catalogs only expose IDs, not parameter capabilities, so keep this
-/// conservative rather than sending a rejected field to every provider.
+/// Models verified to accept the `reasoning_effort` chat parameter. Model
+/// catalogs only expose IDs, not parameter capabilities, so keep this list
+/// explicit rather than sending a rejected field to every provider.
 fn model_supports_reasoning_effort(model: &str) -> bool {
     let model = model.rsplit('/').next().unwrap_or(model).to_ascii_lowercase();
-    model.starts_with("gpt-5")
+    model == "tokamak-1-preview"
+        || model.starts_with("gpt-5")
         || model.starts_with("o1")
         || model.starts_with("o3")
         || model.starts_with("o4")
@@ -9372,6 +9373,17 @@ mod tests {
         assert_eq!(app.reasoning_effort, ReasoningEffort::Medium);
         assert_eq!(app.body()["reasoning_effort"], "medium");
     }
+
+    #[test]
+    fn effort_is_forwarded_and_displayed_for_tokamak_preview() {
+        let mut app = test_app();
+        app.model = "tokamak-1-preview".into();
+
+        assert_eq!(app.body()["reasoning_effort"], "medium");
+        let rendered = render_rows(&mut app, 100, 12).join("\n");
+        assert!(rendered.contains("effort medium"), "{rendered}");
+    }
+
 
     #[test]
     fn effort_is_omitted_for_models_without_reasoning_effort_support() {
