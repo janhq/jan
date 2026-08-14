@@ -6,23 +6,60 @@ description: Use when onboarding users to Jan Agent or explaining project and gl
 
 Run `jan` in a folder. That CWD is the project root; `--project DIR` selects another root.
 
-## Project state
+## Project files
 
-`<project>/.jan/agent/` is created on first use:
+Jan creates this tree on first use:
 
-- `agent.toml`: model, provider override, budget, tools, and skills.
-- `AGENT.md`: always-on project instructions.
-- `skills/<name>/SKILL.md` or `skills/<name>.md`: reusable procedures.
-- `memory/`: durable project facts. `threads/`: saved sessions. `subagents/`: reusable agents.
+```text
+<project>/
+`-- .jan/
+    `-- agent/
+        |-- agent.toml       # model, provider, budget, tools, skills
+        |-- AGENT.md         # always-loaded project instructions
+        |-- skills/
+        |   `-- <name>/
+        |       `-- SKILL.md # procedure, plus optional scripts/templates
+        |-- memory/          # durable project facts
+        |-- threads/         # saved conversations
+        `-- subagents/       # reusable agent definitions
+```
 
-Run `jan cli agent status --project .` to scaffold it. Commit `agent.toml`, `AGENT.md`, `skills/`, and `subagents/`; gitignore `threads/`.
+`agent.toml` has `[agent]`, `[provider]`, `[budget]`, `[tools]`, and `[skills]` sections.
+`AGENT.md` is the default `instructions_file`. A simple skill can instead be
+`skills/<name>.md`. Commit `agent.toml`, `AGENT.md`, `skills/`, and `subagents/`;
+gitignore `threads/`. Run `jan cli agent status --project .` to scaffold the tree.
 
-## Global state
+## User-global files
 
-- `~/.jan/config.toml`: provider configuration and credentials.
-- `<JAN_DATA_FOLDER>/mcp_config.json`: MCP servers. Desktop: **Settings > MCP Servers**.
-- `<JAN_DATA_FOLDER>/agent-workspace/`: Desktop-global `skills/`, `memory/`, and `threads/`. `JAN_DATA_FOLDER` or the Desktop data-folder setting selects the root.
+`~/.jan/` is separate from a project's `.jan/`:
 
-## References
+```text
+~/.jan/
+`-- config.toml              # CLI provider configuration and credentials
+```
 
-[Project config](https://jan.ai/docs/agent/project-config) | [Skills](https://jan.ai/docs/agent/skills) | [MCP servers](https://jan.ai/docs/desktop/integrations/mcp-servers)
+Jan Desktop stores its settings and shared MCP configuration under the platform support folder:
+
+```text
+<support-folder>/Jan/
+|-- settings.json             # Desktop settings, including an optional data_folder
+`-- data/                     # default JAN_DATA_FOLDER
+    |-- mcp_config.json       # shared MCP server definitions
+    `-- agent-workspace/      # Desktop-global agent store
+        |-- skills/
+        |-- memory/
+        `-- threads/
+```
+
+Default `<support-folder>`:
+
+```text
+macOS:   ~/Library/Application Support
+Linux:   $XDG_DATA_HOME, or ~/.local/share
+Windows: %APPDATA%
+```
+
+`JAN_DATA_FOLDER` overrides the `data/` location. Otherwise Jan uses
+`settings.json`'s `data_folder`, then `<support-folder>/Jan/data`.
+Add MCP servers in Desktop at `Settings > MCP Servers`; Jan writes
+`<JAN_DATA_FOLDER>/mcp_config.json`.
