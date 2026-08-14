@@ -149,12 +149,11 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
         std::env::set_var("JAN_CLI_NO_UPDATE_CHECK", "1");
-        let result = tokio::runtime::Builder::new_current_thread()
+        tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap()
             .block_on(ping_if_due());
         std::env::remove_var("JAN_CLI_NO_UPDATE_CHECK");
-        let _: () = result;
     }
 }
