@@ -12,8 +12,7 @@ use tauri_plugin_agent_tools::{memory, skills, workspace};
 /// Default persona used only when no assistant instructions are supplied, so a
 /// bare project run still opens with a role statement instead of "# Working
 /// Directory". An assistant's own instructions replace this entirely.
-const DEFAULT_IDENTITY: &str = "You are Jan, an AI coding agent. You help users by reading files, \
-running commands, editing code, and writing new files.";
+const DEFAULT_IDENTITY: &str = "You're currently running on Jan agent harness";
 
 /// Always-on behavioral guidelines. Kept short and model-facing.
 const GUIDELINES: &str =
@@ -416,7 +415,7 @@ mod tests {
     fn default_identity_and_guidelines_present_without_base() {
         let root = scratch_project("identity");
         let out = build_system_prompt(None, &root, false).expect("prompt");
-        assert!(out.starts_with("You are Jan, an AI coding agent."));
+        assert!(out.starts_with("You're currently running on Jan agent harness"));
         assert!(out.contains("# Guidelines"));
         assert!(out.contains("Be concise"));
         assert!(out.contains("Reach for `todo` only when work genuinely needs tracking"));
