@@ -2,6 +2,8 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
+use super::OAuthToken;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccountProvider {
     Codex,
@@ -14,19 +16,22 @@ pub struct AccountLogin {
     pub state: String,
     pub verifier: String,
     client_id: &'static str,
+    token_endpoint: String,
 }
 
 pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
-    let (client_id, authorization_endpoint, redirect_uri, scopes) = match provider {
+    let (client_id, authorization_endpoint, token_endpoint, redirect_uri, scopes) = match provider {
         AccountProvider::Codex => (
             "app_EMoamEEZ73f0CkXaXp7hrann",
             "https://auth.openai.com/oauth/authorize",
+            "https://auth.openai.com/oauth/token",
             "http://localhost:1455/auth/callback",
             "openid profile email offline_access",
         ),
         AccountProvider::Claude => (
             "1d1c250a-e61b-44d9-88ed-5944d1962f5e",
             "https://claude.ai/oauth/authorize",
+            "https://platform.claude.com/v1/oauth/token",
             "http://localhost:53692/callback",
             "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload",
         ),
@@ -58,6 +63,7 @@ pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
         state,
         verifier,
         client_id,
+        token_endpoint: token_endpoint.to_string(),
     })
 }
 
@@ -95,8 +101,58 @@ fn token_request_body(login: &AccountLogin, code: &str) -> std::collections::BTr
     .collect()
 }
 
+pub async fn exchange(login: &AccountLogin, code: &str) -> Result<OAuthToken, String> {
+    #[derive(serde::Deserialize)]
+    struct TokenResponse {
+        access_token: String,
+        #[serde(default)]
+        refresh_token: Option<String>,
+        #[serde(default)]
+        expires_in: Option<i64>,
+        #[serde(default = "default_token_type")]
+        token_type: String,
+        #[serde(default)]
+        scope: String,
+    }
+
+    fn default_token_type() -> String {
+        "Bearer".to_string()
+    }
+
+    let response = reqwest::Client::new()
+        .post(&login.token_endpoint)
+        .form(&token_request_body(login, code))
+        .send()
+        .await
+        .map_err(|_| "could not exchange the authorization code".to_string())?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "account sign-in was rejected (HTTP {})",
+            response.status()
+        ));
+    }
+    let token = response
+        .json::<TokenResponse>()
+        .await
+        .map_err(|_| "the account token response was unreadable".to_string())?;
+    if token.access_token.is_empty() {
+        return Err("the account token response did not contain an access token".to_string());
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "could not read the system clock".to_string())?
+        .as_secs() as i64;
+    Ok(OAuthToken {
+        access_token: token.access_token,
+        refresh_token: token.refresh_token,
+        expires_at: token.expires_in.map(|seconds| now.saturating_add(seconds.saturating_sub(300))),
+        token_type: token.token_type,
+        scopes: token.scope.split_whitespace().map(str::to_string).collect(),
+    })
+}
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[test]
@@ -155,5 +211,37 @@ mod tests {
         assert_eq!(fields.get("code_verifier"), Some(&login.verifier));
         assert_eq!(fields.get("redirect_uri"), Some(&login.redirect_uri.to_string()));
         assert!(fields.get("client_id").is_some());
+    }
+
+    #[tokio::test]
+    async fn token_exchange_stores_refreshable_credentials() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/token", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request).unwrap();
+            let body = r#"{"access_token":"access","refresh_token":"refresh","expires_in":3600,"token_type":"Bearer","scope":"profile offline_access"}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+
+        let mut login = begin(AccountProvider::Codex).unwrap();
+        login.token_endpoint = endpoint;
+        let token = exchange(&login, "authorization-code").await.unwrap();
+
+        assert_eq!(token.access_token, "access");
+        assert_eq!(token.refresh_token.as_deref(), Some("refresh"));
+        assert_eq!(token.token_type, "Bearer");
+        assert_eq!(token.scopes, vec!["profile", "offline_access"]);
+        assert!(token.expires_at.is_some());
     }
 }
