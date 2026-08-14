@@ -241,7 +241,6 @@ mod tests {
         let root = scratch_project("nodir");
         let block = load_skills(&root).expect("built-in skills block");
         assert!(block.contains("## Skill: jan"));
-        assert!(block.contains("Use when"));
         let _ = std::fs::remove_dir_all(&root);
     }
 

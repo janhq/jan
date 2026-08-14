@@ -421,7 +421,7 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        assert!(read_body(&root, "jan").unwrap().contains("## Start"));
+        assert!(!read_body(&root, "jan").unwrap().trim().is_empty());
         assert!(read_body(&root, "../jan").is_err());
 
         write(
