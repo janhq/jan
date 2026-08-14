@@ -404,11 +404,26 @@ impl Picker {
         if self.kind != PickerKind::SelectModel {
             return;
         }
-        let query = self.query.to_ascii_lowercase();
+        let query = self
+            .query
+            .split_whitespace()
+            .map(str::to_ascii_lowercase)
+            .collect::<Vec<_>>();
         self.items = self
             .all_items
             .iter()
-            .filter(|item| item.label.to_ascii_lowercase().contains(&query))
+            .filter(|item| {
+                let provider_alias = item
+                    .label
+                    .split_once(" / ")
+                    .and_then(|(provider, _)| crate::core::cli::auth::provider_by_id(provider))
+                    .map(|provider| provider.name.to_ascii_lowercase())
+                    .unwrap_or_default();
+                let searchable = format!("{} {provider_alias}", item.label.to_ascii_lowercase());
+                query
+                    .iter()
+                    .all(|term| searchable.contains(term.as_str()))
+            })
             .cloned()
             .collect();
         self.selected = self.selected.min(self.items.len().saturating_sub(1));
@@ -24015,5 +24030,34 @@ mod tests {
         picker.query.clear();
         picker.refresh_model_items();
         assert_eq!(picker.items.len(), 2);
+    }
+    #[test]
+    fn model_picker_matches_all_search_terms_across_provider_and_model() {
+        let mut picker = super::Picker {
+            kind: PickerKind::SelectModel,
+            all_items: vec![
+                super::PickerItem {
+                    value: "gpt-5.6-luna".to_string(),
+                    label: "openai / gpt-5.6-luna".to_string(),
+                    hint: None,
+                    checkbox: None,
+                },
+                super::PickerItem {
+                    value: "gpt-5.6-terra".to_string(),
+                    label: "openai / gpt-5.6-terra".to_string(),
+                    hint: None,
+                    checkbox: None,
+                },
+            ],
+            items: Vec::new(),
+            query: "codex luna".to_string(),
+            selected: 0,
+            provider: None,
+        };
+
+        picker.refresh_model_items();
+
+        assert_eq!(picker.items.len(), 1);
+        assert_eq!(picker.items[0].value, "gpt-5.6-luna");
     }
 }
