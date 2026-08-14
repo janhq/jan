@@ -108,7 +108,7 @@ async fn verify_key(
 
 /// Human-readable reason a verification request was rejected. Never includes
 /// the key.
-fn failure_for(definition: &ProviderDefinition, status: u16, body: &str) -> LoginError {
+fn failure_for(definition: &ProviderDefinition, status: u16, _body: &str) -> LoginError {
     match status {
         401 | 403 => LoginError::Unauthorized,
         429 => LoginError::RateLimited,
@@ -116,36 +116,7 @@ fn failure_for(definition: &ProviderDefinition, status: u16, body: &str) -> Logi
             "{} is unavailable right now (HTTP {status}).",
             definition.name
         )),
-        _ => {
-            let detail = api_error_message(body).unwrap_or_else(|| snippet(body));
-            if detail.is_empty() {
-                LoginError::Unavailable(format!("{} returned HTTP {status}.", definition.name))
-            } else {
-                LoginError::Unavailable(format!(
-                    "{} returned HTTP {status}: {detail}",
-                    definition.name
-                ))
-            }
-        }
-    }
-}
-
-/// `error` as a string, or `error.message`, from an error body.
-fn api_error_message(body: &str) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_str(body).ok()?;
-    let error = value.get("error")?;
-    let text = error
-        .as_str()
-        .or_else(|| error.get("message").and_then(|m| m.as_str()))?;
-    Some(text.to_string())
-}
-
-fn snippet(body: &str) -> String {
-    let one_line = body.split_whitespace().collect::<Vec<_>>().join(" ");
-    if one_line.chars().count() > 120 {
-        format!("{}...", one_line.chars().take(117).collect::<String>())
-    } else {
-        one_line
+        _ => LoginError::Unavailable(format!("{} returned HTTP {status}.", definition.name)),
     }
 }
 
@@ -329,6 +300,20 @@ mod tests {
         assert_eq!(parse_models(&json!(["x", {"id": "y"}])), vec!["x".to_string(), "y".to_string()]);
         assert!(parse_models(&json!({"data": []})).is_empty());
         assert!(parse_models(&json!({"unexpected": 1})).is_empty());
+    }
+
+    #[test]
+    fn provider_error_never_echoes_the_submitted_key() {
+        let definition = provider_by_id("deepseek").unwrap();
+        let error = failure_for(
+            &definition,
+            400,
+            r#"{"error":{"message":"invalid key sk-secret"}}"#,
+        );
+        let LoginError::Unavailable(message) = error else {
+            panic!("HTTP 400 must be an unavailable error");
+        };
+        assert!(!message.contains("sk-secret"), "{message}");
     }
 
     #[test]
