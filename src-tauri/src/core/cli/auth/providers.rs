@@ -12,9 +12,7 @@ use crate::core::agent::global_config::{
     remove_provider, set_default_model_if_unset, set_provider, ProviderUpdate,
 };
 
-use super::{
-    Credential, CredentialStore, LoginError, LoginResult, ProviderDefinition, Transport,
-};
+use super::{Credential, CredentialStore, LoginError, LoginResult, ProviderDefinition, Transport};
 
 const VERIFY_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -46,27 +44,29 @@ impl LoginService {
         raw_key: &str,
     ) -> Result<LoginResult, LoginError> {
         let key = Self::sanitize_key(raw_key).map_err(LoginError::InvalidKey)?;
-        let models = verify_key(definition, &key).await?;
+        let models = discover_models(definition, &key).await?;
         persist(definition, &key, &models)
     }
 
     /// Remove the stored credential and the provider's non-secret
     /// configuration entry. Missing entries are not an error.
     pub fn logout(&self, provider: &str) -> Result<(), LoginError> {
-        CredentialStore::delete(provider)
-            .map_err(|e| LoginError::Persist(format!("could not clear the stored credential: {e}")))?;
-        remove_provider(provider)
-            .map_err(|e| LoginError::Persist(format!("could not clear the provider configuration: {e}")))?;
+        CredentialStore::delete(provider).map_err(|e| {
+            LoginError::Persist(format!("could not clear the stored credential: {e}"))
+        })?;
+        remove_provider(provider).map_err(|e| {
+            LoginError::Persist(format!("could not clear the provider configuration: {e}"))
+        })?;
         Ok(())
     }
 }
 
-/// Ask the provider which models this key can reach. An empty list is a valid
-/// answer (the account has no models yet); the caller decides whether that is
-/// usable.
-async fn verify_key(
+/// Ask the provider which models this credential can reach. An empty list is a
+/// valid answer (the account has no models yet); the caller decides whether
+/// that is usable.
+pub(crate) async fn discover_models(
     definition: &ProviderDefinition,
-    key: &str,
+    credential: &str,
 ) -> Result<Vec<String>, LoginError> {
     let client = reqwest::Client::builder()
         .timeout(VERIFY_TIMEOUT)
@@ -79,10 +79,10 @@ async fn verify_key(
     let mut request = client.get(&url);
     request = match definition.transport {
         Transport::Anthropic => request
-            .header("x-api-key", key)
+            .header("x-api-key", credential)
             .header("anthropic-version", "2023-06-01")
             .header("Accept", "application/json"),
-        Transport::OpenAi => request.header("Authorization", format!("Bearer {key}")),
+        Transport::OpenAi => request.header("Authorization", format!("Bearer {credential}")),
     };
 
     let response = request.send().await.map_err(|e| {
@@ -207,10 +207,10 @@ mod tests {
     use super::*;
     use crate::core::agent::global_config::{load_global_config, with_temp_home};
     use crate::core::cli::auth::provider_by_id;
+    use crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK;
     use serde_json::json;
     use std::io::{Read, Write};
     use std::net::TcpListener;
-    use crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK;
     use std::sync::MutexGuard;
 
     struct TempSecrets {
@@ -221,7 +221,9 @@ mod tests {
 
     impl TempSecrets {
         fn new() -> Self {
-            let guard = SECRET_STORE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let guard = SECRET_STORE_TEST_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             let dir = tempfile::tempdir().unwrap();
             let prev_data_folder = std::env::var("JAN_DATA_FOLDER").ok();
             std::env::set_var("JAN_DATA_FOLDER", dir.path());
@@ -296,8 +298,14 @@ mod tests {
     #[test]
     fn parses_openai_and_bare_model_lists_sorted_and_deduped() {
         let body = json!({"data": [{"id": "deepseek-chat"}, {"id": "b"}, {"id": "b"}]});
-        assert_eq!(parse_models(&body), vec!["b".to_string(), "deepseek-chat".to_string()]);
-        assert_eq!(parse_models(&json!(["x", {"id": "y"}])), vec!["x".to_string(), "y".to_string()]);
+        assert_eq!(
+            parse_models(&body),
+            vec!["b".to_string(), "deepseek-chat".to_string()]
+        );
+        assert_eq!(
+            parse_models(&json!(["x", {"id": "y"}])),
+            vec!["x".to_string(), "y".to_string()]
+        );
         assert!(parse_models(&json!({"data": []})).is_empty());
         assert!(parse_models(&json!({"unexpected": 1})).is_empty());
     }
@@ -367,7 +375,11 @@ mod tests {
                 Some(Credential::ApiKey("sk-ok".into()))
             );
             // The config entry carries no secret, only id/endpoint/models.
-            let cfg = load_global_config().unwrap().get("deepseek").unwrap().clone();
+            let cfg = load_global_config()
+                .unwrap()
+                .get("deepseek")
+                .unwrap()
+                .clone();
             assert!(cfg.api_key.is_none());
             assert!(cfg.api_keys.is_empty());
             assert_eq!(cfg.base_url.as_deref(), Some(endpoint.as_str()));
@@ -417,8 +429,15 @@ mod tests {
             let endpoint = mock_server("200 OK", body);
             login_for_test(&deepseek_at(endpoint), "sk-new").unwrap();
 
-            let cfg = load_global_config().unwrap().get("deepseek").unwrap().clone();
-            assert!(cfg.api_key.is_none(), "legacy plaintext key must be migrated away");
+            let cfg = load_global_config()
+                .unwrap()
+                .get("deepseek")
+                .unwrap()
+                .clone();
+            assert!(
+                cfg.api_key.is_none(),
+                "legacy plaintext key must be migrated away"
+            );
             assert_eq!(
                 CredentialStore::load("deepseek").unwrap(),
                 Some(Credential::ApiKey("sk-new".into()))

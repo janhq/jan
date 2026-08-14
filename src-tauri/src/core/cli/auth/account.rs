@@ -36,6 +36,8 @@ pub struct AccountLogin {
     provider: AccountProvider,
     client_id: &'static str,
     token_endpoint: String,
+    #[cfg(test)]
+    model_base_url: Option<String>,
 }
 
 pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
@@ -84,6 +86,8 @@ pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
         provider,
         client_id,
         token_endpoint: token_endpoint.to_string(),
+        #[cfg(test)]
+        model_base_url: None,
     })
 }
 
@@ -94,7 +98,8 @@ fn random_url_safe(bytes: usize) -> String {
 }
 
 pub fn parse_callback(raw: &str, expected_state: &str) -> Result<String, String> {
-    let url = url::Url::parse(raw.trim()).map_err(|_| "paste the complete redirect URL".to_string())?;
+    let url =
+        url::Url::parse(raw.trim()).map_err(|_| "paste the complete redirect URL".to_string())?;
     let state = url
         .query_pairs()
         .find_map(|(key, value)| (key == "state").then_some(value.into_owned()))
@@ -128,7 +133,11 @@ pub async fn accept_callback(
         .and_then(|request| request.lines().next())
         .and_then(|line| line.split_whitespace().nth(1))
         .ok_or_else(|| "the account callback was malformed".to_string())?;
-    let callback = format!("{}/{}", login.redirect_uri.trim_end_matches('/'), target.trim_start_matches('/'));
+    let callback = format!(
+        "{}/{}",
+        login.redirect_uri.trim_end_matches('/'),
+        target.trim_start_matches('/')
+    );
     let result = parse_callback(&callback, &login.state);
     let response = if result.is_ok() {
         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: 71\r\nConnection: close\r\n\r\n<html><body>Sign-in completed. You can close this window.</body></html>"
@@ -140,7 +149,8 @@ pub async fn accept_callback(
 }
 
 pub async fn bind_callback(login: &AccountLogin) -> Result<tokio::net::TcpListener, String> {
-    let redirect = url::Url::parse(login.redirect_uri).map_err(|_| "the callback URL was invalid".to_string())?;
+    let redirect = url::Url::parse(login.redirect_uri)
+        .map_err(|_| "the callback URL was invalid".to_string())?;
     let port = redirect
         .port_or_known_default()
         .ok_or_else(|| "the callback URL did not include a port".to_string())?;
@@ -154,7 +164,10 @@ pub async fn wait_for_browser_callback(login: &AccountLogin) -> Result<String, S
     accept_callback(listener, login).await
 }
 
-fn token_request_body(login: &AccountLogin, code: &str) -> std::collections::BTreeMap<String, String> {
+fn token_request_body(
+    login: &AccountLogin,
+    code: &str,
+) -> std::collections::BTreeMap<String, String> {
     [
         ("grant_type", "authorization_code".to_string()),
         ("client_id", login.client_id.to_string()),
@@ -188,7 +201,6 @@ fn refresh_request_body(
 pub async fn exchange(login: &AccountLogin, code: &str) -> Result<OAuthToken, String> {
     #[derive(serde::Deserialize)]
     struct TokenResponse {
-
         access_token: String,
         #[serde(default)]
         refresh_token: Option<String>,
@@ -230,7 +242,9 @@ pub async fn exchange(login: &AccountLogin, code: &str) -> Result<OAuthToken, St
     Ok(OAuthToken {
         access_token: token.access_token,
         refresh_token: token.refresh_token,
-        expires_at: token.expires_in.map(|seconds| now.saturating_add(seconds.saturating_sub(300))),
+        expires_at: token
+            .expires_in
+            .map(|seconds| now.saturating_add(seconds.saturating_sub(300))),
         token_type: token.token_type,
         scopes: token.scope.split_whitespace().map(str::to_string).collect(),
     })
@@ -289,7 +303,9 @@ pub async fn refresh(provider: AccountProvider, token: &OAuthToken) -> Result<OA
         .as_secs() as i64;
     Ok(OAuthToken {
         access_token: refreshed.access_token,
-        refresh_token: refreshed.refresh_token.or_else(|| token.refresh_token.clone()),
+        refresh_token: refreshed
+            .refresh_token
+            .or_else(|| token.refresh_token.clone()),
         expires_at: refreshed
             .expires_in
             .map(|seconds| now.saturating_add(seconds.saturating_sub(300))),
@@ -297,7 +313,11 @@ pub async fn refresh(provider: AccountProvider, token: &OAuthToken) -> Result<OA
         scopes: if refreshed.scope.is_empty() {
             token.scopes.clone()
         } else {
-            refreshed.scope.split_whitespace().map(str::to_string).collect()
+            refreshed
+                .scope
+                .split_whitespace()
+                .map(str::to_string)
+                .collect()
         },
     })
 }
@@ -339,22 +359,40 @@ pub async fn complete_callback_login(
 ) -> Result<AccountProvider, String> {
     let code = accept_callback(listener, &login).await?;
     let token = exchange(&login, &code).await?;
+    let definition =
+        crate::core::cli::auth::provider_by_id(login.provider.credential_provider())
+            .ok_or_else(|| "selected account is unavailable".to_string())?;
+    #[cfg(test)]
+    let definition = {
+        let mut definition = definition;
+        if let Some(base_url) = login.model_base_url {
+            definition.default_base_url = base_url;
+        }
+        definition
+    };
+    let models =
+        crate::core::cli::auth::providers::discover_models(&definition, &token.access_token)
+            .await
+            .map_err(|_| "could not discover account models".to_string())?;
     store(login.provider, &token)?;
-    let definition = crate::core::cli::auth::provider_by_id(login.provider.credential_provider())
-        .ok_or_else(|| "selected account is unavailable".to_string())?;
     if let Err(error) = crate::core::agent::global_config::set_provider(
         definition.id,
         crate::core::agent::global_config::ProviderUpdate {
             api_key: None,
             clear_api_key: true,
             base_url: Some(definition.default_base_url),
-            models: None,
-            api_type: matches!(definition.transport, crate::core::cli::auth::Transport::Anthropic)
-                .then_some("anthropic".to_string()),
+            models: Some(models),
+            api_type: matches!(
+                definition.transport,
+                crate::core::cli::auth::Transport::Anthropic
+            )
+            .then_some("anthropic".to_string()),
         },
     ) {
         let _ = CredentialStore::delete(login.provider.credential_provider());
-        return Err(format!("could not save the provider configuration: {error}"));
+        return Err(format!(
+            "could not save the provider configuration: {error}"
+        ));
     }
     Ok(login.provider)
 }
@@ -362,16 +400,143 @@ pub async fn complete_callback_login(
 mod tests {
 
     use super::*;
+    use crate::core::agent::global_config::{load_global_config, with_temp_home};
+    use crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{mpsc, MutexGuard};
+
+    struct TempSecrets {
+        _guard: MutexGuard<'static, ()>,
+        prev_data_folder: Option<String>,
+        _dir: tempfile::TempDir,
+    }
+
+    impl TempSecrets {
+        fn new() -> Self {
+            let guard = SECRET_STORE_TEST_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let dir = tempfile::tempdir().unwrap();
+            let prev_data_folder = std::env::var("JAN_DATA_FOLDER").ok();
+            std::env::set_var("JAN_DATA_FOLDER", dir.path());
+            crate::core::server::provider_secrets::force_file_secrets();
+            Self {
+                _guard: guard,
+                prev_data_folder,
+                _dir: dir,
+            }
+        }
+    }
+
+    impl Drop for TempSecrets {
+        fn drop(&mut self) {
+            match &self.prev_data_folder {
+                Some(value) => std::env::set_var("JAN_DATA_FOLDER", value),
+                None => std::env::remove_var("JAN_DATA_FOLDER"),
+            }
+        }
+    }
+
+    fn account_models_server(
+        status_line: &'static str,
+        body: &'static str,
+    ) -> (String, mpsc::Receiver<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let read = stream.read(&mut request).unwrap_or(0);
+            let _ = tx.send(String::from_utf8_lossy(&request[..read]).into_owned());
+            let response = format!(
+                "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(response.as_bytes());
+        });
+        (format!("http://{addr}/v1"), rx)
+    }
+
+    fn unavailable_base_url() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        format!("http://{addr}/v1")
+    }
+
+    fn token_server() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/token", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request).unwrap();
+            let body = r#"{"access_token":"exchanged-account-token","refresh_token":"refresh","expires_in":3600,"token_type":"Bearer","scope":"profile offline_access"}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+        endpoint
+    }
+
+    fn complete_account_for_test(models_base_url: String) -> Result<AccountProvider, String> {
+        std::thread::spawn(move || {
+            tokio::runtime::Runtime::new().unwrap().block_on(async move {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let address = listener.local_addr().unwrap();
+                let mut login = begin(AccountProvider::Codex).unwrap();
+                login.token_endpoint = token_server();
+                login.model_base_url = Some(models_base_url);
+                let callback = format!(
+                    "GET /auth/callback?code=authorization-code&state={} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n",
+                    login.state
+                );
+                let client = tokio::spawn(async move {
+                    let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+                    tokio::io::AsyncWriteExt::write_all(&mut stream, callback.as_bytes())
+                        .await
+                        .unwrap();
+                });
+                let result = complete_callback_login(listener, login).await;
+                client.await.unwrap();
+                result
+            })
+        })
+        .join()
+        .expect("account completion thread must not panic")
+    }
 
     #[test]
     fn codex_browser_login_uses_pkce_and_loopback_callback() {
         let login = begin(AccountProvider::Codex).unwrap();
         let url = url::Url::parse(&login.authorization_url).unwrap();
 
-        assert_eq!(url.origin().ascii_serialization(), "https://auth.openai.com");
+        assert_eq!(
+            url.origin().ascii_serialization(),
+            "https://auth.openai.com"
+        );
         assert_eq!(url.path(), "/oauth/authorize");
-        assert_eq!(url.query_pairs().find(|(key, _)| key == "response_type").unwrap().1, "code");
-        assert_eq!(url.query_pairs().find(|(key, _)| key == "code_challenge_method").unwrap().1, "S256");
+        assert_eq!(
+            url.query_pairs()
+                .find(|(key, _)| key == "response_type")
+                .unwrap()
+                .1,
+            "code"
+        );
+        assert_eq!(
+            url.query_pairs()
+                .find(|(key, _)| key == "code_challenge_method")
+                .unwrap()
+                .1,
+            "S256"
+        );
         assert_eq!(login.redirect_uri, "http://localhost:1455/auth/callback");
         assert!(!login.state.is_empty());
         assert!(!login.verifier.is_empty());
@@ -384,8 +549,20 @@ mod tests {
 
         assert_eq!(url.origin().ascii_serialization(), "https://claude.ai");
         assert_eq!(url.path(), "/oauth/authorize");
-        assert_eq!(url.query_pairs().find(|(key, _)| key == "response_type").unwrap().1, "code");
-        assert_eq!(url.query_pairs().find(|(key, _)| key == "code_challenge_method").unwrap().1, "S256");
+        assert_eq!(
+            url.query_pairs()
+                .find(|(key, _)| key == "response_type")
+                .unwrap()
+                .1,
+            "code"
+        );
+        assert_eq!(
+            url.query_pairs()
+                .find(|(key, _)| key == "code_challenge_method")
+                .unwrap()
+                .1,
+            "S256"
+        );
         assert_eq!(login.redirect_uri, "http://localhost:53692/callback");
         assert!(!login.state.is_empty());
         assert!(!login.verifier.is_empty());
@@ -414,10 +591,16 @@ mod tests {
         let login = begin(AccountProvider::Claude).unwrap();
         let fields = token_request_body(&login, "authorization-code");
 
-        assert_eq!(fields.get("grant_type"), Some(&"authorization_code".to_string()));
+        assert_eq!(
+            fields.get("grant_type"),
+            Some(&"authorization_code".to_string())
+        );
         assert_eq!(fields.get("code"), Some(&"authorization-code".to_string()));
         assert_eq!(fields.get("code_verifier"), Some(&login.verifier));
-        assert_eq!(fields.get("redirect_uri"), Some(&login.redirect_uri.to_string()));
+        assert_eq!(
+            fields.get("redirect_uri"),
+            Some(&login.redirect_uri.to_string())
+        );
         assert!(fields.get("client_id").is_some());
     }
 
@@ -469,15 +652,113 @@ mod tests {
             stream.write_all(callback.as_bytes()).await.unwrap();
         });
 
-        assert_eq!(accept_callback(listener, &login).await.unwrap(), "authorization-code");
+        assert_eq!(
+            accept_callback(listener, &login).await.unwrap(),
+            "authorization-code"
+        );
         client.await.unwrap();
+    }
+
+    #[test]
+    fn account_model_discovery_persists_models_and_token() {
+        let _tmp = TempSecrets::new();
+        with_temp_home(|_| {
+            let body = r#"{"data":[{"id":"gpt-4o-mini"},{"id":"gpt-4o"},{"id":"gpt-4o"}]}"#;
+            let (models_base_url, request) = account_models_server("200 OK", body);
+
+            assert_eq!(
+                complete_account_for_test(models_base_url.clone()).unwrap(),
+                AccountProvider::Codex
+            );
+
+            let models_request = request.recv().unwrap();
+            assert!(
+                models_request.starts_with("GET /v1/models HTTP/1.1"),
+                "{models_request}"
+            );
+            assert!(
+                models_request.contains("authorization: Bearer exchanged-account-token")
+                    || models_request.contains("Authorization: Bearer exchanged-account-token"),
+                "{models_request}"
+            );
+
+            let token = OAuthToken {
+                access_token: "exchanged-account-token".into(),
+                refresh_token: Some("refresh".into()),
+                expires_at: CredentialStore::load("openai")
+                    .unwrap()
+                    .and_then(|credential| {
+                        credential.as_oauth().and_then(|token| token.expires_at)
+                    }),
+                token_type: "Bearer".into(),
+                scopes: vec!["profile".into(), "offline_access".into()],
+            };
+            assert_eq!(
+                CredentialStore::load("openai").unwrap(),
+                Some(Credential::OAuthToken(token))
+            );
+
+            let cfg = load_global_config().unwrap().get("openai").unwrap().clone();
+            assert!(cfg.api_key.is_none());
+            assert!(cfg.api_keys.is_empty());
+            assert_eq!(cfg.base_url.as_deref(), Some(models_base_url.as_str()));
+            assert_eq!(
+                cfg.models,
+                vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()]
+            );
+        });
+    }
+
+    #[test]
+    fn account_model_discovery_unauthorized_leaves_no_account_state() {
+        let _tmp = TempSecrets::new();
+        with_temp_home(|_| {
+            let (models_base_url, _request) = account_models_server("401 Unauthorized", "{}");
+            let error = complete_account_for_test(models_base_url).unwrap_err();
+
+            assert!(!error.contains("exchanged-account-token"), "{error}");
+            assert!(!error.contains("authorization-code"), "{error}");
+            assert!(CredentialStore::load("openai").unwrap().is_none());
+            assert!(load_global_config().unwrap().get("openai").is_none());
+        });
+    }
+
+    #[test]
+    fn account_model_discovery_unreadable_response_leaves_no_account_state() {
+        let _tmp = TempSecrets::new();
+        with_temp_home(|_| {
+            let (models_base_url, _request) =
+                account_models_server("200 OK", "not-json-without-secret");
+            let error = complete_account_for_test(models_base_url).unwrap_err();
+
+            assert!(!error.contains("not-json-without-secret"), "{error}");
+            assert!(!error.contains("exchanged-account-token"), "{error}");
+            assert!(!error.contains("authorization-code"), "{error}");
+            assert!(CredentialStore::load("openai").unwrap().is_none());
+            assert!(load_global_config().unwrap().get("openai").is_none());
+        });
+    }
+
+    #[test]
+    fn account_model_discovery_unavailable_server_leaves_no_account_state() {
+        let _tmp = TempSecrets::new();
+        with_temp_home(|_| {
+            let error = complete_account_for_test(unavailable_base_url()).unwrap_err();
+
+            assert!(!error.contains("exchanged-account-token"), "{error}");
+            assert!(!error.contains("authorization-code"), "{error}");
+            assert!(CredentialStore::load("openai").unwrap().is_none());
+            assert!(load_global_config().unwrap().get("openai").is_none());
+        });
     }
 
     #[test]
     fn exchanged_token_is_scoped_to_its_account_provider() {
         use crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK;
 
-        let _guard = SECRET_STORE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SECRET_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let directory = tempfile::tempdir().unwrap();
         let previous = std::env::var("JAN_DATA_FOLDER").ok();
         std::env::set_var("JAN_DATA_FOLDER", directory.path());
@@ -515,7 +796,10 @@ mod tests {
         let fields = refresh_request_body("client", &token).unwrap();
 
         assert_eq!(fields.get("grant_type"), Some(&"refresh_token".to_string()));
-        assert_eq!(fields.get("refresh_token"), Some(&"refresh-token".to_string()));
+        assert_eq!(
+            fields.get("refresh_token"),
+            Some(&"refresh-token".to_string())
+        );
         assert_eq!(fields.get("client_id"), Some(&"client".to_string()));
         assert!(!fields.contains_key("access_token"));
     }

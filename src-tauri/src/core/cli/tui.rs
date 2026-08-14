@@ -48,7 +48,9 @@ use super::{sort_threads_recent, AgentSession, ResumeTarget, SessionLimits};
 use serde_json::Value;
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
-use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs, PermissionRegistry};
+use crate::core::agent::r#loop::{
+    run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
+};
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tauri_plugin_agent_tools::workspace;
 
@@ -143,7 +145,11 @@ impl Selection {
                 (a.1.min(h.1)..=a.1.max(h.1)).map(|r| (r, c0, c1)).collect()
             }
             SelectionMode::Linear => {
-                let (start, end) = if (a.1, a.0) <= (h.1, h.0) { (a, h) } else { (h, a) };
+                let (start, end) = if (a.1, a.0) <= (h.1, h.0) {
+                    (a, h)
+                } else {
+                    (h, a)
+                };
                 (start.1..=end.1)
                     .map(|r| {
                         let c0 = if r == start.1 { start.0.min(last) } else { 0 };
@@ -383,6 +389,8 @@ enum PickerKind {
 struct Picker {
     kind: PickerKind,
     items: Vec<PickerItem>,
+    all_items: Vec<PickerItem>,
+    query: String,
     selected: usize,
     /// Index of the provider row a first `d` armed for deletion, so a second
     /// `d` on the same row confirms it. `None` = nothing armed. Resets on
@@ -392,8 +400,22 @@ struct Picker {
 }
 
 impl Picker {
-    fn title(&self) -> &'static str {
-        match self.kind {
+    fn refresh_model_items(&mut self) {
+        if self.kind != PickerKind::SelectModel {
+            return;
+        }
+        let query = self.query.to_ascii_lowercase();
+        self.items = self
+            .all_items
+            .iter()
+            .filter(|item| item.label.to_ascii_lowercase().contains(&query))
+            .cloned()
+            .collect();
+        self.selected = self.selected.min(self.items.len().saturating_sub(1));
+    }
+
+    fn title(&self) -> String {
+        let title = match self.kind {
             PickerKind::ResumeThread => " resume thread ",
             PickerKind::SelectModel => " select model ",
             PickerKind::LoginMethod | PickerKind::LoginProvider => " sign in ",
@@ -404,13 +426,18 @@ impl Picker {
             PickerKind::AgentSettings => " agent settings ",
             PickerKind::ProviderSettings => " providers ",
             PickerKind::Todo => " todo ",
+        };
+        if self.kind == PickerKind::SelectModel && !self.query.is_empty() {
+            format!("{title} - {}", self.query)
+        } else {
+            title.to_string()
         }
     }
 
     fn action_hint(&self) -> &'static str {
         match self.kind {
             PickerKind::ResumeThread => " ↑/↓ select   Enter resume   Esc cancel",
-            PickerKind::SelectModel => " ↑/↓ select   Enter choose   Esc cancel",
+            PickerKind::SelectModel => " type to filter   ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::LoginMethod | PickerKind::LoginProvider => {
                 " ↑/↓ select   Enter continue   Esc cancel"
             }
@@ -425,8 +452,8 @@ impl Picker {
     }
 }
 
+#[derive(Clone)]
 struct PickerItem {
-    /// The value acted on (thread id, model id, or MCP server name).
     value: String,
     /// Primary display text.
     label: String,
@@ -2735,11 +2762,7 @@ impl App {
         let entries = path_refs::search_files_sync(&self.project_root, &query, 30);
         self.path_hints = entries
             .into_iter()
-            .map(|(path, name, is_dir)| PathHintItem {
-                path,
-                name,
-                is_dir,
-            })
+            .map(|(path, name, is_dir)| PathHintItem { path, name, is_dir })
             .collect();
         self.path_hint_selected = 0;
     }
@@ -2862,7 +2885,10 @@ impl App {
         // If a turn is already in progress, enqueue the message instead
         if self.status == Status::Running {
             self.message_queue.push_back(text.clone());
-            self.note(&format!("⏳ message queued ({} in queue)", self.message_queue.len()));
+            self.note(&format!(
+                "⏳ message queued ({} in queue)",
+                self.message_queue.len()
+            ));
             return;
         }
         // Mid-prompt `/skill:<name>` token: dispatch to the skill, threading
@@ -3057,7 +3083,10 @@ impl App {
         if self.message_queue.is_empty() {
             return;
         }
-        let next = self.message_queue.pop_front().expect("checked non-empty above");
+        let next = self
+            .message_queue
+            .pop_front()
+            .expect("checked non-empty above");
         if !next.is_empty() {
             self.note(&format!(
                 "⏩ dequeuing next message ({} remaining)",
@@ -3156,7 +3185,8 @@ impl App {
         // to the session default when absent. Only forwarded in Plan so normal
         // turns keep an unchanged body.
         if self.run_mode == crate::core::agent::plan::RunMode::Plan {
-            body["run_mode"] = serde_json::to_value(self.run_mode).unwrap_or(serde_json::Value::Null);
+            body["run_mode"] =
+                serde_json::to_value(self.run_mode).unwrap_or(serde_json::Value::Null);
         }
         // Only an active `/goal` forces the model to stage a todo plan; a normal
         // turn leaves that to its own judgement. Forwarded only while the goal
@@ -3199,17 +3229,17 @@ impl App {
         // Persist metadata when snapshots, a goal, or plan mode are present; each
         // must survive restart/resume even in a non-git project (no snapshots).
         let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
-        if self.base_snapshot.is_none()
-            && self.goal.is_none()
-            && !planning
-            && self.todos.is_empty()
+        if self.base_snapshot.is_none() && self.goal.is_none() && !planning && self.todos.is_empty()
         {
             return None;
         }
         let mut meta = serde_json::Map::new();
         if let Some(base) = self.base_snapshot.as_ref() {
             meta.insert("base_snapshot".to_string(), serde_json::json!(base));
-            meta.insert("checkpoints".to_string(), serde_json::json!(self.checkpoints));
+            meta.insert(
+                "checkpoints".to_string(),
+                serde_json::json!(self.checkpoints),
+            );
         }
         if let Some(goal) = self.goal.as_ref() {
             meta.insert(
@@ -3526,7 +3556,10 @@ impl App {
                 } else {
                     ("✓", Style::new().green())
                 };
-                let lang = diff.is_some().then(|| self.diff_paths.remove(&id)).flatten();
+                let lang = diff
+                    .is_some()
+                    .then(|| self.diff_paths.remove(&id))
+                    .flatten();
                 // The resolved call row above already names the tool and file in
                 // past tense, so a successful "Applied N edit(s) to X" only
                 // repeats it; the diff is the informative part. Errors keep their
@@ -3666,7 +3699,9 @@ impl App {
     fn apply_subagent_event(&mut self, run_id: &str, name: &str, event: StreamEvent) {
         match event {
             StreamEvent::ToolCall {
-                id, name: tool, args,
+                id,
+                name: tool,
+                args,
             } => {
                 // Stored untruncated; the panel clamps it to the draw width.
                 let label = subagent_activity(&tool, &args);
@@ -3820,8 +3855,10 @@ impl App {
             // back to the terminal usage only for an upstream that reports
             // nothing until the end, so the receipt isn't blank.
             if self.turn_output_tokens == 0 {
-                self.turn_output_tokens =
-                    usage.as_ref().and_then(|u| u.completion_tokens).unwrap_or(0);
+                self.turn_output_tokens = usage
+                    .as_ref()
+                    .and_then(|u| u.completion_tokens)
+                    .unwrap_or(0);
             }
             let stats = turn_stats_line(
                 self.turn_prompt_tokens,
@@ -4021,7 +4058,10 @@ impl App {
                     self.system_marked(
                         GOAL_GLYPH,
                         Level::Good,
-                        &format!("goal achieved in {turns} turn(s), {}", fmt_duration(elapsed)),
+                        &format!(
+                            "goal achieved in {turns} turn(s), {}",
+                            fmt_duration(elapsed)
+                        ),
                     );
                     self.system_detail_text(&v.reason);
                     self.persist();
@@ -4575,7 +4615,10 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         "write" => format!("Writing {}", base(s("path"))),
         "edit" => format!("Editing {}", base(s("path"))),
         "dispatch_subagent" => format!("Dispatching subagent: {}", s("subagent_name")),
-        "await_subagent" => format!("Awaiting subagent: {}", subagent_name_from_run_id(s("run_id"))),
+        "await_subagent" => format!(
+            "Awaiting subagent: {}",
+            subagent_name_from_run_id(s("run_id"))
+        ),
         "create_subagent" => format!("Creating subagent: {}", s("name")),
         "list_subagents" => "Listing subagents".to_string(),
         "web_search" => {
@@ -4704,7 +4747,10 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         "write" => format!("Wrote {}", base(s("path"))),
         "edit" => format!("Edited {}", base(s("path"))),
         "dispatch_subagent" => format!("Dispatched subagent: {}", s("subagent_name")),
-        "await_subagent" => format!("Subagent {} returned", subagent_name_from_run_id(s("run_id"))),
+        "await_subagent" => format!(
+            "Subagent {} returned",
+            subagent_name_from_run_id(s("run_id"))
+        ),
         "create_subagent" => format!("Created subagent: {}", s("name")),
         "list_subagents" => "Listed subagents".to_string(),
         "web_search" => {
@@ -4969,7 +5015,12 @@ fn starting_call_lines(call: &mut StartingCall, frame: &str) -> Vec<Line<'static
             Some(path) if !path.is_empty() => format!("Preparing {}: {path}", call.name),
             _ => format!("Preparing {}", call.name),
         };
-        return vec![tool_row(frame, Style::new().cyan(), &label, Style::new().cyan().dim())];
+        return vec![tool_row(
+            frame,
+            Style::new().cyan(),
+            &label,
+            Style::new().cyan().dim(),
+        )];
     };
 
     let mut out = Vec::new();
@@ -4983,7 +5034,10 @@ fn starting_call_lines(call: &mut StartingCall, frame: &str) -> Vec<Line<'static
     ]));
 
     let start = call.preview.skipped;
-    let gutter = (start + tail.len()).to_string().len().max(STREAM_GUTTER_MIN);
+    let gutter = (start + tail.len())
+        .to_string()
+        .len()
+        .max(STREAM_GUTTER_MIN);
     if start > 0 {
         out.push(Line::from(vec![
             Span::styled("│ ", Style::new().dark_gray()),
@@ -6010,16 +6064,17 @@ async fn chat_loop<B: Backend>(
             }
         }
 
-
         // A key was submitted at the `/login` prompt: verify it off-loop. One at
         // a time - the prompt is read-only while `verifying`.
         if login_task.is_none() {
             if let Some((provider, key)) = app.login_submit.take() {
                 login_task = Some(tokio::spawn(async move {
-                    let definition = crate::core::cli::auth::provider_by_id(&provider)
-                        .ok_or_else(|| crate::core::cli::auth::LoginError::InvalidKey(
-                            "selected provider is unavailable".to_string(),
-                        ))?;
+                    let definition =
+                        crate::core::cli::auth::provider_by_id(&provider).ok_or_else(|| {
+                            crate::core::cli::auth::LoginError::InvalidKey(
+                                "selected provider is unavailable".to_string(),
+                            )
+                        })?;
                     crate::core::cli::auth::providers::LoginService
                         .login_with_api_key(&definition, &key)
                         .await
@@ -6366,7 +6421,11 @@ async fn resolve_front_ask(
     let plan_choice = (!cancelled
         && ask.request.questions.len() == 1
         && ask.request.questions[0].id == crate::core::agent::plan::PLAN_REVIEW_QUESTION_ID)
-        .then(|| ask.answers.first().and_then(|a| a.selected.first().cloned()))
+        .then(|| {
+            ask.answers
+                .first()
+                .and_then(|a| a.selected.first().cloned())
+        })
         .flatten();
     let outcome = if cancelled {
         Err(crate::core::agent::interaction::AskError::Cancelled)
@@ -6576,19 +6635,19 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         return;
     }
     match key.code {
-        KeyCode::Enter => match crate::core::cli::auth::providers::LoginService::sanitize_key(
-            &prompt.input,
-        ) {
-            Ok(key) => {
-                prompt.verifying = true;
-                prompt.error = None;
-                app.login_submit = Some((prompt.provider.clone(), key));
+        KeyCode::Enter => {
+            match crate::core::cli::auth::providers::LoginService::sanitize_key(&prompt.input) {
+                Ok(key) => {
+                    prompt.verifying = true;
+                    prompt.error = None;
+                    app.login_submit = Some((prompt.provider.clone(), key));
+                }
+                Err(e) => {
+                    prompt.input.clear();
+                    prompt.error = Some(e);
+                }
             }
-            Err(e) => {
-                prompt.input.clear();
-                prompt.error = Some(e);
-            }
-        },
+        }
         KeyCode::Backspace => {
             prompt.input.pop();
         }
@@ -6655,7 +6714,10 @@ async fn handle_key(
             }
             return;
         }
-        let pending = app.pending_queue.front_mut().expect("checked non-empty above");
+        let pending = app
+            .pending_queue
+            .front_mut()
+            .expect("checked non-empty above");
         let decision = match key.code {
             KeyCode::Up => {
                 pending.move_selection(-1);
@@ -6678,7 +6740,10 @@ async fn handle_key(
         if let Some(d) = decision {
             // Only the front request resolves here; any others stay queued and
             // surface on the next draw once this one is popped.
-            let pending = app.pending_queue.pop_front().expect("checked non-empty above");
+            let pending = app
+                .pending_queue
+                .pop_front()
+                .expect("checked non-empty above");
             // Only record denials: the tool row that follows an allow
             // already shows the call proceeded, so an "allowed" line is
             // pure noise once granted.
@@ -6703,11 +6768,19 @@ async fn handle_key(
     // act and close; the `/mcp` picker toggles the selected row in place.
     if let Some(picker) = app.picker.as_mut() {
         match key.code {
+            KeyCode::Char(ch) if picker.kind == PickerKind::SelectModel && !ctrl => {
+                picker.query.push(ch);
+                picker.refresh_model_items();
+            }
+            KeyCode::Backspace if picker.kind == PickerKind::SelectModel => {
+                picker.query.pop();
+                picker.refresh_model_items();
+            }
             KeyCode::Up | KeyCode::Char('k') => {
                 picker.armed_delete = None;
                 picker.selected = picker.selected.saturating_sub(1);
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down | KeyCode::Char('j') if !picker.items.is_empty() => {
                 picker.armed_delete = None;
                 picker.selected = (picker.selected + 1).min(picker.items.len() - 1);
             }
@@ -6805,7 +6878,8 @@ async fn handle_key(
                     use crate::core::agent::todo::Target;
                     let result = match code {
                         KeyCode::Char('x') => {
-                            apply_todo_mutation(app, |l| l.drop_target(Target::Task(&content))).await
+                            apply_todo_mutation(app, |l| l.drop_target(Target::Task(&content)))
+                                .await
                         }
                         KeyCode::Char('r') => {
                             apply_todo_mutation(app, |l| l.rm(Target::Task(&content))).await
@@ -6820,8 +6894,7 @@ async fn handle_key(
                         app.picker = None;
                     } else if let Some(picker) = app.picker.as_mut() {
                         picker.items = build_todo_items(&app.todos);
-                        picker.selected =
-                            picker.selected.min(picker.items.len().saturating_sub(1));
+                        picker.selected = picker.selected.min(picker.items.len().saturating_sub(1));
                     }
                 }
             }
@@ -6846,6 +6919,8 @@ async fn handle_key(
                     Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
                 }
             }
+            KeyCode::Enter if picker.kind == PickerKind::SelectModel && picker.items.is_empty() => {
+            }
             KeyCode::Enter => {
                 let kind = picker.kind;
                 let value = picker.items[picker.selected].value.clone();
@@ -6860,12 +6935,12 @@ async fn handle_key(
                         _ => app.note("selected sign-in method is unavailable"),
                     },
                     PickerKind::LoginProvider => open_login_method_picker(app, &value),
-                    PickerKind::ToggleMcp => {},
+                    PickerKind::ToggleMcp => {}
                     PickerKind::RewindMessage => {
                         if let Ok(idx) = value.parse::<usize>() {
                             open_rewind_scope(app, idx);
                         }
-                    },
+                    }
                     PickerKind::RewindScope => {
                         if let Some(idx) = app.rewind_target.take() {
                             rewind_to(app, idx, value == "workspace");
@@ -7360,12 +7435,14 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/plan",
         hint: "[exit|text]",
-        description: "Enter read-only plan mode, optionally seeding it with a message; /plan exit to leave",
+        description:
+            "Enter read-only plan mode, optionally seeding it with a message; /plan exit to leave",
     },
     SlashCommand {
         name: "/todo",
         hint: "[add [phase|] text | clear]",
-        description: "Open the todo editor (bare), /todo add ... to append, /todo clear to drop all",
+        description:
+            "Open the todo editor (bare), /todo add ... to append, /todo clear to drop all",
     },
     SlashCommand {
         name: "/threads",
@@ -7443,7 +7520,10 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("Alt+Enter / Ctrl-J", "Insert a newline"),
     ("Esc / Ctrl-C", "Cancel the running turn"),
     ("Esc Esc", "Rewind to an earlier message"),
-    ("↑/↓", "Recall sent messages (scrolls while the input has text)"),
+    (
+        "↑/↓",
+        "Recall sent messages (scrolls while the input has text)",
+    ),
     ("PgUp/PgDn", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
@@ -7765,10 +7845,15 @@ enum AgentSettingKind {
     /// Exact-match choice: Enter writes one of `options`, cleared field
     /// unsets. Covers the `read-only | deny | allow` and `always | relevance`
     /// toggles that hand-editing agent.toml previously required.
-    Enum { options: &'static [&'static str], default: &'static str },
+    Enum {
+        options: &'static [&'static str],
+        default: &'static str,
+    },
     /// Boolean toggle: Enter writes a TOML boolean (the Enum kind would emit a
     /// quoted string). Unset clears the key so its default applies.
-    Bool { default: bool },
+    Bool {
+        default: bool,
+    },
 }
 
 /// Sentinel row value in the `/settings` picker that opens the provider
@@ -7780,19 +7865,28 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         key: "context_window",
         label: "context_window",
         desc: "context limit in tokens",
-        kind: AgentSettingKind::Int { default: Some(128000), min: 1 },
+        kind: AgentSettingKind::Int {
+            default: Some(128000),
+            min: 1,
+        },
     },
     AgentSettingDef {
         key: "compaction_reserve_tokens",
         label: "compaction_reserve_tokens",
         desc: "headroom kept free before compaction",
-        kind: AgentSettingKind::Int { default: Some(16384), min: 0 },
+        kind: AgentSettingKind::Int {
+            default: Some(16384),
+            min: 0,
+        },
     },
     AgentSettingDef {
         key: "max_tokens",
         label: "max_tokens",
         desc: "cap on tokens generated per response (omitted when unset)",
-        kind: AgentSettingKind::Int { default: None, min: 1 },
+        kind: AgentSettingKind::Int {
+            default: None,
+            min: 1,
+        },
     },
     AgentSettingDef {
         key: "max_parallel_subagents",
@@ -7815,7 +7909,10 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         key: "budget.max_tokens",
         label: "budget.max_tokens",
         desc: "token-spend ceiling per run; the only cap on run length",
-        kind: AgentSettingKind::Int { default: Some(128000), min: 0 },
+        kind: AgentSettingKind::Int {
+            default: Some(128000),
+            min: 0,
+        },
     },
     AgentSettingDef {
         key: "tools.default",
@@ -8359,6 +8456,8 @@ fn open_settings_screen(app: &mut App) {
     app.picker = Some(Picker {
         kind: PickerKind::AgentSettings,
         items: build_agent_settings_items(&toml_path),
+        all_items: Vec::new(),
+        query: String::new(),
         selected: 0,
         armed_delete: None,
         provider: None,
@@ -8412,7 +8511,9 @@ fn open_provider_settings(app: &mut App) {
 /// Keyboard for the `/settings` edit dock: chars/backspace edit the field,
 /// Enter validates and writes (empty clears the key), Esc cancels. Mirrors
 /// `handle_login_key`, minus the secret/verify machinery.
-fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c'))) && app.settings_prompt.is_some()
+fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+    if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c')))
+        && app.settings_prompt.is_some()
     {
         app.settings_prompt = None;
         return;
@@ -8440,7 +8541,8 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.co
                                 return;
                             }
                             Err(_) => {
-                                prompt.error = Some(format!("'{}' is not an integer", prompt.input));
+                                prompt.error =
+                                    Some(format!("'{}' is not an integer", prompt.input));
                                 return;
                             }
                         }
@@ -8471,9 +8573,7 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.co
                     } else if let Ok(b) = input.parse::<bool>() {
                         Some(toml_edit::value(b))
                     } else {
-                        prompt.error = Some(format!(
-                            "must be true or false (default: {default})"
-                        ));
+                        prompt.error = Some(format!("must be true or false (default: {default})"));
                         return;
                     }
                 }
@@ -8795,10 +8895,7 @@ const TODO_KEEP_CLOSED_TURNS: u32 = 2;
 async fn clear_todos(app: &mut App) {
     // `Target::All` clears unconditionally; the Result exists for the
     // unknown-task and unknown-phase targets.
-    let _ = apply_todo_mutation(app, |list| {
-        list.rm(crate::core::agent::todo::Target::All)
-    })
-    .await;
+    let _ = apply_todo_mutation(app, |list| list.rm(crate::core::agent::todo::Target::All)).await;
     app.last_todo_reminder = None;
     app.turns_since_todos_closed = 0;
 }
@@ -8859,6 +8956,8 @@ fn open_todo_picker(app: &mut App) {
     app.picker = Some(Picker {
         kind: PickerKind::Todo,
         items: build_todo_items(&app.todos),
+        all_items: Vec::new(),
+        query: String::new(),
         selected: 0,
         armed_delete: None,
         provider: None,
@@ -8882,10 +8981,7 @@ async fn todo_command(app: &mut App, arg: &str) {
             app.note("no todos to clear");
             return;
         }
-        match apply_todo_mutation(app, |list| {
-            list.rm(crate::core::agent::todo::Target::All)
-        })
-        .await
+        match apply_todo_mutation(app, |list| list.rm(crate::core::agent::todo::Target::All)).await
         {
             Ok(()) => app.note("cleared all todos"),
             Err(e) => app.note(&format!("todo clear failed: {e}")),
@@ -9202,7 +9298,12 @@ fn open_thread_picker(app: &mut App) {
                     let label =
                         thread_display_name(&base, &id, t.get("title").and_then(|v| v.as_str()));
                     let hint = Some(id.chars().take(8).collect());
-                    Some(PickerItem { value: id, label, hint, checkbox: None })
+                    Some(PickerItem {
+                        value: id,
+                        label,
+                        hint,
+                        checkbox: None,
+                    })
                 })
                 .collect::<Vec<_>>();
             if items.is_empty() {
@@ -9211,6 +9312,8 @@ fn open_thread_picker(app: &mut App) {
                 app.picker = Some(Picker {
                     kind: PickerKind::ResumeThread,
                     items,
+                    all_items: Vec::new(),
+                    query: String::new(),
                     selected: 0,
                     armed_delete: None,
                     provider: None,
@@ -9251,7 +9354,7 @@ async fn open_model_picker(app: &mut App) {
         );
     }
     let selected = pairs.iter().position(|(_, m)| *m == app.model).unwrap_or(0);
-    let items = pairs
+    let items: Vec<PickerItem> = pairs
         .into_iter()
         .map(|(provider, model)| PickerItem {
             label: format!("{provider} / {model}"),
@@ -9262,7 +9365,9 @@ async fn open_model_picker(app: &mut App) {
         .collect();
     app.picker = Some(Picker {
         kind: PickerKind::SelectModel,
+        all_items: items.clone(),
         items,
+        query: String::new(),
         selected,
         armed_delete: None,
         provider: None,
@@ -9291,6 +9396,8 @@ fn open_mcp_picker(app: &mut App) {
         items,
         selected: 0,
         armed_delete: None,
+        all_items: Vec::new(),
+        query: String::new(),
         provider: None,
     });
 }
@@ -9317,6 +9424,8 @@ fn open_login_picker(app: &mut App) {
         kind: PickerKind::LoginProvider,
         items,
         selected: 0,
+        all_items: Vec::new(),
+        query: String::new(),
         provider: None,
     });
 }
@@ -9345,6 +9454,8 @@ fn open_login_method_picker(app: &mut App, provider: &str) {
         kind: PickerKind::LoginMethod,
         items,
         selected: 0,
+        all_items: Vec::new(),
+        query: String::new(),
         provider: Some(definition.id.to_string()),
     });
 }
@@ -9363,7 +9474,9 @@ fn open_account_login_with_begin(
     let Some(provider) =
         crate::core::cli::auth::account::AccountProvider::from_credential_provider(provider)
     else {
-        return app.note(&format!("{provider} sign-in failed: selected account is unavailable"));
+        return app.note(&format!(
+            "{provider} sign-in failed: selected account is unavailable"
+        ));
     };
     let provider_id = provider.credential_provider();
     match begin(provider) {
@@ -9467,10 +9580,7 @@ fn account_login_error_message(provider: &str) -> String {
     format!("{provider} sign-in failed: could not complete browser sign-in")
 }
 
-fn login_error_message(
-    provider: &str,
-    error: crate::core::cli::auth::LoginError,
-) -> String {
+fn login_error_message(provider: &str, error: crate::core::cli::auth::LoginError) -> String {
     let message = match error {
         crate::core::cli::auth::LoginError::InvalidKey(message)
         | crate::core::cli::auth::LoginError::Unavailable(message) => message,
@@ -9552,7 +9662,11 @@ fn open_config_screen(app: &mut App) {
         providers
             .into_iter()
             .map(|c| {
-                let key = if c.api_key.is_some() { "key set" } else { "no key" };
+                let key = if c.api_key.is_some() {
+                    "key set"
+                } else {
+                    "no key"
+                };
                 let base = c.base_url.as_deref().unwrap_or("default url");
                 PickerItem {
                     label: format!("{key}  {base}  {} model(s)", c.models.len()),
@@ -9566,6 +9680,8 @@ fn open_config_screen(app: &mut App) {
     app.picker = Some(Picker {
         kind: PickerKind::ViewConfig,
         items,
+        all_items: Vec::new(),
+        query: String::new(),
         selected: 0,
         armed_delete: None,
         provider: None,
@@ -9709,6 +9825,8 @@ fn open_rewind_picker(app: &mut App) {
     app.picker = Some(Picker {
         kind: PickerKind::RewindMessage,
         items,
+        all_items: Vec::new(),
+        query: String::new(),
         selected,
         armed_delete: None,
         provider: None,
@@ -9736,6 +9854,8 @@ fn open_rewind_scope(app: &mut App, user_index: usize) {
     app.picker = Some(Picker {
         kind: PickerKind::RewindScope,
         items,
+        all_items: Vec::new(),
+        query: String::new(),
         selected: 0,
         armed_delete: None,
         provider: None,
@@ -9789,7 +9909,10 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     // can re-submit (or edit) it after the rewind. Image-only content yields
     // no text.
     let fill = user_content_parts(
-        app.history.get(cut).and_then(|m| m.get("content")).unwrap_or(&serde_json::Value::Null),
+        app.history
+            .get(cut)
+            .and_then(|m| m.get("content"))
+            .unwrap_or(&serde_json::Value::Null),
     )
     .0;
 
@@ -9913,7 +10036,8 @@ fn rebuild_transcript(app: &mut App) {
     for m in &history {
         let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("");
         if role == "user" {
-            let (text, images) = user_content_parts(m.get("content").unwrap_or(&serde_json::Value::Null));
+            let (text, images) =
+                user_content_parts(m.get("content").unwrap_or(&serde_json::Value::Null));
             if text.is_empty() && images.is_empty() {
                 continue;
             }
@@ -9949,7 +10073,10 @@ async fn apply_resume(app: &mut App, target: &ResumeTarget) {
 /// snapshots, goal, and model. Only user/assistant text is replayed (tool calls
 /// are not persisted as messages).
 async fn load_thread(app: &mut App, thread: &serde_json::Value) {
-    let full_id = thread.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+    let full_id = thread
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
 
     let (messages, skipped) = match super::cli_read_messages_lenient(&app.agent_dir, full_id) {
         Ok(m) => m,
@@ -10323,12 +10450,12 @@ fn draw(f: &mut Frame, app: &mut App) {
     // between the rule and the prompt. A zero-length slot collapses away, so a
     // session with neither todos nor subagents renders exactly as before.
     let raw = Layout::vertical([
-        Constraint::Length(1),                 // 0: header
-        Constraint::Min(1),                    // 1: body
-        Constraint::Length(panel_h),           // 2: status panel
-        Constraint::Length(1),                 // 3: separator rule
-        Constraint::Length(input_h),           // 4: input
-        Constraint::Length(1),                 // 5: path + key hints
+        Constraint::Length(1),       // 0: header
+        Constraint::Min(1),          // 1: body
+        Constraint::Length(panel_h), // 2: status panel
+        Constraint::Length(1),       // 3: separator rule
+        Constraint::Length(input_h), // 4: input
+        Constraint::Length(1),       // 5: path + key hints
     ])
     .split(f.area());
     let panel_area = raw[2];
@@ -10794,7 +10921,9 @@ fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
     let dim = Style::new().dark_gray();
     let max = width.max(1) as usize;
     let definition = crate::core::cli::auth::provider_by_id(&prompt.provider);
-    let name = definition.as_ref().map_or("provider", |provider| provider.name);
+    let name = definition
+        .as_ref()
+        .map_or("provider", |provider| provider.name);
     let keys_url = definition
         .as_ref()
         .map_or("", |provider| provider.api_key.keys_url);
@@ -11230,7 +11359,12 @@ fn draw_path_hints(
 /// Permission prompt docked above the input: names the tool, capability, and
 /// target path, then an arrow-navigable option list (Enter confirms the
 /// highlighted choice; `y`/`a`/`n` still work as shortcuts).
-fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending, queue_len: usize) {
+fn draw_permission(
+    f: &mut Frame,
+    area: ratatui::layout::Rect,
+    pending: &Pending,
+    queue_len: usize,
+) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
     let title = if queue_len > 1 {
@@ -11322,8 +11456,8 @@ fn draw_picker(
             .get(picker.selected)
             .and_then(|it| AGENT_SETTINGS.iter().find(|d| d.key == it.value))
         {
-            let current = current_agent_value(toml_path, def.key)
-                .unwrap_or_else(|| "unset".to_string());
+            let current =
+                current_agent_value(toml_path, def.key).unwrap_or_else(|| "unset".to_string());
             let meta = match def.kind {
                 AgentSettingKind::Int { default, min } => {
                     let d = default
@@ -11424,7 +11558,10 @@ fn agents_column(
     let (shown, hidden) = if panels.len() <= body {
         (panels.len(), 0)
     } else {
-        (body.saturating_sub(1), panels.len() - body.saturating_sub(1))
+        (
+            body.saturating_sub(1),
+            panels.len() - body.saturating_sub(1),
+        )
     };
     // Whatever is left over after one line each is spread evenly as detail.
     let per = (body - shown)
@@ -11476,7 +11613,10 @@ fn agents_column(
         // structured briefs whose first line is the summary.
         let brief = panel.task.lines().find(|l| !l.trim().is_empty());
         let activity = match panel.active.as_mut() {
-            Some(call) => Some((format!("{frame} {}", call.activity_label()), Style::new().cyan().dim())),
+            Some(call) => Some((
+                format!("{frame} {}", call.activity_label()),
+                Style::new().cyan().dim(),
+            )),
             None => panel
                 .calls
                 .last()
@@ -11782,7 +11922,10 @@ fn todo_pin(todos: &crate::core::agent::todo::TodoList) -> Line<'static> {
         };
         spans.push(Span::styled(label, Style::new().dim()));
     }
-    spans.push(Span::styled("   /todo".to_string(), Style::new().dark_gray()));
+    spans.push(Span::styled(
+        "   /todo".to_string(),
+        Style::new().dark_gray(),
+    ));
     Line::from(spans)
 }
 
@@ -11905,13 +12048,7 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
             let left_w = (width.saturating_sub(PANEL_GUTTER)) / 2;
             let right_w = width.saturating_sub(left_w + PANEL_GUTTER);
             let left = todo_column(&app.todos, left_w, rows);
-            let right = agents_column(
-                &mut app.subagents,
-                context_window,
-                right_w,
-                rows,
-                frame,
-            );
+            let right = agents_column(&mut app.subagents, context_window, right_w, rows, frame);
             join_columns(left, right, left_w)
         }
     }
@@ -11925,16 +12062,17 @@ const MAX_INPUT_ROWS: u16 = 8;
 /// editing, plus one row of air above the dock. The box is borderless, so the
 /// two rows this used to add on top of its content were simply blank.
 fn input_box_height(app: &App, width: u16) -> u16 {
-    let content = if app.picker.is_none() && !(app.status == Status::Running && app.input.is_empty()) {
-        let inner = width.saturating_sub(2).max(1);
-        let rows = Paragraph::new(input_content_lines(&app.input, app.cursor))
-            .wrap(Wrap { trim: false })
-            .line_count(inner)
-            .max(1) as u16;
-        rows.min(MAX_INPUT_ROWS)
-    } else {
-        1
-    };
+    let content =
+        if app.picker.is_none() && !(app.status == Status::Running && app.input.is_empty()) {
+            let inner = width.saturating_sub(2).max(1);
+            let rows = Paragraph::new(input_content_lines(&app.input, app.cursor))
+                .wrap(Wrap { trim: false })
+                .line_count(inner)
+                .max(1) as u16;
+            rows.min(MAX_INPUT_ROWS)
+        } else {
+            1
+        };
     content + 1
 }
 
@@ -12184,10 +12322,13 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
                 ],
             );
             if queue_count > 0 {
-                s.insert(0, Span::styled(
-                    format!("⏳ Queued ({queue_count})  "),
-                    Style::new().yellow().bold(),
-                ));
+                s.insert(
+                    0,
+                    Span::styled(
+                        format!("⏳ Queued ({queue_count})  "),
+                        Style::new().yellow().bold(),
+                    ),
+                );
             }
             s
         }
@@ -12200,10 +12341,13 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
             // lands in the same column as the other states.
             let mut s = vec![Span::raw(" ")];
             if queue_count > 0 {
-                s.insert(0, Span::styled(
-                    format!("⏳ Queued ({queue_count})  "),
-                    Style::new().yellow().bold(),
-                ));
+                s.insert(
+                    0,
+                    Span::styled(
+                        format!("⏳ Queued ({queue_count})  "),
+                        Style::new().yellow().bold(),
+                    ),
+                );
             }
             s
         }
@@ -12223,7 +12367,6 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
 #[cfg(test)]
 mod tests {
     use super::SessionLimits;
-    use super::{journal, DisplayEntry};
     use super::{
         age_closed_todos, apply_resume, assistant_is_awaiting_user_answer, brand, build_user_message,
         clipboard_path,
@@ -12262,7 +12405,6 @@ mod tests {
         Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
         MouseEventKind,
     };
-    use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
     use ratatui::{
         style::{Color, Modifier, Style},
@@ -12273,6 +12415,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
+
 
     /// A bare key press with no modifiers.
     fn key(code: KeyCode) -> KeyEvent {
@@ -12475,7 +12618,10 @@ mod tests {
         let mut app = test_app();
         run_command(&mut app, "update").await;
         assert!(app.update_requested, "the loop should pick up the request");
-        assert!(transcript_text(&app).contains("downloading"), "no progress note");
+        assert!(
+            transcript_text(&app).contains("downloading"),
+            "no progress note"
+        );
 
         // A second /update while the first is still downloading must not queue a
         // concurrent install (two processes rewriting the same binary).
@@ -12501,7 +12647,10 @@ mod tests {
         assert!(!app.update_installing);
         let text = transcript_text(&app);
         assert!(text.contains("0.8.4-10 -> 0.8.4-11"), "{text}");
-        assert!(text.contains("restart"), "must say the swap needs a restart: {text}");
+        assert!(
+            text.contains("restart"),
+            "must say the swap needs a restart: {text}"
+        );
     }
 
     #[test]
@@ -12607,8 +12756,14 @@ mod tests {
                 .to_string()
         };
         let (w, n) = (table_row(&wide), table_row(&narrow));
-        assert!(w.chars().count() > n.chars().count(), "table did not reflow: {w:?} vs {n:?}");
-        assert!(n.chars().count() <= 46, "table overflows the narrow frame: {n:?}");
+        assert!(
+            w.chars().count() > n.chars().count(),
+            "table did not reflow: {w:?} vs {n:?}"
+        );
+        assert!(
+            n.chars().count() <= 46,
+            "table overflows the narrow frame: {n:?}"
+        );
     }
 
     /// The boxed diff panel is re-drawn at the current width, so its right
@@ -12636,11 +12791,17 @@ mod tests {
         let wide = border_width(&render_rows(&mut app, 100, 24));
         let narrow_rows = render_rows(&mut app, 50, 24);
         let narrow = border_width(&narrow_rows);
-        assert!(narrow < wide, "panel kept its old width: {narrow} vs {wide}");
+        assert!(
+            narrow < wide,
+            "panel kept its old width: {narrow} vs {wide}"
+        );
         assert!(narrow <= 50, "panel overflows the frame: {narrow}");
         // Every panel row still closes inside the frame, so the box reads as a box.
         for row in narrow_rows.iter().filter(|r| r.contains('│')) {
-            assert!(row.trim_end().chars().count() <= 50, "row overflows: {row:?}");
+            assert!(
+                row.trim_end().chars().count() <= 50,
+                "row overflows: {row:?}"
+            );
         }
     }
 
@@ -13043,8 +13204,6 @@ mod tests {
         }
     }
 
-
-
     #[test]
     fn always_label_is_command_scoped_for_exec() {
         assert_eq!(
@@ -13082,7 +13241,10 @@ mod tests {
         let preview = p.diff_preview(60);
         assert!(preview.len() >= 4, "boxed diff expected, got {preview:?}");
         let text: String = preview.iter().map(line_text).collect();
-        assert!(text.contains('┌') && text.contains('┘'), "no box frame: {text}");
+        assert!(
+            text.contains('┌') && text.contains('┘'),
+            "no box frame: {text}"
+        );
         assert!(text.contains("+ hi"), "diff content missing: {text}");
     }
 
@@ -13338,10 +13500,7 @@ mod tests {
 
         route_paste_event(&mut app, Event::Paste("pasted answer".into()));
 
-        assert_eq!(
-            app.ask_queue.front().unwrap().custom_input,
-            "pasted answer"
-        );
+        assert_eq!(app.ask_queue.front().unwrap().custom_input, "pasted answer");
         assert!(app.input.is_empty(), "paste leaked into chat composer");
 
         press_ask(&mut app, &registry, KeyCode::Enter).await;
@@ -13547,9 +13706,7 @@ mod tests {
     #[test]
     fn strip_system_xml_tags_removes_system_blocks() {
         assert_eq!(
-            strip_system_xml_tags(
-                "answer<system-notice>internal nudge</system-notice>tail"
-            ),
+            strip_system_xml_tags("answer<system-notice>internal nudge</system-notice>tail"),
             "answertail"
         );
     }
@@ -13557,15 +13714,10 @@ mod tests {
     #[test]
     fn strip_system_xml_tags_removes_multiline_and_unterminated() {
         assert_eq!(
-            strip_system_xml_tags(
-                "a<system-directive>\nline one\nline two</system-directive>b"
-            ),
+            strip_system_xml_tags("a<system-directive>\nline one\nline two</system-directive>b"),
             "ab"
         );
-        assert_eq!(
-            strip_system_xml_tags("a<system-notice>never closed"),
-            "a"
-        );
+        assert_eq!(strip_system_xml_tags("a<system-notice>never closed"), "a");
     }
 
     #[test]
@@ -13752,8 +13904,14 @@ mod tests {
                 Some(since - super::THOUGHT_FOR_TTL - std::time::Duration::from_secs(1));
         }
         let stale = render(&mut app);
-        assert!(stale.contains("[working]"), "stale should be [working]: {stale}");
-        assert!(!stale.contains("[thought for"), "stale thought-for: {stale}");
+        assert!(
+            stale.contains("[working]"),
+            "stale should be [working]: {stale}"
+        );
+        assert!(
+            !stale.contains("[thought for"),
+            "stale thought-for: {stale}"
+        );
     }
 
     #[test]
@@ -13782,7 +13940,10 @@ mod tests {
         };
 
         let collapsed = render(&mut app);
-        assert!(!collapsed.contains("secret plan line"), "collapsed: {collapsed}");
+        assert!(
+            !collapsed.contains("secret plan line"),
+            "collapsed: {collapsed}"
+        );
         assert!(collapsed.contains("reasoning (1 line)"));
 
         app.toggle_regions();
@@ -13841,7 +14002,9 @@ mod tests {
     fn toggle_expands_and_collapses_all_regions_at_once() {
         let mut app = test_app();
         // Two reasoning blocks and two tool groups interleaved across turns.
-        app.apply(StreamEvent::Token { text: "<think>a</think>".into() });
+        app.apply(StreamEvent::Token {
+            text: "<think>a</think>".into(),
+        });
         app.apply(StreamEvent::ToolCall {
             id: "c1".into(),
             name: "bash".into(),
@@ -13853,7 +14016,9 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        app.apply(StreamEvent::Token { text: "<think>b</think>".into() });
+        app.apply(StreamEvent::Token {
+            text: "<think>b</think>".into(),
+        });
         app.apply(StreamEvent::ToolCall {
             id: "c2".into(),
             name: "bash".into(),
@@ -13930,7 +14095,11 @@ mod tests {
     #[test]
     fn group_summary_counts_and_pluralizes() {
         assert_eq!(
-            group_summary(&[("memory note", true), ("skill", true), ("memory note", true)]),
+            group_summary(&[
+                ("memory note", true),
+                ("skill", true),
+                ("memory note", true)
+            ]),
             "Read 2 memory notes, 1 skill"
         );
         assert_eq!(
@@ -14069,7 +14238,10 @@ mod tests {
             tool_activity("bash", &json!({ "command": long })),
             format!("Executing: {long}")
         );
-        assert_eq!(tool_activity("grep", &json!({ "pattern": "foo" })), "Searching");
+        assert_eq!(
+            tool_activity("grep", &json!({ "pattern": "foo" })),
+            "Searching"
+        );
         assert_eq!(
             tool_activity("read", &json!({ "path": "src/main.rs" })),
             "Reading main.rs"
@@ -14093,7 +14265,10 @@ mod tests {
             tool_finished("bash", &json!({ "command": long })),
             format!("Ran: {long}")
         );
-        assert_eq!(tool_finished("grep", &json!({ "pattern": "foo" })), "Searched");
+        assert_eq!(
+            tool_finished("grep", &json!({ "pattern": "foo" })),
+            "Searched"
+        );
         assert_eq!(
             tool_finished("read", &json!({ "path": "src/main.rs" })),
             "Read main.rs"
@@ -14132,8 +14307,14 @@ mod tests {
             tool_finished("web_fetch", &json!({ "url": "https://example.com" })),
             "Fetched: https://example.com"
         );
-        assert_eq!(tool_activity("ask", &json!({ "questions": [] })), "Asking a question");
-        assert_eq!(tool_finished("ask", &json!({ "questions": [] })), "Asked a question");
+        assert_eq!(
+            tool_activity("ask", &json!({ "questions": [] })),
+            "Asking a question"
+        );
+        assert_eq!(
+            tool_finished("ask", &json!({ "questions": [] })),
+            "Asked a question"
+        );
     }
 
     #[test]
@@ -14164,7 +14345,10 @@ mod tests {
             ),
             "Planning 1 phase"
         );
-        assert_eq!(tool_activity("todo", &json!({ "op": "view" })), "Checking todos");
+        assert_eq!(
+            tool_activity("todo", &json!({ "op": "view" })),
+            "Checking todos"
+        );
     }
 
     fn line_text(line: &ratatui::text::Line) -> String {
@@ -14365,7 +14549,10 @@ mod tests {
         // Queued for the loop to run off-thread; NOT captured synchronously here.
         assert!(app.base_requested);
         assert!(app.thread_id.is_some());
-        assert!(app.base_snapshot.is_none(), "no inline git on the render thread");
+        assert!(
+            app.base_snapshot.is_none(),
+            "no inline git on the render thread"
+        );
         assert_eq!(app.snap_queue.len(), 1);
         assert!(matches!(app.snap_queue.front(), Some(SnapshotJob::Base)));
         // Idempotent: a second submit does not re-queue the base.
@@ -14384,14 +14571,19 @@ mod tests {
         let mut app = test_app();
         app.repo_root = Some(std::path::PathBuf::from("/tmp/repo"));
         app.thread_id = Some("t1".into());
-        app.history.push(json!({ "role": "user", "content": "do it" }));
+        app.history
+            .push(json!({ "role": "user", "content": "do it" }));
         // No base armed yet -> no checkpoint.
         app.checkpoint_turn();
         assert!(app.snap_queue.is_empty());
         app.base_requested = true;
         app.checkpoint_turn();
         match app.snap_queue.front() {
-            Some(SnapshotJob::Checkpoint { user_index, preview, .. }) => {
+            Some(SnapshotJob::Checkpoint {
+                user_index,
+                preview,
+                ..
+            }) => {
                 assert_eq!(*user_index, 0);
                 assert_eq!(preview, "do it");
             }
@@ -14492,7 +14684,11 @@ mod tests {
             changed: vec![std::path::PathBuf::from("/tmp/repo/src/a.rs")],
         };
         let (_, parent, msg, _, changed) = app.resolve_snapshot(&job).unwrap();
-        assert_eq!(parent.as_deref(), Some("basesha"), "first checkpoint parents the base");
+        assert_eq!(
+            parent.as_deref(),
+            Some("basesha"),
+            "first checkpoint parents the base"
+        );
         assert_eq!(msg, "jan agent turn 1");
         assert_eq!(changed, vec![std::path::PathBuf::from("src/a.rs")]);
 
@@ -14524,11 +14720,23 @@ mod tests {
             return;
         }
         std::fs::write(root.join("a.txt"), "one\n").unwrap();
-        Command::new("git").args(["-C", &r, "add", "-A"]).status().unwrap();
+        Command::new("git")
+            .args(["-C", &r, "add", "-A"])
+            .status()
+            .unwrap();
         Command::new("git")
             .args([
-                "-C", &r, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m",
-                "init", "--no-gpg-sign",
+                "-C",
+                &r,
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-q",
+                "-m",
+                "init",
+                "--no-gpg-sign",
             ])
             .status()
             .unwrap();
@@ -14554,15 +14762,27 @@ mod tests {
     #[test]
     fn subagent_tool_rows_have_readable_labels() {
         let dispatch = json!({ "subagent_name": "reviewer", "description": "x" });
-        assert_eq!(tool_activity("dispatch_subagent", &dispatch), "Dispatching subagent: reviewer");
-        assert_eq!(tool_finished("dispatch_subagent", &dispatch), "Dispatched subagent: reviewer");
+        assert_eq!(
+            tool_activity("dispatch_subagent", &dispatch),
+            "Dispatching subagent: reviewer"
+        );
+        assert_eq!(
+            tool_finished("dispatch_subagent", &dispatch),
+            "Dispatched subagent: reviewer"
+        );
         let await_args = json!({ "run_id": "sub-sycl-cuda-gap-explorer-1" });
         assert_eq!(
             tool_activity("await_subagent", &await_args),
             "Awaiting subagent: sycl-cuda-gap-explorer"
         );
-        assert_eq!(tool_activity("list_subagents", &json!({})), "Listing subagents");
-        assert_eq!(tool_activity("create_subagent", &json!({"name": "r"})), "Creating subagent: r");
+        assert_eq!(
+            tool_activity("list_subagents", &json!({})),
+            "Listing subagents"
+        );
+        assert_eq!(
+            tool_activity("create_subagent", &json!({"name": "r"})),
+            "Creating subagent: r"
+        );
     }
 
     #[test]
@@ -14587,8 +14807,12 @@ mod tests {
                     .collect::<String>()
             })
             .collect();
-        let prose = rows.iter().position(|r| r.contains("wait for the subagent"));
-        let awaiting = rows.iter().position(|r| r.contains("Awaiting subagent: reviewer"));
+        let prose = rows
+            .iter()
+            .position(|r| r.contains("wait for the subagent"));
+        let awaiting = rows
+            .iter()
+            .position(|r| r.contains("Awaiting subagent: reviewer"));
         let (prose, awaiting) = (prose.expect("prose row"), awaiting.expect("awaiting row"));
         assert!(
             awaiting > prose,
@@ -14621,7 +14845,8 @@ mod tests {
         });
         let rows = render(&mut app);
         assert!(
-            rows.iter().any(|r| r.contains("│") && r.contains("Preparing write")),
+            rows.iter()
+                .any(|r| r.contains("│") && r.contains("Preparing write")),
             "throbber must show with the tool-row gutter while args stream:\n{}",
             rows.join("\n")
         );
@@ -14663,9 +14888,14 @@ mod tests {
         press_esc(&mut app).await;
         assert_eq!(app.status, Status::Idle);
         let rows = render_rows(&mut app, 60, 30);
-        let spinning: Vec<&String> =
-            rows.iter().filter(|r| SPINNER.iter().any(|f| r.contains(f))).collect();
-        assert!(spinning.is_empty(), "throbber survived cancel: {spinning:?}");
+        let spinning: Vec<&String> = rows
+            .iter()
+            .filter(|r| SPINNER.iter().any(|f| r.contains(f)))
+            .collect();
+        assert!(
+            spinning.is_empty(),
+            "throbber survived cancel: {spinning:?}"
+        );
     }
 
     #[tokio::test]
@@ -14680,9 +14910,14 @@ mod tests {
         assert!(!app.awaiting.is_empty());
         press_esc(&mut app).await;
         let rows = render_rows(&mut app, 60, 30);
-        let spinning: Vec<&String> =
-            rows.iter().filter(|r| SPINNER.iter().any(|f| r.contains(f))).collect();
-        assert!(spinning.is_empty(), "throbber survived cancel: {spinning:?}");
+        let spinning: Vec<&String> = rows
+            .iter()
+            .filter(|r| SPINNER.iter().any(|f| r.contains(f)))
+            .collect();
+        assert!(
+            spinning.is_empty(),
+            "throbber survived cancel: {spinning:?}"
+        );
     }
 
     #[tokio::test]
@@ -14704,7 +14939,10 @@ mod tests {
         handle_key(&mut app, esc, &registry, &mut current, &mcp_servers).await;
 
         assert_eq!(app.status, Status::Idle, "Esc must end the run");
-        assert!(app.starting.is_empty(), "Esc must clear the streaming throbber");
+        assert!(
+            app.starting.is_empty(),
+            "Esc must clear the streaming throbber"
+        );
         let rows = render_rows(&mut app, 60, 30);
         assert!(
             !rows.iter().any(|r| r.contains("Preparing write")),
@@ -14718,7 +14956,14 @@ mod tests {
         let mcp_servers: crate::core::state::SharedMcpServers =
             Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let mut current: Option<CurrentRun> = None;
-        handle_key(app, KeyEvent::new(code, mods), &registry, &mut current, &mcp_servers).await;
+        handle_key(
+            app,
+            KeyEvent::new(code, mods),
+            &registry,
+            &mut current,
+            &mcp_servers,
+        )
+        .await;
     }
 
     async fn type_key_chars(app: &mut App, text: &str) {
@@ -14833,7 +15078,10 @@ mod tests {
         app.submit_user("hello".to_string());
 
         let text = transcript_text(&app);
-        assert!(text.contains("not signed in — run /login to choose a provider"), "{text}");
+        assert!(
+            text.contains("not signed in — run /login to choose a provider"),
+            "{text}"
+        );
         assert!(!text.contains("Tokamak"), "{text}");
     }
 
@@ -14907,7 +15155,10 @@ mod tests {
                     .iter()
                     .map(|item| item.value.as_str())
                     .collect::<Vec<_>>(),
-                catalog.iter().map(|provider| provider.id).collect::<Vec<_>>()
+                catalog
+                    .iter()
+                    .map(|provider| provider.id)
+                    .collect::<Vec<_>>()
             );
             assert_eq!(
                 picker
@@ -14937,12 +15188,10 @@ mod tests {
                     })
                     .collect::<Vec<_>>()
             );
-            assert!(
-                picker
-                    .items
-                    .iter()
-                    .all(|item| matches!(item.hint.as_deref(), Some("signed in" | "not signed in")))
-            );
+            assert!(picker
+                .items
+                .iter()
+                .all(|item| matches!(item.hint.as_deref(), Some("signed in" | "not signed in"))));
 
             let rendered = picker
                 .items
@@ -15010,7 +15259,10 @@ mod tests {
 
             press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
 
-            assert!(app.account_login_active, "{provider} must start account sign-in");
+            assert!(
+                app.account_login_active,
+                "{provider} must start account sign-in"
+            );
             assert!(app.account_login_submit.is_some());
             assert!(app.login.is_none());
         }
@@ -15030,7 +15282,10 @@ mod tests {
 
             press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
 
-            let prompt = app.login.as_mut().expect("API-key method must open masked prompt");
+            let prompt = app
+                .login
+                .as_mut()
+                .expect("API-key method must open masked prompt");
             assert_eq!(prompt.provider, provider);
             prompt.paste("provider-secret");
             assert_eq!(prompt.masked(), "***************");
@@ -15110,7 +15365,10 @@ mod tests {
     async fn login_prompt_captures_keys_and_never_renders_the_key() {
         let mut app = test_app();
         super::open_login_prompt(&mut app, "tokamak");
-        assert!(app.login.is_some(), "provider selection must open the prompt");
+        assert!(
+            app.login.is_some(),
+            "provider selection must open the prompt"
+        );
 
         type_key_chars(&mut app, "tk-secret").await;
         // Keystrokes are the key, not chat input.
@@ -15183,7 +15441,11 @@ mod tests {
 
         assert!(app.login.is_none(), "Esc must close the prompt");
         assert!(app.login_submit.is_none());
-        assert_eq!(app.transcript.len(), before, "cancellation must stay silent");
+        assert_eq!(
+            app.transcript.len(),
+            before,
+            "cancellation must stay silent"
+        );
     }
 
     #[tokio::test]
@@ -15201,7 +15463,6 @@ mod tests {
         assert!(!transcript_text(&app).contains("failed"));
         assert!(!transcript_text(&app).contains("signed in"));
     }
-
 
     #[tokio::test]
     async fn login_stays_cancellable_while_verifying() {
@@ -15262,7 +15523,10 @@ mod tests {
             );
 
             let text = transcript_text(&app);
-            assert!(text.contains("signed in to tokamak. Use /model to select a model."), "{text}");
+            assert!(
+                text.contains("signed in to tokamak. Use /model to select a model."),
+                "{text}"
+            );
             assert!(!text.contains("model(s)"), "{text}");
             assert!(!text.contains("/tmp/config.toml"), "{text}");
             assert!(!text.contains("tokamak-1-preview"), "{text}");
@@ -15303,7 +15567,10 @@ mod tests {
             message,
             "tokamak sign-in failed: could not save sign-in securely"
         );
-        assert!(!message.contains("/Users/alice/.jan/config.toml"), "{message}");
+        assert!(
+            !message.contains("/Users/alice/.jan/config.toml"),
+            "{message}"
+        );
         assert!(!message.contains("tk-secret-do-not-render"), "{message}");
     }
 
@@ -15320,7 +15587,10 @@ mod tests {
             message,
             "anthropic sign-in failed: could not complete browser sign-in"
         );
-        assert!(!message.contains("/Users/alice/.jan/config.toml"), "{message}");
+        assert!(
+            !message.contains("/Users/alice/.jan/config.toml"),
+            "{message}"
+        );
         assert!(!message.contains("sk-secret-do-not-render"), "{message}");
     }
 
@@ -15330,14 +15600,23 @@ mod tests {
 
         finish_account_login(&mut app, Ok("openai".to_string()));
         let text = transcript_text(&app);
-        assert!(text.contains("signed in to openai. Use /model to select a model."), "{text}");
+        assert!(
+            text.contains("signed in to openai. Use /model to select a model."),
+            "{text}"
+        );
         assert!(!text.contains("/model <id>"), "{text}");
 
         let mut app = test_app();
         app.account_login_provider = Some("anthropic".to_string());
-        finish_account_login(&mut app, Err("the redirect state did not match".to_string()));
+        finish_account_login(
+            &mut app,
+            Err("the redirect state did not match".to_string()),
+        );
         let text = transcript_text(&app);
-        assert!(text.contains("anthropic sign-in failed: could not complete browser sign-in"), "{text}");
+        assert!(
+            text.contains("anthropic sign-in failed: could not complete browser sign-in"),
+            "{text}"
+        );
         assert!(!text.contains("signed in to anthropic"), "{text}");
     }
 
@@ -15389,9 +15668,16 @@ mod tests {
         let mut app = test_app();
         app.model = String::new();
         app.submit_user("hi".into());
-        assert!(!app.want_start, "a fresh install must not start a turn with no model");
+        assert!(
+            !app.want_start,
+            "a fresh install must not start a turn with no model"
+        );
         assert!(app.history.is_empty());
-        let text: String = row_lines(&app.transcript).iter().flat_map(|l| l.spans.clone()).map(|s| s.content.to_string()).collect();
+        let text: String = row_lines(&app.transcript)
+            .iter()
+            .flat_map(|l| l.spans.clone())
+            .map(|s| s.content.to_string())
+            .collect();
         assert!(text.contains("/login"), "{text}");
     }
 
@@ -15644,7 +15930,11 @@ mod tests {
         assert_eq!(app.awaiting.len(), 1);
         assert_eq!(
             app.awaiting[0],
-            ("a1".to_string(), "sub-reviewer-1".to_string(), "reviewer".to_string())
+            (
+                "a1".to_string(),
+                "sub-reviewer-1".to_string(),
+                "reviewer".to_string()
+            )
         );
         assert!(app.tool_group.is_none(), "await must not open a tool group");
         // The result clears the throbber.
@@ -15727,7 +16017,11 @@ mod tests {
                 },
             ));
         }
-        let panel = app.subagents.iter().find(|p| p.run_id == "r1").expect("active");
+        let panel = app
+            .subagents
+            .iter()
+            .find(|p| p.run_id == "r1")
+            .expect("active");
         // Full history retained (for later expansion); the window is a render concern.
         assert_eq!(panel.calls.len(), 7);
         assert!(panel.calls.first().unwrap().contains("cmd0"));
@@ -15739,7 +16033,11 @@ mod tests {
             terminal.draw(|f| super::draw(f, app)).unwrap();
             let buf = terminal.backend().buffer().clone();
             (0..buf.area.height)
-                .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect::<String>())
+                .map(|y| {
+                    (0..buf.area.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
         };
@@ -15747,7 +16045,10 @@ mod tests {
         // stays reachable through the finished summary row (Ctrl-O).
         let out = render(&mut app);
         assert!(out.contains("cmd6"), "newest call shown: {out}");
-        assert!(!out.contains("cmd5") && !out.contains("cmd0"), "older calls elided: {out}");
+        assert!(
+            !out.contains("cmd5") && !out.contains("cmd0"),
+            "older calls elided: {out}"
+        );
     }
 
     #[test]
@@ -15789,8 +16090,15 @@ mod tests {
             task: Some("queue up".into()),
             waiting: 2,
         });
-        let queued = app.subagents.iter().find(|p| p.run_id == "r1").expect("queued panel");
-        assert!(queued.queued, "dispatch beyond the cap opens a queued panel");
+        let queued = app
+            .subagents
+            .iter()
+            .find(|p| p.run_id == "r1")
+            .expect("queued panel");
+        assert!(
+            queued.queued,
+            "dispatch beyond the cap opens a queued panel"
+        );
         assert_eq!(queued.waiting, 2);
 
         // The child's later SubagentStart must flip the same panel to running,
@@ -15894,7 +16202,10 @@ mod tests {
         app.picker.as_mut().unwrap().selected = idx;
         press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
         let doc = std::fs::read_to_string(&toml_path).unwrap();
-        assert!(!doc.contains("context_window = 64000"), "key removed: {doc}");
+        assert!(
+            !doc.contains("context_window = 64000"),
+            "key removed: {doc}"
+        );
         assert!(transcript_text(&app).contains("context_window unset"));
         let picker = app.picker.as_ref().expect("picker stays open");
         let row = picker
@@ -15980,7 +16291,10 @@ mod tests {
         super::handle_settings_key(&mut app, key(KeyCode::Esc), false);
         assert!(app.settings_prompt.is_none());
         let doc = std::fs::read_to_string(&toml_path).unwrap();
-        assert!(doc.contains("max_parallel_subagents = 7"), "unchanged: {doc}");
+        assert!(
+            doc.contains("max_parallel_subagents = 7"),
+            "unchanged: {doc}"
+        );
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
@@ -16164,7 +16478,10 @@ mod tests {
         super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
         assert!(app.settings_prompt.is_none());
         let doc = std::fs::read_to_string(&toml_path).unwrap();
-        assert!(doc.contains("default = \"deny\""), "written under [tools]: {doc}");
+        assert!(
+            doc.contains("default = \"deny\""),
+            "written under [tools]: {doc}"
+        );
         assert!(transcript_text(&app).contains("tools.default = deny written"));
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
@@ -16884,7 +17201,11 @@ mod tests {
             terminal.draw(|f| super::draw(f, app)).unwrap();
             let buf = terminal.backend().buffer().clone();
             (0..buf.area.height)
-                .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect::<String>())
+                .map(|y| {
+                    (0..buf.area.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
         };
@@ -16894,7 +17215,10 @@ mod tests {
         app.toggle_regions();
         assert!(app.expanded.contains(&idx));
         let expanded = render(&mut app);
-        assert!(expanded.contains("cmd0"), "expanded must reveal earliest call: {expanded}");
+        assert!(
+            expanded.contains("cmd0"),
+            "expanded must reveal earliest call: {expanded}"
+        );
         assert!(expanded.contains("cmd6"));
         // Toggling again collapses it.
         app.toggle_regions();
@@ -17220,7 +17544,10 @@ mod tests {
             .find(|l| line_text(l).contains("@@"))
             .expect("no hunk header row");
         assert!(
-            header.spans.iter().all(|s| !matches!(s.style.fg, Some(ratatui::style::Color::Rgb(..)))),
+            header
+                .spans
+                .iter()
+                .all(|s| !matches!(s.style.fg, Some(ratatui::style::Color::Rgb(..)))),
             "hunk header was highlighted: {:?}",
             line_text(header)
         );
@@ -17265,7 +17592,11 @@ mod tests {
         let out = diff_lines("- foo\n+ bar", 80, DIFF_MAX_ROWS, "│     ", None);
         // 2 content rows framed by a top and bottom border.
         assert_eq!(out.len(), 4);
-        assert!(line_text(&out[0]).contains('┌'), "top: {}", line_text(&out[0]));
+        assert!(
+            line_text(&out[0]).contains('┌'),
+            "top: {}",
+            line_text(&out[0])
+        );
         assert!(
             line_text(out.last().unwrap()).contains('┘'),
             "bottom: {}",
@@ -17385,8 +17716,14 @@ mod tests {
             "cancel must drop the pending start or the loop re-spawns it"
         );
         assert_eq!(app.status, Status::Idle);
-        assert!(app.subagents.is_empty(), "cancel must clear live subagent rows");
-        assert!(app.awaiting.is_empty(), "cancel must clear awaited-subagent state");
+        assert!(
+            app.subagents.is_empty(),
+            "cancel must clear live subagent rows"
+        );
+        assert!(
+            app.awaiting.is_empty(),
+            "cancel must clear awaited-subagent state"
+        );
         assert!(
             app.starting.is_empty(),
             "cancel must clear a still-streaming call's throbber, or it lingers forever"
@@ -17764,7 +18101,8 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": "git push" }),
         });
-        let content = "To github.com:janhq/jan.git\n   a1b2c3d..e4f5g6h  main -> main\nremote line\n[exit 0]";
+        let content =
+            "To github.com:janhq/jan.git\n   a1b2c3d..e4f5g6h  main -> main\nremote line\n[exit 0]";
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
             content: content.into(),
@@ -17777,14 +18115,23 @@ mod tests {
             .map(line_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(joined.contains("main -> main"), "middle line lost: {joined}");
+        assert!(
+            joined.contains("main -> main"),
+            "middle line lost: {joined}"
+        );
         assert!(joined.contains("remote line"), "line lost: {joined}");
         assert!(joined.contains("[exit 0]"), "exit marker lost: {joined}");
-        assert!(!joined.contains("(+"), "must not summarize when expanded: {joined}");
+        assert!(
+            !joined.contains("(+"),
+            "must not summarize when expanded: {joined}"
+        );
         // Single-call group: the command header must not be repeated inside the
         // expansion (the summary row above already shows it).
         assert!(!joined.contains("▸"), "duplicate command header: {joined}");
-        assert!(!joined.contains("git push"), "duplicate command label: {joined}");
+        assert!(
+            !joined.contains("git push"),
+            "duplicate command label: {joined}"
+        );
     }
 
     #[test]
@@ -17798,7 +18145,9 @@ mod tests {
         assert!(app.tool_group.is_some());
         // Prose begins streaming in the same turn (no intervening Step): the
         // group's status must land in the timeline as `✓` right away.
-        app.apply(StreamEvent::Token { text: "Here".into() });
+        app.apply(StreamEvent::Token {
+            text: "Here".into(),
+        });
         assert!(app.tool_group.is_none());
         let row = app
             .transcript
@@ -17809,7 +18158,9 @@ mod tests {
             .unwrap();
         assert!(row.contains("✓"), "row: {row}");
         // Later tokens must not re-trigger finalize work.
-        app.apply(StreamEvent::Token { text: " goes".into() });
+        app.apply(StreamEvent::Token {
+            text: " goes".into(),
+        });
         assert!(app.tool_group.is_none());
     }
 
@@ -17845,7 +18196,12 @@ mod tests {
         assert!(row.contains("✓"), "row: {row}");
         let detail: String = group_detail_lines(&app.groups[0], 80)
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
@@ -17939,7 +18295,10 @@ mod tests {
         });
         app.apply(StreamEvent::Step { index: 2, max: 8 });
         let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
-        let prose = rows.iter().position(|r| r.contains("check the README")).unwrap();
+        let prose = rows
+            .iter()
+            .position(|r| r.contains("check the README"))
+            .unwrap();
         let tool = rows.iter().position(|r| r.contains("Ran: grep")).unwrap();
         let after = rows.iter().position(|r| r.contains("Found it")).unwrap();
         assert!(prose < tool && tool < after, "rows: {rows:?}");
@@ -17980,7 +18339,9 @@ mod tests {
         let row = row_text(app.transcript.last().unwrap());
         assert!(row.contains("✓ Read 3 memory notes, 1 skill"), "row: {row}");
         // The model speaking closes the group without disturbing the row.
-        app.apply(StreamEvent::Token { text: "Done.".into() });
+        app.apply(StreamEvent::Token {
+            text: "Done.".into(),
+        });
         let row = row_text(app.transcript.last().unwrap());
         assert!(row.contains("✓ Read 3 memory notes, 1 skill"), "row: {row}");
     }
@@ -18005,7 +18366,9 @@ mod tests {
                 diff: None,
             });
         }
-        app.apply(StreamEvent::Token { text: "Done.".into() });
+        app.apply(StreamEvent::Token {
+            text: "Done.".into(),
+        });
         assert_eq!(app.groups.len(), 1);
 
         // Collapsed by default: draw injects no per-call detail.
@@ -18043,7 +18406,9 @@ mod tests {
                 diff: None,
             });
         }
-        app.apply(StreamEvent::Token { text: "Done.".into() });
+        app.apply(StreamEvent::Token {
+            text: "Done.".into(),
+        });
         let group_idx = app.groups[0].idx;
 
         // A click on the group's own row toggles it, same as Ctrl-O.
@@ -18340,7 +18705,9 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        app.apply(StreamEvent::Token { text: "Done.".into() });
+        app.apply(StreamEvent::Token {
+            text: "Done.".into(),
+        });
         let group_idx = app.groups[0].idx;
 
         // Simulate what `draw` would have recorded: the group's row is the
@@ -18425,7 +18792,10 @@ mod tests {
         app.last_scroll = 0;
         app.row_index = vec![Some(idx), Some(idx), Some(idx)];
         click(&mut app, 5, 2); // a detail row, not the header at row 1
-        assert!(app.expanded.is_empty(), "click on a detail row should collapse");
+        assert!(
+            app.expanded.is_empty(),
+            "click on a detail row should collapse"
+        );
     }
 
     #[test]
@@ -18498,7 +18868,10 @@ mod tests {
             !rows.iter().any(|r| r.contains("let me look")),
             "raw reasoning must be hidden by default: {rows:?}"
         );
-        let think_at = rows.iter().position(|r| r.contains("reasoning (1 line)")).unwrap();
+        let think_at = rows
+            .iter()
+            .position(|r| r.contains("reasoning (1 line)"))
+            .unwrap();
         let tool_at = rows
             .iter()
             .position(|r| r.contains("Executing") || r.contains("Running") || r.contains("Ran"))
@@ -18509,7 +18882,11 @@ mod tests {
         );
         // The raw thought is retained on the block for expansion.
         let block = &app.reasoning_blocks[0];
-        assert!(block.detail.iter().map(line_text).any(|l| l.contains("let me look")));
+        assert!(block
+            .detail
+            .iter()
+            .map(line_text)
+            .any(|l| l.contains("let me look")));
     }
 
     #[test]
@@ -18520,12 +18897,17 @@ mod tests {
         });
         app.apply(StreamEvent::Step { index: 1, max: 8 });
         let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
-        let think_at = rows.iter().position(|r| r.contains("reasoning (1 line)")).unwrap();
+        let think_at = rows
+            .iter()
+            .position(|r| r.contains("reasoning (1 line)"))
+            .unwrap();
         let prose_at = rows.iter().position(|r| r.contains("Hi there!")).unwrap();
         assert!(think_at < prose_at);
         // A blank line must sit between the reasoning row and the prose.
         assert!(
-            rows[think_at + 1..prose_at].iter().any(|r| r.trim().is_empty()),
+            rows[think_at + 1..prose_at]
+                .iter()
+                .any(|r| r.trim().is_empty()),
             "expected a blank line between reasoning and prose: {rows:?}"
         );
     }
@@ -18856,7 +19238,10 @@ mod tests {
             .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(live.contains("git status") && live.contains("git log -1"), "{live}");
+        assert!(
+            live.contains("git status") && live.contains("git log -1"),
+            "{live}"
+        );
 
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();
@@ -18887,7 +19272,9 @@ mod tests {
         let mut app = test_app();
         record_full_turn(&mut app);
         assert!(
-            !serde_json::to_string(&app.history).unwrap().contains("<think>"),
+            !serde_json::to_string(&app.history)
+                .unwrap()
+                .contains("<think>"),
             "reasoning must not be resent to the model: {:?}",
             app.history
         );
@@ -18896,7 +19283,10 @@ mod tests {
         fresh.agent_dir = app.agent_dir.clone();
         apply_resume(&mut fresh, &ResumeTarget::Latest).await;
 
-        assert_eq!(fresh.history, app.history, "the wire conversation round-trips");
+        assert_eq!(
+            fresh.history, app.history,
+            "the wire conversation round-trips"
+        );
         let called = fresh
             .history
             .iter()
@@ -18928,7 +19318,10 @@ mod tests {
             .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(resumed.contains("do it") && resumed.contains("Answer."), "{resumed}");
+        assert!(
+            resumed.contains("do it") && resumed.contains("Answer."),
+            "{resumed}"
+        );
         assert!(fresh.display_log.is_empty(), "nothing to journal from");
     }
 
@@ -18949,16 +19342,25 @@ mod tests {
             .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(after.contains("✓ Wrote a.txt"), "first turn keeps its rows: {after}");
+        assert!(
+            after.contains("✓ Wrote a.txt"),
+            "first turn keeps its rows: {after}"
+        );
         assert!(after.contains("@@ created file @@"), "{after}");
-        assert!(!after.contains("Second answer."), "rewound turn is gone: {after}");
+        assert!(
+            !after.contains("Second answer."),
+            "rewound turn is gone: {after}"
+        );
         assert!(
             !app.display_log
                 .iter()
                 .any(|e| matches!(e, DisplayEntry::User { text, .. } if text == "and again")),
             "the journal is truncated with the conversation"
         );
-        assert_eq!(app.input, "and again", "the rewound message returns to the input");
+        assert_eq!(
+            app.input, "and again",
+            "the rewound message returns to the input"
+        );
     }
 
     #[tokio::test]
@@ -18968,9 +19370,8 @@ mod tests {
             json!({ "role": "user", "content": "first" }),
             json!({ "role": "assistant", "content": "reply" }),
         ];
-        let id =
-            super::super::cli_save_thread(&app.agent_dir, None, "saved-model", &history, None)
-                .unwrap();
+        let id = super::super::cli_save_thread(&app.agent_dir, None, "saved-model", &history, None)
+            .unwrap();
 
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();
@@ -18985,15 +19386,26 @@ mod tests {
             .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(joined.contains("first") && joined.contains("reply"), "{joined}");
+        assert!(
+            joined.contains("first") && joined.contains("reply"),
+            "{joined}"
+        );
 
         // Re-saving the resumed session updates the same thread, not a new one.
         app.agent_dir = fresh.agent_dir.clone();
-        let same =
-            super::super::cli_save_thread(&app.agent_dir, Some(&id), "saved-model", &fresh.history, None)
-                .unwrap();
+        let same = super::super::cli_save_thread(
+            &app.agent_dir,
+            Some(&id),
+            "saved-model",
+            &fresh.history,
+            None,
+        )
+        .unwrap();
         assert_eq!(same, id);
-        assert_eq!(super::super::list_threads_in(&app.agent_dir).unwrap().len(), 1);
+        assert_eq!(
+            super::super::list_threads_in(&app.agent_dir).unwrap().len(),
+            1
+        );
     }
 
     #[tokio::test]
@@ -19063,7 +19475,10 @@ mod tests {
             .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(joined.contains(super::super::NO_SESSION_TO_RESUME), "{joined}");
+        assert!(
+            joined.contains(super::super::NO_SESSION_TO_RESUME),
+            "{joined}"
+        );
         assert!(app.thread_id.is_none());
         assert!(app.history.is_empty());
     }
@@ -19084,8 +19499,14 @@ mod tests {
     #[test]
     fn thread_display_name_prefers_title() {
         let base = std::path::Path::new("/nonexistent");
-        assert_eq!(super::thread_display_name(base, "id", Some("My Title")), "My Title");
-        assert_eq!(super::thread_display_name(base, "id", Some("  padded  ")), "padded");
+        assert_eq!(
+            super::thread_display_name(base, "id", Some("My Title")),
+            "My Title"
+        );
+        assert_eq!(
+            super::thread_display_name(base, "id", Some("  padded  ")),
+            "padded"
+        );
     }
 
     #[test]
@@ -19190,7 +19611,10 @@ mod tests {
             dragging: false,
             moved: true,
         };
-        assert_eq!(selection_text(&buf, linear, area), "alpha   one\nbeta    two");
+        assert_eq!(
+            selection_text(&buf, linear, area),
+            "alpha   one\nbeta    two"
+        );
 
         let block = Selection {
             anchor: (8, 0),
@@ -19257,10 +19681,7 @@ mod tests {
                 modifiers: KeyModifiers::ALT,
             },
         );
-        assert_eq!(
-            app.selection.expect("selection").mode,
-            SelectionMode::Block
-        );
+        assert_eq!(app.selection.expect("selection").mode, SelectionMode::Block);
     }
 
     #[test]
@@ -19412,7 +19833,10 @@ mod tests {
         assert_eq!(app.history.len(), 1, "history must be left alone");
         assert!(app.compacting.is_none(), "a failure must allow a retry");
         let text: String = app.transcript.iter().map(row_text).collect();
-        assert!(text.contains("auto-compacting failed: upstream 500"), "got: {text}");
+        assert!(
+            text.contains("auto-compacting failed: upstream 500"),
+            "got: {text}"
+        );
     }
 
     #[test]
@@ -19461,7 +19885,12 @@ mod tests {
 
         let mut pair = test_app();
         start_subagent_with_task(&mut pair, "r0", "space", Some(brief));
-        start_subagent_with_task(&mut pair, "r1", "fish", Some("Build Flappy Fish\nUnderwater"));
+        start_subagent_with_task(
+            &mut pair,
+            "r1",
+            "fish",
+            Some("Build Flappy Fish\nUnderwater"),
+        );
         let out = render_rows(&mut pair, 100, 24).join("\n");
         assert!(out.contains("Build Flappy Space"), "{out}");
         assert!(out.contains("Build Flappy Fish"), "{out}");
@@ -19527,10 +19956,15 @@ mod tests {
             assert!(out.contains(name), "missing {name}: {out}");
             assert!(out.contains(pct), "missing context share {pct}: {out}");
         }
-        assert!(out.contains("1t · 1r"), "missing compact call/request counts: {out}");
+        assert!(
+            out.contains("1t · 1r"),
+            "missing compact call/request counts: {out}"
+        );
         // Two agents -> one activity line each, so the block stays scannable.
         assert_eq!(
-            rows.iter().filter(|r| r.contains("alpha.rs") || r.contains("beta.rs")).count(),
+            rows.iter()
+                .filter(|r| r.contains("alpha.rs") || r.contains("beta.rs"))
+                .count(),
             2,
             "expected exactly one activity line per agent: {out}"
         );
@@ -19553,7 +19987,10 @@ mod tests {
             .iter()
             .position(|r| r.contains("parent keeps talking"))
             .expect("prose row");
-        let panel = rows.iter().position(|r| r.contains("alpha")).expect("panel row");
+        let panel = rows
+            .iter()
+            .position(|r| r.contains("alpha"))
+            .expect("panel row");
         let input = rows
             .iter()
             .position(|r| r.contains("Type here to chat with agent"))
@@ -19561,7 +19998,8 @@ mod tests {
         assert!(prose < panel, "the panel is docked, not inline: {rows:?}");
         assert!(panel < input, "and it sits above the input: {rows:?}");
         assert!(
-            rows.iter().any(|r| r.contains("2 agents") || r.contains("1 agent")),
+            rows.iter()
+                .any(|r| r.contains("2 agents") || r.contains("1 agent")),
             "the fan-out is counted: {rows:?}"
         );
     }
@@ -19642,7 +20080,12 @@ mod tests {
     fn subagent_reports_its_in_flight_call() {
         let mut app = test_app();
         start_subagent(&mut app, "r0", "flappy-2d");
-        subagent_event(&mut app, "r0", "flappy-2d", StreamEvent::Step { index: 1, max: 8 });
+        subagent_event(
+            &mut app,
+            "r0",
+            "flappy-2d",
+            StreamEvent::Step { index: 1, max: 8 },
+        );
 
         // The child announces a write and starts streaming its arguments --
         // no ToolCall yet, which is the whole problem.
@@ -19650,11 +20093,20 @@ mod tests {
             &mut app,
             "r0",
             "flappy-2d",
-            StreamEvent::ToolCallStarted { id: "c1".into(), name: "write".into() },
+            StreamEvent::ToolCallStarted {
+                id: "c1".into(),
+                name: "write".into(),
+            },
         );
         let out = render_rows(&mut app, 100, 20).join("\n");
-        assert!(!out.contains("starting…"), "should have moved off the placeholder: {out}");
-        assert!(out.contains("write"), "should name the tool being assembled: {out}");
+        assert!(
+            !out.contains("starting…"),
+            "should have moved off the placeholder: {out}"
+        );
+        assert!(
+            out.contains("write"),
+            "should name the tool being assembled: {out}"
+        );
 
         // Once the path arrives it names the destination, still mid-stream.
         for delta in [r#"{"path":"flappy"#, r#"-2d.html","content":"<!doct"#] {
@@ -19662,11 +20114,17 @@ mod tests {
                 &mut app,
                 "r0",
                 "flappy-2d",
-                StreamEvent::ToolCallArgsDelta { id: "c1".into(), delta: delta.into() },
+                StreamEvent::ToolCallArgsDelta {
+                    id: "c1".into(),
+                    delta: delta.into(),
+                },
             );
         }
         let out = render_rows(&mut app, 100, 20).join("\n");
-        assert!(out.contains("flappy-2d.html"), "destination should surface: {out}");
+        assert!(
+            out.contains("flappy-2d.html"),
+            "destination should surface: {out}"
+        );
         assert!(out.contains("0t · "), "still no completed call: {out}");
 
         // The completed call supersedes the in-progress row.
@@ -19697,7 +20155,10 @@ mod tests {
         let out = render_rows(&mut app, 100, 20).join("\n");
         assert!(out.contains("1 agent"), "{out}");
         assert!(out.contains("starting…"), "{out}");
-        assert!(!out.contains('%'), "no share before the first response: {out}");
+        assert!(
+            !out.contains('%'),
+            "no share before the first response: {out}"
+        );
     }
 
     /// The running placeholder is the row a user stares at during a long turn.
@@ -19719,7 +20180,10 @@ mod tests {
 
         app.spinner_frame = 0;
         let first = frame_of(&mut app);
-        assert!(first.contains(SPINNER[0]), "expected frame 0 glyph: {first:?}");
+        assert!(
+            first.contains(SPINNER[0]),
+            "expected frame 0 glyph: {first:?}"
+        );
 
         // While a plain turn is running (no reasoning), the row shows a
         // rotating synonym of "working".
@@ -19730,7 +20194,10 @@ mod tests {
 
         app.spinner_frame = 3;
         let later = frame_of(&mut app);
-        assert!(later.contains(SPINNER[3]), "expected frame 3 glyph: {later:?}");
+        assert!(
+            later.contains(SPINNER[3]),
+            "expected frame 3 glyph: {later:?}"
+        );
         assert_ne!(first, later, "row must change as the frame advances");
 
         assert!(later.contains("(Esc to cancel, type to queue next message)"), "{later:?}");
@@ -20049,7 +20516,12 @@ mod tests {
         assert_eq!(app.turn_prompt_tokens, 40_000);
 
         app.on_done("stop".into(), None);
-        let out: String = app.transcript.iter().map(row_text).collect::<Vec<_>>().join("\n");
+        let out: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(out.contains("40K"), "input tokens missing: {out}");
         assert!(out.contains("1.5K"), "summed output missing: {out}");
         assert!(out.contains("/s"), "rate missing: {out}");
@@ -20072,9 +20544,7 @@ mod tests {
         app.todos
             .init(vec![crate::core::agent::todo::TodoPhase {
                 name: String::new(),
-                tasks: vec![
-                    todo_item("write the parser"),
-                ],
+                tasks: vec![todo_item("write the parser")],
             }])
             .unwrap();
         assert!(!app.todos.is_empty());
@@ -20098,7 +20568,10 @@ mod tests {
 
         // One turn past the grace period and it goes.
         age_closed_todos(&mut app).await;
-        assert!(app.todos.is_empty(), "finished list should have been dropped");
+        assert!(
+            app.todos.is_empty(),
+            "finished list should have been dropped"
+        );
     }
 
     /// Reopening work resets the grace period, so a list in active use is never
@@ -20167,7 +20640,10 @@ mod tests {
 
         app.apply(StreamEvent::Step { index: 1, max: 8 });
         age_closed_todos(&mut app).await;
-        assert!(app.todos.is_empty(), "dropped mid-run after the grace period");
+        assert!(
+            app.todos.is_empty(),
+            "dropped mid-run after the grace period"
+        );
     }
 
     #[test]
@@ -20184,14 +20660,20 @@ mod tests {
 
         // Cut mid-value: everything that arrived is the value.
         let cut = r#"{"path":"a.html","content":"<!doctype html>\n<html"#;
-        assert_eq!(partial_json_field(cut, "content"), Some(r#"<!doctype html>\n<html"#));
+        assert_eq!(
+            partial_json_field(cut, "content"),
+            Some(r#"<!doctype html>\n<html"#)
+        );
 
         // Cut before the field even opens.
         assert_eq!(partial_json_field(r#"{"path":"a.htm"#, "content"), None);
 
         // An escaped quote inside the value does not end it.
         let escaped = r#"{"content":"say \"hi\" now"#;
-        assert_eq!(partial_json_field(escaped, "content"), Some(r#"say \"hi\" now"#));
+        assert_eq!(
+            partial_json_field(escaped, "content"),
+            Some(r#"say \"hi\" now"#)
+        );
 
         // The field name occurring inside an earlier value is not the field.
         let decoy = r#"{"path":"my\"content\".txt","content":"real"#;
@@ -20217,19 +20699,43 @@ mod tests {
         let body: String = (1..=20).map(|n| format!("line {n}\\n")).collect();
         let mut call = super::StartingCall::new("c1".into(), "write".into());
         call.args = format!(r#"{{"path":"game.html","content":"{body}"#);
-        let text: Vec<String> = starting_call_lines(&mut call, "⠋").iter().map(line_text).collect();
+        let text: Vec<String> = starting_call_lines(&mut call, "⠋")
+            .iter()
+            .map(line_text)
+            .collect();
         let joined = text.join("\n");
 
-        assert!(joined.contains("Write: game.html"), "no destination: {joined}");
-        assert!(joined.contains("… (streaming)"), "no streaming marker: {joined}");
+        assert!(
+            joined.contains("Write: game.html"),
+            "no destination: {joined}"
+        );
+        assert!(
+            joined.contains("… (streaming)"),
+            "no streaming marker: {joined}"
+        );
         // 20 body lines plus the empty one after the final \n = 21; a 12-line
         // window leaves 9 behind.
-        assert!(joined.contains("… (9 earlier lines)"), "wrong elision: {joined}");
-        assert!(!joined.contains("line 9\n"), "line 9 is outside the window: {joined}");
-        assert!(joined.contains("line 20"), "tail should include the newest line: {joined}");
+        assert!(
+            joined.contains("… (9 earlier lines)"),
+            "wrong elision: {joined}"
+        );
+        assert!(
+            !joined.contains("line 9\n"),
+            "line 9 is outside the window: {joined}"
+        );
+        assert!(
+            joined.contains("line 20"),
+            "tail should include the newest line: {joined}"
+        );
         // Numbers are absolute, not window-relative, and right-aligned.
-        assert!(text.iter().any(|l| l.contains(" 10 line 10")), "gutter: {text:?}");
-        assert!(text.iter().any(|l| l.contains(" 20 line 20")), "gutter: {text:?}");
+        assert!(
+            text.iter().any(|l| l.contains(" 10 line 10")),
+            "gutter: {text:?}"
+        );
+        assert!(
+            text.iter().any(|l| l.contains(" 20 line 20")),
+            "gutter: {text:?}"
+        );
     }
 
     /// The preview is derived from an append-only buffer, so an unchanged
@@ -20241,7 +20747,10 @@ mod tests {
         call.args = r#"{"path":"a.html","content":"one\ntwo"#.into();
         call.refresh_preview();
         let first = call.preview_at;
-        assert_eq!(tail_text(&call), Some(vec!["one".to_string(), "two".to_string()]));
+        assert_eq!(
+            tail_text(&call),
+            Some(vec!["one".to_string(), "two".to_string()])
+        );
 
         // Same bytes: the cache holds and nothing is recomputed.
         call.preview.tail = Some(vec![vec![ratatui::text::Span::raw("sentinel")]]);
@@ -20254,7 +20763,11 @@ mod tests {
         call.refresh_preview();
         assert_eq!(
             tail_text(&call),
-            Some(vec!["one".to_string(), "two".to_string(), "three".to_string()])
+            Some(vec![
+                "one".to_string(),
+                "two".to_string(),
+                "three".to_string()
+            ])
         );
     }
 
@@ -20264,9 +20777,15 @@ mod tests {
     fn streaming_write_shows_the_path_before_the_body() {
         let mut call = super::StartingCall::new("c1".into(), "write".into());
         call.args = r#"{"path":"game.html","cont"#.into();
-        let text: Vec<String> = starting_call_lines(&mut call, "⠋").iter().map(line_text).collect();
+        let text: Vec<String> = starting_call_lines(&mut call, "⠋")
+            .iter()
+            .map(line_text)
+            .collect();
         assert_eq!(text.len(), 1);
-        assert!(text[0].contains("Preparing write: game.html"), "got {text:?}");
+        assert!(
+            text[0].contains("Preparing write: game.html"),
+            "got {text:?}"
+        );
     }
 
     /// Tools other than `write` keep the plain throbber -- there is no file
@@ -20275,7 +20794,10 @@ mod tests {
     fn other_tools_keep_the_plain_throbber() {
         let mut call = super::StartingCall::new("c1".into(), "bash".into());
         call.args = r#"{"command":"ls -la"#.into();
-        let text: Vec<String> = starting_call_lines(&mut call, "⠋").iter().map(line_text).collect();
+        let text: Vec<String> = starting_call_lines(&mut call, "⠋")
+            .iter()
+            .map(line_text)
+            .collect();
         assert_eq!(text.len(), 1);
         assert!(text[0].contains("Preparing bash"), "got {text:?}");
     }
@@ -20580,7 +21102,10 @@ mod tests {
         let rows = render_rows(&mut app, 80, 12);
         let dock = rows.last().unwrap();
         assert!(dock.trim_end().ends_with("stop_reason=stop"), "{dock:?}");
-        assert!(dock.contains("/tmp/repo"), "location keeps its place: {dock:?}");
+        assert!(
+            dock.contains("/tmp/repo"),
+            "location keeps its place: {dock:?}"
+        );
     }
 
     /// Working dir + branch share the single dock row below the input with the
@@ -20615,10 +21140,7 @@ mod tests {
         assert_eq!(tilde_path(&home), "~");
         assert_eq!(tilde_path(&home.join("code/jan")), "~/code/jan");
         // A path that merely starts with the same characters is not a child.
-        assert_eq!(
-            tilde_path(std::path::Path::new("/var/tmp/x")),
-            "/var/tmp/x"
-        );
+        assert_eq!(tilde_path(std::path::Path::new("/var/tmp/x")), "/var/tmp/x");
     }
 
     /// A running turn still needs its transient hints -- only the idle cheat
@@ -20655,7 +21177,10 @@ mod tests {
         // Setting a goal starts the first turn with the condition as the prompt.
         assert!(app.want_start, "a turn should be queued");
         assert_eq!(app.status, Status::Running);
-        let last = app.history.last().expect("history has the condition prompt");
+        let last = app
+            .history
+            .last()
+            .expect("history has the condition prompt");
         assert_eq!(
             last.get("content").and_then(|c| c.as_str()),
             Some("all tests in test/auth pass")
@@ -20782,7 +21307,9 @@ mod tests {
     fn on_done_without_goal_does_not_queue_eval() {
         let mut app = test_app();
         app.status = Status::Running;
-        app.apply(StreamEvent::Token { text: "done".into() });
+        app.apply(StreamEvent::Token {
+            text: "done".into(),
+        });
         app.on_done("stop".into(), None);
         assert!(!app.goal_eval_pending);
     }
@@ -20794,10 +21321,15 @@ mod tests {
         let mut app = test_app();
         app.goal = Some(crate::core::agent::goal::GoalState::new("cond"));
         app.status = Status::Running;
-        app.apply(StreamEvent::Token { text: "partial".into() });
+        app.apply(StreamEvent::Token {
+            text: "partial".into(),
+        });
         app.on_done("length".into(), None);
         assert_eq!(app.goal.as_ref().unwrap().turns, 1);
-        assert!(!app.goal_eval_pending, "early finish should not auto-continue");
+        assert!(
+            !app.goal_eval_pending,
+            "early finish should not auto-continue"
+        );
     }
 
     #[test]
@@ -20883,8 +21415,16 @@ mod tests {
     async fn plan_command_with_text_enters_plan_and_submits_it() {
         use crate::core::agent::plan::RunMode;
         let mut app = test_app();
-        run_command(&mut app, "plan make a html cat slide. use 3 subagents to research").await;
-        assert_eq!(app.run_mode, RunMode::Plan, "text arg must also enter plan mode");
+        run_command(
+            &mut app,
+            "plan make a html cat slide. use 3 subagents to research",
+        )
+        .await;
+        assert_eq!(
+            app.run_mode,
+            RunMode::Plan,
+            "text arg must also enter plan mode"
+        );
         assert_eq!(app.status, Status::Running, "seeded text must start a turn");
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(
@@ -20910,7 +21450,9 @@ mod tests {
         use crate::core::agent::plan::RunMode;
         let mut app = test_app();
         app.run_mode = RunMode::Plan;
-        let meta = app.thread_metadata().expect("metadata present in plan mode");
+        let meta = app
+            .thread_metadata()
+            .expect("metadata present in plan mode");
         assert_eq!(meta.get("run_mode").and_then(|v| v.as_str()), Some("plan"));
 
         let mut restored = test_app();
@@ -20936,8 +21478,14 @@ mod tests {
             phases: vec![TodoPhase {
                 name: "P".into(),
                 tasks: vec![
-                    TodoItem { content: "t1".into(), status: TodoStatus::InProgress },
-                    TodoItem { content: "t2".into(), status: TodoStatus::Pending },
+                    TodoItem {
+                        content: "t1".into(),
+                        status: TodoStatus::InProgress,
+                    },
+                    TodoItem {
+                        content: "t2".into(),
+                        status: TodoStatus::Pending,
+                    },
                 ],
             }],
         };
@@ -20975,7 +21523,10 @@ mod tests {
         assert!(injected.contains("t1") && injected.contains("t2"));
         // The reminder is hidden: no user-authored `› ` row in the transcript.
         let rows: String = app.transcript.iter().map(row_text).collect();
-        assert!(!rows.contains("› "), "reminder must not render as a user row");
+        assert!(
+            !rows.contains("› "),
+            "reminder must not render as a user row"
+        );
     }
 
     #[test]
@@ -20996,7 +21547,10 @@ mod tests {
         app.run_mode = RunMode::Plan;
         seed_open_todos(&mut app);
         finish_clean_turn(&mut app);
-        assert!(!app.want_start, "plan mode stages todos, never auto-executes");
+        assert!(
+            !app.want_start,
+            "plan mode stages todos, never auto-executes"
+        );
     }
 
     #[test]
@@ -21020,7 +21574,10 @@ mod tests {
             request: ask_request(false, false),
         });
         finish_clean_turn(&mut app);
-        assert!(!app.want_start, "a pending ask blocks the reminder boundary");
+        assert!(
+            !app.want_start,
+            "a pending ask blocks the reminder boundary"
+        );
     }
 
     #[test]
@@ -21050,18 +21607,27 @@ mod tests {
         app.todo_call_this_turn = true;
         app.todo_ok_this_turn = false;
         finish_clean_turn(&mut app);
-        assert!(app.want_start, "a failed mutation queues one retry reminder");
+        assert!(
+            app.want_start,
+            "a failed mutation queues one retry reminder"
+        );
         assert!(last_history_content(&app).contains("failed"));
     }
 
     #[test]
     fn awaiting_user_answer_detects_plain_questions_and_response_cues() {
-        assert!(assistant_is_awaiting_user_answer("Which approach do you want?"));
-        assert!(assistant_is_awaiting_user_answer("Q: proceed with the migration?"));
+        assert!(assistant_is_awaiting_user_answer(
+            "Which approach do you want?"
+        ));
+        assert!(assistant_is_awaiting_user_answer(
+            "Q: proceed with the migration?"
+        ));
         assert!(assistant_is_awaiting_user_answer(
             "I've drafted both options.\nLet me know which one to build."
         ));
-        assert!(assistant_is_awaiting_user_answer("Please confirm before I continue."));
+        assert!(assistant_is_awaiting_user_answer(
+            "Please confirm before I continue."
+        ));
         assert!(!assistant_is_awaiting_user_answer("Done, the tests pass."));
         assert!(!assistant_is_awaiting_user_answer(
             "This uses a well-known algorithm, is it fast enough already? It runs in O(n)."
@@ -21087,7 +21653,10 @@ mod tests {
         for i in 0..3 {
             app.want_start = false;
             finish_clean_turn(&mut app);
-            assert!(app.want_start, "reminder {i} of the 3-reminder budget must fire");
+            assert!(
+                app.want_start,
+                "reminder {i} of the 3-reminder budget must fire"
+            );
             app.reminder_awaiting_progress = false;
             // Vary the open-work summary each round so the same-summary dedup
             // alone could never explain a stop -- only the hard cap should.
@@ -21095,7 +21664,10 @@ mod tests {
         }
         app.want_start = false;
         finish_clean_turn(&mut app);
-        assert!(!app.want_start, "the 4th reminder must be suppressed by the per-cycle cap");
+        assert!(
+            !app.want_start,
+            "the 4th reminder must be suppressed by the per-cycle cap"
+        );
     }
 
     #[test]
@@ -21122,7 +21694,10 @@ mod tests {
         });
         app.todos.phases[0].tasks[0].content = "t1-changed-again".into();
         finish_clean_turn(&mut app);
-        assert!(app.want_start, "a reminder may fire again once progress happened");
+        assert!(
+            app.want_start,
+            "a reminder may fire again once progress happened"
+        );
     }
 
     fn todos_from(
@@ -21187,7 +21762,10 @@ mod tests {
         app.todos = todos_from(vec![("only", vec![("alpha", InProgress)])]);
         let rows = render_rows(&mut app, 60, 20);
 
-        let todo_row = rows.iter().position(|r| r.contains("Todos")).expect("todos");
+        let todo_row = rows
+            .iter()
+            .position(|r| r.contains("Todos"))
+            .expect("todos");
         let input_row = rows
             .iter()
             .position(|r| r.contains("Type here to chat with agent"))
@@ -21237,7 +21815,10 @@ mod tests {
     fn multi_phase_plan_column_expands_only_the_active_phase() {
         use crate::core::agent::todo::TodoStatus::*;
         let todos = todos_from(vec![
-            ("backend", vec![("scaffold", Completed), ("routes", InProgress)]),
+            (
+                "backend",
+                vec![("scaffold", Completed), ("routes", InProgress)],
+            ),
             ("frontend", vec![("ui", Pending), ("polish", Pending)]),
         ]);
         let lines: Vec<String> = super::todo_column(&todos, 60, 8)
@@ -21268,8 +21849,14 @@ mod tests {
             vec![("shipped", Completed), ("dropped", Abandoned)],
         )]);
         let col = super::todo_column(&todos, 60, 8);
-        let done = col.iter().find(|l| line_text(l).contains("shipped")).unwrap();
-        let gone = col.iter().find(|l| line_text(l).contains("dropped")).unwrap();
+        let done = col
+            .iter()
+            .find(|l| line_text(l).contains("shipped"))
+            .unwrap();
+        let gone = col
+            .iter()
+            .find(|l| line_text(l).contains("dropped"))
+            .unwrap();
         // Completed: checked glyph + strikethrough.
         assert!(line_text(done).contains("☑"), "{:?}", line_text(done));
         assert!(crossed_out(done), "completed is struck through");
@@ -21277,7 +21864,9 @@ mod tests {
         assert!(line_text(gone).contains("☒"), "{:?}", line_text(gone));
         assert!(crossed_out(gone), "abandoned is struck through");
         assert!(
-            gone.spans.iter().any(|s| s.style.fg == Some(ratatui::style::Color::Red)),
+            gone.spans
+                .iter()
+                .any(|s| s.style.fg == Some(ratatui::style::Color::Red)),
             "abandoned carries a red accent to distinguish it from completed"
         );
     }
@@ -21304,11 +21893,19 @@ mod tests {
         };
 
         assert_eq!(crest_at(0), Some(0));
-        assert_eq!(crest_at(3), Some(3), "the crest advances one char per frame");
+        assert_eq!(
+            crest_at(3),
+            Some(3),
+            "the crest advances one char per frame"
+        );
         // Past the end of the word the crest is off-screen (the pause), then
         // the cycle restarts.
         assert_eq!(crest_at(8), None, "pause between sweeps");
-        assert_eq!(crest_at(8 + super::SHIMMER_PAUSE), Some(0), "sweep restarts");
+        assert_eq!(
+            crest_at(8 + super::SHIMMER_PAUSE),
+            Some(0),
+            "sweep restarts"
+        );
     }
 
     /// The animation is scoped to the state that needs it: a folded, streaming
@@ -21328,7 +21925,11 @@ mod tests {
         });
         assert!(app.is_thinking(), "open reasoning block");
         let rows = render_rows(&mut app, 60, 12);
-        assert!(rows[0].contains("[thinking]"), "label intact: {:?}", rows[0]);
+        assert!(
+            rows[0].contains("[thinking]"),
+            "label intact: {:?}",
+            rows[0]
+        );
 
         app.apply(StreamEvent::Token {
             text: "</think>done".into(),
@@ -21367,7 +21968,9 @@ mod tests {
         );
 
         // Prose is a different band and still gets its air.
-        app.apply(StreamEvent::Token { text: "an answer".into() });
+        app.apply(StreamEvent::Token {
+            text: "an answer".into(),
+        });
         app.flush_assistant();
         assert!(
             app.transcript.iter().any(Row::is_blank),
@@ -21385,7 +21988,11 @@ mod tests {
             .iter()
             .position(|r| r.contains("Type here to chat with agent"))
             .expect("input");
-        assert_eq!(input + 3, rows.len(), "input, one blank, then the dock: {rows:?}");
+        assert_eq!(
+            input + 3,
+            rows.len(),
+            "input, one blank, then the dock: {rows:?}"
+        );
         assert!(rows[input + 1].trim().is_empty());
         assert!(rows.last().unwrap().contains("/tmp/repo"));
     }
@@ -21396,18 +22003,27 @@ mod tests {
     fn todo_pin_reports_phase_and_progress() {
         use crate::core::agent::todo::TodoStatus::*;
         let multi = todos_from(vec![
-            ("backend", vec![("scaffold", Completed), ("routes", InProgress)]),
+            (
+                "backend",
+                vec![("scaffold", Completed), ("routes", InProgress)],
+            ),
             ("frontend", vec![("ui", Pending)]),
         ]);
         let text = line_text(&super::todo_pin(&multi));
         assert!(text.contains("Todos"), "{text}");
         assert!(text.contains("1/2"), "phase position: {text}");
-        assert!(text.contains("backend 1/2"), "active phase progress: {text}");
+        assert!(
+            text.contains("backend 1/2"),
+            "active phase progress: {text}"
+        );
         assert!(text.contains("/todo"), "editor hint: {text}");
 
         let single = todos_from(vec![("only", vec![("a", Completed), ("b", Pending)])]);
         let text = line_text(&super::todo_pin(&single));
-        assert!(text.contains("Todos · 1/2"), "single phase progress: {text}");
+        assert!(
+            text.contains("Todos · 1/2"),
+            "single phase progress: {text}"
+        );
     }
 
     /// A child's panel normally closes on its own `SubagentEnd`. A run that
@@ -21446,7 +22062,8 @@ mod tests {
             // Not silently: the child did work, so it gets the same kind of
             // summary row a clean end would leave, marked unfinished.
             assert!(
-                rows.iter().any(|r| r.contains("subagent alpha interrupted")),
+                rows.iter()
+                    .any(|r| r.contains("subagent alpha interrupted")),
                 "{finish}: unfinished child must be accounted for: {rows:?}"
             );
         }
@@ -21465,7 +22082,9 @@ mod tests {
         // Closed, but only just: still shown, and the deadline is now armed.
         let rows = render_rows(&mut app, 80, 20);
         assert!(rows.iter().any(|r| r.contains("Todos")), "{rows:?}");
-        let closed = app.todos_closed_at.expect("deadline armed on a closed plan");
+        let closed = app
+            .todos_closed_at
+            .expect("deadline armed on a closed plan");
 
         // Past the timeout: the dock gives the rows back, the list stays.
         app.todos_closed_at = closed.checked_sub(super::TODO_HIDE_AFTER);
@@ -21637,7 +22256,10 @@ mod tests {
 
         let mut restored = test_app();
         restore_todos(&mut restored, Some(&meta));
-        assert_eq!(restored.todos, app.todos, "resume/branch reconstructs todos");
+        assert_eq!(
+            restored.todos, app.todos,
+            "resume/branch reconstructs todos"
+        );
     }
 
     #[tokio::test]
@@ -21645,7 +22267,9 @@ mod tests {
         use crate::core::agent::plan::RunMode;
         let mut app = test_app();
         app.run_mode = RunMode::Plan;
-        app.apply(StreamEvent::TodoUpdate { list: staged_todos() });
+        app.apply(StreamEvent::TodoUpdate {
+            list: staged_todos(),
+        });
         app.status = Status::Running; // an in-flight turn owns the ask
         let registry = crate::core::agent::interaction::new_registry();
         let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
@@ -21694,7 +22318,9 @@ mod tests {
         use crate::core::agent::plan::RunMode;
         let mut app = test_app();
         app.run_mode = RunMode::Plan;
-        app.apply(StreamEvent::TodoUpdate { list: staged_todos() });
+        app.apply(StreamEvent::TodoUpdate {
+            list: staged_todos(),
+        });
         app.status = Status::Running;
         let registry = crate::core::agent::interaction::new_registry();
         let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
@@ -21705,7 +22331,10 @@ mod tests {
         press_ask(&mut app, &registry, KeyCode::Down).await; // -> Keep planning
         press_ask(&mut app, &registry, KeyCode::Enter).await;
         assert_eq!(app.run_mode, RunMode::Plan);
-        assert!(app.message_queue.is_empty(), "keep planning must not execute");
+        assert!(
+            app.message_queue.is_empty(),
+            "keep planning must not execute"
+        );
     }
 
     #[tokio::test]
@@ -21713,7 +22342,9 @@ mod tests {
         use crate::core::agent::plan::RunMode;
         let mut app = test_app();
         app.run_mode = RunMode::Plan;
-        app.apply(StreamEvent::TodoUpdate { list: staged_todos() });
+        app.apply(StreamEvent::TodoUpdate {
+            list: staged_todos(),
+        });
         app.status = Status::Running;
         let registry = crate::core::agent::interaction::new_registry();
         let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
@@ -21780,8 +22411,14 @@ mod tests {
         assert!(app.thread_id.is_none(), "must detach from the saved thread");
         assert_eq!(app.tokens, 0);
         let text: String = app.transcript.iter().map(row_text).collect();
-        assert!(!text.contains("old content"), "transcript not reset: {text}");
-        assert!(text.contains("started a new session"), "missing note: {text}");
+        assert!(
+            !text.contains("old content"),
+            "transcript not reset: {text}"
+        );
+        assert!(
+            text.contains("started a new session"),
+            "missing note: {text}"
+        );
     }
 
     #[test]
@@ -22630,7 +23267,7 @@ mod tests {
     fn should_auto_compact_when_above_threshold() {
         let mut app = test_app();
         app.tokens = 120_000; // > 128K - 16K = 112K
-        // Need more than 4 history messages
+                              // Need more than 4 history messages
         for i in 0..6 {
             app.history.push(serde_json::json!({
                 "role": if i % 2 == 0 { "user" } else { "assistant" },
@@ -22710,7 +23347,10 @@ mod tests {
             "an overflow must queue a compaction instead of going idle"
         );
         assert!(app.retry_after_compact, "the turn must be retried");
-        assert!(!app.want_start, "the retry waits for the compaction to land");
+        assert!(
+            !app.want_start,
+            "the retry waits for the compaction to land"
+        );
     }
 
     #[test]
@@ -22737,7 +23377,10 @@ mod tests {
         app.compacting = app.compact_request.take();
         let compacted = vec![serde_json::json!({ "role": "system", "content": "summary" })];
         finish_compaction(&mut app, Ok(compacted), 7);
-        assert!(app.want_start, "a landed compaction resumes the errored turn");
+        assert!(
+            app.want_start,
+            "a landed compaction resumes the errored turn"
+        );
         assert!(!app.retry_after_compact);
         assert_eq!(app.status, Status::Running);
     }
@@ -22952,7 +23595,10 @@ mod tests {
         assert!(app.body().get("goal_mode").is_none());
 
         app.goal = Some(GoalState::new("ship the release"));
-        assert_eq!(app.body().get("goal_mode").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            app.body().get("goal_mode").and_then(|v| v.as_bool()),
+            Some(true)
+        );
 
         if let Some(goal) = app.goal.as_mut() {
             goal.status = GoalStatus::Achieved;
@@ -22987,7 +23633,10 @@ mod tests {
         assert!(!joined.contains("tokamak-1-preview"), "{joined}");
         assert!(joined.contains("/tmp/repo"), "{joined}");
         assert!(joined.contains("fix/tui-panel-width"), "{joined}");
-        assert!(joined.contains("auto-approved inside the OS sandbox"), "{joined}");
+        assert!(
+            joined.contains("auto-approved inside the OS sandbox"),
+            "{joined}"
+        );
         assert!(joined.contains("/help"), "{joined}");
         assert!(joined.contains("type a message to start"), "{joined}");
         assert!(
@@ -23086,7 +23735,11 @@ mod tests {
             assert!(all.contains(key), "dropped {key}");
             assert!(all.contains(label), "dropped {label}");
         }
-        assert_eq!(super::hint_rows(pairs, 200).len(), 1, "one row when it fits");
+        assert_eq!(
+            super::hint_rows(pairs, 200).len(),
+            1,
+            "one row when it fits"
+        );
     }
     /// Spans of the last committed transcript row, as `(text, style)`.
     fn last_row(app: &App) -> Vec<(String, Style)> {
@@ -23166,7 +23819,9 @@ mod tests {
         let mut app = test_app();
         app.note("conversation cleared");
         run_command(&mut app, "help").await;
-        for l in render_rows(&mut app, 84, 40) { println!("|{}", l.trim_end()); }
+        for l in render_rows(&mut app, 84, 40) {
+            println!("|{}", l.trim_end());
+        }
     }
 
     /// Every rendered line of the last row, as plain text.
@@ -23183,7 +23838,9 @@ mod tests {
     #[test]
     fn a_wrapped_note_indents_instead_of_repeating_its_marker() {
         let mut app = test_app();
-        app.note("not signed in - run /login to choose a provider before sending your first message");
+        app.note(
+            "not signed in - run /login to choose a provider before sending your first message",
+        );
 
         let lines = last_row_lines(&app, 60);
         assert!(lines.len() > 1, "expected a wrap: {lines:?}");
@@ -23196,7 +23853,9 @@ mod tests {
         }
         // Wrapped at a space, not mid-word.
         assert!(
-            lines.iter().all(|l| !l.ends_with("Tokam") && !l.ends_with("provi")),
+            lines
+                .iter()
+                .all(|l| !l.ends_with("Tokam") && !l.ends_with("provi")),
             "{lines:?}"
         );
         assert!(lines.iter().all(|l| l.chars().count() <= 60), "{lines:?}");
@@ -23206,7 +23865,9 @@ mod tests {
     fn a_wrapped_block_body_keeps_its_edge() {
         let mut app = test_app();
         app.note("commands:");
-        app.system_detail_text("/plan [exit|text]  Enter read-only plan mode, optionally seeding it with a message");
+        app.system_detail_text(
+            "/plan [exit|text]  Enter read-only plan mode, optionally seeding it with a message",
+        );
 
         let lines = last_row_lines(&app, 50);
         assert!(lines.len() > 1, "expected a wrap: {lines:?}");
@@ -23279,5 +23940,37 @@ mod tests {
             Some(&Some(last)),
             "the last body row must map to the last transcript row"
         );
+}
+    #[test]
+    fn model_picker_filters_and_restores_original_models() {
+        let mut picker = super::Picker {
+            kind: PickerKind::SelectModel,
+            all_items: vec![
+                super::PickerItem {
+                    value: "gpt-5-codex".to_string(),
+                    label: "openai / gpt-5-codex".to_string(),
+                    hint: None,
+                    checkbox: None,
+                },
+                super::PickerItem {
+                    value: "claude-sonnet".to_string(),
+                    label: "anthropic / claude-sonnet".to_string(),
+                    hint: None,
+                    checkbox: None,
+                },
+            ],
+            items: Vec::new(),
+            query: "CoDeX".to_string(),
+            selected: 1,
+            provider: None,
+        };
+        picker.refresh_model_items();
+        assert_eq!(picker.items.len(), 1);
+        assert_eq!(picker.items[0].value, "gpt-5-codex");
+        assert_eq!(picker.selected, 0);
+
+        picker.query.clear();
+        picker.refresh_model_items();
+        assert_eq!(picker.items.len(), 2);
     }
 }
