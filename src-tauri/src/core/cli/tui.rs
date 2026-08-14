@@ -436,9 +436,10 @@ struct PickerItem {
     checkbox: Option<bool>,
 }
 
-/// `/login` key entry: a docked prompt that collects a Tokamak API key without
-/// echoing it. Verification runs off the render loop (see `login_task` in
-/// `chat_loop`), so `verifying` marks the window where the prompt is read-only.
+/// `/login` key entry: a docked prompt opened after provider/method selection
+/// that collects a masked API key for the chosen provider without echoing it.
+/// Verification runs off the render loop (see `login_task` in `chat_loop`), so
+/// `verifying` marks the window where the prompt is read-only.
 struct LoginPrompt {
     provider: String,
     /// The key as typed/pasted. Never rendered verbatim -- see `masked`.
