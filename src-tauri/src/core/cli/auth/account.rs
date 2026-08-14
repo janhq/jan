@@ -158,10 +158,29 @@ fn token_request_body(login: &AccountLogin, code: &str) -> std::collections::BTr
     .map(|(key, value)| (key.to_string(), value))
     .collect()
 }
+fn refresh_request_body(
+    client_id: &str,
+    token: &OAuthToken,
+) -> Result<std::collections::BTreeMap<String, String>, String> {
+    let refresh_token = token
+        .refresh_token
+        .as_deref()
+        .filter(|token| !token.is_empty())
+        .ok_or_else(|| "account sign-in must be completed again".to_string())?;
+    Ok([
+        ("grant_type", "refresh_token".to_string()),
+        ("client_id", client_id.to_string()),
+        ("refresh_token", refresh_token.to_string()),
+    ]
+    .into_iter()
+    .map(|(key, value)| (key.to_string(), value))
+    .collect())
+}
 
 pub async fn exchange(login: &AccountLogin, code: &str) -> Result<OAuthToken, String> {
     #[derive(serde::Deserialize)]
     struct TokenResponse {
+
         access_token: String,
         #[serde(default)]
         refresh_token: Option<String>,
@@ -206,6 +225,72 @@ pub async fn exchange(login: &AccountLogin, code: &str) -> Result<OAuthToken, St
         expires_at: token.expires_in.map(|seconds| now.saturating_add(seconds.saturating_sub(300))),
         token_type: token.token_type,
         scopes: token.scope.split_whitespace().map(str::to_string).collect(),
+    })
+}
+
+pub async fn refresh(provider: AccountProvider, token: &OAuthToken) -> Result<OAuthToken, String> {
+    #[derive(serde::Deserialize)]
+    struct TokenResponse {
+        access_token: String,
+        #[serde(default)]
+        refresh_token: Option<String>,
+        #[serde(default)]
+        expires_in: Option<i64>,
+        #[serde(default = "default_token_type")]
+        token_type: String,
+        #[serde(default)]
+        scope: String,
+    }
+
+    fn default_token_type() -> String {
+        "Bearer".to_string()
+    }
+
+    let (client_id, token_endpoint) = match provider {
+        AccountProvider::Codex => (
+            "app_EMoamEEZ73f0CkXaXp7hrann",
+            "https://auth.openai.com/oauth/token",
+        ),
+        AccountProvider::Claude => (
+            "1d1c250a-e61b-44d9-88ed-5944d1962f5e",
+            "https://platform.claude.com/v1/oauth/token",
+        ),
+    };
+    let response = reqwest::Client::new()
+        .post(token_endpoint)
+        .form(&refresh_request_body(client_id, token)?)
+        .send()
+        .await
+        .map_err(|_| "could not refresh the account token".to_string())?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "account token refresh was rejected (HTTP {})",
+            response.status()
+        ));
+    }
+    let refreshed = response
+        .json::<TokenResponse>()
+        .await
+        .map_err(|_| "the refreshed account token was unreadable".to_string())?;
+    if refreshed.access_token.is_empty() {
+        return Err("the refreshed account token did not contain an access token".to_string());
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "could not read the system clock".to_string())?
+        .as_secs() as i64;
+    Ok(OAuthToken {
+        access_token: refreshed.access_token,
+        refresh_token: refreshed.refresh_token.or_else(|| token.refresh_token.clone()),
+        expires_at: refreshed
+            .expires_in
+            .map(|seconds| now.saturating_add(seconds.saturating_sub(300))),
+        token_type: refreshed.token_type,
+        scopes: if refreshed.scope.is_empty() {
+            token.scopes.clone()
+        } else {
+            refreshed.scope.split_whitespace().map(str::to_string).collect()
+        },
     })
 }
 
@@ -372,5 +457,23 @@ mod tests {
             Some(value) => std::env::set_var("JAN_DATA_FOLDER", value),
             None => std::env::remove_var("JAN_DATA_FOLDER"),
         }
+    }
+
+    #[test]
+    fn refresh_request_uses_the_refresh_grant_without_the_expired_access_token() {
+        let token = OAuthToken {
+            access_token: "expired-access".into(),
+            refresh_token: Some("refresh-token".into()),
+            expires_at: Some(1),
+            token_type: "Bearer".into(),
+            scopes: vec!["profile".into()],
+        };
+
+        let fields = refresh_request_body("client", &token).unwrap();
+
+        assert_eq!(fields.get("grant_type"), Some(&"refresh_token".to_string()));
+        assert_eq!(fields.get("refresh_token"), Some(&"refresh-token".to_string()));
+        assert_eq!(fields.get("client_id"), Some(&"client".to_string()));
+        assert!(!fields.contains_key("access_token"));
     }
 }
