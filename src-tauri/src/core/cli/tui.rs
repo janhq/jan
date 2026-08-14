@@ -1894,7 +1894,7 @@ impl App {
     /// reasoning has happened recently this turn.
     fn reasoning_status(&self) -> Option<(String, Style)> {
         if thinking_open(&self.assistant_buf) {
-            Some(("thinking".to_string(), Style::new().cyan().bold()))
+            Some(("thinking".to_string(), Style::new().yellow().bold()))
         } else {
             // The summary is transient: it lasts only `THOUGHT_FOR_TTL` after the
             // block closed, so a long tool call or answer prose falls back to the
@@ -1903,7 +1903,7 @@ impl App {
                 (Some(d), Some(since)) if since.elapsed() < THOUGHT_FOR_TTL => {
                     Some((
                         format!("thought for {}", format_elapsed(d.as_secs())),
-                        Style::new().cyan(),
+                        Style::new().yellow(),
                     ))
                 }
                 _ => None,
@@ -8552,10 +8552,10 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         // Ns] for the rest of the turn once it closes.
         match app.reasoning_status() {
             Some(s) => s,
-            None => ("working".to_string(), Style::new().yellow().bold()),
+            None => ("working".to_string(), Style::new().cyan().bold()),
         }
     } else {
-        ("working".to_string(), Style::new().yellow().bold())
+        ("working".to_string(), Style::new().cyan().bold())
     };
     let turn = match app.turn {
         (0, _) => String::new(),
@@ -8632,9 +8632,9 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         spans.extend(shimmer_spans(
             &status,
             [
-                Style::new().cyan().bold(),
-                Style::new().cyan(),
-                Style::new().cyan().dim(),
+                Style::new().yellow().bold(),
+                Style::new().yellow(),
+                Style::new().yellow().dim(),
             ],
             app.spinner_frame,
         ));
@@ -15261,9 +15261,9 @@ mod tests {
     fn thinking_badge_shimmers_across_its_frames() {
         use ratatui::style::{Modifier, Style};
         let palette = [
-            Style::new().cyan().bold(),
-            Style::new().cyan(),
-            Style::new().cyan().dim(),
+            Style::new().yellow().bold(),
+            Style::new().yellow(),
+            Style::new().yellow().dim(),
         ];
         let crest_at = |frame: usize| {
             let spans = super::shimmer_spans("thinking", palette, frame);

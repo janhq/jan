@@ -537,7 +537,9 @@ impl Renderer {
                 self.item_open = true;
             }
             Tag::Emphasis => self.inlines.push(Style::new().italic()),
-            Tag::Strong => self.inlines.push(Style::new().bold()),
+            Tag::Strong => self
+                .inlines
+                .push(Style::new().bold().fg(Color::Rgb(255, 165, 0))),
             Tag::Strikethrough => self.inlines.push(Style::new().crossed_out()),
             Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. } => {
                 self.link = Some(Link {
@@ -1387,3 +1389,4 @@ mod tests {
     }
 
 }
+
