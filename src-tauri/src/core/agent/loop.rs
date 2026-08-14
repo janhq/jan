@@ -994,28 +994,6 @@ fn stop_reason_of(completion: &serde_json::Value) -> String {
         .to_string()
 }
 
-/// Text of the most recent `user` message. Handles both string content and the
-/// multimodal array form (text parts concatenated). None if there is no user turn.
-fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
-    let content = messages
-        .iter()
-        .rev()
-        .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))?
-        .get("content")?;
-    match content {
-        serde_json::Value::String(s) => Some(s.clone()),
-        serde_json::Value::Array(parts) => {
-            let text: String = parts
-                .iter()
-                .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
-                .collect::<Vec<_>>()
-                .join(" ");
-            (!text.is_empty()).then_some(text)
-        }
-        _ => None,
-    }
-}
-
 /// Assembles the run's system prompt: `override_prompt` (a subagent's
 /// definition prompt) replaces the assistant identity when set, but the
 /// project-context and tool-use guidance from `build_system_prompt` is still
@@ -1163,26 +1141,12 @@ async fn orchestrate_inner(
         (None, None)
     };
 
-    let mut system_prompt = build_run_system_prompt(
+    let system_prompt = build_run_system_prompt(
         assistant_instructions.as_deref(),
         system_prompt_override.as_deref(),
         project_root.as_deref(),
         *subagents_enabled,
     );
-    // Normal parent runs recall project memory for the current query before it
-    // is indexed. Child runs keep their isolated history and skip memory.
-    if system_prompt_override.is_none() {
-        if let Some(root) = project_root {
-            if let Some(query) = latest_user_text(&conversation_messages) {
-                if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
-                    system_prompt = Some(match system_prompt {
-                        Some(s) => format!("{s}\n\n{mem}"),
-                        None => mem,
-                    });
-                }
-            }
-        }
-    }
     // Always tell the model today's date, including isolated child runs.
     let date_line = format!("Today's date is {}.", chrono::Local::now().format("%Y-%m-%d"));
     let system_prompt = match system_prompt {
@@ -1386,14 +1350,6 @@ async fn orchestrate_inner(
     let mut budget = SessionBudget::new(max_session_tokens);
 
     if let Some(root) = project_root {
-        // Subagent (override) runs are ephemeral: their turns are never indexed
-        // into project memory, so a child cannot pollute the parent's recall.
-        let index_memory = system_prompt_override.is_none();
-        if index_memory {
-            if let Some(query) = latest_user_text(&conversation_messages) {
-                crate::core::agent::memory::index_message(root, "user", &query);
-            }
-        }
         // Background subagents are scoped to this run: `_bg_guard` aborts any
         // still-running child when `orchestrate_inner` returns or is cancelled.
         // The cap (`max_parallel_subagents`) is snapshotted here, at run start.
@@ -1445,15 +1401,6 @@ async fn orchestrate_inner(
         // `_bg_guard`. On an error, teardown still aborts them.
         if result.is_ok() {
             bg.join_all().await;
-        }
-        if index_memory {
-            if let Ok(completion) = &result {
-                if let Some(answer) = extract_choice_message(completion)
-                    .and_then(|m| m.get("content").and_then(|c| c.as_str()).map(str::to_string))
-                {
-                    crate::core::agent::memory::index_message(root, "assistant", &answer);
-                }
-            }
         }
         result
     } else {
