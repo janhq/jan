@@ -4344,6 +4344,32 @@ async fn await_login(
     }
 }
 
+/// How often the dock's branch indicator re-reads `HEAD`, so a checkout made
+/// outside the TUI (another terminal, an editor) shows up without needing a
+/// restart. Cheap (`rev-parse --abbrev-ref HEAD`) but still shells out, so this
+/// is a poll, not every tick.
+const BRANCH_POLL_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Re-read the current git branch off-loop (a blocking `git` call), only when
+/// no poll is already in flight. A no-op when the project isn't a git repo.
+fn spawn_branch_poll(project_root: &std::path::Path) -> tokio::task::JoinHandle<Option<String>> {
+    let root = project_root.to_path_buf();
+    tokio::task::spawn_blocking(move || git::current_branch(&root))
+}
+
+/// Await an in-flight branch poll once, clearing the slot. Same cancel-safe
+/// borrow as `await_mcp`; pends forever when idle.
+async fn await_branch_poll(
+    task: &mut Option<tokio::task::JoinHandle<Option<String>>>,
+) -> Option<String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    joined.ok().flatten()
+}
+
 /// Await the startup update check once, clearing the slot. Same cancel-safe
 /// borrow as `await_mcp`; pends forever before it is spawned and after it has
 /// been consumed, so it can sit in the loop's `select!` unconditionally.
@@ -4601,6 +4627,14 @@ async fn chat_loop<B: Backend>(
         None;
     let mut compact_base = 0usize;
 
+    // The dock's branch indicator is captured once at startup; re-read it on a
+    // slow timer so a checkout made outside the TUI (another terminal, an
+    // editor) is reflected without a restart. `None` once the project proves
+    // not to be a git repo, so a plain directory never shells out every tick.
+    let mut branch_task: Option<tokio::task::JoinHandle<Option<String>>> = None;
+    let mut branch_poll = tokio::time::interval(BRANCH_POLL_INTERVAL);
+    branch_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
     // Nothing to say when there is no seed message: the splash already invites
     // the first one (`Banner::awaiting_first_message`).
     if let Some(task) = initial_task.filter(|t| !t.trim().is_empty()) {
@@ -4745,6 +4779,14 @@ async fn chat_loop<B: Backend>(
                         _ => {}
                     }
                 }
+            }
+            _ = branch_poll.tick() => {
+                if branch_task.is_none() {
+                    branch_task = Some(spawn_branch_poll(&app.project_root));
+                }
+            }
+            branch = await_branch_poll(&mut branch_task) => {
+                app.git_branch = branch;
             }
             outcome = await_mcp(&mut mcp_task) => {
                 mcp_ready = true;
@@ -9120,7 +9162,7 @@ mod tests {
         image_mime_of, load_first_file_image, load_image_file, MAX_IMAGE_BYTES,
         message_text, CompactKind, MAX_OVERFLOW_RETRIES,
         estimate_token_count, header_spans, status_panel, SubagentPanel,
-        note_update, open_config_screen,
+        note_update, open_config_screen, spawn_branch_poll, await_branch_poll,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
         run_command, starting_call_lines, unescape_partial_json_string,
@@ -10717,6 +10759,56 @@ mod tests {
         // Disabled (no repo) -> job dropped.
         app.repo_root = None;
         assert!(app.resolve_snapshot(&SnapshotJob::Base).is_none());
+    }
+
+    /// The dock's branch indicator must not stick to whatever `HEAD` was at
+    /// startup: `spawn_branch_poll`/`await_branch_poll` -- the pair
+    /// `chat_loop` drives on `BRANCH_POLL_INTERVAL` -- re-read `HEAD` live, so
+    /// a checkout made outside the TUI while it's running is picked up on the
+    /// next poll instead of only at the next launch.
+    #[tokio::test]
+    async fn branch_poll_picks_up_a_checkout_made_after_the_first_poll() {
+        use std::process::Command;
+        let n = std::process::id();
+        let root = std::env::temp_dir().join(format!("jan_tui_branch_poll_{n}"));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let r = root.to_string_lossy().to_string();
+        let git_ok = Command::new("git")
+            .args(["-C", &r, "init", "-q"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !git_ok {
+            let _ = std::fs::remove_dir_all(&root);
+            return;
+        }
+        std::fs::write(root.join("a.txt"), "one\n").unwrap();
+        Command::new("git").args(["-C", &r, "add", "-A"]).status().unwrap();
+        Command::new("git")
+            .args([
+                "-C", &r, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m",
+                "init", "--no-gpg-sign",
+            ])
+            .status()
+            .unwrap();
+
+        let mut task = Some(spawn_branch_poll(&root));
+        let first = await_branch_poll(&mut task).await;
+        assert!(first.is_some(), "a fresh commit has a branch");
+        assert!(task.is_none(), "the slot clears once the poll lands");
+
+        Command::new("git")
+            .args(["-C", &r, "checkout", "-q", "-b", "feature/x"])
+            .status()
+            .unwrap();
+
+        let mut task = Some(spawn_branch_poll(&root));
+        let second = await_branch_poll(&mut task).await;
+        assert_eq!(second.as_deref(), Some("feature/x"));
+        assert_ne!(first, second, "the poll must see the external checkout");
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
