@@ -232,6 +232,32 @@ pub async fn set_secret(key: String, value: String) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
+/// Store (or replace) one opaque secret record under `key` (namespaced
+/// `auth:<key>` so it can never collide with a provider key chain). Used for
+/// versioned login credential bundles; empty values delete the entry.
+pub fn store_secret_record(key: &str, value: &str) -> Result<(), String> {
+    store_provider_keys(&format!("auth:{key}"), &[value.to_string()])
+}
+
+/// Read a secret record stored via [`store_secret_record`]. `None` when absent.
+pub fn load_secret_record(key: &str) -> Option<String> {
+    load_provider_keys(&format!("auth:{key}")).into_iter().next()
+}
+
+/// Remove a secret record stored via [`store_secret_record`]. Missing entries
+/// are not an error.
+pub fn delete_secret_record(key: &str) -> Result<(), String> {
+    delete_provider_keys(&format!("auth:{key}"))
+}
+
+/// Force the encrypted-file fallback for the rest of the process. Test-only:
+/// lets unit tests exercise the file path without touching the developer's
+/// keychain.
+#[cfg(test)]
+pub(crate) fn force_file_secrets() {
+    KEYRING_DOWN.store(true, Ordering::Relaxed);
+}
+
 /// Read a single generic secret stored via `set_secret`. None when absent.
 #[cfg(not(feature = "cli"))]
 #[tauri::command]
