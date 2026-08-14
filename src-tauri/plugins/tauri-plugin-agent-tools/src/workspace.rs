@@ -61,6 +61,41 @@ pub fn thread_workspace(jan_data_folder: &Path, thread_id: &str) -> Result<PathB
     Ok(threads_dir(jan_data_folder).join(thread_segment(thread_id)?))
 }
 
+/// The session-scoped scratch directory: a subdirectory of the host temp
+/// dir (e.g. `/tmp/jan-agent-<session>` on Linux) bound over the sandbox's
+/// `/tmp` so `bash` scratch files persist across calls for one session.
+///
+/// Only the specific session subdir is bound, not the whole host `/tmp`, so
+/// the sandboxed shell sees just its own scratch and none of the machine's
+/// other temp files. On macOS and Windows the OS temp dir is already
+/// host-backed and persists on its own, so this path is only consumed by the
+/// Linux bubblewrap backend; it is still cleaned up with the session elsewhere.
+pub fn scratch_dir(session: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("jan-agent-{session}"))
+}
+
+/// Create the session-scoped scratch directory (idempotent) and return it.
+/// Must exist before the Linux sandbox binds it over `/tmp`. The caller owns
+/// its teardown: thread deletion on the desktop, run end on the CLI, and
+/// session end in the TUI.
+pub async fn ensure_scratch_dir(session: &str) -> Result<PathBuf, String> {
+    let dir = scratch_dir(session);
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| format!("ERROR: {e}"))?;
+    Ok(dir)
+}
+
+/// Delete a session's scratch directory. Idempotent: a missing scratch is Ok.
+pub async fn remove_scratch_dir(session: &str) -> Result<(), String> {
+    let dir = scratch_dir(session);
+    match tokio::fs::remove_dir_all(&dir).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("ERROR: {e}")),
+    }
+}
+
 /// Create the permanent store and its `memory/`/`skills/` subdirectories,
 /// returning the store root. Idempotent.
 pub async fn ensure_permanent_store(jan_data_folder: &Path) -> Result<PathBuf, String> {
@@ -97,10 +132,13 @@ pub async fn remove_thread_workspace(
     let dir = thread_workspace(jan_data_folder, thread_id)?;
     crate::tools::appcontainer::release(&dir);
     match tokio::fs::remove_dir_all(&dir).await {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("ERROR: {e}")),
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("ERROR: {e}")),
     }
+    // Wipe the session-scoped host-temp scratch keyed to the same thread id.
+    let _ = remove_scratch_dir(thread_id).await;
+    Ok(())
 }
 
 /// Delete every thread sandbox whose id is not in `keep`, returning how many
@@ -135,6 +173,8 @@ pub async fn sweep_thread_workspaces(
         crate::tools::appcontainer::release(&entry.path());
         if tokio::fs::remove_dir_all(entry.path()).await.is_ok() {
             removed += 1;
+            // Wipe the session-scoped host-temp scratch keyed to this thread.
+            let _ = remove_scratch_dir(&name).await;
         }
     }
     Ok(removed)
@@ -219,6 +259,23 @@ mod tests {
         let thread = thread_workspace(data, "abc-123").unwrap();
         assert_eq!(thread, Path::new("/data/agent-workspace/threads/abc-123"));
         assert!(!store_dir(&permanent_store(data), "memory").starts_with(&thread));
+    }
+
+    #[tokio::test]
+    async fn scratch_dir_lifecycle_is_session_keyed_and_removable() {
+        let session = "t1";
+        let scratch = scratch_dir(session);
+        assert!(!scratch.exists());
+
+        let created = ensure_scratch_dir(session).await.unwrap();
+        assert_eq!(created, scratch);
+        assert!(scratch.is_dir());
+
+        std::fs::write(scratch.join("f"), b"x").unwrap();
+        remove_scratch_dir(session).await.unwrap();
+        assert!(!scratch.exists());
+        // Idempotent.
+        remove_scratch_dir(session).await.unwrap();
     }
 
     #[test]

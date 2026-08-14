@@ -87,6 +87,13 @@ pub struct Policy {
     /// desktop keeps the full isolation so `settings.json` and provider keys
     /// stay out of the shell's reach.
     pub home_readonly: bool,
+    /// A host directory bound over the sandbox's `/tmp`, replacing the default
+    /// private tmpfs. On bubblewrap the default `/tmp` is a volatile overlay
+    /// discarded with each command, so scratch files vanish between `bash`
+    /// calls; binding a session-scoped host directory instead makes `/tmp`
+    /// persist for the whole run. The directory must already exist before the
+    /// sandbox is built ([`bwrap_args`] binds it, it does not create it).
+    pub scratch_root: Option<PathBuf>,
 }
 
 impl Policy {
@@ -97,6 +104,7 @@ impl Policy {
             allow_network,
             hide_root: None,
             home_readonly: false,
+            scratch_root: None,
         }
     }
 
@@ -124,6 +132,15 @@ impl Policy {
     /// Expose `$HOME` read-only instead of masking it. See [`Policy::home_readonly`].
     pub fn with_home_readonly(mut self, home_readonly: bool) -> Self {
         self.home_readonly = home_readonly;
+        self
+    }
+
+    /// Bind `scratch_root` over the sandbox's `/tmp` so scratch files persist
+    /// across `bash` calls in a session instead of being discarded with each
+    /// private tmpfs. The directory must already exist (the caller creates and
+    /// owns its lifecycle).
+    pub fn with_scratch_root(mut self, scratch_root: &Path) -> Self {
+        self.scratch_root = Some(scratch_root.to_path_buf());
         self
     }
 }
@@ -293,8 +310,16 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     // rather than the host's, and so an unshared pid namespace has a valid /proc.
     push(&mut args, &["--proc", "/proc"]);
     push(&mut args, &["--dev", "/dev"]);
-    // Private temp: writable, discarded with the sandbox, invisible to the host.
-    push(&mut args, &["--tmpfs", "/tmp"]);
+    // `/tmp`: by default a private tmpfs, writable and discarded with the
+    // sandbox. When a session-scoped scratch root is set, bind it over `/tmp`
+    // instead (the tmpfs would shadow it), so scratch files persist across
+    // `bash` calls for the whole run.
+    if let Some(scratch) = &policy.scratch_root {
+        let scratch = scratch.to_string_lossy();
+        push(&mut args, &["--bind", &scratch, "/tmp"]);
+    } else {
+        push(&mut args, &["--tmpfs", "/tmp"]);
+    }
 
     // An empty tmpfs over $HOME hides user files without needing a deny rule.
     // The workspace is re-bound on top, so it survives while its siblings (the
@@ -629,6 +654,23 @@ mod tests {
     }
 
     #[test]
+    fn bwrap_binds_scratch_over_tmp_instead_of_a_tmpfs() {
+        let scratch = Path::new("/data/agent-workspace/threads/t1/agent-scratch");
+        let scratch_bind = format!("--bind {} /tmp", scratch.to_string_lossy());
+
+        // Default: a throwaway tmpfs per command, no scratch bind.
+        let default = joined(&bwrap_args(&policy(), &cfg()));
+        assert!(default.contains("--tmpfs /tmp"), "{default}");
+        assert!(!default.contains(&scratch_bind), "{default}");
+
+        // With a scratch root, /tmp is a real bind so files written there by one
+        // bash call survive into the next.
+        let bound = joined(&bwrap_args(&policy().with_scratch_root(scratch), &cfg()));
+        assert!(!bound.contains("--tmpfs /tmp"), "{bound}");
+        assert!(bound.contains(&scratch_bind), "{bound}");
+    }
+
+    #[test]
     fn bwrap_ends_with_the_shell_so_the_command_appends_last() {
         let args = bwrap_args(&policy(), &cfg());
         let sep = args.iter().position(|a| a == "--").expect("separator");
@@ -839,6 +881,28 @@ mod enforcement_tests {
             "the write must land on the real workspace, not a throwaway overlay"
         );
         let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[tokio::test]
+    async fn scratch_persists_across_bash_calls_when_bound_over_tmp() {
+        require_backend!();
+        let ws = workspace();
+        let scratch = ws.join("agent-scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let policy = Policy::new(&ws, false).with_scratch_root(&scratch);
+
+        // Write into /tmp in the first call, then read it back in a second,
+        // separate sandboxed process. This is exactly the pattern the fix
+        // exists for: a scratch pad that outlives a single bash invocation.
+        let (ok, out) = run_policy(policy.clone(), &ws, "echo persistent > /tmp/scratch.txt").await;
+        assert!(ok, "scratch write must succeed: {out}");
+        let (ok, out) = run_policy(policy, &ws, "cat /tmp/scratch.txt").await;
+        let _ = std::fs::remove_dir_all(&ws);
+        assert!(ok, "scratch read must succeed: {out}");
+        assert!(
+            out.contains("persistent"),
+            "scratch must survive a second bash call: {out}"
+        );
     }
 
     #[tokio::test]

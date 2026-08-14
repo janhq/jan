@@ -458,6 +458,7 @@ use crate::core::agent::r#loop::{
     run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
 };
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::workspace;
 use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use crate::core::cli::run_report::{OutputFormat, RunReport};
 use crate::core::mcp::models::McpSettings;
@@ -661,6 +662,11 @@ fn build_cli_orchestration_args(
         } else {
             crate::core::agent::plan::RunMode::Normal
         },
+        // Key the persistent bash `/tmp` scratch to this session. Generated per
+        // run/session: a one-shot CLI wipes it after its single run; the TUI
+        // reuses `args` across turns and wipes it when the interactive session
+        // ends.
+        session_id: Some(uuid::Uuid::new_v4().to_string()),
     }
 }
 
@@ -1083,6 +1089,11 @@ async fn run_agent_loop(
             started.elapsed().as_millis(),
             final_text.as_deref(),
         ));
+    }
+    // The one-shot CLI runs exactly one turn, so its session ends here: wipe
+    // the persistent bash `/tmp` scratch this run used.
+    if let Some(session) = args.session_id.as_deref() {
+        let _ = workspace::remove_scratch_dir(session).await;
     }
     result.map(|_| ())
 }

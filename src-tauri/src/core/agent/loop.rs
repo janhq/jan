@@ -92,6 +92,12 @@ pub(crate) struct OrchestrationArgs {
     /// nor executable: the dispatcher hard-denies them with `plan_mode_read_only`,
     /// stronger than auto-approval's prompt suppression (it cannot override this).
     pub run_mode: crate::core::agent::plan::RunMode,
+    /// Stable identity for this run's session, used to key the persistent
+    /// `bash` `/tmp` scratch directory (`<temp>/jan-agent-<session_id>`) and
+    /// wiped at the session boundary specific to each surface. `None` on
+    /// code paths with no session (server proxy runs) keeps the default
+    /// throwaway per-command tmpfs.
+    pub session_id: Option<String>,
 }
 
 #[async_trait]
@@ -207,6 +213,10 @@ struct CompositeToolInvoker {
     /// Whether the sandboxed shell may read `$HOME`. Resolved once per run
     /// from `[tools].allow_home_read`, falling back to `true` on the CLI.
     allow_home_read: bool,
+    /// Session-scoped scratch directory bound over the sandbox's `/tmp` so
+    /// `bash` scratch files persist across calls for the whole run. Created at
+    /// run start and wiped at run end.
+    scratch_root: std::path::PathBuf,
     permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
@@ -285,6 +295,7 @@ impl CompositeToolInvoker {
         )
         .with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
+        .with_scratch_root(&self.scratch_root)
     }
 
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
@@ -898,6 +909,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
         auto_approve: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
+        session_id: None,
     };
     let body = match json_body.get("max_turns") {
         Some(_) => std::borrow::Cow::Borrowed(json_body),
@@ -1077,6 +1089,7 @@ async fn orchestrate_inner(
         max_parallel_subagents,
         auto_approve,
         run_mode,
+        session_id,
     } = args;
 
     // Per-turn override: the TUI toggles plan mode live via the request body
@@ -1331,12 +1344,22 @@ async fn orchestrate_inner(
             bg: bg.clone(),
         });
         let settings = resolve_run_settings(root);
+        // Scratch is keyed to the session so `/tmp` persists across turns in the
+        // interactive TUI (and across calls in one-shot runs), then wiped at the
+        // session boundary. `None` (server proxy) keeps the default tmpfs.
+        let scratch_root = match session_id {
+            Some(session) => tauri_plugin_agent_tools::workspace::ensure_scratch_dir(session)
+                .await
+                .map_err(|e| format!("ERROR: {e}"))?,
+            None => root.join("agent-scratch"),
+        };
         let tools = CompositeToolInvoker {
             mcp: mcp_tools,
             store_root: tauri_plugin_agent_tools::workspace::project_store(root),
             enabled_skills: settings.enabled_skills,
             allow_network: settings.allow_network,
             allow_home_read: settings.allow_home_read,
+            scratch_root: scratch_root.clone(),
             project_root: root.clone(),
             permissions: permissions.clone(),
             events: events.clone(),
@@ -2789,6 +2812,7 @@ mod tests {
             enabled_skills: Vec::new(),
             allow_network: DEFAULT_ALLOW_NETWORK,
             allow_home_read: DEFAULT_ALLOW_HOME_READ,
+            scratch_root: tauri_plugin_agent_tools::workspace::scratch_dir("test-session"),
             project_root: root,
             // Read-only default => write PROMPTS.
             permissions: ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),

@@ -280,6 +280,7 @@ pub async fn execute_tool(
     // would be refused if the thread's first tool call arrived before any UI
     // surface had ensured it.
     let root = workspace::ensure_thread_workspace(Path::new(&data_folder), &thread_id).await?;
+    let scratch = workspace::ensure_scratch_dir(&thread_id).await?;
     let store = resolve_store(&data_folder, project.as_deref());
     let tool = lookup(&name)
         .ok_or_else(|| AgentToolsError::from(format!("unknown built-in tool '{name}'")))?;
@@ -340,7 +341,8 @@ pub async fn execute_tool(
     let ctx = ToolContext::new(&root, &store, &enabled)
         .with_network(allow_network.unwrap_or(false))
         .with_confined_writes(true)
-        .with_mask_root(Path::new(&data_folder));
+        .with_mask_root(Path::new(&data_folder))
+        .with_scratch_root(&scratch);
     let (content, diff) = handlers::execute_builtin_with_diff(tool, &args, &ctx).await;
     let is_error =
         content.starts_with("ERROR") || (name == "bash" && handlers::bash_result_failed(&content));

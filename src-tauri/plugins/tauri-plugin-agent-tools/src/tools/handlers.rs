@@ -658,6 +658,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     if let Some(mask) = ctx.mask_root {
         policy = policy.with_mask_root(mask);
     }
+    if let Some(scratch) = ctx.scratch_root {
+        policy = policy.with_scratch_root(scratch);
+    }
     let Some(shell) = jail::wrap(proc::shell(), &policy) else {
         return "ERROR: bash is unavailable because no OS sandbox could be established on this \
                 system. Use the read/ls/find/grep tools instead."

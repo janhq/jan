@@ -46,6 +46,7 @@ use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs, PermissionRegistry};
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::workspace;
 
 /// Mouse tracking, hand-rolled instead of crossterm's `EnableMouseCapture`,
 /// which also turns on any-motion reporting (1003) -- a stream of events for
@@ -4509,6 +4510,7 @@ pub async fn run(
     args.ask_requests = Some(ask_requests.clone());
     let todo_registry = crate::core::agent::todo::new_registry();
     args.todo_registry = Some(todo_registry.clone());
+    let session_scratch = args.session_id.clone();
     let args = Arc::new(args);
 
     // Deserializing syntect's syntax/theme dumps takes tens of milliseconds.
@@ -4621,6 +4623,11 @@ pub async fn run(
     // transcript note would vanish with it.
     if app.update_installing {
         eprintln!("the update was still installing when jan exited; run `jan update` to finish it");
+    }
+    // The interactive session is over: wipe the persistent bash `/tmp` scratch
+    // that its turns shared.
+    if let Some(session) = session_scratch.as_deref() {
+        let _ = workspace::remove_scratch_dir(session).await;
     }
     res
 }
