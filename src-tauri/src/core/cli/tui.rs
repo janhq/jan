@@ -6981,6 +6981,12 @@ async fn handle_key(
 
     match key.code {
         KeyCode::Esc => {
+            if app.account_login_active {
+                app.account_login_active = false;
+                app.account_login_submit = None;
+                app.note("account sign-in cancelled");
+                return;
+            }
             // Esc cancels a run or clears typed input; it never quits (that's
             // Ctrl-D / Ctrl-C when idle), so a stray Esc can't close the app.
             if app.status == Status::Running {
@@ -14844,6 +14850,19 @@ mod tests {
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
         assert!(app.login.is_none(), "Esc must close the prompt");
         assert!(app.login_submit.is_none());
+    }
+
+    #[tokio::test]
+    async fn esc_cancels_a_pending_account_sign_in() {
+        let mut app = test_app();
+        super::open_account_login(&mut app, "openai");
+        assert!(app.account_login_active);
+        assert!(app.account_login_submit.is_some());
+
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+
+        assert!(!app.account_login_active);
+        assert!(app.account_login_submit.is_none());
     }
 
     #[tokio::test]
