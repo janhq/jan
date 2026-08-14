@@ -6158,7 +6158,9 @@ async fn chat_loop<B: Backend>(
             account_login = await_account_login(&mut account_login_task) => {
                 app.account_login_active = false;
                 match account_login {
-                    Ok(provider) => app.note(&format!("signed in to {provider}")),
+                    Ok(provider) => app.note(&format!(
+                        "signed in to {provider}; use /model <id> to select a model"
+                    )),
                     Err(error) => app.note(&format!("account sign-in failed: {error}")),
                 }
             }
