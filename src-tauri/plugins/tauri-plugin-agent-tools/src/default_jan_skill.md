@@ -3,19 +3,23 @@ name: jan
 description: Use when onboarding users to Jan Agent or explaining project and global configuration, skills, memory, providers, and MCP servers.
 ---
 # Jan Agent
+When enabled, Jan lists this skill's name and purpose. The model loads its body with `skill_read`
+only when the task needs it.
+
 
 Run `jan` in a folder. That CWD is the project root; `--project DIR` selects another root.
 
 ## Project files
 
-Jan creates this tree on first use:
+Jan reads non-empty `JAN.md` files from the project root and its ancestors. The nearest file wins.
+Jan creates this separate state tree on first use:
 
 ```text
 <project>/
+|-- JAN.md                 # always-loaded project instructions
 `-- .jan/
     `-- agent/
         |-- agent.toml       # model, provider, budget, tools, skills
-        |-- AGENT.md         # always-loaded project instructions
         |-- skills/
         |   `-- <name>/
         |       `-- SKILL.md # procedure, plus optional scripts/templates
@@ -25,9 +29,8 @@ Jan creates this tree on first use:
 ```
 
 `agent.toml` has `[agent]`, `[provider]`, `[budget]`, `[tools]`, and `[skills]` sections.
-`AGENT.md` is the default `instructions_file`. A simple skill can instead be
-`skills/<name>.md`. Commit `agent.toml`, `AGENT.md`, `skills/`, and `subagents/`;
-gitignore `threads/`. Run `jan cli agent status --project .` to scaffold the tree.
+A simple skill can be `skills/<name>.md`. Commit `JAN.md`, `agent.toml`, `skills/`, and
+`subagents/`; gitignore `threads/`. Run `jan cli agent status --project .` to scaffold the tree.
 
 ## User-global files
 
