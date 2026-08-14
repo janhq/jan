@@ -7,6 +7,7 @@
 //! verifier/state values never live here. They move through
 //! [`crate::core::server::provider_secrets`] only.
 
+pub mod account;
 pub mod credentials;
 pub mod providers;
 
