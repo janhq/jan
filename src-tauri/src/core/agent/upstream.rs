@@ -287,15 +287,19 @@ pub(crate) async fn resolve_upstream_for_model(
     drop(pc);
 
     if let Some(provider) = provider_name {
-        let pc2 = provider_configs.lock().await;
-        if let Some(provider_cfg) = pc2.get(provider.as_str()).cloned() {
+        let provider_cfg = provider_configs.lock().await.get(provider.as_str()).cloned();
+        if let Some(provider_cfg) = provider_cfg {
             // A populated base_url means an HTTP upstream (cloud, or a local
             // engine whose live endpoint was registered at runtime). A local
             // engine loaded from persisted settings has none -- fall through to
             // the MLX session / llama-server router resolution below.
             if let Some(api_url) = provider_cfg.base_url.clone().filter(|u| !u.is_empty()) {
+                let api_keys = crate::core::cli::auth::account::access_token(&provider_cfg.provider)
+                    .await?
+                    .map(|token| vec![token])
+                    .unwrap_or_else(|| provider_cfg.bearer_key_chain());
                 let url = format!("{}{}", api_url, destination_path);
-                return Ok((url, provider_cfg.bearer_key_chain()));
+                return Ok((url, api_keys));
             }
         }
     }
@@ -1362,6 +1366,54 @@ mod tests {
         .await
         .expect("the API server provider is reachable");
         assert_eq!(url, "http://127.0.0.1:1337/v1/chat/completions");
+    }
+
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn account_credentials_override_the_api_key_chain() {
+        use crate::core::cli::auth::{Credential, CredentialStore, OAuthToken};
+        use crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK;
+
+        let _guard = SECRET_STORE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let directory = tempfile::tempdir().unwrap();
+        let previous = std::env::var("JAN_DATA_FOLDER").ok();
+        std::env::set_var("JAN_DATA_FOLDER", directory.path());
+        crate::core::server::provider_secrets::force_file_secrets();
+        CredentialStore::store(
+            "openai",
+            &Credential::OAuthToken(OAuthToken {
+                access_token: "account-access".into(),
+                refresh_token: Some("refresh".into()),
+                expires_at: Some(1_800_000_000),
+                token_type: "Bearer".into(),
+                scopes: vec![],
+            }),
+        )
+        .unwrap();
+        let mut configs = HashMap::new();
+        configs.insert(
+            "openai".to_string(),
+            ProviderConfig {
+                provider: "openai".into(),
+                base_url: Some("https://api.openai.com/v1".into()),
+                api_key: Some("api-key".into()),
+                models: vec!["account-model".into()],
+                ..Default::default()
+            },
+        );
+
+        let (_, keys) = resolve_upstream_for_model(
+            "account-model",
+            Arc::new(Mutex::new(configs)),
+        )
+        .await
+        .unwrap();
+        assert_eq!(keys, vec!["account-access"]);
+
+        match previous {
+            Some(value) => std::env::set_var("JAN_DATA_FOLDER", value),
+            None => std::env::remove_var("JAN_DATA_FOLDER"),
+        }
     }
 
     #[test]

@@ -17,6 +17,14 @@ impl AccountProvider {
             Self::Claude => "anthropic",
         }
     }
+
+    fn from_credential_provider(provider: &str) -> Option<Self> {
+        match provider {
+            "openai" => Some(Self::Codex),
+            "anthropic" => Some(Self::Claude),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -292,6 +300,25 @@ pub async fn refresh(provider: AccountProvider, token: &OAuthToken) -> Result<OA
             refreshed.scope.split_whitespace().map(str::to_string).collect()
         },
     })
+}
+
+pub async fn access_token(provider: &str) -> Result<Option<String>, String> {
+    let Some(provider_kind) = AccountProvider::from_credential_provider(provider) else {
+        return Ok(None);
+    };
+    let Some(Credential::OAuthToken(token)) = CredentialStore::load(provider)? else {
+        return Ok(None);
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "could not read the system clock".to_string())?
+        .as_secs() as i64;
+    if token.expires_at.is_some_and(|expires_at| expires_at <= now) {
+        let refreshed = refresh(provider_kind, &token).await?;
+        store(provider_kind, &refreshed)?;
+        return Ok(Some(refreshed.access_token));
+    }
+    Ok(Some(token.access_token))
 }
 
 pub fn store(provider: AccountProvider, token: &OAuthToken) -> Result<(), String> {
