@@ -2186,6 +2186,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn built_in_jan_skill_is_available_without_project_skills() {
+        let root = unique_root();
+
+        let list = execute_builtin(lookup("skill_list").unwrap(), &json!({}), &root).await;
+        assert!(
+            list.lines()
+                .any(|line| line == "jan" || line.starts_with("jan — ")),
+            "unexpected list: {list}"
+        );
+
+        let body = execute_builtin(
+            lookup("skill_read").unwrap(),
+            &json!({"name": "jan"}),
+            &root,
+        )
+        .await;
+        assert!(!body.trim().is_empty(), "unexpected body: {body}");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
     async fn skill_tools_hide_disabled_skills() {
         let root = unique_root();
         execute_builtin(
