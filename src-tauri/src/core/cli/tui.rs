@@ -9341,28 +9341,48 @@ mod tests {
         );
     }
 
-    fn test_app() -> App {
+    /// Wraps an `App` bound to a temp dir that is removed when the wrapper is
+    /// dropped, so tests that persist threads or journals never leak under
+    /// `/tmp` and never dirty the working tree.
+    struct TestApp {
+        app: App,
+        _dir: tempfile::TempDir,
+    }
+
+    impl std::ops::Deref for TestApp {
+        type Target = App;
+
+        fn deref(&self) -> &App {
+            &self.app
+        }
+    }
+
+    impl std::ops::DerefMut for TestApp {
+        fn deref_mut(&mut self) -> &mut App {
+            &mut self.app
+        }
+    }
+
+    fn test_app() -> TestApp {
         // Persist into a unique temp dir so tests that save threads never
-        // dirty the working tree (src-tauri/threads/).
-        let agent_dir = std::env::temp_dir().join(format!(
-            "jan_tui_{}_{}",
-            std::process::id(),
-            uuid::Uuid::new_v4()
-        ));
+        // dirty the working tree (src-tauri/threads/) and the dir is removed on
+        // drop.
+        let dir = tempfile::tempdir().unwrap();
         let limits = SessionLimits {
             context_window: 128_000,
             reserve_tokens: 16_384,
             max_tokens: None,
             max_session_tokens: 128_000,
         };
-        App::new(
+        let app = App::new(
             "m".into(),
             limits,
             false,
-            agent_dir,
+            dir.path().to_path_buf(),
             std::path::PathBuf::from("/tmp/repo"),
             None,
-        )
+        );
+        TestApp { app, _dir: dir }
     }
 
     /// Draw `app` into an off-screen terminal and return its rows as strings.
@@ -14905,7 +14925,7 @@ mod tests {
 
         let mut restored = test_app();
         restore_goal(&mut restored, Some(&meta));
-        let g = restored.goal.expect("goal restored");
+        let g = restored.goal.clone().expect("goal restored");
         assert_eq!(g.condition, "tests pass");
         assert_eq!(g.turns, 2);
         assert_eq!(g.last_reason, "one failing");
@@ -16027,7 +16047,7 @@ mod tests {
         )
     }
 
-    fn app_with_history(n: usize) -> App {
+    fn app_with_history(n: usize) -> TestApp {
         let mut app = test_app();
         for i in 0..n {
             app.history.push(serde_json::json!({

@@ -200,19 +200,14 @@ mod tests {
         ]
     }
 
-    fn tmp_dir() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "jan_journal_{}_{}",
-            std::process::id(),
-            uuid::Uuid::new_v4()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn tmp_dir() -> tempfile::TempDir {
+        tempfile::tempdir().unwrap()
     }
 
     #[test]
     fn round_trips_every_entry_kind() {
-        let path = tmp_dir().join(JOURNAL_FILE);
+        let dir = tmp_dir();
+        let path = dir.path().join(JOURNAL_FILE);
         let entries = sample();
         write_journal(&path, &entries).unwrap();
         assert_eq!(read_journal(&path), entries);
@@ -220,7 +215,8 @@ mod tests {
 
     #[test]
     fn rewrite_replaces_a_truncated_log() {
-        let path = tmp_dir().join(JOURNAL_FILE);
+        let dir = tmp_dir();
+        let path = dir.path().join(JOURNAL_FILE);
         write_journal(&path, &sample()).unwrap();
         let kept = sample()[..2].to_vec();
         write_journal(&path, &kept).unwrap();
@@ -233,7 +229,8 @@ mod tests {
 
     #[test]
     fn read_skips_unparsable_lines() {
-        let path = tmp_dir().join(JOURNAL_FILE);
+        let dir = tmp_dir();
+        let path = dir.path().join(JOURNAL_FILE);
         let good = serde_json::to_string(&user("hi")).unwrap();
         std::fs::write(
             &path,
@@ -245,7 +242,7 @@ mod tests {
 
     #[test]
     fn read_of_a_missing_journal_is_empty() {
-        assert!(read_journal(&tmp_dir().join(JOURNAL_FILE)).is_empty());
+        assert!(read_journal(&tmp_dir().path().join(JOURNAL_FILE)).is_empty());
     }
 
     #[test]
@@ -266,7 +263,8 @@ mod tests {
 
     #[test]
     fn writer_lands_dumps_in_order() {
-        let path = tmp_dir().join(JOURNAL_FILE);
+        let dir = tmp_dir();
+        let path = dir.path().join(JOURNAL_FILE);
         let mut writer = Writer::new();
         writer.dump(path.clone(), sample());
         let last = sample()[..1].to_vec();
@@ -277,9 +275,10 @@ mod tests {
 
     #[test]
     fn journal_sits_in_the_thread_dir() {
-        let base = tmp_dir();
+        let dir = tmp_dir();
+        let base = dir.path();
         assert_eq!(
-            journal_path(&base, "t1"),
+            journal_path(base, "t1"),
             base.join("threads").join("t1").join(JOURNAL_FILE)
         );
     }
