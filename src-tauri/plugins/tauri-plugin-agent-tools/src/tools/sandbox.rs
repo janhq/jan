@@ -10,10 +10,23 @@ pub fn escapes_project(
     scratch: Option<&Path>,
     raw: &str,
 ) -> Result<bool, String> {
-    // Absolute `/tmp` paths map into the session scratch (see [`resolve_path`]);
-    // a scratch-backed `/tmp` is the agent's own area, never an escape.
-    if cfg!(target_os = "linux") && scratch.is_some() && tmp_relative(raw).is_some() {
-        return Ok(false);
+    // Absolute `/tmp` paths map into the session scratch (see [`resolve_path`]),
+    // which is the agent's own area -- but only once the mapped path is checked
+    // against it. Clamping `..` happens lexically, so a symlink planted in the
+    // scratch (the shell can make one: `/tmp` is the scratch bind) would
+    // otherwise resolve straight back out to the host. Canonicalize what the
+    // clamp produced and require it to still be inside.
+    if cfg!(target_os = "linux") {
+        if let Some(scratch) = scratch {
+            if tmp_relative(raw).is_some() {
+                let scratch_root = scratch
+                    .canonicalize()
+                    .map_err(|e| format!("scratch root {:?}: {e}", scratch))?;
+                let resolved =
+                    canonicalize_lenient(&resolve_path(project_root, Some(scratch), raw))?;
+                return Ok(!resolved.starts_with(&scratch_root));
+            }
+        }
     }
     let root = project_root
         .canonicalize()
@@ -49,6 +62,23 @@ pub fn resolve_path(project_root: &Path, scratch: Option<&Path>, raw: &str) -> P
     } else {
         project_root.join(raw)
     }
+}
+
+/// The spelling to hand a tool-facing path back to the model: the inverse of
+/// [`resolve_path`]. A file the host wrote inside the scratch is named
+/// `/tmp/...`, the one name that works from both the filesystem tools (which
+/// remap it back) and `bash` (where the scratch is mounted at `/tmp`); its host
+/// path would resolve for the former and not exist for the latter. Anything
+/// outside the scratch is shown as-is.
+pub fn scratch_display_path(scratch: Option<&Path>, path: &Path) -> String {
+    if cfg!(target_os = "linux") {
+        if let Some(scratch) = scratch {
+            if let Ok(rel) = path.strip_prefix(scratch) {
+                return Path::new("/tmp").join(rel).to_string_lossy().into_owned();
+            }
+        }
+    }
+    path.to_string_lossy().into_owned()
 }
 
 /// Join `rel` under `scratch`, clamping `..` so it can never climb above the
@@ -283,6 +313,31 @@ mod tests {
         assert!(!command_touches_hidden_jan_path(&root, "cat JAN.md"));
         assert!(!command_touches_hidden_jan_path(&root, "ls -la src"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A symlink planted in the scratch (the shell can create one: `/tmp` is
+    /// the scratch bind) must not turn `/tmp/...` into a way out. Clamping `..`
+    /// is not enough -- the link is a single component that resolves elsewhere.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn tmp_symlink_cannot_escape_the_scratch() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let outside = unique_root();
+        std::os::unix::fs::symlink(&outside, scratch.join("esc")).unwrap();
+        assert_eq!(
+            escapes_project(&root, Some(&scratch), "/tmp/esc/pwned.txt"),
+            Ok(true),
+            "a symlink out of the scratch is an escape"
+        );
+        // A genuine scratch path is still not an escape.
+        assert_eq!(
+            escapes_project(&root, Some(&scratch), "/tmp/ok.txt"),
+            Ok(false)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 
     #[cfg(unix)]

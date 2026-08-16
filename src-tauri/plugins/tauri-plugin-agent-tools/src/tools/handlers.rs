@@ -684,8 +684,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // The child's pid stays registered until the task ends so a shutdown can
     // reap its whole process tree if it is still running.
     let (tx, mut rx) = oneshot::channel();
+    let spill_scratch = ctx.scratch_root.map(Path::to_path_buf);
     tokio::spawn(async move {
-        let mut out = collect_and_format(child).await;
+        let mut out = collect_and_format(child, spill_scratch).await;
         // Appended inside the task so a backgrounded job carries the hint too.
         // `Permission denied` on its own tells the model nothing about *why*;
         // without this it retries the same command until it gives up.
@@ -730,11 +731,11 @@ async fn await_bash_job(job_id: &str) -> String {
 /// combined chronologically and spilled to a temp file once it outgrows the
 /// in-memory window, so the full text stays readable even though only a bounded
 /// tail is kept in RAM.
-async fn collect_and_format(mut child: tokio::process::Child) -> String {
+async fn collect_and_format(mut child: tokio::process::Child, scratch: Option<PathBuf>) -> String {
     use tokio::io::AsyncReadExt;
     let mut stdout = child.stdout.take();
     let mut stderr = child.stderr.take();
-    let mut cap = BashCapture::new();
+    let mut cap = BashCapture::new(scratch);
     let mut bo = vec![0u8; 8192];
     let mut be = vec![0u8; 8192];
     let mut out_open = stdout.is_some();
@@ -767,16 +768,18 @@ struct BashCapture {
     total_newlines: usize,
     spill: Option<std::io::BufWriter<std::fs::File>>,
     spill_path: Option<PathBuf>,
+    scratch: Option<PathBuf>,
 }
 
 impl BashCapture {
-    fn new() -> Self {
+    fn new(scratch: Option<PathBuf>) -> Self {
         BashCapture {
             tail: std::collections::VecDeque::new(),
             total_bytes: 0,
             total_newlines: 0,
             spill: None,
             spill_path: None,
+            scratch,
         }
     }
 
@@ -787,7 +790,7 @@ impl BashCapture {
         // yet), so dumping it captures the full prefix before we start
         // dropping from the front.
         if self.spill.is_none() && self.tail.len() + chunk.len() > BASH_MAX_BYTES {
-            let path = new_temp_path();
+            let path = new_temp_path(self.scratch.as_deref());
             if let Ok(file) = std::fs::File::create(&path) {
                 let mut w = std::io::BufWriter::new(file);
                 let (a, b) = self.tail.as_slices();
@@ -843,9 +846,10 @@ impl BashCapture {
         }
 
         let path = match self.spill_path.take() {
-            Some(p) => Some(p.to_string_lossy().into_owned()),
-            None => write_temp_output(&collapsed),
-        };
+            Some(p) => Some(p),
+            None => write_temp_output(&collapsed, self.scratch.as_deref()),
+        }
+        .map(|p| crate::tools::sandbox::scratch_display_path(self.scratch.as_deref(), &p));
         match path {
             Some(p) => format!(
                 "{body}\n[output truncated at {} of {} bytes; full output written \
@@ -932,29 +936,34 @@ fn tail_cap(s: &str, max_lines: usize, max_bytes: usize) -> String {
     out
 }
 
-/// Directory holding bash-output spill files. Purged once on first use so
-/// files retained by a previous (possibly crashed) run don't accumulate.
-fn spill_dir() -> &'static Path {
-    static DIR: OnceLock<PathBuf> = OnceLock::new();
-    DIR.get_or_init(|| {
-        let dir = std::env::temp_dir().join("jan-bash");
-        let _ = std::fs::remove_dir_all(&dir);
-        let _ = std::fs::create_dir_all(&dir);
-        dir
-    })
-    .as_path()
+/// Directory holding bash-output spill files: inside the session scratch when
+/// there is one, so the file the truncation note points at is reachable by the
+/// same `/tmp/jan-bash/...` name from both the filesystem tools and the shell,
+/// and is reclaimed when the session's scratch is removed.
+///
+/// Deliberately not swept on first use: the files are removed individually by
+/// [`BashCapture::finish`] and its `Drop`, and the host fallback is a shared
+/// path, so a global purge there would delete a concurrent instance's live
+/// spill files rather than only stale ones.
+fn spill_dir(scratch: Option<&Path>) -> PathBuf {
+    let base = scratch
+        .map(Path::to_path_buf)
+        .unwrap_or_else(std::env::temp_dir);
+    let dir = base.join("jan-bash");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
 }
 
-fn new_temp_path() -> PathBuf {
+fn new_temp_path(scratch: Option<&Path>) -> PathBuf {
     let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-    spill_dir().join(format!("jan-bash-{}-{}.txt", std::process::id(), n))
+    spill_dir(scratch).join(format!("jan-bash-{}-{}.txt", std::process::id(), n))
 }
 
 /// Write `content` to a uniquely named temp file, returning its path on success.
-fn write_temp_output(content: &str) -> Option<String> {
-    let path = new_temp_path();
+fn write_temp_output(content: &str, scratch: Option<&Path>) -> Option<PathBuf> {
+    let path = new_temp_path(scratch);
     std::fs::write(&path, content).ok()?;
-    Some(path.to_string_lossy().into_owned())
+    Some(path)
 }
 
 async fn find(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> String {
@@ -1677,6 +1686,65 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// `find` from a legitimate `/tmp` base must not walk *out* through a
+    /// symlinked directory inside the scratch. Pins `WalkBuilder`'s
+    /// no-follow default, which is what the containment check cannot cover:
+    /// the base path here is honest, only the recursion would escape.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn find_does_not_recurse_out_of_the_scratch_via_a_symlink() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let outside = unique_root();
+        std::fs::write(outside.join("secret.txt"), b"classified").unwrap();
+        std::os::unix::fs::symlink(&outside, scratch.join("esc")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[]).with_scratch_root(&scratch);
+        let out = super::execute_builtin(
+            lookup("find").unwrap(),
+            &json!({"pattern": "*.txt", "path": "/tmp"}),
+            &ctx,
+        )
+        .await;
+        assert!(
+            !out.contains("secret.txt"),
+            "walked out of the scratch through a symlink: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// The write escape the scratch clamp is there to stop, spelled with a
+    /// symlink instead of `..`: a confined `write` through `/tmp/esc` must be
+    /// refused and must leave nothing behind outside the scratch.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn confined_write_refuses_a_tmp_symlink_escape() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let outside = unique_root();
+        std::os::unix::fs::symlink(&outside, scratch.join("esc")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[])
+            .with_scratch_root(&scratch)
+            .with_confined_writes(true);
+        let out = super::execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "/tmp/esc/pwned.txt", "content": "x"}),
+            &ctx,
+        )
+        .await;
+        assert!(out.starts_with("ERROR"), "must be refused, got: {out}");
+        assert!(
+            !outside.join("pwned.txt").exists(),
+            "wrote outside the scratch via a symlink"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
     /// A `write` to `/tmp/x` lands in the session scratch, and a `read` of the
     /// same path sees it: every fs tool shares the one `/tmp` the shell sees.
     #[tokio::test]
@@ -1774,6 +1842,33 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The counterpart: the same write spelled through a symlink out of the
+    /// scratch is an escape, so it takes the escape prompt (refused outright on
+    /// the desktop) rather than the ordinary in-project one.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn gate_treats_a_tmp_symlink_escape_as_an_escape() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let outside = unique_root();
+        std::os::unix::fs::symlink(&outside, scratch.join("esc")).unwrap();
+        let d = crate::tools::gate::resolve_decision(
+            lookup("write").unwrap(),
+            &json!({"path": "/tmp/esc/x.txt", "content": "y"}),
+            &root,
+            Some(&scratch),
+            &crate::permissions::ToolPermissions::default(),
+            &crate::tools::gate::SessionGrants::default(),
+        );
+        assert_eq!(
+            d,
+            crate::tools::gate::Decision::Prompt(crate::tools::gate::PromptKind::WriteEscape)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 
     #[tokio::test]
@@ -2157,6 +2252,47 @@ mod tests {
             "tail readable: {full}"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The same overflow with a session scratch set: the spill must land in the
+    /// scratch and be advertised by the one name that works from both the fs
+    /// tools and the shell, so the `read` the note asks for actually finds it.
+    /// The no-scratch case above cannot catch this -- there `/tmp` is not remapped.
+    #[tokio::test]
+    async fn bash_spill_is_readable_when_a_scratch_is_set() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[]).with_scratch_root(&scratch);
+        let out = super::execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "for i in $(seq 1 16000); do printf '%064d\\n' \"$i\"; done"}),
+            &ctx,
+        )
+        .await;
+        let path = out
+            .rsplit("full output written to ")
+            .next()
+            .and_then(|s| s.split(". Use the read tool").next())
+            .unwrap_or("");
+        if cfg!(target_os = "linux") {
+            assert!(
+                path.starts_with("/tmp/"),
+                "must be advertised as the /tmp name the shell also sees: {out}"
+            );
+        }
+        let full = super::execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": path, "offset": 15999, "limit": 1}),
+            &ctx,
+        )
+        .await;
+        assert!(
+            full.contains("015999") || full.contains("016000"),
+            "spill at {path} must be readable back: {full}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     #[tokio::test]

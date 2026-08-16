@@ -687,18 +687,24 @@ mod tests {
     async fn one_thread_cannot_read_another_threads_files() {
         let data = unique_data_folder();
         let df = data.to_string_lossy().to_string();
-        let one = PathBuf::from(thread_workspace_path(df.clone(), T1.into()).await.unwrap());
-        thread_workspace_path(df.clone(), T2.into()).await.unwrap();
+        // Thread ids unique to this test rather than the ids shared across the
+        // module: a scratch is keyed on the session id alone and lives in the
+        // host temp dir, so it is global state even though each test gets its
+        // own data folder, and any test deleting that thread's workspace also
+        // removes its scratch (see `remove_thread_workspace`).
+        let (t1, t2) = ("isolation-thread-one", "isolation-thread-two");
+        let one = PathBuf::from(thread_workspace_path(df.clone(), t1.into()).await.unwrap());
+        thread_workspace_path(df.clone(), t2.into()).await.unwrap();
         std::fs::write(one.join("secret.txt"), b"classified").unwrap();
 
         // A relative climb-out reaches the sibling thread's workspace and is an
         // escape, so it must prompt (and is refused on this surface).
         let err = execute_tool(
             df.clone(),
-            T2.into(),
+            t2.into(),
             None,
             "read".into(),
-            json!({"path": "../thread-one/secret.txt"}),
+            json!({"path": "../isolation-thread-one/secret.txt"}),
             None,
             None,
         )
@@ -710,16 +716,13 @@ mod tests {
             err.message
         );
 
-        // `/tmp` is the per-thread scratch: T1's scratch (written by its shell) is
-        // not visible to T2, whose own scratch is empty.
-        std::fs::write(
-            crate::workspace::scratch_dir(T1).join("secret.txt"),
-            b"classified",
-        )
-        .unwrap();
+        // `/tmp` is the per-thread scratch: t1's scratch (written by its shell)
+        // is not visible to t2, whose own scratch is empty.
+        let one_scratch = crate::workspace::ensure_scratch_dir(t1).await.unwrap();
+        std::fs::write(one_scratch.join("secret.txt"), b"classified").unwrap();
         let out = execute_tool(
             df.clone(),
-            T2.into(),
+            t2.into(),
             None,
             "read".into(),
             json!({"path": "/tmp/secret.txt"}),
@@ -728,8 +731,10 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(out.is_error, "T2 sees an empty scratch, got: {}", out.content);
+        assert!(out.is_error, "t2 sees an empty scratch, got: {}", out.content);
         let _ = std::fs::remove_dir_all(&data);
+        let _ = crate::workspace::remove_scratch_dir(t1).await;
+        let _ = crate::workspace::remove_scratch_dir(t2).await;
     }
 
     /// Memory is permanent: wiping a thread's sandbox leaves it untouched, and a
