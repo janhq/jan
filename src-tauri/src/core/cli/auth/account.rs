@@ -60,10 +60,10 @@ pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
             "openid profile email offline_access",
         ),
         AccountProvider::Claude => (
-            "1d1c250a-e61b-44d9-88ed-5944d1962f5e",
+            "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
             "https://claude.ai/oauth/authorize",
-            "https://platform.claude.com/v1/oauth/token",
-            "http://localhost:53692/callback",
+            "https://api.anthropic.com/v1/oauth/token",
+            "http://localhost:54545/callback",
             "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload",
         ),
     };
@@ -335,8 +335,8 @@ pub async fn refresh(provider: AccountProvider, token: &OAuthToken) -> Result<OA
             "https://auth.openai.com/oauth/token",
         ),
         AccountProvider::Claude => (
-            "1d1c250a-e61b-44d9-88ed-5944d1962f5e",
-            "https://platform.claude.com/v1/oauth/token",
+            "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+            "https://api.anthropic.com/v1/oauth/token",
         ),
     };
     let response = reqwest::Client::new()
@@ -687,9 +687,24 @@ mod tests {
                 .1,
             "S256"
         );
-        assert_eq!(login.redirect_uri, "http://localhost:53692/callback");
+        assert_eq!(login.redirect_uri, "http://localhost:54545/callback");
         assert!(!login.state.is_empty());
         assert!(!login.verifier.is_empty());
+    }
+    #[test]
+    fn claude_browser_login_uses_registered_client_id() {
+        let login = begin(AccountProvider::Claude).unwrap();
+        let url = url::Url::parse(&login.authorization_url).unwrap();
+
+        assert_eq!(
+            url.query_pairs()
+                .find(|(key, _)| key == "client_id")
+                .unwrap()
+                .1,
+            "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        );
+        assert_eq!(login.client_id, "9d1c250a-e61b-44d9-88ed-5944d1962f5e");
+        assert_eq!(login.token_endpoint, "https://api.anthropic.com/v1/oauth/token");
     }
 
     #[test]
