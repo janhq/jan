@@ -15,7 +15,10 @@ use crate::memory;
 use crate::skills;
 use crate::tools::jail;
 use crate::tools::proc;
-use crate::tools::sandbox::{escapes_project, is_hidden_jan_path, resolve_path};
+use crate::tools::sandbox::{
+    escapes_project, in_scratch, is_hidden_jan_path, lexical_normalize, resolve_path,
+    scratch_display_path,
+};
 use crate::tools::{BuiltinTool, ToolContext};
 
 const MAX_BYTES: usize = 64 * 1024;
@@ -66,42 +69,15 @@ fn rel_to(base: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// Resolve `.`/`..` without touching the filesystem, so a path is comparable to
-/// the project root even when the target does not exist yet. Purely lexical:
-/// `canonicalize` would also follow symlinks and fail on missing files.
-fn lexical_normalize(path: &Path) -> PathBuf {
-    use std::path::Component;
-    let mut out = PathBuf::new();
-    for c in path.components() {
-        match c {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other.as_os_str()),
-        }
-    }
-    out
-}
-
 /// How a mutated path is named back to the model: relative inside the project,
 /// absolute once it escapes. Normalizes first, since `root/../x` strips to a
 /// misleading `../x` against an un-normalized root. A target inside the session
-/// scratch is shown as its `/tmp/...` alias so the model sees the path it wrote.
+/// scratch is named by whichever spelling the shell can also use there.
 fn display_path(root: &Path, scratch: Option<&Path>, target: &Path) -> String {
-    let target = lexical_normalize(target);
-    if let Some(scratch) = scratch {
-        if let Ok(rel) = target.strip_prefix(lexical_normalize(scratch)) {
-            let rel = rel.to_string_lossy().replace('\\', "/");
-            return if rel.is_empty() {
-                "/tmp".to_string()
-            } else {
-                format!("/tmp/{rel}")
-            };
-        }
+    if in_scratch(scratch, target) {
+        return scratch_display_path(scratch, target);
     }
-    let root = lexical_normalize(root);
-    rel_to(&root, &target)
+    rel_to(&lexical_normalize(root), &lexical_normalize(target))
 }
 
 /// Truncate `s` to the smaller of `max_lines` or `max_bytes`, appending
@@ -672,7 +648,8 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
             .to_string();
     };
 
-    let child = match proc::spawn(&shell, command, root).await {
+    let sandbox_tmp = jail::scratch_env_path(jail::backend(), &policy);
+    let child = match proc::spawn(&shell, command, root, sandbox_tmp.as_deref()).await {
         Ok(c) => c,
         Err(e) => return format!("ERROR: failed to run command: {e}"),
     };

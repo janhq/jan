@@ -61,15 +61,17 @@ pub fn thread_workspace(jan_data_folder: &Path, thread_id: &str) -> Result<PathB
     Ok(threads_dir(jan_data_folder).join(thread_segment(thread_id)?))
 }
 
-/// The session-scoped scratch directory: a subdirectory of the host temp
-/// dir (e.g. `/tmp/jan-agent-<session>` on Linux) bound over the sandbox's
-/// `/tmp` so `bash` scratch files persist across calls for one session.
+/// The session-scoped scratch directory: a subdirectory of the host temp dir
+/// (e.g. `/tmp/jan-agent-<session>` on Linux), where `bash` scratch files
+/// persist across calls for one session and the filesystem tools may write.
 ///
-/// Only the specific session subdir is bound, not the whole host `/tmp`, so
-/// the sandboxed shell sees just its own scratch and none of the machine's
-/// other temp files. On macOS and Windows the OS temp dir is already
-/// host-backed and persists on its own, so this path is only consumed by the
-/// Linux bubblewrap backend; it is still cleaned up with the session elsewhere.
+/// Every backend exposes it, but not the same way. Bubblewrap binds it over the
+/// sandbox's `/tmp` -- only this session subdir, not the whole host `/tmp`, so
+/// the shell sees its own scratch and none of the machine's other temp files --
+/// and the tools remap `/tmp/...` back onto it. Seatbelt and AppContainer have
+/// no mount, so it is reached by this real path and made writable by a policy
+/// rule and an ACE respectively. Either way `TMPDIR`/`TMP`/`TEMP` point at it
+/// (see `tools::jail::scratch_env_path`) and it is cleaned up with the session.
 pub fn scratch_dir(session: &str) -> PathBuf {
     std::env::temp_dir().join(format!("jan-agent-{session}"))
 }

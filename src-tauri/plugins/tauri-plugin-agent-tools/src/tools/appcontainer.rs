@@ -72,9 +72,13 @@ pub fn moniker(workspace: &Path) -> String {
 
 /// argv for the helper re-exec. Shaped like the other backends -- fixed
 /// arguments, then the shell, with the command string appended by the caller --
-/// so the spawn path does not change per platform.
+/// so the spawn path does not change per platform. The scratch travels with the
+/// workspace because both need an ACE, and only the helper holds the container
+/// SID to grant one with; an absent scratch is the empty string, since a
+/// positional slot cannot simply be omitted.
 pub fn helper_args(
     workspace: &Path,
+    scratch: Option<&Path>,
     allow_network: bool,
     program: &Path,
     args: &[String],
@@ -83,6 +87,9 @@ pub fn helper_args(
         SANDBOX_EXEC_FLAG.to_string(),
         if allow_network { NET_ON } else { NET_OFF }.to_string(),
         workspace.to_string_lossy().to_string(),
+        scratch
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default(),
         "--".to_string(),
         program.to_string_lossy().to_string(),
     ];
@@ -141,6 +148,7 @@ fn command_line(program: &Path, args: &[String]) -> String {
 #[cfg_attr(not(windows), allow(dead_code))]
 struct Request {
     workspace: PathBuf,
+    scratch: Option<PathBuf>,
     allow_network: bool,
     program: PathBuf,
     args: Vec<String>,
@@ -160,12 +168,17 @@ fn parse_request<I: IntoIterator<Item = String>>(argv: I) -> Option<Request> {
         _ => return None,
     };
     let workspace = PathBuf::from(it.next()?);
+    let scratch = match it.next()? {
+        s if s.is_empty() => None,
+        s => Some(PathBuf::from(s)),
+    };
     if it.next()? != "--" {
         return None;
     }
     let program = PathBuf::from(it.next()?);
     Some(Request {
         workspace,
+        scratch,
         allow_network,
         program,
         args: it.collect(),
@@ -334,8 +347,9 @@ mod win {
 
     /// Grant the container full access to `path` and everything created under it.
     /// This is the entire write policy: without an ACE naming the container, a
-    /// lowbox token can open nothing it was not given.
-    fn grant_workspace(path: &Path, sid: PSID) -> Result<(), String> {
+    /// lowbox token can open nothing it was not given. Called for the workspace
+    /// and, when there is one, the session scratch.
+    fn grant_path(path: &Path, sid: PSID) -> Result<(), String> {
         let mut object = wide(path.as_os_str());
         let mut existing: *mut ACL = std::ptr::null_mut();
         let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
@@ -492,9 +506,19 @@ mod win {
                 req.workspace.display()
             ));
         }
+        if let Some(scratch) = &req.scratch {
+            if !scratch.is_dir() {
+                return Err(format!("scratch does not exist: {}", scratch.display()));
+            }
+        }
         reap_children_with_this_process();
         let sid = ensure_profile(&moniker(&req.workspace))?;
-        grant_workspace(&req.workspace, sid.0)?;
+        grant_path(&req.workspace, sid.0)?;
+        // The scratch is the shell's `TEMP`/`TMP`, so without this every
+        // temp-file write in the container is denied.
+        if let Some(scratch) = &req.scratch {
+            grant_path(scratch, sid.0)?;
+        }
 
         let mut capability_sid = Vec::new();
         let mut capabilities = Vec::new();
@@ -651,7 +675,13 @@ mod tests {
 
     #[test]
     fn helper_args_end_with_the_shell_so_the_command_appends_last() {
-        let args = helper_args(&ws(), false, Path::new("bash.exe"), &["-c".to_string()]);
+        let args = helper_args(
+            &ws(),
+            None,
+            false,
+            Path::new("bash.exe"),
+            &["-c".to_string()],
+        );
         let sep = args.iter().position(|a| a == "--").expect("separator");
         assert_eq!(
             &args[sep + 1..],
@@ -662,10 +692,10 @@ mod tests {
 
     #[test]
     fn helper_args_carry_the_network_decision() {
-        let denied = helper_args(&ws(), false, Path::new("bash.exe"), &[]);
+        let denied = helper_args(&ws(), None, false, Path::new("bash.exe"), &[]);
         assert!(denied.contains(&NET_OFF.to_string()));
         assert!(!denied.contains(&NET_ON.to_string()));
-        let allowed = helper_args(&ws(), true, Path::new("bash.exe"), &[]);
+        let allowed = helper_args(&ws(), None, true, Path::new("bash.exe"), &[]);
         assert!(allowed.contains(&NET_ON.to_string()));
     }
 
@@ -673,15 +703,30 @@ mod tests {
     fn the_helper_round_trips_its_own_argv() {
         let args = helper_args(
             &ws(),
+            Some(Path::new(r"C:\Temp\jan-agent-s1")),
             true,
             Path::new(r"C:\Program Files\Git\bin\bash.exe"),
             &["-c".to_string(), "echo hi".to_string()],
         );
         let req = parse_request(args).expect("parsed");
         assert_eq!(req.workspace, ws());
+        assert_eq!(
+            req.scratch.as_deref(),
+            Some(Path::new(r"C:\Temp\jan-agent-s1"))
+        );
         assert!(req.allow_network);
         assert_eq!(req.program, Path::new(r"C:\Program Files\Git\bin\bash.exe"));
         assert_eq!(req.args, vec!["-c".to_string(), "echo hi".to_string()]);
+    }
+
+    /// The scratch has to reach the helper, because the ACE that makes it
+    /// writable can only be granted on the far side of the re-exec.
+    #[test]
+    fn the_helper_round_trips_an_absent_scratch() {
+        let args = helper_args(&ws(), None, false, Path::new("bash.exe"), &[]);
+        let req = parse_request(args).expect("parsed");
+        assert_eq!(req.workspace, ws());
+        assert_eq!(req.scratch, None);
     }
 
     #[test]

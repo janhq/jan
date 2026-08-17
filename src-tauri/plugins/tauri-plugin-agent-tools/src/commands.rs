@@ -493,8 +493,9 @@ mod tests {
 
     /// A write that escapes the sandbox (absolute or `..`) must be refused on
     /// the desktop surface, just like an escaping read -- it could reach host
-    /// files. A `/tmp` path is the exception: it is the session scratch, bound
-    /// over the sandbox's `/tmp`, and is a valid (scratch-backed) write.
+    /// files. The session scratch is the exception: it is the agent's own area,
+    /// spelled `/tmp/...` where it is bound over the sandbox's `/tmp` and by its
+    /// real path where nothing is mounted there.
     #[tokio::test]
     async fn escaping_writes_are_refused() {
         let data = unique_data_folder();
@@ -519,23 +520,36 @@ mod tests {
             );
         }
 
-        // A `/tmp` write is the session scratch (not a host escape) and succeeds.
+        // A scratch write is not a host escape and succeeds, under whichever
+        // spelling reaches the scratch on this platform. The scratch outlives the
+        // test process, so the name is per-run: a leftover file would answer
+        // "No change" instead of "Created".
+        let scratch = crate::workspace::ensure_scratch_dir(T1).await.unwrap();
+        let name = format!("jan_cmd_scratch_{}.txt", std::process::id());
+        let (requested, expected) = if cfg!(target_os = "linux") {
+            let p = format!("/tmp/{name}");
+            (p.clone(), p)
+        } else {
+            let p = scratch.join(&name).to_string_lossy().into_owned();
+            (p.clone(), p)
+        };
         let res = execute_tool(
             df.clone(),
             T1.into(),
             None,
             "write".into(),
-            json!({"path": "/tmp/jan_cmd_scratch.txt", "content": "x"}),
+            json!({"path": requested, "content": "x"}),
             None,
             None,
         )
         .await
-        .expect("a /tmp write is the session scratch and must succeed");
+        .expect("a scratch write is the session scratch and must succeed");
         assert!(
-            res.content.starts_with("Created /tmp/jan_cmd_scratch.txt"),
+            res.content.starts_with(&format!("Created {expected}")),
             "got: {}",
             res.content
         );
+        let _ = std::fs::remove_file(scratch.join(&name));
 
         // An in-sandbox write still succeeds, so we didn't over-tighten.
         let res = execute_tool(
