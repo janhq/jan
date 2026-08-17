@@ -884,6 +884,8 @@ export class ModelFactory {
       case 'moonshot':
       case 'minimax':
         return this.createOpenAICompatibleModel(modelId, provider)
+      case 'unorouter':
+        return this.createOpenAICompatibleModel(modelId, provider, parameters)
 
       case 'mistral':
         return this.createMistralModel(modelId, provider, parameters)
