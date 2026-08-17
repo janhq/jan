@@ -109,13 +109,6 @@ pub(crate) fn resolve_from(root: &Path, name: &str, enabled: &[String]) -> Resul
     }
 }
 
-/// Locate a command ignoring the `[skills].enabled` whitelist (resolves any
-/// discovered command). Used for discovery/listing; runtime invocation uses
-/// [`resolve_from`] so disabled commands stay hidden.
-pub(crate) fn resolve(root: &Path, name: &str) -> Result<CommandEntry, String> {
-    resolve_from(root, name, &[])
-}
-
 /// Build the user message that runs a command: the invocation wrapper plus the
 /// body with `$ARGUMENTS`/`$N` placeholders substituted. Returns
 /// `(message, description)`, mirroring `skills::build_invocation_message`.
@@ -293,14 +286,14 @@ mod tests {
         mk("triage", "prepare");
 
         // Explicit form always works.
-        assert!(resolve(&root, "release:prepare").is_ok());
+        assert!(resolve_from(&root, "release:prepare", &[]).is_ok());
         // Ambiguous plain name fails.
-        assert!(resolve(&root, "prepare").is_err());
+        assert!(resolve_from(&root, "prepare", &[]).is_err());
         // Unknown fails.
-        assert!(resolve(&root, "nope").is_err());
+        assert!(resolve_from(&root, "nope", &[]).is_err());
         // Unique plain name resolves.
         mk("release", "ship");
-        assert_eq!(resolve(&root, "ship").unwrap().name, "ship");
+        assert_eq!(resolve_from(&root, "ship", &[]).unwrap().name, "ship");
         let _ = std::fs::remove_dir_all(&root);
     }
 

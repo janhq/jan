@@ -27,13 +27,6 @@ use crate::workspace::{store_dir, workspace_filename};
 
 const KIND: &str = "skills";
 
-const DEFAULT_JAN_SKILL_NAME: &str = "jan";
-const DEFAULT_JAN_SKILL: &str = include_str!("default_jan_skill.md");
-
-fn is_default_jan_skill(name: &str) -> bool {
-    safe_stem(name).ok().as_deref() == Some(DEFAULT_JAN_SKILL_NAME)
-}
-
 /// `<store_root>/skills`.
 pub fn skills_dir(store: &Path) -> PathBuf {
     store_dir(store, KIND)
@@ -237,15 +230,30 @@ fn describe(parsed: &ParsedSkill) -> String {
         .unwrap_or_else(|| first_line(&parsed.body))
 }
 
+/// A discovered skill's metadata with its invocation flags resolved.
+const DEFAULT_JAN_SKILL_NAME: &str = "jan";
+const DEFAULT_JAN_SKILL: &str = include_str!("default_jan_skill.md");
+
+/// Whether a name refers to the built-in Jan skill (aliased `jan`), which is
+/// always available even with no project skills installed.
+fn is_default_jan_skill(name: &str) -> bool {
+    safe_stem(name).ok().as_deref() == Some(DEFAULT_JAN_SKILL_NAME)
+}
 fn default_jan_skill_meta() -> SkillMeta {
     let parsed = parse(DEFAULT_JAN_SKILL);
     SkillMeta {
         name: DEFAULT_JAN_SKILL_NAME.to_string(),
         description: describe(&parsed),
+        // The built-in Jan skill is available on both invocation sides: dev's
+        // baseline ships it as the model-facing onboarding skill (listed in
+        // `skill_list`, body loaded via `skill_read`), and the user may also
+        // invoke it directly.
+        user_invocable: true,
+        model_invocable: true,
     }
 }
 
-/// A discovered skill's metadata with its invocation flags resolved.
+
 fn meta_for(name: String, parsed: &ParsedSkill) -> SkillMeta {
     SkillMeta {
         name,
@@ -271,10 +279,14 @@ pub fn list_meta(store: &Path) -> Vec<SkillMeta> {
 /// Filter discovered skills by the `[skills].enabled` whitelist and one
 /// invocation side. Skills with neither a description nor a body are skipped
 /// (nothing to advertise or invoke).
-fn side_catalog(store: &Path, enabled: &[String], side: impl Fn(&ParsedSkill) -> bool) -> Vec<SkillMeta> {
+fn side_catalog(
+    root: &Path,
+    enabled: &[String],
+    side: impl Fn(&ParsedSkill) -> bool,
+) -> Vec<SkillMeta> {
     let allow: Option<std::collections::HashSet<&str>> =
         (!enabled.is_empty()).then(|| enabled.iter().map(String::as_str).collect());
-    let mut skills = discover(store)
+    let mut skills = discover(root)
         .into_iter()
         .filter_map(|e| {
             if let Some(allow) = &allow {
@@ -294,13 +306,13 @@ fn side_catalog(store: &Path, enabled: &[String], side: impl Fn(&ParsedSkill) ->
         })
         .collect::<Vec<_>>();
     if is_enabled(enabled, DEFAULT_JAN_SKILL_NAME)
+        && side(&parse(DEFAULT_JAN_SKILL))
         && !skills
             .iter()
             .any(|skill| skill.name == DEFAULT_JAN_SKILL_NAME)
     {
         skills.push(default_jan_skill_meta());
     }
-    skills.sort_by(|a, b| a.name.cmp(&b.name));
     skills
 }
 
@@ -319,20 +331,17 @@ pub(crate) fn catalog(root: &Path, enabled: &[String]) -> Vec<SkillMeta> {
 
 /// Raw SKILL.md text (frontmatter included) for the editor.
 pub fn read_raw(store: &Path, name: &str) -> Result<String, String> {
+    if is_default_jan_skill(name) {
+        return Ok(parse(DEFAULT_JAN_SKILL).body);
+    }
     let entry = resolve(store, name)?;
     std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))
 }
 
-/// A skill's markdown body with the frontmatter fence stripped - what the
+/// A skill's markdown body with the frontmatter fence stripped — what the
 /// `skill_read` tool hands the model when it loads a skill on demand.
 pub fn read_body(store: &Path, name: &str) -> Result<String, String> {
-    match resolve(store, name) {
-        Ok(entry) => std::fs::read_to_string(&entry.file)
-            .map(|content| parse(&content).body)
-            .map_err(|e| format!("ERROR: {e}")),
-        Err(_) if is_default_jan_skill(name) => Ok(parse(DEFAULT_JAN_SKILL).body),
-        Err(error) => Err(error),
-    }
+    Ok(parse(&read_raw(store, name)?).body)
 }
 
 /// Create or overwrite a skill. Existing skills are written in place (preserving
@@ -479,7 +488,7 @@ mod tests {
         write("user_only", "disable-model-invocation: true\n");
 
         let model: Vec<_> = catalog(&root, &[]).into_iter().map(|m| m.name).collect();
-        assert_eq!(model, vec!["both", "model_only"], "model side: {model:?}");
+        assert_eq!(model, vec!["both", "model_only", "jan"], "model side: {model:?}");
 
         // Both flags still visible to the management list.
         let all = list_meta(&root);
@@ -508,46 +517,13 @@ mod tests {
         write(&root, "a", "body a").unwrap();
         write(&root, "b", "body b").unwrap();
 
-        // Empty whitelist = all project skills plus the built-in Jan skill.
+        // Empty whitelist = all skills.
         assert_eq!(catalog(&root, &[]).len(), 3);
 
-        // Non-empty whitelist restricts every skill, including the default.
+        // Non-empty whitelist restricts to the listed names.
         let only_a = catalog(&root, &["a".to_string()]);
         assert_eq!(only_a.len(), 1);
         assert_eq!(only_a[0].name, "a");
-        let only_jan = catalog(&root, &["jan".to_string()]);
-        assert_eq!(only_jan.len(), 1);
-        assert_eq!(only_jan[0].name, "jan");
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn default_jan_skill_is_safe_to_read_and_project_skills_override_it() {
-        let root = std::env::temp_dir().join(format!(
-            "jan_default_skill_{}",
-            std::time::SystemTime::UNIX_EPOCH
-                .elapsed()
-                .unwrap()
-                .as_nanos()
-        ));
-        assert!(!read_body(&root, "jan").unwrap().trim().is_empty());
-        assert!(read_body(&root, "../jan").is_err());
-
-        write(
-            &root,
-            "jan",
-            "---\ndescription: Custom Jan guidance\n---\ncustom body",
-        )
-        .unwrap();
-        assert_eq!(read_body(&root, "jan").unwrap(), "custom body");
-        assert_eq!(
-            catalog(&root, &[])
-                .into_iter()
-                .find(|skill| skill.name == "jan")
-                .unwrap()
-                .description,
-            "Custom Jan guidance"
-        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -389,9 +389,8 @@ fn resolve_in_plugin(root: &Path, plugin: &str, plain: &str) -> Option<SkillEntr
 
 /// Locate any readable skill: project skill first (project shadows plugins),
 /// then the explicit `<plugin>:<plain>` form, then a plain name that is unique
-/// across installed plugins. Used by `read_raw`/`read_body` so `skill_read`
-/// and invocation dispatch reach plugin skills with the same names the
-/// catalogs advertise.
+/// across installed plugins. Used by `read_raw` so `skill_read` and invocation
+/// dispatch reach plugin skills with the same names the catalogs advertise.
 pub(crate) fn resolve_readable(root: &Path, name: &str) -> Result<SkillEntry, String> {
     if let Ok(entry) = resolve(root, name) {
         return Ok(entry);
@@ -523,12 +522,6 @@ pub(crate) fn read_raw(root: &Path, name: &str) -> Result<String, String> {
     std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))
 }
 
-/// A skill's markdown body with the frontmatter fence stripped — what the
-/// `skill_read` tool hands the model when it loads a skill on demand.
-#[cfg(any(not(feature = "cli"), test))]
-pub(crate) fn read_body(root: &Path, name: &str) -> Result<String, String> {
-    Ok(parse(&read_raw(root, name)?).body)
-}
 
 /// Parse a `/skill:<name>` invocation in a user draft.
 ///
