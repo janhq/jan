@@ -2093,6 +2093,11 @@ impl App {
     }
 
     fn input_insert(&mut self, c: char) {
+        // Tab must never be inserted as a literal character; some terminals
+        // deliver it as KeyCode::Char('\t') instead of KeyCode::Tab.
+        if c == '\t' {
+            return;
+        }
         self.input.insert(self.cursor, c);
         self.cursor += c.len_utf8();
         self.reset_slash_hint();
@@ -2170,10 +2175,30 @@ impl App {
     /// Returns `None` when the cursor is not inside or immediately after
     /// a `@`-prefixed token (no space since the `@`), or when the `@` does
     /// not start a token (e.g. `user@host` is not a file reference).
+    ///
+    /// Supports quoted references: `@"path with spaces"` - the query is the
+    /// text between the quotes, and the closing quote is optional (the user
+    /// may still be typing).
     fn path_hint_query(&self) -> Option<String> {
         let before = &self.input[..self.cursor];
         let at_idx = path_refs::last_ref_start(before)?;
         let after_at = &before[at_idx + 1..];
+
+        // Quoted reference: @"query..."
+        if let Some(inner) = after_at.strip_prefix('"') {
+            // If the cursor is right after the opening quote, return empty query.
+            if inner.is_empty() {
+                return Some(String::new());
+            }
+            // Find the closing quote within the typed text.
+            if let Some(close) = inner.find('"') {
+                // Cursor is inside or at the closing quote - extract the query.
+                return Some(inner[..close].to_string());
+            }
+            // No closing quote yet - the user is still typing inside quotes.
+            return Some(inner.to_string());
+        }
+
         if after_at.contains(' ') {
             return None; // space after @ means the token ended
         }
@@ -2207,7 +2232,8 @@ impl App {
     }
 
     /// Accept the highlighted path hint: replace the `@query` token with the
-    /// selected path.
+    /// selected path. Quoted references (`@"query"`) are replaced with the
+    /// quoted form (`@"selected/path"`).
     fn accept_path_hint(&mut self) {
         if self.path_hints.is_empty() {
             return;
@@ -2219,11 +2245,37 @@ impl App {
             Some(i) => i,
             None => return,
         };
+        let after_at = &before[at_idx + 1..];
         let after = &self.input[self.cursor..];
-        let replacement = &selected.path;
-        let new_input = format!("{}{}{}", &self.input[..at_idx], replacement, after);
-        self.input = new_input;
-        self.cursor = at_idx + replacement.len();
+
+        // Quoted reference: replace @"..." with @"selected/path"
+        if after_at.starts_with('"') {
+            // rest[0] is the opening quote; the closing quote may be past the
+            // cursor. A missing closing quote means the user is still typing
+            // the token, so delete through the end of the input.
+            let rest = &self.input[at_idx + 1..];
+            let full_len = rest[1..].find('"').map(|i| i + 2).unwrap_or(rest.len());
+            let replacement = format!("@\"{}\"", selected.path);
+            let new_input = format!(
+                "{}{}{}",
+                &self.input[..at_idx],
+                replacement,
+                &self.input[at_idx + 1 + full_len..]
+            );
+            self.input = new_input;
+            self.cursor = at_idx + replacement.len();
+        } else {
+            // Replace the `@query` token but keep the `@` marker so the result
+            // stays a reference, and append `/` for directories so the user
+            // can keep drilling into them.
+            let marker = "@";
+            let path = &selected.path;
+            let trailing = if selected.is_dir { "/" } else { "" };
+            let replacement = format!("{marker}{path}{trailing}");
+            let new_input = format!("{}{}{}", &self.input[..at_idx], replacement, after);
+            self.input = new_input;
+            self.cursor = at_idx + replacement.len();
+        }
         self.path_hints.clear();
         self.path_hint_dismissed = false;
     }
@@ -5687,6 +5739,9 @@ async fn handle_key(
         KeyCode::End => {
             app.cursor = app.input.len();
         }
+        // Tab is a no-op in normal input mode; slash-command and path-hint
+        // popups intercept it before reaching this arm.
+        KeyCode::Tab => {}
         KeyCode::Char(c) if !ctrl => {
             app.input_insert(c);
         }
@@ -16050,6 +16105,81 @@ mod tests {
         // Editing the buffer re-shows the popup.
         app.input_insert('s');
         assert_eq!(names(&app), vec!["/resume"]);
+    }
+
+    #[test]
+    fn tab_is_noop_in_normal_input_mode() {
+        // Tab must never insert a literal character, even when the input
+        // contains underscores or other characters that might confuse
+        // crossterm's key delivery.
+        let mut app = test_app();
+        app.input = "use credential for api.txt".into();
+        app.cursor = app.input.len();
+        app.input_insert('\t');
+        assert_eq!(app.input, "use credential for api.txt");
+        assert_eq!(app.cursor, app.input.len());
+    }
+
+    #[test]
+    fn accept_quoted_path_hint_replaces_whole_quoted_token() {
+        let mut app = test_app();
+        app.input = r#"use @"my file.txt""#.into(); // fully typed, closing quote present
+        app.cursor = app.input.len();
+        app.path_hints = vec![super::PathHintItem {
+            path: "notes/report.md".into(),
+            name: "report.md".into(),
+            is_dir: false,
+        }];
+        app.accept_path_hint();
+        assert_eq!(app.input, r#"use @"notes/report.md""#);
+    }
+
+    #[test]
+    fn accept_directory_path_hint_keeps_at_and_slash() {
+        let mut app = test_app();
+        app.input = "use @docs".into();
+        app.cursor = app.input.len();
+        app.path_hints = vec![super::PathHintItem {
+            path: "docs".into(),
+            name: "docs".into(),
+            is_dir: true,
+        }];
+        app.accept_path_hint();
+        // The reference marker and a trailing slash survive, so the user can
+        // keep drilling into the directory. Accepting must not turn the token
+        // into a plain, non-reference path.
+        assert_eq!(app.input, "use @docs/");
+    }
+
+    #[test]
+    fn accept_file_path_hint_keeps_at_marker() {
+        let mut app = test_app();
+        app.input = "use @report".into();
+        app.cursor = app.input.len();
+        app.path_hints = vec![super::PathHintItem {
+            path: "docs/report.md".into(),
+            name: "report.md".into(),
+            is_dir: false,
+        }];
+        app.accept_path_hint();
+        assert_eq!(app.input, "use @docs/report.md");
+    }
+
+    #[test]
+    fn path_hint_query_handles_quoted_reference() {
+        let mut app = test_app();
+        // Cursor inside the opening quote: query is empty.
+        app.input = r#"use @"#.into();
+        app.cursor = app.input.len();
+        assert_eq!(app.path_hint_query(), Some(String::new()));
+        // Typing inside quotes: query is the typed text.
+        app.input = r#"use @"my file"#.into();
+        app.cursor = app.input.len();
+        assert_eq!(app.path_hint_query(), Some("my file".to_string()));
+        // Closing quote: query is the text between quotes.
+        app.input = r#"use @"my file.txt""#.into();
+        app.cursor = app.input.len();
+        assert_eq!(app.path_hint_query(), Some("my file.txt".to_string()));
     }
 
     #[test]

@@ -22,10 +22,13 @@ use once_cell::sync::Lazy;
 
 /// Regex scanning `@token` candidates in text; `ref_matches` applies the
 /// reference rules (boundary, URL, IPv4) on top of this token scan.
+///
+/// Two alternatives:
+/// * `@"path with spaces"` - double-quoted, allows whitespace inside
+/// * `@path` - unquoted, whitespace terminates the token
 static REFERENCE_RE: Lazy<regex::Regex> = Lazy::new(|| {
     // Using a raw string with hash delimiters avoids escaping quotes and backticks.
-    // The negated character class excludes tokens that would make bad paths.
-    regex::Regex::new(r###"@([^\s,;:!?'"`\[\](){}<>)\)]+)"###).unwrap()
+    regex::Regex::new(r###"@\"[^\"]+\"|@[^\s,;:!?'"`\[\](){}<>)\)]+"###).unwrap()
 });
 
 /// True when `at_idx` in `text` is the start of a reference token: the `@` is
@@ -80,10 +83,24 @@ const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"]
 /// Index of the last `@` in `text` that starts a reference token, if any.
 /// Uses the same rules as `ref_matches`; a trailing bare `@` (empty query)
 /// still counts so the TUI hint popup can open with an empty search.
+///
+/// Also handles unterminated quoted references: `@"query` (no closing quote)
+/// counts so the TUI hint popup can show completions while the user types.
 pub fn last_ref_start(text: &str) -> Option<usize> {
     if let Some(idx) = text.len().checked_sub(1) {
         if text.ends_with('@') && is_ref_start(text, idx) {
             return Some(idx);
+        }
+    }
+    // Check for unterminated quoted reference: @"<text> with no closing "
+    // after the last @. The regex requires a closing quote, so this is a
+    // separate check for the TUI hint popup.
+    if let Some(at_pos) = text.rfind('@') {
+        if is_ref_start(text, at_pos) {
+            let after = &text[at_pos + 1..];
+            if after.starts_with('"') && !after[1..].contains('"') {
+                return Some(at_pos);
+            }
         }
     }
     ref_matches(text).map(|m| m.start()).last()
@@ -92,11 +109,18 @@ pub fn last_ref_start(text: &str) -> Option<usize> {
 /// Parse `@path` references from `text`.
 ///
 /// Returns the raw path strings in order of appearance (deduplicated).
+/// Quoted references (`@"path with spaces"`) have their surrounding quotes
+/// stripped so the path is usable as a filesystem path.
 pub fn parse_references(text: &str) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut refs = Vec::new();
     for m in ref_matches(text) {
         let raw = &text[m.start() + 1..m.end()];
+        // Strip surrounding double quotes from @"..." references.
+        let raw = raw
+            .strip_prefix('"')
+            .and_then(|r| r.strip_suffix('"'))
+            .unwrap_or(raw);
         if seen.insert(raw.to_string()) {
             refs.push(raw.to_string());
         }
@@ -456,5 +480,44 @@ mod tests {
         assert_eq!(last_ref_start("check @"), Some(6));
         // But a mid-word `@` never is, even at the end.
         assert_eq!(last_ref_start("ssh user@"), None);
+    }
+
+    #[test]
+    fn test_quoted_reference_with_spaces() {
+        let refs = parse_references("use @\"my file.txt\" now");
+        assert_eq!(refs, vec!["my file.txt"]);
+    }
+
+    #[test]
+    fn test_quoted_reference_resolve_and_strip() {
+        let dir = std::env::temp_dir().join("path_ref_test_quoted");
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(dir.join("my file.txt"), b"space content").unwrap();
+        let (clean, block) = resolve_references("read @\"my file.txt\" please", &dir);
+        // strip_references normalizes whitespace after removal.
+        assert_eq!(clean, "read please");
+        assert!(block.contains("space content"));
+    }
+
+    #[test]
+    fn test_quoted_reference_unterminated() {
+        // Unterminated quote: the regex requires a closing quote, so this
+        // does not match as a reference.
+        let refs = parse_references("use @\"my file");
+        assert!(refs.is_empty(), "unterminated quote must not be a reference");
+    }
+
+    #[test]
+    fn test_last_ref_start_quoted() {
+        assert_eq!(
+            last_ref_start("check @\"src/main ts\" and foo"),
+            Some("check ".len())
+        );
+    }
+
+    #[test]
+    fn test_strip_quoted_reference() {
+        let cleaned = strip_references("see @\"my file.txt\" and done");
+        assert_eq!(cleaned, "see and done");
     }
 }
