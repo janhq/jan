@@ -1549,6 +1549,9 @@ struct App {
     account_login_submit: Option<crate::core::cli::auth::account::AccountLogin>,
     /// Manual OAuth redirect/code sender for the active account task.
     account_login_manual_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    /// Manual OAuth input submitted while no task sender is active; delivered to
+    /// the fresh task channel on retry spawn.
+    account_login_pending_manual_input: Option<String>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
     update_requested: bool,
     /// Compaction handed off to the loop, which spawns the summarizing model
@@ -1915,6 +1918,7 @@ impl App {
             account_login: None,
             account_login_submit: None,
             account_login_manual_tx: None,
+            account_login_pending_manual_input: None,
             update_requested: false,
             update_installing: false,
             compact_request: None,
@@ -6181,6 +6185,7 @@ async fn chat_loop<B: Backend>(
             }
         }
         if app.account_login.is_none() {
+            app.account_login_pending_manual_input = None;
             app.account_login_manual_tx = None;
             if let Some(task) = account_login_task.take() {
                 task.abort();
@@ -6189,11 +6194,14 @@ async fn chat_loop<B: Backend>(
 
         if account_login_task.is_none() {
             if let Some(login) = app.account_login_submit.take() {
-                let (manual_tx, manual_rx) = tokio::sync::mpsc::unbounded_channel();
-                app.account_login_manual_tx = Some(manual_tx);
+                let (manual_rx, has_pending_manual_input) = account_login_manual_channel(app);
                 account_login_task = Some(tokio::spawn(async move {
                     let listener = crate::core::cli::auth::account::bind_callback(&login).await?;
-                    open_browser(&login.authorization_url)?;
+                    if let Err(error) = open_browser(&login.authorization_url) {
+                        if !has_pending_manual_input {
+                            return Err(error);
+                        }
+                    }
                     let provider = tokio::time::timeout(
                         ACCOUNT_CALLBACK_TIMEOUT,
                         crate::core::cli::auth::account::complete_callback_login_with_manual(
@@ -6749,8 +6757,25 @@ fn cancel_account_login(app: &mut App) {
     app.account_login = None;
     app.account_login_submit = None;
     app.account_login_manual_tx = None;
+    clear_account_login_pending(app);
 }
 
+fn account_login_manual_channel(
+    app: &mut App,
+) -> (tokio::sync::mpsc::UnboundedReceiver<String>, bool) {
+    let (manual_tx, manual_rx) = tokio::sync::mpsc::unbounded_channel();
+    let pending = app.account_login_pending_manual_input.take();
+    let has_pending = pending.is_some();
+    if let Some(input) = pending {
+        let _ = manual_tx.send(input);
+    }
+    app.account_login_manual_tx = Some(manual_tx);
+    (manual_rx, has_pending)
+}
+
+fn clear_account_login_pending(app: &mut App) {
+    app.account_login_pending_manual_input = None;
+}
 /// Keys for the account OAuth prompt. Manual input is locally validated for fast
 /// feedback; the account task validates again before exchanging anything.
 fn handle_account_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
@@ -6797,9 +6822,10 @@ fn handle_account_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                     let sent = app
                         .account_login_manual_tx
                         .as_ref()
-                        .is_some_and(|tx| tx.send(input).is_ok());
+                        .is_some_and(|tx| tx.send(input.clone()).is_ok());
                     if !sent {
                         app.account_login_manual_tx = None;
+                        app.account_login_pending_manual_input = Some(input);
                         app.account_login_submit = Some(retry);
                     }
                 }
@@ -9770,6 +9796,7 @@ fn finish_login(
 
 fn finish_account_login(app: &mut App, result: Result<String, String>) {
     app.account_login_manual_tx = None;
+    clear_account_login_pending(app);
     if app.account_login.is_none() {
         return;
     }
@@ -15840,6 +15867,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn login_stays_cancellable_while_verifying() {
+        let mut app = test_app();
+        super::open_login_prompt(&mut app, "tokamak");
+        app.login.as_mut().unwrap().paste("tk-abc");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        app.login_submit.take();
+
+        // Read-only while in flight: no edit may change the key being checked.
+        type_key_chars(&mut app, "xyz").await;
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE).await;
+        assert_eq!(app.login.as_ref().unwrap().input, "tk-abc");
+        let rows = render_rows(&mut app, 80, 24);
+        assert!(rows.iter().any(|r| r.contains("verifying")), "{rows:?}");
+
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(app.login.is_none(), "Ctrl-C must not wedge the prompt");
+        assert!(app.login_submit.is_none());
+    }
+
+    #[tokio::test]
+    async fn failed_verification_keeps_the_prompt_open_with_the_reason() {
+        let mut app = test_app();
+        super::open_login_prompt(&mut app, "tokamak");
+        app.login.as_mut().unwrap().paste("tk-abc");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        app.login_submit.take();
+
+        finish_login(
+            &mut app,
+            Err(crate::core::cli::auth::LoginError::Unavailable(
+                "Tokamak rejected that API key.".to_string(),
+            )),
+        );
+
+        let prompt = app.login.as_ref().expect("prompt stays open to retry");
+        assert!(!prompt.verifying);
+        assert!(prompt.input.is_empty());
+        assert_eq!(
+            prompt.error.as_deref(),
+            Some("tokamak sign-in failed: Tokamak rejected that API key.")
+        );
+    }
+
+    #[tokio::test]
     async fn esc_cancels_a_pending_account_sign_in() {
         let mut app = test_app();
         super::open_account_login(&mut app, "openai");
@@ -15926,15 +15997,17 @@ mod tests {
         finish_account_login(&mut app, Err("could not discover account models".to_string()));
         let state = app.account_login.as_ref().unwrap().login.state.clone();
         app.account_login_submit = None;
-        app.account_login
-            .as_mut()
-            .unwrap()
-            .paste(&format!("authorization-code#{state}"));
+        let manual = format!("authorization-code#{state}");
+        app.account_login.as_mut().unwrap().paste(&manual);
 
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
 
+        let (mut rx, has_pending) = super::account_login_manual_channel(&mut app);
+        assert!(has_pending);
+        assert_eq!(rx.recv().await.as_deref(), Some(manual.as_str()));
         assert!(app.account_login.as_ref().unwrap().submitting);
         assert!(app.account_login_submit.is_some());
+        assert!(app.account_login_pending_manual_input.is_none());
     }
 
     #[test]
@@ -16122,6 +16195,67 @@ mod tests {
             // move it onto one the new account can serve.
             assert_eq!(app.model, "tokamak-1-preview");
         });
+    }
+
+    #[test]
+    fn failed_api_key_login_reports_provider_safe_error_without_key() {
+        let mut app = test_app();
+        super::open_login_prompt(&mut app, "tokamak");
+        app.login.as_mut().unwrap().paste("tk-secret-do-not-render");
+
+        finish_login(
+            &mut app,
+            Err(crate::core::cli::auth::LoginError::Unauthorized),
+        );
+
+        let prompt = app.login.as_ref().expect("prompt stays open to retry");
+        assert_eq!(
+            prompt.error.as_deref(),
+            Some("tokamak sign-in failed: that API key was not accepted")
+        );
+        let screen = render_rows(&mut app, 80, 24).join("\n");
+        assert!(screen.contains("tokamak sign-in failed"), "{screen}");
+        assert!(!screen.contains("tk-secret-do-not-render"), "{screen}");
+    }
+
+    #[test]
+    fn login_error_message_sanitizes_persistence_failure_details() {
+        let message = super::login_error_message(
+            "tokamak",
+            crate::core::cli::auth::LoginError::Persist(
+                "could not save provider configuration to /Users/alice/.jan/config.toml with key tk-secret-do-not-render".to_string(),
+            ),
+        );
+
+        assert_eq!(
+            message,
+            "tokamak sign-in failed: could not save sign-in securely"
+        );
+        assert!(
+            !message.contains("/Users/alice/.jan/config.toml"),
+            "{message}"
+        );
+        assert!(!message.contains("tk-secret-do-not-render"), "{message}");
+    }
+
+    #[test]
+    fn login_error_message_sanitizes_oauth_failure_details() {
+        let message = super::login_error_message(
+            "anthropic",
+            crate::core::cli::auth::LoginError::OAuth(
+                "callback contained code=sk-secret-do-not-render from /Users/alice/.jan/config.toml".to_string(),
+            ),
+        );
+
+        assert_eq!(
+            message,
+            "anthropic sign-in failed: could not complete browser sign-in"
+        );
+        assert!(
+            !message.contains("/Users/alice/.jan/config.toml"),
+            "{message}"
+        );
+        assert!(!message.contains("sk-secret-do-not-render"), "{message}");
     }
 
     #[test]
