@@ -363,7 +363,6 @@ impl Pending {
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum PickerKind {
     ResumeThread,
-    SelectModel,
     LoginProvider,
     ToggleMcp,
     /// Double-Esc rewind: pick a past user message to roll back to.
@@ -383,13 +382,11 @@ enum PickerKind {
     Todo,
 }
 
-/// Interactive list overlay (`/resume` threads, `/model` models, `/mcp`
-/// servers): rows with a highlighted cursor, acted on by `PickerKind` on Enter.
+/// Interactive list overlay (`/resume`, `/login`, `/mcp`, etc.): rows with a
+/// highlighted cursor, acted on by `PickerKind` on Enter.
 struct Picker {
     kind: PickerKind,
     items: Vec<PickerItem>,
-    all_items: Vec<PickerItem>,
-    query: String,
     selected: usize,
     /// Index of the provider row a first `d` armed for deletion, so a second
     /// `d` on the same row confirms it. `None` = nothing armed. Resets on
@@ -398,39 +395,9 @@ struct Picker {
 }
 
 impl Picker {
-    fn refresh_model_items(&mut self) {
-        if self.kind != PickerKind::SelectModel {
-            return;
-        }
-        let query = self
-            .query
-            .split_whitespace()
-            .map(str::to_ascii_lowercase)
-            .collect::<Vec<_>>();
-        self.items = self
-            .all_items
-            .iter()
-            .filter(|item| {
-                let provider_alias = item
-                    .label
-                    .split_once(" / ")
-                    .and_then(|(provider, _)| crate::core::cli::auth::provider_by_id(provider))
-                    .map(|provider| provider.name.to_ascii_lowercase())
-                    .unwrap_or_default();
-                let searchable = format!("{} {provider_alias}", item.label.to_ascii_lowercase());
-                query
-                    .iter()
-                    .all(|term| searchable.contains(term.as_str()))
-            })
-            .cloned()
-            .collect();
-        self.selected = self.selected.min(self.items.len().saturating_sub(1));
-    }
-
     fn title(&self) -> String {
-        let title = match self.kind {
+        match self.kind {
             PickerKind::ResumeThread => " resume thread ".to_string(),
-            PickerKind::SelectModel => " select model ".to_string(),
             PickerKind::LoginProvider => " sign in ".to_string(),
             PickerKind::ToggleMcp => " mcp servers ".to_string(),
             PickerKind::RewindMessage => " rewind to message ".to_string(),
@@ -439,18 +406,12 @@ impl Picker {
             PickerKind::AgentSettings => " agent settings ".to_string(),
             PickerKind::ProviderSettings => " providers ".to_string(),
             PickerKind::Todo => " todo ".to_string(),
-        };
-        if self.kind == PickerKind::SelectModel && !self.query.is_empty() {
-            format!("{title} - {}", self.query)
-        } else {
-            title
         }
     }
 
     fn action_hint(&self) -> &'static str {
         match self.kind {
             PickerKind::ResumeThread => " ↑/↓ select   Enter resume   Esc cancel",
-            PickerKind::SelectModel => " type to filter   ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::LoginProvider => " ↑/↓ select   Enter sign in   Esc cancel",
             PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   a add   e edit   d delete   Esc close",
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
@@ -460,6 +421,136 @@ impl Picker {
             PickerKind::ProviderSettings => " ↑/↓ select   Enter edit   a add   dd delete   Esc close",
             PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ModelPickerFocus {
+    Scopes,
+    Models,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ModelScope {
+    provider: Option<String>,
+    label: String,
+    count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ModelItem {
+    provider: String,
+    model: String,
+    value: String,
+}
+
+struct ModelPicker {
+    scopes: Vec<ModelScope>,
+    active_scope: usize,
+    focus: ModelPickerFocus,
+    all_items: Vec<ModelItem>,
+    items: Vec<ModelItem>,
+    query: String,
+    selected: usize,
+}
+
+impl ModelPicker {
+    fn from_pairs(mut pairs: Vec<(String, String)>, current_model: &str) -> Option<Self> {
+        pairs.sort();
+        pairs.dedup();
+        if pairs.is_empty() {
+            return None;
+        }
+
+        let all_items: Vec<ModelItem> = pairs
+            .into_iter()
+            .map(|(provider, model)| ModelItem {
+                value: model.clone(),
+                provider,
+                model,
+            })
+            .collect();
+        let mut scopes = vec![ModelScope {
+            provider: None,
+            label: "All models".to_string(),
+            count: all_items.len(),
+        }];
+        for item in &all_items {
+            if let Some(scope) = scopes
+                .last_mut()
+                .filter(|scope| scope.provider.as_deref() == Some(item.provider.as_str()))
+            {
+                scope.count += 1;
+            } else {
+                scopes.push(ModelScope {
+                    provider: Some(item.provider.clone()),
+                    label: item.provider.clone(),
+                    count: 1,
+                });
+            }
+        }
+        let selected = all_items
+            .iter()
+            .position(|item| item.value == current_model)
+            .unwrap_or(0);
+        Some(Self {
+            scopes,
+            active_scope: 0,
+            focus: ModelPickerFocus::Models,
+            items: all_items.clone(),
+            all_items,
+            query: String::new(),
+            selected,
+        })
+    }
+
+    fn refresh_items(&mut self) {
+        self.active_scope = self.active_scope.min(self.scopes.len().saturating_sub(1));
+        let provider = self
+            .scopes
+            .get(self.active_scope)
+            .and_then(|scope| scope.provider.as_deref())
+            .map(str::to_string);
+        let terms: Vec<String> = self
+            .query
+            .split_whitespace()
+            .map(str::to_ascii_lowercase)
+            .collect();
+        self.items = self
+            .all_items
+            .iter()
+            .filter(|item| {
+                if provider.as_deref().is_some_and(|p| p != item.provider) {
+                    return false;
+                }
+                let searchable = format!(
+                    "{} {}",
+                    item.provider.to_ascii_lowercase(),
+                    item.model.to_ascii_lowercase()
+                );
+                terms.iter().all(|term| searchable.contains(term))
+            })
+            .cloned()
+            .collect();
+        self.selected = self.selected.min(self.items.len().saturating_sub(1));
+    }
+
+    fn select_scope(&mut self, index: usize) {
+        let current = self.items.get(self.selected).map(|item| item.value.clone());
+        self.active_scope = index.min(self.scopes.len().saturating_sub(1));
+        self.refresh_items();
+        self.selected = current
+            .and_then(|value| self.items.iter().position(|item| item.value == value))
+            .unwrap_or(0);
+    }
+
+    fn move_selection(&mut self, delta: isize) {
+        if self.items.is_empty() {
+            self.selected = 0;
+            return;
+        }
+        let max = self.items.len() as isize - 1;
+        self.selected = (self.selected as isize + delta).clamp(0, max) as usize;
     }
 }
 
@@ -1434,6 +1525,7 @@ struct App {
     /// Structured questions waiting for this TUI, oldest first.
     ask_queue: std::collections::VecDeque<PendingAsk>,
     picker: Option<Picker>,
+    model_picker: Option<ModelPicker>,
     /// Active `/login` prompt; owns the keyboard while open.
     login: Option<LoginPrompt>,
     /// Active `/settings` edit prompt (docked like `/login`); owns the
@@ -1813,6 +1905,7 @@ impl App {
             pending_queue: std::collections::VecDeque::new(),
             ask_queue: std::collections::VecDeque::new(),
             picker: None,
+            model_picker: None,
             login: None,
             settings_prompt: None,
             mcp_prompt: None,
@@ -6783,6 +6876,66 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     }
 }
 
+/// Plain text from the OS clipboard, for Ctrl-V in the `/login` prompt (the
+/// image path is `clipboard_image`).
+fn clipboard_text() -> Result<String, String> {
+    super::secret_input::clipboard_text()
+}
+
+fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+    if key.code == KeyCode::Esc || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d'))) {
+        app.model_picker = None;
+        return;
+    }
+
+    let mut chosen = None;
+    if let Some(picker) = app.model_picker.as_mut() {
+        match key.code {
+            KeyCode::Left => picker.focus = ModelPickerFocus::Scopes,
+            KeyCode::Right => {
+                picker.focus = ModelPickerFocus::Models;
+                picker.move_selection(0);
+            }
+            KeyCode::Up => match picker.focus {
+                ModelPickerFocus::Scopes => picker.select_scope(picker.active_scope.saturating_sub(1)),
+                ModelPickerFocus::Models => picker.move_selection(-1),
+            },
+            KeyCode::Down => match picker.focus {
+                ModelPickerFocus::Scopes => {
+                    let max = picker.scopes.len().saturating_sub(1);
+                    picker.select_scope((picker.active_scope + 1).min(max));
+                }
+                ModelPickerFocus::Models => picker.move_selection(1),
+            },
+            KeyCode::Char('k') if picker.focus == ModelPickerFocus::Models && !ctrl => {
+                picker.move_selection(-1);
+            }
+            KeyCode::Char('j') if picker.focus == ModelPickerFocus::Models && !ctrl => {
+                picker.move_selection(1);
+            }
+            KeyCode::Backspace if picker.focus == ModelPickerFocus::Models => {
+                picker.query.pop();
+                picker.refresh_items();
+            }
+            KeyCode::Char(ch) if picker.focus == ModelPickerFocus::Models && !ctrl => {
+                picker.query.push(ch);
+                picker.refresh_items();
+            }
+            KeyCode::Enter if picker.focus == ModelPickerFocus::Scopes => {
+                picker.select_scope(picker.active_scope);
+                picker.focus = ModelPickerFocus::Models;
+            }
+            KeyCode::Enter if picker.focus == ModelPickerFocus::Models => {
+                chosen = picker.items.get(picker.selected).map(|item| item.value.clone());
+            }
+            _ => {}
+        }
+    }
+    if let Some(value) = chosen {
+        app.set_model(value);
+        app.model_picker = None;
+    }
+}
 async fn handle_key(
     app: &mut App,
     key: KeyEvent,
@@ -6891,7 +7044,12 @@ async fn handle_key(
         return;
     }
 
-    // Ctrl-D quits from anywhere; Ctrl-C cancels a run or quits when idle.
+    if app.model_picker.is_some() {
+        handle_model_picker_key(app, key, ctrl);
+        return;
+    }
+
+    // Ctrl-D quits from anywhere not owned by a prompt or picker; Ctrl-C cancels a run or quits when idle.
     if ctrl_d {
         abort_run(current);
         app.should_quit = true;
@@ -6902,14 +7060,6 @@ async fn handle_key(
     // act and close; the `/mcp` picker toggles the selected row in place.
     if let Some(picker) = app.picker.as_mut() {
         match key.code {
-            KeyCode::Char(ch) if picker.kind == PickerKind::SelectModel && !ctrl => {
-                picker.query.push(ch);
-                picker.refresh_model_items();
-            }
-            KeyCode::Backspace if picker.kind == PickerKind::SelectModel => {
-                picker.query.pop();
-                picker.refresh_model_items();
-            }
             KeyCode::Up | KeyCode::Char('k') => {
                 picker.armed_delete = None;
                 picker.selected = picker.selected.saturating_sub(1);
@@ -7053,15 +7203,12 @@ async fn handle_key(
                     Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
                 }
             }
-            KeyCode::Enter if picker.kind == PickerKind::SelectModel && picker.items.is_empty() => {
-            }
             KeyCode::Enter => {
                 let kind = picker.kind;
                 let value = picker.items[picker.selected].value.clone();
                 app.picker = None;
                 match kind {
                     PickerKind::ResumeThread => resume_thread(app, &value).await,
-                    PickerKind::SelectModel => app.set_model(value),
                     PickerKind::LoginProvider => {
                         if crate::core::cli::auth::account::AccountProvider::from_credential_provider(&value)
                             .is_some()
@@ -8586,8 +8733,6 @@ fn open_settings_screen(app: &mut App) {
     app.picker = Some(Picker {
         kind: PickerKind::AgentSettings,
         items: build_agent_settings_items(&toml_path),
-        all_items: Vec::new(),
-        query: String::new(),
         selected: 0,
         armed_delete: None,
     });
@@ -9084,8 +9229,6 @@ fn open_todo_picker(app: &mut App) {
     app.picker = Some(Picker {
         kind: PickerKind::Todo,
         items: build_todo_items(&app.todos),
-        all_items: Vec::new(),
-        query: String::new(),
         selected: 0,
         armed_delete: None,
     });
@@ -9439,8 +9582,6 @@ fn open_thread_picker(app: &mut App) {
                 app.picker = Some(Picker {
                     kind: PickerKind::ResumeThread,
                     items,
-                    all_items: Vec::new(),
-                    query: String::new(),
                     selected: 0,
                     armed_delete: None,
                 });
@@ -9450,53 +9591,20 @@ fn open_thread_picker(app: &mut App) {
     }
 }
 
-/// Open the `/model` selector listing the `provider / model` pairs this build
-/// can actually run, with the current model pre-highlighted. A reachable
-/// provider with no configured model list (e.g. just added via the settings
-/// wizard) is queried for its `GET /models` on the spot and the discovered ids
-/// persisted, so a bare provider becomes selectable immediately.
-async fn open_model_picker(app: &mut App) {
-    let project_root = app.project_root.clone();
-    match super::providers::fetch_missing_models(
-        Some(&project_root),
-        &mut app.probed_models,
-    )
-    .await
-    {
-        Ok(true) => {
-            // The discovered ids now live on disk; refresh the session's
-            // in-memory provider snapshot so a picked model resolves on the
-            // next run without a restart (#8688 parallels the /login reload).
-            reload_provider_configs(app).await;
-            app.note("fetched models for provider(s) with no configured list");
+/// Open the `/model` hub listing the `provider / model` pairs this build can
+/// actually run, with the current raw model pre-highlighted.
+fn open_model_picker(app: &mut App) {
+    let pairs = super::providers::list_provider_models(Some(&app.project_root));
+    match ModelPicker::from_pairs(pairs, &app.model) {
+        Some(picker) => {
+            app.picker = None;
+            app.model_picker = Some(picker);
         }
-        Ok(_) => {}
-        Err(e) => app.note(&format!("could not fetch models: {e}")),
-    }
-    let pairs = super::providers::list_provider_models(Some(&project_root));
-    if pairs.is_empty() {
-        return app.note(
+        None => app.note(
             "no models available (add a provider with `jan config set`, or configure one in the desktop app)",
-        );
+        ),
     }
-    let selected = pairs.iter().position(|(_, m)| *m == app.model).unwrap_or(0);
-    let items: Vec<PickerItem> = pairs
-        .into_iter()
-        .map(|(provider, model)| PickerItem {
-            label: format!("{provider} / {model}"),
-            value: model,
-            hint: None,
-            checkbox: None,
-        })
-        .collect();
-    app.picker = Some(Picker {
-        kind: PickerKind::SelectModel,
-        all_items: items.clone(),
-        items,
-        query: String::new(),
-        selected,
-        armed_delete: None,
-    });
+
 }
 
 /// Open the `/mcp` picker listing configured MCP servers with their enabled
@@ -9521,8 +9629,6 @@ fn open_mcp_picker(app: &mut App) {
         items,
         selected: 0,
         armed_delete: None,
-        all_items: Vec::new(),
-        query: String::new(),
     });
 }
 
@@ -9555,8 +9661,6 @@ fn open_login_picker_at(app: &mut App, selected_provider: Option<&str>) {
         kind: PickerKind::LoginProvider,
         items,
         selected,
-        all_items: Vec::new(),
-        query: String::new(),
     });
 }
 
@@ -9813,8 +9917,6 @@ fn open_config_screen(app: &mut App) {
     app.picker = Some(Picker {
         kind: PickerKind::ViewConfig,
         items,
-        all_items: Vec::new(),
-        query: String::new(),
         selected: 0,
         armed_delete: None,
     });
@@ -9957,8 +10059,6 @@ fn open_rewind_picker(app: &mut App) {
     app.picker = Some(Picker {
         kind: PickerKind::RewindMessage,
         items,
-        all_items: Vec::new(),
-        query: String::new(),
         selected,
         armed_delete: None,
     });
@@ -9985,8 +10085,6 @@ fn open_rewind_scope(app: &mut App, user_index: usize) {
     app.picker = Some(Picker {
         kind: PickerKind::RewindScope,
         items,
-        all_items: Vec::new(),
-        query: String::new(),
         selected: 0,
         armed_delete: None,
     });
@@ -10546,6 +10644,10 @@ fn draw(f: &mut Frame, app: &mut App) {
     // stale width would mis-size the frame a resize lands on. The body spans
     // the full frame width (its border is top-only).
     app.view_width = f.area().width.max(1);
+    if let Some(picker) = app.model_picker.as_ref() {
+        draw_model_picker(f, f.area(), picker, &app.model);
+        return;
+    }
     // Every frame, so a finished plan hides on wall-clock time even with the
     // session idle -- the loop redraws on its tick either way, and ratatui
     // emits nothing until the panel actually changes.
@@ -11617,6 +11719,175 @@ fn draw_permission(
     let mut state = ListState::default();
     state.select(Some(pending.selected));
     f.render_stateful_widget(list, rows[2], &mut state);
+}
+
+fn count_label(label: &str, count: usize, width: u16) -> String {
+    let width = width as usize;
+    if width == 0 {
+        return String::new();
+    }
+    let count = count.to_string();
+    let label_width = width.saturating_sub(count.chars().count() + 1).max(1);
+    let label = truncate(label, label_width);
+    let used = label.chars().count() + count.chars().count();
+    if used >= width {
+        return truncate(&format!("{label} {count}"), width);
+    }
+    format!("{label}{}{}", " ".repeat(width - used), count)
+}
+
+fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_model: &str) {
+    use ratatui::widgets::{Clear, List, ListItem, ListState};
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            " Models ",
+            Style::new().on_cyan().black().bold(),
+        ));
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
+    let body = rows[0];
+    let help = truncate(
+        "Enter choose · Left/Right panes · Up/Down move · type to search · Esc close",
+        rows[1].width as usize,
+    );
+    f.render_widget(Paragraph::new(Line::styled(help, Style::new().dark_gray())), rows[1]);
+    if body.width == 0 || body.height == 0 {
+        return;
+    }
+
+    let scope_w = body
+        .width
+        .saturating_sub(1)
+        .min(28)
+        .max(body.width.saturating_sub(1).min(14));
+    let panes = Layout::horizontal([
+        Constraint::Length(scope_w),
+        Constraint::Length(1),
+        Constraint::Min(0),
+    ])
+    .split(body);
+
+    let scope_width = panes[0].width.saturating_sub(2);
+    let scope_items: Vec<ListItem> = picker
+        .scopes
+        .iter()
+        .enumerate()
+        .map(|(idx, scope)| {
+            let style = if idx == picker.active_scope {
+                if picker.focus == ModelPickerFocus::Scopes {
+                    Style::new().reversed().bold()
+                } else {
+                    Style::new().reversed()
+                }
+            } else {
+                Style::new()
+            };
+            ListItem::new(Line::styled(
+                count_label(&scope.label, scope.count, scope_width),
+                style,
+            ))
+        })
+        .collect();
+    let scopes = List::new(scope_items).highlight_symbol(if picker.focus == ModelPickerFocus::Scopes {
+        "▶ "
+    } else {
+        "  "
+    });
+    let mut scope_state = ListState::default();
+    if !picker.scopes.is_empty() {
+        scope_state.select(Some(picker.active_scope.min(picker.scopes.len() - 1)));
+    }
+    f.render_stateful_widget(scopes, panes[0], &mut scope_state);
+
+    let divider = (0..panes[1].height)
+        .map(|_| Line::styled("│", Style::new().dark_gray()))
+        .collect::<Vec<_>>();
+    f.render_widget(Paragraph::new(divider), panes[1]);
+
+    if panes[2].width == 0 || panes[2].height == 0 {
+        return;
+    }
+    let right_rows = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ])
+    .split(panes[2]);
+    let title = picker
+        .scopes
+        .get(picker.active_scope)
+        .and_then(|scope| scope.provider.as_deref())
+        .map(|provider| format!("{provider} models"))
+        .unwrap_or_else(|| "All available models".to_string());
+    f.render_widget(
+        Paragraph::new(Line::styled(
+            truncate(&title, right_rows[0].width as usize),
+            Style::new().bold(),
+        )),
+        right_rows[0],
+    );
+    let caret = if picker.focus == ModelPickerFocus::Models { "█" } else { "" };
+    let search = truncate(&format!("⌕ {}{caret}", picker.query), right_rows[1].width as usize);
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(search, Style::new().dark_gray()),
+        ])),
+        right_rows[1],
+    );
+
+    let model_width = right_rows[2].width.saturating_sub(2) as usize;
+    let model_items: Vec<ListItem> = picker
+        .items
+        .iter()
+        .map(|item| {
+            ListItem::new(Line::raw(truncate(
+                &format!("{} / {}", item.provider, item.model),
+                model_width,
+            )))
+        })
+        .collect();
+    let models = List::new(model_items)
+        .highlight_style(if picker.focus == ModelPickerFocus::Models {
+            Style::new().reversed().bold()
+        } else {
+            Style::new().reversed()
+        })
+        .highlight_symbol(if picker.focus == ModelPickerFocus::Models {
+            "▶ "
+        } else {
+            "  "
+        });
+    let mut model_state = ListState::default();
+    if !picker.items.is_empty() {
+        model_state.select(Some(picker.selected.min(picker.items.len() - 1)));
+    }
+    f.render_stateful_widget(models, right_rows[2], &mut model_state);
+
+    let detail = picker
+        .items
+        .get(picker.selected)
+        .map(|item| {
+            let state = if item.value == current_model { "current" } else { "default" };
+            format!("{}/{} · {state}", item.provider, item.model)
+        })
+        .unwrap_or_else(|| "no models match".to_string());
+    f.render_widget(
+        Paragraph::new(Line::styled(
+            truncate(&detail, right_rows[3].width as usize),
+            Style::new().dark_gray(),
+        )),
+        right_rows[3],
+    );
 }
 
 fn draw_picker(
@@ -15828,7 +16099,7 @@ mod tests {
     }
 
     #[test]
-    fn successful_login_closes_the_prompt_and_adopts_a_runnable_model() {
+    fn login_successful_api_key_login_reports_only_model_guidance() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let mut app = test_app();
             app.login = Some(super::LoginPrompt::new("tokamak"));
@@ -15842,6 +16113,11 @@ mod tests {
                 }),
             );
             assert!(app.login.is_none());
+            assert!(
+                transcript_text(&app).contains("signed in to tokamak. Use /model to select a model."),
+                "{}",
+                transcript_text(&app)
+            );
             // The session's old model ("m") is offered by nobody, so sign-in must
             // move it onto one the new account can serve.
             assert_eq!(app.model, "tokamak-1-preview");
@@ -24037,62 +24313,111 @@ mod tests {
         );
 }
     #[test]
-    fn model_picker_filters_and_restores_original_models() {
-        let mut picker = super::Picker {
-            kind: PickerKind::SelectModel,
-            all_items: vec![
-                super::PickerItem {
-                    value: "gpt-5-codex".to_string(),
-                    label: "openai / gpt-5-codex".to_string(),
-                    hint: None,
-                    checkbox: None,
-                },
-                super::PickerItem {
-                    value: "claude-sonnet".to_string(),
-                    label: "anthropic / claude-sonnet".to_string(),
-                    hint: None,
-                    checkbox: None,
-                },
+    fn model_picker_builds_all_and_provider_scopes_with_counts() {
+        let picker = super::ModelPicker::from_pairs(
+            vec![
+                ("anthropic".into(), "claude-sonnet".into()),
+                ("openai".into(), "gpt-5-codex".into()),
+                ("openai".into(), "gpt-5-mini".into()),
             ],
-            items: Vec::new(),
-            query: "CoDeX".to_string(),
-            selected: 1,
-        };
-        picker.refresh_model_items();
-        assert_eq!(picker.items.len(), 1);
-        assert_eq!(picker.items[0].value, "gpt-5-codex");
-        assert_eq!(picker.selected, 0);
+            "gpt-5-codex",
+        )
+        .unwrap();
 
-        picker.query.clear();
-        picker.refresh_model_items();
-        assert_eq!(picker.items.len(), 2);
+        assert_eq!(picker.scopes[0].label, "All models");
+        assert_eq!(picker.scopes[0].count, 3);
+        assert_eq!(picker.scopes[1].label, "anthropic");
+        assert_eq!(picker.scopes[1].count, 1);
+        assert_eq!(picker.scopes[2].label, "openai");
+        assert_eq!(picker.scopes[2].count, 2);
+        assert_eq!(picker.items[picker.selected].value, "gpt-5-codex");
     }
+
     #[test]
-    fn model_picker_matches_all_search_terms_across_provider_and_model() {
-        let mut picker = super::Picker {
-            kind: PickerKind::SelectModel,
-            all_items: vec![
-                super::PickerItem {
-                    value: "gpt-5.6-luna".to_string(),
-                    label: "openai / gpt-5.6-luna".to_string(),
-                    hint: None,
-                    checkbox: None,
-                },
-                super::PickerItem {
-                    value: "gpt-5.6-terra".to_string(),
-                    label: "openai / gpt-5.6-terra".to_string(),
-                    hint: None,
-                    checkbox: None,
-                },
+    fn model_picker_filters_all_terms_and_changes_scope() {
+        let mut picker = super::ModelPicker::from_pairs(
+            vec![
+                ("openai".into(), "gpt-5.6-luna".into()),
+                ("openai".into(), "gpt-5.6-terra".into()),
+                ("anthropic".into(), "claude-sonnet".into()),
             ],
-            items: Vec::new(),
-            query: "codex luna".to_string(),
-            selected: 0,
-        };
+            "gpt-5.6-luna",
+        )
+        .unwrap();
 
-        picker.refresh_model_items();
-
+        picker.query = "openai luna".into();
+        picker.refresh_items();
         assert_eq!(picker.items.len(), 1);
         assert_eq!(picker.items[0].value, "gpt-5.6-luna");
+
+        picker.select_scope(1);
+        assert_eq!(picker.scopes[picker.active_scope].label, "anthropic");
+        assert!(picker.items.iter().all(|item| item.provider == "anthropic"));
+    }
+
+    #[tokio::test]
+    async fn model_picker_enter_uses_raw_value_while_label_is_provider_scoped() {
+        let mut app = test_app();
+        app.model_picker = super::ModelPicker::from_pairs(
+            vec![("openai".into(), "gpt-5-codex".into())],
+            "missing-current",
+        );
+
+        let picker = app.model_picker.as_ref().unwrap();
+        assert_eq!(picker.items[picker.selected].provider, "openai");
+        assert_eq!(picker.items[picker.selected].model, "gpt-5-codex");
+        assert_eq!(picker.items[picker.selected].value, "gpt-5-codex");
+
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+
+        assert_eq!(app.model, "gpt-5-codex");
+        assert!(app.model_picker.is_none());
+    }
+
+    #[test]
+    fn model_picker_reopens_with_newly_written_provider_models() {
+        with_isolated_login_state(|| {
+            crate::core::agent::global_config::set_provider(
+                "tokamak",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("tk".into()),
+                    clear_api_key: false,
+                    base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
+                    models: Some(vec!["tokamak-old".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let mut app = test_app();
+            super::open_model_picker(&mut app);
+            assert!(app
+                .model_picker
+                .as_ref()
+                .unwrap()
+                .all_items
+                .iter()
+                .any(|item| item.value == "tokamak-old"));
+
+            crate::core::agent::global_config::set_provider(
+                "tokamak",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("tk".into()),
+                    clear_api_key: false,
+                    base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
+                    models: Some(vec!["tokamak-old".into(), "tokamak-new".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            super::open_model_picker(&mut app);
+            let picker = app.model_picker.as_ref().unwrap();
+            assert!(picker
+                .all_items
+                .iter()
+                .any(|item| item.value == "tokamak-new"));
+            assert!(app.picker.is_none());
+        });
     }
 }
