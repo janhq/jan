@@ -1,0 +1,125 @@
+# Builds the Jan Agent CLI binary for Linux aarch64.
+# Runs natively on GitHub's arm64 hosted runner; no Tauri bundler, no frontend.
+name: cli-build-linux-aarch64
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+        default: refs/heads/dev
+      new_version:
+        required: true
+        type: string
+        default: ''
+      channel:
+        required: true
+        type: string
+        default: agent-nightly
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME:
+        required: false
+      DELTA_AWS_ACCESS_KEY_ID:
+        required: false
+      DELTA_AWS_SECRET_ACCESS_KEY:
+        required: false
+      DELTA_AWS_REGION:
+        required: false
+    outputs:
+      FILE_NAME:
+        value: ${{ jobs.build-linux-aarch64.outputs.FILE_NAME }}
+      SHA256:
+        value: ${{ jobs.build-linux-aarch64.outputs.SHA256 }}
+
+jobs:
+  build-linux-aarch64:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      FILE_NAME: ${{ steps.package.outputs.FILE_NAME }}
+      SHA256: ${{ steps.package.outputs.SHA256 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      # `libdbus-1-dev` used to be required here because keyring's
+      # `sync-secret-service` backend links libdbus. That backend is gone (it is
+      # now the pure-Rust `async-secret-service`), and installing the dev
+      # package would hide a regression: the build would keep succeeding while
+      # producing a binary that cannot start on a host without libdbus at all.
+      # `pkg-config` stays for openssl-sys.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      # See template-cli-build-linux-x64.yml for why this blocklist exists.
+      - name: Assert no GUI or D-Bus crates in the CLI dependency graph
+        run: |
+          cd src-tauri
+          for crate in tauri gtk gdk muda wry webkit2gtk dbus libdbus-sys dbus-secret-service; do
+            out=$(cargo tree --no-default-features --features cli -e normal \
+              --target aarch64-unknown-linux-gnu -i "$crate" 2>&1) || continue
+            case "$out" in *"nothing to print"*) continue ;; esac
+            echo "::error::$crate is back in the jan CLI dependency graph"
+            echo "$out" | head -20
+            exit 1
+          done
+
+      - name: Build CLI binary
+        env:
+          JAN_CLI_UPDATE_CHANNEL: ${{ inputs.channel }}
+          JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
+        run: |
+          cd src-tauri
+          cargo build --no-default-features --features cli --bin jan --release
+
+      # See template-cli-build-linux-x64.yml for why this check exists.
+      - name: Assert the CLI binary links no unexpected shared libraries
+        run: |
+          # `comm` requires both inputs collated identically, hence LC_ALL=C.
+          export LC_ALL=C
+          readelf -d src-tauri/target/release/jan \
+            | sed -n 's/.*NEEDED.*\[\(.*\)\].*/\1/p' | sort -u > needed.txt
+          echo "linked:"; sed 's/^/  /' needed.txt
+          # libssl/libcrypto come from reqwest's default native-tls backend.
+          # They are versioned sonames, so the binary still fails on a host with
+          # a different OpenSSL; switching reqwest to rustls-tls would drop them.
+          printf '%s\n' ld-linux-aarch64.so.1 libc.so.6 libcrypto.so.3 \
+            libgcc_s.so.1 libm.so.6 libssl.so.3 | sort -u > allowed.txt
+          unexpected=$(comm -23 needed.txt allowed.txt)
+          if [ -n "$unexpected" ]; then
+            echo "::error::CLI binary gained an unexpected shared library dependency: $(echo $unexpected)"
+            exit 1
+          fi
+
+      - name: Strip binary
+        run: strip src-tauri/target/release/jan
+
+      - name: Package tarball
+        id: package
+        run: |
+          VERSION="${{ inputs.new_version }}"
+          FILE_NAME="jan-agent-linux-aarch64-$VERSION.tar.gz"
+          tar czf "$FILE_NAME" -C src-tauri/target/release jan
+          echo "FILE_NAME=$FILE_NAME" >> "$GITHUB_OUTPUT"
+          echo "SHA256=$(sha256sum "$FILE_NAME" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp "./${{ steps.package.outputs.FILE_NAME }}" \
+            "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/${{ inputs.channel }}/${{ steps.package.outputs.FILE_NAME }}"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
