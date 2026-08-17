@@ -2173,8 +2173,7 @@ impl App {
         let after_at = &before[at_idx + 1..];
 
         // Quoted reference: @"query..."
-        if after_at.starts_with('"') {
-            let inner = &after_at[1..];
+        if let Some(inner) = after_at.strip_prefix('"') {
             // If the cursor is right after the opening quote, return empty query.
             if inner.is_empty() {
                 return Some(String::new());
