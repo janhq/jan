@@ -10,6 +10,7 @@ use console::Style;
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
+use app_lib::core::cli::mcp::{self, split_kv, McpServerEntry};
 use app_lib::core::cli::run_report::OutputFormat;
 use app_lib::core::cli::{
     cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
@@ -41,6 +42,8 @@ to opt out of both.",
   jan cli agent run \"fix the failing test\"               # run the agent non-interactively\n  \
   jan cli models list                                    # show every configured provider model\n  \
   jan cli threads list                                   # list saved conversation threads\n  \
+  jan cli mcp list                                      # list configured MCP servers\n  \
+  jan cli mcp add my-server --command npx --arg -y --arg my-mcp \n  \
   jan update                                             # install the latest build of this channel"
 )]
 struct Cli {
@@ -191,6 +194,12 @@ enum CliCommands {
     Agent {
         #[command(subcommand)]
         cmd: AgentCommands,
+    },
+    /// List and manage MCP servers in mcp_config.json
+    #[command(display_order = 13)]
+    Mcp {
+        #[command(subcommand)]
+        cmd: McpCommands,
     },
 }
 
@@ -350,6 +359,67 @@ enum ModelsCommands {
     },
 }
 
+// ── MCP subcommands ────────────────────────────────────────────────────────
+
+/// Manage MCP servers in the shared <jan_data>/mcp_config.json, the same store
+/// the desktop app and the TUI `/mcp` picker read. Every command is headless
+/// and persists across runs.
+#[derive(Subcommand)]
+enum McpCommands {
+    /// List every configured server as JSON, excluding the desktop-only browser bridge
+    List {
+        /// Show env/header values (they may contain secrets); redacted by default
+        #[arg(long)]
+        show_secrets: bool,
+    },
+    /// Print a single server's full config as JSON
+    Get {
+        /// Server name
+        name: String,
+    },
+    /// Add a server, or replace an existing one with the same name (edit)
+    Add {
+        /// Server name (the key in mcpServers)
+        name: String,
+        /// Command for a stdio server (e.g. npx, uvx)
+        #[arg(long)]
+        command: Option<String>,
+        /// Argument for the command, repeatable
+        #[arg(long = "arg", allow_hyphen_values = true)]
+        args: Vec<String>,
+        /// Environment variable KEY=VALUE for a stdio server, repeatable
+        #[arg(long = "env")]
+        env: Vec<String>,
+        /// Transport type: stdio (default), http, or sse
+        #[arg(long, default_value = "stdio")]
+        r#type: String,
+        /// URL for an http/sse server (required unless stdio)
+        #[arg(long)]
+        url: Option<String>,
+        /// Header KEY=VALUE for an http/sse server, repeatable
+        #[arg(long = "header")]
+        header: Vec<String>,
+        /// Mark the server active immediately; defaults to inactive
+        #[arg(long)]
+        active: bool,
+    },
+    /// Remove a server entry from mcp_config.json
+    Remove {
+        /// Server name
+        name: String,
+    },
+    /// Mark a server active (so the next session connects it)
+    Enable {
+        /// Server name
+        name: String,
+    },
+    /// Mark a server inactive
+    Disable {
+        /// Server name
+        name: String,
+    },
+}
+
 // ── ASCII logo ─────────────────────────────────────────────────────────────
 
 /// Build a left-aligned, bright-yellow ASCII logo for the help header.
@@ -486,6 +556,12 @@ async fn handle_cli(cmd: CliCommands) {
         CliCommands::Threads { cmd } => handle_threads(cmd).await,
         CliCommands::Models { cmd } => handle_models(cmd).await,
         CliCommands::Agent { cmd } => handle_agent(cmd).await,
+        CliCommands::Mcp { cmd } => {
+            if let Err(e) = handle_mcp(cmd) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 }
 
@@ -670,6 +746,130 @@ async fn handle_models(cmd: ModelsCommands) {
     }
 }
 
+/// Render one server entry for `list`: transport summary plus (redacted by
+/// default) env/header keys. Secret values are masked unless `--show-secrets`.
+fn mcp_list_entry(entry: &McpServerEntry, show_secrets: bool) -> serde_json::Value {
+    let cfg = &entry.config;
+    let transport_type = cfg.get("type").and_then(serde_json::Value::as_str);
+    let redact = |v: &serde_json::Value| -> serde_json::Value {
+        if show_secrets {
+            v.clone()
+        } else {
+            serde_json::Value::String("<redacted>".to_string())
+        }
+    };
+    let redact_map = |m: Option<&serde_json::Map<String, serde_json::Value>>| -> serde_json::Value {
+        match m {
+            Some(map) => {
+                let out: serde_json::Map<String, serde_json::Value> = map
+                    .iter()
+                    .map(|(k, v)| (k.clone(), redact(v)))
+                    .collect();
+                serde_json::Value::Object(out)
+            }
+            None => serde_json::json!({}),
+        }
+    };
+    serde_json::json!({
+        "name": entry.name,
+        "active": entry.active,
+        "type": transport_type.unwrap_or("stdio"),
+        "command": cfg.get("command").and_then(serde_json::Value::as_str).unwrap_or(""),
+        "args": cfg.get("args").cloned().unwrap_or_else(|| serde_json::json!([])),
+        "url": cfg.get("url").cloned().unwrap_or(serde_json::Value::Null),
+        "env": redact_map(cfg.get("env").and_then(serde_json::Value::as_object)),
+        "headers": redact_map(cfg.get("headers").and_then(serde_json::Value::as_object)),
+    })
+}
+
+/// Manage MCP servers in mcp_config.json.
+fn handle_mcp(cmd: McpCommands) -> Result<(), String> {
+    match cmd {
+        McpCommands::List { show_secrets } => {
+            let servers = mcp::list_servers();
+            let out: Vec<serde_json::Value> = servers
+                .iter()
+                .map(|s| mcp_list_entry(s, show_secrets))
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&out).unwrap());
+            Ok(())
+        }
+        McpCommands::Get { name } => match mcp::get_server(&name) {
+            Some(entry) => {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&mcp_list_entry(&entry, true)).unwrap()
+                );
+                Ok(())
+            }
+            None => Err(format!("server '{name}' not found")),
+        },
+        McpCommands::Add {
+            name,
+            command,
+            args,
+            env,
+            r#type,
+            url,
+            header,
+            active,
+        } => {
+            let config = build_mcp_config(command, args, env, &r#type, url, header, active)?;
+            mcp::upsert_server(&name, &config)?;
+            println!("saved server '{name}' to mcp_config.json");
+            Ok(())
+        }
+        McpCommands::Remove { name } => {
+            mcp::remove_server(&name)?;
+            println!("removed server '{name}' from mcp_config.json");
+            Ok(())
+        }
+        McpCommands::Enable { name } => {
+            mcp::set_active(&name, true)?;
+            println!("enabled server '{name}'");
+            Ok(())
+        }
+        McpCommands::Disable { name } => {
+            mcp::set_active(&name, false)?;
+            println!("disabled server '{name}'");
+            Ok(())
+        }
+    }
+}
+
+/// Build the server config object for `mcp add` from the CLI flags. Funnels
+/// through the shared `core::cli::mcp::build_server_config` so the TUI form and
+/// the headless flags can never diverge on the config shape or validation.
+fn build_mcp_config(
+    command: Option<String>,
+    args: Vec<String>,
+    env: Vec<String>,
+    r#type: &str,
+    url: Option<String>,
+    header: Vec<String>,
+    active: bool,
+) -> Result<serde_json::Value, String> {
+    let mut env_map = serde_json::Map::new();
+    for kv in &env {
+        let (k, v) = split_kv(kv, "env")?;
+        env_map.insert(k, serde_json::json!(v));
+    }
+    let mut header_map = serde_json::Map::new();
+    for kv in &header {
+        let (k, v) = split_kv(kv, "header")?;
+        header_map.insert(k, serde_json::json!(v));
+    }
+    mcp::build_server_config(
+        r#type,
+        command.as_deref(),
+        args,
+        env_map,
+        url.as_deref(),
+        header_map,
+        active,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -756,5 +956,96 @@ mod tests {
         let cli = Cli::parse_from(["jan", "login"]);
         assert!(matches!(cli.command, Some(Commands::Login)));
         assert!(Cli::try_parse_from(["jan", "login", "sk-key"]).is_err());
+    }
+
+    /// Parse a `jan cli mcp <cmd> <extra...>` argv and pull out the subcommand.
+    fn parsed_mcp(extra: &[&str]) -> McpCommands {
+        let mut argv = vec!["jan", "cli", "mcp"];
+        argv.extend_from_slice(extra);
+        match Cli::parse_from(argv).command {
+            Some(Commands::Cli { cmd: CliCommands::Mcp { cmd } }) => cmd,
+            _ => panic!("expected `cli mcp`"),
+        }
+    }
+
+    #[test]
+    fn mcp_list_parses_and_redacts_by_default() {
+        let cmd = parsed_mcp(&["list"]);
+        assert!(matches!(cmd, McpCommands::List { show_secrets: false }));
+        let cmd = parsed_mcp(&["list", "--show-secrets"]);
+        assert!(matches!(cmd, McpCommands::List { show_secrets: true }));
+    }
+
+    #[test]
+    fn mcp_add_parses_stdio_fields() {
+        let cmd = parsed_mcp(&[
+            "add",
+            "files",
+            "--command",
+            "npx",
+            "--arg",
+            "-y",
+            "--arg",
+            "my-mcp",
+            "--env",
+            "K=V",
+            "--active",
+        ]);
+        match cmd {
+            McpCommands::Add {
+                name,
+                command,
+                args,
+                env,
+                r#type,
+                url,
+                header,
+                active,
+            } => {
+                assert_eq!(name, "files");
+                assert_eq!(command.as_deref(), Some("npx"));
+                assert_eq!(args, vec!["-y", "my-mcp"]);
+                assert_eq!(env, vec!["K=V"]);
+                assert_eq!(r#type, "stdio");
+                assert!(url.is_none());
+                assert!(header.is_empty());
+                assert!(active);
+            }
+            _ => panic!("expected add"),
+        }
+    }
+
+    #[test]
+    fn mcp_build_rejects_http_without_url() {
+        let err = build_mcp_config(None, vec![], vec![], "http", None, vec![], false).unwrap_err();
+        assert!(err.contains("url"), "{err}");
+        let err = build_mcp_config(None, vec![], vec![], "sse", None, vec![], false).unwrap_err();
+        assert!(err.contains("url"), "{err}");
+        assert!(build_mcp_config(None, vec![], vec![], "bogus", None, vec![], false).is_err());
+        // stdio needs a command.
+        assert!(build_mcp_config(None, vec![], vec![], "stdio", None, vec![], false).is_err());
+    }
+
+    #[test]
+    fn mcp_remove_enable_disable_take_one_name() {
+        assert!(matches!(
+            parsed_mcp(&["remove", "files"]),
+            McpCommands::Remove { name } if name == "files"
+        ));
+        assert!(matches!(
+            parsed_mcp(&["enable", "files"]),
+            McpCommands::Enable { name } if name == "files"
+        ));
+        assert!(matches!(
+            parsed_mcp(&["disable", "files"]),
+            McpCommands::Disable { name } if name == "files"
+        ));
+    }
+
+    #[test]
+    fn split_kv_rejects_without_separator() {
+        assert_eq!(split_kv("K=V", "env").unwrap(), ("K".to_string(), "V".to_string()));
+        assert!(split_kv("novalue", "env").is_err());
+        assert!(split_kv("=V", "header").is_err());
     }
 }

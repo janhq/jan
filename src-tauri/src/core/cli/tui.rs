@@ -41,7 +41,9 @@ use markdown::{
 
 use super::brand;
 use super::journal::{self, DisplayEntry};
+use super::mcp::McpServerEntry;
 use super::{sort_threads_recent, AgentSession, ResumeTarget, SessionLimits};
+use serde_json::Value;
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs, PermissionRegistry};
@@ -330,7 +332,7 @@ impl Picker {
         match self.kind {
             PickerKind::ResumeThread => " ↑/↓ select   Enter resume   Esc cancel",
             PickerKind::SelectModel => " ↑/↓ select   Enter choose   Esc cancel",
-            PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   Esc close",
+            PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   a add   e edit   d delete   Esc close",
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
@@ -1172,6 +1174,8 @@ struct App {
     /// keyboard while open. Holds the setting being edited and any validation
     /// error; writes go straight to agent.toml on Enter.
     settings_prompt: Option<SettingsPrompt>,
+    /// Active MCP add/edit wizard (docked); owns the keyboard while open.
+    mcp_prompt: Option<McpPrompt>,
     /// Key handed off to the loop to verify off the render loop. Taken once.
     login_submit: Option<String>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
@@ -1471,6 +1475,7 @@ impl App {
             picker: None,
             login: None,
             settings_prompt: None,
+            mcp_prompt: None,
             login_submit: None,
             update_requested: false,
             update_installing: false,
@@ -5357,6 +5362,12 @@ async fn handle_key(
         return;
     }
 
+    // The MCP add/edit wizard owns the keyboard while open.
+    if app.mcp_prompt.is_some() {
+        handle_mcp_prompt_key(app, key, ctrl, mcp_servers).await;
+        return;
+    }
+
     // A pending permission prompt captures y/a/n; Ctrl-C cancels the run and
     // Ctrl-D quits, so it can't be wedged waiting on an unanswered prompt.
     // Several subagents can have requests queued at once (see `pending_queue`),
@@ -5434,6 +5445,45 @@ async fn handle_key(
                 let enable = !item.checkbox.unwrap_or(false);
                 item.checkbox = Some(enable);
                 toggle_mcp_server(app, mcp_servers, name, enable);
+            }
+            // `/mcp` picker: `a` opens the add wizard, `e` opens the edit
+            // wizard prefilled from the selected row, `d` removes it after a
+            // confirmation keystroke. All act through the shared config layer.
+            KeyCode::Char('a') if picker.kind == PickerKind::ToggleMcp => {
+                app.picker = None;
+                app.mcp_prompt = Some(McpPrompt {
+                    editing: None,
+                    field: McpField::Name,
+                    name: String::new(),
+                    transport: "stdio".to_string(),
+                    command: String::new(),
+                    args: String::new(),
+                    env: String::new(),
+                    url: String::new(),
+                    headers: String::new(),
+                    active: false,
+                    error: None,
+                });
+            }
+            KeyCode::Char('e') if picker.kind == PickerKind::ToggleMcp => {
+                let name = picker.items[picker.selected].value.clone();
+                let entry = super::mcp::get_server(&name);
+                if let Some(entry) = entry {
+                    app.picker = None;
+                    app.mcp_prompt = Some(McpPrompt::from_entry(&entry));
+                } else {
+                    app.note(&format!("server '{name}' no longer exists"));
+                }
+            }
+            KeyCode::Char('d') if picker.kind == PickerKind::ToggleMcp => {
+                let name = picker.items[picker.selected].value.clone();
+                app.picker = None;
+                if let Err(e) = super::mcp::remove_server(&name) {
+                    app.note(&format!("failed to remove '{name}': {e}"));
+                } else {
+                    super::mcp::disconnect(&name, mcp_servers).await;
+                    app.note(&format!("removed MCP server '{name}'"));
+                }
             }
             // `/todo` editor: d/Enter = done, x = abandon (drop), r = remove.
             // Each mutates the canonical list and rebuilds the overlay in place;
@@ -5778,7 +5828,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/mcp",
         hint: "",
-        description: "Enable/disable MCP servers",
+        description: "List, add, edit, remove, or toggle MCP servers",
     },
     SlashCommand {
         name: "/cancel",
@@ -6200,6 +6250,187 @@ impl SettingsPrompt {
     }
 }
 
+/// A docked multi-field wizard for adding or editing an MCP server. Collects
+/// the fields the desktop form also asks for (name, transport, then the
+/// transport-specific bits), validating on save through the shared
+/// `core::cli::mcp` layer. `edit` mode prefills from the existing entry and
+/// defaults `name` to it; `add` mode starts blank.
+struct McpPrompt {
+    /// `Some(original_name)` when editing; `None` when adding a new server.
+    editing: Option<String>,
+    /// Which field the keyboard is currently filling in.
+    field: McpField,
+    name: String,
+    transport: String,
+    command: String,
+    args: String,
+    env: String,
+    url: String,
+    headers: String,
+    active: bool,
+    error: Option<String>,
+}
+
+/// The fields of `McpPrompt`, in input order. `Transport` is a toggle row
+/// rather than a free-text field, so it is navigated but not typed.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum McpField {
+    Name,
+    Transport,
+    Command,
+    Args,
+    Env,
+    Url,
+    Headers,
+    Active,
+}
+
+impl McpPrompt {
+    const FIELD_ORDER: [McpField; 8] = [
+        McpField::Name,
+        McpField::Transport,
+        McpField::Command,
+        McpField::Args,
+        McpField::Env,
+        McpField::Url,
+        McpField::Headers,
+        McpField::Active,
+    ];
+
+    /// The fields relevant to the current transport, in input order. stdio
+    /// servers never ask for url/headers; http/sse never ask for command/args.
+    fn visible_fields(&self) -> Vec<McpField> {
+        let transport = self.transport.as_str();
+        Self::FIELD_ORDER
+            .iter()
+            .copied()
+            .filter(|f| match f {
+                McpField::Command | McpField::Args | McpField::Env => transport == "stdio",
+                McpField::Url | McpField::Headers => transport != "stdio",
+                _ => true,
+            })
+            .collect()
+    }
+
+    fn next_field(&mut self) {
+        let fields = self.visible_fields();
+        let pos = fields
+            .iter()
+            .position(|f| *f == self.field)
+            .unwrap_or(usize::MAX);
+        if pos + 1 < fields.len() {
+            self.field = fields[pos + 1];
+        } else {
+            self.field = fields[0];
+        }
+    }
+
+    fn prev_field(&mut self) {
+        let fields = self.visible_fields();
+        let pos = fields
+            .iter()
+            .position(|f| *f == self.field)
+            .unwrap_or(0);
+        self.field = fields[if pos == 0 { fields.len() - 1 } else { pos - 1 }];
+    }
+
+    fn from_entry(entry: &McpServerEntry) -> Self {
+        let cfg = &entry.config;
+        let transport = cfg
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("stdio")
+            .to_string();
+        let env = pairs_to_str(cfg.get("env").and_then(Value::as_object));
+        let headers = pairs_to_str(cfg.get("headers").and_then(Value::as_object));
+        Self {
+            editing: Some(entry.name.clone()),
+            field: McpField::Name,
+            name: entry.name.clone(),
+            transport: transport.clone(),
+            command: cfg
+                .get("command")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            args: cfg
+                .get("args")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default(),
+            env,
+            url: cfg
+                .get("url")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            headers,
+            active: entry.active,
+            error: None,
+        }
+    }
+
+    /// Build and persist the entry, then (dis)connect live as needed.
+    /// Returns an error string on invalid input so the caller can keep the
+    /// prompt open with the reason shown.
+    async fn save(
+        &mut self,
+        mcp_servers: &crate::core::state::SharedMcpServers,
+    ) -> Result<(), String> {
+        let config = super::mcp::build_server_config(
+            self.transport.trim(),
+            Some(self.command.trim()).filter(|s| !s.is_empty()),
+            super::mcp::parse_args(self.args.trim()),
+            super::mcp::parse_pairs(self.env.trim(), "env")?,
+            Some(self.url.trim()).filter(|s| !s.is_empty()),
+            super::mcp::parse_pairs(self.headers.trim(), "header")?,
+            self.active,
+        )?;
+        super::mcp::upsert_server(self.name.trim(), &config)?;
+        let name = self.name.trim().to_string();
+        let was_active = self.editing.as_deref().is_some_and(|n| {
+            super::mcp::get_server(n).is_some_and(|e| e.active)
+        });
+        // Disconnect the old live service on rename/edit, then reconnect if active.
+        if let Some(old) = self.editing.take() {
+            if old != name {
+                super::mcp::disconnect(&old, mcp_servers).await;
+            }
+        }
+        if self.active {
+            let cfg = super::mcp::list_servers()
+                .into_iter()
+                .find(|s| s.name == name)
+                .map(|s| s.config);
+            if let Some(cfg) = cfg {
+                if let Err(e) = super::mcp::connect(&name, &cfg, mcp_servers).await {
+                    log::warn!("MCP: {e}");
+                }
+            }
+        } else if was_active {
+            super::mcp::disconnect(&name, mcp_servers).await;
+        }
+        Ok(())
+    }
+}
+
+/// Render a `KEY=VALUE` map as a comma-separated string, for pre-filling the
+/// form fields (the inverse of `parse_pairs`).
+fn pairs_to_str(map: Option<&serde_json::Map<String, Value>>) -> String {
+    map.map(|m| {
+        m.iter()
+            .filter_map(|(k, v)| v.as_str().map(|v| format!("{k}={v}")))
+            .collect::<Vec<_>>()
+            .join(",")
+    })
+    .unwrap_or_default()
+}
+
 /// Value of an `[agent]` key in `agent.toml` as a display string, `None` when
 /// unset or the file is unreadable. Reads the inner value directly so the
 /// display is not padded by the document's alignment.
@@ -6293,8 +6524,7 @@ fn open_settings_screen(app: &mut App) {
 /// Keyboard for the `/settings` edit dock: chars/backspace edit the field,
 /// Enter validates and writes (empty clears the key), Esc cancels. Mirrors
 /// `handle_login_key`, minus the secret/verify machinery.
-fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
-    if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c'))) && app.settings_prompt.is_some()
+fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c'))) && app.settings_prompt.is_some()
     {
         app.settings_prompt = None;
         return;
@@ -6375,6 +6605,83 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
             prompt.input.pop();
         }
         KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
+        _ => {}
+    }
+}
+
+/// Keyboard for the MCP add/edit wizard: Up/Down move between fields, chars/
+/// backspace edit the current text field, Space toggles the transport/active
+/// rows, Enter saves and connects, Esc cancels.
+#[allow(clippy::too_many_lines)]
+async fn handle_mcp_prompt_key(
+    app: &mut App,
+    key: KeyEvent,
+    ctrl: bool,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+) {
+    if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c')))
+        && app.mcp_prompt.is_some()
+    {
+        app.mcp_prompt = None;
+        return;
+    }
+    let Some(prompt) = app.mcp_prompt.as_mut() else {
+        return;
+    };
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => prompt.prev_field(),
+        KeyCode::Down | KeyCode::Char('j') => prompt.next_field(),
+        KeyCode::Tab => prompt.next_field(),
+        KeyCode::Enter => {
+            // Take the prompt out so `save` can borrow `app` freely for notes
+            // and put it back on error.
+            let mut taken = app.mcp_prompt.take().expect("prompt is Some");
+            match taken.save(mcp_servers).await {
+                Ok(()) => {
+                    let name = taken.name.trim().to_string();
+                    app.note(&format!("saved MCP server '{name}'"));
+                }
+                Err(e) => {
+                    taken.error = Some(e);
+                    app.mcp_prompt = Some(taken);
+                }
+            }
+        }
+        KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right => {
+            match prompt.field {
+                McpField::Transport => {
+                    prompt.transport = if prompt.transport == "stdio" {
+                        "http".to_string()
+                    } else {
+                        "stdio".to_string()
+                    };
+                    // Reset to a valid field for the new transport.
+                    prompt.field = prompt.visible_fields()[0];
+                }
+                McpField::Active => prompt.active = !prompt.active,
+                _ => {}
+            }
+        }
+        KeyCode::Backspace => match prompt.field {
+            McpField::Name => { prompt.name.pop(); }
+            McpField::Command => { prompt.command.pop(); }
+            McpField::Args => { prompt.args.pop(); }
+            McpField::Env => { prompt.env.pop(); }
+            McpField::Url => { prompt.url.pop(); }
+            McpField::Headers => { prompt.headers.pop(); }
+            _ => {}
+        },
+        KeyCode::Char(ch) if !ctrl => {
+            match prompt.field {
+                McpField::Name => prompt.name.push(ch),
+                McpField::Command => prompt.command.push(ch),
+                McpField::Args => prompt.args.push(ch),
+                McpField::Env => prompt.env.push(ch),
+                McpField::Url => prompt.url.push(ch),
+                McpField::Headers => prompt.headers.push(ch),
+                _ => {}
+            }
+        }
         _ => {}
     }
 }
@@ -6758,11 +7065,12 @@ fn open_model_picker(app: &mut App) {
 }
 
 /// Open the `/mcp` picker listing configured MCP servers with their enabled
-/// state. Enter toggles a row in place (see `toggle_mcp_server`).
+/// state. Enter toggles a row in place (see `toggle_mcp_server`); `a` adds, `e`
+/// edits, and `d` removes (see the picker key handler).
 fn open_mcp_picker(app: &mut App) {
     let servers = super::mcp::list_servers();
     if servers.is_empty() {
-        return app.note("no MCP servers configured (add them in the desktop app or mcp_config.json)");
+        return app.note("no MCP servers configured (press a to add one, or use `jan cli mcp add ...`)");
     }
     let items = servers
         .into_iter()
@@ -7890,6 +8198,17 @@ fn draw(f: &mut Frame, app: &mut App) {
         };
         let toml_path = app.agent_dir.join("agent.toml");
         draw_settings_prompt(f, rect, prompt, &toml_path);
+    } else if let Some(prompt) = &app.mcp_prompt {
+        let height = prompt.visible_fields().len() as u16 + 3;
+        let height = height.min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        draw_mcp_prompt(f, rect, prompt);
     } else if !app.ask_queue.is_empty() {
         let queue_len = app.ask_queue.len();
         let ask = app.ask_queue.front_mut().expect("checked non-empty above");
@@ -8200,7 +8519,70 @@ fn draw_settings_prompt(
     f.render_widget(Paragraph::new(lines), inner);
 }
 
-/// Slash-command hint popup: one row per match (`/name [hint]  description`),
+/// Dock the MCP add/edit wizard above the input: one row per visible field,
+/// the active field highlighted, with a toggle marker on transport/active.
+fn draw_mcp_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &McpPrompt) {
+    use ratatui::widgets::Clear;
+
+    let dim = Style::new().dark_gray();
+    let title = if prompt.editing.is_some() {
+        " mcp server: edit "
+    } else {
+        " mcp server: add "
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(title, Style::new().on_cyan().black().bold()));
+
+    let mut lines = Vec::new();
+    for field in prompt.visible_fields() {
+        let selected = field == prompt.field;
+        let (label, value, toggle) = match field {
+            McpField::Name => ("name", prompt.name.as_str(), None),
+            McpField::Transport => ("type", prompt.transport.as_str(), Some(prompt.transport.as_str())),
+            McpField::Command => ("command", prompt.command.as_str(), None),
+            McpField::Args => ("args", prompt.args.as_str(), None),
+            McpField::Env => ("env", prompt.env.as_str(), None),
+            McpField::Url => ("url", prompt.url.as_str(), None),
+            McpField::Headers => ("headers", prompt.headers.as_str(), None),
+            McpField::Active => {
+                ("active", if prompt.active { "yes" } else { "no" }, Some(if prompt.active { "yes" } else { "no" }))
+            }
+        };
+        let marker = if selected { "› " } else { "  " };
+        let style = if selected {
+            Style::new().bold()
+        } else {
+            dim
+        };
+        let mut spans = vec![
+            Span::styled(format!("{marker}{label}: "), style),
+        ];
+        if let Some(toggle) = toggle {
+            spans.push(Span::styled(toggle.to_string(), if selected { Style::new().cyan() } else { dim }));
+        } else {
+            spans.push(Span::styled(value.to_string(), style));
+            if selected {
+                spans.push(Span::styled("█", Style::new().cyan()));
+            }
+        }
+        lines.push(Line::from(spans));
+    }
+    if let Some(error) = &prompt.error {
+        lines.push(Line::styled(error.clone(), Style::new().red()));
+    }
+    lines.push(Line::styled(
+        "↑/↓ move · Enter save · Space toggle · Esc cancel".to_string(),
+        dim,
+    ));
+
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
 /// the highlighted row reversed. Docked above the input box.
 fn draw_slash_hints(
     f: &mut Frame,
@@ -9291,6 +9673,7 @@ mod tests {
         estimate_token_count, header_spans, status_panel, SubagentPanel,
         note_update, open_config_screen, spawn_branch_poll, await_branch_poll,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
+        McpPrompt, McpField, pairs_to_str,
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
         run_command, starting_call_lines, unescape_partial_json_string,
         running_group_row, split_reasoning, strip_system_xml_tags, subagent_activity,
@@ -11843,6 +12226,65 @@ mod tests {
         assert!(err.contains("not an integer"), "{err}");
         assert_eq!(std::fs::read_to_string(&toml_path).unwrap(), "[agent]\n");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn mcp_prompt_visible_fields_follow_transport() {
+        let mut p = McpPrompt {
+            editing: None,
+            field: McpField::Name,
+            name: String::new(),
+            transport: "stdio".to_string(),
+            command: String::new(),
+            args: String::new(),
+            env: String::new(),
+            url: String::new(),
+            headers: String::new(),
+            active: false,
+            error: None,
+        };
+        assert!(p.visible_fields().contains(&McpField::Command));
+        assert!(!p.visible_fields().contains(&McpField::Url));
+
+        p.transport = "http".to_string();
+        assert!(!p.visible_fields().contains(&McpField::Command));
+        assert!(p.visible_fields().contains(&McpField::Url));
+        assert!(p.visible_fields().contains(&McpField::Headers));
+    }
+
+    #[test]
+    fn mcp_prompt_next_prev_wrap_and_skip_hidden() {
+        let mut p = McpPrompt {
+            editing: None,
+            field: McpField::Name,
+            name: String::new(),
+            transport: "stdio".to_string(),
+            command: String::new(),
+            args: String::new(),
+            env: String::new(),
+            url: String::new(),
+            headers: String::new(),
+            active: false,
+            error: None,
+        };
+        // From Name forward skips url/headers (stdio).
+        p.next_field();
+        assert_eq!(p.field, McpField::Transport);
+        p.next_field();
+        assert_eq!(p.field, McpField::Command);
+        // Prev wraps from the last field back to the first.
+        p.field = McpField::Active;
+        p.next_field();
+        assert_eq!(p.field, McpField::Name);
+        p.prev_field();
+        assert_eq!(p.field, McpField::Active);
+    }
+
+    #[test]
+    fn pairs_to_str_roundtrips() {
+        let map = crate::core::cli::mcp::parse_pairs("A=1,B=2", "env").unwrap();
+        assert_eq!(pairs_to_str(Some(&map)), "A=1,B=2");
+        assert_eq!(pairs_to_str(None), "");
     }
 
     #[test]
