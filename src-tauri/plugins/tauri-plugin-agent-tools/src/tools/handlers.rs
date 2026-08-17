@@ -130,12 +130,12 @@ pub async fn execute_builtin(
     let scratch = ctx.scratch_root;
     match tool.name {
         "read" => read(args, project_root, scratch).await,
-        "ls" => ls(args, project_root, scratch).await,
+        "ls" => ls(args, project_root, scratch, ctx.sandbox).await,
         "write" => write(args, project_root, scratch, ctx.confine_writes).await,
         "edit" => edit(args, project_root, scratch, ctx.confine_writes).await,
         "bash" => bash(args, ctx).await,
-        "find" => find(args, project_root, scratch).await,
-        "grep" => grep(args, project_root, scratch).await,
+        "find" => find(args, project_root, scratch, ctx.sandbox).await,
+        "grep" => grep(args, project_root, scratch, ctx.sandbox).await,
         // Memory and skills live in the store root, not the sandbox: they must
         // outlive the conversation the filesystem tools are scoped to.
         "memory_list" => memory_list(ctx.store_root).await,
@@ -496,7 +496,7 @@ async fn read(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
     )
 }
 
-async fn ls(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> String {
+async fn ls(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, hide_jan: bool) -> String {
     let path = arg_str(args, "path").unwrap_or(".");
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
@@ -515,8 +515,9 @@ async fn ls(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> St
         match entries.next_entry().await {
             Ok(Some(entry)) => {
                 // Hidden state is omitted, not reported-then-denied: an entry the
-                // agent can never open is only an invitation to try.
-                if is_hidden_jan_path(root, &entry.path().to_string_lossy()) {
+                // agent can never open is only an invitation to try. Skipped when
+                // not hiding, so an unconfined CLI run sees its own `.jan`.
+                if hide_jan && is_hidden_jan_path(root, &entry.path().to_string_lossy()) {
                     continue;
                 }
                 let mut name = entry.file_name().to_string_lossy().into_owned();
@@ -654,8 +655,14 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     }
 
     let mut policy = jail::Policy::new(root, ctx.allow_network)
-        .with_home_readonly(ctx.home_readonly)
-        .with_hide_root(&root.join(crate::tools::sandbox::JAN_DIR));
+        .with_home_readonly(ctx.home_readonly);
+    // While the shell is sandboxed, hide the project's own `.jan` state directory
+    // from it (see [`Policy::with_hide_root`]). When the shell runs unconfined the
+    // hide is both pointless (there is no OS mount to layer it on) and wrong
+    // (the agent should see its own state), so it is only applied when sandboxed.
+    if ctx.sandbox {
+        policy = policy.with_hide_root(&root.join(crate::tools::sandbox::JAN_DIR));
+    }
     if let Some(mask) = ctx.mask_root {
         policy = policy.with_mask_root(mask);
     }
@@ -1038,7 +1045,7 @@ fn remove_spill_file(path: &Path) {
     let _ = std::fs::remove_file(path);
 }
 
-async fn find(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> String {
+async fn find(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, hide_jan: bool) -> String {
     let pattern = arg_str(args, "pattern").map(String::from);
     let path = arg_str(args, "path").unwrap_or(".").to_string();
     let limit = arg_u64(args, "limit")
@@ -1073,7 +1080,7 @@ async fn find(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(true) {
                 continue;
             }
-            if is_hidden_jan_path(&root_owned, &entry.path().to_string_lossy()) {
+            if hide_jan && is_hidden_jan_path(&root_owned, &entry.path().to_string_lossy()) {
                 continue;
             }
             let rel = rel_to(&base, entry.path());
@@ -1094,7 +1101,7 @@ async fn find(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
     res.unwrap_or_else(|e| format!("ERROR: {e}"))
 }
 
-async fn grep(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> String {
+async fn grep(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, hide_jan: bool) -> String {
     let pattern = arg_str(args, "pattern").map(String::from);
     let path = arg_str(args, "path").unwrap_or(".").to_string();
     let glob_filter = arg_str(args, "glob").map(String::from);
@@ -1209,7 +1216,7 @@ async fn grep(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
                 {
                     continue;
                 }
-                if is_hidden_jan_path(&root_owned, &entry.path().to_string_lossy()) {
+                if hide_jan && is_hidden_jan_path(&root_owned, &entry.path().to_string_lossy()) {
                     continue;
                 }
                 if !search_file(entry.path(), &base) {
@@ -2080,6 +2087,7 @@ mod tests {
             Some(&scratch),
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
+            true,
         );
         assert_eq!(
             d,
@@ -2107,6 +2115,7 @@ mod tests {
             Some(&scratch),
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
+            true,
         );
         assert_eq!(
             d,
@@ -2153,6 +2162,22 @@ mod tests {
         assert!(out.contains("src.rs"), "unexpected: {out}");
         assert!(out.contains("JAN.md"), "unexpected: {out}");
         assert!(!out.contains(".jan/"), "must not list the agent state dir: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// When the shell is unconfined (CLI with --no-sandbox) the `.jan` directory
+    /// is ordinary project state and is listed, not hidden.
+    #[tokio::test]
+    async fn ls_lists_the_jan_dir_when_unconfined() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join(".jan/agent")).unwrap();
+        std::fs::write(root.join(".jan/agent/agent.toml"), b"[tools]\n").unwrap();
+        std::fs::write(root.join("src.rs"), b"x").unwrap();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[]).with_sandbox(false);
+        let out = super::execute_builtin(lookup("ls").unwrap(), &json!({}), &ctx).await;
+        assert!(out.contains("src.rs"), "unexpected: {out}");
+        assert!(out.contains(".jan/"), "must list .jan when unconfined: {out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
