@@ -296,7 +296,10 @@ pub(crate) fn transform_anthropic_to_openai(body: &serde_json::Value) -> Option<
 ///   wrapped: "x-anthropic-billing-header:\n   cc_version=…;\n<prompt>"
 pub(crate) fn strip_anthropic_billing_header(text: &str) -> &str {
     const KEY: &str = "x-anthropic-billing-header:";
-    if text.len() < KEY.len() || !text[..KEY.len()].eq_ignore_ascii_case(KEY) {
+    if !text
+        .get(..KEY.len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(KEY))
+    {
         return text;
     }
     let first_nl = match text.find('\n') {

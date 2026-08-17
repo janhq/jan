@@ -1136,6 +1136,43 @@ mod server_tests {
         assert_eq!(proxy::strip_anthropic_billing_header(other), other);
     }
 
+    // The crashing system prompt from https://github.com/janhq/jan/issues/8358.
+    // `x-anthropic-billing-header:` is 27 bytes; byte 27 of this string sits
+    // inside a 2-byte Cyrillic character, so a raw `text[..27]` slice panics.
+    const CYRILLIC_CRASHING_SYSTEM: &str = "Ты извлекаешь финансовую";
+
+    #[test]
+    fn strip_billing_header_does_not_panic_on_cyrillic_system_prompt() {
+        const KEY_LEN: usize = "x-anthropic-billing-header:".len();
+        assert!(
+            CYRILLIC_CRASHING_SYSTEM.len() >= KEY_LEN
+                && !CYRILLIC_CRASHING_SYSTEM.is_char_boundary(KEY_LEN),
+            "fixture must land KEY_LEN inside a multi-byte character"
+        );
+
+        assert_eq!(
+            proxy::strip_anthropic_billing_header(CYRILLIC_CRASHING_SYSTEM),
+            CYRILLIC_CRASHING_SYSTEM
+        );
+        // A one-byte shift makes KEY_LEN a char boundary; that path must stay a no-op too.
+        let shifted = format!(" {CYRILLIC_CRASHING_SYSTEM}");
+        assert_eq!(proxy::strip_anthropic_billing_header(&shifted), shifted);
+
+        let mut body = json!({
+            "model": "Jan-v3_5-4B-Q4_K_M",
+            "max_tokens": 16,
+            "messages": [
+                { "role": "system", "content": CYRILLIC_CRASHING_SYSTEM },
+                { "role": "user", "content": "Hello" }
+            ]
+        });
+        proxy::strip_billing_header_in_body(&mut body);
+        assert_eq!(
+            body["messages"][0]["content"],
+            json!(CYRILLIC_CRASHING_SYSTEM)
+        );
+    }
+
     #[test]
     fn strip_billing_header_in_body_covers_system_and_first_message() {
         let header = "x-anthropic-billing-header: cc_version=1; cch=z;\n";
