@@ -56,9 +56,17 @@ detect_platform() {
   arch="$(uname -m)"
   case "$os" in
     Linux)
-      [ "$arch" = "x86_64" ] || die "no published build for Linux $arch; use --source"
-      PLATFORM_KEY="linux-x86_64"
-      ARCHIVE_SLUG="linux-x86_64"
+      case "$arch" in
+        x86_64)
+          PLATFORM_KEY="linux-x86_64"
+          ARCHIVE_SLUG="linux-x86_64"
+          ;;
+        aarch64)
+          PLATFORM_KEY="linux-aarch64"
+          ARCHIVE_SLUG="linux-aarch64"
+          ;;
+        *) die "no published build for Linux $arch; use --source" ;;
+      esac
       ARCHIVE_EXT="tar.gz"
       ;;
     Darwin)
