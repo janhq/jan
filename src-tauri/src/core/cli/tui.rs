@@ -9796,12 +9796,13 @@ fn finish_login(
 
 fn finish_account_login(app: &mut App, result: Result<String, String>) {
     app.account_login_manual_tx = None;
-    clear_account_login_pending(app);
     if app.account_login.is_none() {
+        clear_account_login_pending(app);
         return;
     }
     match result {
         Ok(provider) => {
+            clear_account_login_pending(app);
             app.account_login = None;
             app.account_login_submit = None;
             app.note(&login_success_message(&provider));
@@ -16007,6 +16008,35 @@ mod tests {
         assert_eq!(rx.recv().await.as_deref(), Some(manual.as_str()));
         assert!(app.account_login.as_ref().unwrap().submitting);
         assert!(app.account_login_submit.is_some());
+        assert!(app.account_login_pending_manual_input.is_none());
+    }
+
+    #[tokio::test]
+    async fn account_retry_keeps_pending_manual_input_after_failure_result() {
+        let mut app = test_app();
+        super::open_account_login(&mut app, "openai");
+        let (rx, _) = super::account_login_manual_channel(&mut app);
+        drop(rx);
+        let state = app.account_login.as_ref().unwrap().login.state.clone();
+        let manual = format!("authorization-code#{state}");
+        app.account_login.as_mut().unwrap().paste(&manual);
+
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(
+            app.account_login_pending_manual_input.as_deref(),
+            Some(manual.as_str())
+        );
+
+        finish_account_login(&mut app, Err("could not discover account models".to_string()));
+
+        assert_eq!(
+            app.account_login_pending_manual_input.as_deref(),
+            Some(manual.as_str()),
+            "failed old task result must not clear input queued for retry"
+        );
+        let (mut rx, has_pending) = super::account_login_manual_channel(&mut app);
+        assert!(has_pending);
+        assert_eq!(rx.recv().await.as_deref(), Some(manual.as_str()));
         assert!(app.account_login_pending_manual_input.is_none());
     }
 
