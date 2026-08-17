@@ -15,7 +15,10 @@ use crate::memory;
 use crate::skills;
 use crate::tools::jail;
 use crate::tools::proc;
-use crate::tools::sandbox::{escapes_project, is_hidden_jan_path};
+use crate::tools::sandbox::{
+    escapes_project, in_scratch, is_hidden_jan_path, lexical_normalize, resolve_path,
+    scratch_display_path,
+};
 use crate::tools::{BuiltinTool, ToolContext};
 
 const MAX_BYTES: usize = 64 * 1024;
@@ -47,14 +50,6 @@ fn bash_jobs() -> &'static Mutex<HashMap<String, oneshot::Receiver<String>>> {
     JOBS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn resolve(project_root: &Path, raw: &str) -> PathBuf {
-    if Path::new(raw).is_absolute() {
-        PathBuf::from(raw)
-    } else {
-        project_root.join(raw)
-    }
-}
-
 fn arg_str<'a>(args: &'a serde_json::Value, key: &str) -> Option<&'a str> {
     args.get(key).and_then(|v| v.as_str())
 }
@@ -74,31 +69,15 @@ fn rel_to(base: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// Resolve `.`/`..` without touching the filesystem, so a path is comparable to
-/// the project root even when the target does not exist yet. Purely lexical:
-/// `canonicalize` would also follow symlinks and fail on missing files.
-fn lexical_normalize(path: &Path) -> PathBuf {
-    use std::path::Component;
-    let mut out = PathBuf::new();
-    for c in path.components() {
-        match c {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other.as_os_str()),
-        }
-    }
-    out
-}
-
 /// How a mutated path is named back to the model: relative inside the project,
 /// absolute once it escapes. Normalizes first, since `root/../x` strips to a
-/// misleading `../x` against an un-normalized root.
-fn display_path(root: &Path, target: &Path) -> String {
-    let target = lexical_normalize(target);
-    let root = lexical_normalize(root);
-    rel_to(&root, &target)
+/// misleading `../x` against an un-normalized root. A target inside the session
+/// scratch is named by whichever spelling the shell can also use there.
+fn display_path(root: &Path, scratch: Option<&Path>, target: &Path) -> String {
+    if in_scratch(scratch, target) {
+        return scratch_display_path(scratch, target);
+    }
+    rel_to(&lexical_normalize(root), &lexical_normalize(target))
 }
 
 /// Truncate `s` to the smaller of `max_lines` or `max_bytes`, appending
@@ -148,14 +127,15 @@ pub async fn execute_builtin(
     ctx: &ToolContext<'_>,
 ) -> String {
     let project_root = ctx.project_root;
+    let scratch = ctx.scratch_root;
     match tool.name {
-        "read" => read(args, project_root).await,
-        "ls" => ls(args, project_root).await,
-        "write" => write(args, project_root, ctx.confine_writes).await,
-        "edit" => edit(args, project_root, ctx.confine_writes).await,
+        "read" => read(args, project_root, scratch).await,
+        "ls" => ls(args, project_root, scratch).await,
+        "write" => write(args, project_root, scratch, ctx.confine_writes).await,
+        "edit" => edit(args, project_root, scratch, ctx.confine_writes).await,
         "bash" => bash(args, ctx).await,
-        "find" => find(args, project_root).await,
-        "grep" => grep(args, project_root).await,
+        "find" => find(args, project_root, scratch).await,
+        "grep" => grep(args, project_root, scratch).await,
         // Memory and skills live in the store root, not the sandbox: they must
         // outlive the conversation the filesystem tools are scoped to.
         "memory_list" => memory_list(ctx.store_root).await,
@@ -185,6 +165,7 @@ pub async fn preview_diff(
     ctx: &ToolContext<'_>,
 ) -> Option<String> {
     let project_root = ctx.project_root;
+    let scratch = ctx.scratch_root;
     match tool.name {
         "edit" => {
             let edits = args.get("edits").and_then(|v| v.as_array())?;
@@ -192,7 +173,7 @@ pub async fn preview_diff(
                 return None;
             }
             let prior = match arg_str(args, "path") {
-                Some(p) => tokio::fs::read_to_string(resolve(project_root, p))
+                Some(p) => tokio::fs::read_to_string(resolve_path(project_root, scratch, p))
                     .await
                     .unwrap_or_default(),
                 None => String::new(),
@@ -202,7 +183,7 @@ pub async fn preview_diff(
         }
         "write" => {
             let prior = match arg_str(args, "path") {
-                Some(p) => tokio::fs::read_to_string(resolve(project_root, p))
+                Some(p) => tokio::fs::read_to_string(resolve_path(project_root, scratch, p))
                     .await
                     .ok(),
                 None => None,
@@ -466,13 +447,13 @@ async fn memory_write(args: &serde_json::Value, store: &Path) -> String {
     }
 }
 
-async fn read(args: &serde_json::Value, root: &Path) -> String {
+async fn read(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
     };
     let offset = arg_u64(args, "offset").map(|v| v as usize);
     let limit = arg_u64(args, "limit").map(|v| v as usize);
-    let target = resolve(root, path);
+    let target = resolve_path(root, scratch, path);
 
     let bytes = match tokio::fs::read(&target).await {
         Ok(b) => b,
@@ -510,12 +491,12 @@ async fn read(args: &serde_json::Value, root: &Path) -> String {
     )
 }
 
-async fn ls(args: &serde_json::Value, root: &Path) -> String {
+async fn ls(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> String {
     let path = arg_str(args, "path").unwrap_or(".");
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
         .unwrap_or(LS_DEFAULT_LIMIT);
-    let mut entries = match tokio::fs::read_dir(resolve(root, path)).await {
+    let mut entries = match tokio::fs::read_dir(resolve_path(root, scratch, path)).await {
         Ok(rd) => rd,
         Err(e) => return format!("ERROR: {e}"),
     };
@@ -548,7 +529,7 @@ async fn ls(args: &serde_json::Value, root: &Path) -> String {
     cap_output(&joined, usize::MAX, MAX_BYTES, "\n[truncated: 64KB limit]")
 }
 
-async fn write(args: &serde_json::Value, root: &Path, confine: bool) -> String {
+async fn write(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, confine: bool) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
     };
@@ -558,13 +539,13 @@ async fn write(args: &serde_json::Value, root: &Path, confine: bool) -> String {
     // Defense in depth: when the caller confines writes, re-canonicalize on the
     // canonical root (not the raw argument) so `..` and absolute paths are
     // caught even if the gate's decision was made against a stale view.
-    if confine && escapes_project(root, path).unwrap_or(true) {
+    let target = resolve_path(root, scratch, path);
+    if confine && escapes_project(root, scratch, path).unwrap_or(true) {
         return format!("ERROR: refused to write outside the agent workspace: {path}");
     }
-    let target = resolve(root, path);
     // Report the resolved location, not the raw argument: an absolute or `../`
     // path lands outside the project and the model must see where it went.
-    let shown = display_path(root, &target);
+    let shown = display_path(root, scratch, &target);
     if let Some(parent) = target.parent() {
         if let Err(e) = tokio::fs::create_dir_all(parent).await {
             return format!("ERROR: {shown}: {e}");
@@ -586,7 +567,7 @@ async fn write(args: &serde_json::Value, root: &Path, confine: bool) -> String {
     }
 }
 
-async fn edit(args: &serde_json::Value, root: &Path, confine: bool) -> String {
+async fn edit(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, confine: bool) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
     };
@@ -596,11 +577,11 @@ async fn edit(args: &serde_json::Value, root: &Path, confine: bool) -> String {
     if edits.is_empty() {
         return "ERROR: edits must contain at least one replacement".to_string();
     }
-    if confine && escapes_project(root, path).unwrap_or(true) {
+    let target = resolve_path(root, scratch, path);
+    if confine && escapes_project(root, scratch, path).unwrap_or(true) {
         return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
-    let target = resolve(root, path);
-    let shown = display_path(root, &target);
+    let shown = display_path(root, scratch, &target);
     let mut content = match tokio::fs::read_to_string(&target).await {
         Ok(c) => c,
         Err(e) => return format!("ERROR: {shown}: {e}"),
@@ -658,13 +639,17 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     if let Some(mask) = ctx.mask_root {
         policy = policy.with_mask_root(mask);
     }
+    if let Some(scratch) = ctx.scratch_root {
+        policy = policy.with_scratch_root(scratch);
+    }
     let Some(shell) = jail::wrap(proc::shell(), &policy) else {
         return "ERROR: bash is unavailable because no OS sandbox could be established on this \
                 system. Use the read/ls/find/grep tools instead."
             .to_string();
     };
 
-    let child = match proc::spawn(&shell, command, root).await {
+    let sandbox_tmp = jail::scratch_env_path(jail::backend(), &policy);
+    let child = match proc::spawn(&shell, command, root, sandbox_tmp.as_deref()).await {
         Ok(c) => c,
         Err(e) => return format!("ERROR: failed to run command: {e}"),
     };
@@ -676,8 +661,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // The child's pid stays registered until the task ends so a shutdown can
     // reap its whole process tree if it is still running.
     let (tx, mut rx) = oneshot::channel();
+    let spill_scratch = ctx.scratch_root.map(Path::to_path_buf);
     tokio::spawn(async move {
-        let mut out = collect_and_format(child).await;
+        let mut out = collect_and_format(child, spill_scratch).await;
         // Appended inside the task so a backgrounded job carries the hint too.
         // `Permission denied` on its own tells the model nothing about *why*;
         // without this it retries the same command until it gives up.
@@ -722,11 +708,11 @@ async fn await_bash_job(job_id: &str) -> String {
 /// combined chronologically and spilled to a temp file once it outgrows the
 /// in-memory window, so the full text stays readable even though only a bounded
 /// tail is kept in RAM.
-async fn collect_and_format(mut child: tokio::process::Child) -> String {
+async fn collect_and_format(mut child: tokio::process::Child, scratch: Option<PathBuf>) -> String {
     use tokio::io::AsyncReadExt;
     let mut stdout = child.stdout.take();
     let mut stderr = child.stderr.take();
-    let mut cap = BashCapture::new();
+    let mut cap = BashCapture::new(scratch);
     let mut bo = vec![0u8; 8192];
     let mut be = vec![0u8; 8192];
     let mut out_open = stdout.is_some();
@@ -759,16 +745,18 @@ struct BashCapture {
     total_newlines: usize,
     spill: Option<std::io::BufWriter<std::fs::File>>,
     spill_path: Option<PathBuf>,
+    scratch: Option<PathBuf>,
 }
 
 impl BashCapture {
-    fn new() -> Self {
+    fn new(scratch: Option<PathBuf>) -> Self {
         BashCapture {
             tail: std::collections::VecDeque::new(),
             total_bytes: 0,
             total_newlines: 0,
             spill: None,
             spill_path: None,
+            scratch,
         }
     }
 
@@ -779,7 +767,7 @@ impl BashCapture {
         // yet), so dumping it captures the full prefix before we start
         // dropping from the front.
         if self.spill.is_none() && self.tail.len() + chunk.len() > BASH_MAX_BYTES {
-            let path = new_temp_path();
+            let path = new_temp_path(self.scratch.as_deref());
             if let Ok(file) = std::fs::File::create(&path) {
                 let mut w = std::io::BufWriter::new(file);
                 let (a, b) = self.tail.as_slices();
@@ -835,9 +823,10 @@ impl BashCapture {
         }
 
         let path = match self.spill_path.take() {
-            Some(p) => Some(p.to_string_lossy().into_owned()),
-            None => write_temp_output(&collapsed),
-        };
+            Some(p) => Some(p),
+            None => write_temp_output(&collapsed, self.scratch.as_deref()),
+        }
+        .map(|p| crate::tools::sandbox::scratch_display_path(self.scratch.as_deref(), &p));
         match path {
             Some(p) => format!(
                 "{body}\n[output truncated at {} of {} bytes; full output written \
@@ -924,38 +913,43 @@ fn tail_cap(s: &str, max_lines: usize, max_bytes: usize) -> String {
     out
 }
 
-/// Directory holding bash-output spill files. Purged once on first use so
-/// files retained by a previous (possibly crashed) run don't accumulate.
-fn spill_dir() -> &'static Path {
-    static DIR: OnceLock<PathBuf> = OnceLock::new();
-    DIR.get_or_init(|| {
-        let dir = std::env::temp_dir().join("jan-bash");
-        let _ = std::fs::remove_dir_all(&dir);
-        let _ = std::fs::create_dir_all(&dir);
-        dir
-    })
-    .as_path()
+/// Directory holding bash-output spill files: inside the session scratch when
+/// there is one, so the file the truncation note points at is reachable by the
+/// same `/tmp/jan-bash/...` name from both the filesystem tools and the shell,
+/// and is reclaimed when the session's scratch is removed.
+///
+/// Deliberately not swept on first use: the files are removed individually by
+/// [`BashCapture::finish`] and its `Drop`, and the host fallback is a shared
+/// path, so a global purge there would delete a concurrent instance's live
+/// spill files rather than only stale ones.
+fn spill_dir(scratch: Option<&Path>) -> PathBuf {
+    let base = scratch
+        .map(Path::to_path_buf)
+        .unwrap_or_else(std::env::temp_dir);
+    let dir = base.join("jan-bash");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
 }
 
-fn new_temp_path() -> PathBuf {
+fn new_temp_path(scratch: Option<&Path>) -> PathBuf {
     let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-    spill_dir().join(format!("jan-bash-{}-{}.txt", std::process::id(), n))
+    spill_dir(scratch).join(format!("jan-bash-{}-{}.txt", std::process::id(), n))
 }
 
 /// Write `content` to a uniquely named temp file, returning its path on success.
-fn write_temp_output(content: &str) -> Option<String> {
-    let path = new_temp_path();
+fn write_temp_output(content: &str, scratch: Option<&Path>) -> Option<PathBuf> {
+    let path = new_temp_path(scratch);
     std::fs::write(&path, content).ok()?;
-    Some(path.to_string_lossy().into_owned())
+    Some(path)
 }
 
-async fn find(args: &serde_json::Value, root: &Path) -> String {
+async fn find(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> String {
     let pattern = arg_str(args, "pattern").map(String::from);
     let path = arg_str(args, "path").unwrap_or(".").to_string();
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
         .unwrap_or(FIND_DEFAULT_LIMIT);
-    let base = resolve(root, &path);
+    let base = resolve_path(root, scratch, &path);
     let root_owned = root.to_path_buf();
 
     let Some(pattern) = pattern else {
@@ -1002,7 +996,7 @@ async fn find(args: &serde_json::Value, root: &Path) -> String {
     res.unwrap_or_else(|e| format!("ERROR: {e}"))
 }
 
-async fn grep(args: &serde_json::Value, root: &Path) -> String {
+async fn grep(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> String {
     let pattern = arg_str(args, "pattern").map(String::from);
     let path = arg_str(args, "path").unwrap_or(".").to_string();
     let glob_filter = arg_str(args, "glob").map(String::from);
@@ -1012,7 +1006,7 @@ async fn grep(args: &serde_json::Value, root: &Path) -> String {
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
         .unwrap_or(GREP_DEFAULT_LIMIT);
-    let base = resolve(root, &path);
+    let base = resolve_path(root, scratch, &path);
     let root_owned = root.to_path_buf();
 
     let Some(pattern) = pattern else {
@@ -1669,6 +1663,191 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// `find` from a legitimate `/tmp` base must not walk *out* through a
+    /// symlinked directory inside the scratch. Pins `WalkBuilder`'s
+    /// no-follow default, which is what the containment check cannot cover:
+    /// the base path here is honest, only the recursion would escape.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn find_does_not_recurse_out_of_the_scratch_via_a_symlink() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let outside = unique_root();
+        std::fs::write(outside.join("secret.txt"), b"classified").unwrap();
+        std::os::unix::fs::symlink(&outside, scratch.join("esc")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[]).with_scratch_root(&scratch);
+        let out = super::execute_builtin(
+            lookup("find").unwrap(),
+            &json!({"pattern": "*.txt", "path": "/tmp"}),
+            &ctx,
+        )
+        .await;
+        assert!(
+            !out.contains("secret.txt"),
+            "walked out of the scratch through a symlink: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// The write escape the scratch clamp is there to stop, spelled with a
+    /// symlink instead of `..`: a confined `write` through `/tmp/esc` must be
+    /// refused and must leave nothing behind outside the scratch.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn confined_write_refuses_a_tmp_symlink_escape() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let outside = unique_root();
+        std::os::unix::fs::symlink(&outside, scratch.join("esc")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[])
+            .with_scratch_root(&scratch)
+            .with_confined_writes(true);
+        let out = super::execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "/tmp/esc/pwned.txt", "content": "x"}),
+            &ctx,
+        )
+        .await;
+        assert!(out.starts_with("ERROR"), "must be refused, got: {out}");
+        assert!(
+            !outside.join("pwned.txt").exists(),
+            "wrote outside the scratch via a symlink"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A `write` to `/tmp/x` lands in the session scratch, and a `read` of the
+    /// same path sees it: every fs tool shares the one `/tmp` the shell sees.
+    #[tokio::test]
+    async fn write_then_read_via_tmp_persists_in_scratch() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[]).with_scratch_root(&scratch);
+        let out = super::execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "/tmp/scratch.txt", "content": "persist"}),
+            &ctx,
+        )
+        .await;
+        assert!(out.starts_with("Created /tmp/scratch.txt"), "got: {out}");
+        assert!(scratch.join("scratch.txt").exists(), "wrote into scratch");
+
+        let out = super::execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "/tmp/scratch.txt"}),
+            &ctx,
+        )
+        .await;
+        assert_eq!(out, "persist");
+
+        // No stray file on the real host /tmp.
+        assert!(!Path::new("/tmp/scratch.txt").exists());
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The bare `/tmp` dir resolves to the scratch root; files written there by
+    /// the shell (or a sibling tool) are listable through the file tools.
+    #[test]
+    fn resolve_path_maps_tmp_into_scratch() {
+        let root = unique_root();
+        let scratch = unique_root();
+        assert_eq!(
+            crate::tools::sandbox::resolve_path(&root, Some(&scratch), "/tmp/a/b.txt"),
+            scratch.join("a/b.txt")
+        );
+        assert_eq!(
+            crate::tools::sandbox::resolve_path(&root, Some(&scratch), "/tmp"),
+            scratch
+        );
+        // Without a scratch, /tmp stays the host path (i.e. never the project).
+        assert_eq!(
+            crate::tools::sandbox::resolve_path(&root, None, "/tmp/a.txt"),
+            Path::new("/tmp/a.txt")
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A `..` climb inside `/tmp` must NOT escape the session scratch: an
+    /// absolute path maps into the scratch, and a `..` is clamped back to the
+    /// scratch root (chroot semantics, matching the `/tmp` bind mount), so it
+    /// can never reach the host temp.
+    #[test]
+    fn tmp_path_cannot_climb_out_with_dotdot() {
+        let root = unique_root();
+        let scratch = unique_root();
+        // `/tmp/../evil.txt` clamps inside the scratch, never the host parent.
+        let out = crate::tools::sandbox::resolve_path(&root, Some(&scratch), "/tmp/../evil.txt");
+        assert!(
+            out.starts_with(&scratch),
+            "must stay inside the scratch, got: {out:?}"
+        );
+        assert_eq!(out, scratch.join("evil.txt"));
+        // Even a deeper climb stays clamped at the scratch root.
+        let deep =
+            crate::tools::sandbox::resolve_path(&root, Some(&scratch), "/tmp/../../deep.txt");
+        assert_eq!(deep, scratch.join("deep.txt"));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The gate treats a scratch-backed `/tmp` write as inside, not an escape.
+    #[test]
+    fn gate_allows_tmp_write_when_scratch_is_set() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let d = crate::tools::gate::resolve_decision(
+            lookup("write").unwrap(),
+            &json!({"path": "/tmp/x.txt", "content": "y"}),
+            &root,
+            Some(&scratch),
+            &crate::permissions::ToolPermissions::default(),
+            &crate::tools::gate::SessionGrants::default(),
+        );
+        assert_eq!(
+            d,
+            crate::tools::gate::Decision::Prompt(crate::tools::gate::PromptKind::Write),
+            "in-scratch write is an in-project write, not an escape"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The counterpart: the same write spelled through a symlink out of the
+    /// scratch is an escape, so it takes the escape prompt (refused outright on
+    /// the desktop) rather than the ordinary in-project one.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn gate_treats_a_tmp_symlink_escape_as_an_escape() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let outside = unique_root();
+        std::os::unix::fs::symlink(&outside, scratch.join("esc")).unwrap();
+        let d = crate::tools::gate::resolve_decision(
+            lookup("write").unwrap(),
+            &json!({"path": "/tmp/esc/x.txt", "content": "y"}),
+            &root,
+            Some(&scratch),
+            &crate::permissions::ToolPermissions::default(),
+            &crate::tools::gate::SessionGrants::default(),
+        );
+        assert_eq!(
+            d,
+            crate::tools::gate::Decision::Prompt(crate::tools::gate::PromptKind::WriteEscape)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
     #[tokio::test]
     async fn edit_error_yields_no_diff() {
         let root = unique_root();
@@ -2050,6 +2229,47 @@ mod tests {
             "tail readable: {full}"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The same overflow with a session scratch set: the spill must land in the
+    /// scratch and be advertised by the one name that works from both the fs
+    /// tools and the shell, so the `read` the note asks for actually finds it.
+    /// The no-scratch case above cannot catch this -- there `/tmp` is not remapped.
+    #[tokio::test]
+    async fn bash_spill_is_readable_when_a_scratch_is_set() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[]).with_scratch_root(&scratch);
+        let out = super::execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "for i in $(seq 1 16000); do printf '%064d\\n' \"$i\"; done"}),
+            &ctx,
+        )
+        .await;
+        let path = out
+            .rsplit("full output written to ")
+            .next()
+            .and_then(|s| s.split(". Use the read tool").next())
+            .unwrap_or("");
+        if cfg!(target_os = "linux") {
+            assert!(
+                path.starts_with("/tmp/"),
+                "must be advertised as the /tmp name the shell also sees: {out}"
+            );
+        }
+        let full = super::execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": path, "offset": 15999, "limit": 1}),
+            &ctx,
+        )
+        .await;
+        assert!(
+            full.contains("015999") || full.contains("016000"),
+            "spill at {path} must be readable back: {full}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     #[tokio::test]

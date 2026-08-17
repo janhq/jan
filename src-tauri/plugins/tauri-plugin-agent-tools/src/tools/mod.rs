@@ -54,6 +54,13 @@ pub struct ToolContext<'a> {
     /// Expose `$HOME` to the sandboxed shell read-only (the CLI) instead of
     /// hiding it (the desktop). Passed through to the `bash` sandbox policy.
     pub home_readonly: bool,
+    /// A session-scoped host directory the shell and the filesystem tools share
+    /// for temporary work, so scratch files persist across `bash` calls in the
+    /// run. See [`Policy::scratch_root`] for how each backend exposes it, and
+    /// [`crate::workspace::scratch_dir`] for where it lives. `None` keeps the
+    /// default throwaway per-command tmpfs. Cleaned up with the session (run end
+    /// on the CLI, thread teardown on the desktop).
+    pub scratch_root: Option<&'a Path>,
 }
 
 impl<'a> ToolContext<'a> {
@@ -66,6 +73,7 @@ impl<'a> ToolContext<'a> {
             confine_writes: false,
             mask_root: None,
             home_readonly: false,
+            scratch_root: None,
         }
     }
 
@@ -87,6 +95,13 @@ impl<'a> ToolContext<'a> {
     /// Expose `$HOME` to the sandboxed shell read-only. See [`Self::home_readonly`].
     pub fn with_home_readonly(mut self, home_readonly: bool) -> Self {
         self.home_readonly = home_readonly;
+        self
+    }
+
+    /// Bind `scratch_root` over the sandbox's `/tmp` so scratch files survive
+    /// across `bash` calls. See [`Self::scratch_root`].
+    pub fn with_scratch_root(mut self, scratch_root: &'a Path) -> Self {
+        self.scratch_root = Some(scratch_root);
         self
     }
 }

@@ -1,11 +1,33 @@
 use std::path::{Path, PathBuf};
 
-/// True iff `raw` resolves to a path outside `project_root`.
-/// Relative paths are resolved against `project_root`. Canonicalizes (resolving
-/// `..` and symlinks) so string tricks and symlink escapes are caught. For a
-/// not-yet-existing leaf (new-file writes), the deepest existing ancestor is
-/// canonicalized and the remaining tail re-joined.
-pub fn escapes_project(project_root: &Path, raw: &str) -> Result<bool, String> {
+/// True iff `raw` resolves to a path outside `project_root` and outside the
+/// session scratch. Relative paths are resolved against `project_root`.
+/// Canonicalizes (resolving `..` and symlinks) so string tricks and symlink
+/// escapes are caught. For a not-yet-existing leaf (new-file writes), the
+/// deepest existing ancestor is canonicalized and the remaining tail re-joined.
+pub fn escapes_project(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    raw: &str,
+) -> Result<bool, String> {
+    // Absolute `/tmp` paths map into the session scratch (see [`resolve_path`]),
+    // which is the agent's own area -- but only once the mapped path is checked
+    // against it. Clamping `..` happens lexically, so a symlink planted in the
+    // scratch (the shell can make one: `/tmp` is the scratch bind) would
+    // otherwise resolve straight back out to the host. Canonicalize what the
+    // clamp produced and require it to still be inside.
+    if cfg!(target_os = "linux") {
+        if let Some(scratch) = scratch {
+            if tmp_relative(raw).is_some() {
+                let scratch_root = scratch
+                    .canonicalize()
+                    .map_err(|e| format!("scratch root {:?}: {e}", scratch))?;
+                let resolved =
+                    canonicalize_lenient(&resolve_path(project_root, Some(scratch), raw))?;
+                return Ok(!resolved.starts_with(&scratch_root));
+            }
+        }
+    }
     let root = project_root
         .canonicalize()
         .map_err(|e| format!("project root {:?}: {e}", project_root))?;
@@ -15,7 +37,133 @@ pub fn escapes_project(project_root: &Path, raw: &str) -> Result<bool, String> {
         root.join(raw)
     };
     let resolved = canonicalize_lenient(&abs)?;
-    Ok(!resolved.starts_with(&root))
+    if resolved.starts_with(&root) {
+        return Ok(false);
+    }
+    // The scratch is the agent's own per-session area and is writable under
+    // every backend, so a path landing in it is not a host escape even though it
+    // sits outside the project. On Linux it is normally reached through the
+    // `/tmp` branch above; macOS and Windows have no bind mount, so the shell
+    // and the filesystem tools both address it by this real path. A scratch that
+    // cannot be canonicalized grants nothing: the path stays an escape.
+    if let Some(scratch) = scratch {
+        if let Ok(scratch) = scratch.canonicalize() {
+            return Ok(!resolved.starts_with(&scratch));
+        }
+    }
+    Ok(true)
+}
+
+/// Resolve a tool-supplied path to its on-disk location, forwarding an absolute
+/// `/tmp/...` path into the session scratch when one is set (and only on Linux,
+/// where the bash sandbox binds the scratch over `/tmp`). This keeps every
+/// filesystem tool reading and writing the same `/tmp` the shell sees. With no
+/// scratch, `/tmp` stays a plain host path.
+///
+/// The scratch is treated like a chroot: no `..` component may climb above the
+/// scratch root, matching how the sandbox's `/tmp` mount behaves (it is a mount
+/// point, so `..` above it stays inside `/tmp`).
+pub fn resolve_path(project_root: &Path, scratch: Option<&Path>, raw: &str) -> PathBuf {
+    if cfg!(target_os = "linux") {
+        if let Some(rel) = tmp_relative(raw) {
+            if let Some(scratch) = scratch {
+                return clamp_scratch(scratch, &rel);
+            }
+        }
+    }
+    if Path::new(raw).is_absolute() {
+        PathBuf::from(raw)
+    } else {
+        project_root.join(raw)
+    }
+}
+
+/// The spelling to hand a tool-facing path back to the model: the inverse of
+/// [`resolve_path`]. On Linux a file inside the scratch is named `/tmp/...`, the
+/// one name that works from both the filesystem tools (which remap it back) and
+/// `bash` (where the scratch is mounted at `/tmp`); its host path would resolve
+/// for the former and not exist for the latter. Where nothing is mounted over
+/// `/tmp` (macOS, Windows) both surfaces use the real path, so that is the name.
+/// Anything outside the scratch is shown as-is.
+pub fn scratch_display_path(scratch: Option<&Path>, path: &Path) -> String {
+    let target = lexical_normalize(path);
+    if cfg!(target_os = "linux") {
+        if let Some(rel) = scratch_tail(scratch, &target) {
+            let rel = rel.to_string_lossy().replace('\\', "/");
+            return if rel.is_empty() {
+                "/tmp".to_string()
+            } else {
+                format!("/tmp/{rel}")
+            };
+        }
+    }
+    target.to_string_lossy().into_owned()
+}
+
+/// True iff `path` lexically sits inside the session scratch. Lexical on
+/// purpose: it names a path the tools are about to create as well as one that
+/// already exists.
+pub fn in_scratch(scratch: Option<&Path>, path: &Path) -> bool {
+    scratch_tail(scratch, &lexical_normalize(path)).is_some()
+}
+
+/// The scratch-relative tail of an already-normalized `path`, or `None` when it
+/// is not in the scratch. `Some("")` for the scratch root itself.
+fn scratch_tail(scratch: Option<&Path>, path: &Path) -> Option<PathBuf> {
+    let scratch = lexical_normalize(scratch?);
+    path.strip_prefix(&scratch).ok().map(Path::to_path_buf)
+}
+
+/// Resolve `.`/`..` without touching the filesystem, so a path is comparable to
+/// the project root even when the target does not exist yet. Purely lexical:
+/// `canonicalize` would also follow symlinks and fail on missing files.
+pub fn lexical_normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// Join `rel` under `scratch`, clamping `..` so it can never climb above the
+/// scratch root (chroot semantics). A leading `..` or `/tmp/..` therefore falls
+/// back to the scratch root rather than escaping to the host temp.
+fn clamp_scratch(scratch: &Path, rel: &str) -> PathBuf {
+    let mut out = scratch.to_path_buf();
+    for c in Path::new(rel).components() {
+        match c {
+            std::path::Component::ParentDir => {
+                // Clamp: never pop past the scratch root.
+                if out != scratch {
+                    out.pop();
+                }
+            }
+            std::path::Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// The `/tmp`-relative tail of an absolute `/tmp/...` path; `Some("")` for the
+/// bare `/tmp` dir itself; `None` when `raw` is not such a path.
+fn tmp_relative(raw: &str) -> Option<String> {
+    let path = Path::new(raw);
+    if !path.is_absolute() {
+        return None;
+    }
+    let rest = raw.strip_prefix("/tmp")?;
+    if rest.is_empty() {
+        return Some(String::new());
+    }
+    Some(rest.strip_prefix('/').unwrap_or(rest).to_string())
 }
 
 /// The agent's own state directory inside a project. Hidden wholesale rather
@@ -111,11 +259,24 @@ mod tests {
         dir
     }
 
+    /// A test dir that is *not* under the host temp dir, so a Linux run does not
+    /// silently route through the `/tmp` bind branch. Lives under the crate's
+    /// `target/`, which is already build output.
+    fn unique_root_outside_tmp() -> PathBuf {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("sandbox-tests")
+            .join(format!("{}_{}", std::process::id(), n));
+        std::fs::create_dir_all(&dir).expect("create test scratch");
+        dir
+    }
+
     #[test]
     fn in_project_file_does_not_escape() {
         let root = unique_root();
         std::fs::write(root.join("inner.txt"), b"x").unwrap();
-        assert_eq!(escapes_project(&root, "inner.txt"), Ok(false));
+        assert_eq!(escapes_project(&root, None, "inner.txt"), Ok(false));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -124,14 +285,14 @@ mod tests {
         let root = unique_root();
         std::fs::create_dir_all(root.join("sub")).unwrap();
         std::fs::write(root.join("sub/inner.txt"), b"x").unwrap();
-        assert_eq!(escapes_project(&root, "sub/inner.txt"), Ok(false));
+        assert_eq!(escapes_project(&root, None, "sub/inner.txt"), Ok(false));
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn dotdot_escapes() {
         let root = unique_root();
-        assert_eq!(escapes_project(&root, "../outside.txt"), Ok(true));
+        assert_eq!(escapes_project(&root, None, "../outside.txt"), Ok(true));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -139,7 +300,7 @@ mod tests {
     fn absolute_outside_escapes() {
         let root = unique_root();
         let outside = std::env::temp_dir().join("definitely_outside_the_root.txt");
-        assert_eq!(escapes_project(&root, outside.to_str().unwrap()), Ok(true));
+        assert_eq!(escapes_project(&root, None, outside.to_str().unwrap()), Ok(true));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -148,7 +309,7 @@ mod tests {
         let root = unique_root();
         std::fs::write(root.join("inner.txt"), b"x").unwrap();
         let inside = root.join("inner.txt");
-        assert_eq!(escapes_project(&root, inside.to_str().unwrap()), Ok(false));
+        assert_eq!(escapes_project(&root, None, inside.to_str().unwrap()), Ok(false));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -156,7 +317,7 @@ mod tests {
     fn new_file_in_project_dir_does_not_escape() {
         let root = unique_root();
         std::fs::create_dir_all(root.join("sub")).unwrap();
-        assert_eq!(escapes_project(&root, "sub/newfile.txt"), Ok(false));
+        assert_eq!(escapes_project(&root, None, "sub/newfile.txt"), Ok(false));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -218,6 +379,116 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A symlink planted in the scratch (the shell can create one: `/tmp` is
+    /// the scratch bind) must not turn `/tmp/...` into a way out. Clamping `..`
+    /// is not enough -- the link is a single component that resolves elsewhere.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn tmp_symlink_cannot_escape_the_scratch() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let outside = unique_root();
+        std::os::unix::fs::symlink(&outside, scratch.join("esc")).unwrap();
+        assert_eq!(
+            escapes_project(&root, Some(&scratch), "/tmp/esc/pwned.txt"),
+            Ok(true),
+            "a symlink out of the scratch is an escape"
+        );
+        // A genuine scratch path is still not an escape.
+        assert_eq!(
+            escapes_project(&root, Some(&scratch), "/tmp/ok.txt"),
+            Ok(false)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A scratch reached by its real path (no `/tmp` bind in front of it) is the
+    /// agent's own area on every platform, so it must not read as an escape.
+    /// The scratch here sits outside the host temp dir on purpose: on Linux a
+    /// `/tmp`-prefixed path would be answered by the bind branch above instead,
+    /// leaving the cross-platform branch untested on the one OS we can run.
+    #[test]
+    fn real_scratch_path_is_not_an_escape() {
+        let root = unique_root();
+        let scratch = unique_root_outside_tmp();
+        let inside = scratch.join("notes.txt");
+        assert_eq!(
+            escapes_project(&root, Some(&scratch), inside.to_str().unwrap()),
+            Ok(false),
+            "a write into the session scratch is not a host escape"
+        );
+        assert_eq!(
+            escapes_project(&root, Some(&scratch), scratch.to_str().unwrap()),
+            Ok(false),
+            "the scratch root itself is addressable"
+        );
+        // The allowance is the scratch, not its parent.
+        let sibling = scratch.parent().unwrap().join("not_the_scratch.txt");
+        assert_eq!(
+            escapes_project(&root, Some(&scratch), sibling.to_str().unwrap()),
+            Ok(true)
+        );
+        // And nothing changes for a caller with no scratch at all.
+        assert_eq!(
+            escapes_project(&root, None, inside.to_str().unwrap()),
+            Ok(true)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The real-path branch resolves symlinks for the same reason the `/tmp`
+    /// branch does: the shell can plant one inside the scratch.
+    #[cfg(unix)]
+    #[test]
+    fn real_scratch_path_symlink_cannot_escape() {
+        let root = unique_root();
+        let scratch = unique_root_outside_tmp();
+        let outside = unique_root();
+        std::os::unix::fs::symlink(&outside, scratch.join("esc")).unwrap();
+        let via_link = scratch.join("esc").join("pwned.txt");
+        assert_eq!(
+            escapes_project(&root, Some(&scratch), via_link.to_str().unwrap()),
+            Ok(true),
+            "a symlink out of the scratch is an escape"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// The name handed back to the model: the `/tmp` alias only where something
+    /// is actually mounted there, the real path everywhere else.
+    #[test]
+    fn scratch_is_displayed_under_the_name_the_shell_can_use() {
+        let scratch = PathBuf::from(if cfg!(windows) {
+            r"C:\Temp\jan-agent-s1"
+        } else {
+            "/var/scratch/jan-agent-s1"
+        });
+        let file = scratch.join("out.txt");
+        assert!(in_scratch(Some(&scratch), &file));
+        assert!(!in_scratch(Some(&scratch), Path::new("/elsewhere/out.txt")));
+        assert!(!in_scratch(None, &file));
+        if cfg!(target_os = "linux") {
+            assert_eq!(scratch_display_path(Some(&scratch), &file), "/tmp/out.txt");
+            assert_eq!(scratch_display_path(Some(&scratch), &scratch), "/tmp");
+        } else {
+            assert_eq!(
+                scratch_display_path(Some(&scratch), &file),
+                file.to_string_lossy()
+            );
+        }
+        // Outside the scratch the path is untouched either way.
+        let other = PathBuf::from("/elsewhere/out.txt");
+        assert_eq!(
+            scratch_display_path(Some(&scratch), &other),
+            other.to_string_lossy()
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn symlink_escape_is_caught() {
@@ -226,7 +497,7 @@ mod tests {
         std::fs::write(outside.join("secret.txt"), b"x").unwrap();
         let link = root.join("link");
         std::os::unix::fs::symlink(&outside, &link).unwrap();
-        assert_eq!(escapes_project(&root, "link/secret.txt"), Ok(true));
+        assert_eq!(escapes_project(&root, None, "link/secret.txt"), Ok(true));
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
     }

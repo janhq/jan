@@ -92,6 +92,12 @@ pub(crate) struct OrchestrationArgs {
     /// nor executable: the dispatcher hard-denies them with `plan_mode_read_only`,
     /// stronger than auto-approval's prompt suppression (it cannot override this).
     pub run_mode: crate::core::agent::plan::RunMode,
+    /// Stable identity for this run's session, used to key the persistent
+    /// `bash` `/tmp` scratch directory (`<temp>/jan-agent-<session_id>`) and
+    /// wiped at the session boundary specific to each surface. `None` on
+    /// code paths with no session (server proxy runs) keeps the default
+    /// throwaway per-command tmpfs.
+    pub session_id: Option<String>,
 }
 
 #[async_trait]
@@ -207,6 +213,10 @@ struct CompositeToolInvoker {
     /// Whether the sandboxed shell may read `$HOME`. Resolved once per run
     /// from `[tools].allow_home_read`, falling back to `true` on the CLI.
     allow_home_read: bool,
+    /// Session-scoped scratch directory the shell and the filesystem tools share
+    /// (see `workspace::scratch_dir`), so `bash` scratch files persist across
+    /// calls for the whole run. Created at run start and wiped at run end.
+    scratch_root: std::path::PathBuf,
     permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
@@ -285,6 +295,7 @@ impl CompositeToolInvoker {
         )
         .with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
+        .with_scratch_root(&self.scratch_root)
     }
 
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
@@ -727,6 +738,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 tool,
                 &args,
                 &self.project_root,
+                Some(self.scratch_root.as_path()),
                 &self.permissions,
                 &snapshot,
             );
@@ -749,10 +761,12 @@ impl ToolInvoker for CompositeToolInvoker {
                 let enabled = self.enabled_skills.clone();
                 let allow_network = self.allow_network;
                 let allow_home_read = self.allow_home_read;
+                let scratch = self.scratch_root.clone();
                 read_futures.push(async move {
                     let ctx = ToolContext::new(&root, &store, &enabled)
                         .with_network(allow_network)
-                        .with_home_readonly(allow_home_read);
+                        .with_home_readonly(allow_home_read)
+                        .with_scratch_root(&scratch);
                     let (text, diff) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
                         id,
@@ -898,6 +912,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
         auto_approve: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
+        session_id: None,
     };
     let body = match json_body.get("max_turns") {
         Some(_) => std::borrow::Cow::Borrowed(json_body),
@@ -1004,14 +1019,36 @@ fn build_run_system_prompt(
     assistant_instructions: Option<&str>,
     override_prompt: Option<&str>,
     project_root: Option<&std::path::Path>,
+    session_id: Option<&str>,
     subagents_enabled: bool,
 ) -> Option<String> {
     let base = override_prompt.or(assistant_instructions);
     match project_root {
         Some(root) => {
-            crate::core::agent::context::build_system_prompt(base, root, subagents_enabled)
+            let scratch = scratch_root_for(session_id, root);
+            crate::core::agent::context::build_system_prompt(
+                base,
+                root,
+                Some(&scratch),
+                subagents_enabled,
+            )
         }
         None => base.map(str::to_string),
+    }
+}
+
+/// Where this run's scratch lives. Session-keyed so it persists across turns in
+/// the interactive TUI (and across calls in a one-shot run), then is wiped at the
+/// session boundary; a run with no session (the server proxy) gets a per-project
+/// directory instead. Pure path math -- [`ensure_scratch_dir`] is what creates
+/// it -- so the system prompt can name the scratch before the tools are built.
+fn scratch_root_for(
+    session_id: Option<&str>,
+    project_root: &std::path::Path,
+) -> std::path::PathBuf {
+    match session_id {
+        Some(session) => tauri_plugin_agent_tools::workspace::scratch_dir(session),
+        None => project_root.join("agent-scratch"),
     }
 }
 
@@ -1077,6 +1114,7 @@ async fn orchestrate_inner(
         max_parallel_subagents,
         auto_approve,
         run_mode,
+        session_id,
     } = args;
 
     // Per-turn override: the TUI toggles plan mode live via the request body
@@ -1119,6 +1157,7 @@ async fn orchestrate_inner(
         assistant_instructions.as_deref(),
         system_prompt_override.as_deref(),
         project_root.as_deref(),
+        session_id.as_deref(),
         *subagents_enabled,
     );
     // Child (subagent) runs are excluded via `system_prompt_override`, the
@@ -1331,12 +1370,22 @@ async fn orchestrate_inner(
             bg: bg.clone(),
         });
         let settings = resolve_run_settings(root);
+        // The same path `build_run_system_prompt` advertised (both go through
+        // `scratch_root_for`), created here before the first tool call reaches
+        // for it. Created for a session-less run too: the policy binds this path
+        // either way, and bubblewrap refuses to bind a directory that is not
+        // there -- which would take `bash` down with it.
+        let scratch_root = scratch_root_for(session_id.as_deref(), root);
+        tokio::fs::create_dir_all(&scratch_root)
+            .await
+            .map_err(|e| format!("ERROR: {e}"))?;
         let tools = CompositeToolInvoker {
             mcp: mcp_tools,
             store_root: tauri_plugin_agent_tools::workspace::project_store(root),
             enabled_skills: settings.enabled_skills,
             allow_network: settings.allow_network,
             allow_home_read: settings.allow_home_read,
+            scratch_root: scratch_root.clone(),
             project_root: root.clone(),
             permissions: permissions.clone(),
             events: events.clone(),
@@ -1982,6 +2031,27 @@ mod tests {
         );
     }
 
+    /// The prompt names the scratch and the tools bind it, so both must derive
+    /// it the same way or the model is told about a directory nothing set up.
+    #[test]
+    fn scratch_root_is_session_keyed_and_falls_back_to_the_project() {
+        let root = unique_project_root();
+        assert_eq!(
+            scratch_root_for(Some("sess-1"), &root),
+            tauri_plugin_agent_tools::workspace::scratch_dir("sess-1")
+        );
+        assert_eq!(
+            scratch_root_for(None, &root),
+            root.join("agent-scratch"),
+            "a session-less run still needs a scratch to bind"
+        );
+        // Two sessions never share one scratch.
+        assert_ne!(
+            scratch_root_for(Some("sess-1"), &root),
+            scratch_root_for(Some("sess-2"), &root)
+        );
+    }
+
     #[test]
     fn subagent_prompt_reuses_main_prompt_builder() {
         let root = unique_project_root();
@@ -1989,6 +2059,7 @@ mod tests {
             Some("main assistant"),
             Some("You are a robotics researcher."),
             Some(&root),
+            Some("test-session"),
             false,
         )
         .expect("prompt");
@@ -2789,6 +2860,7 @@ mod tests {
             enabled_skills: Vec::new(),
             allow_network: DEFAULT_ALLOW_NETWORK,
             allow_home_read: DEFAULT_ALLOW_HOME_READ,
+            scratch_root: tauri_plugin_agent_tools::workspace::scratch_dir("test-session"),
             project_root: root,
             // Read-only default => write PROMPTS.
             permissions: ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),

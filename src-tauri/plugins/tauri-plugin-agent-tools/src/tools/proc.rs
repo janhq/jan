@@ -128,6 +128,11 @@ fn which(name: &str) -> Option<PathBuf> {
 /// seatbelt, and the Windows AppContainer helper) funnel through.
 const SANDBOX_ENV_ALLOW: &[&str] = &["PATH", "HOME", "USERPROFILE", "TMPDIR", "TMP", "TEMP", "LANG", "TERM"];
 
+/// Every spelling of "where temporary files go": POSIX tools read `TMPDIR`,
+/// Windows ones `TEMP`/`TMP`, and a mixed toolchain (git-bash, MSYS) reads both.
+/// All are pointed at the scratch together so no tool falls back to the host.
+const TEMP_ENV_KEYS: &[&str] = &["TMPDIR", "TMP", "TEMP"];
+
 /// Bound the resource exhaustion a sandboxed command could otherwise trigger on
 /// the host. `bwrap` 0.6.1 (and older) has no `--rlimit`, so instead we clamp the
 /// child's soft limits here, before exec, from the one choke point every backend
@@ -164,7 +169,12 @@ fn confine_limits(cmd: &mut Command) {
     }
 }
 
-pub async fn spawn(cfg: &ShellConfig, command: &str, cwd: &Path) -> std::io::Result<Child> {
+pub async fn spawn(
+    cfg: &ShellConfig,
+    command: &str,
+    cwd: &Path,
+    scratch: Option<&Path>,
+) -> std::io::Result<Child> {
     let mut cmd = Command::new(&cfg.program);
     cmd.args(&cfg.args);
     if !cfg.via_stdin {
@@ -177,6 +187,17 @@ pub async fn spawn(cfg: &ShellConfig, command: &str, cwd: &Path) -> std::io::Res
     for key in SANDBOX_ENV_ALLOW {
         if let Some(val) = std::env::var_os(key) {
             cmd.env(key, val);
+        }
+    }
+    // Point the shell's temp env at the session scratch, overriding the host
+    // values the allowlist just copied in. Without this a command that writes
+    // through `mktemp`/`$TMPDIR` lands in the host temp dir -- unreachable to
+    // the filesystem tools, and on the backends that confine by path, not
+    // writable at all. `scratch` is what the sandbox exposes, which is not
+    // always the host path (see `jail::scratch_env_path`).
+    if let Some(scratch) = scratch {
+        for key in TEMP_ENV_KEYS {
+            cmd.env(key, scratch);
         }
     }
     cmd.current_dir(cwd)
@@ -286,18 +307,58 @@ mod tests {
 
     #[tokio::test]
     async fn runs_a_command_and_captures_stdout() {
-        let child = spawn(shell(), "echo hello", &tmp()).await.unwrap();
+        let child = spawn(shell(), "echo hello", &tmp(), None).await.unwrap();
         let pid = child.id().unwrap();
         let out = child.wait_with_output().await.unwrap();
         unregister(pid);
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hello");
     }
 
+    /// `mktemp`, `pytest`, `cargo` and friends write to `$TMPDIR`, so the scratch
+    /// is only useful if it is what the shell's temp env names. All three
+    /// spellings are set: POSIX tools read `TMPDIR`, Windows ones `TEMP`/`TMP`.
+    #[tokio::test]
+    async fn temp_env_points_at_the_scratch_when_one_is_given() {
+        let scratch = tmp().join("jan_proc_scratch_env");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let child = spawn(
+            shell(),
+            "echo \"$TMPDIR $TMP $TEMP\"",
+            &tmp(),
+            Some(&scratch),
+        )
+        .await
+        .unwrap();
+        let pid = child.id().unwrap();
+        let out = child.wait_with_output().await.unwrap();
+        unregister(pid);
+        let s = scratch.to_string_lossy();
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            format!("{s} {s} {s}")
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// With no scratch the shell keeps whatever the host allowlist passed
+    /// through, rather than being handed an empty temp dir.
+    #[tokio::test]
+    async fn temp_env_is_left_alone_without_a_scratch() {
+        let child = spawn(shell(), "echo ${TMPDIR:-unset}", &tmp(), None)
+            .await
+            .unwrap();
+        let pid = child.id().unwrap();
+        let out = child.wait_with_output().await.unwrap();
+        unregister(pid);
+        let expected = std::env::var("TMPDIR").unwrap_or_else(|_| "unset".to_string());
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), expected);
+    }
+
     #[tokio::test]
     async fn kill_tree_reaps_backgrounded_grandchild() {
         // The shell backgrounds a long sleeper, prints its pid, then waits on
         // it. Killing the group must take down that grandchild too.
-        let mut child = spawn(shell(), "sleep 300 & echo $! ; wait", &tmp())
+        let mut child = spawn(shell(), "sleep 300 & echo $! ; wait", &tmp(), None)
             .await
             .unwrap();
         let leader = child.id().unwrap();
@@ -342,14 +403,14 @@ mod tests {
     async fn confine_limits_caps_the_child_process_count() {
         // The rlimit mounting must actually reach the spawned child: with NPROC
         // clamped we still run up to the cap, but a fork-bomb past it fails.
-        let child = spawn(shell(), "exit 0", &tmp()).await.unwrap();
+        let child = spawn(shell(), "exit 0", &tmp(), None).await.unwrap();
         let pid = child.id().unwrap();
         child.wait_with_output().await.unwrap();
         unregister(pid);
 
         // Spawn a shell that reports its own soft NOFILE limit; confine_limits
         // sets it to 1024, which should be visible inside the sandbox.
-        let child = spawn(shell(), "ulimit -n", &tmp()).await.unwrap();
+        let child = spawn(shell(), "ulimit -n", &tmp(), None).await.unwrap();
         let pid = child.id().unwrap();
         let out = child.wait_with_output().await.unwrap();
         unregister(pid);

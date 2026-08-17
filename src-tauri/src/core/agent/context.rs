@@ -168,17 +168,18 @@ work: the moment you finish a task call `todo` with `done` for it (or `drop` if 
 it), before moving on to the next one. Do not leave finished work sitting as pending, and do not \
 batch the close-out to the end of the turn.";
 
+fn display_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 /// Build a compact runtime environment block injected into the system prompt at
 /// session start so the agent is grounded from turn one. Mirrors the
 /// `<workstation>` / cwd / date context blocks that harnesses like this one
 /// already inject. Fields: working directory, OS/platform/arch, date, shell, and
 /// git state (branch name when the project is inside a git repo). Kept short —
 /// a few lines, not a wall of text.
-fn runtime_environment_block(project_root: &Path) -> String {
-    let cwd = std::env::current_dir()
-        .ok()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "unknown".to_string());
+fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> String {
+    let cwd = display_path(project_root);
 
     let os = format!(
         "{} {}",
@@ -199,13 +200,26 @@ fn runtime_environment_block(project_root: &Path) -> String {
         None => "Git: not a git repository (or no commits yet)".to_string(),
     };
 
+    // Where to do temporary work. Named by the one spelling that resolves from
+    // both `bash` and the filesystem tools on this platform: `/tmp` where the
+    // sandbox binds the scratch over it, the real path where nothing is mounted
+    // there. Same directory either way, and the shell's `TMPDIR`/`TMP`/`TEMP`
+    // point at it too.
+    let scratch_line = match scratch {
+        Some(scratch) => format!(
+            "\nScratch: `{}` is a writable scratch space for temporary work; it persists for this session.",
+            tauri_plugin_agent_tools::tools::sandbox::scratch_display_path(Some(scratch), scratch)
+        ),
+        None => String::new(),
+    };
+
     format!(
         "# Runtime Environment\n\n\
 Work directory: `{cwd}`\n\
 OS: `{os}`\n\
 Date: `{date}`\n\
 Shell: `{shell}`\n\
-{git_line}"
+{git_line}{scratch_line}"
     )
 }
 
@@ -239,6 +253,7 @@ pub(crate) fn load_memory_catalog(project_root: &Path) -> Option<String> {
 pub(crate) fn build_system_prompt(
     base: Option<&str>,
     project_root: &Path,
+    scratch: Option<&Path>,
     subagents_enabled: bool,
 ) -> Option<String> {
     let mut blocks: Vec<String> = Vec::new();
@@ -251,7 +266,7 @@ pub(crate) fn build_system_prompt(
         "# Working Directory\n\nCurrent project directory: `{}`\n\nAll relative paths in tool calls resolve against this directory unless stated otherwise.",
         project_root.display()
     ));
-    blocks.push(runtime_environment_block(project_root));
+    blocks.push(runtime_environment_block(project_root, scratch));
     if subagents_enabled {
         blocks.push(SUBAGENT_GUIDE.to_string());
     }
@@ -368,7 +383,7 @@ mod tests {
     fn build_system_prompt_orders_base_guide_then_skills() {
         let root = scratch_project("merge");
         write_skill(&root, "s.md", "Do the thing.");
-        let out = build_system_prompt(Some("You are Jan."), &root, false).expect("prompt");
+        let out = build_system_prompt(Some("You are Jan."), &root, None, false).expect("prompt");
         assert!(out.starts_with("You are Jan."));
         assert!(out.contains("Do the thing."));
         // Guide sits between the base prompt and the project skills.
@@ -381,7 +396,7 @@ mod tests {
     #[test]
     fn build_system_prompt_advertises_native_web_tools() {
         let root = scratch_project("web");
-        let out = build_system_prompt(None, &root, false).expect("prompt");
+        let out = build_system_prompt(None, &root, None, false).expect("prompt");
         assert!(out.contains("# Web Access"));
         assert!(out.contains("web_search"));
         assert!(out.contains("web_fetch"));
@@ -399,13 +414,13 @@ mod tests {
     fn build_system_prompt_always_includes_guide() {
         let root = scratch_project("guide");
         // No base and no project skills: the built-in guide is still injected.
-        let out = build_system_prompt(None, &root, false).expect("guide always present");
+        let out = build_system_prompt(None, &root, None, false).expect("guide always present");
         assert!(out.contains("Skills and Project Memory"));
         assert!(out.contains("skill_write"));
         assert!(out.contains("memory_write"));
 
         // Base is preserved and precedes the guide.
-        let with_base = build_system_prompt(Some("base"), &root, false).expect("prompt");
+        let with_base = build_system_prompt(Some("base"), &root, None, false).expect("prompt");
         assert!(with_base.starts_with("base"));
         assert!(with_base.contains("Skills and Project Memory"));
         let _ = std::fs::remove_dir_all(&root);
@@ -414,7 +429,7 @@ mod tests {
     #[test]
     fn default_identity_and_guidelines_present_without_base() {
         let root = scratch_project("identity");
-        let out = build_system_prompt(None, &root, false).expect("prompt");
+        let out = build_system_prompt(None, &root, None, false).expect("prompt");
         assert!(out.starts_with("You're currently running on Jan agent harness"));
         assert!(out.contains("# Guidelines"));
         assert!(out.contains("Be concise"));
@@ -442,7 +457,7 @@ mod tests {
         // Nearest (nested) file wins by appearing last.
         assert!(block.find("ROOT_RULES").unwrap() < block.find("NESTED_RULES").unwrap());
 
-        let prompt = build_system_prompt(None, &nested, false).expect("prompt");
+        let prompt = build_system_prompt(None, &nested, None, false).expect("prompt");
         // Context files precede the skills catalog position and follow the guide.
         assert!(prompt.contains("NESTED_RULES"));
         let _ = std::fs::remove_dir_all(&root);
@@ -459,9 +474,9 @@ mod tests {
     #[test]
     fn build_system_prompt_advertises_subagents_only_when_enabled() {
         let root = scratch_project("subagents");
-        let without = build_system_prompt(None, &root, false).expect("prompt");
+        let without = build_system_prompt(None, &root, None, false).expect("prompt");
         assert!(!without.contains("dispatch_subagent"));
-        let with = build_system_prompt(None, &root, true).expect("prompt");
+        let with = build_system_prompt(None, &root, None, true).expect("prompt");
         assert!(with.contains("dispatch_subagent"));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -472,7 +487,7 @@ mod tests {
     fn runtime_environment_block_is_compact() {
         let root = scratch_project("env");
         std::fs::create_dir_all(&root).unwrap();
-        let block = runtime_environment_block(&root);
+        let block = runtime_environment_block(&root, None);
         // Must be a handful of lines, not a wall of text.
         let lines: Vec<_> = block.lines().filter(|l| !l.is_empty()).collect();
         assert!(lines.len() <= 15, "env block is too large: {} lines", lines.len());
@@ -493,7 +508,7 @@ mod tests {
     fn runtime_environment_block_injected_into_system_prompt() {
         let root = scratch_project("inject");
         std::fs::create_dir_all(&root).unwrap();
-        let out = build_system_prompt(None, &root, false).expect("prompt");
+        let out = build_system_prompt(None, &root, None, false).expect("prompt");
         assert!(out.contains("# Runtime Environment"));
         assert!(out.contains("Work directory:"));
         // The block sits right after the Working Directory section.
@@ -507,13 +522,84 @@ mod tests {
     fn runtime_environment_block_answers_os_date_cwd() {
         let root = scratch_project("answer");
         std::fs::create_dir_all(&root).unwrap();
-        let block = runtime_environment_block(&root);
+        let block = runtime_environment_block(&root, None);
         // The date field must be a real-looking ISO date.
         assert!(block.contains("Date: `20"), "date should be a 20xx year");
         // The OS field must identify the host platform.
         assert!(block.contains(format!("OS: `{}", std::env::consts::OS).as_str()));
         // Work directory should be present and non-empty.
         assert!(!block.contains("Work directory: ``"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The scratch must be advertised under the name that resolves from both
+    /// `bash` and the filesystem tools: `/tmp` where the sandbox binds it there,
+    /// the real path where nothing is mounted over `/tmp`. Naming the host path
+    /// on Linux (or `/tmp` anywhere else) would send the model to a directory
+    /// one of the two surfaces cannot reach.
+    #[test]
+    fn runtime_environment_block_advertises_the_scratch_the_tools_share() {
+        let root = scratch_project("scratch");
+        std::fs::create_dir_all(&root).unwrap();
+        let scratch = root.join("agent-scratch");
+        let block = runtime_environment_block(&root, Some(&scratch));
+        let expected = if cfg!(target_os = "linux") {
+            "/tmp".to_string()
+        } else {
+            scratch.to_string_lossy().into_owned()
+        };
+        assert!(
+            block.contains(&format!("Scratch: `{expected}`")),
+            "want {expected}: {block}"
+        );
+        assert!(block.contains("persists for this session"), "{block}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A run with no scratch (the server proxy path) must not promise one.
+    #[test]
+    fn runtime_environment_block_omits_the_scratch_when_there_is_none() {
+        let root = scratch_project("noscratch");
+        std::fs::create_dir_all(&root).unwrap();
+        let block = runtime_environment_block(&root, None);
+        assert!(!block.contains("Scratch:"), "{block}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn work_directory_is_the_project_root_not_the_process_cwd() {
+        let root = scratch_project("cwd_is_root");
+        std::fs::create_dir_all(&root).unwrap();
+        let process_cwd = std::env::current_dir().expect("cwd");
+        assert_ne!(
+            root, process_cwd,
+            "the test is meaningless unless the two differ"
+        );
+
+        let block = runtime_environment_block(&root, None);
+        let expected = root.to_string_lossy().replace('\\', "/");
+        assert!(
+            block.contains(&format!("Work directory: `{expected}`")),
+            "block should report the project root, got: {block}"
+        );
+        let cwd_shown = process_cwd.to_string_lossy().replace('\\', "/");
+        assert!(
+            !block.contains(&format!("Work directory: `{cwd_shown}`")),
+            "block must not report the process cwd"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn work_directory_is_written_with_forward_slashes() {
+        let root = scratch_project("cwd_slashes");
+        std::fs::create_dir_all(&root).unwrap();
+        let block = runtime_environment_block(&root, None);
+        let line = block
+            .lines()
+            .find(|l| l.starts_with("Work directory:"))
+            .expect("work directory line");
+        assert!(!line.contains('\\'), "path should be slash-normalised: {line}");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

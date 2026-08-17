@@ -46,6 +46,7 @@ use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs, PermissionRegistry};
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::workspace;
 
 /// Mouse tracking, hand-rolled instead of crossterm's `EnableMouseCapture`,
 /// which also turns on any-motion reporting (1003) -- a stream of events for
@@ -447,14 +448,20 @@ impl ToolGroup {
         }
     }
 
-    /// Live label for an open group: a lone call names itself (so a running
-    /// command reads as the command), several fall back to the counted
-    /// breakdown, where no single call describes the group.
+    /// Live label for an open group: the tool still in flight, so a running
+    /// batch reads as that tool rather than a counted breakdown like "Running
+    /// 2 commands, 5 searches" (which would wrongly imply all of them are
+    /// executing at once). The past-tense summary only appears once the group
+    /// resolves. Results can land out of dispatch order, so the in-flight call
+    /// is the latest one still awaiting its result.
     fn activity(&self) -> String {
-        match self.calls.as_slice() {
-            [only] => only.activity.clone(),
-            _ => group_activity(&self.nouns),
-        }
+        self.calls
+            .iter()
+            .rev()
+            .find(|c| c.content.is_none())
+            .or_else(|| self.calls.last())
+            .map(|c| c.activity.clone())
+            .unwrap_or_default()
     }
 
     /// The group's row: present-tense `▸` only while it is open with a call in
@@ -4073,13 +4080,6 @@ fn group_summary(nouns: &[(&str, bool)]) -> String {
     group_clauses(nouns, "Read", "ran")
 }
 
-/// Present-tense counterpart to `group_summary` for the live, in-progress group
-/// row, e.g. "Reading 3 files, 1 directory; running 2 commands". Keeps the row
-/// honest about the mix of calls instead of showing the latest call + a count.
-fn group_activity(nouns: &[(&str, bool)]) -> String {
-    group_clauses(nouns, "Reading", "running")
-}
-
 /// Live row for the still-open tool group: a braille throbber in place of the
 /// static `▸` tag, plus elapsed time, so the user can see it's actively
 /// working and how long it's taken. Rebuilt fresh every draw (not stored in
@@ -4509,6 +4509,7 @@ pub async fn run(
     args.ask_requests = Some(ask_requests.clone());
     let todo_registry = crate::core::agent::todo::new_registry();
     args.todo_registry = Some(todo_registry.clone());
+    let session_scratch = args.session_id.clone();
     let args = Arc::new(args);
 
     // Deserializing syntect's syntax/theme dumps takes tens of milliseconds.
@@ -4621,6 +4622,11 @@ pub async fn run(
     // transcript note would vanish with it.
     if app.update_installing {
         eprintln!("the update was still installing when jan exited; run `jan update` to finish it");
+    }
+    // The interactive session is over: wipe the persistent bash `/tmp` scratch
+    // that its turns shared.
+    if let Some(session) = session_scratch.as_deref() {
+        let _ = workspace::remove_scratch_dir(session).await;
     }
     res
 }
@@ -9268,7 +9274,7 @@ mod tests {
     use super::{
         age_closed_todos, apply_resume, assistant_is_awaiting_user_answer, brand, build_user_message,
         clipboard_path,
-        diff_lines, Row, group_activity, group_detail_lines, group_summary, handle_ask_key,
+        diff_lines, Row, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
         route_paste_event,
         compact_tokens, finish_compaction, finish_login, finish_update_install,
@@ -9335,28 +9341,48 @@ mod tests {
         );
     }
 
-    fn test_app() -> App {
+    /// Wraps an `App` bound to a temp dir that is removed when the wrapper is
+    /// dropped, so tests that persist threads or journals never leak under
+    /// `/tmp` and never dirty the working tree.
+    struct TestApp {
+        app: App,
+        _dir: tempfile::TempDir,
+    }
+
+    impl std::ops::Deref for TestApp {
+        type Target = App;
+
+        fn deref(&self) -> &App {
+            &self.app
+        }
+    }
+
+    impl std::ops::DerefMut for TestApp {
+        fn deref_mut(&mut self) -> &mut App {
+            &mut self.app
+        }
+    }
+
+    fn test_app() -> TestApp {
         // Persist into a unique temp dir so tests that save threads never
-        // dirty the working tree (src-tauri/threads/).
-        let agent_dir = std::env::temp_dir().join(format!(
-            "jan_tui_{}_{}",
-            std::process::id(),
-            uuid::Uuid::new_v4()
-        ));
+        // dirty the working tree (src-tauri/threads/) and the dir is removed on
+        // drop.
+        let dir = tempfile::tempdir().unwrap();
         let limits = SessionLimits {
             context_window: 128_000,
             reserve_tokens: 16_384,
             max_tokens: None,
             max_session_tokens: 128_000,
         };
-        App::new(
+        let app = App::new(
             "m".into(),
             limits,
             false,
-            agent_dir,
+            dir.path().to_path_buf(),
             std::path::PathBuf::from("/tmp/repo"),
             None,
-        )
+        );
+        TestApp { app, _dir: dir }
     }
 
     /// Draw `app` into an off-screen terminal and return its rows as strings.
@@ -10410,22 +10436,6 @@ mod tests {
                 ("command", false),
             ]),
             "Read 1 directory, 1 file; ran 1 search, 1 command"
-        );
-    }
-
-    #[test]
-    fn group_activity_is_present_tense_running_breakdown() {
-        assert_eq!(
-            group_activity(&[("file", true), ("file", true), ("command", false)]),
-            "Reading 2 files; running 1 command"
-        );
-        assert_eq!(
-            group_activity(&[("search", false), ("search", false)]),
-            "Running 2 searches"
-        );
-        assert_eq!(
-            group_activity(&[("file", true), ("directory", true)]),
-            "Reading 1 file, 1 directory"
         );
     }
 
@@ -12819,10 +12829,11 @@ mod tests {
         assert!(!text.contains("running 1 command"), "{text}");
     }
 
-    /// Two or more calls in flight go back to the counted breakdown: no single
-    /// command describes the group.
+    /// Two or more calls in flight still name the tool actively running (the
+    /// latest outstanding one), not a counted breakdown -- a summary like
+    /// "Running 2 commands" would wrongly imply both are executing at once.
     #[test]
-    fn running_multi_call_row_falls_back_to_breakdown() {
+    fn running_multi_call_row_names_the_in_flight_tool() {
         let mut app = test_app();
         for (id, cmd) in [("c1", "cargo test"), ("c2", "cargo clippy")] {
             app.apply(StreamEvent::ToolCall {
@@ -12833,7 +12844,8 @@ mod tests {
         }
         let group = app.tool_group.as_ref().expect("group open");
         let text = line_text(&running_group_row(group, 0, 200));
-        assert!(text.contains("Running 2 commands"), "{text}");
+        assert!(text.contains("Executing: cargo clippy"), "{text}");
+        assert!(!text.contains("Running 2 commands"), "{text}");
     }
 
     #[test]
@@ -14913,7 +14925,7 @@ mod tests {
 
         let mut restored = test_app();
         restore_goal(&mut restored, Some(&meta));
-        let g = restored.goal.expect("goal restored");
+        let g = restored.goal.clone().expect("goal restored");
         assert_eq!(g.condition, "tests pass");
         assert_eq!(g.turns, 2);
         assert_eq!(g.last_reason, "one failing");
@@ -16035,7 +16047,7 @@ mod tests {
         )
     }
 
-    fn app_with_history(n: usize) -> App {
+    fn app_with_history(n: usize) -> TestApp {
         let mut app = test_app();
         for i in 0..n {
             app.history.push(serde_json::json!({
