@@ -117,11 +117,15 @@ pub(crate) trait ModelInvoker: Send + Sync {
 }
 
 /// One tool call's outcome: `content` is the model-facing result string,
-/// `diff` is display-only focused-change text (`write`/`edit` only).
+/// `diff` is display-only focused-change text (`write`/`edit` only). `images`
+/// carries OpenAI `image_url` content parts for a `read` of an image file; when
+/// present, the result is emitted as a multimodal `tool` message with these
+/// parts (plus `content` as a text part) instead of plain text.
 pub(crate) struct ToolOutcome {
     pub id: String,
     pub content: String,
     pub diff: Option<String>,
+    pub images: Vec<tauri_plugin_agent_tools::tools::ImageContentPart>,
 }
 
 impl ToolOutcome {
@@ -130,6 +134,7 @@ impl ToolOutcome {
             id,
             content,
             diff: None,
+            images: Vec::new(),
         }
     }
 }
@@ -839,19 +844,23 @@ impl ToolInvoker for CompositeToolInvoker {
                         .with_home_readonly(allow_home_read)
                         .with_sandbox(sandbox)
                         .with_scratch_root(&scratch);
-                    let (text, diff) = execute_builtin_with_diff(tool, &args, &ctx).await;
+                    let (text, diff, images) =
+                        execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
                         id,
                         content: text,
                         diff,
+                        images: images.unwrap_or_default(),
                     }
                 });
                 continue;
             }
-            let (text, diff) = match decision {
-                Decision::Allow => execute_builtin_with_diff(tool, &args, &self.tool_context()).await,
+            let (text, diff, images) = match decision {
+                Decision::Allow => {
+                    execute_builtin_with_diff(tool, &args, &self.tool_context()).await
+                }
                 Decision::HardDeny(reason) => {
-                    (hard_deny_msg(name, reason, &self.project_root), None)
+                    (hard_deny_msg(name, reason, &self.project_root), None, None)
                 }
                 Decision::Prompt(kind) => {
                     let request_id = next_permission_id();
@@ -919,7 +928,7 @@ impl ToolInvoker for CompositeToolInvoker {
                             execute_builtin_with_diff(tool, &args, &self.tool_context()).await
                         }
                         PermissionDecision::Deny => {
-                            (format!("ERROR: tool '{name}' denied by user"), None)
+                            (format!("ERROR: tool '{name}' denied by user"), None, None)
                         }
                     }
                 }
@@ -928,6 +937,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 id,
                 content: text,
                 diff,
+                images: images.unwrap_or_default(),
             });
         }
         if !read_futures.is_empty() {
@@ -2092,7 +2102,12 @@ async fn run_turn_cycle(
         // what else ran alongside it.
         let mut todo_touched_this_batch = false;
         for outcome in tool_results {
-            let ToolOutcome { id, content, diff } = outcome;
+            let ToolOutcome {
+                id,
+                content,
+                diff,
+                images,
+            } = outcome;
             // A `bash` call that exits non-zero isn't prefixed "ERROR" (that
             // convention is reserved for hard tool failures the model must
             // treat as errors), but its failed exit marker still flags the
@@ -2110,12 +2125,31 @@ async fn run_turn_cycle(
                 id: id.clone(),
                 content: content.clone(),
                 is_error,
-                diff,
+                diff: diff.clone(),
             });
+            // A `read` of an image carries OpenAI `image_url` content parts; the
+            // tool message is then a content-part array (text note first, the
+            // image parts after) so a vision model sees the image. Other results
+            // stay plain text, preserving the standard tool protocol.
+            let wire_content = if images.is_empty() {
+                serde_json::Value::String(content.clone())
+            } else {
+                let mut parts = vec![serde_json::json!({
+                    "type": "text",
+                    "text": content.clone(),
+                })];
+                for img in &images {
+                    parts.push(serde_json::json!({
+                        "type": "image_url",
+                        "image_url": { "url": img.data_url, "detail": "auto" },
+                    }));
+                }
+                serde_json::Value::Array(parts)
+            };
             conversation_messages.push(serde_json::json!({
                 "role": "tool",
                 "tool_call_id": id,
-                "content": content
+                "content": wire_content
             }));
         }
         if todo_touched_this_batch {
@@ -2391,6 +2425,82 @@ mod tests {
             }
         }
         assert!(saw_tool_call && saw_tool_result);
+    }
+
+    /// Reads the tool message the loop wrote into the next request's
+    /// conversation. The image case must land there as an OpenAI content-part
+    /// array (text note + `image_url`) rather than a plain string, or the
+    /// vision model never sees the image.
+    #[tokio::test]
+    async fn image_tool_result_is_emitted_as_a_multimodal_tool_message() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            tool_call_completion(),
+            json!({ "choices": [{ "message": { "content": "final answer" }, "finish_reason": "stop" }] }),
+        ]);
+        struct ImageTool;
+        #[async_trait]
+        impl ToolInvoker for ImageTool {
+            async fn invoke(
+                &self,
+                tool_calls: &[serde_json::Value],
+            ) -> Result<Vec<ToolOutcome>, String> {
+                Ok(tool_calls
+                    .iter()
+                    .map(|tc| {
+                        let id = tc
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        ToolOutcome {
+                            id,
+                            content: "Read image pic.png (image/png, 10 bytes)".to_string(),
+                            diff: None,
+                            images: vec![tauri_plugin_agent_tools::tools::ImageContentPart {
+                                data_url: "data:image/png;base64,QUJD".to_string(),
+                                name: "pic.png".to_string(),
+                            }],
+                        }
+                    })
+                    .collect())
+            }
+        }
+        let tool = ImageTool;
+        let mut budget = SessionBudget::new(None);
+        let convo = vec![json!({ "role": "user", "content": "hi" })];
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2, "tool call then final answer");
+        let messages = requests[1]["messages"].as_array().unwrap();
+        let tool_msg = messages
+            .iter()
+            .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("tool"))
+            .unwrap_or_else(|| panic!("no tool message: {messages:#?}"));
+        assert_eq!(tool_msg["tool_call_id"], "call_1");
+        let content = tool_msg["content"].as_array().unwrap();
+        assert_eq!(content.len(), 2);
+        assert_eq!(content[0]["type"], "text");
+        assert_eq!(content[1]["type"], "image_url");
+        assert_eq!(content[1]["image_url"]["url"], "data:image/png;base64,QUJD");
+        assert_eq!(content[1]["image_url"]["detail"], "auto");
     }
 
     #[tokio::test]

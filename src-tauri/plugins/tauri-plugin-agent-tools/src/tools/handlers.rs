@@ -19,7 +19,7 @@ use crate::tools::sandbox::{
     escapes_project, in_scratch, is_hidden_jan_path, lexical_normalize, resolve_path,
     scratch_display_path, symlink_escapes_root,
 };
-use crate::tools::{BuiltinTool, ToolContext};
+use crate::tools::{BuiltinTool, ImageContentPart, ToolContext};
 
 const MAX_BYTES: usize = 64 * 1024;
 const MAX_LINES: usize = 2000;
@@ -119,17 +119,31 @@ fn collapse_carriage_returns(s: &str) -> String {
     out
 }
 
-/// Execute a built-in tool. Returns the tool-result text. Errors are returned
-/// as a String STARTING WITH "ERROR" rather than as Err.
+/// Execute a built-in tool. Returns the tool-result text plus, for a `read` of
+/// an image file, the base64 `image_url` content parts the model needs to see
+/// the image. Errors are returned as a String STARTING WITH "ERROR" rather than
+/// as Err.
 pub async fn execute_builtin(
     tool: &BuiltinTool,
     args: &serde_json::Value,
     ctx: &ToolContext<'_>,
-) -> String {
+) -> (String, Option<Vec<ImageContentPart>>) {
+    let project_root = ctx.project_root;
+    let scratch = ctx.scratch_root;
+    let (content, images) = match tool.name {
+        "read" => read(args, project_root, scratch).await,
+        _ => (execute_text(tool, args, ctx).await, None),
+    };
+    (content, images)
+}
+
+/// The text result for every tool except `read`. Split out so `read` can also
+/// return image parts without duplicating the remaining tool dispatch.
+async fn execute_text(tool: &BuiltinTool, args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let project_root = ctx.project_root;
     let scratch = ctx.scratch_root;
     match tool.name {
-        "read" => read(args, project_root, scratch).await,
+        "read" => read(args, project_root, scratch).await.0,
         "ls" => ls(args, project_root, scratch, ctx.sandbox).await,
         "write" => write(args, project_root, scratch, ctx.confine_writes).await,
         "edit" => edit(args, project_root, scratch, ctx.confine_writes).await,
@@ -211,17 +225,21 @@ pub async fn execute_builtin_with_diff(
     tool: &BuiltinTool,
     args: &serde_json::Value,
     ctx: &ToolContext<'_>,
-) -> (String, Option<String>) {
+) -> (String, Option<String>, Option<Vec<ImageContentPart>>) {
     match tool.name {
         "write" | "edit" => {
             let diff = preview_diff(tool, args, ctx).await;
-            let content = execute_builtin(tool, args, ctx).await;
+            let (content, images) = execute_builtin(tool, args, ctx).await;
             if content.starts_with("ERROR") {
-                return (content, None);
+                return (content, None, None);
             }
-            (content, diff)
+            (content, diff, images)
         }
-        _ => (execute_builtin(tool, args, ctx).await, None),
+        "read" => {
+            let (content, images) = execute_builtin(tool, args, ctx).await;
+            (content, None, images)
+        }
+        _ => (execute_builtin(tool, args, ctx).await.0, None, None),
     }
 }
 
@@ -453,9 +471,13 @@ async fn memory_write(args: &serde_json::Value, store: &Path) -> String {
     }
 }
 
-async fn read(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> String {
+async fn read(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+) -> (String, Option<Vec<ImageContentPart>>) {
     let Some(path) = arg_str(args, "path") else {
-        return "ERROR: missing required argument 'path'".to_string();
+        return ("ERROR: missing required argument 'path'".to_string(), None);
     };
     let offset = arg_u64(args, "offset").map(|v| v as usize);
     let limit = arg_u64(args, "limit").map(|v| v as usize);
@@ -463,26 +485,55 @@ async fn read(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
     // Fail closed: a component swapped to a symlink after the gate validated
     // the path must not redirect the open out of the workspace.
     if symlink_escapes_root(root, scratch, &target) {
-        return format!("ERROR: refused to read through a symlink out of the workspace: {path}");
+        return (
+            format!("ERROR: refused to read through a symlink out of the workspace: {path}"),
+            None,
+        );
     }
 
     let bytes = match tokio::fs::read(&target).await {
         Ok(b) => b,
-        Err(e) => return format!("ERROR: {e}"),
+        Err(e) => return (format!("ERROR: {e}"), None),
     };
+
+    // An image file is returned as an OpenAI `image_url` content part rather
+    // than text: the model cannot see a raster through a base64 string. Only a
+    // plain read (no offset/limit) does this, since slicing an image makes no
+    // sense and offset/limit still refers to text lines.
+    if offset.is_none() && limit.is_none() {
+        if let Some(mime) = crate::tools::image::detect(&target) {
+            use base64::Engine;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            let name = target
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("image")
+                .to_string();
+            let note = format!("Read image {name} ({mime}, {} bytes)", bytes.len());
+            let image = ImageContentPart {
+                data_url: format!("data:{mime};base64,{b64}"),
+                name,
+            };
+            return (note, Some(vec![image]));
+        }
+    }
+
     let content = match String::from_utf8(bytes) {
         Ok(c) => c,
-        Err(_) => return "ERROR: not a UTF-8 text file".to_string(),
+        Err(_) => return ("ERROR: not a UTF-8 text file".to_string(), None),
     };
 
     let selected = if offset.is_some() || limit.is_some() {
         let lines: Vec<&str> = content.split('\n').collect();
         let start = offset.map(|o| o.saturating_sub(1)).unwrap_or(0);
         if start >= lines.len() {
-            return format!(
-                "ERROR: offset {} is beyond end of file ({} lines total)",
-                offset.unwrap_or(1),
-                lines.len()
+            return (
+                format!(
+                    "ERROR: offset {} is beyond end of file ({} lines total)",
+                    offset.unwrap_or(1),
+                    lines.len()
+                ),
+                None,
             );
         }
         let end = match limit {
@@ -494,11 +545,14 @@ async fn read(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
         content
     };
 
-    cap_output(
-        &selected,
-        MAX_LINES,
-        MAX_BYTES,
-        "\n[truncated: use offset/limit to read more]",
+    (
+        cap_output(
+            &selected,
+            MAX_LINES,
+            MAX_BYTES,
+            "\n[truncated: use offset/limit to read more]",
+        ),
+        None,
     )
 }
 
@@ -1285,7 +1339,9 @@ mod tests {
     // `workspace` and `commands`.
     async fn execute_builtin(tool: &BuiltinTool, args: &serde_json::Value, root: &Path) -> String {
         let store = crate::workspace::project_store(root);
-        super::execute_builtin(tool, args, &ToolContext::new(root, &store, &[])).await
+        super::execute_builtin(tool, args, &ToolContext::new(root, &store, &[]))
+            .await
+            .0
     }
 
     async fn execute_builtin_with_diff(
@@ -1294,7 +1350,9 @@ mod tests {
         root: &Path,
     ) -> (String, Option<String>) {
         let store = crate::workspace::project_store(root);
-        super::execute_builtin_with_diff(tool, args, &ToolContext::new(root, &store, &[])).await
+        let (content, diff, _images) =
+            super::execute_builtin_with_diff(tool, args, &ToolContext::new(root, &store, &[])).await;
+        (content, diff)
     }
 
     async fn preview_diff(
@@ -1345,6 +1403,62 @@ mod tests {
         std::fs::write(root.join("bin"), [0xff, 0xfe, 0x00]).unwrap();
         let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "bin"}), &root).await;
         assert!(out.starts_with("ERROR"), "unexpected: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_returns_image_payload_for_a_png() {
+        let root = unique_root();
+        // Minimal valid PNG signature suffices for detection; the payload is
+        // what the tool validates, not a decodable image.
+        let bytes: Vec<u8> = vec![
+            0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52,
+        ];
+        std::fs::write(root.join("pic.png"), &bytes).unwrap();
+        let (content, images) = super::execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "pic.png"}),
+            &ToolContext::new(&root, &crate::workspace::project_store(&root), &[]),
+        )
+        .await;
+        assert!(content.contains("image/png"), "note: {content}");
+        let img = images.expect("an image read must return image parts");
+        assert_eq!(img.len(), 1);
+        assert_eq!(img[0].name, "pic.png");
+        assert!(img[0].data_url.starts_with("data:image/png;base64,"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_extension_fallback_catches_a_misnamed_image() {
+        let root = unique_root();
+        // No valid signature header, but the extension says PNG: the extension
+        // fallback still returns an image payload.
+        std::fs::write(root.join("scanned.png"), b"not a real png").unwrap();
+        let (content, images) = super::execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "scanned.png"}),
+            &ToolContext::new(&root, &crate::workspace::project_store(&root), &[]),
+        )
+        .await;
+        assert!(!content.starts_with("ERROR"), "got: {content}");
+        assert!(images.is_some(), "extension-matching png must yield an image");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_image_with_offset_falls_back_to_text_error() {
+        let root = unique_root();
+        let bytes: Vec<u8> = vec![0x89, b'P', b'N', b'G'];
+        std::fs::write(root.join("pic.png"), &bytes).unwrap();
+        let out = execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "pic.png", "offset": 1, "limit": 1}),
+            &root,
+        )
+        .await;
+        assert!(out.starts_with("ERROR"), "slicing an image must not render: {out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1766,7 +1880,7 @@ mod tests {
             &json!({"path": "../escape.txt", "content": "x"}),
             &ctx,
         )
-        .await;
+        .await.0;
         assert!(out.starts_with("ERROR: refused to write outside"), "got: {out}");
         assert!(!root.parent().unwrap().join("escape.txt").exists());
 
@@ -1775,7 +1889,7 @@ mod tests {
             &json!({"path": "../escape.txt", "edits": [{"old_string": "a", "new_string": "b"}]}),
             &ctx,
         )
-        .await;
+        .await.0;
         assert!(out.starts_with("ERROR: refused to edit outside"), "got: {out}");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1822,7 +1936,7 @@ mod tests {
             &json!({"pattern": "*.txt", "path": "/tmp"}),
             &ctx,
         )
-        .await;
+        .await.0;
         assert!(
             !out.contains("secret.txt"),
             "walked out of the scratch through a symlink: {out}"
@@ -1944,7 +2058,7 @@ mod tests {
             &json!({"path": "/tmp/esc/pwned.txt", "content": "x"}),
             &ctx,
         )
-        .await;
+        .await.0;
         assert!(out.starts_with("ERROR"), "must be refused, got: {out}");
         assert!(
             !outside.join("pwned.txt").exists(),
@@ -2027,7 +2141,7 @@ mod tests {
             &json!({"path": "/tmp/scratch.txt", "content": "persist"}),
             &ctx,
         )
-        .await;
+        .await.0;
         assert!(out.starts_with("Created /tmp/scratch.txt"), "got: {out}");
         assert!(scratch.join("scratch.txt").exists(), "wrote into scratch");
 
@@ -2036,7 +2150,7 @@ mod tests {
             &json!({"path": "/tmp/scratch.txt"}),
             &ctx,
         )
-        .await;
+        .await.0;
         assert_eq!(out, "persist");
 
         // No stray file on the real host /tmp.
@@ -2194,7 +2308,7 @@ mod tests {
         std::fs::write(root.join("src.rs"), b"x").unwrap();
         let store = crate::workspace::project_store(&root);
         let ctx = ToolContext::new(&root, &store, &[]).with_sandbox(false);
-        let out = super::execute_builtin(lookup("ls").unwrap(), &json!({}), &ctx).await;
+        let out = super::execute_builtin(lookup("ls").unwrap(), &json!({}), &ctx).await.0;
         assert!(out.contains("src.rs"), "unexpected: {out}");
         assert!(out.contains(".jan/"), "must list .jan when unconfined: {out}");
         let _ = std::fs::remove_dir_all(&root);
@@ -2575,7 +2689,7 @@ mod tests {
             &json!({"command": "for i in $(seq 1 16000); do printf '%064d\\n' \"$i\"; done"}),
             &ctx,
         )
-        .await;
+        .await.0;
         let path = out
             .rsplit("full output written to ")
             .next()
@@ -2592,7 +2706,7 @@ mod tests {
             &json!({"path": path, "offset": 15999, "limit": 1}),
             &ctx,
         )
-        .await;
+        .await.0;
         assert!(
             full.contains("015999") || full.contains("016000"),
             "spill at {path} must be readable back: {full}"
@@ -2615,7 +2729,7 @@ mod tests {
             &json!({"command": "echo unconfined"}),
             &ctx,
         )
-        .await;
+        .await.0;
         assert!(out.contains("unconfined"), "unsandboxed bash did not run: {out}");
         assert!(
             !out.contains("no OS sandbox could be established"),
@@ -2829,20 +2943,20 @@ mod tests {
         let store = crate::workspace::project_store(&root);
         let ctx = ToolContext::new(&root, &store, &enabled);
 
-        let list = super::execute_builtin(lookup("skill_list").unwrap(), &json!({}), &ctx).await;
+        let list = super::execute_builtin(lookup("skill_list").unwrap(), &json!({}), &ctx).await.0;
         assert!(list.contains("on"), "list: {list}");
         assert!(!list.contains("off body"), "disabled skill leaked: {list}");
 
         // Disabled skill is unreadable.
         let read_off =
             super::execute_builtin(lookup("skill_read").unwrap(), &json!({"name": "off"}), &ctx)
-                .await;
+                .await.0;
         assert!(read_off.starts_with("ERROR"), "disabled read: {read_off}");
 
         // Enabled skill still readable.
         let read_on =
             super::execute_builtin(lookup("skill_read").unwrap(), &json!({"name": "on"}), &ctx)
-                .await;
+                .await.0;
         assert_eq!(read_on, "on body");
 
         // A disabled skill is read-only for the model: writing to it is refused
@@ -2852,14 +2966,14 @@ mod tests {
             &json!({"name": "off", "content": "evil body"}),
             &ctx,
         )
-        .await;
+        .await.0;
         assert!(
             write_off.starts_with("ERROR"),
             "disabled write: {write_off}"
         );
         let r =
             super::execute_builtin(lookup("skill_read").unwrap(), &json!({"name": "off"}), &ctx)
-                .await;
+                .await.0;
         assert!(r.starts_with("ERROR"), "still disabled after write");
         let _ = std::fs::remove_dir_all(&root);
     }
