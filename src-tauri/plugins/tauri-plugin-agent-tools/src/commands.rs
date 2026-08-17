@@ -299,6 +299,7 @@ pub async fn execute_tool(
         Some(&scratch),
         &ToolPermissions::default(),
         &SessionGrants::default(),
+        true,
     ) {
         Decision::Allow => {}
         Decision::HardDeny(gate::DenyReason::Hidden) => {

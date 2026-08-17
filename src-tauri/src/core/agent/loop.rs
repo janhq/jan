@@ -800,10 +800,11 @@ impl ToolInvoker for CompositeToolInvoker {
                 Some(self.scratch_root.as_path()),
                 &self.permissions,
                 &snapshot,
+                self.sandbox,
             );
             // Auto-approval suppresses every prompt (sandbox escape, write, exec) but
-            // still honors HardDeny, so the hidden `.jan` invariant and explicit
-            // agent.toml denies hold.
+            // still honors HardDeny, so the hidden `.jan` invariant (while the shell
+            // is sandboxed) and explicit agent.toml denies hold.
             let decision = match decision {
                 Decision::Prompt(_) if self.auto_approve => Decision::Allow,
                 other => other,

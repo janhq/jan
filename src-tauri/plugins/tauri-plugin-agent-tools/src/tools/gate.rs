@@ -136,20 +136,25 @@ pub fn resolve_decision(
     scratch: Option<&Path>,
     perms: &ToolPermissions,
     grants: &SessionGrants,
+    hide_jan: bool,
 ) -> Decision {
     if perms.is_denied(tool.name) {
         return Decision::HardDeny(DenyReason::Policy);
     }
-    // Nothing under .jan is reachable: skills/memory only through their
-    // dedicated tools, config, threads and the dir listing not at all. Checked
-    // ahead of allow rules so an allowed tool name cannot bypass it.
-    let hits_hidden = tool.path_args.iter().any(|key| {
-        args.get(key)
-            .and_then(|v| v.as_str())
-            .map(|p| is_hidden_jan_path(project_root, p))
-            .unwrap_or(false)
-    });
-    let exec_hits_hidden = tool.capability == Capability::Exec
+    // Nothing under .jan is reachable while hidden: skills/memory only through
+    // their dedicated tools, config, threads and the dir listing not at all.
+    // Checked ahead of allow rules so an allowed tool name cannot bypass it.
+    // The whole check is skipped when not hiding, so an unconfined CLI run can
+    // read and edit its own `.jan` like any other project state.
+    let hits_hidden = hide_jan
+        && tool.path_args.iter().any(|key| {
+            args.get(key)
+                .and_then(|v| v.as_str())
+                .map(|p| is_hidden_jan_path(project_root, p))
+                .unwrap_or(false)
+        });
+    let exec_hits_hidden = hide_jan
+        && tool.capability == Capability::Exec
         && args
             .get("command")
             .and_then(|v| v.as_str())
@@ -266,6 +271,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -283,6 +289,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
         let _ = std::fs::remove_dir_all(&root);
@@ -301,6 +308,7 @@ mod tests {
                 None,
                 &perms,
                 &grants,
+                true,
             );
             assert_eq!(d, Decision::Allow, "{tool} should be auto-allowed");
         }
@@ -320,6 +328,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(
             d,
@@ -345,6 +354,7 @@ mod tests {
                 None,
                 &perms,
                 &grants,
+                true,
             );
             assert_eq!(
                 d,
@@ -360,6 +370,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::HardDeny(DenyReason::Hidden));
         // The instructions file is an ordinary project file at the root.
@@ -371,8 +382,49 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn hidden_jan_is_reachable_when_not_hiding() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join(".jan/agent")).unwrap();
+        std::fs::write(root.join(".jan/agent/agent.toml"), b"[tools]\n").unwrap();
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        // With hiding off, paths and commands under `.jan` take the ordinary
+        // capability path instead of the hard deny (here an in-project read
+        // allows; the write prompts like any in-project write).
+        for tool in ["read", "ls", "find", "grep", "write", "edit"] {
+            let d = resolve_decision(
+                lookup(tool).unwrap(),
+                &json!({ "path": ".jan/agent/agent.toml" }),
+                &root,
+                None,
+                &perms,
+                &grants,
+                false,
+            );
+            assert_ne!(
+                d,
+                Decision::HardDeny(DenyReason::Hidden),
+                "{tool} must not hard-deny .jan when not hiding"
+            );
+        }
+        // bash referencing it is a normal exec prompt, not a hidden deny.
+        let d = resolve_decision(
+            lookup("bash").unwrap(),
+            &json!({"command": "cat .jan/agent/agent.toml"}),
+            &root,
+            None,
+            &perms,
+            &grants,
+            false,
+        );
+        assert_ne!(d, Decision::HardDeny(DenyReason::Hidden));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -388,6 +440,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Write));
         let _ = std::fs::remove_dir_all(&root);
@@ -405,6 +458,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
         let _ = std::fs::remove_dir_all(&root);
@@ -422,6 +476,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -451,6 +506,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
 
@@ -462,6 +518,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
         let _ = std::fs::remove_dir_all(&root);
@@ -487,6 +544,7 @@ mod tests {
                 None,
                 &perms,
                 &grants,
+                true,
             );
             assert_eq!(d, Decision::Prompt(PromptKind::Exec), "must reprompt: {cmd}");
         }
@@ -508,6 +566,7 @@ mod tests {
                 None,
                 &perms,
                 &grants,
+                true,
             );
             assert_eq!(d, Decision::Allow, "should be covered: {cmd}");
         }
@@ -529,6 +588,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
 
@@ -540,6 +600,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
         let _ = std::fs::remove_dir_all(&root);
@@ -566,6 +627,7 @@ mod tests {
                     None,
                     &perms,
                     &grants,
+                    true,
                 );
                 assert_eq!(
                     d,
@@ -590,6 +652,7 @@ mod tests {
                 None,
                 &perms,
                 &grants,
+                true,
             );
             assert_eq!(d, Decision::Allow, "{name} should auto-allow");
         }
@@ -602,6 +665,7 @@ mod tests {
             None,
             &denied,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::HardDeny(DenyReason::Policy));
         let _ = std::fs::remove_dir_all(&root);
@@ -619,6 +683,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::HardDeny(DenyReason::Policy));
         let _ = std::fs::remove_dir_all(&root);
@@ -636,6 +701,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -654,6 +720,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -672,6 +739,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -689,6 +757,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Write));
         let _ = std::fs::remove_dir_all(&root);
@@ -708,6 +777,7 @@ mod tests {
                 None,
                 &perms,
                 &grants,
+                true,
             );
             assert_eq!(d, Decision::Prompt(PromptKind::WriteEscape), "{}", path);
         }
@@ -727,6 +797,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -744,6 +815,7 @@ mod tests {
             None,
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
         let _ = std::fs::remove_dir_all(&root);
