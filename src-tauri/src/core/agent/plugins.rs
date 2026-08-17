@@ -99,7 +99,9 @@ pub(crate) fn installed(root: &Path) -> Vec<InstalledPlugin> {
         .collect()
 }
 
-/// Find an installed plugin by directory name or manifest name.
+/// Find an installed plugin by directory name or manifest name. Used by the
+/// cli `/plugin` popup; the desktop lists plugins through `installed`.
+#[cfg(feature = "cli")]
 pub(crate) fn find_installed(root: &Path, query: &str) -> Option<(String, InstalledPlugin)> {
     let query = skills::safe_stem(query).ok()?;
     installed_entries(root)

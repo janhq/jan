@@ -186,48 +186,6 @@ async fn summarize(dropped: &[Value], model_id: &str, model: &dyn ModelInvoker) 
         Err(_) => FALLBACK_NOTE.to_string(),
     }
 }
-
-/// Render dropped messages as plain text for the summarizer, capped so a very
-/// large prefix cannot itself overflow the summarization request; the most
-/// recent (most relevant) content is kept when truncating.
-fn serialize_messages(messages: &[Value]) -> String {
-    const MAX_CHARS: usize = 120_000;
-    let mut lines: Vec<String> = Vec::with_capacity(messages.len());
-    for msg in messages {
-        let r = role(msg);
-        let content = match msg.get("content") {
-            Some(Value::String(s)) => s.clone(),
-            Some(Value::Null) | None => String::new(),
-            Some(other) => other.to_string(),
-        };
-        let mut line = format!("{r}: {content}");
-        if let Some(calls) = msg.get("tool_calls").and_then(|v| v.as_array()) {
-            let names: Vec<&str> = calls
-                .iter()
-                .filter_map(|c| {
-                    c.get("function")
-                        .and_then(|f| f.get("name"))
-                        .and_then(|n| n.as_str())
-                })
-                .collect();
-            if !names.is_empty() {
-                line.push_str(&format!(" [tool_calls: {}]", names.join(", ")));
-            }
-        }
-        lines.push(line);
-    }
-    let joined = lines.join("\n");
-    if joined.len() > MAX_CHARS {
-        let start = joined.len() - MAX_CHARS;
-        // Snap to a char boundary so the slice is valid UTF-8.
-        let start = (start..joined.len())
-            .find(|i| joined.is_char_boundary(*i))
-            .unwrap_or(joined.len());
-        format!("[...older content truncated...]\n{}", &joined[start..])
-    } else {
-        joined
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;

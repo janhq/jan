@@ -467,10 +467,11 @@ fn default_jan_skill_meta() -> SkillMeta {
 
 
 /// Metadata for every project skill (name + description + invocation
-/// flags) — for the management UI, which must see disabled and private skills
-/// and only edits project skills (plugin skills are managed via plugins).
-/// Keeps empty stubs so the user can see and edit them.
-#[cfg(any(not(feature = "cli"), test))]
+/// flags). Keeps empty stubs so the user can see and edit them.
+///
+/// Test-only: the management UI edits skills through the plugin crate's
+/// `list_meta`, which reads the same project store.
+#[cfg(test)]
 pub(crate) fn list_meta(root: &Path) -> Vec<SkillMeta> {
     discover(root)
         .into_iter()
@@ -547,8 +548,10 @@ pub(crate) fn plugin_skill_metas(root: &Path, plugin: &str) -> Vec<SkillMeta> {
     metas
 }
 
-/// Raw SKILL.md text (frontmatter included) for the editor. Resolves project
-/// and plugin skills alike.
+/// Raw SKILL.md text (frontmatter included). Test-only: the desktop editor
+/// reads skills through the plugin crate's `read_raw` (which also resolves the
+/// built-in jan skill); core resolves the same files for invocation dispatch.
+#[cfg(test)]
 pub(crate) fn read_raw(root: &Path, name: &str) -> Result<String, String> {
     if is_default_jan_skill(name) {
         return Ok(parse(DEFAULT_JAN_SKILL).body);
@@ -569,6 +572,7 @@ pub(crate) fn read_raw(root: &Path, name: &str) -> Result<String, String> {
 /// command (`/compact /skill:foo` is a command argument, not an invocation) or
 /// a local-execution sigil (`!cmd` / `$ cmd`), whose bodies routinely contain
 /// `/skill:` references that are not meant as skill invocations.
+#[cfg(any(feature = "cli", test))]
 pub(crate) fn parse_invocation(text: &str) -> Option<(String, String)> {
     let trimmed = text.trim_start();
     if let Some(rest) = trimmed.strip_prefix("/skill:") {
@@ -588,9 +592,7 @@ pub(crate) fn parse_invocation(text: &str) -> Option<(String, String)> {
     let bytes = text.as_bytes();
     let mut search_from = 0;
     while search_from < text.len() {
-        let Some(rel) = text[search_from..].find("/skill:") else {
-            return None;
-        };
+        let rel = text[search_from..].find("/skill:")?;
         let start = search_from + rel;
         let prev_ok = start == 0 || bytes[start - 1].is_ascii_whitespace();
         let after = start + "/skill:".len();
@@ -647,7 +649,7 @@ pub(crate) fn build_invocation_message(
             // Folder skills (and single-skill plugins) may bundle files next to
             // their SKILL.md; announce that directory so relative paths resolve.
             let dir_note = entry.is_folder.then(|| {
-                let base = entry.file.parent().unwrap_or_else(|| root);
+                let base = entry.file.parent().unwrap_or(root);
                 format!(
                     "\n\n---\n[Skill directory: {}]\nResolve relative paths in the skill against that directory.\n",
                     base.display()
@@ -687,6 +689,9 @@ fn find_user_skill(user_skills: &[SkillMeta], name: &str) -> Option<SkillMeta> {
 
 /// Create or overwrite a skill. Existing skills are written in place (preserving
 /// their form); new skills are written as the folder form `<name>/SKILL.md`.
+///
+/// Test-only: the desktop UI writes skills through the plugin crate's `write`.
+#[cfg(test)]
 pub(crate) fn write(root: &Path, name: &str, content: &str) -> Result<(), String> {
     let stem = safe_stem(name)?;
     let dir = skills_dir(root);
@@ -702,7 +707,9 @@ pub(crate) fn write(root: &Path, name: &str, content: &str) -> Result<(), String
 }
 
 /// Delete a skill (folder or flat form). Idempotent: a missing skill is Ok.
-#[cfg(any(not(feature = "cli"), test))]
+///
+/// Test-only: the desktop UI deletes skills through the plugin crate's `delete`.
+#[cfg(test)]
 pub(crate) fn delete(root: &Path, name: &str) -> Result<(), String> {
     let stem = safe_stem(name)?;
     let dir = skills_dir(root);
@@ -1055,7 +1062,7 @@ mod tests {
         std::fs::write(staging.join("skills").join("half").join("SKILL.md"), "partial").unwrap();
 
         let entries = discover_plugins(&root);
-        let names: Vec<String> = entries.iter().map(|e| qualified_name(e)).collect();
+        let names: Vec<String> = entries.iter().map(qualified_name).collect();
         assert_eq!(names, vec!["release:prepare"]);
         let _ = std::fs::remove_dir_all(&root);
     }

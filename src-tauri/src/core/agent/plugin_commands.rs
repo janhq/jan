@@ -71,7 +71,9 @@ pub(crate) fn discover(root: &Path) -> Vec<CommandEntry> {
 }
 /// Commands offered to the human, honoring the `[skills].enabled` whitelist
 /// (plugin name, qualified `<plugin>:<name>`, or plain name enable a command;
-/// an empty whitelist enables everything).
+/// an empty whitelist enables everything). Used by the cli slash popup; the
+/// desktop invokes commands through the plugin crate's handlers.
+#[cfg(any(feature = "cli", test))]
 pub(crate) fn catalog(root: &Path, enabled: &[String]) -> Vec<CommandEntry> {
     let commands = discover(root);
     if enabled.is_empty() {
@@ -92,6 +94,7 @@ pub(crate) fn catalog(root: &Path, enabled: &[String]) -> Vec<CommandEntry> {
 /// first, then a plain name that is unique across installed plugins. Filters
 /// through the `[skills].enabled` whitelist so disabled commands are not
 /// resolvable.
+#[cfg(any(feature = "cli", test))]
 pub(crate) fn resolve_from(root: &Path, name: &str, enabled: &[String]) -> Result<CommandEntry, String> {
     let commands = catalog(root, enabled);
     if let Some((plugin, plain)) = name.split_once(':') {
@@ -114,6 +117,7 @@ pub(crate) fn resolve_from(root: &Path, name: &str, enabled: &[String]) -> Resul
 /// `(message, description)`, mirroring `skills::build_invocation_message`.
 /// Honors the `[skills].enabled` whitelist: a disabled plugin/command is
 /// rejected, matching the skill invocation path.
+#[cfg(any(feature = "cli", test))]
 pub(crate) fn build_message(
     root: &Path,
     name: &str,
@@ -138,6 +142,7 @@ pub(crate) fn build_message(
 /// (whitespace-split positional words) in a command body. Missing positions
 /// become empty. `$10` and `$ARGUMENTATION`-style tokens are left literal so a
 /// body can still talk about dollars.
+#[cfg(any(feature = "cli", test))]
 pub(crate) fn substitute(body: &str, args: &str) -> String {
     let positional: Vec<&str> = args.split_whitespace().collect();
     let mut out = String::with_capacity(body.len() + args.len());
@@ -150,7 +155,7 @@ pub(crate) fn substitute(body: &str, args: &str) -> String {
         out.push_str(&rest[..rel]);
         let tail = &rest[rel + 1..];
         if let Some(after) = tail.strip_prefix("ARGUMENTS") {
-            if after.chars().next().map_or(true, |c| !c.is_alphanumeric()) {
+            if after.chars().next().is_none_or(|c| !c.is_alphanumeric()) {
                 out.push_str(args);
                 rest = after;
                 continue;
@@ -162,7 +167,7 @@ pub(crate) fn substitute(body: &str, args: &str) -> String {
             let next_ok = after_digit
                 .chars()
                 .next()
-                .map_or(true, |c| !c.is_ascii_digit());
+                .is_none_or(|c| !c.is_ascii_digit());
             if (1..=9).contains(&d) && next_ok {
                 if let Some(word) = positional.get(d as usize - 1) {
                     out.push_str(word);
@@ -192,7 +197,7 @@ pub(crate) fn template_hints(body: &str) -> Vec<String> {
                     body[i + needle.len()..]
                         .chars()
                         .next()
-                        .map_or(true, |c| !c.is_ascii_digit())
+                        .is_none_or(|c| !c.is_ascii_digit())
                 })
         })
         .map(|n| format!("${n}"))
@@ -203,7 +208,7 @@ pub(crate) fn template_hints(body: &str) -> Vec<String> {
             body[i + "$ARGUMENTS".len()..]
                 .chars()
                 .next()
-                .map_or(true, |c| !c.is_alphanumeric())
+                .is_none_or(|c| !c.is_alphanumeric())
         });
     if arguments_needed {
         out.push("$ARGUMENTS".to_string());

@@ -7528,6 +7528,7 @@ fn cancel_command(app: &mut App, arg: &str) {
 ///     from the configured `[plugins] marketplace`
 ///   - `/plugin remove <name>`       — uninstall by directory name
 ///   - `/plugin search [query]`      — marketplace listing, name/description match
+///
 /// Install and search hit the network, so this is async like `/todo`.
 async fn plugin_command(app: &mut App, arg: &str) {
     let root = app.project_root.clone();
@@ -14989,7 +14990,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_resume_renders_invocation_messages_compactly() {
-        let mut app = test_app();
+        let app = test_app();
         let body =
             "Build: $ARGUMENTS\n\nFull template body that must not leak into the transcript.";
         let history = vec![json!({
@@ -14998,7 +14999,7 @@ mod tests {
                 "[IMPORTANT: You have invoked the \"feature-dev\" command - follow its instructions. The full command content is loaded below.]\n\n{body}"
             )
         })];
-        let id = super::super::cli_save_thread(&app.agent_dir, None, "m", &history, None).unwrap();
+        super::super::cli_save_thread(&app.agent_dir, None, "m", &history, None).unwrap();
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();
         apply_resume(&mut fresh, &ResumeTarget::Latest).await;
@@ -17325,7 +17326,18 @@ mod tests {
     fn slash_bare_lists_all_commands() {
         let mut app = test_app();
         app.input = "/".into();
-        assert_eq!(names(&app).len(), super::SLASH_COMMANDS.len());
+        // All built-ins plus the always-advertised built-in jan skill.
+        assert_eq!(
+            names(&app).len(),
+            super::SLASH_COMMANDS.len() + 1,
+            "{:?}",
+            names(&app)
+        );
+        assert!(
+            names(&app).contains(&"/jan".to_string()),
+            "built-in jan skill row: {:?}",
+            names(&app)
+        );
     }
 
     #[test]
@@ -17386,7 +17398,8 @@ mod tests {
     fn slash_move_wraps_within_matches() {
         let mut app = test_app();
         app.input = "/".into();
-        let n = super::SLASH_COMMANDS.len();
+        // Built-ins plus the always-advertised built-in jan skill.
+        let n = names(&app).len();
         app.slash_move(-1);
         assert_eq!(app.slash_selected, n - 1);
         app.slash_move(1);

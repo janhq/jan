@@ -51,13 +51,13 @@ mod tests {
         let delay3 = calculate_exponential_backoff_delay(3);
         
         // First attempt should be around base delay (1000ms) ± jitter
-        assert!(delay1 >= 100 && delay1 <= 2000);
+        assert!((100..=2000).contains(&delay1));
         
         // Second attempt should be roughly double
-        assert!(delay2 >= 1000 && delay2 <= 4000);
+        assert!((1000..=4000).contains(&delay2));
         
         // Third attempt should be roughly quadruple
-        assert!(delay3 >= 2000 && delay3 <= 6000);
+        assert!((2000..=6000).contains(&delay3));
         // Generally increasing pattern
         assert!(delay1 < delay3);
     }

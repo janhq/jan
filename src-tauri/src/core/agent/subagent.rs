@@ -353,7 +353,8 @@ fn map_claude_tools(tools: &[String]) -> Option<Vec<String>> {
 }
 
 /// Agent definitions one plugin ships (`(name, description)`), for the
-/// `/plugin list` detail view.
+/// `/plugin list` detail view (cli only).
+#[cfg(feature = "cli")]
 pub(crate) fn plugin_agent_metas(root: &Path, plugin: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let base = crate::core::agent::skills::plugins_dir(root)
