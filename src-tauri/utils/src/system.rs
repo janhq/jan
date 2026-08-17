@@ -113,8 +113,8 @@ pub fn setup_library_path(
         let mut all_dirs: Vec<String> = Vec::new();
         if let Some(lib_path) = library_path {
             let lib_str = lib_path.to_string_lossy();
-            let normalized = if lib_str.starts_with(r"\\?\") {
-                lib_str[4..].to_string()
+            let normalized = if let Some(stripped) = lib_str.strip_prefix(r"\\?\") {
+                stripped.to_string()
             } else {
                 lib_str.to_string()
             };

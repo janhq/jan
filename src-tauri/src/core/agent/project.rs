@@ -4,16 +4,18 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
 
-/// `[tools]` is always modeled. `[agent]` is only compiled for the CLI (its
-/// sole consumer, via `jan cli agent run/step/status`); serde still ignores the
-/// remaining deferred sections (`[budget]`/`[skills]`).
+/// `[tools]`/`[skills]` are always modeled. `[agent]` and `[budget]` are only
+/// compiled for the CLI (their sole consumer, via `jan cli agent run/step/status`).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct AgentToml {
     #[cfg(feature = "cli")]
     #[serde(default)]
     pub agent: AgentSection,
+    #[cfg(feature = "cli")]
+    #[serde(default)]
+    pub budget: BudgetSection,
     #[cfg(feature = "cli")]
     #[serde(default)]
     pub provider: Option<ProviderSection>,
@@ -50,15 +52,24 @@ pub(crate) struct SkillsSection {
     pub enabled: Vec<String>,
 }
 
-/// `[agent]` — resolves the model and default turn cap for CLI agent runs.
-/// `max_turns` is a soft default; the loop clamps it to 1..=400.
+/// `[budget]` — the only cap on how long a run may go. The agent takes as many
+/// turns as the task needs; `max_tokens` bounds the run's *marginal* token
+/// spend (see `SessionBudget`: replayed context is not recharged each turn).
+/// Unset applies `DEFAULT_MAX_SESSION_TOKENS`; an explicit `0` disables the
+/// ceiling, leaving cancellation as the only guard.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct BudgetSection {
+    #[serde(default)]
+    pub max_tokens: Option<u64>,
+}
+
+/// `[agent]` — resolves the model and per-run knobs for CLI agent runs.
 #[cfg(feature = "cli")]
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct AgentSection {
     #[serde(default)]
     pub model: Option<String>,
-    #[serde(default)]
-    pub max_turns: Option<u32>,
     /// Context window limit in tokens for the model (defaults to 128K if unset).
     /// Set this to match your model's actual context length so compaction
     /// triggers at the right threshold.
@@ -75,6 +86,18 @@ pub(crate) struct AgentSection {
     /// single response. Omitted from the request when unset (model default).
     #[serde(default)]
     pub max_tokens: Option<u64>,
+    /// Cap on concurrently-running background subagents for a run (defaults to
+    /// 10 if unset). Dispatches beyond the cap queue FIFO and start as running
+    /// ones finish. Snapshot at run start: a mid-run change affects the next
+    /// run only.
+    #[serde(default)]
+    pub max_parallel_subagents: Option<u32>,
+    /// Expand `<think>` reasoning blocks in the TUI transcript instead of
+    /// folding them to a `[thinking]`/`[thought for Ns]` status and a summary
+    /// row. Default false (hidden); Ctrl-O still reveals a folded block, and
+    /// this flips the default for every block in the session.
+    #[serde(default)]
+    pub show_reasoning: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -87,15 +110,27 @@ pub(crate) struct ToolsSection {
     pub deny: Vec<String>,
     #[serde(default)]
     pub allow_write: Vec<String>,
+    /// Whether the sandboxed shell keeps its network namespace. `None` (unset)
+    /// leaves the choice to the surface running the loop, which differ: the CLI
+    /// prompts before every exec and allows it, the desktop's ephemeral chat
+    /// sandbox does not and denies it.
+    #[serde(default)]
+    pub allow_network: Option<bool>,
+    /// Whether the sandboxed shell may read the user's home directory (the
+    /// CLI, for `git`/`ssh` credential helpers). `None` (unset) leaves the
+    /// choice to the surface: the CLI defaults to true, the desktop masks
+    /// `$HOME` entirely. Writes are confined to the workspace either way.
+    #[serde(default)]
+    pub allow_home_read: Option<bool>,
 }
 
 const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # model = "Jan-V4"
-max_turns = 400
 # context_window = 128000  # tokens; defaults to 128K if unset
 # compaction_reserve_tokens = 16384  # headroom before auto-compaction; defaults to 16K
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
-instructions_file = "AGENT.md"
+# max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
+# show_reasoning = false  # expand  reasoning in the transcript (Ctrl-O still toggles)
 
 # Project-local provider override. Wins over ~/.jan/config.toml and any
 # provider inherited from Jan Desktop's settings.json. Most projects don't
@@ -106,13 +141,16 @@ instructions_file = "AGENT.md"
 # base_url = "https://api.openai.com/v1"
 # models = ["gpt-4o"]
 
+# The run's only cap: new token spend across all turns (replayed context is not
+# recharged each turn). There is no turn limit. Defaults to 128000 when unset;
+# 0 disables the cap so the agent runs until the task is done or cancelled.
 [budget]
-max_steps = 40
-max_tokens = 200000
+# max_tokens = 128000
 
 [tools]
 # read-only | deny | allow. read-only (default) exposes MCP tools and built-in
-# reads; built-in writes/exec still prompt. deny locks down all MCP tools.
+# reads; built-in writes/exec go through the permission gate. deny locks down
+# all MCP tools.
 default = "read-only"
 # Exposed even under deny; deny-list wins over everything:
 allow = []
@@ -120,15 +158,20 @@ deny = []
 # Write tools are opt-in only:
 # allow_write = ["fs.write"]
 allow_write = []
+# Whether the sandboxed shell can reach the network. Unset follows the surface
+# running the agent: the CLI allows it, the desktop's throwaway chat sandbox
+# does not.
+# allow_network = true
+# Whether the sandboxed shell can read your home directory (for git/ssh
+# credential helpers and ~/.ssh/config). Unset follows the surface: the CLI
+# allows it (true), the desktop masks $HOME. Writes stay in the workspace.
+# allow_home_read = true
 
 [skills]
 enabled = []
 # always | relevance
 inject = "always"
 "#;
-
-const AGENT_MD_TEMPLATE: &str =
-    "# Agent Instructions\n\nDescribe how this project's agent should behave.\n";
 
 /// Path to `<project_root>/.jan/agent/agent.toml`.
 pub(crate) fn agent_toml_path(project_root: &Path) -> PathBuf {
@@ -141,6 +184,40 @@ pub(crate) fn load_agent_config(project_root: &Path) -> Result<AgentToml, String
     let raw = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
     toml::from_str(&raw).map_err(|e| format!("Failed to parse {}: {e}", path.display()))
+}
+
+/// The per-run knobs a `ToolContext` needs from agent.toml.
+///
+/// The toolset owns no config format, so this is the one place that maps
+/// agent.toml onto a `ToolContext`. Resolved once per run rather than per tool
+/// call, and in a single parse rather than one per field.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RunSettings {
+    /// `[skills].enabled` (empty = every skill).
+    pub enabled_skills: Vec<String>,
+    /// `[tools].allow_network`; `None` when unset, so the caller applies the
+    /// default appropriate to its surface.
+    pub allow_network: Option<bool>,
+    /// `[tools].allow_home_read`; `None` when unset, so the caller applies the
+    /// default appropriate to its surface.
+    pub allow_home_read: Option<bool>,
+}
+
+/// A missing or malformed config yields defaults rather than an error: a project
+/// without an agent.toml should still run, advertising all of its skills.
+pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
+    let Ok(cfg) = load_agent_config(project_root) else {
+        return RunSettings::default();
+    };
+    RunSettings {
+        enabled_skills: cfg.skills.enabled,
+        allow_network: cfg.tools.allow_network,
+        allow_home_read: cfg.tools.allow_home_read,
+    }
+}
+
+pub(crate) fn enabled_skills(project_root: &Path) -> Vec<String> {
+    run_settings(project_root).enabled_skills
 }
 
 /// Build a `ToolPermissions` from the parsed `[tools]` section.
@@ -159,10 +236,14 @@ pub(crate) fn permissions_from(cfg: &AgentToml) -> ToolPermissions {
     )
 }
 
-/// Ensure a usable `.jan/agent/{agent.toml, AGENT.md, skills/, memory/}` exists
-/// under `project_root`, creating only the pieces that don't already exist.
+/// Ensure a usable `.jan/agent/{agent.toml, skills/, memory/}` exists under
+/// `project_root`, creating only the pieces that don't already exist.
 /// Idempotent and clobber-safe: preserves user edits on re-runs. Auto-managed
 /// on both the CLI and desktop agent-run paths (there is no explicit init step).
+///
+/// The project instructions file (`<project_root>/JAN.md`) is deliberately not
+/// scaffolded: an empty placeholder costs prompt space and teaches nothing, so
+/// it is written by `/init` or by hand.
 pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
     if !project_root.is_dir() {
         return Err(format!(
@@ -180,11 +261,6 @@ pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
     if !toml_path.exists() {
         std::fs::write(&toml_path, AGENT_TOML_TEMPLATE)
             .map_err(|e| format!("Failed to write {}: {e}", toml_path.display()))?;
-    }
-    let md_path = agent_dir.join("AGENT.md");
-    if !md_path.exists() {
-        std::fs::write(&md_path, AGENT_MD_TEMPLATE)
-            .map_err(|e| format!("Failed to write {}: {e}", md_path.display()))?;
     }
 
     Ok(agent_dir)
@@ -207,9 +283,46 @@ pub(crate) fn set_model_in_agent_toml(path: &Path, model: &str) -> Result<(), St
         .map_err(|e| format!("Failed to write {}: {e}", path.display()))
 }
 
+/// Persist a scalar key into the agent.toml at `path`, format-preserving
+/// (comments kept). Keys are `section.key` with `agent` the default section,
+/// so the `/settings` menu can reach `[agent]`, `[budget]`, `[tools]` and
+/// `[skills]` scalars alike. `None` removes the key (default applies).
+#[cfg(feature = "cli")]
+pub(crate) fn set_agent_key(
+    path: &Path,
+    key: &str,
+    value: Option<toml_edit::Item>,
+) -> Result<(), String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let mut doc = raw
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+
+    let (section, key) = match key.split_once('.') {
+        Some((section, key)) => (section, key),
+        None => ("agent", key),
+    };
+
+    match value {
+        Some(v) => {
+            let table = doc[section].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+            table[key] = v;
+        }
+        None => {
+            if let Some(table) = doc.get_mut(section).and_then(|t| t.as_table_mut()) {
+                table.remove(key);
+            }
+        }
+    }
+
+    std::fs::write(path, doc.to_string())
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))
+}
+
 /// Persist `[skills].enabled` into the agent.toml at `path`, format-preserving
 /// (comments kept). An empty list clears the whitelist (= all skills enabled).
-#[cfg(any(not(feature = "cli"), test))]
+#[cfg(not(feature = "cli"))]
 pub(crate) fn set_skills_enabled_in_agent_toml(
     path: &Path,
     enabled: &[String],
@@ -238,11 +351,86 @@ mod tests {
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
+    /// The pid keeps the path unique across concurrently-running test binaries
+    /// (the `cli` and `tauri` feature configs both compile this module), which a
+    /// per-process counter alone does not: a leftover root from one run makes
+    /// `ensure_project` skip scaffolding in the next.
     fn unique_root(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let root = std::env::temp_dir().join(format!("jan_agent_test_{tag}_{n}"));
+        let pid = std::process::id();
+        let root = std::env::temp_dir().join(format!("jan_agent_test_{tag}_{pid}_{n}"));
         std::fs::create_dir_all(&root).expect("create test project root");
         root
+    }
+
+    /// `ensure_project` scaffolds `.jan/agent/{skills,memory}` by hand, while the
+    /// toolset resolves those same directories through `workspace::project_store`.
+    /// Nothing but this test ties the two together, and if they ever drift a
+    /// user's existing skills and memories simply stop being found.
+    #[test]
+    fn scaffolded_dirs_match_the_toolset_store_layout() {
+        use tauri_plugin_agent_tools::workspace;
+
+        let root = unique_root("store_layout");
+        ensure_project(&root).expect("scaffold project");
+
+        let store = workspace::project_store(&root);
+        assert_eq!(store, root.join(".jan").join("agent"));
+        assert!(
+            tauri_plugin_agent_tools::skills::skills_dir(&store).is_dir(),
+            "skills dir the toolset reads is not the one ensure_project created"
+        );
+        assert!(
+            workspace::store_dir(&store, "memory").is_dir(),
+            "memory dir the toolset reads is not the one ensure_project created"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn write_agent_toml(root: &Path, body: &str) {
+        let dir = root.join(".jan").join("agent");
+        std::fs::create_dir_all(&dir).expect("create agent dir");
+        std::fs::write(dir.join("agent.toml"), body).expect("write agent.toml");
+    }
+
+    #[test]
+    fn run_settings_reads_allow_network_both_ways() {
+        let root = unique_root("allow_net");
+        write_agent_toml(&root, "[tools]\nallow_network = true\n");
+        assert_eq!(run_settings(&root).allow_network, Some(true));
+
+        write_agent_toml(&root, "[tools]\nallow_network = false\n");
+        assert_eq!(run_settings(&root).allow_network, Some(false));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Unset must stay `None` rather than collapsing to `false`, or the caller
+    /// cannot tell "explicitly denied" from "not configured" and every CLI
+    /// project silently loses the network.
+    #[test]
+    fn run_settings_leaves_unset_allow_network_undecided() {
+        let root = unique_root("allow_net_unset");
+
+        write_agent_toml(&root, "[tools]\ndefault = \"read-only\"\n");
+        assert_eq!(run_settings(&root).allow_network, None);
+
+        // A project with no agent.toml at all resolves the same way.
+        let bare = unique_root("allow_net_bare");
+        assert_eq!(run_settings(&bare).allow_network, None);
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&bare);
+    }
+
+    /// The scaffold documents the key, so it has to stay parseable as written.
+    #[test]
+    fn scaffold_template_parses_with_allow_network_documented() {
+        let cfg: AgentToml =
+            toml::from_str(AGENT_TOML_TEMPLATE).expect("scaffold template parses");
+        assert_eq!(cfg.tools.allow_network, None);
+        assert!(AGENT_TOML_TEMPLATE.contains("allow_network"));
     }
 
     #[test]
@@ -257,12 +445,24 @@ mod tests {
         assert!(!root.exists(), "must not create the missing project dir");
     }
 
+    /// The instructions file lives at the project root as `JAN.md` and is the
+    /// user's (or `/init`'s) to create -- the scaffold must not plant an empty
+    /// one under `.jan/agent/`, which nothing reads.
+    #[test]
+    fn ensure_does_not_scaffold_an_instructions_file() {
+        let root = unique_root("no_instructions");
+        let dir = ensure_project(&root).expect("ensure");
+        assert!(!dir.join("AGENT.md").exists());
+        assert!(!root.join("JAN.md").exists());
+        assert!(!AGENT_TOML_TEMPLATE.contains("instructions_file"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn ensure_creates_artifacts_and_is_idempotent() {
         let root = unique_root("ensure");
         let dir = ensure_project(&root).expect("ensure");
         assert!(dir.join("agent.toml").exists());
-        assert!(dir.join("AGENT.md").exists());
         assert!(dir.join("skills").is_dir());
         assert!(dir.join("memory").is_dir());
 
@@ -319,15 +519,88 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "cli")]
     #[test]
-    fn full_template_parses_ignoring_deferred_sections() {
+    fn max_parallel_subagents_parses_and_defaults_to_none() {
+        let root = unique_root("max_parallel");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.max_parallel_subagents, None, "template leaves it unset");
+
+        // Explicit value round-trips through the /settings writer; unset removes.
+        let path = agent_toml_path(&root);
+        set_agent_key(&path, "max_parallel_subagents", Some(toml_edit::value(4i64)))
+            .expect("write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.max_parallel_subagents, Some(4));
+        set_agent_key(&path, "max_parallel_subagents", None).expect("unset");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.max_parallel_subagents, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn show_reasoning_parses_and_defaults_to_false() {
+        let root = unique_root("show_reasoning");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.show_reasoning, None, "template leaves it unset");
+
+        // Explicit value round-trips through the /settings writer; unset removes.
+        let path = agent_toml_path(&root);
+        set_agent_key(&path, "show_reasoning", Some(toml_edit::value(true)))
+            .expect("write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.show_reasoning, Some(true));
+        set_agent_key(&path, "show_reasoning", None).expect("unset");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.show_reasoning, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn dotted_keys_write_and_remove_under_their_section() {
+        let root = unique_root("dotted");
+        ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
+
+        set_agent_key(&path, "budget.max_tokens", Some(toml_edit::value(60i64))).expect("write");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("max_tokens = 60"), "written under [budget]: {raw}");
+
+        set_agent_key(&path, "budget.max_tokens", None).expect("unset");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(!raw.contains("max_tokens = 60"), "removed: {raw}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn full_template_parses() {
         let root = unique_root("full");
         ensure_project(&root).expect("scaffold");
-        // The template carries [agent]/[budget]/[skills] we don't model yet;
-        // parsing must succeed and read [tools].
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.tools.default.as_deref(), Some("read-only"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The scaffold leaves the key commented out, so a fresh project picks up
+    /// `DEFAULT_MAX_SESSION_TOKENS` rather than a hardcoded template value.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn scaffold_template_leaves_session_budget_unset() {
+        let cfg: AgentToml =
+            toml::from_str(AGENT_TOML_TEMPLATE).expect("scaffold template parses");
+        assert_eq!(cfg.budget.max_tokens, None);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn budget_max_tokens_parses_when_set() {
+        let cfg: AgentToml =
+            toml::from_str("[budget]\nmax_tokens = 200000\n").expect("parses");
+        assert_eq!(cfg.budget.max_tokens, Some(200_000));
     }
 
     #[cfg(feature = "cli")]

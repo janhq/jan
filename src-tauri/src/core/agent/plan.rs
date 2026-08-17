@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Persisted per-session run mode. `Normal` is the default (normal permission
-/// gate / `--yolo`); `Plan` is read-only by enforcement.
+/// gate / auto-approval); `Plan` is read-only by enforcement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum RunMode {

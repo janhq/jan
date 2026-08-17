@@ -382,11 +382,11 @@ mod tests {
 
     #[test]
     fn test_resolve_references_inject() {
-        let dir = std::env::temp_dir().join("path_ref_test_inject");
-        let _ = std::fs::create_dir_all(&dir);
-        std::fs::write(dir.join("hello.txt"), b"hello world").unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("hello.txt"), b"hello world").unwrap();
 
-        let (clean, block) = resolve_references("read @hello.txt", &dir);
+        let (clean, block) = resolve_references("read @hello.txt", root);
         assert_eq!(clean, "read");
         assert!(block.contains("hello world"));
         assert!(block.contains("hello.txt"));
@@ -394,8 +394,8 @@ mod tests {
 
     #[test]
     fn test_resolve_references_no_refs() {
-        let dir = std::env::temp_dir().join("path_ref_test_none");
-        let (clean, block) = resolve_references("plain text", &dir);
+        let dir = tempfile::tempdir().unwrap();
+        let (clean, block) = resolve_references("plain text", dir.path());
         assert_eq!(clean, "plain text");
         assert!(block.is_empty());
     }
@@ -409,8 +409,8 @@ mod tests {
         let text = "please use bash to ssh alandao@44.50.0.89";
         assert!(parse_references(text).is_empty());
 
-        let dir = std::env::temp_dir().join("path_ref_test_ssh");
-        let (clean, block) = resolve_references(text, &dir);
+        let dir = tempfile::tempdir().unwrap();
+        let (clean, block) = resolve_references(text, dir.path());
         assert_eq!(clean, text);
         assert!(block.is_empty());
     }
@@ -437,10 +437,10 @@ mod tests {
         let refs = parse_references("use @README.md to check the build steps");
         assert_eq!(refs, vec!["README.md"]);
 
-        let dir = std::env::temp_dir().join("path_ref_test_rest");
-        let _ = std::fs::create_dir_all(&dir);
-        std::fs::write(dir.join("README.md"), b"build steps here").unwrap();
-        let (clean, block) = resolve_references("use @README.md to check the build steps", &dir);
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("README.md"), b"build steps here").unwrap();
+        let (clean, block) = resolve_references("use @README.md to check the build steps", root);
         assert_eq!(clean, "use to check the build steps");
         assert!(block.contains("build steps here"));
     }

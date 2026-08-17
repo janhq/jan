@@ -10,6 +10,7 @@ use console::Style;
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
+use app_lib::core::cli::run_report::OutputFormat;
 use app_lib::core::cli::{
     cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
@@ -27,10 +28,13 @@ where you chat with a model that can run tools in your project.\n\n\
 The `jan cli` subcommand is the non-interactive fallback: run folder-based\n\
 agents headlessly and manage threads and providers.\n\n\
 Models are served by remote providers configured in ~/.jan/config.toml\n\
-(see `jan config set`), a project's agent.toml, or the Jan desktop app.",
+(see `jan config set`), a project's agent.toml, or the Jan desktop app.\n\n\
+Once every 24h this sends an anonymous usage ping (version, OS/arch, a random\n\
+install id) to the same endpoint as the update check. Set JAN_CLI_NO_UPDATE_CHECK\n\
+to opt out of both.",
     after_help = "Examples:\n  \
   jan                                                    # open the interactive agent console (TUI)\n  \
-  jan --yolo                                             # TUI with every tool call auto-approved\n  \
+  jan --safe                                             # TUI that asks before writes and commands\n  \
   jan --task \"fix the failing test\"                      # seed the TUI with a first message\n  \
   jan -c                                                 # resume the most recent session\n  \
   jan --resume 3f7a91c2                                  # resume a session by id (or id prefix)\n  \
@@ -51,18 +55,15 @@ struct Cli {
     /// Model ID overriding [agent].model in agent.toml (bare TUI only)
     #[arg(long)]
     model: Option<String>,
-    /// Max turns per message, clamped 1..=400 (bare TUI only)
-    #[arg(long)]
-    max_turns: Option<u32>,
     /// Image file to attach to the first message, repeatable (bare TUI only)
     #[arg(long = "image")]
     images: Vec<String>,
     #[command(flatten)]
     providers: ProviderArgs,
-    /// Disable the sandbox and auto-approve every tool call in the default agent
-    /// TUI (no prompts). Ignored when a subcommand is given.
+    /// Prompt for approval before writes, shell commands, and MCP tool calls in
+    /// the default agent TUI. Ignored when a subcommand is given.
     #[arg(long)]
-    yolo: bool,
+    safe: bool,
     #[command(flatten)]
     resume: ResumeArgs,
     /// Start the default agent TUI in read-only plan mode (same as /plan).
@@ -194,7 +195,7 @@ impl ProviderArgs {
 
 #[derive(Subcommand)]
 enum AgentCommands {
-    /// Run the agent loop to completion or the turn/token budget
+    /// Run the agent loop to completion or the session token budget
     Run {
         /// Project root containing .jan/agent/agent.toml
         #[arg(long, default_value = ".")]
@@ -204,16 +205,17 @@ enum AgentCommands {
         /// Model ID (overrides [agent].model in agent.toml)
         #[arg(long)]
         model: Option<String>,
-        /// Max turns (overrides [agent].max_turns; clamped 1..=400)
+        /// Prompt for approval before writes, shell commands, and MCP tool calls
         #[arg(long)]
-        max_turns: Option<u32>,
-        /// Disable the sandbox and auto-approve every tool call (no prompts)
-        #[arg(long)]
-        yolo: bool,
+        safe: bool,
         #[command(flatten)]
         providers: ProviderArgs,
         #[command(flatten)]
         resume: ResumeRunArgs,
+        /// `text` streams the answer as it arrives; `json` prints one result
+        /// object on stdout when the run finishes
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        output_format: OutputFormat,
     },
     /// Run a single turn (debugging)
     Step {
@@ -225,9 +227,9 @@ enum AgentCommands {
         /// Model ID (overrides [agent].model in agent.toml)
         #[arg(long)]
         model: Option<String>,
-        /// Disable the sandbox and auto-approve every tool call (no prompts)
+        /// Prompt for approval before writes, shell commands, and MCP tool calls
         #[arg(long)]
-        yolo: bool,
+        safe: bool,
         #[command(flatten)]
         providers: ProviderArgs,
     },
@@ -318,32 +320,11 @@ enum ModelsCommands {
 
 /// Build a left-aligned, bright-yellow ASCII logo for the help header.
 fn make_logo() -> String {
-    // "JAN" in ANSI Shadow block letters
-    let lines = [
-        r"     ██╗ █████╗ ███╗  ██╗",
-        r"     ██║██╔══██╗████╗ ██║",
-        r"     ██║███████║██╔██╗██║",
-        r"██   ██║██╔══██║██║╚████║",
-        r"╚█████╔╝██║  ██║██║ ╚███║",
-        r" ╚════╝ ╚═╝  ╚═╝╚═╝  ╚══╝",
-    ];
-
-    // Fixed left-aligned indent (2 spaces)
-    let indent = "  ";
-
     let yellow = Style::new().yellow().bold();
-
-    let mut out: Vec<String> = Vec::new();
-
-    // Add padding at top
-    out.push(String::new());
-    out.push(String::new());
-
-    // Logo lines
-    for l in &lines {
-        out.push(format!("{}{}", indent, yellow.apply_to(l)));
+    let mut out = vec![String::new(), String::new()];
+    for l in app_lib::core::cli::brand::LOGO {
+        out.push(format!("  {}", yellow.apply_to(l)));
     }
-
     out.join("\n")
 }
 
@@ -351,6 +332,12 @@ fn make_logo() -> String {
 
 #[tokio::main]
 async fn main() {
+    // Exits early if invoked as the Windows sandbox helper for a `bash` tool
+    // call: the helper's only job is to spawn the confined shell and wait, so it
+    // must run before anything else -- starting the app first would run a second
+    // copy per shell command.
+    tauri_plugin_agent_tools::run_sandbox_helper_if_requested();
+
     // Pre-scan raw args for --verbose / -v before full parse so we can set
     // the log level before any logging happens.
     let verbose = std::env::args().any(|a| a == "--verbose" || a == "-v");
@@ -374,15 +361,15 @@ async fn main() {
         // No stderr notice on this path: the TUI's alternate screen would wipe
         // it, and blocking on the check here would delay the first frame. The
         // TUI runs the same check itself and notes it in the transcript.
+        // The usage ping is likewise deferred to the TUI's own background task.
         let overrides = cli.providers.into_overrides();
         if let Err(e) = cli_agent_ui(
             &cli.project,
             cli.task,
             cli.model,
-            cli.max_turns,
             cli.images,
             overrides,
-            cli.yolo,
+            !cli.safe,
             cli.plan,
             cli.resume.into_target(),
         )
@@ -398,6 +385,10 @@ async fn main() {
     if !matches!(command, Commands::Update { .. }) {
         app_lib::core::cli::updater::print_update_notice_if_available().await;
     }
+    // Awaited (not spawned): a short-lived `jan cli ...` invocation can exit
+    // before a detached background task gets to run. See `telemetry::ping_if_due`
+    // for what this sends and `JAN_CLI_NO_UPDATE_CHECK` to opt out.
+    app_lib::core::cli::telemetry::ping_if_due().await;
 
     match command {
         Commands::Cli { cmd } => handle_cli(cmd).await,
@@ -468,19 +459,19 @@ async fn handle_agent(cmd: AgentCommands) {
             project,
             task,
             model,
-            max_turns,
-            yolo,
+            safe,
             providers,
             resume,
+            output_format,
         } => {
             cli_agent_run(
                 &project,
                 &task,
                 model,
-                max_turns,
                 providers.into_overrides(),
-                yolo,
+                !safe,
                 resume.into_target(),
+                output_format,
             )
             .await
         }
@@ -488,9 +479,9 @@ async fn handle_agent(cmd: AgentCommands) {
             project,
             task,
             model,
-            yolo,
+            safe,
             providers,
-        } => cli_agent_step(&project, &task, model, providers.into_overrides(), yolo).await,
+        } => cli_agent_step(&project, &task, model, providers.into_overrides(), !safe).await,
         AgentCommands::Status { project, providers } => {
             match cli_agent_status(&project, &providers.into_overrides()) {
                 Ok(status) => {
@@ -600,7 +591,7 @@ async fn handle_models(cmd: ModelsCommands) {
             let mut output: Vec<serde_json::Value> = configs
                 .values()
                 .filter(|c| app_lib::core::cli::providers::is_cli_reachable(c))
-                .filter(|c| provider.as_ref().map_or(true, |p| &c.provider == p))
+                .filter(|c| provider.as_ref().is_none_or(|p| &c.provider == p))
                 .flat_map(|c| {
                     c.models.iter().map(move |m| {
                         serde_json::json!({
@@ -626,17 +617,63 @@ async fn handle_models(cmd: ModelsCommands) {
 mod tests {
     use super::*;
 
-    // `--plan` is a per-invocation startup toggle mirroring `--yolo`; it must
+    // `--plan` is a per-invocation startup toggle mirroring `--safe`; it must
     // parse on the top-level `jan` command and default off.
     #[test]
     fn top_level_plan_flag_parses() {
         let cli = Cli::parse_from(["jan", "--plan"]);
         assert!(cli.plan);
-        assert!(!cli.yolo);
+        assert!(!cli.safe);
         assert!(cli.command.is_none());
 
         let cli = Cli::parse_from(["jan"]);
         assert!(!cli.plan);
+    }
+
+    // Permission prompts are opt-in: auto-approval inside the OS sandbox is the
+    // default, and `--safe` is what turns the gate back on.
+    #[test]
+    fn safe_flag_parses_and_defaults_off() {
+        assert!(!Cli::parse_from(["jan"]).safe);
+        assert!(Cli::parse_from(["jan", "--safe"]).safe);
+    }
+
+    /// Parse `jan cli agent run <task> <extra...>` and pull out its output format.
+    fn parsed_output_format(extra: &[&str]) -> OutputFormat {
+        let mut argv = vec!["jan", "cli", "agent", "run", "task"];
+        argv.extend_from_slice(extra);
+        match Cli::parse_from(argv).command {
+            Some(Commands::Cli {
+                cmd:
+                    CliCommands::Agent {
+                        cmd: AgentCommands::Run { output_format, .. },
+                    },
+            }) => output_format,
+            _ => panic!("expected `cli agent run`"),
+        }
+    }
+
+    #[test]
+    fn output_format_parses_and_defaults_to_text() {
+        assert_eq!(parsed_output_format(&[]), OutputFormat::Text);
+        assert_eq!(
+            parsed_output_format(&["--output-format", "json"]),
+            OutputFormat::Json
+        );
+        assert_eq!(
+            parsed_output_format(&["--output-format=text"]),
+            OutputFormat::Text
+        );
+        assert!(Cli::try_parse_from([
+            "jan",
+            "cli",
+            "agent",
+            "run",
+            "task",
+            "--output-format",
+            "yaml"
+        ])
+        .is_err());
     }
 
     #[test]

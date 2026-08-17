@@ -17,6 +17,8 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # default_model = "my-model"        # used when no --model / agent.toml model is set
 # smol_model = "my-fast-model"       # fast model for the `smol` role (/goal evaluation);
 #                                     # defaults to `default_model` when unset
+# mouse = false                      # disable TUI mouse tracking (scroll wheel,
+#                                     # click-to-expand); on by default
 #
 # [providers.my-provider]
 # api_key = "sk-..."
@@ -34,6 +36,10 @@ struct GlobalConfigToml {
     /// lightweight side calls. Falls back to `default_model` when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     smol_model: Option<String>,
+    /// TUI mouse tracking (wheel scrolling, click-to-expand). `None` = the
+    /// default, on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mouse: Option<bool>,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
 }
@@ -130,6 +136,16 @@ pub(crate) fn default_model() -> Result<Option<String>, String> {
 pub(crate) fn smol_model() -> Result<Option<String>, String> {
     let config = load_raw()?;
     Ok(config.smol_model.filter(|m| !m.trim().is_empty()))
+}
+
+/// Whether the TUI should track the mouse (`mouse` in `~/.jan/config.toml`),
+/// defaulting to on. A display preference must never block startup, so an
+/// unreadable or malformed config yields the default rather than an error.
+pub(crate) fn mouse_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.mouse)
+        .unwrap_or(true)
 }
 
 /// Read `~/.jan/config.toml` into the raw TOML struct for editing. Missing file
@@ -271,6 +287,23 @@ mod tests {
         with_temp_home(|_| {
             let configs = load_global_config().expect("load");
             assert!(configs.is_empty());
+        });
+    }
+
+    #[test]
+    fn mouse_defaults_on_and_reads_the_toml_key() {
+        with_temp_home(|_| {
+            assert!(mouse_enabled(), "missing file -> tracking on");
+            let path = ensure_global_config().expect("ensure");
+            assert!(mouse_enabled(), "scaffolded file -> tracking on");
+
+            std::fs::write(&path, "mouse = false\n").unwrap();
+            assert!(!mouse_enabled());
+            std::fs::write(&path, "mouse = true\n").unwrap();
+            assert!(mouse_enabled());
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert!(mouse_enabled(), "an unreadable config keeps the default");
         });
     }
 
@@ -454,7 +487,7 @@ models = ["gpt-4o"]
             set_provider("openai", ProviderUpdate { api_key: Some("sk-1".into()), ..Default::default() }).unwrap();
             assert!(remove_provider("openai").expect("remove"));
             assert!(!remove_provider("openai").expect("remove again"));
-            assert!(load_global_config().unwrap().get("openai").is_none());
+            assert!(!load_global_config().unwrap().contains_key("openai"));
         });
     }
 

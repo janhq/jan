@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import {
+  render,
+  screen,
+  fireEvent,
+  act,
+  waitFor,
+} from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 // --- Module mocks (must be declared before component import) ---------------
@@ -361,12 +367,14 @@ describe('ChatInput', () => {
     expect(setPromptMock).toHaveBeenCalledWith('abc')
   })
 
-  it('submits via onSubmit prop when Enter is pressed', () => {
+  it('submits via onSubmit prop when Enter is pressed', async () => {
     promptState = 'hello world'
     const onSubmit = vi.fn()
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
-    expect(onSubmit).toHaveBeenCalledWith('hello world', undefined)
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith('hello world', undefined)
+    )
     expect(addToHistoryMock).toHaveBeenCalledWith('hello world')
     expect(setPromptMock).toHaveBeenCalledWith('')
   })
@@ -379,15 +387,18 @@ describe('ChatInput', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
-  it('does nothing when Enter pressed with empty/whitespace prompt', () => {
+  it('does nothing when Enter pressed with empty/whitespace prompt', async () => {
     promptState = '   '
     const onSubmit = vi.fn()
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    // submission is async, so flush pending promises before asserting the
+    // whitespace guard actually blocked it
+    await act(async () => {})
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
-  it('submits via the send button click', () => {
+  it('submits via the send button click', async () => {
     promptState = 'button submit'
     const onSubmit = vi.fn()
     renderInput({ onSubmit })
@@ -395,7 +406,9 @@ describe('ChatInput', () => {
       '[data-test-id="send-message-button"]'
     ) as HTMLButtonElement
     fireEvent.click(btn)
-    expect(onSubmit).toHaveBeenCalledWith('button submit', undefined)
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith('button submit', undefined)
+    )
   })
 
   it('shows stop button while streaming and hides the send button', () => {
@@ -430,15 +443,17 @@ describe('ChatInput', () => {
     expect(clicked).toBeGreaterThanOrEqual(0) // smoke: no crash
   })
 
-  it('queues the message when streaming with a currentThreadId', () => {
+  it('queues the message when streaming with a currentThreadId', async () => {
     promptState = 'queued msg'
     const onSubmit = vi.fn()
     renderInput({ onSubmit, chatStatus: 'streaming' })
     // During streaming, stop button is shown instead of send; submit path is via Enter on textarea
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
-    expect(enqueueMock).toHaveBeenCalledWith(
-      'thread-1',
-      expect.objectContaining({ text: 'queued msg', id: 'gen-id-1' })
+    await waitFor(() =>
+      expect(enqueueMock).toHaveBeenCalledWith(
+        'thread-1',
+        expect.objectContaining({ text: 'queued msg', id: 'gen-id-1' })
+      )
     )
     // onSubmit should NOT fire when queued
     expect(onSubmit).not.toHaveBeenCalled()
@@ -485,7 +500,7 @@ describe('ChatInput', () => {
     expect(navigateHistoryMock).toHaveBeenCalledWith('down')
   })
 
-  it('adds attached image files to onSubmit payload', () => {
+  it('adds attached image files to onSubmit payload', async () => {
     promptState = 'with image'
     attachmentsList = [
       {
@@ -497,15 +512,17 @@ describe('ChatInput', () => {
     const onSubmit = vi.fn()
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
-    expect(onSubmit).toHaveBeenCalledWith(
-      'with image',
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'file',
-          mediaType: 'image/png',
-          url: 'data:image/png;base64,xxx',
-        }),
-      ])
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'with image',
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'file',
+            mediaType: 'image/png',
+            url: 'data:image/png;base64,xxx',
+          }),
+        ])
+      )
     )
     expect(clearAttachmentsMock).toHaveBeenCalled()
   })

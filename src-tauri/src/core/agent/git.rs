@@ -18,7 +18,7 @@
 //! touched. Shelling out keeps us free of a libgit2 dependency.
 
 use std::path::Path;
-#[cfg(any(feature = "cli", test))]
+#[cfg(feature = "cli")]
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -354,5 +354,24 @@ mod tests {
             assert!(repo_root(&dir).is_none());
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `current_branch` re-reads `HEAD` live rather than caching it, so a
+    /// checkout made after the first call (e.g. by another process while the
+    /// TUI is open) is picked up on the next call.
+    #[test]
+    fn current_branch_reflects_a_checkout_made_after_the_first_read() {
+        let Some(root) = init_repo() else { return };
+        let r = root.to_string_lossy().to_string();
+
+        let first = current_branch(&root);
+        assert!(first.is_some(), "a fresh init_repo commit has a branch");
+
+        git(&["-C", &r, "checkout", "-q", "-b", "feature/other"]).expect("checkout");
+        let second = current_branch(&root);
+        assert_eq!(second.as_deref(), Some("feature/other"));
+        assert_ne!(first, second, "the branch must change after an external checkout");
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -74,6 +74,7 @@ llm-docs
 .claude/agents
 .claude
 CLAUDE.md
+JAN.md
 
 ## agent
 .jan

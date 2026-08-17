@@ -15,7 +15,7 @@ use tokio::sync::{mpsc, Mutex};
 
 use crate::core::agent::events::{StreamEvent, Usage};
 use crate::core::agent::session::SessionBudget;
-use crate::core::agent::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::tools::gate::{DenyReason, PermissionDecision};
 use crate::core::agent::upstream::{
     collect_mcp_openai_tools, copy_optional_chat_params, execute_mcp_tool_calls,
     extract_choice_message, extract_tool_calls, load_assistant_config, parse_openai_messages,
@@ -61,7 +61,7 @@ pub(crate) struct OrchestrationArgs {
     pub mcp_servers: SharedMcpServers,
     pub mcp_settings: Arc<Mutex<McpSettings>>,
     pub jan_data_folder: String,
-    pub permissions: crate::core::agent::permissions::ToolPermissions,
+    pub permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     pub project_root: Option<std::path::PathBuf>,
     pub permission_requests: PermissionRegistry,
     /// Present only when a client can render and answer structured questions.
@@ -77,15 +77,27 @@ pub(crate) struct OrchestrationArgs {
     /// Whether this run may dispatch subagents. `false` for child runs, which
     /// caps recursion depth at one (a subagent cannot spawn grandchildren).
     pub subagents_enabled: bool,
-    /// `--yolo`: disable the sandbox/permission gate and auto-allow every tool
-    /// call (built-in reads/writes/exec and MCP) without prompting. Inherited by
-    /// dispatched subagents via the cloned parent args.
-    pub yolo: bool,
+    /// Cap on concurrently-running background subagents for this run
+    /// (`[agent].max_parallel_subagents` in agent.toml, default 10). Snapshot
+    /// taken at run start: a mid-run config edit affects the *next* run only.
+    pub max_parallel_subagents: u32,
+    /// Auto-allow every tool call that would otherwise prompt (built-in
+    /// reads/writes/exec and MCP). The CLI default, since the OS jail in the
+    /// tools plugin confines exec regardless; `--safe` turns it off. Desktop
+    /// leaves it false. `HardDeny` still stands. Inherited by dispatched
+    /// subagents via the cloned parent args.
+    pub auto_approve: bool,
     /// Read-only plan mode. When `Plan`, mutation-capable tools (write/edit/bash,
     /// memory_write/skill_write, MCP, subagent dispatch) are neither advertised
     /// nor executable: the dispatcher hard-denies them with `plan_mode_read_only`,
-    /// stronger than `--yolo`'s prompt suppression (yolo cannot override this).
+    /// stronger than auto-approval's prompt suppression (it cannot override this).
     pub run_mode: crate::core::agent::plan::RunMode,
+    /// Stable identity for this run's session, used to key the persistent
+    /// `bash` `/tmp` scratch directory (`<temp>/jan-agent-<session_id>`) and
+    /// wiped at the session boundary specific to each surface. `None` on
+    /// code paths with no session (server proxy runs) keeps the default
+    /// throwaway per-command tmpfs.
+    pub session_id: Option<String>,
 }
 
 #[async_trait]
@@ -187,18 +199,105 @@ struct SubagentContext {
 struct CompositeToolInvoker {
     mcp: McpToolInvoker,
     project_root: std::path::PathBuf,
-    permissions: crate::core::agent::permissions::ToolPermissions,
+    /// Where `memory/` and `skills/` live. Co-located with the project here, so
+    /// the on-disk layout is unchanged; the desktop points this at its permanent
+    /// store instead.
+    store_root: std::path::PathBuf,
+    /// `[skills].enabled`, resolved once per run. The toolset owns no config
+    /// format, so the whitelist is injected rather than re-read per tool call.
+    enabled_skills: Vec<String>,
+    /// Whether the sandboxed shell keeps its network namespace. Resolved once
+    /// per run from `[tools].allow_network`, falling back to the surface
+    /// default when unset.
+    allow_network: bool,
+    /// Whether the sandboxed shell may read `$HOME`. Resolved once per run
+    /// from `[tools].allow_home_read`, falling back to `true` on the CLI.
+    allow_home_read: bool,
+    /// Session-scoped scratch directory the shell and the filesystem tools share
+    /// (see `workspace::scratch_dir`), so `bash` scratch files persist across
+    /// calls for the whole run. Created at run start and wiped at run end.
+    scratch_root: std::path::PathBuf,
+    permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
     ask_requests: Option<crate::core::agent::interaction::AskRegistry>,
     todo_registry: Option<crate::core::agent::todo::TodoRegistry>,
-    grants: std::sync::Mutex<crate::core::agent::tools::gate::SessionGrants>,
+    grants: std::sync::Mutex<tauri_plugin_agent_tools::tools::gate::SessionGrants>,
     subagents: Option<SubagentContext>,
-    yolo: bool,
+    auto_approve: bool,
     run_mode: crate::core::agent::plan::RunMode,
 }
 
+/// Default for the sandboxed shell's network namespace, used when
+/// `[tools].allow_network` is unset.
+///
+/// The CLI agent runs against the user's own project, where what confines it is
+/// the workspace the sandbox pins it to, not the network namespace. Before the
+/// shell was sandboxed at all it ran fully unconfined, and a coding agent that
+/// cannot `curl`, `git fetch`, or install a package is largely useless, so the
+/// network stays on. `--safe` adds a prompt on top; it does not change this.
+///
+/// The desktop chat sandbox makes the opposite trade: it is ephemeral, cannot
+/// prompt at all, and opts in per call from a user setting (`commands.rs`).
+#[cfg(feature = "cli")]
+const DEFAULT_ALLOW_NETWORK: bool = true;
+#[cfg(not(feature = "cli"))]
+const DEFAULT_ALLOW_NETWORK: bool = false;
+
+/// `[tools].allow_network` wins over the surface default when set.
+fn resolve_allow_network(configured: Option<bool>) -> bool {
+    configured.unwrap_or(DEFAULT_ALLOW_NETWORK)
+}
+
+/// Default for whether the sandboxed shell can read `$HOME`, used when
+/// `[tools].allow_home_read` is unset.
+///
+/// The CLI needs it for `git`/`ssh` credential helpers, so its shell binds
+/// `$HOME` read-only. The desktop keeps the full isolation and masks the home
+/// (the Jan data folder lives inside `$HOME`, so exposing it read-only would
+/// leak `settings.json` API keys, thread workspaces, and the memory store).
+#[cfg(feature = "cli")]
+const DEFAULT_ALLOW_HOME_READ: bool = true;
+#[cfg(not(feature = "cli"))]
+const DEFAULT_ALLOW_HOME_READ: bool = false;
+
+/// `[tools].allow_home_read` wins over the surface default when set.
+fn resolve_allow_home_read(configured: Option<bool>) -> bool {
+    configured.unwrap_or(DEFAULT_ALLOW_HOME_READ)
+}
+
+/// agent.toml resolved for one run: the skill whitelist, plus the network
+/// decision with this surface's default already applied.
+struct ResolvedSettings {
+    enabled_skills: Vec<String>,
+    allow_network: bool,
+    allow_home_read: bool,
+}
+
+/// Kept out of the invoker's struct literal so it is reachable from a test.
+/// Inline, it was silently passing `None` instead of the parsed value, which
+/// made `[tools].allow_network` a no-op that nothing detected.
+fn resolve_run_settings(project_root: &std::path::Path) -> ResolvedSettings {
+    let settings = crate::core::agent::project::run_settings(project_root);
+    ResolvedSettings {
+        enabled_skills: settings.enabled_skills,
+        allow_network: resolve_allow_network(settings.allow_network),
+        allow_home_read: resolve_allow_home_read(settings.allow_home_read),
+    }
+}
+
 impl CompositeToolInvoker {
+    fn tool_context(&self) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
+        tauri_plugin_agent_tools::tools::ToolContext::new(
+            &self.project_root,
+            &self.store_root,
+            &self.enabled_skills,
+        )
+        .with_network(self.allow_network)
+        .with_home_readonly(self.allow_home_read)
+        .with_scratch_root(&self.scratch_root)
+    }
+
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
     /// A dropped responder (client gone / run cancelled) resolves to Deny.
     async fn prompt_mcp_permission(&self, tool_name: &str) -> PermissionDecision {
@@ -365,9 +464,7 @@ impl CompositeToolInvoker {
         }
         match receiver.await {
             Ok(Ok(results)) => match request.validate_results(&results) {
-                Ok(()) => serde_json::to_string(&results).unwrap_or_else(|error| {
-                    format!("ERROR: could not encode ask response: {error}")
-                }),
+                Ok(()) => request.render_results(&results),
                 Err(error) => format!("ERROR: invalid ask response: {error}"),
             },
             Ok(Err(AskError::Cancelled)) | Err(_) => {
@@ -478,6 +575,25 @@ fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
     )
 }
 
+/// Message for a call that reached the hidden agent state directory. Says the
+/// path does not exist *for the agent* and that retrying is pointless: pointing
+/// at a deny list would send the model reading a file that is hidden too.
+fn hidden_path_msg(name: &str) -> String {
+    format!(
+        "ERROR: tool '{name}' refused: '{}' is the agent's own state directory and is not part of \
+         the project. It is hidden from every tool -- do not try to reach it another way. Skills \
+         and memory are available through the skill_*/memory_* tools.",
+        tauri_plugin_agent_tools::tools::sandbox::JAN_DIR
+    )
+}
+
+fn hard_deny_msg(name: &str, reason: DenyReason, project_root: &std::path::Path) -> String {
+    match reason {
+        DenyReason::Policy => denied_by_policy_msg(name, project_root),
+        DenyReason::Hidden => hidden_path_msg(name),
+    }
+}
+
 /// Rejection message for a mutation-capable tool call attempted in
 /// `RunMode::Plan`. Authoritative: the tool never actually runs.
 fn plan_mode_read_only_msg(name: &str) -> String {
@@ -490,10 +606,10 @@ impl ToolInvoker for CompositeToolInvoker {
         &self,
         tool_calls: &[serde_json::Value],
     ) -> Result<Vec<ToolOutcome>, String> {
-        use crate::core::agent::tools::{
+        use tauri_plugin_agent_tools::tools::{
             gate::{resolve_decision, Decision, PromptKind},
             handlers::{execute_builtin_with_diff, preview_diff},
-            is_builtin, lookup, Capability,
+            is_builtin, lookup, Capability, ToolContext,
         };
         let mut out: Vec<ToolOutcome> = Vec::with_capacity(tool_calls.len());
         let mut mcp_calls: Vec<serde_json::Value> = Vec::new();
@@ -546,7 +662,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 // Plan mode blocks subagent dispatch (a subagent could mutate).
                 // They are not advertised in Plan; this is defense in depth
-                // against a stale tool schema. `--yolo` cannot override.
+                // against a stale tool schema. Auto-approval cannot override.
                 if self.run_mode == crate::core::agent::plan::RunMode::Plan {
                     out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
                     continue;
@@ -565,7 +681,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 // Plan mode blocks all MCP tools: their capability is arbitrary
                 // and unknowable, so they are never advertised in Plan and are
-                // hard-denied here as defense in depth. `--yolo` cannot override.
+                // hard-denied here as defense in depth. Auto-approval cannot override.
                 if self.run_mode == crate::core::agent::plan::RunMode::Plan {
                     out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
                     continue;
@@ -578,7 +694,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     ));
                     continue;
                 }
-                if self.yolo || self.grants.lock().unwrap().covers_mcp(name) {
+                if self.auto_approve || self.grants.lock().unwrap().covers_mcp(name) {
                     mcp_calls.push(tc.clone());
                     continue;
                 }
@@ -608,7 +724,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 .unwrap_or(serde_json::Value::Object(Default::default()));
             let tool = lookup(name).expect("is_builtin implies lookup");
             // Plan mode: mutation-capable builtins (Write/Exec) are hard-denied
-            // BEFORE the normal gate, without a permission prompt, and `--yolo`
+            // BEFORE the normal gate, without a permission prompt, and auto-approval
             // cannot override this (unlike the normal prompt suppression below).
             // Read/Net/workspace-read tools fall through to the usual gate.
             if self.run_mode == crate::core::agent::plan::RunMode::Plan
@@ -622,14 +738,15 @@ impl ToolInvoker for CompositeToolInvoker {
                 tool,
                 &args,
                 &self.project_root,
+                Some(self.scratch_root.as_path()),
                 &self.permissions,
                 &snapshot,
             );
-            // --yolo suppresses every prompt (sandbox escape, write, exec) but
-            // still honors HardDeny, so the `.jan/agent` restricted-path invariant
-            // and explicit agent.toml denies hold.
+            // Auto-approval suppresses every prompt (sandbox escape, write, exec) but
+            // still honors HardDeny, so the hidden `.jan` invariant and explicit
+            // agent.toml denies hold.
             let decision = match decision {
-                Decision::Prompt(_) if self.yolo => Decision::Allow,
+                Decision::Prompt(_) if self.auto_approve => Decision::Allow,
                 other => other,
             };
             // Read and Net tools are non-mutating and safe to run concurrently
@@ -637,9 +754,20 @@ impl ToolInvoker for CompositeToolInvoker {
             if matches!(decision, Decision::Allow)
                 && matches!(tool.capability, Capability::Read | Capability::Net)
             {
+                // The future outlives this borrow of `self`, so it owns its roots
+                // and builds the context inside.
                 let root = self.project_root.clone();
+                let store = self.store_root.clone();
+                let enabled = self.enabled_skills.clone();
+                let allow_network = self.allow_network;
+                let allow_home_read = self.allow_home_read;
+                let scratch = self.scratch_root.clone();
                 read_futures.push(async move {
-                    let (text, diff) = execute_builtin_with_diff(tool, &args, &root).await;
+                    let ctx = ToolContext::new(&root, &store, &enabled)
+                        .with_network(allow_network)
+                        .with_home_readonly(allow_home_read)
+                        .with_scratch_root(&scratch);
+                    let (text, diff) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
                         id,
                         content: text,
@@ -649,8 +777,10 @@ impl ToolInvoker for CompositeToolInvoker {
                 continue;
             }
             let (text, diff) = match decision {
-                Decision::Allow => execute_builtin_with_diff(tool, &args, &self.project_root).await,
-                Decision::HardDeny => (denied_by_policy_msg(name, &self.project_root), None),
+                Decision::Allow => execute_builtin_with_diff(tool, &args, &self.tool_context()).await,
+                Decision::HardDeny(reason) => {
+                    (hard_deny_msg(name, reason, &self.project_root), None)
+                }
                 Decision::Prompt(kind) => {
                     let request_id = next_permission_id();
                     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -669,6 +799,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     let prompt_kind = match kind {
                         PromptKind::ReadEscape => "read_escape",
                         PromptKind::Write => "write",
+                        PromptKind::WriteEscape => "write_escape",
                         PromptKind::Exec => "exec",
                     };
                     let path = tool
@@ -681,7 +812,7 @@ impl ToolInvoker for CompositeToolInvoker {
                         .then(|| args.get("command").and_then(|v| v.as_str()))
                         .flatten()
                         .map(String::from);
-                    let diff = preview_diff(tool, &args, &self.project_root).await;
+                    let diff = preview_diff(tool, &args, &self.tool_context()).await;
                     let _ = self.events.send(StreamEvent::PermissionRequest {
                         request_id: request_id.clone(),
                         tool_name: name.to_string(),
@@ -699,7 +830,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     self.permission_requests.lock().await.remove(&request_id);
                     match decision {
                         PermissionDecision::AllowOnce => {
-                            execute_builtin_with_diff(tool, &args, &self.project_root).await
+                            execute_builtin_with_diff(tool, &args, &self.tool_context()).await
                         }
                         PermissionDecision::AllowAlways => {
                             // Thread-scoped only; never persisted to agent.toml.
@@ -713,7 +844,7 @@ impl ToolInvoker for CompositeToolInvoker {
                             } else {
                                 self.grants.lock().unwrap().grant(kind);
                             }
-                            execute_builtin_with_diff(tool, &args, &self.project_root).await
+                            execute_builtin_with_diff(tool, &args, &self.tool_context()).await
                         }
                         PermissionDecision::Deny => {
                             (format!("ERROR: tool '{name}' denied by user"), None)
@@ -746,6 +877,10 @@ impl ToolInvoker for CompositeToolInvoker {
 /// API-server entry point. Preserves the original single-final-JSON contract by
 /// running the streamed loop with a discarded event sink. Desktop-only: the
 /// `cli` build has no proxy server.
+///
+/// An HTTP client has no way to cancel mid-run, so this is the one path that
+/// keeps a turn cap: a body that doesn't ask for one gets
+/// [`PROXY_DEFAULT_MAX_TURNS`] rather than the unbounded default.
 #[cfg(not(feature = "cli"))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_server_side_openai_orchestration(
@@ -767,18 +902,38 @@ pub(crate) async fn run_server_side_openai_orchestration(
         mcp_servers,
         mcp_settings,
         jan_data_folder: jan_data_folder.to_string(),
-        permissions: crate::core::agent::permissions::ToolPermissions::allow_all(),
+        permissions: tauri_plugin_agent_tools::permissions::ToolPermissions::allow_all(),
         project_root: None,
         permission_requests: Arc::new(Mutex::new(HashMap::new())),
         ask_requests: None,
         todo_registry: None,
         system_prompt_override: None,
         subagents_enabled: false,
-        yolo: false,
+        max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
+        auto_approve: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
+        session_id: None,
     };
-    run_orchestration_streamed(&tx, json_body, &args).await
+    let body = match json_body.get("max_turns") {
+        Some(_) => std::borrow::Cow::Borrowed(json_body),
+        None => {
+            let mut b = json_body.clone();
+            if let Some(map) = b.as_object_mut() {
+                map.insert(
+                    "max_turns".to_string(),
+                    serde_json::json!(PROXY_DEFAULT_MAX_TURNS),
+                );
+            }
+            std::borrow::Cow::Owned(b)
+        }
+    };
+    run_orchestration_streamed(&tx, &body, &args).await
 }
+
+/// Turn cap applied to an API-server run whose body doesn't set one. Small on
+/// purpose: nothing on that path can interrupt a loop that never converges.
+#[cfg(not(feature = "cli"))]
+const PROXY_DEFAULT_MAX_TURNS: u64 = 8;
 
 /// Streaming entry point. Emits `Step`/`ToolCall`/`ToolResult` progress events
 /// and exactly one terminal `Done`/`Error` derived from the final result, while
@@ -831,7 +986,7 @@ fn apply_tool_allowlist(
 fn retain_advertisable_mcp_tools(
     openai_tools: &mut Vec<serde_json::Value>,
     tool_to_server: &mut HashMap<String, String>,
-    permissions: &crate::core::agent::permissions::ToolPermissions,
+    permissions: &tauri_plugin_agent_tools::permissions::ToolPermissions,
 ) {
     openai_tools.retain(|t| {
         t.get("function")
@@ -854,28 +1009,6 @@ fn stop_reason_of(completion: &serde_json::Value) -> String {
         .to_string()
 }
 
-/// Text of the most recent `user` message. Handles both string content and the
-/// multimodal array form (text parts concatenated). None if there is no user turn.
-fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
-    let content = messages
-        .iter()
-        .rev()
-        .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))?
-        .get("content")?;
-    match content {
-        serde_json::Value::String(s) => Some(s.clone()),
-        serde_json::Value::Array(parts) => {
-            let text: String = parts
-                .iter()
-                .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
-                .collect::<Vec<_>>()
-                .join(" ");
-            (!text.is_empty()).then_some(text)
-        }
-        _ => None,
-    }
-}
-
 /// Assembles the run's system prompt: `override_prompt` (a subagent's
 /// definition prompt) replaces the assistant identity when set, but the
 /// project-context and tool-use guidance from `build_system_prompt` is still
@@ -886,96 +1019,73 @@ fn build_run_system_prompt(
     assistant_instructions: Option<&str>,
     override_prompt: Option<&str>,
     project_root: Option<&std::path::Path>,
+    session_id: Option<&str>,
     subagents_enabled: bool,
 ) -> Option<String> {
     let base = override_prompt.or(assistant_instructions);
     match project_root {
         Some(root) => {
-            crate::core::agent::context::build_system_prompt(base, root, subagents_enabled)
+            let scratch = scratch_root_for(session_id, root);
+            crate::core::agent::context::build_system_prompt(
+                base,
+                root,
+                Some(&scratch),
+                subagents_enabled,
+            )
         }
         None => base.map(str::to_string),
     }
 }
 
-/// System-prompt addendum on a session's first substantive message: without
-/// it, the model only ever reaches for `todo` once told explicitly that it
-/// has the tool, instead of proactively planning a multi-step request the
-/// way a plan laid out up front would help with. Paired with a forced
-/// `tool_choice` on that same first turn (see `should_suggest_eager_todo_plan`
-/// and its caller), so this is a real requirement, not a suggestion the model
-/// can silently skip -- the imperative wording matches that guarantee.
-const EAGER_TODO_PROMPT_ADDENDUM: &str = "Before substantial work on this request, create a \
-phased todo. You MUST call `todo` first in this turn with a single `init` op covering \
-investigation through implementation and verification, not just the next step. Keep each task \
-to a concise, specific 5-10 word label; `init` only accepts phase names and task-label strings, \
-passed as the `list` argument (e.g. `list: [{phase: \"Setup\", items: [\"...\"]}]`) -- never as \
-top-level `phase`/`task` strings, which are for later ops (start/done/drop), not init. After \
-`todo` succeeds, continue the request in the same turn.";
+/// Where this run's scratch lives. Session-keyed so it persists across turns in
+/// the interactive TUI (and across calls in a one-shot run), then is wiped at the
+/// session boundary; a run with no session (the server proxy) gets a per-project
+/// directory instead. Pure path math -- [`ensure_scratch_dir`] is what creates
+/// it -- so the system prompt can name the scratch before the tools are built.
+fn scratch_root_for(
+    session_id: Option<&str>,
+    project_root: &std::path::Path,
+) -> std::path::PathBuf {
+    match session_id {
+        Some(session) => tauri_plugin_agent_tools::workspace::scratch_dir(session),
+        None => project_root.join("agent-scratch"),
+    }
+}
 
-/// Upkeep half of the todo guidance, applied on every turn that has a non-empty
-/// list rather than only a session's first message. The init addendum above
-/// fires once and never again (see `should_suggest_eager_todo_plan`), so a
-/// resumed or multi-turn session would otherwise carry a list the model was
-/// never told to maintain -- which is exactly how a run ends reading 0/N with
-/// every task finished but still marked pending.
-const TODO_UPKEEP_PROMPT_ADDENDUM: &str = "You have an active todo list. Keep it honest as you \
-work: the moment you finish a task call `todo` with `done` for it (or `drop` if you are skipping \
-it), before moving on to the next one. Do not leave finished work sitting as pending, and do not \
-batch the close-out to the end of the turn.";
-
-/// Which todo addendum this turn needs, if any: the init guidance on a
-/// session's first substantive message, otherwise the upkeep guidance whenever
-/// a list already exists. `None` when there is nothing to say (no list, and not
-/// a first-message candidate). Subagent/plan-mode gating is the caller's.
+/// Which todo addendum this turn needs, if any: the init guidance on a `/goal`
+/// turn with no plan staged, otherwise the upkeep guidance whenever a list
+/// already exists. `None` when there is nothing to say (no list, and not a
+/// goal run). Subagent/plan-mode gating is the caller's.
 async fn todo_prompt_addendum(
     eager_todo_plan: bool,
     todo_registry: &Option<crate::core::agent::todo::TodoRegistry>,
 ) -> Option<&'static str> {
     if eager_todo_plan {
-        return Some(EAGER_TODO_PROMPT_ADDENDUM);
+        return Some(crate::core::agent::context::EAGER_TODO_PROMPT_ADDENDUM);
     }
     let has_todos = match todo_registry {
         Some(registry) => !registry.lock().await.is_empty(),
         None => false,
     };
-    has_todos.then_some(TODO_UPKEEP_PROMPT_ADDENDUM)
+    has_todos.then_some(crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM)
 }
 
-/// True on a session's first substantive user message: exactly one user-role
-/// message in the conversation so far (this one), no todos staged yet, and
-/// the prompt looks like actual multi-step work rather than a greeting,
-/// acknowledgement, or a bare question/exclamation a phased plan would be
-/// overkill for.
-async fn should_suggest_eager_todo_plan(
-    conversation_messages: &[serde_json::Value],
+/// True when this turn should be forced to stage a plan: a `/goal` run whose
+/// list is still empty. Forcing is deliberately limited to goal mode -- an
+/// unattended loop needs a plan to work against, while an ordinary turn is the
+/// model's call, and a phased list for small work is noise the user reads past.
+/// Requires a registry: without one the `todo` tool is never advertised, so
+/// forcing `tool_choice` on it would name a tool the request does not carry.
+async fn should_force_goal_todo_plan(
+    goal_mode: bool,
     todo_registry: &Option<crate::core::agent::todo::TodoRegistry>,
 ) -> bool {
-    let user_turns = conversation_messages
-        .iter()
-        .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))
-        .count();
-    if user_turns != 1 {
-        return false;
-    }
-    let Some(prompt_text) = latest_user_text(conversation_messages) else {
-        return false;
-    };
-    let trimmed = prompt_text.trim_end();
-    if ['?', '！', '？', '!'].iter().any(|c| trimmed.ends_with(*c)) {
-        return false;
-    }
-    // A greeting, thanks, or one-line aside ("hi", "ok thanks") is not work a
-    // phased plan helps with. Require enough words to look like an actual
-    // request; the shortest real task prompts ("fix the login bug") clear this,
-    // while chit-chat does not. A word-count floor, not a keyword blocklist, so
-    // it never has to enumerate every possible pleasantry.
-    const MIN_SUBSTANTIVE_WORDS: usize = 4;
-    if trimmed.split_whitespace().count() < MIN_SUBSTANTIVE_WORDS {
+    if !goal_mode {
         return false;
     }
     match todo_registry {
         Some(registry) => registry.lock().await.is_empty(),
-        None => true,
+        None => false,
     }
 }
 
@@ -1001,8 +1111,10 @@ async fn orchestrate_inner(
         todo_registry,
         system_prompt_override,
         subagents_enabled,
-        yolo,
+        max_parallel_subagents,
+        auto_approve,
         run_mode,
+        session_id,
     } = args;
 
     // Per-turn override: the TUI toggles plan mode live via the request body
@@ -1041,39 +1153,27 @@ async fn orchestrate_inner(
         (None, None)
     };
 
-    let mut system_prompt = build_run_system_prompt(
+    let system_prompt = build_run_system_prompt(
         assistant_instructions.as_deref(),
         system_prompt_override.as_deref(),
         project_root.as_deref(),
+        session_id.as_deref(),
         *subagents_enabled,
     );
-    // Normal parent runs recall project memory for the current query before it
-    // is indexed. Child runs keep their isolated history and skip memory.
-    if system_prompt_override.is_none() {
-        if let Some(root) = project_root {
-            if let Some(query) = latest_user_text(&conversation_messages) {
-                if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
-                    system_prompt = Some(match system_prompt {
-                        Some(s) => format!("{s}\n\n{mem}"),
-                        None => mem,
-                    });
-                }
-            }
-        }
-    }
-    // Always tell the model today's date, including isolated child runs.
-    let date_line = format!("Today's date is {}.", chrono::Local::now().format("%Y-%m-%d"));
-    let system_prompt = match system_prompt {
-        Some(sys) => format!("{date_line}\n\n{sys}"),
-        None => date_line,
-    };
-    let system_prompt = Some(system_prompt);
     // Child (subagent) runs are excluded via `system_prompt_override`, the
     // same gate the memory-recall block above uses to distinguish a
     // top-level run from a subagent's isolated context.
+    // `/goal` is a per-request flag like `run_mode`: the TUI sets it while a
+    // goal is active, and nothing else does, so every other surface (a plain
+    // turn, `jan cli agent run`, a subagent) leaves the model free to reach for
+    // `todo` on its own.
+    let goal_mode = json_body
+        .get("goal_mode")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let eager_todo_plan = run_mode != crate::core::agent::plan::RunMode::Plan
         && system_prompt_override.is_none()
-        && should_suggest_eager_todo_plan(&conversation_messages, todo_registry).await;
+        && should_force_goal_todo_plan(goal_mode, todo_registry).await;
     let system_prompt = if run_mode == crate::core::agent::plan::RunMode::Plan {
         let addendum = crate::core::agent::plan::plan_mode_prompt_addendum();
         Some(match system_prompt {
@@ -1161,7 +1261,7 @@ async fn orchestrate_inner(
         // we only drop tools explicitly denied in agent.toml (and honor allowed_tools
         // if the request set one). Advertisement is independent of the read-only
         // default that applies to opaque MCP tools.
-        for schema in crate::core::agent::tools::schema::builtin_tool_schemas() {
+        for schema in tauri_plugin_agent_tools::tools::schema::builtin_tool_schemas() {
             let name = schema["function"]["name"].as_str().unwrap_or_default();
             if permissions.is_denied(name) {
                 continue;
@@ -1169,11 +1269,11 @@ async fn orchestrate_inner(
             // Plan mode advertises only read/net builtins; write/exec are hidden
             // entirely rather than relying on a prompt or execution-time denial.
             if run_mode == crate::core::agent::plan::RunMode::Plan
-                && crate::core::agent::tools::lookup(name).is_some_and(|t| {
+                && tauri_plugin_agent_tools::tools::lookup(name).is_some_and(|t| {
                     matches!(
                         t.capability,
-                        crate::core::agent::tools::Capability::Write
-                            | crate::core::agent::tools::Capability::Exec
+                        tauri_plugin_agent_tools::tools::Capability::Write
+                            | tauri_plugin_agent_tools::tools::Capability::Exec
                     )
                 })
             {
@@ -1192,7 +1292,9 @@ async fn orchestrate_inner(
         if args.subagents_enabled && run_mode != crate::core::agent::plan::RunMode::Plan {
             if let Some(root) = project_root {
                 let registry = crate::core::agent::subagent::SubagentRegistry::load(root);
-                for schema in crate::core::agent::subagent::subagent_tool_schemas(&registry) {
+                for schema in
+                    crate::core::agent::subagent::subagent_tool_schemas(&registry, *max_parallel_subagents)
+                {
                     let name = schema["function"]["name"].as_str().unwrap_or_default();
                     if permissions.is_denied(name) {
                         continue;
@@ -1237,13 +1339,7 @@ async fn orchestrate_inner(
     )
     .await?;
 
-    // Explicit values pass through unclamped; `0` means unbounded (guarded by
-    // the session token budget and cancellation). Absent falls back to 8 for
-    // the proxy path, which has no interactive cancel.
-    let max_turns = json_body
-        .get("max_turns")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(8) as usize;
+    let max_turns = body_turn_cap(json_body);
 
     let http_model = HttpModelInvoker {
         client: client.clone(),
@@ -1256,21 +1352,16 @@ async fn orchestrate_inner(
         mcp_settings: mcp_settings.clone(),
     };
 
-    let max_session_tokens = json_body.get("max_session_tokens").and_then(|v| v.as_u64());
+    let max_session_tokens = body_session_budget(json_body);
     let mut budget = SessionBudget::new(max_session_tokens);
 
     if let Some(root) = project_root {
-        // Subagent (override) runs are ephemeral: their turns are never indexed
-        // into project memory, so a child cannot pollute the parent's recall.
-        let index_memory = system_prompt_override.is_none();
-        if index_memory {
-            if let Some(query) = latest_user_text(&conversation_messages) {
-                crate::core::agent::memory::index_message(root, "user", &query);
-            }
-        }
         // Background subagents are scoped to this run: `_bg_guard` aborts any
         // still-running child when `orchestrate_inner` returns or is cancelled.
-        let bg = std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+        // The cap (`max_parallel_subagents`) is snapshotted here, at run start.
+        let bg = std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
+            *max_parallel_subagents,
+        ));
         let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),
@@ -1278,17 +1369,32 @@ async fn orchestrate_inner(
             max_session_tokens,
             bg: bg.clone(),
         });
+        let settings = resolve_run_settings(root);
+        // The same path `build_run_system_prompt` advertised (both go through
+        // `scratch_root_for`), created here before the first tool call reaches
+        // for it. Created for a session-less run too: the policy binds this path
+        // either way, and bubblewrap refuses to bind a directory that is not
+        // there -- which would take `bash` down with it.
+        let scratch_root = scratch_root_for(session_id.as_deref(), root);
+        tokio::fs::create_dir_all(&scratch_root)
+            .await
+            .map_err(|e| format!("ERROR: {e}"))?;
         let tools = CompositeToolInvoker {
             mcp: mcp_tools,
+            store_root: tauri_plugin_agent_tools::workspace::project_store(root),
+            enabled_skills: settings.enabled_skills,
+            allow_network: settings.allow_network,
+            allow_home_read: settings.allow_home_read,
+            scratch_root: scratch_root.clone(),
             project_root: root.clone(),
             permissions: permissions.clone(),
             events: events.clone(),
             permission_requests: permission_requests.clone(),
             ask_requests: ask_requests.clone(),
             todo_registry: todo_registry.clone(),
-            grants: std::sync::Mutex::new(crate::core::agent::tools::gate::SessionGrants::default()),
+            grants: std::sync::Mutex::new(tauri_plugin_agent_tools::tools::gate::SessionGrants::default()),
             subagents,
-            yolo: *yolo,
+            auto_approve: *auto_approve,
             run_mode,
         };
         let result = run_turn_cycle(
@@ -1311,15 +1417,6 @@ async fn orchestrate_inner(
         // `_bg_guard`. On an error, teardown still aborts them.
         if result.is_ok() {
             bg.join_all().await;
-        }
-        if index_memory {
-            if let Ok(completion) = &result {
-                if let Some(answer) = extract_choice_message(completion)
-                    .and_then(|m| m.get("content").and_then(|c| c.as_str()).map(str::to_string))
-                {
-                    crate::core::agent::memory::index_message(root, "assistant", &answer);
-                }
-            }
         }
         result
     } else {
@@ -1359,10 +1456,16 @@ fn build_completion_request(
         "messages".to_string(),
         serde_json::Value::Array(conversation_messages.to_vec()),
     );
-    let tool_choice = match forced_tool_choice {
-        Some(name) => serde_json::json!({ "type": "function", "function": { "name": name } }),
-        None => serde_json::json!("auto"),
-    };
+    let tool_choice = forced_tool_choice
+        .filter(|name| {
+            openai_tools
+                .iter()
+                .any(|tool| tool["function"]["name"].as_str() == Some(*name))
+        })
+        .map_or_else(
+            || serde_json::json!("auto"),
+            |name| serde_json::json!({ "type": "function", "function": { "name": name } }),
+        );
     completion_map.insert("tool_choice".to_string(), tool_choice);
     if !openai_tools.is_empty() {
         completion_map.insert(
@@ -1445,6 +1548,26 @@ async fn open_todo_summary(
     todo_registry?.lock().await.open_summary()
 }
 
+/// Turn cap for a request body. No cap by default: the agent runs as long as
+/// the task needs, guarded by the session token budget and cancellation.
+/// `max_turns` survives only for callers that have neither guard (`jan cli
+/// agent step`, the API-server proxy); `0` and absent both mean unbounded.
+fn body_turn_cap(json_body: &serde_json::Value) -> usize {
+    json_body
+        .get("max_turns")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as usize
+}
+
+/// Token-spend ceiling for a request body, the real bound on run length.
+/// `0` is the explicit "no ceiling" encoding, matching `max_turns`.
+fn body_session_budget(json_body: &serde_json::Value) -> Option<u64> {
+    json_body
+        .get("max_session_tokens")
+        .and_then(|v| v.as_u64())
+        .filter(|v| *v > 0)
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_turn_cycle(
     events: &mpsc::UnboundedSender<StreamEvent>,
@@ -1463,9 +1586,9 @@ async fn run_turn_cycle(
     // instead of an easily-ignored suggestion. `None` for every later turn.
     force_first_tool: Option<&str>,
 ) -> Result<serde_json::Value, String> {
-    // `max_turns == 0` means unbounded: the session token budget and user
-    // cancellation are the real guards, so an interactive run isn't cut off
-    // mid-task by a fixed turn cap.
+    // `max_turns == 0` is the normal case: the session token budget and user
+    // cancellation are the real guards, so a run isn't cut off mid-task by a
+    // fixed turn cap.
     let unlimited = max_turns == 0;
     let mut turn: usize = 0;
     // Mid-run todo upkeep: after a long uninterrupted run of mutating tool
@@ -1524,6 +1647,13 @@ async fn run_turn_cycle(
                             attempts + 1
                         );
                         conversation_messages = compacted;
+                        // Publish now, not at the end of the run: a retry that
+                        // never recovers returns Err, and an unpublished
+                        // compaction leaves the client holding the oversized
+                        // history that every later turn would re-overflow on.
+                        let _ = events.send(StreamEvent::MessagesUpdated {
+                            messages: conversation_messages.clone(),
+                        });
                         keep_recent = (keep_recent / 2).max(2);
                         attempts += 1;
                     }
@@ -1584,11 +1714,36 @@ async fn run_turn_cycle(
             return Ok(completion);
         }
 
+        // The session budget is exhausted. This is a soft stop, not an error:
+        // a subagent that inherits the parent's remaining budget must hand back
+        // its partial progress (as an assistant message) so the parent can act
+        // on it, instead of the run hard-failing and losing the work. Tool
+        // calls are not executed; nothing further is spent against the ceiling.
         if budget.exhausted() {
-            return Err(format!(
-                "session token budget exhausted ({} tokens) before resolving tool calls",
-                budget.spent()
-            ));
+            let partial = extract_choice_message(&completion)
+                .and_then(|m| m.get("content").and_then(|c| c.as_str()))
+                .unwrap_or("")
+                .to_string();
+            let stop_note = format!(
+                "[session token budget exhausted ({} tokens)] Partial progress so far:\n\
+                 {}",
+                budget.spent(),
+                if partial.is_empty() {
+                    "(none yet reported)".to_string()
+                } else {
+                    partial
+                }
+            );
+            conversation_messages.push(serde_json::json!({
+                "role": "assistant",
+                "content": stop_note,
+            }));
+            let _ = events.send(StreamEvent::MessagesUpdated {
+                messages: conversation_messages.clone(),
+            });
+            return Ok(serde_json::json!({
+                "choices": [{ "message": { "content": stop_note }, "finish_reason": "stop" }]
+            }));
         }
 
         for tc in &tool_calls {
@@ -1698,7 +1853,7 @@ async fn run_turn_cycle(
             // call as failed for display.
             let is_error = content.starts_with("ERROR")
                 || (tool_names.get(id.as_str()) == Some(&"bash")
-                    && crate::core::agent::tools::handlers::bash_result_failed(&content));
+                    && tauri_plugin_agent_tools::tools::handlers::bash_result_failed(&content));
             let name = tool_names.get(id.as_str()).copied().unwrap_or("");
             if name == "todo" {
                 todo_touched_this_batch = true;
@@ -1758,7 +1913,7 @@ async fn run_turn_cycle(
     }
 
     Err(format!(
-        "reached the {max_turns}-turn limit while the model was still calling tools; raise --max-turns (or set 0 for unbounded) to let it finish"
+        "reached the {max_turns}-turn limit while the model was still calling tools"
     ))
 }
 
@@ -1825,10 +1980,6 @@ mod tests {
         }
     }
 
-    fn user_message(text: &str) -> serde_json::Value {
-        json!({ "role": "user", "content": text })
-    }
-
     fn empty_todo_registry() -> crate::core::agent::todo::TodoRegistry {
         std::sync::Arc::new(tokio::sync::Mutex::new(
             crate::core::agent::todo::TodoList::default(),
@@ -1846,47 +1997,59 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn eager_todo_plan_suggested_on_first_substantive_message() {
-        let convo = vec![user_message("build a flappy bird clone")];
-        assert!(should_suggest_eager_todo_plan(&convo, &Some(empty_todo_registry())).await);
-        assert!(should_suggest_eager_todo_plan(&convo, &None).await);
+    async fn goal_todo_plan_forced_while_a_goal_has_no_plan() {
+        assert!(should_force_goal_todo_plan(true, &Some(empty_todo_registry())).await);
     }
 
     #[tokio::test]
-    async fn eager_todo_plan_not_suggested_for_a_bare_question() {
-        let convo = vec![user_message("what's the capital of France?")];
-        assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
-        let convo = vec![user_message("nice work!")];
-        assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
+    async fn goal_todo_plan_not_forced_once_the_plan_is_staged() {
+        assert!(!should_force_goal_todo_plan(true, &Some(staged_todo_registry())).await);
     }
 
     #[tokio::test]
-    async fn eager_todo_plan_not_suggested_for_a_short_greeting() {
-        // Punctuation-free chit-chat must not force a todo plan: the word-count
-        // floor catches greetings and acks that the `?`/`!` check misses.
-        for msg in ["hi", "hello", "hey there", "ok thanks"] {
-            let convo = vec![user_message(msg)];
-            assert!(
-                !should_suggest_eager_todo_plan(&convo, &None).await,
-                "short greeting should not trigger eager todo: {msg:?}"
-            );
-        }
+    async fn goal_todo_plan_never_forced_outside_goal_mode() {
+        assert!(!should_force_goal_todo_plan(false, &Some(empty_todo_registry())).await);
     }
 
     #[tokio::test]
-    async fn eager_todo_plan_not_suggested_once_todos_exist() {
-        let convo = vec![user_message("keep going")];
-        assert!(!should_suggest_eager_todo_plan(&convo, &Some(staged_todo_registry())).await);
+    async fn goal_todo_plan_not_forced_without_a_registry() {
+        // No registry means the `todo` tool is never advertised, so forcing it
+        // would name a tool the request does not carry.
+        assert!(!should_force_goal_todo_plan(true, &None).await);
     }
 
     #[tokio::test]
-    async fn eager_todo_plan_not_suggested_past_the_first_user_turn() {
-        let convo = vec![
-            user_message("build a flappy bird clone"),
-            json!({ "role": "assistant", "content": "on it" }),
-            user_message("also add a high score screen"),
-        ];
-        assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
+    async fn todo_addendum_is_upkeep_only_outside_goal_mode() {
+        let staged = Some(staged_todo_registry());
+        assert_eq!(
+            todo_prompt_addendum(false, &staged).await,
+            Some(crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM)
+        );
+        assert_eq!(
+            todo_prompt_addendum(false, &Some(empty_todo_registry())).await,
+            None
+        );
+    }
+
+    /// The prompt names the scratch and the tools bind it, so both must derive
+    /// it the same way or the model is told about a directory nothing set up.
+    #[test]
+    fn scratch_root_is_session_keyed_and_falls_back_to_the_project() {
+        let root = unique_project_root();
+        assert_eq!(
+            scratch_root_for(Some("sess-1"), &root),
+            tauri_plugin_agent_tools::workspace::scratch_dir("sess-1")
+        );
+        assert_eq!(
+            scratch_root_for(None, &root),
+            root.join("agent-scratch"),
+            "a session-less run still needs a scratch to bind"
+        );
+        // Two sessions never share one scratch.
+        assert_ne!(
+            scratch_root_for(Some("sess-1"), &root),
+            scratch_root_for(Some("sess-2"), &root)
+        );
     }
 
     #[test]
@@ -1896,6 +2059,7 @@ mod tests {
             Some("main assistant"),
             Some("You are a robotics researcher."),
             Some(&root),
+            Some("test-session"),
             false,
         )
         .expect("prompt");
@@ -1967,10 +2131,8 @@ mod tests {
                         saw_tool_call = true;
                     }
                 }
-                StreamEvent::ToolResult { content, .. } => {
-                    if content == "MOCK_RESULT" {
-                        saw_tool_result = true;
-                    }
+                StreamEvent::ToolResult { content, .. } if content == "MOCK_RESULT" => {
+                    saw_tool_result = true;
                 }
                 _ => {}
             }
@@ -1993,7 +2155,7 @@ mod tests {
             &tx,
             &json!({}),
             "m",
-            &[],
+            &[crate::core::agent::todo::todo_tool_schema()],
             convo,
             8,
             &mut budget,
@@ -2016,6 +2178,27 @@ mod tests {
         assert_eq!(
             requests[1]["tool_choice"], "auto",
             "later turns must not keep forcing the same tool"
+        );
+    }
+
+    #[test]
+    fn forced_tool_choice_requires_an_advertised_tool() {
+        let messages = vec![json!({ "role": "user", "content": "build a flappy bird clone" })];
+        let ask_only = vec![crate::core::agent::interaction::ask_tool_schema()];
+
+        let ask_request =
+            build_completion_request("m", &messages, &ask_only, &json!({}), Some("todo"));
+        assert_eq!(
+            ask_request["tool_choice"], "auto",
+            "a named tool_choice must not select a tool omitted from tools"
+        );
+
+        let todo = crate::core::agent::todo::todo_tool_schema();
+        let todo_request =
+            build_completion_request("m", &messages, &[todo], &json!({}), Some("todo"));
+        assert_eq!(
+            todo_request["tool_choice"],
+            json!({ "type": "function", "function": { "name": "todo" } })
         );
     }
 
@@ -2117,12 +2300,12 @@ mod tests {
         let registry = Some(todo_registry_with_open_task());
         // Not a first-message candidate (eager_todo_plan == false), list exists.
         let addendum = todo_prompt_addendum(false, &registry).await;
-        assert_eq!(addendum, Some(TODO_UPKEEP_PROMPT_ADDENDUM));
+        assert_eq!(addendum, Some(crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM));
 
         // A first substantive message gets the init guidance instead.
         assert_eq!(
             todo_prompt_addendum(true, &registry).await,
-            Some(EAGER_TODO_PROMPT_ADDENDUM)
+            Some(crate::core::agent::context::EAGER_TODO_PROMPT_ADDENDUM)
         );
     }
 
@@ -2374,8 +2557,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn turn_cycle_stops_when_budget_exhausted() {
-        let (tx, _rx) = mpsc::unbounded_channel();
+    async fn turn_cycle_soft_stops_when_budget_exhausted() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let mut over_budget = tool_call_completion();
         over_budget["usage"] = json!({ "total_tokens": 100 });
         let model = MockModel::new(vec![over_budget]);
@@ -2383,7 +2566,7 @@ mod tests {
         let mut budget = SessionBudget::new(Some(50));
         let convo = vec![json!({ "role": "user", "content": "hi" })];
 
-        let err = run_turn_cycle(
+        let result = run_turn_cycle(
             &tx,
             &json!({}),
             "m",
@@ -2398,12 +2581,28 @@ mod tests {
             None,
         )
         .await
-        .unwrap_err();
+        .expect("budget exhaustion is a soft stop, not an error");
 
-        assert!(err.contains("budget"), "unexpected error: {err}");
+        let final_text = extract_choice_message(&result)
+            .and_then(|m| m.get("content").and_then(|c| c.as_str()))
+            .unwrap_or_default();
+        let spent = budget.spent();
+        assert!(
+            final_text.contains("budget")
+                && final_text.contains(&spent.to_string()),
+            "soft stop should describe the exhausted budget ({spent} tokens): {final_text}",
+        );
         assert!(
             tool.calls.lock().unwrap().is_empty(),
             "tool must not run once budget is exhausted"
+        );
+        // A MessagesUpdated is published so live surfaces (and the replay
+        // session) see the partial conversation before the soft stop.
+        assert!(
+            std::iter::from_fn(|| rx.try_recv().ok()).any(
+                |ev| matches!(ev, StreamEvent::MessagesUpdated { .. })
+            ),
+            "expected a MessagesUpdated event on soft stop"
         );
     }
 
@@ -2460,6 +2659,76 @@ mod tests {
         assert!(tool.calls.lock().unwrap().is_empty());
     }
 
+    /// A run that never recovers from overflow still has to hand its compacted
+    /// conversation to the client: without it the session keeps the oversized
+    /// history and every later turn re-overflows by construction.
+    #[tokio::test]
+    async fn turn_cycle_publishes_compacted_history_before_giving_up() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let overflow = || {
+            Err(format!(
+                "[{}] Upstream returned HTTP 400: context_length_exceeded",
+                crate::core::agent::upstream::CONTEXT_OVERFLOW_MARKER
+            ))
+        };
+        let summary = || Ok(json!({ "choices": [{ "message": { "content": "SUMMARY" } }] }));
+        let model = ResultQueueModel {
+            results: StdMutex::new(
+                vec![
+                    overflow(),
+                    summary(),
+                    overflow(),
+                    summary(),
+                    overflow(),
+                    summary(),
+                    overflow(),
+                    summary(),
+                    overflow(),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        };
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let mut convo = vec![json!({ "role": "system", "content": "sys" })];
+        for i in 0..60 {
+            let r = if i % 2 == 0 { "user" } else { "assistant" };
+            convo.push(json!({ "role": r, "content": format!("m{i}") }));
+        }
+        let original_len = convo.len();
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_err(), "a persistent overflow must still fail");
+        drop(tx);
+        let mut published: Option<usize> = None;
+        while let Ok(ev) = rx.try_recv() {
+            if let StreamEvent::MessagesUpdated { messages } = ev {
+                published = Some(messages.len());
+            }
+        }
+        let len = published.expect("compaction must publish MessagesUpdated");
+        assert!(
+            len < original_len,
+            "published history must be shorter than the overflowing one ({len} vs {original_len})"
+        );
+    }
+
     #[tokio::test]
     async fn turn_cycle_skips_execution_on_truncated_tool_calls() {
         let (tx, _rx) = mpsc::unbounded_channel();
@@ -2505,6 +2774,23 @@ mod tests {
     }
 
     #[test]
+    fn absent_turn_cap_is_unbounded() {
+        assert_eq!(body_turn_cap(&json!({})), 0);
+        assert_eq!(body_turn_cap(&json!({ "max_turns": 0 })), 0);
+        assert_eq!(body_turn_cap(&json!({ "max_turns": 3 })), 3);
+    }
+
+    #[test]
+    fn session_budget_treats_zero_and_absent_as_no_ceiling() {
+        assert_eq!(body_session_budget(&json!({})), None);
+        assert_eq!(body_session_budget(&json!({ "max_session_tokens": 0 })), None);
+        assert_eq!(
+            body_session_budget(&json!({ "max_session_tokens": 128_000 })),
+            Some(128_000)
+        );
+    }
+
+    #[test]
     fn stop_reason_reads_first_choice() {
         let completion = json!({ "choices": [{ "finish_reason": "tool_calls" }] });
         assert_eq!(stop_reason_of(&completion), "tool_calls");
@@ -2534,8 +2820,8 @@ mod tests {
         assert_eq!(map.keys().collect::<Vec<_>>(), vec!["search"]);
     }
 
-    use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
-    use crate::core::agent::tools::gate::{PermissionDecision, SessionGrants};
+    use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
+    use tauri_plugin_agent_tools::tools::gate::{PermissionDecision, SessionGrants};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static TEST_ROOT_SEQ: AtomicUsize = AtomicUsize::new(0);
@@ -2570,6 +2856,11 @@ mod tests {
                 mcp_servers: Arc::new(Mutex::new(HashMap::new())),
                 mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             },
+            store_root: tauri_plugin_agent_tools::workspace::project_store(&root),
+            enabled_skills: Vec::new(),
+            allow_network: DEFAULT_ALLOW_NETWORK,
+            allow_home_read: DEFAULT_ALLOW_HOME_READ,
+            scratch_root: tauri_plugin_agent_tools::workspace::scratch_dir("test-session"),
             project_root: root,
             // Read-only default => write PROMPTS.
             permissions: ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
@@ -2579,9 +2870,137 @@ mod tests {
             todo_registry: None,
             grants: std::sync::Mutex::new(SessionGrants::default()),
             subagents: None,
-            yolo: false,
+            auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
         }
+    }
+
+    /// The whole point of the setting: what agent.toml says has to survive the
+    /// trip into the invoker. This is the assertion that was missing when the
+    /// resolution passed `None` and silently ignored the file.
+    #[test]
+    fn agent_toml_network_setting_reaches_the_invoker() {
+        let root = std::env::temp_dir().join(format!(
+            "jan_loop_net_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let agent_dir = root.join(".jan").join("agent");
+        std::fs::create_dir_all(&agent_dir).expect("create agent dir");
+
+        let write = |body: &str| {
+            std::fs::write(agent_dir.join("agent.toml"), body).expect("write agent.toml")
+        };
+
+        write("[tools]\nallow_network = false\n[skills]\nenabled = [\"deploy\"]\n");
+        let denied = resolve_run_settings(&root);
+        assert!(!denied.allow_network, "explicit false must be honoured");
+        assert_eq!(denied.enabled_skills, vec!["deploy".to_string()]);
+
+        write("[tools]\nallow_network = true\n");
+        assert!(
+            resolve_run_settings(&root).allow_network,
+            "explicit true must be honoured"
+        );
+
+        write("[tools]\ndefault = \"read-only\"\n");
+        assert_eq!(
+            resolve_run_settings(&root).allow_network,
+            DEFAULT_ALLOW_NETWORK,
+            "unset must fall back to the surface default"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An explicit `[tools].allow_network` overrides the surface default in both
+    /// directions, so a project can lock the shell down or open it up whichever
+    /// way its surface leans.
+    #[test]
+    fn configured_allow_network_overrides_the_default() {
+        assert!(resolve_allow_network(Some(true)));
+        assert!(!resolve_allow_network(Some(false)));
+        assert_eq!(resolve_allow_network(None), DEFAULT_ALLOW_NETWORK);
+    }
+
+    /// `[tools].allow_home_read` likewise overrides the CLI default (on by
+    /// default) in both directions, so a project can lock `$HOME` back down.
+    #[test]
+    fn configured_allow_home_read_overrides_the_default() {
+        assert!(resolve_allow_home_read(Some(true)));
+        assert!(!resolve_allow_home_read(Some(false)));
+        assert_eq!(resolve_allow_home_read(None), DEFAULT_ALLOW_HOME_READ);
+    }
+
+    /// The CLI agent's shell keeps its network namespace. Before the sandbox
+    /// existed this shell ran fully unconfined, so flipping this to `false`
+    /// silently breaks `curl`, `git fetch` and package installs while every
+    /// test that does not actually open a socket keeps passing.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn cli_tool_context_allows_network() {
+        let root = std::path::PathBuf::from("/tmp/jan-net-check");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
+        assert!(
+            invoker.tool_context().allow_network,
+            "CLI shell must keep its network namespace"
+        );
+    }
+
+    /// The CLI shell reads `$HOME` (so git/ssh credential helpers work) unless
+    /// the project explicitly opts out.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn cli_tool_context_reads_home() {
+        let root = std::path::PathBuf::from("/tmp/jan-home-check");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
+        assert!(
+            invoker.tool_context().home_readonly,
+            "CLI shell must read $HOME"
+        );
+    }
+
+    /// The desktop keeps the full isolation: the sandbox masks `$HOME` rather
+    /// than binding it read-only, so the Jan data folder (which lives inside
+    /// `$HOME`) stays unreadable.
+    #[test]
+    #[cfg(not(feature = "cli"))]
+    fn desktop_tool_context_withholds_home() {
+        let root = std::path::PathBuf::from("/tmp/jan-home-check");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
+        assert!(!invoker.tool_context().home_readonly);
+    }
+
+    /// The desktop chat sandbox is ephemeral and unprompted, so it opts in per
+    /// call from a user setting instead of defaulting on here.
+    #[test]
+    #[cfg(not(feature = "cli"))]
+    fn desktop_tool_context_withholds_network() {
+        let root = std::path::PathBuf::from("/tmp/jan-net-check");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
+        assert!(!invoker.tool_context().allow_network);
     }
 
     async fn respond_once(
@@ -2632,14 +3051,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn plan_mode_denies_write_even_with_yolo() {
+    async fn plan_mode_denies_write_even_with_auto_approve() {
         let root = unique_project_root();
         let (tx, _rx) = mpsc::unbounded_channel();
         let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
         let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
         invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
-        // --yolo must NOT override the plan-mode read-only gate.
-        invoker.yolo = true;
+        // Auto-approval must NOT override the plan-mode read-only gate.
+        invoker.auto_approve = true;
 
         let out = invoker.invoke(&[write_call()]).await.unwrap();
 
@@ -2660,7 +3079,7 @@ mod tests {
         let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
         let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
         invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
-        invoker.yolo = true;
+        invoker.auto_approve = true;
 
         // An unknown (non-builtin) name stands in for an MCP tool a stale schema
         // could still surface; it must be denied before any dispatch.
@@ -2744,7 +3163,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ask_waits_for_and_returns_a_structured_response() {
+    async fn ask_waits_for_and_returns_model_readable_response() {
         let root = unique_project_root();
         let (tx, mut rx) = mpsc::unbounded_channel();
         let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
@@ -2776,9 +3195,72 @@ mod tests {
         .unwrap();
 
         let out = task.await.unwrap();
-        let result: serde_json::Value = serde_json::from_str(&out[0].content).unwrap();
-        assert_eq!(result[0]["id"], "scope");
-        assert_eq!(result[0]["selected"][0], "Small");
+        assert_eq!(out[0].content, "User response for \"scope\": Small");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn ask_returns_custom_response_as_clear_model_text() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let asks = crate::core::agent::interaction::new_registry();
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        invoker.ask_requests = Some(asks.clone());
+
+        let task = tokio::spawn(async move { invoker.invoke(&[ask_call()]).await.unwrap() });
+        let request_id = match rx.recv().await.unwrap() {
+            StreamEvent::AskRequest { request_id, .. } => request_id,
+            event => panic!("expected ask_request, got {event:?}"),
+        };
+        crate::core::agent::interaction::respond(
+            &asks,
+            &request_id,
+            Ok(vec![crate::core::agent::interaction::QuestionResult {
+                id: "scope".into(),
+                selected: Vec::new(),
+                custom_input: Some("CUSTOM-SENTINEL-4829".into()),
+            }]),
+        )
+        .await
+        .unwrap();
+
+        let out = task.await.unwrap();
+        assert_eq!(
+            out[0].content,
+            "User response for \"scope\": CUSTOM-SENTINEL-4829"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn ask_returns_custom_response_at_invoker_boundary() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let asks = crate::core::agent::interaction::new_registry();
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        invoker.ask_requests = Some(asks.clone());
+
+        let task = tokio::spawn(async move { invoker.invoke(&[ask_call()]).await.unwrap() });
+        let request_id = match rx.recv().await.unwrap() {
+            StreamEvent::AskRequest { request_id, .. } => request_id,
+            event => panic!("expected ask_request, got {event:?}"),
+        };
+        crate::core::agent::interaction::respond(
+            &asks,
+            &request_id,
+            Ok(vec![crate::core::agent::interaction::QuestionResult {
+                id: "scope".into(),
+                selected: Vec::new(),
+                custom_input: Some("custom answer".into()),
+            }]),
+        )
+        .await
+        .unwrap();
+
+        let out = task.await.unwrap();
+        assert_eq!(out[0].content, "User response for \"scope\": custom answer");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2950,12 +3432,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn yolo_writes_without_prompting() {
+    async fn auto_approve_writes_without_prompting() {
         let root = unique_project_root();
         let (tx, mut rx) = mpsc::unbounded_channel();
         let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
         let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
-        invoker.yolo = true;
+        invoker.auto_approve = true;
 
         let out = invoker.invoke(&[write_call()]).await.unwrap();
 
@@ -2965,7 +3447,7 @@ mod tests {
         // No permission prompt should have been emitted.
         assert!(
             !matches!(rx.try_recv(), Ok(StreamEvent::PermissionRequest { .. })),
-            "yolo must not prompt for a write"
+            "auto_approve must not prompt for a write"
         );
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -3129,7 +3611,7 @@ mod tests {
 
     #[test]
     fn read_only_project_still_advertises_mcp_tools() {
-        use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+        use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools = vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
         let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
         // The scaffolded CLI project default: read-only, no allow-list.
@@ -3143,7 +3625,7 @@ mod tests {
 
     #[test]
     fn denied_mcp_tool_is_not_advertised() {
-        use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+        use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools = vec![
             json!({ "type": "function", "function": { "name": "web_search_exa" } }),
             json!({ "type": "function", "function": { "name": "dangerous_write" } }),
@@ -3168,7 +3650,7 @@ mod tests {
 
     #[test]
     fn deny_default_advertises_no_mcp_tools() {
-        use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+        use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools = vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
         let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
         let perms = ToolPermissions::new(PermissionDefault::Deny, &[], &[], &[]);

@@ -28,6 +28,7 @@
     "vector-db:default",
     "rag:default",
     "websearch:default",
+    "agent-tools:default",
     "hardware:default",
     "deep-link:default",
     "llamacpp:default",

@@ -2889,6 +2889,12 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@janhq/tauri-plugin-agent-tools-api@link:../src-tauri/plugins/tauri-plugin-agent-tools::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-agent-tools-api@link:../src-tauri/plugins/tauri-plugin-agent-tools::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app"
+  languageName: node
+  linkType: soft
+
 "@janhq/tauri-plugin-hardware-api@link:../../src-tauri/plugins/tauri-plugin-hardware::locator=%40janhq%2Fllamacpp-extension%40workspace%3Aextensions%2Fllamacpp-extension":
   version: 0.0.0-use.local
   resolution: "@janhq/tauri-plugin-hardware-api@link:../../src-tauri/plugins/tauri-plugin-hardware::locator=%40janhq%2Fllamacpp-extension%40workspace%3Aextensions%2Fllamacpp-extension"
@@ -2982,6 +2988,7 @@ __metadata:
     "@eslint/js": "npm:8.57.0"
     "@janhq/core": "workspace:*"
     "@janhq/interfaces": "npm:0.0.2"
+    "@janhq/tauri-plugin-agent-tools-api": "link:../src-tauri/plugins/tauri-plugin-agent-tools"
     "@janhq/tauri-plugin-llamacpp-api": "link:../src-tauri/plugins/tauri-plugin-llamacpp"
     "@janhq/tauri-plugin-websearch-api": "link:../src-tauri/plugins/tauri-plugin-websearch"
     "@radix-ui/react-accordion": "npm:1.2.11"

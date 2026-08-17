@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 use std::future::pending;
-use std::io;
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,11 +17,11 @@ use super::path_refs;
 
 use ratatui::crossterm::{
     event::{
-        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
-        EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton,
-        MouseEvent, MouseEventKind,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, Event, KeyCode,
+        KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
     },
     execute,
+    style::Print,
     terminal::{
         disable_raw_mode, enable_raw_mode, BeginSynchronizedUpdate, EndSynchronizedUpdate,
         EnterAlternateScreen, LeaveAlternateScreen,
@@ -36,14 +36,96 @@ mod highlight;
 mod markdown;
 
 use markdown::{
-    format_assistant_lines, format_markdown_lines, reasoning_detail_lines, reasoning_summary_row,
+    format_markdown_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
 };
 
-use super::{sort_threads_recent, AgentSession, ResumeTarget};
+use super::brand;
+use super::journal::{self, DisplayEntry};
+use super::{sort_threads_recent, AgentSession, ResumeTarget, SessionLimits};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs, PermissionRegistry};
-use crate::core::agent::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::workspace;
+
+/// Mouse tracking, hand-rolled instead of crossterm's `EnableMouseCapture`,
+/// which also turns on any-motion reporting (1003) -- a stream of events for
+/// every idle pointer move. Buttons and the wheel (1000) plus motion *while a
+/// button is held* (1002), with SGR coordinates (1006), is exactly what
+/// drag-to-select needs and nothing more.
+const MOUSE_TRACK_ON: &str = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
+/// Alternate scroll (1007) makes the terminal translate the wheel into arrow
+/// keys, which the composer reads as message-history recall -- so it is saved
+/// and forced off for the session, then restored on exit. Needed whether or not
+/// tracking is on, since with tracking off the wheel would otherwise type.
+const ALT_SCROLL_SAVE_OFF: &str = "\x1b[?1007s\x1b[?1007l";
+const ALT_SCROLL_RESTORE: &str = "\x1b[?1007r";
+
+/// How long the dock advertises a finished copy.
+const COPY_NOTICE: Duration = Duration::from_millis(1500);
+/// Terminals cap the OSC 52 payload they will accept; past this the sequence is
+/// skipped and the in-process clipboard is the only path.
+const OSC52_MAX_BYTES: usize = 100_000;
+
+/// Which cells a drag covers. `Linear` follows reading order, taking whole rows
+/// between the endpoints; `Block` takes the rectangle between them, for lifting
+/// one column out of a table or a diff without its `+`/`-` markers. Alt held as
+/// the drag starts picks `Block`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SelectionMode {
+    Linear,
+    Block,
+}
+
+/// A mouse selection in frame cell coordinates. The TUI owns selection outright
+/// because mouse tracking takes it away from the terminal: without this, a drag
+/// with tracking on would do nothing at all.
+#[derive(Debug, Clone, Copy)]
+struct Selection {
+    anchor: (u16, u16),
+    head: (u16, u16),
+    mode: SelectionMode,
+    /// Button still held, so edge auto-scroll may run.
+    dragging: bool,
+    /// The pointer moved since the press. A press that never moves is a click
+    /// (expand a tool row), not a selection.
+    moved: bool,
+}
+
+impl Selection {
+    fn new(at: (u16, u16), mode: SelectionMode) -> Self {
+        Self {
+            anchor: at,
+            head: at,
+            mode,
+            dragging: true,
+            moved: false,
+        }
+    }
+
+    /// Covered cells as `(row, first_col, last_col)`, inclusive on both ends and
+    /// clipped to `width`. Ordered top to bottom regardless of drag direction.
+    fn spans(&self, width: u16) -> Vec<(u16, u16, u16)> {
+        let last = width.saturating_sub(1);
+        let (a, h) = (self.anchor, self.head);
+        match self.mode {
+            SelectionMode::Block => {
+                let (c0, c1) = (a.0.min(h.0).min(last), a.0.max(h.0).min(last));
+                (a.1.min(h.1)..=a.1.max(h.1)).map(|r| (r, c0, c1)).collect()
+            }
+            SelectionMode::Linear => {
+                let (start, end) = if (a.1, a.0) <= (h.1, h.0) { (a, h) } else { (h, a) };
+                (start.1..=end.1)
+                    .map(|r| {
+                        let c0 = if r == start.1 { start.0.min(last) } else { 0 };
+                        let c1 = if r == end.1 { end.0.min(last) } else { last };
+                        (r, c0, c1)
+                    })
+                    .collect()
+            }
+        }
+    }
+}
 
 #[derive(Debug, PartialEq)]
 enum Status {
@@ -62,6 +144,59 @@ enum Kind {
     Reasoning,
     Tool,
     Meta,
+}
+
+/// Gutter glyph for a system line. A category with its own established glyph
+/// (`◎` for a goal) passes that instead, so the column always carries exactly
+/// one marker.
+const SYSTEM_GLYPH: &str = "•";
+
+/// Gutter glyph for goal-loop lines, matching the header's `◎ /goal` badge.
+const GOAL_GLYPH: &str = "◎";
+
+/// Gutter for the body rows of a multi-line system block. Distinct from the tool
+/// rows' `│` and the reasoning rows' `┊`, so three stacked blocks stay tellable
+/// apart at a glance.
+const SYSTEM_CONT: &str = "┆";
+
+/// How loud a system line is. The only thing that varies between them, so it is
+/// a parameter rather than a colour picked at each of the ~90 call sites.
+#[derive(Copy, Clone, PartialEq)]
+enum Level {
+    /// A dim acknowledgement or status note.
+    Info,
+    /// Something the user should notice but that needs no action.
+    Warn,
+    /// A failed turn, tool or command.
+    Error,
+    /// Work that completed successfully.
+    Good,
+}
+
+impl Level {
+    /// `(gutter, body)` styles. The gutter always carries colour so the marker
+    /// is scannable down the left edge even when the body is dim.
+    fn styles(self) -> (Style, Style) {
+        match self {
+            Level::Info => (Style::new().light_blue(), Style::new().dim()),
+            Level::Warn => (Style::new().yellow(), Style::new().yellow()),
+            Level::Error => (Style::new().red().bold(), Style::new().red().bold()),
+            Level::Good => (Style::new().green(), Style::new().green().bold()),
+        }
+    }
+}
+
+/// Blocks that read as one run of activity and so need no blank between them.
+/// A turn alternating folded reasoning summaries with tool rows was spending a
+/// blank line on every switch, which is most of the turn.
+fn band(kind: Kind) -> u8 {
+    match kind {
+        Kind::Tool | Kind::Reasoning => 0,
+        Kind::None => 1,
+        Kind::User => 2,
+        Kind::Prose => 3,
+        Kind::Meta => 4,
+    }
 }
 
 struct Pending {
@@ -99,7 +234,7 @@ impl Pending {
     /// sees exactly what a grant covers (`git status && rm foo` -> git AND rm);
     /// commands that can't be decomposed grant only their exact text.
     fn always_label(&self) -> String {
-        use crate::core::agent::tools::cmdscan::{scan_command, CommandScan};
+        use tauri_plugin_agent_tools::tools::cmdscan::{scan_command, CommandScan};
         let Some(command) = self.command.as_deref() else {
             return "Allow always (this thread)".to_string();
         };
@@ -124,7 +259,8 @@ impl Pending {
         match &self.diff {
             Some(d) => diff_lines(
                 d,
-                (inner as usize).saturating_sub(4).max(1),
+                inner as usize,
+                DIFF_PREVIEW_MAX_ROWS,
                 "",
                 self.path.as_deref(),
             ),
@@ -149,7 +285,7 @@ impl Pending {
 }
 
 /// What a highlighted picker row does on Enter.
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 enum PickerKind {
     ResumeThread,
     SelectModel,
@@ -160,6 +296,9 @@ enum PickerKind {
     RewindScope,
     /// Read-only view of `~/.jan/config.toml` providers (`/config`). Enter closes.
     ViewConfig,
+    /// `/settings`: browse editable `[agent]` keys from agent.toml; Enter opens
+    /// a docked edit prompt for the selected row.
+    AgentSettings,
     /// `/todo` editor: browse the phased list and mutate the selected task
     /// (done/drop/rm) through the same canonical `TodoList` the model uses.
     Todo,
@@ -182,6 +321,7 @@ impl Picker {
             PickerKind::RewindMessage => " rewind to message ",
             PickerKind::RewindScope => " restore ",
             PickerKind::ViewConfig => " provider config ",
+            PickerKind::AgentSettings => " agent settings ",
             PickerKind::Todo => " todo ",
         }
     }
@@ -194,6 +334,7 @@ impl Picker {
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
+            PickerKind::AgentSettings => " ↑/↓ select   Enter edit   x unset   Esc close",
             PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
         }
     }
@@ -251,6 +392,9 @@ struct CurrentRun {
 /// individual call and its result without re-fetching anything.
 struct GroupedCall {
     id: String,
+    /// Present-tense label (e.g. "Executing grep -n foo src/"), shown on the
+    /// live row while this is the group's only call.
+    activity: String,
     /// Past-tense finished label (e.g. "Ran grep -n foo src/").
     done: String,
     /// Raw result content, filled when the matching `ToolResult` arrives.
@@ -275,14 +419,438 @@ struct ToolGroup {
     calls: Vec<GroupedCall>,
     /// When the group opened, so the running row can show elapsed time.
     started: Instant,
+    /// Outcome of the most recently *arrived* result, which is what the
+    /// collapsed row reports. Results can land out of dispatch order, so this
+    /// can't be read back off `calls`.
+    last_result_error: Option<bool>,
 }
 
 impl ToolGroup {
-    /// Whether the most recent call is still awaiting its `ToolResult`.
-    /// A group can stay open with no in-flight call so future calls keep
-    /// folding into it; the throbber must not show while that's the case.
+    /// Whether any call is still awaiting its `ToolResult`. A group can stay
+    /// open with every call resolved so future calls keep folding into it; the
+    /// throbber must not show while that's the case. Results within a batch can
+    /// land out of dispatch order, so this looks at every call, not the last.
     fn is_running(&self) -> bool {
-        self.calls.last().is_some_and(|c| c.content.is_none())
+        self.calls.iter().any(|c| c.content.is_none())
+    }
+
+    /// Terminal marker for the collapsed row: the latest result's status, so a
+    /// call that failed and then succeeded on a retry reads as resolved. The
+    /// per-call failure stays visible in the expanded detail. A failure still
+    /// outranks an unresolved call: it is the more specific thing to report.
+    fn outcome_tag(&self, interrupted: bool) -> (&'static str, Style) {
+        if self.last_result_error == Some(true) {
+            ("✗", Style::new().red())
+        } else if interrupted && self.is_running() {
+            ("○", Style::new().yellow())
+        } else {
+            ("✓", Style::new().green())
+        }
+    }
+
+    /// Live label for an open group: the tool still in flight, so a running
+    /// batch reads as that tool rather than a counted breakdown like "Running
+    /// 2 commands, 5 searches" (which would wrongly imply all of them are
+    /// executing at once). The past-tense summary only appears once the group
+    /// resolves. Results can land out of dispatch order, so the in-flight call
+    /// is the latest one still awaiting its result.
+    fn activity(&self) -> String {
+        self.calls
+            .iter()
+            .rev()
+            .find(|c| c.content.is_none())
+            .or_else(|| self.calls.last())
+            .map(|c| c.activity.clone())
+            .unwrap_or_default()
+    }
+
+    /// The group's row: present-tense `▸` only while it is open with a call in
+    /// flight, otherwise a resolved tag plus past-tense summary. The label is
+    /// stored untruncated; `Row::Tool` clamps it to the current draw width.
+    fn row(&self, state: GroupRow) -> Row {
+        if state == GroupRow::Open && self.is_running() {
+            return RowKind::Tool {
+                tag: "▸".to_string(),
+                tag_style: Style::new().cyan(),
+                label: self.activity(),
+                label_style: Style::new().cyan().dim(),
+                reserve: TOOL_ROW_RESERVE,
+            }
+            .into();
+        }
+        let label = if self.nouns.len() <= 1 {
+            self.first_done.clone()
+        } else {
+            group_summary(&self.nouns)
+        };
+        let (tag, tag_style) = self.outcome_tag(state == GroupRow::Aborted);
+        RowKind::Tool {
+            tag: tag.to_string(),
+            tag_style,
+            label,
+            label_style: Style::new().dim(),
+            reserve: TOOL_ROW_RESERVE,
+        }
+        .into()
+    }
+}
+
+/// How a group's row should read: still open to further calls, closed normally,
+/// or closed by an abort that left calls unresolved.
+#[derive(Clone, Copy, PartialEq)]
+enum GroupRow {
+    Open,
+    Closed,
+    Aborted,
+}
+
+/// A standalone (diff-producing) tool row awaiting its `ToolResult`, retained so
+/// an aborted run can mark it interrupted instead of leaving a `▸` that reads as
+/// work still in flight.
+struct PendingToolRow {
+    id: String,
+    idx: usize,
+    label: String,
+    /// Past-tense label the row is rewritten to once its result lands.
+    done: String,
+}
+
+/// What the session opens with: the `jan` wordmark plus the facts a first-time
+/// reader needs (which project, how tool calls are approved) and the commands to
+/// go on with. Held as data rather than rendered lines so the row re-lays out at
+/// the draw width like every other width-dependent row.
+struct Banner {
+    version: &'static str,
+    project: String,
+    branch: Option<String>,
+    /// How tool calls are approved this session (sandboxed, or `--safe`).
+    tools: String,
+    /// False when `--task` already seeded the first message, so the splash does
+    /// not invite one.
+    awaiting_first_message: bool,
+}
+
+/// Indent shared by every splash row, matching `jan --help`.
+const BANNER_INDENT: u16 = 2;
+
+/// Commands worth putting in front of a first-time reader. The full list is
+/// behind `/help` (see `SLASH_COMMANDS`).
+const BANNER_HINTS: &[(&str, &str)] = &[
+    ("/help", "commands"),
+    ("/init", "onboard this project"),
+    ("/model", "switch model"),
+    ("/resume", "reopen a session"),
+    ("Ctrl-D", "quit"),
+];
+
+fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
+    let accent = Style::new().yellow().bold();
+    let label = Style::new().dark_gray();
+    let dim = Style::new().dim();
+    let indent = " ".repeat(BANNER_INDENT as usize);
+    let mut out: Vec<Line<'static>> = Vec::new();
+
+    // A clipped wordmark reads as breakage, so a narrow terminal gets the name
+    // as text instead.
+    if width >= brand::LOGO_WIDTH + BANNER_INDENT * 2 {
+        for art in brand::LOGO {
+            out.push(Line::styled(format!("{indent}{art}"), accent));
+        }
+        out.push(Line::raw(""));
+        out.push(Line::styled(
+            format!("{indent}interactive agent console · v{}", banner.version),
+            dim,
+        ));
+    } else {
+        out.push(Line::from(vec![
+            Span::styled(format!("{indent}jan"), accent),
+            Span::styled(format!(" v{}", banner.version), dim),
+        ]));
+    }
+    out.push(Line::raw(""));
+
+    let value_max = width.saturating_sub(BANNER_INDENT + 10).max(8) as usize;
+    let mut field = |name: &str, value: String| {
+        out.push(Line::from(vec![
+            Span::styled(format!("{indent}{name:<8}"), label),
+            Span::styled(truncate(&value, value_max), dim),
+        ]));
+    };
+    // No `model` row: the header leads with it, bold, two rows above. The
+    // location is a different case -- the dock's copy is dim and easy to miss,
+    // and the tools act on that directory, so a `jan` started in the wrong one
+    // is the mistake worth catching before the first message.
+    let location = match &banner.branch {
+        Some(branch) => format!("{} ⎇ {branch}", banner.project),
+        None => banner.project.clone(),
+    };
+    field("project", location);
+    field("tools", banner.tools.clone());
+    out.push(Line::raw(""));
+
+    for row in hint_rows(BANNER_HINTS, width) {
+        out.push(row);
+    }
+    if banner.awaiting_first_message {
+        let long = "type a message to start";
+        let invite = if width as usize >= BANNER_INDENT as usize + long.len() {
+            long
+        } else {
+            "type a message"
+        };
+        out.push(Line::styled(format!("{indent}{invite}"), dim));
+    }
+    out
+}
+
+/// Pack `(key, label)` hints into as few indented rows as `width` allows, so a
+/// narrow terminal wraps between hints instead of mid-hint.
+fn hint_rows(pairs: &[(&str, &str)], width: u16) -> Vec<Line<'static>> {
+    let key_style = Style::new().cyan().bold();
+    // `hint_spans` opens with one space; the splash indents by two.
+    let row = |group: &[(&str, &str)]| {
+        let mut spans = vec![Span::raw(" ")];
+        spans.extend(hint_spans(key_style, group));
+        Line::from(spans)
+    };
+    let mut groups: Vec<Vec<(&str, &str)>> = Vec::new();
+    let mut group: Vec<(&str, &str)> = Vec::new();
+    for pair in pairs {
+        group.push(*pair);
+        if row_width(&row(&group)) > width as usize && group.len() > 1 {
+            group.pop();
+            groups.push(std::mem::take(&mut group));
+            group.push(*pair);
+        }
+    }
+    if !group.is_empty() {
+        groups.push(group);
+    }
+    groups
+        .into_iter()
+        .map(|group| {
+            let full = row(&group);
+            if row_width(&full) <= width as usize {
+                return full;
+            }
+            // A hint too wide even on its own keeps its key and drops the
+            // description; the key is the part the user has to type.
+            row(&group.iter().map(|(key, _)| (*key, "")).collect::<Vec<_>>())
+        })
+        .collect()
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Counts `Row::lines` calls, so a test can assert that `draw` materializes
+    /// a viewport's worth of rows rather than the whole transcript.
+    static ROW_CLONES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Rows a `Paragraph` occupies once it word-wraps `lines` at `width`, measured
+/// with the same wrap the body uses so the two cannot disagree. ratatui wraps
+/// each `Line` independently and never merges across them, so summing this over
+/// a run of rows equals measuring their concatenation -- which is what lets
+/// `draw` add up cached per-row heights instead of wrapping the whole session.
+fn wrapped_height(lines: Vec<Line<'static>>, width: u16) -> u16 {
+    Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .line_count(width.max(1))
+        .min(u16::MAX as usize) as u16
+}
+
+/// One committed transcript entry. Width-dependent entries keep their *source*
+/// rather than rendered lines, so a terminal resize re-lays them out at the new
+/// width instead of leaving tables, boxed diffs and truncated labels sized for
+/// the old one. `Line` holds content whose layout is width-independent (it wraps
+/// naturally in the body `Paragraph`).
+///
+/// A row may render to several lines; transcript indices (group/reasoning/
+/// pending-row `idx`, `expanded`, `reveal`) address rows, so they stay valid
+/// across a resize no matter how the line count changes.
+struct Row {
+    kind: RowKind,
+    /// Last render, keyed by the width that produced it. The whole transcript
+    /// is laid out on every frame, so without this a long session would
+    /// re-parse its markdown and re-highlight its diffs 20 times a second;
+    /// only a width change invalidates the entry.
+    cache: std::cell::RefCell<Option<RowRender>>,
+}
+
+/// A row's rendered lines plus the height they occupy once the body
+/// `Paragraph` word-wraps them. `height` is what lets `draw` locate the visible
+/// window without materializing (let alone wrapping) the rows above it.
+struct RowRender {
+    width: u16,
+    lines: Vec<Line<'static>>,
+    height: u16,
+}
+
+enum RowKind {
+    Line(Line<'static>),
+    /// Assistant prose, re-wrapped through markdown at the draw width.
+    Markdown(String),
+    /// The opening splash, re-laid out at the draw width (the wordmark is
+    /// dropped and the hints re-packed on a terminal too narrow for them).
+    Banner(Box<Banner>),
+    /// A line the app is saying: `glyph` in the gutter column, body wrapped at
+    /// the draw width, so the gutter owns the left edge of the whole row instead
+    /// of only its first line. `cont` is what a wrapped continuation puts in the
+    /// column: an edge glyph repeats, a marker glyph gives way to blanks (a
+    /// second `•` would read as a second note).
+    System {
+        glyph: &'static str,
+        cont: &'static str,
+        gutter: Style,
+        body: Vec<Span<'static>>,
+    },
+    /// A tool call/summary row, re-truncated to `width - reserve`.
+    Tool {
+        tag: String,
+        tag_style: Style,
+        label: String,
+        label_style: Style,
+        reserve: u16,
+    },
+    /// A tool result summary plus its optional boxed diff panel. `content` is
+    /// `None` when the call row above already says the same thing.
+    Result {
+        tag: &'static str,
+        tag_style: Style,
+        content: Option<String>,
+        diff: Option<String>,
+        /// Path of the edited file, for diff syntax highlighting.
+        lang: Option<String>,
+    },
+}
+
+impl From<RowKind> for Row {
+    fn from(kind: RowKind) -> Self {
+        Row {
+            kind,
+            cache: std::cell::RefCell::new(None),
+        }
+    }
+}
+
+impl Row {
+    fn line(line: Line<'static>) -> Row {
+        RowKind::Line(line).into()
+    }
+
+    fn lines(&self, width: u16) -> Vec<Line<'static>> {
+        #[cfg(test)]
+        ROW_CLONES.with(|n| n.set(n.get() + 1));
+        self.fill(width);
+        self.cache
+            .borrow()
+            .as_ref()
+            .map(|r| r.lines.clone())
+            .unwrap_or_default()
+    }
+
+    /// Wrapped height at `width`, without cloning the row's lines. `draw` calls
+    /// this for every row on every frame and `lines` only for the visible few,
+    /// so this must stay O(1) once the row is cached.
+    fn height(&self, width: u16) -> u16 {
+        self.fill(width);
+        self.cache.borrow().as_ref().map_or(0, |r| r.height)
+    }
+
+    fn fill(&self, width: u16) {
+        if self.cache.borrow().as_ref().is_some_and(|r| r.width == width) {
+            return;
+        }
+        let lines = self.render(width);
+        let height = wrapped_height(lines.clone(), width);
+        *self.cache.borrow_mut() = Some(RowRender {
+            width,
+            lines,
+            height,
+        });
+    }
+
+    fn render(&self, width: u16) -> Vec<Line<'static>> {
+        match &self.kind {
+            RowKind::Line(line) => vec![line.clone()],
+            RowKind::Markdown(text) => format_markdown_lines(text, width),
+            RowKind::Banner(banner) => banner_lines(banner, width),
+            RowKind::System {
+                glyph,
+                cont,
+                gutter,
+                body,
+            } => {
+                let lead = glyph.chars().count() + 1;
+                let max = width.saturating_sub(lead as u16).max(8) as usize;
+                markdown::wrap_spans_at_words(body.clone(), max)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, spans)| {
+                        let mark = if i == 0 { *glyph } else { *cont };
+                        let mut row = vec![Span::styled(
+                            format!("{mark:<width$}", width = lead),
+                            *gutter,
+                        )];
+                        row.extend(spans);
+                        Line::from(row)
+                    })
+                    .collect()
+            }
+            RowKind::Tool {
+                tag,
+                tag_style,
+                label,
+                label_style,
+                reserve,
+            } => {
+                let max = width.saturating_sub(*reserve).max(1) as usize;
+                vec![tool_row(
+                    tag,
+                    *tag_style,
+                    &truncate(label, max),
+                    *label_style,
+                )]
+            }
+            RowKind::Result {
+                tag,
+                tag_style,
+                content,
+                diff,
+                lang,
+            } => {
+                let max = width.saturating_sub(8).max(1) as usize;
+                let mut out: Vec<Line<'static>> = content
+                    .iter()
+                    .map(|c| {
+                        Line::from(vec![
+                            Span::styled("│   ", Style::new().dark_gray()),
+                            Span::styled(format!("{tag} "), *tag_style),
+                            Span::styled(summarize_result(c, max), Style::new().dim()),
+                        ])
+                    })
+                    .collect();
+                if let Some(diff) = diff {
+                    out.extend(diff_lines(
+                        diff,
+                        width as usize,
+                        DIFF_MAX_ROWS,
+                        "│     ",
+                        lang.as_deref(),
+                    ));
+                }
+                out
+            }
+        }
+    }
+
+    /// Whether this row is the blank separator `gap` inserts. Only a literal
+    /// blank line qualifies; a source-backed row always renders content.
+    fn is_blank(&self) -> bool {
+        match &self.kind {
+            RowKind::Line(line) => line.spans.iter().all(|s| s.content.trim().is_empty()),
+            _ => false,
+        }
     }
 }
 
@@ -469,7 +1037,6 @@ struct App {
     /// Orchestration handle for out-of-run model calls (the `/compact` command).
     /// `None` in unit tests, set by `run` for the live session.
     args: Option<Arc<OrchestrationArgs>>,
-    max_turns: u32,
     /// Context window limit for the current model (default 128K).
     context_window: u64,
     /// Tokens to reserve for the model's response (compaction triggers at limit - reserve).
@@ -477,6 +1044,9 @@ struct App {
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     max_tokens: Option<u64>,
+    /// Token-spend ceiling for one message's run; `0` is unbounded. The only
+    /// cap on run length -- there is no turn limit.
+    max_session_tokens: u64,
     /// Repo top-level when the project is a git repo; enables workspace snapshots.
     /// Cleared if git setup fails, permanently disabling snapshots this session.
     repo_root: Option<PathBuf>,
@@ -512,8 +1082,17 @@ struct App {
     history: Vec<serde_json::Value>,
     /// Thread this conversation persists to (set on first save or on resume).
     thread_id: Option<String>,
-    /// Styled display transcript (user turns, assistant text, workflow lines).
-    transcript: Vec<Line<'static>>,
+    /// Display transcript (user turns, assistant text, workflow lines). Rows,
+    /// not lines: width-dependent entries keep their source and re-render on
+    /// resize (see `Row`).
+    transcript: Vec<Row>,
+    /// What was rendered, in emission order, so a resumed session gets its
+    /// reasoning and tool calls back. `history` cannot serve this: reasoning is
+    /// kept out of it and tool calls are flattened away on save. Dumped off the
+    /// render loop by `persist`, replayed by `replay_display_log`.
+    display_log: Vec<DisplayEntry>,
+    /// Background journal writer, created on the first dump and joined on exit.
+    journal_writer: Option<journal::Writer>,
     /// In-progress assistant text for the current turn, flushed on the next
     /// step/tool/terminal event.
     assistant_buf: String,
@@ -527,9 +1106,16 @@ struct App {
     /// Finalized tool groups, retained with their per-call detail so a collapsed
     /// summary row can be expanded back to its individual calls/results.
     groups: Vec<ToolGroup>,
+    /// Standalone (edit/write) call rows still awaiting their result. Several
+    /// can be open at once: a batch emits every `ToolCall` before any result.
+    pending_rows: Vec<PendingToolRow>,
     /// Committed reasoning blocks, folded to a summary row and expandable back to
     /// their full dimmed lines.
     reasoning_blocks: Vec<ReasoningBlock>,
+    /// Whether `<think>` reasoning reveals in full instead of folding. Defaults
+    /// from `[agent].show_reasoning` in agent.toml (false). Ctrl-O toggles every
+    /// existing block between its summary row and full detail for the session.
+    show_reasoning: bool,
     /// Transcript row indices of collapsed regions (tool groups or reasoning
     /// blocks) the user has expanded to full detail.
     expanded: std::collections::HashSet<usize>,
@@ -537,6 +1123,10 @@ struct App {
     /// expanding one that may sit above the pinned-to-bottom viewport).
     reveal: Option<usize>,
     input: String,
+    /// Composer entries submitted this session, oldest first, for Up/Down recall.
+    input_history: Vec<String>,
+    /// Position in `input_history` while recalling; `None` is the fresh buffer.
+    recall_pos: Option<usize>,
     /// Images staged by `/image`, flushed into the next submitted user message.
     pending_images: Vec<PendingImage>,
     /// Caret position as a byte index into `input` (always on a char boundary).
@@ -553,6 +1143,18 @@ struct App {
     /// Set by Esc to dismiss the path-hint popup; cleared on next char edit.
     path_hint_dismissed: bool,
     status: Status,
+    /// Wall-clock start of the current reasoning `<think>` block while it is
+    /// open (the model is actively reasoning). `None` between blocks.
+    thinking_since: Option<Instant>,
+    /// Duration of the reasoning block that just closed, cached so the header
+    /// can show `[thought for Ns]` transiently. `None` after the reasoning is
+    /// shown inline (or none has happened yet).
+    thought_for: Option<Duration>,
+    /// Wall-clock time `thought_for` was last set, so the `[thought for Ns]`
+    /// summary can expire back to the plain `[working]` after a short while
+    /// rather than persisting for the rest of the turn. `None` when `thought_for`
+    /// is `None` or not yet set.
+    thought_for_since: Option<Instant>,
     turn: (u32, u32),
     tokens: u64,
     detail: String,
@@ -566,10 +1168,34 @@ struct App {
     picker: Option<Picker>,
     /// Active `/login` prompt; owns the keyboard while open.
     login: Option<LoginPrompt>,
+    /// Active `/settings` edit prompt (docked like `/login`); owns the
+    /// keyboard while open. Holds the setting being edited and any validation
+    /// error; writes go straight to agent.toml on Enter.
+    settings_prompt: Option<SettingsPrompt>,
     /// Key handed off to the loop to verify off the render loop. Taken once.
     login_submit: Option<String>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
     update_requested: bool,
+    /// Compaction handed off to the loop, which spawns the summarizing model
+    /// call off the render loop. Taken once.
+    compact_request: Option<CompactKind>,
+    /// A compaction is in flight: the header and the input box show a throbber,
+    /// a second request is refused, and no run starts until it lands (its result
+    /// replaces `history`, so a run reading the old one would be clobbered).
+    compacting: Option<CompactKind>,
+    /// When the in-flight compaction started, for the elapsed counter.
+    compact_started: Option<Instant>,
+    /// The in-flight compaction was triggered by a context-overflow error, so
+    /// the errored turn is resumed once it lands.
+    retry_after_compact: bool,
+    /// Overflow retries spent in the current user turn, capped so a model that
+    /// overflows no matter how small the context cannot spin forever.
+    overflow_retries: u8,
+    /// False once a prompt the provider *accepted* exceeded `context_window`,
+    /// which proves the configured value wrong. Nothing then divides by it: the
+    /// gauge drops its denominator, the subagent share is hidden, and proactive
+    /// compaction stands down in favour of the loop's reactive path.
+    context_window_trusted: bool,
     /// An install is in flight: `/update` is refused (two processes must not
     /// rewrite the same binary) and the footer shows progress.
     update_installing: bool,
@@ -578,12 +1204,18 @@ struct App {
     scrollback: u16,
     /// Set when the user submits a message; the loop spawns a run next tick.
     want_start: bool,
-    /// Runs started since the todo list last had open work. The list is the
-    /// model's own scratchpad, so a finished one lingers until it declares a
-    /// new plan -- which may never happen. This counts down a grace period
-    /// instead of clearing the moment the last task closes, so a model that is
-    /// still mid-flow (about to append, or reopening a task) keeps its list.
-    runs_since_todos_closed: u32,
+    /// Turns (model roundtrips, plus the submission that kicked off a run)
+    /// since the todo list last had open work. The list is the model's own
+    /// scratchpad, so a finished one lingers until it declares a new plan --
+    /// which may never happen. This counts down a grace period instead of
+    /// clearing the moment the last task closes, so a model that is still
+    /// mid-flow (about to append, or reopening a task) keeps its list.
+    turns_since_todos_closed: u32,
+    /// When the plan last went from having open work to having none. Drives the
+    /// dock's own, wall-clock hide: `turns_since_todos_closed` only advances on
+    /// model roundtrips, so a run that finishes its plan and stops would pin a
+    /// fully checked-off list on screen indefinitely.
+    todos_closed_at: Option<Instant>,
     /// Transcript viewport width in cells, refreshed each `draw`; tables wrap to
     /// it. 0 until the first draw (callers fall back to a default).
     view_width: u16,
@@ -625,23 +1257,27 @@ struct App {
     /// Transcript viewport rect from the last draw, for mapping mouse clicks
     /// to rows.
     transcript_rect: Rect,
-    /// Wrapped-line scroll offset from the last draw (`0` = top), in the same
-    /// coordinate space as `row_index`.
+    /// Wrapped-line scroll offset from the last draw (`0` = top). Only the
+    /// selection anchor uses it now, to follow content that moved under it.
     last_scroll: u16,
-    /// Rendered-row -> source transcript index from the last draw (`None` for
-    /// synthetic rows: awaiting throbbers, live subagent panels, streaming
-    /// prose). Assumes summary rows never wrap (they're pre-truncated to the
-    /// viewport width), so a click's rendered row maps directly here without
-    /// needing wrap-aware layout math.
+    /// Body screen row -> source transcript index from the last draw (`None`
+    /// for synthetic rows: top padding, awaiting throbbers, streaming prose).
+    /// One entry per visible row, in wrapped coordinates, so a click maps
+    /// straight through even where a row wrapped.
     row_index: Vec<Option<usize>>,
     /// When the current run started, so the header can show elapsed time.
     /// `None` while idle.
     run_started: Option<Instant>,
-    /// Whether the terminal's mouse capture should be on (click-to-expand) or
-    /// off (native text selection/copy). Toggled by Ctrl-T; `chat_loop` diffs
-    /// this against its previous value each tick to (de)activate it, since
-    /// crossterm's enable/disable calls need the real terminal handle.
-    mouse_capture: bool,
+    /// Mouse selection, live or finished. Cleared by any key, wheel notch or
+    /// fresh press.
+    selection: Option<Selection>,
+    /// Set when a drag ends: the next `draw` lifts the text out of the buffer it
+    /// just rendered (only `draw` holds one) and hands it to `chat_loop`.
+    copy_armed: bool,
+    /// Selected text waiting to reach the clipboard.
+    copy_request: Option<String>,
+    /// (when, line count) of the last copy, for the transient dock notice.
+    copied: Option<(Instant, usize)>,
     /// Messages queued while a run is in progress, dequeued automatically
     /// when the current turn finishes.
     message_queue: std::collections::VecDeque<String>,
@@ -668,11 +1304,22 @@ struct App {
     reminder_awaiting_progress: bool,
 }
 
+/// How long a fully checked-off plan stays in the dock before it hides: just
+/// long enough to see the last task tick over. The list itself lives on until
+/// `age_closed_todos` drops it, and `/todo` reopens it at any point.
+const TODO_HIDE_AFTER: Duration = Duration::from_secs(3);
+
 /// Braille throbber frames for in-progress rows (e.g. awaiting a subagent).
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 /// Milliseconds per spinner frame, decoupled from the 50ms render tick.
 const SPINNER_ADVANCE_MS: u64 = 80;
+
+/// How long the `[thought for Ns]` header summary lingers after a reasoning
+/// block closes before it falls back to the plain `[working]` status. The
+/// summary is only a transient cue that a block finished; it should not pin the
+/// header for the rest of the turn once the model gets back to work.
+const THOUGHT_FOR_TTL: Duration = Duration::from_secs(3);
 
 /// Live rolling view of an in-flight subagent's tool calls. The panel shows only
 /// the most recent [`SUBAGENT_WINDOW`] calls, but the full list is retained so
@@ -697,6 +1344,14 @@ struct SubagentPanel {
     /// request -- no completed tool call yet, so a stats line frozen at
     /// "0 tools" and an activity line stuck on "starting…".
     active: Option<StartingCall>,
+    /// True while the dispatch is parked on the parent run's
+    /// `max_parallel_subagents` cap (reported via `SubagentQueued`); flipped
+    /// off when the child's `SubagentStart` arrives. Queued panels render
+    /// "queued (N waiting)" instead of live stats, so a capped fan-out reads
+    /// as a queue rather than a wall of silently-idle agents.
+    queued: bool,
+    /// 1-based position in the queue at the time the child was queued.
+    waiting: u32,
 }
 
 /// A committed finished-subagent summary row, folded to one line but retaining
@@ -704,16 +1359,26 @@ struct SubagentPanel {
 struct SubagentBlock {
     /// Transcript index of the summary row this block owns.
     idx: usize,
-    /// Full detail lines (one per tool call), revealed when expanded.
-    detail: Vec<Line<'static>>,
+    /// Tool-call labels, revealed when expanded. Held as text, not lines, so
+    /// they re-truncate to the draw width.
+    calls: Vec<String>,
 }
 
-/// Rolling window size for a subagent's live tool-call list.
-const SUBAGENT_WINDOW: usize = 5;
-
-/// Lines of the dispatch prompt shown for a lone subagent, where there is room
-/// for the brief itself rather than just its first line.
-const SUBAGENT_TASK_LINES: usize = 4;
+impl SubagentBlock {
+    fn detail_lines(&self, width: u16) -> Vec<Line<'static>> {
+        let max = width.saturating_sub(8).max(1) as usize;
+        self.calls
+            .iter()
+            .map(|label| {
+                Line::from(vec![
+                    Span::styled("│   ", Style::new().dark_gray()),
+                    Span::styled("▸ ", Style::new().magenta()),
+                    Span::styled(truncate(label, max), Style::new().dim()),
+                ])
+            })
+            .collect()
+    }
+}
 
 /// A queued git workspace snapshot. Snapshots only stage the paths the agent
 /// actually touched this turn (see `App::turn_touched`), never the whole
@@ -741,10 +1406,8 @@ impl App {
     #[allow(clippy::too_many_arguments)]
     fn new(
         model: String,
-        max_turns: u32,
-        context_window: u64,
-        reserve_tokens: u64,
-        max_tokens: Option<u64>,
+        limits: SessionLimits,
+        show_reasoning: bool,
         agent_dir: std::path::PathBuf,
         project_root: PathBuf,
         repo_root: Option<PathBuf>,
@@ -756,10 +1419,10 @@ impl App {
             goal_eval_pending: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             args: None,
-            max_turns,
-            context_window,
-            reserve_tokens,
-            max_tokens,
+            context_window: limits.context_window,
+            reserve_tokens: limits.reserve_tokens,
+            max_tokens: limits.max_tokens,
+            max_session_tokens: limits.max_session_tokens,
             repo_root,
             git_branch: git::current_branch(&project_root),
             project_root,
@@ -775,14 +1438,20 @@ impl App {
             history: Vec::new(),
             thread_id: None,
             transcript: Vec::new(),
+            display_log: Vec::new(),
+            journal_writer: None,
             assistant_buf: String::new(),
             tool_group: None,
             grouped_ids: std::collections::HashSet::new(),
             groups: Vec::new(),
+            pending_rows: Vec::new(),
             reasoning_blocks: Vec::new(),
+            show_reasoning,
             expanded: std::collections::HashSet::new(),
             reveal: None,
             input: String::new(),
+            input_history: Vec::new(),
+            recall_pos: None,
             pending_images: Vec::new(),
             cursor: 0,
             slash_selected: 0,
@@ -791,6 +1460,9 @@ impl App {
             path_hint_selected: 0,
             path_hint_dismissed: false,
             status: Status::Idle,
+            thinking_since: None,
+            thought_for: None,
+            thought_for_since: None,
             turn: (0, 0),
             tokens: 0,
             detail: String::new(),
@@ -798,12 +1470,20 @@ impl App {
             ask_queue: std::collections::VecDeque::new(),
             picker: None,
             login: None,
+            settings_prompt: None,
             login_submit: None,
             update_requested: false,
             update_installing: false,
+            compact_request: None,
+            compacting: None,
+            compact_started: None,
+            retry_after_compact: false,
+            overflow_retries: 0,
+            context_window_trusted: true,
             scrollback: 0,
             want_start: false,
-            runs_since_todos_closed: 0,
+            turns_since_todos_closed: 0,
+            todos_closed_at: None,
             view_width: 0,
             last_kind: Kind::None,
             should_quit: false,
@@ -820,7 +1500,10 @@ impl App {
             last_scroll: 0,
             row_index: Vec::new(),
             run_started: None,
-            mouse_capture: false,
+            selection: None,
+            copy_armed: false,
+            copy_request: None,
+            copied: None,
             message_queue: std::collections::VecDeque::new(),
             todos: crate::core::agent::todo::TodoList::default(),
             todo_call_this_turn: false,
@@ -847,19 +1530,20 @@ impl App {
     }
 
     fn push(&mut self, line: Line<'static>) {
-        self.transcript.push(line);
+        self.transcript.push(Row::line(line));
     }
 
-    /// Insert a blank separator when the block kind changes, then record it.
-    /// Keeps consecutive same-kind lines tight while spacing turn boundaries.
+    fn push_row(&mut self, row: impl Into<Row>) {
+        self.transcript.push(row.into());
+    }
+
+    /// Insert a blank separator when the block *band* changes, then record the
+    /// kind. Keeps consecutive same-kind lines tight while spacing turn
+    /// boundaries.
     fn gap(&mut self, next: Kind) {
-        let last_blank = self
-            .transcript
-            .last()
-            .map(|l| l.spans.iter().all(|s| s.content.trim().is_empty()))
-            .unwrap_or(true);
-        if !self.transcript.is_empty() && self.last_kind != next && !last_blank {
-            self.transcript.push(Line::raw(""));
+        let last_blank = self.transcript.last().map(Row::is_blank).unwrap_or(true);
+        if !self.transcript.is_empty() && band(self.last_kind) != band(next) && !last_blank {
+            self.transcript.push(Row::line(Line::raw("")));
         }
         self.last_kind = next;
     }
@@ -880,12 +1564,15 @@ impl App {
         self.base_requested = false;
         self.last_esc = None;
         self.transcript.clear();
+        self.display_log.clear();
         self.tool_group = None;
         self.grouped_ids.clear();
         self.starting.clear();
         self.groups.clear();
+        self.pending_rows.clear();
         self.reasoning_blocks.clear();
         self.subagent_blocks.clear();
+        self.subagents.clear();
         self.expanded.clear();
         self.reveal = None;
         self.assistant_buf.clear();
@@ -902,6 +1589,7 @@ impl App {
         // A fresh session drops the todo projection and reminder state; the
         // model re-declares work with a new `todo init`.
         self.todos = crate::core::agent::todo::TodoList::default();
+        self.todos_closed_at = None;
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
         self.last_todo_reminder = None;
@@ -909,16 +1597,90 @@ impl App {
         self.reminder_awaiting_progress = false;
     }
 
-    /// Append a dim single-line status note (command output, cancel, errors).
-    fn note(&mut self, text: &str) {
+    /// Drop any selection, and with it a copy armed but not yet lifted out of a
+    /// frame -- otherwise it would fire against whatever is selected next.
+    fn clear_selection(&mut self) {
+        self.selection = None;
+        self.copy_armed = false;
+    }
+
+    /// Line count of a copy recent enough to still advertise, if any.
+    fn copy_notice(&self) -> Option<usize> {
+        self.copied
+            .filter(|(at, _)| at.elapsed() < COPY_NOTICE)
+            .map(|(_, lines)| lines)
+    }
+
+    /// Open the session with the splash: the wordmark, this session's project
+    /// and approval mode, and where to go next.
+    fn push_banner(&mut self, tools: &str, awaiting_first_message: bool) {
+        let banner = Banner {
+            version: super::updater::build_version(),
+            project: tilde_path(&self.project_root),
+            branch: self.git_branch.clone(),
+            tools: tools.to_string(),
+            awaiting_first_message,
+        };
+        self.gap(Kind::Meta);
+        self.push_row(RowKind::Banner(Box::new(banner)));
+        // Whatever follows -- a startup note, or the first message -- gets a
+        // blank line off the splash instead of butting against its last row.
+        self.last_kind = Kind::None;
+    }
+
+    /// Append a line the *app* is saying, in its own gutter column. Every other
+    /// transcript class owns one (`› ` user, `│ ` tool, `┊ ` reasoning), so
+    /// without it a note is indistinguishable from model prose. `glyph` names the
+    /// category and `level` carries severity.
+    fn system_marked(&mut self, glyph: &'static str, level: Level, text: &str) {
         self.scrollback = 0;
         self.gap(Kind::Meta);
-        self.push(Line::styled(text.to_string(), Style::new().dim()));
+        let (gutter, body) = level.styles();
+        self.push_row(RowKind::System {
+            glyph,
+            cont: " ",
+            gutter,
+            body: vec![Span::styled(text.to_string(), body)],
+        });
+    }
+
+    fn system(&mut self, level: Level, text: &str) {
+        self.system_marked(SYSTEM_GLYPH, level, text);
+    }
+
+    /// A dim informational note: the common case, and what every `/command`
+    /// acknowledgement and background result goes through.
+    fn note(&mut self, text: &str) {
+        self.system(Level::Info, text);
+    }
+
+    /// A body row of a multi-line system block (`/help`, `/threads`, a goal
+    /// status), under the header its `system*` call pushed. The gutter keeps
+    /// running so the block reads as one unit instead of leaving its body
+    /// unattributed, and the body starts in the header's column.
+    ///
+    /// Fixed dim styling rather than the header's `Level`: blocks are
+    /// informational -- a warning or an error is a single line.
+    fn system_detail(&mut self, body: Vec<Span<'static>>) {
+        self.push_row(RowKind::System {
+            glyph: SYSTEM_CONT,
+            cont: SYSTEM_CONT,
+            gutter: Style::new().dark_gray(),
+            body,
+        });
+    }
+
+    fn system_detail_text(&mut self, text: &str) {
+        self.system_detail(vec![Span::styled(text.to_string(), Style::new().dim())]);
     }
 
     fn flush_assistant(&mut self) {
         let text = self.assistant_buf.trim_end().to_string();
         self.assistant_buf.clear();
+        // The buffered stream is committed: any open reasoning window closes
+        // (its elapsed time was stashed when the block itself closed, so this
+        // only matters for a flush that happens mid-block, e.g. a tool call).
+        self.thinking_since = None;
         // No-op (and, crucially, don't finalize the tool group) on an empty or
         // whitespace-only buffer, so silent consecutive tool calls keep folding.
         if !assistant_has_content(&text) {
@@ -926,6 +1688,12 @@ impl App {
         }
         // Model prose ends the current run of tool calls.
         self.finalize_tool_group();
+        // Journaled with its `<think>` markers intact: this is the only place the
+        // reasoning exists (it is kept out of `history` on purpose), and the
+        // replay folds it exactly as the live turn did.
+        self.display_log.push(DisplayEntry::Assistant {
+            text: text.clone(),
+        });
         self.push_assistant_blocks(&text);
     }
 
@@ -934,7 +1702,6 @@ impl App {
     /// whose full dimmed detail is retained for expansion.
     fn push_assistant_blocks(&mut self, text: &str) {
         let text = strip_system_xml_tags(text);
-        let width = self.render_width();
         for (reasoning, seg) in split_reasoning(&text) {
             if seg.trim().is_empty() {
                 continue;
@@ -947,14 +1714,22 @@ impl App {
                 // Distinct Kind so the reasoning->prose transition still gaps
                 // (both sharing Kind::Prose would collapse to no separator).
                 self.gap(Kind::Reasoning);
-                self.push(reasoning_summary_row(detail.len()));
-                let idx = self.transcript.len() - 1;
-                self.reasoning_blocks.push(ReasoningBlock { idx, detail });
+                if self.show_reasoning {
+                    self.transcript.extend(detail.into_iter().map(Row::line));
+                } else {
+                    self.push(reasoning_summary_row(detail.len()));
+                    let idx = self.transcript.len() - 1;
+                    self.reasoning_blocks.push(ReasoningBlock { idx, detail });
+                }
             } else {
-                let lines = format_markdown_lines(&seg, width);
-                if !lines.is_empty() {
+                // Kept as source: the markdown re-wraps at the draw width, so a
+                // resize re-flows tables and code blocks instead of stranding
+                // them at the width they were committed at. Markup that renders
+                // to nothing (a bare HTML comment) still emits no row.
+                let row: Row = RowKind::Markdown(seg.to_string()).into();
+                if !row.lines(self.render_width()).is_empty() {
                     self.gap(Kind::Prose);
-                    self.transcript.extend(lines);
+                    self.push_row(row);
                 }
             }
         }
@@ -967,67 +1742,228 @@ impl App {
         self.grouped_ids.insert(id.to_string());
         let call = GroupedCall {
             id: id.to_string(),
+            activity: label.clone(),
             done: done.clone(),
             content: None,
             is_error: false,
             diff: None,
         };
-        let extend = self.tool_group.as_mut().map(|g| {
+        let extend = self
+            .tool_group
+            .as_ref()
+            .is_some_and(|g| g.idx < self.transcript.len());
+        if extend {
+            let g = self.tool_group.as_mut().expect("group checked above");
             g.nouns.push((noun, is_read));
             g.calls.push(call);
-            (g.idx, group_activity(&g.nouns))
-        });
-        match extend {
-            Some((idx, running)) if idx < self.transcript.len() => {
-                let max = self.render_width().saturating_sub(6) as usize;
-                self.transcript[idx] = tool_row(
-                    "▸",
-                    Style::new().cyan(),
-                    &truncate(&running, max),
-                    Style::new().cyan().dim(),
-                );
-            }
-            _ => {
-                self.gap(Kind::Tool);
-                self.push(tool_row(
-                    "▸",
-                    Style::new().cyan(),
-                    &label,
-                    Style::new().cyan().dim(),
-                ));
-                self.tool_group = Some(ToolGroup {
-                    idx: self.transcript.len() - 1,
-                    first_done: done.clone(),
-                    nouns: vec![(noun, is_read)],
-                    calls: vec![GroupedCall {
-                        id: id.to_string(),
-                        done,
-                        content: None,
-                        is_error: false,
-                        diff: None,
-                    }],
-                    started: Instant::now(),
-                });
-            }
+            self.refresh_group_row();
+            return;
         }
+        self.gap(Kind::Tool);
+        self.push_row(RowKind::Tool {
+            tag: "▸".to_string(),
+            tag_style: Style::new().cyan(),
+            label,
+            label_style: Style::new().cyan().dim(),
+            reserve: TOOL_ROW_RESERVE,
+        });
+        self.tool_group = Some(ToolGroup {
+            idx: self.transcript.len() - 1,
+            first_done: done,
+            nouns: vec![(noun, is_read)],
+            calls: vec![call],
+            started: Instant::now(),
+            last_result_error: None,
+        });
     }
 
-    /// Close the current tool group, rewriting its row to a `✓` short summary:
-    /// the single activity label for one call, else a counted breakdown.
+    /// Rewrite the open group's row for its current state, leaving it open so
+    /// later calls keep folding in. Called as each result lands so the status
+    /// resolves then, rather than lagging until the group closes (which only
+    /// happens once the model starts answering).
+    fn refresh_group_row(&mut self) {
+        let Some((idx, row)) = self
+            .tool_group
+            .as_ref()
+            .filter(|g| g.idx < self.transcript.len())
+            .map(|g| (g.idx, g.row(GroupRow::Open)))
+        else {
+            return;
+        };
+        self.transcript[idx] = row;
+    }
+
+    /// Close the current tool group, rewriting its row to a short summary: the
+    /// single activity label for one call, else a counted breakdown.
     fn finalize_tool_group(&mut self) {
+        self.close_tool_group(false);
+    }
+
+    /// `interrupted` marks calls that never received a result as unresolved
+    /// rather than done. Only an abort knows that: a normal finalize can land
+    /// while a call is legitimately still running (a `dispatch_subagent`
+    /// resolves after its child's panel opens).
+    fn close_tool_group(&mut self, interrupted: bool) {
         let Some(g) = self.tool_group.take() else {
             return;
         };
         if g.idx >= self.transcript.len() {
             return;
         }
-        let text = if g.nouns.len() <= 1 {
-            g.first_done.clone()
+        let state = if interrupted {
+            GroupRow::Aborted
         } else {
-            group_summary(&g.nouns)
+            GroupRow::Closed
         };
-        self.transcript[g.idx] = tool_row("✓", Style::new().green(), &text, Style::new().dim());
+        self.transcript[g.idx] = g.row(state);
         self.groups.push(g);
+    }
+
+    /// Fold one finished child into a summary row, retaining its call list so
+    /// the row can expand back to it (like a tool group). `finished` separates a
+    /// clean `SubagentEnd` from a child the run ended out from under.
+    fn push_subagent_summary(&mut self, name: &str, calls: Vec<String>, finished: bool) {
+        self.display_log.push(DisplayEntry::Subagent {
+            name: name.to_string(),
+            calls: calls.clone(),
+            finished,
+        });
+        let total = calls.len();
+        let noun = if total == 1 { "call" } else { "calls" };
+        let verb = if finished { "finished" } else { "interrupted" };
+        let style = if finished {
+            Style::new().magenta().dim()
+        } else {
+            Style::new().yellow()
+        };
+        self.gap(Kind::Tool);
+        self.push_row(RowKind::Tool {
+            tag: "↲".to_string(),
+            tag_style: style,
+            label: format!("subagent {name} {verb} ({total} tool {noun})"),
+            label_style: if finished { style } else { Style::new().dim() },
+            reserve: TOOL_ROW_RESERVE,
+        });
+        if total > 0 {
+            let idx = self.transcript.len() - 1;
+            self.subagent_blocks.push(SubagentBlock { idx, calls });
+        }
+    }
+
+    /// Close every live child panel, for a run that ended without their own
+    /// `SubagentEnd` events (an upstream error mid-fan-out, a `Done` that beats
+    /// the children, a cancel). The panel is live state and must not outlive the
+    /// run -- a stranded block spins in the dock on an idle session -- but a
+    /// child that did work still earns its summary row, so the calls it made are
+    /// accounted for rather than vanishing with the panel.
+    fn close_live_subagents(&mut self) {
+        for panel in std::mem::take(&mut self.subagents) {
+            self.push_subagent_summary(&panel.name, panel.calls, false);
+        }
+        self.awaiting.clear();
+    }
+
+    /// Rewrite a standalone tool row to its resolved form once its result lands:
+    /// past-tense label plus an outcome tag, matching how a tool group's row
+    /// resolves. Without this a finished `edit` keeps reading as "Editing X".
+    /// Returns whether the row was found and rewritten.
+    fn resolve_pending_row(&mut self, id: &str, is_error: bool) -> bool {
+        let Some(pos) = self.pending_rows.iter().position(|row| row.id == id) else {
+            return false;
+        };
+        let row = self.pending_rows.remove(pos);
+        if row.idx >= self.transcript.len() {
+            return false;
+        }
+        let (tag, tag_style) = if is_error {
+            ("✗", Style::new().red())
+        } else {
+            ("✓", Style::new().green())
+        };
+        self.transcript[row.idx] = RowKind::Tool {
+            tag: tag.to_string(),
+            tag_style,
+            label: row.done,
+            label_style: Style::new().dim(),
+            reserve: TOOL_ROW_RESERVE,
+        }
+        .into();
+        true
+    }
+
+    /// Resolve every row still awaiting a result: the run ended (cancel, error,
+    /// aborted stream) and no `ToolResult` is coming, so a `▸`/`✓` would read as
+    /// work that is still running or that succeeded.
+    fn abort_tool_rows(&mut self) {
+        self.close_tool_group(true);
+        // A call whose args were still streaming never gets its "Preparing X"
+        // throbber cleared by the `ToolCall` that would have superseded it, so
+        // it animates on past the end of the run, naming a tool that never ran.
+        self.starting.clear();
+        for row in std::mem::take(&mut self.pending_rows) {
+            if row.idx < self.transcript.len() {
+                self.transcript[row.idx] = RowKind::Tool {
+                    tag: "○".to_string(),
+                    tag_style: Style::new().yellow(),
+                    label: row.label,
+                    label_style: Style::new().dim(),
+                    reserve: TOOL_ROW_RESERVE,
+                }
+                .into();
+            }
+        }
+    }
+
+    /// Stamp the moment the plan ran out of open work, and clear the stamp the
+    /// moment it has some again. Called once per frame rather than at each
+    /// mutation site, so the four places that write `todos` cannot disagree.
+    fn refresh_todo_deadline(&mut self) {
+        if self.todos.is_empty() || self.todos.has_open() {
+            self.todos_closed_at = None;
+        } else if self.todos_closed_at.is_none() {
+            self.todos_closed_at = Some(Instant::now());
+        }
+    }
+
+    /// True once a fully checked-off plan has sat closed for `TODO_HIDE_AFTER`.
+    /// Only the dock hides: the list still exists, `/todo` still opens it, and
+    /// `age_closed_todos` still owns actually dropping it. A finished plan stops
+    /// being live state the moment it is read, and holding those rows costs the
+    /// conversation the space they take.
+    fn todos_expired(&self) -> bool {
+        self.todos_closed_at
+            .is_some_and(|closed| closed.elapsed() >= TODO_HIDE_AFTER)
+    }
+
+    /// True while a reasoning block is streaming with folding on: the one
+    /// stretch of a run that puts nothing on screen, so the header badge is the
+    /// only place progress can show.
+    fn is_thinking(&self) -> bool {
+        self.status != Status::Idle && !self.show_reasoning && thinking_open(&self.assistant_buf)
+    }
+
+    /// Header status while a turn is running with reasoning folding on:
+    /// `[thinking]` while a reasoning block is actively streaming, `[thought for
+    /// Ns]` for a short while after a block closes, then back to `None` (the
+    /// plain `[working]`) once the model is working again. `None` when no
+    /// reasoning has happened recently this turn.
+    fn reasoning_status(&self) -> Option<(String, Style)> {
+        if thinking_open(&self.assistant_buf) {
+            Some(("thinking".to_string(), Style::new().yellow().bold()))
+        } else {
+            // The summary is transient: it lasts only `THOUGHT_FOR_TTL` after the
+            // block closed, so a long tool call or answer prose falls back to the
+            // plain [working] instead of pinning [thought for Ns] till turn end.
+            match (self.thought_for, self.thought_for_since) {
+                (Some(d), Some(since)) if since.elapsed() < THOUGHT_FOR_TTL => {
+                    Some((
+                        format!("thought for {}", format_elapsed(d.as_secs())),
+                        Style::new().yellow(),
+                    ))
+                }
+                _ => None,
+            }
+        }
     }
 
     /// Toggle full detail for every collapsed region (tool groups and reasoning
@@ -1076,6 +2012,72 @@ impl App {
         self.reset_slash_hint();
         self.path_hints.clear();
         self.path_hint_selected = 0;
+        self.reset_recall();
+    }
+
+    /// Leave recall: the next Up starts again from the newest entry.
+    fn reset_recall(&mut self) {
+        self.recall_pos = None;
+    }
+
+    /// Record a submitted line for recall, skipping a repeat of the newest entry.
+    fn record_submitted(&mut self, text: &str) {
+        if self.input_history.last().map(String::as_str) != Some(text) {
+            self.input_history.push(text.to_string());
+        }
+        self.reset_recall();
+    }
+
+    /// Replace the buffer with a recalled entry, caret at the end.
+    fn set_input(&mut self, text: String) {
+        self.input = text;
+        self.cursor = self.input.len();
+        self.reset_slash_hint();
+        self.path_hints.clear();
+        self.path_hint_selected = 0;
+    }
+
+    /// Up: step back through submitted messages. Recall only starts on an empty
+    /// buffer, so Up still scrolls the transcript while something is typed;
+    /// once recalling, it keeps stepping even though the buffer is now full.
+    /// Returns false when the key should fall through to scrollback.
+    fn recall_prev(&mut self) -> bool {
+        if self.input_history.is_empty() {
+            return false;
+        }
+        match self.recall_pos {
+            Some(pos) => {
+                let next = pos.saturating_sub(1);
+                self.recall_pos = Some(next);
+                self.set_input(self.input_history[next].clone());
+            }
+            None => {
+                if !self.input.is_empty() {
+                    return false;
+                }
+                let last = self.input_history.len() - 1;
+                self.recall_pos = Some(last);
+                self.set_input(self.input_history[last].clone());
+            }
+        }
+        true
+    }
+
+    /// Down: step forward through recalled messages; past the newest, the
+    /// composer returns to an empty new message (recall only ever starts from
+    /// an empty buffer, so there is no draft to restore). Returns false when
+    /// not recalling, so Down still scrolls the transcript.
+    fn recall_next(&mut self) -> bool {
+        let Some(pos) = self.recall_pos else {
+            return false;
+        };
+        if pos + 1 < self.input_history.len() {
+            self.recall_pos = Some(pos + 1);
+            self.set_input(self.input_history[pos + 1].clone());
+        } else {
+            self.input_clear();
+        }
+        true
     }
 
     fn input_insert(&mut self, c: char) {
@@ -1308,6 +2310,20 @@ impl App {
     }
 
     fn submit_user(&mut self, text: String) {
+        self.submit_user_text(text, true)
+    }
+
+    /// Start a user turn whose text the model sees but the transcript never
+    /// shows. For commands that expand into a long canned prompt (`/init`): the
+    /// command's own note already says what is happening, and pasting the
+    /// prompt body into the transcript is noise. Hidden turns leave
+    /// `pending_images` staged for the user's next real message rather than
+    /// attaching them to a prompt they did not write.
+    fn submit_user_hidden(&mut self, text: String) {
+        self.submit_user_text(text, false)
+    }
+
+    fn submit_user_text(&mut self, text: String, display: bool) {
         if self.model.is_empty() {
             self.note("not signed in — run /login to sign in to Tokamak first");
             return;
@@ -1319,7 +2335,11 @@ impl App {
             return;
         }
         self.ensure_base_snapshot();
-        let images = std::mem::take(&mut self.pending_images);
+        let images = if display {
+            std::mem::take(&mut self.pending_images)
+        } else {
+            Vec::new()
+        };
         let names: Vec<String> = images.iter().map(|i| i.name.clone()).collect();
         // Resolve @path file references before sending
         let (clean_text, injected_contents) =
@@ -1330,7 +2350,15 @@ impl App {
             format!("{clean_text}\n\n---\nReferenced file contents:\n\n{injected_contents}")
         };
         self.history.push(build_user_message(&final_text, &images));
-        self.push_user_line(&text, &names);
+        if display {
+            self.push_user_line(&text, &names);
+            // The typed text, not `final_text`: `@path` expansions are context
+            // for the model, and the row never showed them.
+            self.display_log.push(DisplayEntry::User {
+                text: text.clone(),
+                images: names,
+            });
+        }
         self.begin_turn();
         // A fresh user turn is new context: allow the next boundary to remind
         // again even if the open work is unchanged (dedup is "twice in a row"),
@@ -1341,6 +2369,9 @@ impl App {
         self.last_todo_reminder = None;
         self.reminder_count = 0;
         self.reminder_awaiting_progress = false;
+        // A fresh turn gets a fresh overflow-recovery budget: the previous
+        // turn's failures say nothing about this one's size.
+        self.overflow_retries = 0;
         self.want_start = true;
         self.persist();
     }
@@ -1351,11 +2382,7 @@ impl App {
     fn submit_reminder(&mut self, text: String) {
         self.history
             .push(serde_json::json!({ "role": "user", "content": text }));
-        self.gap(Kind::Meta);
-        self.push(Line::styled(
-            "◈ todo reminder — unfinished work, continuing".to_string(),
-            Style::new().dim(),
-        ));
+        self.note("todo reminder — unfinished work, continuing");
         self.begin_turn();
         self.want_start = true;
         self.persist();
@@ -1482,7 +2509,7 @@ impl App {
         let mut body = serde_json::json!({
             "model": self.model,
             "messages": self.history,
-            "max_turns": self.max_turns,
+            "max_session_tokens": self.max_session_tokens,
             "stream": true,
         });
         // Forward the per-request output cap only when configured; it reaches
@@ -1495,6 +2522,12 @@ impl App {
         // turns keep an unchanged body.
         if self.run_mode == crate::core::agent::plan::RunMode::Plan {
             body["run_mode"] = serde_json::to_value(self.run_mode).unwrap_or(serde_json::Value::Null);
+        }
+        // Only an active `/goal` forces the model to stage a todo plan; a normal
+        // turn leaves that to its own judgement. Forwarded only while the goal
+        // runs, so an achieved or cleared goal reverts to an unchanged body.
+        if self.goal.as_ref().is_some_and(|g| g.is_active()) {
+            body["goal_mode"] = serde_json::json!(true);
         }
         body
     }
@@ -1625,9 +2658,32 @@ impl App {
             &self.history,
             self.thread_metadata(),
         ) {
-            Ok(id) => self.thread_id = Some(id),
+            Ok(id) => {
+                self.thread_id = Some(id);
+                self.dump_display_log();
+            }
             Err(e) => self.detail = format!("save failed: {e}"),
         }
+    }
+
+    /// Hand the rendered transcript to the writer thread, so a turn boundary (or
+    /// a cancel) leaves a resumable journal without a frame paying for the write.
+    fn dump_display_log(&mut self) {
+        let Some(id) = self.thread_id.clone() else {
+            return;
+        };
+        let path = journal::journal_path(&self.agent_dir, &id);
+        self.journal_writer
+            .get_or_insert_with(journal::Writer::new)
+            .dump(path, self.display_log.clone());
+    }
+
+    /// Wait for queued journal dumps to reach disk (session exit, tests).
+    fn join_journal(&mut self) {
+        if let Some(writer) = self.journal_writer.as_mut() {
+            writer.join();
+        }
+        self.journal_writer = None;
     }
 
     /// Switch the active model and remember it in the project's agent.toml so it
@@ -1646,6 +2702,19 @@ impl App {
         match ev {
             StreamEvent::Token { text } => {
                 self.assistant_buf.push_str(&text);
+                // Track the live thinking state so the header can fold reasoning
+                // to `[thinking]` / `[thought for Ns]`. Start the timer when a
+                //  block opens; close it (stashing the duration) once the block
+                // closes or the tool group proceeds.
+                let open = thinking_open(&self.assistant_buf);
+                if open && self.thinking_since.is_none() {
+                    self.thinking_since = Some(Instant::now());
+                } else if !open {
+                    if let Some(started) = self.thinking_since.take() {
+                        self.thought_for = Some(started.elapsed());
+                        self.thought_for_since = Some(Instant::now());
+                    }
+                }
                 // Commit the tool group as `✓` once real answer prose begins, so
                 // it lands above the streaming response. Reasoning tokens must
                 // not trigger this, or every call by a reasoning model splits
@@ -1682,6 +2751,23 @@ impl App {
                 // The full call (with parsed args) supersedes its in-progress
                 // throbber.
                 self.starting.retain(|c| c.id != id);
+                // Commit buffered prose/reasoning before anything else: every
+                // branch below does it anyway (so the timeline stays in emission
+                // order), and doing it here keeps the journal in that order too
+                // -- text that preceded the call, then the call. `flush_assistant`
+                // no-ops on an empty buffer, so silent consecutive calls still
+                // fold into one group row.
+                self.flush_assistant();
+                // `await_subagent` renders a live throbber that its result
+                // clears, so journaling the call would replay a spinner nothing
+                // ever stops; its result row is journaled below either way.
+                if name != "await_subagent" {
+                    self.display_log.push(DisplayEntry::ToolCall {
+                        id: id.clone(),
+                        name: name.clone(),
+                        args: args.clone(),
+                    });
+                }
                 // Track todo activity this turn so the reminder policy can tell
                 // an engaged turn (mutated todos) from a stalled one.
                 if name == "todo" {
@@ -1691,19 +2777,15 @@ impl App {
                 // (advanced each render tick) instead of a static grouped row,
                 // cleared when its result arrives.
                 if name == "await_subagent" {
-                    // Commit any buffered reasoning/prose the model emitted
-                    // before awaiting so it folds to its summary row instead of
-                    // lingering fully expanded in the live tail behind the
-                    // throbber (matches the grouped-call path below).
-                    self.flush_assistant();
                     let run_id = args.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
                     let sub = subagent_name_from_run_id(run_id).to_string();
                     self.awaiting.push((id, run_id.to_string(), sub));
                     return;
                 }
-                let max = self.render_width().saturating_sub(6) as usize;
-                let label = truncate(&tool_activity(&name, &args), max);
-                let done = truncate(&tool_finished(&name, &args), max);
+                // Untruncated: every row that shows these clamps to the width it
+                // is drawn at, so they survive a resize either way.
+                let label = tool_activity(&name, &args);
+                let done = tool_finished(&name, &args);
                 if matches!(name.as_str(), "edit" | "write") {
                     // Record the touched path so the next checkpoint snapshots
                     // exactly this file instead of scanning the whole repo.
@@ -1713,16 +2795,21 @@ impl App {
                     }
                     // Diff-producing tools render standalone (call row & panel).
                     self.finalize_tool_group();
-                    self.flush_assistant();
                     self.gap(Kind::Tool);
-                    self.push(tool_row("▸", Style::new().cyan(), &label, Style::new().cyan().dim()));
+                    self.push_row(RowKind::Tool {
+                        tag: "▸".to_string(),
+                        tag_style: Style::new().cyan(),
+                        label: label.clone(),
+                        label_style: Style::new().cyan().dim(),
+                        reserve: TOOL_ROW_RESERVE,
+                    });
+                    self.pending_rows.push(PendingToolRow {
+                        id: id.clone(),
+                        idx: self.transcript.len() - 1,
+                        label,
+                        done,
+                    });
                 } else {
-                    // Commit any buffered prose OR reasoning the model emitted
-                    // before this call so the timeline stays in emission order
-                    // (pre-tool thinking renders above the tool row, not stranded
-                    // in the live tail below it). `flush_assistant` no-ops on an
-                    // empty buffer, so truly silent consecutive calls still fold.
-                    self.flush_assistant();
                     self.push_grouped_call(&id, &name, label, done);
                 }
             }
@@ -1734,6 +2821,13 @@ impl App {
             } => {
                 // Clear the throbber for an awaited subagent once its result lands.
                 self.awaiting.retain(|(await_id, ..)| await_id != &id);
+                self.display_log.push(DisplayEntry::ToolResult {
+                    id: id.clone(),
+                    content: content.clone(),
+                    is_error,
+                    diff: diff.clone(),
+                });
+                let resolved = self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
                 // reminder fired; let a later stop remind again if work is still
                 // open. Set unconditionally, before the grouped-call early return
@@ -1742,15 +2836,15 @@ impl App {
                 // Grouped calls are already represented by the group row; retain
                 // their result on the group so an expand can show it later.
                 if self.grouped_ids.contains(&id) {
-                    if let Some(call) = self
-                        .tool_group
-                        .as_mut()
-                        .and_then(|g| g.calls.iter_mut().find(|c| c.id == id))
-                    {
-                        call.is_error = is_error;
-                        call.diff = diff;
-                        call.content = Some(content);
+                    if let Some(group) = self.tool_group.as_mut() {
+                        if let Some(call) = group.calls.iter_mut().find(|c| c.id == id) {
+                            call.is_error = is_error;
+                            call.diff = diff;
+                            call.content = Some(content);
+                            group.last_result_error = Some(is_error);
+                        }
                     }
+                    self.refresh_group_row();
                     return;
                 }
                 self.flush_assistant();
@@ -1759,19 +2853,20 @@ impl App {
                 } else {
                     ("✓", Style::new().green())
                 };
-                let max = self.render_width().saturating_sub(8) as usize;
+                let lang = diff.is_some().then(|| self.diff_paths.remove(&id)).flatten();
+                // The resolved call row above already names the tool and file in
+                // past tense, so a successful "Applied N edit(s) to X" only
+                // repeats it; the diff is the informative part. Errors keep their
+                // text -- the row says nothing about why the call failed.
+                let content = (!(resolved && !is_error && diff.is_some())).then_some(content);
                 self.gap(Kind::Tool);
-                self.push(Line::from(vec![
-                    Span::styled("│   ", Style::new().dark_gray()),
-                    Span::styled(format!("{tag} "), tag_style),
-                    Span::styled(summarize_result(&content, max), Style::new().dim()),
-                ]));
-                if let Some(diff) = diff {
-                    let lang = self.diff_paths.remove(&id);
-                    for line in diff_lines(&diff, max, "│     ", lang.as_deref()) {
-                        self.push(line);
-                    }
-                }
+                self.push_row(RowKind::Result {
+                    tag,
+                    tag_style,
+                    content,
+                    diff,
+                    lang,
+                });
             }
             StreamEvent::PermissionRequest {
                 request_id,
@@ -1805,7 +2900,36 @@ impl App {
                 .ask_queue
                 .push_back(PendingAsk::new(request_id, request)),
             StreamEvent::SubagentStart { run_id, name, task } => {
-                // Open a live rolling panel for this run; several may be active.
+                // A queued dispatch already opened a panel for this run; promote
+                // it to running instead of pushing a duplicate. Otherwise open a
+                // fresh live panel (several may be active).
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    panel.queued = false;
+                } else {
+                    self.finalize_tool_group();
+                    self.flush_assistant();
+                    self.subagents.push(SubagentPanel {
+                        run_id,
+                        name,
+                        task: task.unwrap_or_default(),
+                        calls: Vec::new(),
+                        requests: 0,
+                        prompt_tokens: 0,
+                        active: None,
+                        queued: false,
+                        waiting: 0,
+                    });
+                }
+            }
+            StreamEvent::SubagentQueued {
+                run_id,
+                name,
+                task,
+                waiting,
+            } => {
+                // The cap is exhausted; this dispatch will start when a running
+                // child finishes. Open its panel now, marked queued, so the
+                // fan-out shows the queue instead of hiding dispatches.
                 self.finalize_tool_group();
                 self.flush_assistant();
                 self.subagents.push(SubagentPanel {
@@ -1816,11 +2940,11 @@ impl App {
                     requests: 0,
                     prompt_tokens: 0,
                     active: None,
+                    queued: true,
+                    waiting,
                 });
             }
             StreamEvent::SubagentEnd { run_id, name } => {
-                // Take the run's full call list, commit a folded summary row, and
-                // retain the detail so Ctrl-O can expand it (like a tool group).
                 let calls = self
                     .subagents
                     .iter()
@@ -1829,29 +2953,7 @@ impl App {
                     .unwrap_or_default();
                 self.subagents.retain(|p| p.run_id != run_id);
                 self.awaiting.retain(|(_, r, _)| r != &run_id);
-                let total = calls.len();
-                self.gap(Kind::Tool);
-                let noun = if total == 1 { "call" } else { "calls" };
-                self.push(tool_row(
-                    "↲",
-                    Style::new().magenta().dim(),
-                    &format!("subagent {name} finished ({total} tool {noun})"),
-                    Style::new().magenta().dim(),
-                ));
-                if total > 0 {
-                    let idx = self.transcript.len() - 1;
-                    let detail = calls
-                        .into_iter()
-                        .map(|label| {
-                            Line::from(vec![
-                                Span::styled("│   ", Style::new().dark_gray()),
-                                Span::styled("▸ ", Style::new().magenta()),
-                                Span::styled(label, Style::new().dim()),
-                            ])
-                        })
-                        .collect();
-                    self.subagent_blocks.push(SubagentBlock { idx, detail });
-                }
+                self.push_subagent_summary(&name, calls, true);
             }
             StreamEvent::Subagent {
                 run_id,
@@ -1867,6 +2969,7 @@ impl App {
                     // Keep the header's context gauge live during the turn
                     // instead of jumping only when the run ends.
                     self.tokens = prompt + usage.completion_tokens.unwrap_or(0);
+                    self.observe_prompt_tokens(prompt);
                 }
             }
             StreamEvent::Done { .. } | StreamEvent::Error { .. } => {}
@@ -1892,8 +2995,8 @@ impl App {
             StreamEvent::ToolCall {
                 id, name: tool, args,
             } => {
-                let max = self.render_width().saturating_sub(6) as usize;
-                let label = truncate(&subagent_activity(&tool, &args), max);
+                // Stored untruncated; the panel clamps it to the draw width.
+                let label = subagent_activity(&tool, &args);
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     // The completed call supersedes its in-progress view.
                     if panel.active.as_ref().is_some_and(|c| c.id == id) {
@@ -1974,6 +3077,10 @@ impl App {
         self.scrollback = 0;
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
+        // A fresh turn starts with no active reasoning.
+        self.thinking_since = None;
+        self.thought_for = None;
+        self.thought_for_since = None;
         // A call cancelled before its result would otherwise leave its path
         // behind for the life of the session.
         self.diff_paths.clear();
@@ -1995,10 +3102,15 @@ impl App {
 
     fn on_done(&mut self, stop_reason: String, usage: Option<Usage>) {
         self.finalize_tool_group();
+        // Children cannot outlive the run that dispatched them: their events
+        // arrive on its stream. Any panel still open here never got its own
+        // `SubagentEnd`.
+        self.close_live_subagents();
         let answer = self.take_answer();
-        if !answer.is_empty() {
+        let wire = answer_without_reasoning(&answer);
+        if !wire.is_empty() {
             self.history
-                .push(serde_json::json!({ "role": "assistant", "content": answer.clone() }));
+                .push(serde_json::json!({ "role": "assistant", "content": wire }));
         }
         // A closing receipt for the turn: when, how much context went up, how
         // much came back, how long it took, how fast. Cheap to skim, and the
@@ -2045,8 +3157,7 @@ impl App {
             } else {
                 format!("finished early (stop_reason={stop_reason})")
             };
-            self.gap(Kind::Meta);
-            self.push(Line::styled(msg, Style::new().yellow().bold()));
+            self.system(Level::Warn, &msg);
         }
         self.checkpoint_turn();
         // A turn just completed under an active goal: count it and queue an
@@ -2071,14 +3182,60 @@ impl App {
         self.persist();
     }
 
-    /// Whether auto-compaction should trigger after a turn completes.
+    /// Whether auto-compaction should trigger after a turn completes. Requires
+    /// a window worth measuring against: with the configured one disproven,
+    /// this would fire on every remaining turn of the session.
     fn should_auto_compact(&self) -> bool {
         let limit = self.context_window.saturating_sub(self.reserve_tokens);
-        self.tokens > limit && self.tokens > 0 && self.history.len() > 4
+        self.context_window_trusted
+            && self.tokens > limit
+            && self.tokens > 0
+            && self.history.len() > 4
+    }
+
+    /// Fold an accepted request's prompt size into the session's view of the
+    /// context window. `context_window` is a guess (`[agent].context_window`,
+    /// default 128K) with nothing tying it to the model actually in use, so a
+    /// prompt the provider served proves it wrong when it exceeds it -- the
+    /// real window is at least this big. How much bigger is unknowable from
+    /// here, so nothing is invented: the value is simply no longer used as a
+    /// denominator, and the user is told once how to set it.
+    fn observe_prompt_tokens(&mut self, prompt_tokens: u64) {
+        if !self.context_window_trusted || prompt_tokens <= self.context_window {
+            return;
+        }
+        self.context_window_trusted = false;
+        self.note(&format!(
+            "a {}K prompt exceeded the configured {}K context window: set [agent].context_window in agent.toml",
+            (prompt_tokens + 500) / 1000,
+            self.context_window / 1000,
+        ));
+    }
+
+    /// Queue a compaction and a retry for a context-overflow error, reporting
+    /// whether recovery was taken up. Declines when the error is something
+    /// else, the turn's retry budget is spent, a compaction is already in
+    /// flight, or there is too little history for compaction to shrink -- in
+    /// those cases a retry would re-send the request that just failed.
+    fn request_overflow_recovery(&mut self, message: &str) -> bool {
+        if !crate::core::agent::upstream::is_context_overflow_error(message)
+            || self.overflow_retries >= MAX_OVERFLOW_RETRIES
+            || self.compacting.is_some()
+            || self.history.len() <= 4
+        {
+            return false;
+        }
+        self.overflow_retries += 1;
+        self.retry_after_compact = true;
+        self.compact_request = Some(CompactKind::Auto);
+        self.detail = "context overflow: compacting".to_string();
+        self.note("context overflow: compacting and retrying the turn");
+        true
     }
 
     fn on_error(&mut self, code: String, message: String) {
-        self.finalize_tool_group();
+        self.abort_tool_rows();
+        self.close_live_subagents();
         self.flush_assistant();
         self.status = Status::Idle;
         self.run_started = None;
@@ -2087,12 +3244,21 @@ impl App {
         } else {
             format!("{code}: {message}")
         };
-        self.gap(Kind::Meta);
-        self.push(Line::styled(
-            format!("error: {message}"),
-            Style::new().red().bold(),
-        ));
-        self.scrollback = 0;
+        self.system(Level::Error, &format!("error: {message}"));
+        // A context overflow is the one error the session can recover from by
+        // itself: compact, then resume the turn that failed. The goal loop and
+        // the message queue are left alone until the retry resolves, so neither
+        // acts on a turn that is about to run again.
+        if self.request_overflow_recovery(&message) {
+            return;
+        }
+        self.halt_turn();
+    }
+
+    /// Hand control back after a turn ended abnormally. Also reached from
+    /// `finish_compaction` when an overflow recovery is abandoned, so the two
+    /// paths cannot drift.
+    fn halt_turn(&mut self) {
         // An errored turn halts the goal loop; the user decides how to recover.
         self.goal_eval_pending = false;
         if let Some(goal) = self.goal.as_ref() {
@@ -2142,20 +3308,21 @@ impl App {
                     }
                     let turns = self.goal.as_ref().map(|g| g.turns).unwrap_or(0);
                     let elapsed = self.goal.as_ref().map(|g| g.elapsed_secs()).unwrap_or(0);
-                    self.gap(Kind::Meta);
-                    self.push(Line::styled(
-                        format!(
-                            "◎ goal achieved in {turns} turn(s), {}",
-                            fmt_duration(elapsed)
-                        ),
-                        Style::new().green().bold(),
-                    ));
-                    self.push(Line::styled(format!("  {}", v.reason), Style::new().dim()));
+                    self.system_marked(
+                        GOAL_GLYPH,
+                        Level::Good,
+                        &format!("goal achieved in {turns} turn(s), {}", fmt_duration(elapsed)),
+                    );
+                    self.system_detail_text(&v.reason);
                     self.persist();
                 } else {
                     // Goal unmet: surface the reason as guidance and start the
                     // next turn automatically, no user prompt needed.
-                    self.note(&format!("◎ goal not met: {} — continuing", v.reason));
+                    self.system_marked(
+                        GOAL_GLYPH,
+                        Level::Info,
+                        &format!("goal not met: {} — continuing", v.reason),
+                    );
                     let prompt =
                         crate::core::agent::goal::continuation_prompt(&goal.condition, &v.reason);
                     self.submit_user(prompt);
@@ -2177,8 +3344,8 @@ impl App {
         // Commit whatever was streamed before the cancel so partial prose and the
         // preceding tool calls stay in the transcript, and record the partial
         // answer in history so the next turn and a later /resume both see it.
-        self.finalize_tool_group();
-        let answer = self.take_answer();
+        self.abort_tool_rows();
+        let answer = answer_without_reasoning(&self.take_answer());
         if !answer.is_empty() {
             self.history
                 .push(serde_json::json!({ "role": "assistant", "content": answer }));
@@ -2189,17 +3356,10 @@ impl App {
         // snapshot readiness); otherwise the loop starts it once ready and the
         // cancel is silently undone.
         self.want_start = false;
-        self.subagents.clear();
-        self.awaiting.clear();
-        // A call whose args were still streaming (no ToolCall event yet) never
-        // gets its "Preparing X" throbber cleared by that event once cancelled
-        // -- it would otherwise linger in the transcript forever, looking like
-        // work is still happening after "cancelled" has already printed.
-        self.starting.clear();
+        self.close_live_subagents();
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
-        self.gap(Kind::Meta);
-        self.push(Line::styled("cancelled", Style::new().yellow()));
+        self.system(Level::Warn, "cancelled");
         // A cancel stops the goal loop mid-flight; the goal itself is kept so
         // the user can inspect it (/goal) or clear it (/goal clear).
         self.goal_eval_pending = false;
@@ -2218,29 +3378,59 @@ fn truncate(s: &str, max: usize) -> String {
     format!("{head}…")
 }
 
-/// Summarize tool output to one transcript line: first non-empty line with its
-/// internal whitespace collapsed, truncated to `max`, plus a `(+N lines)`
-/// suffix when more follow.
-/// Rough token count from message content characters (~4 chars ≈ 1 token).
+/// Per-message envelope (role, delimiters) in the estimate below, the usual
+/// OpenAI-accounting constant.
+const TOKENS_PER_MESSAGE: u64 = 4;
+
+/// Rough token count (~4 chars per token) for a history the provider has not
+/// reported usage for: the window between a compaction and the next response.
+/// Counts what actually goes on the wire -- text content including multimodal
+/// text parts, tool-call names and arguments, tool-result ids -- so a
+/// tool-heavy history is not scored as empty. Image parts are left out: their
+/// cost is a provider-specific function of resolution, and inventing a number
+/// there is worse than omitting one.
 fn estimate_token_count(messages: &[serde_json::Value]) -> u64 {
     let mut total_chars: usize = 0;
     for msg in messages {
-        if let Some(content) = msg.get("content").and_then(|c| c.as_str()) {
-            total_chars += content.len();
-        }
-        if let Some(calls) = msg.get("tool_calls") {
-            if let Some(arr) = calls.as_array() {
-                for call in arr {
-                    if let Some(args) = call.get("arguments") {
-                        total_chars += args.to_string().len();
-                    }
+        match msg.get("content") {
+            Some(serde_json::Value::String(text)) => total_chars += text.len(),
+            Some(serde_json::Value::Array(parts)) => {
+                for part in parts {
+                    total_chars += part
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .map_or(0, str::len);
                 }
             }
+            _ => {}
         }
+        for call in msg
+            .get("tool_calls")
+            .and_then(|c| c.as_array())
+            .into_iter()
+            .flatten()
+        {
+            // Arguments live under `function`, not on the call itself.
+            if let Some(f) = call.get("function") {
+                total_chars += f.get("name").and_then(|n| n.as_str()).map_or(0, str::len);
+                total_chars += f
+                    .get("arguments")
+                    .and_then(|a| a.as_str())
+                    .map_or(0, str::len);
+            }
+        }
+        total_chars += msg
+            .get("tool_call_id")
+            .and_then(|v| v.as_str())
+            .map_or(0, str::len);
     }
-    (total_chars / 4).max(1) as u64
+    let envelope = TOKENS_PER_MESSAGE * messages.len() as u64;
+    ((total_chars / 4) as u64 + envelope).max(1)
 }
 
+/// Summarize tool output to one transcript line: first non-empty line with its
+/// internal whitespace collapsed, truncated to `max`, plus a `(+N lines)`
+/// suffix when more follow.
 fn summarize_result(s: &str, max: usize) -> String {
     let mut lines = s.lines().filter(|l| !l.trim().is_empty());
     let first = lines.next().unwrap_or("");
@@ -2254,25 +3444,48 @@ fn summarize_result(s: &str, max: usize) -> String {
     }
 }
 
-/// Max diff rows rendered under a tool result before collapsing the tail.
-const DIFF_MAX_ROWS: usize = 20;
+/// Max diff rows rendered under a tool result before collapsing the tail. The
+/// transcript scrolls, so a whole edit is worth showing; only pathological
+/// machine-generated diffs hit this.
+const DIFF_MAX_ROWS: usize = 1000;
+
+/// Max diff rows in the permission prompt, which does not scroll: its box grows
+/// upward into the transcript and shares the space with the decision list, so a
+/// long diff has to collapse rather than crowd out the options.
+const DIFF_PREVIEW_MAX_ROWS: usize = 20;
 
 /// Max chars shown for a bash/shell/exec command label in the transcript.
 const COMMAND_LABEL_MAX: usize = 80;
 
+/// Cells a `tool_row` spends on its gutter and tag, subtracted from the draw
+/// width to bound the label so the row never wraps.
+const TOOL_ROW_RESERVE: u16 = 6;
+
+/// Diff row backgrounds. Dark and desaturated on purpose: the syntax-highlighted
+/// foreground is drawn on top of them, so the tint has to read as added/removed
+/// at a glance without swallowing the code.
+const DIFF_ADD_BG: Color = Color::Rgb(22, 52, 32);
+const DIFF_DEL_BG: Color = Color::Rgb(66, 26, 30);
+
 /// Render focused-diff text as a boxed panel: a light rule frames the change,
-/// `-` lines red, `+` green, `@@` headers dim-cyan. Content is truncated to
-/// `max` and each row padded so the right border aligns. Collapses to
-/// `DIFF_MAX_ROWS` with a `(+N more)` tail before the closing rule. `gutter`
-/// indents the panel (tool-row alignment under a result; empty in the prompt).
+/// `+` rows on a green background and `-` rows on a red one across the whole row
+/// (so the change reads as a band), `@@` headers dim-cyan. Every row keeps its
+/// syntax highlighting, changed or not; only the background says what happened.
+/// Content is truncated to what `width` leaves after the gutter and the frame,
+/// and each row padded so the right border aligns.
+/// Collapses to `max_rows` with a `(+N more)` tail before the closing rule.
+/// `gutter` indents the panel (tool-row alignment under a result; empty in the
+/// prompt).
 fn diff_lines(
     diff: &str,
-    max: usize,
+    width: usize,
+    max_rows: usize,
     gutter: &'static str,
     lang: Option<&str>,
 ) -> Vec<Line<'static>> {
+    let max = panel_inner(width, gutter);
     let all: Vec<&str> = diff.lines().collect();
-    let shown = all.len().min(DIFF_MAX_ROWS);
+    let shown = all.len().min(max_rows);
     let truncated = all.len() > shown;
 
     // Truncate before highlighting so the width arithmetic is unchanged.
@@ -2290,24 +3503,39 @@ fn diff_lines(
     let mut rows: Vec<Line<'static>> = Vec::with_capacity(shown + 1);
     for (i, line) in kept.iter().enumerate() {
         let (marker, body) = split_diff_marker(line);
-        let marker_style = match marker.as_bytes().first() {
-            Some(b'-') => Style::new().red(),
-            Some(b'+') => Style::new().green(),
-            _ => Style::new().dim(),
-        };
         if marker.starts_with('@') {
             rows.push(Line::styled(line.clone(), Style::new().cyan().dim()));
             continue;
         }
+        let bg = match marker.as_bytes().first() {
+            Some(b'-') => Some(DIFF_DEL_BG),
+            Some(b'+') => Some(DIFF_ADD_BG),
+            _ => None,
+        };
         let mut spans = Vec::with_capacity(2);
         if !marker.is_empty() {
+            // On a tinted row the marker takes the strong colour and the code
+            // keeps its own; elsewhere it recedes.
+            let marker_style = match marker.as_bytes().first() {
+                Some(b'-') => Style::new().red().bold(),
+                Some(b'+') => Style::new().green().bold(),
+                _ => Style::new().dim(),
+            };
             spans.push(Span::styled(marker.to_string(), marker_style));
         }
         match &highlighted {
             Some(h) => spans.extend(h[i].iter().cloned()),
+            // Dimming an unhighlighted body would fight the tint behind it.
+            None if bg.is_some() => spans.push(Span::raw(body.to_string())),
             None => spans.push(Span::styled(body.to_string(), Style::new().dim())),
         }
-        rows.push(Line::from(spans));
+        // The tint rides on the line so `boxed_panel` can carry it across the
+        // padding too, making the band reach the right border.
+        let row = Line::from(spans);
+        rows.push(match bg {
+            Some(bg) => row.style(Style::new().bg(bg)),
+            None => row,
+        });
     }
     if truncated {
         rows.push(Line::styled(
@@ -2315,7 +3543,7 @@ fn diff_lines(
             Style::new().dim(),
         ));
     }
-    boxed_panel(rows, max, gutter)
+    boxed_panel(rows, width, gutter)
 }
 
 /// Split a diff row into its leading marker and the code after it. A `@@` hunk
@@ -2335,16 +3563,28 @@ fn row_width(row: &Line<'_>) -> usize {
     row.spans.iter().map(|s| s.content.chars().count()).sum()
 }
 
+/// Content columns a panel of total `width` has left after its gutter and the
+/// four the frame spends (`│ ` and ` │`). Callers size their rows with this so
+/// the closing border lands inside the terminal instead of wrapping onto a line
+/// of its own.
+pub(super) fn panel_inner(width: usize, gutter: &str) -> usize {
+    width.saturating_sub(gutter.chars().count() + 4).max(1)
+}
+
 /// Frame styled rows in a light box, right-padded to the widest row (clamped to
-/// `max`). Rows carry their own spans so style can vary within a row (syntax
-/// highlighting); `gutter` prefixes every line to indent the panel.
-fn boxed_panel(rows: Vec<Line<'static>>, max: usize, gutter: &'static str) -> Vec<Line<'static>> {
+/// what `width` leaves for content). Rows carry their own spans so style can vary
+/// within a row (syntax highlighting); `gutter` prefixes every line to indent the
+/// panel. A row's line-level style is folded into its spans, since the framed
+/// line replaces it with the border's own style, and a row-level background also
+/// fills the interior padding so a highlighted row reads as a band from border to
+/// border rather than stopping at the end of its text.
+fn boxed_panel(rows: Vec<Line<'static>>, width: usize, gutter: &'static str) -> Vec<Line<'static>> {
     let inner = rows
         .iter()
         .map(row_width)
         .max()
         .unwrap_or(0)
-        .clamp(1, max.max(1));
+        .clamp(1, panel_inner(width, gutter));
     let border = Style::new().dark_gray();
     let mut out = Vec::with_capacity(rows.len() + 2);
     out.push(Line::from(vec![
@@ -2353,12 +3593,26 @@ fn boxed_panel(rows: Vec<Line<'static>>, max: usize, gutter: &'static str) -> Ve
     ]));
     for row in rows {
         let pad = inner.saturating_sub(row_width(&row));
+        let row_style = row.style;
+        // Interior spacing carries the row's background but not its foreground:
+        // the frame itself stays neutral, so only the padding between the
+        // borders is tinted.
+        let fill = match row_style.bg {
+            Some(bg) => border.bg(bg),
+            None => border,
+        };
         let mut spans = vec![
             Span::styled(gutter, border),
-            Span::styled("│ ", border),
+            Span::styled("│", border),
+            Span::styled(" ", fill),
         ];
-        spans.extend(row.spans);
-        spans.push(Span::styled(format!("{} │", " ".repeat(pad)), border));
+        spans.extend(
+            row.spans
+                .into_iter()
+                .map(|s| Span::styled(s.content, row_style.patch(s.style))),
+        );
+        spans.push(Span::styled(format!("{} ", " ".repeat(pad)), fill));
+        spans.push(Span::styled("│", border));
         out.push(Line::from(spans));
     }
     out.push(Line::from(vec![
@@ -2395,8 +3649,10 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             if cmd.trim().is_empty() {
                 "Executing command".to_string()
             } else {
+                // Untruncated: the row clamps to the draw width, so the command
+                // fills the terminal rather than eliding at a fixed 80.
                 let collapsed = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-                format!("Executing: {}", truncate(&collapsed, COMMAND_LABEL_MAX))
+                format!("Executing: {collapsed}")
             }
         }
         "grep" | "search" => "Searching".to_string(),
@@ -2522,13 +3778,15 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
                 "Ran command".to_string()
             } else {
                 let collapsed = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-                format!("Ran: {}", truncate(&collapsed, COMMAND_LABEL_MAX))
+                format!("Ran: {collapsed}")
             }
         }
         "grep" | "search" => "Searched".to_string(),
         "find" | "glob" => "Found files".to_string(),
         "read" => format!("Read {}", base(s("path"))),
         "list" | "ls" => "Listed files".to_string(),
+        "write" => format!("Wrote {}", base(s("path"))),
+        "edit" => format!("Edited {}", base(s("path"))),
         "dispatch_subagent" => format!("Dispatched subagent: {}", s("subagent_name")),
         "await_subagent" => format!("Subagent {} returned", subagent_name_from_run_id(s("run_id"))),
         "create_subagent" => format!("Created subagent: {}", s("name")),
@@ -2735,8 +3993,9 @@ fn starting_call_lines(call: &mut StartingCall, frame: &str) -> Vec<Line<'static
     let Some(tail) = call.preview.tail.as_ref() else {
         let label = match call.preview.path.as_deref() {
             // Even without a body, the path lands early enough to be worth
-            // showing -- "Preparing write" alone says nothing about what.
-            Some(path) if !path.is_empty() => format!("Preparing write: {path}"),
+            // showing -- "Preparing write" alone says nothing about what. Any
+            // path-carrying tool reaches here, so the name comes from the call.
+            Some(path) if !path.is_empty() => format!("Preparing {}: {path}", call.name),
             _ => format!("Preparing {}", call.name),
         };
         return vec![tool_row(frame, Style::new().cyan(), &label, Style::new().cyan().dim())];
@@ -2809,7 +4068,7 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
             out.push(Line::from(vec![
                 Span::styled("│   ", Style::new().dark_gray()),
                 Span::styled("▸ ", Style::new().cyan()),
-                Span::styled(call.done.clone(), Style::new().dim()),
+                Span::styled(truncate(&call.done, max), Style::new().dim()),
             ]));
         }
         if let Some(content) = &call.content {
@@ -2835,7 +4094,7 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
                 ]));
             }
             if let Some(diff) = &call.diff {
-                for line in diff_lines(diff, max, cont_gutter, None) {
+                for line in diff_lines(diff, width as usize, DIFF_MAX_ROWS, cont_gutter, None) {
                     out.push(line);
                 }
             }
@@ -2867,13 +4126,6 @@ fn group_summary(nouns: &[(&str, bool)]) -> String {
     group_clauses(nouns, "Read", "ran")
 }
 
-/// Present-tense counterpart to `group_summary` for the live, in-progress group
-/// row, e.g. "Reading 3 files, 1 directory; running 2 commands". Keeps the row
-/// honest about the mix of calls instead of showing the latest call + a count.
-fn group_activity(nouns: &[(&str, bool)]) -> String {
-    group_clauses(nouns, "Reading", "running")
-}
-
 /// Live row for the still-open tool group: a braille throbber in place of the
 /// static `▸` tag, plus elapsed time, so the user can see it's actively
 /// working and how long it's taken. Rebuilt fresh every draw (not stored in
@@ -2882,7 +4134,7 @@ fn group_activity(nouns: &[(&str, bool)]) -> String {
 fn running_group_row(group: &ToolGroup, spinner_frame: usize, width: u16) -> Line<'static> {
     let frame = SPINNER[spinner_frame % SPINNER.len()];
     let elapsed = group.started.elapsed().as_secs();
-    let text = format!("{} ({elapsed}s)", group_activity(&group.nouns));
+    let text = format!("{} ({elapsed}s)", group.activity());
     let max = (width as usize).saturating_sub(6).max(1);
     tool_row(frame, Style::new().cyan(), &truncate(&text, max), Style::new().cyan().dim())
 }
@@ -2950,6 +4202,18 @@ fn has_answer_text(buf: &str) -> bool {
         .any(|(reasoning, seg)| !reasoning && !seg.trim().is_empty())
 }
 
+/// `text` with its reasoning removed, for the copy that goes into `history`.
+/// Reasoning is display-only and must never be resent to the model (see
+/// `SseAccumulator`); the display journal is what keeps it for a resume.
+pub(crate) fn answer_without_reasoning(text: &str) -> String {
+    split_reasoning(text)
+        .into_iter()
+        .filter_map(|(reasoning, seg)| (!reasoning).then_some(seg))
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
 /// A leading markdown list/blockquote marker (`> `, `- `, `1. `), stripped
 /// before checking whether a line reads as a question.
 fn markdown_prefix_re() -> &'static regex::Regex {
@@ -3001,8 +4265,7 @@ fn assistant_is_awaiting_user_answer(text: &str) -> bool {
     let Some(last_line) = text
         .split(['\n', '\r'])
         .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .next_back()
+        .rfind(|l| !l.is_empty())
     else {
         return false;
     };
@@ -3048,6 +4311,17 @@ fn split_reasoning(text: &str) -> Vec<(bool, String)> {
         out.push((in_think, seg.to_string()));
     }
     out
+}
+
+/// True if `text` ends inside an unclosed ` think>` block (an opening tag whose
+/// matching close has not yet streamed). Used to show `[thinking]` while
+/// reasoning streams. Re-uses the same tag matcher as `split_reasoning`.
+fn thinking_open(text: &str) -> bool {
+    let mut open = false;
+    for m in think_re().find_iter(text) {
+        open = !m.as_str().starts_with("</");
+    }
+    open
 }
 
 /// True if `text` has any non-whitespace content in any reasoning/answer run.
@@ -3164,6 +4438,32 @@ async fn await_login(
     }
 }
 
+/// How often the dock's branch indicator re-reads `HEAD`, so a checkout made
+/// outside the TUI (another terminal, an editor) shows up without needing a
+/// restart. Cheap (`rev-parse --abbrev-ref HEAD`) but still shells out, so this
+/// is a poll, not every tick.
+const BRANCH_POLL_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Re-read the current git branch off-loop (a blocking `git` call), only when
+/// no poll is already in flight. A no-op when the project isn't a git repo.
+fn spawn_branch_poll(project_root: &std::path::Path) -> tokio::task::JoinHandle<Option<String>> {
+    let root = project_root.to_path_buf();
+    tokio::task::spawn_blocking(move || git::current_branch(&root))
+}
+
+/// Await an in-flight branch poll once, clearing the slot. Same cancel-safe
+/// borrow as `await_mcp`; pends forever when idle.
+async fn await_branch_poll(
+    task: &mut Option<tokio::task::JoinHandle<Option<String>>>,
+) -> Option<String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    joined.ok().flatten()
+}
+
 /// Await the startup update check once, clearing the slot. Same cancel-safe
 /// borrow as `await_mcp`; pends forever before it is spawned and after it has
 /// been consumed, so it can sit in the loop's `select!` unconditionally.
@@ -3246,10 +4546,8 @@ pub async fn run(
         permission_requests,
         model,
         smol_model,
-        max_turns,
-        context_window,
-        reserve_tokens,
-        max_tokens,
+        limits,
+        show_reasoning,
         mcp_servers,
         mcp_task,
     } = session;
@@ -3257,6 +4555,7 @@ pub async fn run(
     args.ask_requests = Some(ask_requests.clone());
     let todo_registry = crate::core::agent::todo::new_registry();
     args.todo_registry = Some(todo_registry.clone());
+    let session_scratch = args.session_id.clone();
     let args = Arc::new(args);
 
     // Deserializing syntect's syntax/theme dumps takes tens of milliseconds.
@@ -3276,27 +4575,50 @@ pub async fn run(
 
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
-    // Mouse capture stays off by default so terminal text is selectable/copyable
-    // (Ctrl-T enables click-to-expand). `chat_loop` diffs against
-    // `app.mouse_capture` and enables it on the first tick if the user toggles.
     execute!(stdout, EnterAlternateScreen, EnableBracketedPaste).map_err(|e| e.to_string())?;
+    let mut modes = String::from(ALT_SCROLL_SAVE_OFF);
+    if crate::core::agent::global_config::mouse_enabled() {
+        modes.push_str(MOUSE_TRACK_ON);
+    }
+    let _ = stdout.write_all(modes.as_bytes());
+    let _ = stdout.flush();
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
 
     // A git repo enables workspace snapshots (rewind can restore files); a
     // non-repo runs exactly as before with conversation-only rewind.
     let repo_root = git::repo_root(&project_root);
-    let mut app = App::new(model, max_turns, context_window, reserve_tokens, max_tokens, agent_dir, project_root, repo_root);
+    let mut app = App::new(
+        model,
+        limits,
+        show_reasoning,
+        agent_dir,
+        project_root,
+        repo_root,
+    );
     app.smol_model = smol_model;
     app.args = Some(args.clone());
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
     // shows immediately; a resumed thread overrides this via restore_run_mode.
     app.run_mode = args.run_mode;
+    let seeded = initial_task
+        .as_deref()
+        .is_some_and(|t| !t.trim().is_empty());
+    app.push_banner(
+        if args.auto_approve {
+            "auto-approved inside the OS sandbox (start with --safe to be asked first)"
+        } else {
+            "--safe: writes, shell commands and MCP tool calls need approval"
+        },
+        !seeded,
+    );
     if app.model.is_empty() {
         app.note("not signed in — run /login to sign in to Tokamak, or `jan config set` to configure a provider manually");
     }
-    if args.yolo {
-        app.note("--yolo: sandbox disabled, all tool calls auto-approved without prompting");
+    // Only when there is nothing to load: a project that already has JAN.md needs
+    // no invitation, and the splash hint covers re-running /init deliberately.
+    if !crate::core::agent::context::has_context_file(&app.project_root) {
+        app.note("no JAN.md here — run /init to study this project and write one");
     }
     // A failed resume is not fatal: the note explains why and the blank session
     // the user already has stays usable.
@@ -3327,11 +4649,16 @@ pub async fn run(
     )
     .await;
 
+    // The last turn's journal may still be queued on the writer thread; a
+    // process that exits now would lose it, and with it that turn's resume.
+    app.join_journal();
+
     let _ = disable_raw_mode();
     let _ = execute!(
         terminal.backend_mut(),
         DisableBracketedPaste,
         DisableMouseCapture,
+        Print(ALT_SCROLL_RESTORE),
         LeaveAlternateScreen,
     );
     let _ = terminal.show_cursor();
@@ -3341,6 +4668,11 @@ pub async fn run(
     // transcript note would vanish with it.
     if app.update_installing {
         eprintln!("the update was still installing when jan exited; run `jan update` to finish it");
+    }
+    // The interactive session is over: wipe the persistent bash `/tmp` scratch
+    // that its turns shared.
+    if let Some(session) = session_scratch.as_deref() {
+        let _ = workspace::remove_scratch_dir(session).await;
     }
     res
 }
@@ -3358,10 +4690,6 @@ async fn chat_loop<B: Backend>(
 ) -> Result<(), String> {
     let mut current: Option<CurrentRun> = None;
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
-    // Mirrors app.mouse_capture; `run` sets the real terminal to the same
-    // state before this loop starts, so both start in sync.
-    let mut mouse_capture_active = false;
-
     // Active MCP servers connect in the background; gate the first run on them
     // so the model's tools (collected once per run) are ready.
     let mut mcp_ready = mcp_task.is_none();
@@ -3382,15 +4710,35 @@ async fn chat_loop<B: Backend>(
     // and notes itself whenever it lands rather than delaying the first frame.
     let mut update_task = Some(tokio::spawn(super::updater::available_update()));
 
+    // Anonymous usage ping (see `telemetry::ping_if_due`), same reasoning:
+    // detached so it never delays the first frame. Nothing is noted for it --
+    // it has no user-visible outcome.
+    tokio::spawn(super::telemetry::ping_if_due());
+
     // `/update` downloads tens of megabytes and rewrites the binary; off the
     // render loop for the same reason, and one at a time.
     let mut update_install_task: Option<
         tokio::task::JoinHandle<Result<super::updater::UpdateOutcome, String>>,
     > = None;
 
-    match initial_task {
-        Some(task) if !task.trim().is_empty() => app.submit_user(task.trim().to_string()),
-        _ => app.note("type a message to start, or /help for commands"),
+    // Compaction is a summarizing model call, so it runs off the render loop
+    // too; `compact_base` is the history length it was computed from.
+    let mut compact_task: Option<tokio::task::JoinHandle<Result<Vec<serde_json::Value>, String>>> =
+        None;
+    let mut compact_base = 0usize;
+
+    // The dock's branch indicator is captured once at startup; re-read it on a
+    // slow timer so a checkout made outside the TUI (another terminal, an
+    // editor) is reflected without a restart. `None` once the project proves
+    // not to be a git repo, so a plain directory never shells out every tick.
+    let mut branch_task: Option<tokio::task::JoinHandle<Option<String>>> = None;
+    let mut branch_poll = tokio::time::interval(BRANCH_POLL_INTERVAL);
+    branch_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+    // Nothing to say when there is no seed message: the splash already invites
+    // the first one (`Banner::awaiting_first_message`).
+    if let Some(task) = initial_task.filter(|t| !t.trim().is_empty()) {
+        app.submit_user(task.trim().to_string());
     }
 
     while !app.should_quit {
@@ -3436,6 +4784,29 @@ async fn chat_loop<B: Backend>(
             }
         }
 
+        // `/compact` (or the auto trigger) was requested: summarize off-loop.
+        // One at a time -- both request sites already refuse while one is in
+        // flight, and the result replaces `history` wholesale.
+        if compact_task.is_none() {
+            if let Some(kind) = app.compact_request.take() {
+                let args = args.clone();
+                let model = app.model.clone();
+                let history = app.history.clone();
+                compact_base = history.len();
+                app.compacting = Some(kind);
+                app.compact_started = Some(Instant::now());
+                compact_task = Some(tokio::spawn(async move {
+                    crate::core::agent::r#loop::compact_history(
+                        &args,
+                        &model,
+                        &history,
+                        kind.keep_recent(),
+                    )
+                    .await
+                }));
+            }
+        }
+
         // A turn finished under an active goal: run the (stateless) evaluator
         // before anything else. It either auto-submits the next turn (setting
         // want_start) or hands control back. Gated on an idle, run-free state so
@@ -3448,10 +4819,14 @@ async fn chat_loop<B: Backend>(
         // servers (if any) are connected, and the base snapshot (if any) is
         // captured. `submit_user` already flipped status to Running and reset
         // the counter.
-        if app.want_start && current.is_none() {
+        // A compaction in flight is also a gate: it replaces `history`, so a run
+        // started against the pre-compaction copy would be clobbered.
+        if app.want_start && current.is_none() && compact_task.is_none() {
             let base_ready = app.repo_root.is_none() || app.base_snapshot.is_some();
             if mcp_ready && base_ready {
                 app.want_start = false;
+                // The submission itself is one human turn toward the aging
+                // grace period; model roundtrips count via `Step` events.
                 age_closed_todos(app).await;
                 current = Some(spawn_run(args, app.body()));
             } else if !loading_noted && !mcp_ready {
@@ -3464,13 +4839,18 @@ async fn chat_loop<B: Backend>(
         // Wrap the repaint in synchronized-output (`\x1b[?2026h/l`) so the
         // terminal buffers the whole frame and flips it atomically, eliminating
         // tearing. Written straight to stdout (not the generic `Backend`) for the
-        // same reason mouse-capture toggles are: `chat_loop` is generic over B
-        // for TestBackend, which isn't `io::Write`. ratatui already diffs the
+        // same reason the clipboard write below is: `chat_loop` is generic over
+        // B for TestBackend, which isn't `io::Write`. ratatui already diffs the
         // buffer and emits ANSI only for changed cells.
         let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
         let draw_result = terminal.draw(|f| draw(f, app)).map_err(|e| e.to_string());
         let _ = execute!(io::stdout(), EndSynchronizedUpdate);
         draw_result?;
+        // Outside the synchronized block: `draw` only extracts the text, so the
+        // OSC 52 write can't land in the middle of a frame.
+        if let Some(text) = app.copy_request.take() {
+            copy_to_clipboard(&text);
+        }
 
         tokio::select! {
             _ = ticker.tick() => {
@@ -3480,32 +4860,17 @@ async fn chat_loop<B: Backend>(
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     match event::read() {
                         Ok(Event::Key(key)) => {
+                            // Typing moves the content under a highlight, and the
+                            // copy already happened on release.
+                            app.clear_selection();
                             if !handle_ask_key(app, key, ask_requests).await {
                                 handle_key(app, key, registry, &mut current, mcp_servers).await;
                             }
-                            if app.mouse_capture != mouse_capture_active {
-                                mouse_capture_active = app.mouse_capture;
-                                // Written straight to stdout (not through the generic
-                                // `Backend`) since chat_loop is generic over B for
-                                // testability with TestBackend, which isn't io::Write.
-                                let mut stdout = io::stdout();
-                                let _ = if mouse_capture_active {
-                                    execute!(stdout, EnableMouseCapture)
-                                } else {
-                                    execute!(stdout, DisableMouseCapture)
-                                };
-                            }
                         }
-                        Ok(Event::Paste(text)) => match app.login.as_mut() {
-                            // A pasted API key belongs to the login field, not
-                            // the input box (where it would be echoed).
-                            Some(prompt) => prompt.paste(&text),
-                            None => {
-                                for c in text.chars() {
-                                    app.input_insert(c);
-                                }
-                            }
-                        },
+                        Ok(event @ Event::Paste(_)) => route_paste_event(app, event),
+                        // `handle_ask_mouse` mutates app state, so it stays in the
+                        // arm body rather than a match guard that hides the effect.
+                        #[allow(clippy::collapsible_match)]
                         Ok(Event::Mouse(mouse)) => {
                             if !handle_ask_mouse(app, mouse, ask_requests).await {
                                 handle_mouse(app, mouse);
@@ -3514,6 +4879,14 @@ async fn chat_loop<B: Backend>(
                         _ => {}
                     }
                 }
+            }
+            _ = branch_poll.tick() => {
+                if branch_task.is_none() {
+                    branch_task = Some(spawn_branch_poll(&app.project_root));
+                }
+            }
+            branch = await_branch_poll(&mut branch_task) => {
+                app.git_branch = branch;
             }
             outcome = await_mcp(&mut mcp_task) => {
                 mcp_ready = true;
@@ -3535,6 +4908,9 @@ async fn chat_loop<B: Backend>(
             }
             install = await_update_install(&mut update_install_task) => {
                 finish_update_install(app, install);
+            }
+            compacted = await_compaction(&mut compact_task) => {
+                finish_compaction(app, compacted, compact_base);
             }
             snap_res = await_snapshot(&mut snap_task) => {
                 match (snap_inflight.take(), snap_res) {
@@ -3563,51 +4939,24 @@ async fn chat_loop<B: Backend>(
                 Some(StreamEvent::Done { stop_reason, usage }) => {
                     app.on_done(stop_reason, usage);
                     current = None;
-                    // Auto-compact when approaching the context limit.
-                    if app.should_auto_compact() {
-                        let model = app.model.clone();
-                        let mut history = std::mem::take(&mut app.history);
-                        let before = history.len();
-                        // Show feedback immediately before the blocking model call.
-                        app.note("auto-compacting...");
-                        let compacted = crate::core::agent::r#loop::compact_history(
-                            args, &model, &history,
-                            crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
-                        )
-                        .await;
-                        // Remove the "auto-compacting..." note.
-                        app.transcript.retain(|l| {
-                            let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
-                            !text.contains("auto-compacting")
-                        });
-                        match compacted {
-                            Ok(c) if c.len() < before => {
-                                history = c;
-                                app.history = history;
-                                // Update token estimate from compacted content.
-                                app.tokens = estimate_token_count(&app.history);
-                                app.persist();
-                                app.note(&format!(
-                                    "auto-compacted {} -> {} messages (ctx {}K/{}K)",
-                                    before,
-                                    app.history.len(),
-                                    app.tokens / 1000,
-                                    app.context_window / 1000,
-                                ));
-                            }
-                            Ok(_) => {
-                                app.history = history;
-                            }
-                            Err(e) => {
-                                app.history = history;
-                                app.note(&format!("auto-compaction failed: {e}"));
-                            }
-                        }
+                    // Auto-compact when approaching the context limit. Handed to
+                    // the loop like `/compact` so the summarizing call runs off
+                    // the render loop.
+                    if app.should_auto_compact() && app.compacting.is_none() {
+                        app.compact_request = Some(CompactKind::Auto);
                     }
                 }
                 Some(StreamEvent::Error { code, message }) => {
                     app.on_error(code, message);
                     current = None;
+                }
+                // Each model roundtrip is one turn toward the finished-todo
+                // aging grace period. A single run can span many tool-call
+                // turns, so aging must count turns, not runs -- otherwise a
+                // finished plan lingers through the rest of a long run.
+                Some(ev @ StreamEvent::Step { .. }) => {
+                    app.apply(ev);
+                    age_closed_todos(app).await;
                 }
                 Some(other) => app.apply(other),
                 None => {
@@ -3616,7 +4965,7 @@ async fn chat_loop<B: Backend>(
                     app.pending_queue.clear();
                     if app.status == Status::Running {
                         app.flush_assistant();
-                        app.finalize_tool_group();
+                        app.abort_tool_rows();
                         app.status = Status::Idle;
                         app.run_started = None;
                     }
@@ -3635,41 +4984,144 @@ async fn chat_loop<B: Backend>(
     Ok(())
 }
 
-/// A left click on a folded row (tool group / reasoning block / subagent
-/// summary) toggles its detail, the same as Ctrl-O but for a single region.
-/// Ignores clicks outside the transcript viewport or on rows that aren't a
-/// region's own summary row (detail lines, blank padding, etc).
+/// Wheel, drag-to-select and click-to-expand. Press/release are split: the
+/// toggle fires on release and only when the pointer never moved, so a drag that
+/// starts on a folded row selects text instead of expanding it.
 fn handle_mouse(app: &mut App, mouse: MouseEvent) {
     // Wheel scrolls the transcript (clamped to `max_back` on the next draw);
-    // one notch matches a single arrow-key step.
+    // one notch matches a single arrow-key step. Scrolling moves the content out
+    // from under a finished selection, so it drops one.
     match mouse.kind {
         MouseEventKind::ScrollUp => {
+            app.clear_selection();
             app.scrollback = app.scrollback.saturating_add(1);
-            return;
         }
         MouseEventKind::ScrollDown => {
+            app.clear_selection();
             app.scrollback = app.scrollback.saturating_sub(1);
-            return;
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            app.copy_armed = false;
+            let mode = if mouse.modifiers.contains(KeyModifiers::ALT) {
+                SelectionMode::Block
+            } else {
+                SelectionMode::Linear
+            };
+            app.selection = Some(Selection::new((mouse.column, mouse.row), mode));
+        }
+        MouseEventKind::Drag(MouseButton::Left) => {
+            if let Some(sel) = app.selection.as_mut() {
+                let at = (mouse.column, mouse.row);
+                sel.moved |= at != sel.anchor;
+                sel.head = at;
+            }
+        }
+        MouseEventKind::Up(MouseButton::Left) => {
+            let Some(sel) = app.selection.as_mut() else {
+                return;
+            };
+            sel.dragging = false;
+            if sel.moved {
+                // The text lives in the rendered buffer, which only `draw` has;
+                // it copies on the next frame (<=50ms).
+                app.copy_armed = true;
+            } else {
+                app.clear_selection();
+                click_region(app, mouse.column, mouse.row);
+            }
         }
         _ => {}
     }
-    if !matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
-        return;
-    }
+}
+
+/// A click that never became a drag: expand or collapse the region whose summary
+/// row it landed on. Ignores clicks outside the transcript viewport or on rows
+/// that aren't a region's own summary row (detail lines, blank padding, etc).
+fn click_region(app: &mut App, column: u16, row: u16) {
     let rect = app.transcript_rect;
-    if mouse.column < rect.x
-        || mouse.column >= rect.x + rect.width
-        || mouse.row <= rect.y
-        || mouse.row >= rect.y + rect.height.saturating_sub(1)
+    if column < rect.x
+        || column >= rect.x + rect.width
+        || row <= rect.y
+        || row >= rect.y + rect.height.saturating_sub(1)
     {
         return;
     }
-    // Top border consumes one row; the rest maps 1:1 onto `row_index` since
-    // summary rows are pre-truncated to the viewport width and never wrap.
-    let body_row = (mouse.row - rect.y - 1) as usize;
-    let absolute = app.last_scroll as usize + body_row;
-    if let Some(Some(idx)) = app.row_index.get(absolute) {
+    // Top border consumes one row; the rest maps 1:1 onto `row_index`, which is
+    // built in the body's own wrapped screen coordinates.
+    let body_row = (row - rect.y - 1) as usize;
+    if let Some(Some(idx)) = app.row_index.get(body_row) {
         app.toggle_region(*idx);
+    }
+}
+
+/// Extend a held drag past the top or bottom edge of the transcript by scrolling
+/// a row per frame toward the pointer. Only nudges `scrollback`; `draw` clamps it
+/// and shifts the anchor by however much the view actually moved.
+fn autoscroll_selection(app: &mut App) {
+    let Some(sel) = app.selection.filter(|s| s.dragging) else {
+        return;
+    };
+    let rect = app.transcript_rect;
+    if rect.height <= 2 {
+        return;
+    }
+    if sel.head.1 <= rect.y {
+        app.scrollback = app.scrollback.saturating_add(1);
+    } else if sel.head.1 >= rect.y + rect.height.saturating_sub(1) {
+        app.scrollback = app.scrollback.saturating_sub(1);
+    }
+}
+
+/// Lift the selected cells out of a rendered frame. Rows are joined with
+/// newlines and stripped of trailing padding, so a copied command pastes as the
+/// command and not as the width of the terminal.
+fn selection_text(buf: &Buffer, sel: Selection, area: Rect) -> String {
+    sel.spans(area.width)
+        .into_iter()
+        .filter(|(row, _, _)| *row < area.height)
+        .map(|(row, c0, c1)| {
+            // Wide glyphs park an empty symbol in their second cell, so plain
+            // concatenation already reconstructs them.
+            let line: String = (c0..=c1)
+                .filter_map(|col| buf.cell((col, row)))
+                .map(|cell| cell.symbol())
+                .collect();
+            line.trim_end().to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Put a selection on the system clipboard by both routes available to a TUI:
+/// `arboard`, which serves it for as long as this process runs, and OSC 52,
+/// which hands it to the terminal emulator so it survives `jan` exiting and
+/// crosses an ssh/tmux session. OSC 52 goes second so that where it is supported
+/// the terminal ends up owning the selection.
+fn copy_to_clipboard(text: &str) {
+    let owned = text.to_string();
+    std::thread::spawn(move || {
+        let Ok(mut clip) = arboard::Clipboard::new() else {
+            return;
+        };
+        // X11/Wayland ownership lives with the setter, so this thread parks
+        // inside `wait()` until something else claims the clipboard; returning
+        // immediately would drop the text on the floor.
+        #[cfg(target_os = "linux")]
+        {
+            use arboard::SetExtLinux;
+            let _ = clip.set().wait().text(owned);
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = clip.set_text(owned);
+        }
+    });
+    if text.len() <= OSC52_MAX_BYTES {
+        use base64::Engine;
+        let payload = base64::engine::general_purpose::STANDARD.encode(text);
+        let mut out = io::stdout();
+        let _ = write!(out, "\x1b]52;c;{payload}\x07");
+        let _ = out.flush();
     }
 }
 
@@ -3743,7 +5195,7 @@ async fn handle_ask_key(
     if app.ask_queue.is_empty() {
         return false;
     }
-    if key.kind != KeyEventKind::Press {
+    if key.kind == KeyEventKind::Release {
         return true;
     }
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
@@ -3787,6 +5239,33 @@ async fn handle_ask_key(
         resolve_front_ask(app, registry, false).await;
     }
     true
+}
+
+/// Route a bracketed paste event to the active input owner.
+fn route_paste_event(app: &mut App, event: Event) {
+    let Event::Paste(text) = event else {
+        return;
+    };
+    if let Some(prompt) = app.login.as_mut() {
+        // A pasted API key belongs to the login field, not the chat composer
+        // (where it would echo).
+        prompt.paste(&text);
+    } else if !app.ask_queue.is_empty() {
+        handle_ask_paste(app, &text);
+    } else {
+        for c in text.chars() {
+            app.input_insert(c);
+        }
+    }
+}
+
+/// Append bracketed paste to the active custom answer only.
+fn handle_ask_paste(app: &mut App, text: &str) {
+    if let Some(ask) = app.ask_queue.front_mut() {
+        if ask.editing_custom {
+            ask.custom_input.push_str(text);
+        }
+    }
 }
 
 async fn handle_ask_mouse(
@@ -3902,23 +5381,17 @@ async fn handle_key(
     let ctrl_c = ctrl && key.code == KeyCode::Char('c');
     let ctrl_d = ctrl && key.code == KeyCode::Char('d');
 
-    // Global: toggle mouse capture so the terminal's native text selection
-    // works (crossterm's mouse capture otherwise claims all mouse input).
-    if ctrl && key.code == KeyCode::Char('t') {
-        app.mouse_capture = !app.mouse_capture;
-        app.note(if app.mouse_capture {
-            "mouse capture on: click to expand"
-        } else {
-            "mouse capture off: drag to select/copy text (Ctrl-T to re-enable)"
-        });
-        return;
-    }
-
     // The `/login` prompt owns the keyboard while open: every keystroke is part
     // of a secret being typed, so none of it may reach the input box or the
     // transcript shortcuts.
     if app.login.is_some() {
         handle_login_key(app, key, ctrl);
+        return;
+    }
+
+    // The `/settings` edit dock owns the keyboard while open, same as `/login`.
+    if app.settings_prompt.is_some() {
+        handle_settings_key(app, key, ctrl);
         return;
     }
 
@@ -3967,10 +5440,7 @@ async fn handle_key(
             // already shows the call proceeded, so an "allowed" line is
             // pure noise once granted.
             if matches!(d, PermissionDecision::Deny) {
-                app.push(Line::styled(
-                    format!("• denied: {}", pending.summary()),
-                    Style::new().red(),
-                ));
+                app.system(Level::Error, &format!("denied: {}", pending.summary()));
             }
             if let Some(sender) = registry.lock().await.remove(&pending.request_id) {
                 let _ = sender.send(d);
@@ -4036,6 +5506,27 @@ async fn handle_key(
                     }
                 }
             }
+            // `/settings` picker: `x` restores the selected key to its default
+            // by removing it from agent.toml - same write as clearing the
+            // field in the edit dock, one keypress instead of two.
+            KeyCode::Char('x') if picker.kind == PickerKind::AgentSettings => {
+                let key = picker.items[picker.selected].value.clone();
+                // (picker borrow ends here; nothing below reads it before rebuild)
+                let toml_path = app.agent_dir.join("agent.toml");
+                match crate::core::agent::project::set_agent_key(&toml_path, &key, None) {
+                    Ok(()) => {
+                        app.note(&format!(
+                            "{key} unset (default applies); takes effect on the next run"
+                        ));
+                        if let Some(picker) = app.picker.as_mut() {
+                            picker.items = build_agent_settings_items(&toml_path);
+                            picker.selected =
+                                picker.selected.min(picker.items.len().saturating_sub(1));
+                        }
+                    }
+                    Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
+                }
+            }
             KeyCode::Enter => {
                 let kind = picker.kind;
                 let value = picker.items[picker.selected].value.clone();
@@ -4055,6 +5546,15 @@ async fn handle_key(
                         }
                     }
                     PickerKind::ViewConfig => {}
+                    // `/settings`: open the edit dock for the selected row.
+                    PickerKind::AgentSettings => {
+                        if let Some(def) = AGENT_SETTINGS.iter().find(|d| d.key == value) {
+                            let toml_path = app.agent_dir.join("agent.toml");
+                            let current = current_agent_value(&toml_path, def.key);
+                            app.settings_prompt =
+                                Some(SettingsPrompt::new(def, current.as_deref()));
+                        }
+                    }
                     // Todo Enter is handled by the guarded action arm above.
                     PickerKind::Todo => {}
                 }
@@ -4184,6 +5684,7 @@ async fn handle_key(
             let text = app.input.trim().to_string();
             app.input_clear();
             if !text.is_empty() {
+                app.record_submitted(&text);
                 if let Some(cmd) = text.strip_prefix('/') {
                     run_command(app, cmd).await;
                 } else {
@@ -4215,11 +5716,20 @@ async fn handle_key(
         KeyCode::Char(c) if !ctrl => {
             app.input_insert(c);
         }
+        // Up/Down recall submitted messages into the composer when there is
+        // something to recall; otherwise they scroll the transcript as before.
+        // PageUp/PageDown always scroll, so scrollback is never unreachable.
         KeyCode::Up | KeyCode::PageUp => {
+            if key.code == KeyCode::Up && app.recall_prev() {
+                return;
+            }
             let step = if key.code == KeyCode::PageUp { 10 } else { 1 };
             app.scrollback = app.scrollback.saturating_add(step);
         }
         KeyCode::Down | KeyCode::PageDown => {
+            if key.code == KeyCode::Down && app.recall_next() {
+                return;
+            }
             let step = if key.code == KeyCode::PageDown { 10 } else { 1 };
             app.scrollback = app.scrollback.saturating_sub(step);
         }
@@ -4265,6 +5775,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "/clear",
         hint: "",
         description: "Clear the conversation",
+    },
+    SlashCommand {
+        name: "/init",
+        hint: "",
+        description: "Study the project, then write JAN.md, skills, and memory",
     },
     SlashCommand {
         name: "/compact",
@@ -4322,6 +5837,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "View provider config (~/.jan/config.toml)",
     },
     SlashCommand {
+        name: "/settings",
+        hint: "[max_parallel_subagents N]",
+        description: "Edit [agent] settings from agent.toml (menu); takes effect next run",
+    },
+    SlashCommand {
         name: "/update",
         hint: "",
         description: "Install the latest published build (takes effect on restart)",
@@ -4342,10 +5862,11 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("Alt+Enter / Ctrl-J", "Insert a newline"),
     ("Esc / Ctrl-C", "Cancel the running turn"),
     ("Esc Esc", "Rewind to an earlier message"),
-    ("↑/↓", "Scroll the transcript"),
+    ("↑/↓", "Recall sent messages (scrolls while the input has text)"),
+    ("PgUp/PgDn", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
-    ("Ctrl-T", "Toggle mouse capture (click-to-expand vs text select)"),
+    ("Drag", "Select text, copied on release (Alt+drag for a block)"),
     ("Ctrl-D", "Quit"),
 ];
 
@@ -4362,26 +5883,18 @@ async fn run_command(app: &mut App, line: &str) {
     let (name, arg) = parse_command(line);
     match name {
         "" | "help" | "?" => {
-            app.gap(Kind::Meta);
-            app.push(Line::styled("commands:".to_string(), Style::new().dim()));
+            app.note("commands:");
             for c in SLASH_COMMANDS {
                 let sig = if c.hint.is_empty() {
                     c.name.to_string()
                 } else {
                     format!("{} {}", c.name, c.hint)
                 };
-                app.push(Line::styled(
-                    format!("  {sig:18} {}", c.description),
-                    Style::new().dim(),
-                ));
+                app.system_detail_text(&format!("{sig:18} {}", c.description));
             }
-            app.gap(Kind::Meta);
-            app.push(Line::styled("keys:".to_string(), Style::new().dim()));
+            app.note("keys:");
             for (keys, description) in KEY_BINDINGS {
-                app.push(Line::styled(
-                    format!("  {keys:18} {description}"),
-                    Style::new().dim(),
-                ));
+                app.system_detail_text(&format!("{keys:18} {description}"));
             }
         }
         "clear" => {
@@ -4394,7 +5907,7 @@ async fn run_command(app: &mut App, line: &str) {
             clear_todos(app).await;
             app.note("started a new session");
         }
-        "compact" => compact_command(app).await,
+        "compact" => compact_command(app),
         "threads" | "list" => match super::list_threads_in(&app.agent_dir) {
             Ok(threads) if threads.is_empty() => {
                 app.note("no saved threads found");
@@ -4402,25 +5915,18 @@ async fn run_command(app: &mut App, line: &str) {
             Ok(mut threads) => {
                 sort_threads_recent(&mut threads);
                 let base = app.agent_dir.clone();
-                app.gap(Kind::Meta);
-                app.push(Line::styled(
-                    format!("{} saved thread(s):", threads.len()),
-                    Style::new().dim(),
-                ));
+                app.note(&format!("{} saved thread(s):", threads.len()));
                 for t in &threads {
                     let id = t.get("id").and_then(|v| v.as_str()).unwrap_or("?");
                     let title =
                         thread_display_name(&base, id, t.get("title").and_then(|v| v.as_str()));
                     let short: String = id.chars().take(8).collect();
-                    app.push(Line::from(vec![
-                        Span::styled(format!("  {short}  "), Style::new().cyan()),
+                    app.system_detail(vec![
+                        Span::styled(format!("{short}  "), Style::new().cyan()),
                         Span::raw(title),
-                    ]));
+                    ]);
                 }
-                app.push(Line::styled(
-                    "resume with /resume".to_string(),
-                    Style::new().dim(),
-                ));
+                app.system_detail_text("resume with /resume");
             }
             Err(e) => app.note(&format!("failed to list threads: {e}")),
         },
@@ -4442,7 +5948,9 @@ async fn run_command(app: &mut App, line: &str) {
         "login" => open_login_prompt(app),
         "update" => update_command(app),
         "config" => open_config_screen(app),
+        "settings" => settings_command(app, arg),
         "goal" => goal_command(app, arg),
+        "init" => init_command(app),
         "plan" => plan_command(app, arg),
         "todo" => todo_command(app, arg).await,
         "cancel" => cancel_command(app, arg),
@@ -4451,37 +5959,162 @@ async fn run_command(app: &mut App, line: &str) {
     }
 }
 
+/// The `/init` prompt. Onboarding a project means producing the three things a
+/// later session reads back: the root `JAN.md` (ingested as project context),
+/// skills for repeatable workflows, and memory for durable facts. Phrased as a
+/// task for the model rather than executed here -- only the model can read the
+/// project and judge what is worth writing down.
+const INIT_PROMPT: &str = "Onboard yourself to this project so future sessions start informed.\n\n\
+1. Study the project first. Read the README and any contributor docs, map the directory layout, and \
+find the real build, test, lint, and type-check commands (from the manifests and CI config, not from \
+guesswork). Note the conventions the code actually follows.\n\n\
+2. Write `JAN.md` in the project root. It is the only instructions file loaded into your system \
+prompt, and it is loaded every session, so it must earn its tokens: the commands to build/test/lint, \
+the architecture a newcomer cannot infer from the tree, and the conventions worth enforcing. Skip \
+anything obvious from a directory listing, and do not pad it. If `JAN.md` already exists, read it and \
+correct what has drifted instead of rewriting it wholesale.\n\n\
+3. Write skills with `skill_write` for the project's repeatable procedures -- releasing, running \
+migrations, adding a module, debugging a subsystem -- one skill per procedure, only where a real \
+multi-step recipe exists. Do not invent skills to fill space.\n\n\
+4. Record durable project facts with `memory_write`: decisions, constraints, and gotchas that are \
+true beyond this session and not already stated in the code.\n\n\
+Then report what you wrote and why, briefly.";
+
+/// `/init`: hand the model the onboarding task as a user turn, so it runs with
+/// the normal toolset, permission gate, and transcript. The prompt body itself
+/// is hidden -- the note below is what the user asked for, the canned text is
+/// not. Idle-only, like the other commands that start a turn -- queueing it
+/// behind a running turn would have it survey a project mid-change.
+fn init_command(app: &mut App) {
+    if app.status != Status::Idle {
+        app.note("/init is only available while idle");
+        return;
+    }
+    let existing = crate::core::agent::context::has_context_file(&app.project_root);
+    app.note(if existing {
+        "◈ init · reviewing JAN.md, skills, and memory for this project"
+    } else {
+        "◈ init · studying the project to write JAN.md, skills, and memory"
+    });
+    app.submit_user_hidden(INIT_PROMPT.to_string());
+}
+
 /// Manually compact the conversation: summarize older turns, keeping the recent
 /// tail, then persist. Blocks the event loop for one model call; runs only while
 /// idle (the caller gates on `Status::Idle`).
-async fn compact_command(app: &mut App) {
-    let Some(args) = app.args.clone() else {
+fn compact_command(app: &mut App) {
+    if app.compacting.is_some() {
+        app.note("already compacting");
+        return;
+    }
+    if app.args.is_none() {
         app.note("compaction unavailable (no active session)");
         return;
+    }
+    app.compact_request = Some(CompactKind::Manual);
+}
+
+/// Compact-and-retry attempts allowed per user turn. The loop already retries
+/// within a single request (`MAX_COMPACTION_ATTEMPTS`); this bounds the outer
+/// recovery so a model that overflows at any size still hands control back.
+const MAX_OVERFLOW_RETRIES: u8 = 2;
+
+/// Which path asked for a compaction: `/compact` keeps a shorter tail than the
+/// automatic one and reports itself differently.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CompactKind {
+    Manual,
+    Auto,
+}
+
+impl CompactKind {
+    fn keep_recent(self) -> usize {
+        match self {
+            CompactKind::Manual => crate::core::agent::compaction::MANUAL_KEEP_RECENT,
+            CompactKind::Auto => crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            CompactKind::Manual => "compacting",
+            CompactKind::Auto => "auto-compacting",
+        }
+    }
+
+    fn done_label(self) -> &'static str {
+        match self {
+            CompactKind::Manual => "compacted",
+            CompactKind::Auto => "auto-compacted",
+        }
+    }
+}
+
+/// Await an in-flight compaction, parking forever when none is running so this
+/// can sit in the loop's `select!` unconditionally.
+async fn await_compaction(
+    task: &mut Option<tokio::task::JoinHandle<Result<Vec<serde_json::Value>, String>>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
     };
-    let before = app.history.len();
-    match crate::core::agent::r#loop::compact_history(
-        &args,
-        &app.model,
-        &app.history,
-        crate::core::agent::compaction::MANUAL_KEEP_RECENT,
-    )
-    .await
-    {
-        Ok(compacted) if compacted.len() < before => {
+    *task = None;
+    match joined {
+        Ok(inner) => inner,
+        Err(e) => Err(format!("compaction task failed: {e}")),
+    }
+}
+
+/// Apply a finished compaction. `base_len` is the history length the summary was
+/// computed from: anything appended since (a message submitted while the call was
+/// in flight) is carried over rather than dropped.
+fn finish_compaction(
+    app: &mut App,
+    result: Result<Vec<serde_json::Value>, String>,
+    base_len: usize,
+) {
+    let kind = app.compacting.take().unwrap_or(CompactKind::Manual);
+    app.compact_started = None;
+    let retrying = std::mem::take(&mut app.retry_after_compact);
+    match result {
+        Ok(mut compacted) if compacted.len() < base_len => {
+            compacted.extend(app.history.split_off(base_len.min(app.history.len())));
             app.history = compacted;
             app.persist();
             // Estimate tokens from compacted message content (~4 chars ≈ 1 token).
             app.tokens = estimate_token_count(&app.history);
             app.note(&format!(
-                "compacted {before} -> {} messages (ctx {}K/{}K)",
+                "{} {base_len} -> {} messages (ctx {}K/{}K)",
+                kind.done_label(),
                 app.history.len(),
                 app.tokens / 1000,
                 app.context_window / 1000,
             ));
+            // The turn this compaction was queued for died on an overflow
+            // error: resume it now that the history it failed on is smaller.
+            if retrying {
+                app.begin_turn();
+                app.want_start = true;
+            }
         }
-        Ok(_) => app.note("nothing to compact yet"),
-        Err(e) => app.note(&format!("compaction failed: {e}")),
+        Ok(_) => {
+            if kind == CompactKind::Manual {
+                app.note("nothing to compact yet");
+            }
+            // Nothing shrank, so the retry would re-send the request that
+            // already overflowed. Hand control back instead.
+            if retrying {
+                app.note("nothing left to compact: the turn cannot be retried");
+                app.halt_turn();
+            }
+        }
+        Err(e) => {
+            app.note(&format!("{} failed: {e}", kind.label()));
+            if retrying {
+                app.halt_turn();
+            }
+        }
     }
 }
 
@@ -4502,6 +6135,288 @@ fn goal_command(app: &mut App, arg: &str) {
         }
         "" => show_goal_status(app),
         condition => set_goal(app, condition),
+    }
+}
+
+/// One editable `[agent]` key surfaced by `/settings`. Mirrors the template's
+/// knobs; defaults match `load_agent_config`. `model` is deliberately absent:
+/// it has its own `/model` picker.
+struct AgentSettingDef {
+    key: &'static str,
+    label: &'static str,
+    desc: &'static str,
+    kind: AgentSettingKind,
+}
+
+enum AgentSettingKind {
+    Int { default: Option<u64>, min: u64 },
+    /// Exact-match choice: Enter writes one of `options`, cleared field
+    /// unsets. Covers the `read-only | deny | allow` and `always | relevance`
+    /// toggles that hand-editing agent.toml previously required.
+    Enum { options: &'static [&'static str], default: &'static str },
+    /// Boolean toggle: Enter writes a TOML boolean (the Enum kind would emit a
+    /// quoted string). Unset clears the key so its default applies.
+    Bool { default: bool },
+}
+
+const AGENT_SETTINGS: &[AgentSettingDef] = &[
+    AgentSettingDef {
+        key: "context_window",
+        label: "context_window",
+        desc: "context limit in tokens",
+        kind: AgentSettingKind::Int { default: Some(128000), min: 1 },
+    },
+    AgentSettingDef {
+        key: "compaction_reserve_tokens",
+        label: "compaction_reserve_tokens",
+        desc: "headroom kept free before compaction",
+        kind: AgentSettingKind::Int { default: Some(16384), min: 0 },
+    },
+    AgentSettingDef {
+        key: "max_tokens",
+        label: "max_tokens",
+        desc: "cap on tokens generated per response (omitted when unset)",
+        kind: AgentSettingKind::Int { default: None, min: 1 },
+    },
+    AgentSettingDef {
+        key: "max_parallel_subagents",
+        label: "max_parallel_subagents",
+        desc: "subagents that may run at once; extra dispatches queue FIFO",
+        kind: AgentSettingKind::Int { default: Some(10), min: 1 },
+    },
+    AgentSettingDef {
+        key: "budget.max_tokens",
+        label: "budget.max_tokens",
+        desc: "token-spend ceiling per run; the only cap on run length",
+        kind: AgentSettingKind::Int { default: Some(128000), min: 0 },
+    },
+    AgentSettingDef {
+        key: "tools.default",
+        label: "tools.default",
+        desc: "tool permission mode; deny locks down MCP tools",
+        kind: AgentSettingKind::Enum {
+            options: &["read-only", "deny", "allow"],
+            default: "read-only",
+        },
+    },
+    AgentSettingDef {
+        key: "skills.inject",
+        label: "skills.inject",
+        desc: "when project skills are injected into the prompt",
+        kind: AgentSettingKind::Enum {
+            options: &["always", "relevance"],
+            default: "always",
+        },
+    },
+    AgentSettingDef {
+        key: "show_reasoning",
+        label: "show_reasoning",
+        desc: "expand  reasoning in the transcript (Ctrl-O still toggles)",
+        kind: AgentSettingKind::Bool { default: false },
+    },
+];
+
+/// Docked edit prompt for one `/settings` row: value field, inline validation
+/// error, Enter saves / Esc cancels / cleared field unsets.
+struct SettingsPrompt {
+    key: &'static str,
+    input: String,
+    error: Option<String>,
+}
+
+impl SettingsPrompt {
+    fn new(def: &AgentSettingDef, current: Option<&str>) -> Self {
+        Self {
+            key: def.key,
+            input: current.unwrap_or_default().to_string(),
+            error: None,
+        }
+    }
+
+    fn def(&self) -> &'static AgentSettingDef {
+        AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == self.key)
+            .expect("settings prompt always opens for a def row")
+    }
+}
+
+/// Value of an `[agent]` key in `agent.toml` as a display string, `None` when
+/// unset or the file is unreadable. Reads the inner value directly so the
+/// display is not padded by the document's alignment.
+fn current_agent_value(toml_path: &std::path::Path, key: &str) -> Option<String> {
+    let raw = std::fs::read_to_string(toml_path).ok()?;
+    let doc = raw.parse::<toml_edit::DocumentMut>().ok()?;
+    let (section, key) = match key.split_once('.') {
+        Some((section, key)) => (section, key),
+        None => ("agent", key),
+    };
+    let item = doc.get(section)?.get(key)?;
+    Some(match item.as_value() {
+        Some(toml_edit::Value::Integer(i)) => i.value().to_string(),
+        Some(toml_edit::Value::String(s)) => s.value().to_string(),
+        Some(toml_edit::Value::Boolean(b)) => b.value().to_string(),
+        _ => item.to_string(),
+    })
+}
+
+/// `/settings` dispatcher: bare opens the interactive settings menu (an
+/// `AgentSettings` picker over the `[agent]` keys; Enter on a row docks an edit
+/// prompt); `max_parallel_subagents <N>` still works as a one-shot shortcut.
+/// Writes are format-preserving and take effect on the next run (the current
+/// run snapshotted its config at start). Runs only while idle, like every
+/// command.
+fn settings_command(app: &mut App, arg: &str) {
+    let toml_path = app.agent_dir.join("agent.toml");
+    let arg = arg.trim();
+    let Some((key, value)) = arg.split_once(char::is_whitespace) else {
+        return open_settings_screen(app);
+    };
+    match key {
+        "max_parallel_subagents" => {
+            let n: u64 = match value.parse() {
+                Ok(n) => n,
+                Err(_) => return app.note(&format!("'{value}' is not an integer")),
+            };
+            if n < 1 {
+                return app.note("max_parallel_subagents must be at least 1");
+            }
+            match crate::core::agent::project::set_agent_key(
+                &toml_path,
+                key,
+                Some(toml_edit::value(n as i64)),
+            ) {
+                Ok(()) => app.note(&format!(
+                    "max_parallel_subagents = {n} written; takes effect on the next run"
+                )),
+                Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
+            }
+        }
+        other => app.note(&format!(
+            "unknown setting '/settings {other}' (bare /settings opens the menu)"
+        )),
+    }
+}
+
+/// One picker row per `[agent]` def; the hint carries the current on-disk
+/// value (`= 400`) or `(unset)` when the default applies. `value` is the key
+/// so the edit dock and the `x` unset shortcut can act on it.
+fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
+    AGENT_SETTINGS
+        .iter()
+        .map(|def| {
+            let current = current_agent_value(toml_path, def.key);
+            PickerItem {
+                value: def.key.to_string(),
+                label: def.label.to_string(),
+                hint: Some(match &current {
+                    Some(v) => format!("= {v}"),
+                    None => "(unset)".to_string(),
+                }),
+                checkbox: None,
+            }
+        })
+        .collect()
+}
+
+/// Open the `/settings` menu: a picker row per `[agent]` key, hint showing the
+/// current value (or `unset`), Enter docking the edit prompt for that row, `x`
+/// removing the key so its default applies again.
+fn open_settings_screen(app: &mut App) {
+    let toml_path = app.agent_dir.join("agent.toml");
+    app.picker = Some(Picker {
+        kind: PickerKind::AgentSettings,
+        items: build_agent_settings_items(&toml_path),
+        selected: 0,
+    });
+}
+
+/// Keyboard for the `/settings` edit dock: chars/backspace edit the field,
+/// Enter validates and writes (empty clears the key), Esc cancels. Mirrors
+/// `handle_login_key`, minus the secret/verify machinery.
+fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+    if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c'))) && app.settings_prompt.is_some()
+    {
+        app.settings_prompt = None;
+        return;
+    }
+    let Some(prompt) = app.settings_prompt.as_mut() else {
+        return;
+    };
+    match key.code {
+        KeyCode::Enter => {
+            let toml_path = app.agent_dir.join("agent.toml");
+            let value: Option<toml_edit::Item> = match prompt.def().kind {
+                AgentSettingKind::Int { default, min } => {
+                    if prompt.input.trim().is_empty() {
+                        None
+                    } else {
+                        match prompt.input.trim().parse::<u64>() {
+                            Ok(n) if n >= min => Some(toml_edit::value(n as i64)),
+                            Ok(_) => {
+                                prompt.error = Some(format!(
+                                    "must be at least {min} (default: {})",
+                                    default
+                                        .map(|d| d.to_string())
+                                        .unwrap_or_else(|| "unset".into())
+                                ));
+                                return;
+                            }
+                            Err(_) => {
+                                prompt.error = Some(format!("'{}' is not an integer", prompt.input));
+                                return;
+                            }
+                        }
+                    }
+                }
+                AgentSettingKind::Enum { options, default } => {
+                    let input = prompt.input.trim();
+                    if input.is_empty() {
+                        None
+                    } else if options.contains(&input) {
+                        Some(toml_edit::value(input.to_string()))
+                    } else {
+                        prompt.error = Some(format!(
+                            "must be one of: {} (default: {default})",
+                            options.join(" | ")
+                        ));
+                        return;
+                    }
+                }
+                AgentSettingKind::Bool { default } => {
+                    let input = prompt.input.trim();
+                    if input.is_empty() {
+                        None
+                    } else if let Ok(b) = input.parse::<bool>() {
+                        Some(toml_edit::value(b))
+                    } else {
+                        prompt.error = Some(format!(
+                            "must be true or false (default: {default})"
+                        ));
+                        return;
+                    }
+                }
+            };
+            match crate::core::agent::project::set_agent_key(&toml_path, prompt.key, value) {
+                Ok(()) => {
+                    let what = if prompt.input.trim().is_empty() {
+                        format!("{} unset (default applies)", prompt.key)
+                    } else {
+                        format!("{} = {} written", prompt.key, prompt.input.trim())
+                    };
+                    app.note(&format!("{what}; takes effect on the next run"));
+                    app.settings_prompt = None;
+                }
+                Err(e) => {
+                    prompt.error = Some(format!("failed to write {}: {e}", toml_path.display()));
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            prompt.input.pop();
+        }
+        KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
+        _ => {}
     }
 }
 
@@ -4572,11 +6487,11 @@ async fn apply_todo_mutation(
     Ok(())
 }
 
-/// Runs allowed to start with a fully closed-out todo list before it is
-/// dropped. One is too eager -- a model often closes the last task and then
-/// appends follow-up work in the next run, and clearing between the two would
-/// destroy a list it is still using.
-const TODO_KEEP_CLOSED_RUNS: u32 = 2;
+/// Turns (model roundtrips or user submissions) allowed to pass with a fully
+/// closed-out todo list before it is dropped. One is too eager -- a model
+/// often closes the last task and then appends follow-up work in the next
+/// turn, and clearing between the two would destroy a list it is still using.
+const TODO_KEEP_CLOSED_TURNS: u32 = 2;
 
 /// Clear the canonical todo list and the TUI projection together.
 ///
@@ -4592,11 +6507,14 @@ async fn clear_todos(app: &mut App) {
     })
     .await;
     app.last_todo_reminder = None;
-    app.runs_since_todos_closed = 0;
+    app.turns_since_todos_closed = 0;
 }
 
 /// Age a finished todo list, dropping it once it has survived
-/// `TODO_KEEP_CLOSED_RUNS` runs without the model reopening or extending it.
+/// `TODO_KEEP_CLOSED_TURNS` turns without the model reopening or extending it.
+/// Called on every model roundtrip (`Step`) and at each run kick, so a single
+/// run's many tool-call turns all count -- a finished plan does not outlive
+/// the long run that produced it.
 ///
 /// Without this the widget is sticky: `is_empty` means "no tasks exist", and a
 /// completed task is still a task, so a finished plan renders forever and only
@@ -4605,11 +6523,11 @@ async fn clear_todos(app: &mut App) {
 async fn age_closed_todos(app: &mut App) {
     if app.todos.is_empty() || app.todos.has_open() {
         // Nothing to age, or the model still has open work.
-        app.runs_since_todos_closed = 0;
+        app.turns_since_todos_closed = 0;
         return;
     }
-    app.runs_since_todos_closed += 1;
-    if app.runs_since_todos_closed > TODO_KEEP_CLOSED_RUNS {
+    app.turns_since_todos_closed += 1;
+    if app.turns_since_todos_closed > TODO_KEEP_CLOSED_TURNS {
         clear_todos(app).await;
         app.persist();
     }
@@ -4750,32 +6668,19 @@ fn show_goal_status(app: &mut App) {
         GoalStatus::Active => "active",
         GoalStatus::Achieved => "achieved",
     };
-    app.gap(Kind::Meta);
-    app.push(Line::styled(
-        format!("◎ goal [{state}]"),
-        Style::new().cyan().bold(),
-    ));
-    app.push(Line::styled(
-        format!("  condition: {}", goal.condition),
-        Style::new().dim(),
-    ));
-    app.push(Line::styled(
-        format!(
-            "  turns: {}   duration: {}",
-            goal.turns,
-            fmt_duration(goal.elapsed_secs())
-        ),
-        Style::new().dim(),
+    app.system_marked(GOAL_GLYPH, Level::Info, &format!("goal [{state}]"));
+    app.system_detail_text(&format!("condition: {}", goal.condition));
+    app.system_detail_text(&format!(
+        "turns: {}   duration: {}",
+        goal.turns,
+        fmt_duration(goal.elapsed_secs())
     ));
     let reason = if goal.last_reason.is_empty() {
         "(not evaluated yet)"
     } else {
         &goal.last_reason
     };
-    app.push(Line::styled(
-        format!("  evaluator: {reason}"),
-        Style::new().dim(),
-    ));
+    app.system_detail_text(&format!("evaluator: {reason}"));
 }
 
 /// Set a new goal from `condition` and immediately start a turn toward it (the
@@ -4921,20 +6826,16 @@ fn open_mcp_picker(app: &mut App) {
 /// just handed to the browser, so a headless or remote session can still be
 /// completed by hand.
 fn open_login_prompt(app: &mut App) {
-    app.gap(Kind::Meta);
-    app.push(Line::styled(
-        "sign in to Tokamak and create an API key:".to_string(),
-        Style::new().dim(),
-    ));
-    app.push(Line::styled(
-        format!("  {}", super::tokamak::API_KEYS_URL),
+    app.note("sign in to Tokamak and create an API key:");
+    app.system_detail(vec![Span::styled(
+        super::tokamak::API_KEYS_URL,
         Style::new().cyan(),
-    ));
+    )]);
     let browser = match super::tokamak::open_api_keys_page() {
-        Ok(()) => "  opening that page in your browser".to_string(),
-        Err(e) => format!("  open that URL yourself ({e})"),
+        Ok(()) => "opening that page in your browser".to_string(),
+        Err(e) => format!("open that URL yourself ({e})"),
     };
-    app.push(Line::styled(browser, Style::new().dim()));
+    app.system_detail_text(&browser);
     app.login = Some(LoginPrompt::new());
 }
 
@@ -5230,29 +7131,128 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
         }
     }
 
+    // Lift the target user message's text into the input area so the user
+    // can re-submit (or edit) it after the rewind. Image-only content yields
+    // no text.
+    let fill = user_content_parts(
+        app.history.get(cut).and_then(|m| m.get("content")).unwrap_or(&serde_json::Value::Null),
+    )
+    .0;
+
     app.history.truncate(cut);
+    // The journal is keyed by its own user entries, not by history indices: it
+    // holds rows (tool calls, reasoning) that history never had.
+    app.display_log
+        .truncate(journal::truncate_at_user(&app.display_log, target));
     app.checkpoints.retain(|c| c.user_index < target);
     rebuild_transcript(app);
+    rebuild_recall(app);
     app.status = Status::Idle;
     app.run_started = None;
     app.scrollback = 0;
+    app.input_clear();
+    app.input = fill;
+    app.cursor = app.input.len();
     app.note(&format!("rewound to message #{}", target + 1));
     app.persist();
 }
 
-/// Re-render the transcript from the current `history` after a rewind.
+/// Rebuild Up/Down recall from `history`, the conversation being the one source
+/// of truth for it. Anything that replaces or truncates the conversation
+/// (resume, rewind) calls this, so recall can never offer a message the thread
+/// no longer contains -- nor lose the ones it does.
+fn rebuild_recall(app: &mut App) {
+    app.input_history.clear();
+    app.reset_recall();
+    let texts: Vec<String> = app
+        .history
+        .iter()
+        .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+        .filter_map(|m| m.get("content"))
+        .map(|c| user_content_parts(c).0)
+        .filter(|t| !t.is_empty())
+        .collect();
+    for text in texts {
+        app.record_submitted(&text);
+    }
+}
+
+/// Replay a display journal through the very paths that rendered it live, so a
+/// resumed or rewound transcript keeps its reasoning, tool rows and diff panels.
+/// The replayed events journal themselves again, so `entries` is reinstated as
+/// the log afterwards instead of whatever the replay appended.
+fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
+    for entry in &entries {
+        match entry {
+            DisplayEntry::User { text, images } => {
+                app.finalize_tool_group();
+                app.push_user_line(text, images);
+            }
+            // Through `flush_assistant`, not `push_assistant_blocks`: the prose
+            // is also what closes the preceding run of grouped calls. Rendering
+            // the blocks directly leaves the group open, so every later call
+            // folds back into one row that is never committed -- the whole turn's
+            // tool calls then render as nothing at all.
+            DisplayEntry::Assistant { text } => {
+                app.assistant_buf = text.clone();
+                app.flush_assistant();
+            }
+            DisplayEntry::ToolCall { id, name, args } => app.apply(StreamEvent::ToolCall {
+                id: id.clone(),
+                name: name.clone(),
+                args: args.clone(),
+            }),
+            DisplayEntry::ToolResult {
+                id,
+                content,
+                is_error,
+                diff,
+            } => app.apply(StreamEvent::ToolResult {
+                id: id.clone(),
+                content: content.clone(),
+                is_error: *is_error,
+                diff: diff.clone(),
+            }),
+            DisplayEntry::Subagent {
+                name,
+                calls,
+                finished,
+            } => {
+                app.finalize_tool_group();
+                app.push_subagent_summary(name, calls.clone(), *finished);
+            }
+        }
+    }
+    // A replay is rendering, not work: the calls it re-renders must not stage
+    // files for the next checkpoint, leave a call awaiting a diff, or read as
+    // todo activity in the turn that follows.
+    app.finalize_tool_group();
+    app.turn_touched.clear();
+    app.diff_paths.clear();
+    app.todo_call_this_turn = false;
+    app.display_log = entries;
+}
+
+/// Re-render the transcript after a rewind: from the display journal when there
+/// is one (so the kept turns keep their reasoning and tool rows), else from the
+/// `history` the rewind left behind.
 fn rebuild_transcript(app: &mut App) {
     app.transcript.clear();
     app.tool_group = None;
     app.grouped_ids.clear();
     app.starting.clear();
     app.groups.clear();
+    app.pending_rows.clear();
     app.reasoning_blocks.clear();
     app.subagent_blocks.clear();
     app.expanded.clear();
     app.reveal = None;
     app.assistant_buf.clear();
     app.last_kind = Kind::None;
+    if !app.display_log.is_empty() {
+        let logged = std::mem::take(&mut app.display_log);
+        return replay_display_log(app, logged);
+    }
     let history = app.history.clone();
     for m in &history {
         let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("");
@@ -5301,6 +7301,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     app.tool_group = None;
     app.grouped_ids.clear();
     app.groups.clear();
+    app.pending_rows.clear();
     app.reasoning_blocks.clear();
     app.subagent_blocks.clear();
     app.expanded.clear();
@@ -5331,22 +7332,31 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
         app.model = model.to_string();
     }
 
-    let mut count = 0;
-    for msg in &messages {
-        let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("");
-        let text = message_text(msg);
-        if text.is_empty() || !matches!(role, "user" | "assistant") {
-            continue;
-        }
-        app.history
-            .push(serde_json::json!({ "role": role, "content": text }));
-        if role == "user" {
-            app.push_user_line(&text, &[]);
-        } else {
-            app.push_assistant_blocks(&text);
-        }
-        count += 1;
+    // The journal holds what was rendered (reasoning, tool rows, diffs); the
+    // messages hold what the model is sent. Prefer the journal for the
+    // transcript, and fall back to replaying the messages for a thread saved
+    // before journaling (or whose journal was lost).
+    let logged = journal::read_journal(&journal::journal_path(&app.agent_dir, full_id));
+    app.history = super::rebuild_wire_history(&messages);
+    let count = app
+        .history
+        .iter()
+        .filter(|m| {
+            matches!(
+                m.get("role").and_then(|v| v.as_str()),
+                Some("user" | "assistant")
+            )
+        })
+        .count();
+    app.display_log.clear();
+    if logged.is_empty() {
+        rebuild_transcript(app);
+    } else {
+        replay_display_log(app, logged);
     }
+    // Recall follows the conversation, so the replaced session's lines go with
+    // it and the resumed thread's come back.
+    rebuild_recall(app);
 
     let title = thread
         .get("title")
@@ -5359,24 +7369,45 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     }
 }
 
-/// Infer an image MIME type from a file extension, defaulting to PNG.
-fn image_mime(path: &str) -> &'static str {
+/// Largest image accepted from a path or the clipboard, before base64 (which
+/// inflates it by 4/3).
+const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+
+/// Infer an image MIME type from a file extension. `None` when the extension is
+/// not a known image type.
+fn image_mime_of(path: &str) -> Option<&'static str> {
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
     match ext.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        _ => "image/png",
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        _ => None,
     }
+}
+
+/// Infer an image MIME type from a file extension, defaulting to PNG.
+fn image_mime(path: &str) -> &'static str {
+    image_mime_of(path).unwrap_or("image/png")
 }
 
 /// Read an image file into a `PendingImage` (base64 data URL + basename).
 fn load_image_file(path: &str) -> Result<PendingImage, String> {
     use base64::Engine;
+    let len = std::fs::metadata(path)
+        .map_err(|e| format!("{path}: {e}"))?
+        .len();
+    if len > MAX_IMAGE_BYTES {
+        return Err(format!(
+            "{path}: too large ({} MB, max {} MB)",
+            len / (1024 * 1024),
+            MAX_IMAGE_BYTES / (1024 * 1024)
+        ));
+    }
     let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
     if bytes.is_empty() {
         return Err(format!("{path}: empty file"));
@@ -5419,6 +7450,17 @@ fn clipboard_path(text: &str) -> Option<String> {
     String::from_utf8(out).ok().filter(|p| !p.is_empty())
 }
 
+/// Load the first loadable image out of a clipboard file list, skipping entries
+/// that are missing, oversized, or not a known image type -- the list is
+/// whatever the user copied, not necessarily an image.
+fn load_first_file_image(files: &[PathBuf]) -> Option<PendingImage> {
+    files.iter().find_map(|p| {
+        let path = p.to_str()?;
+        image_mime_of(path)?;
+        load_image_file(path).ok()
+    })
+}
+
 /// Read an image from the OS clipboard into a `PendingImage`. Prefers raw image
 /// data (PNG-encoding it); falls back to treating clipboard text as an image
 /// file path or `file://` URI (as file managers and browsers put on the
@@ -5433,6 +7475,15 @@ fn clipboard_image() -> Result<PendingImage, String> {
                 if std::path::Path::new(&path).is_file() {
                     return load_image_file(&path);
                 }
+            }
+            // macOS Finder copies publish a file URL, not raster data.
+            if let Some(img) = clip
+                .get()
+                .file_list()
+                .ok()
+                .and_then(|files| load_first_file_image(&files))
+            {
+                return Ok(img);
             }
             return Err(image_err.to_string());
         }
@@ -5525,79 +7576,155 @@ fn transcript_top_padding(total: u16, inner_h: u16) -> u16 {
     inner_h.saturating_sub(total)
 }
 
+/// One contiguous run of body lines. A committed transcript row is held by
+/// index alone, so its cached lines are cloned only when the viewport reaches
+/// it; volatile content -- a running group's spinner row, expanded detail, the
+/// streaming tail -- is rebuilt every frame regardless and carries its lines
+/// inline.
+struct Segment {
+    idx: Option<usize>,
+    height: u16,
+    lines: Option<Vec<Line<'static>>>,
+}
+
+impl Segment {
+    fn eager(idx: Option<usize>, lines: Vec<Line<'static>>, width: u16) -> Segment {
+        Segment {
+            idx,
+            height: wrapped_height(lines.clone(), width),
+            lines: Some(lines),
+        }
+    }
+}
+
+/// Whether the body currently ends on a blank line, so `draw` knows if the
+/// streaming tail needs a separator above it. Reads the last rendered line
+/// rather than the last row's source, since a row renders to several lines.
+fn trailing_blank(tail: &[Line<'static>], transcript: &[Row], width: u16) -> bool {
+    let blank = |line: &Line<'static>| line.spans.iter().all(|s| s.content.trim().is_empty());
+    match tail.last() {
+        Some(line) => blank(line),
+        None => transcript
+            .last()
+            .is_none_or(|row| row.lines(width).last().is_none_or(blank)),
+    }
+}
+
+/// Rows the status panel may take, given the frame it has to share. The
+/// conversation is the point of the screen, so the panel is what gives way: it
+/// gets what is left after the header, rule, input, dock and
+/// `MIN_TRANSCRIPT_ROWS`, capped at `PANEL_MAX_ROWS`, and disappears entirely
+/// on a frame with nothing to spare.
+fn panel_budget(frame_h: u16, input_h: u16) -> usize {
+    let fixed = 1 + 1 + input_h + 1; // header, rule, input, dock
+    frame_h
+        .saturating_sub(fixed + MIN_TRANSCRIPT_ROWS)
+        .min(PANEL_MAX_ROWS as u16) as usize
+}
+
 fn draw(f: &mut Frame, app: &mut App) {
+    // Cached before anything reads it: the status panel sizes the layout, so a
+    // stale width would mis-size the frame a resize lands on. The body spans
+    // the full frame width (its border is top-only).
+    app.view_width = f.area().width.max(1);
+    // Every frame, so a finished plan hides on wall-clock time even with the
+    // session idle -- the loop redraws on its tick either way, and ratatui
+    // emits nothing until the panel actually changes.
+    app.refresh_todo_deadline();
+    // Before the layout reads `scrollback`: a drag held past an edge keeps
+    // pulling content into view a row per frame.
+    autoscroll_selection(app);
     let input_h = input_box_height(app, f.area().width);
-    // A multi-line todo tree HUD sits just below the header when todos exist and
-    // no overlay is open, sized to its bounded row count. Kept out of the layout
-    // otherwise so a todo-free session (or an open picker) renders exactly as
-    // before. Built at most once per frame -- its line count sizes the layout
-    // and the same lines are reused for the actual render below.
-    let todo_lines = (app.picker.is_none() && !app.todos.is_empty()).then(|| todo_hud(app));
-    let todo_h = todo_lines.as_ref().map_or(0, |l| l.len() as u16);
-    let show_todo = todo_h > 0;
-    // The header stays pinned at the top; the working dir/branch line and the
-    // transient status footer sit *below* the input, so the whole "where am I,
-    // what's happening" block reads as one unit at the bottom edge next to
-    // where the user types, instead of being split across both ends. The todo
-    // HUD sits
-    // directly above the input box -- the last thing in view right before where
-    // the user types, not competing with the header for attention. The
-    // separator rule is its own row *below* the HUD (rather than the body's own
-    // bottom border) so the todos read as part of the input dock, above the
-    // line, instead of stranded between the rule and the prompt. A zero-length
-    // todo slot collapses away, so a todo-free session (or an open overlay)
-    // renders exactly as before.
+    // Live state -- the plan and the running fan-out -- is docked, not woven
+    // into the transcript: it describes *now*, and it is what the eye wants
+    // right where the typing happens. Built at most once per frame, since its
+    // own height sizes the layout, and clamped to what the frame can spare so a
+    // short terminal loses panel rows rather than conversation.
+    let panel_lines = app
+        .picker
+        .is_none()
+        .then(|| {
+            let width = f.area().width.max(1);
+            status_panel(app, width, panel_budget(f.area().height, input_h))
+        })
+        .filter(|l| !l.is_empty());
+    let panel_h = panel_lines.as_ref().map_or(0, |l| l.len() as u16);
+    // The header stays pinned at the top; the working dir/branch and the
+    // transient key hints share the single row *below* the input, so the whole
+    // "where am I, what's happening" block reads as one unit at the bottom edge
+    // next to where the user types, instead of being split across both ends and
+    // spending two rows on it. The panel sits directly above the input box --
+    // the last thing in view right before where the user types, not competing
+    // with the header for attention. The separator rule is its own row *below*
+    // the panel (rather than the body's own bottom border) so the live state
+    // reads as part of the input dock, above the line, instead of stranded
+    // between the rule and the prompt. A zero-length slot collapses away, so a
+    // session with neither todos nor subagents renders exactly as before.
     let raw = Layout::vertical([
-        Constraint::Length(1),       // 0: header
-        Constraint::Min(1),          // 1: body
-        Constraint::Length(todo_h),  // 2: todo HUD
-        Constraint::Length(1),       // 3: separator rule
-        Constraint::Length(input_h), // 4: input
-        Constraint::Length(1),       // 5: path line
-        Constraint::Length(1),       // 6: footer
+        Constraint::Length(1),                 // 0: header
+        Constraint::Min(1),                    // 1: body
+        Constraint::Length(panel_h),           // 2: status panel
+        Constraint::Length(1),                 // 3: separator rule
+        Constraint::Length(input_h),           // 4: input
+        Constraint::Length(1),                 // 5: path + key hints
     ])
     .split(f.area());
-    let todo_area = show_todo.then(|| raw[2]);
-    let chunks = [raw[0], raw[1], raw[4], raw[5], raw[6]];
+    let panel_area = raw[2];
+    let chunks = [raw[0], raw[1], raw[4], raw[5]];
 
     f.render_widget(header(app), chunks[0]);
     // Drawn for every path (picker included) so the dock always reads the same.
     f.render_widget(Block::default().borders(Borders::TOP), raw[3]);
 
-    // Top/bottom borders only, so wrapping uses the full width; the two border
-    // rows reduce the vertical viewport. Cache the width so flushed tables wrap.
+    // Top border only, so wrapping uses the full width; the border row reduces
+    // the vertical viewport.
     let width = chunks[1].width.max(1);
-    app.view_width = width;
 
     if let Some(picker) = &app.picker {
         app.row_index.clear();
-        draw_picker(f, chunks[1], picker);
+        let toml_path = app.agent_dir.join("agent.toml");
+        draw_picker(f, chunks[1], picker, &toml_path);
         f.render_widget(input_box(app), chunks[2]);
-        f.render_widget(path_line(app), chunks[3]);
-        f.render_widget(footer(app), chunks[4]);
+        f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
         return;
     }
 
-    let mut lines: Vec<Line<'static>> = Vec::with_capacity(app.transcript.len());
-    // Parallel to `lines`: which transcript index (if any) owns each rendered
-    // row, so a mouse click can be mapped back to a region to toggle.
-    let mut row_index: Vec<Option<usize>> = Vec::with_capacity(app.transcript.len());
-    let mut reveal_at: Option<usize> = None;
-    for (i, line) in app.transcript.iter().enumerate() {
+    // ---- Measure ----
+    // Every committed row contributes only its *height* here, read from the row
+    // cache in O(1); the rows the viewport actually shows are the only ones
+    // materialized and word-wrapped, in the pass below. Laying the whole
+    // session out every frame is what made a long transcript crawl: the body
+    // Paragraph wrapped all of it twice (once to count, once to render), so the
+    // per-frame cost tracked history rather than what was on screen.
+    let mut segs: Vec<Segment> = Vec::with_capacity(app.transcript.len() + 8);
+    let mut content_h: u16 = 0;
+    let mut reveal_at: Option<u16> = None;
+    let frame = app.spinner();
+    for (i, row) in app.transcript.iter().enumerate() {
         if app.reveal == Some(i) {
-            reveal_at = Some(lines.len());
+            reveal_at = Some(content_h);
         }
-        if let Some(row) = app
+        // Every committed row re-renders at the current width, so a resize
+        // re-flows prose, re-boxes diffs and re-truncates labels. The running
+        // group's row animates, so it can never come from the row cache.
+        let seg = match app
             .tool_group
             .as_ref()
             .filter(|g| g.idx == i && g.is_running())
-            .map(|g| running_group_row(g, app.spinner_frame, width))
         {
-            lines.push(row);
-        } else {
-            lines.push(line.clone());
-        }
-        row_index.push(Some(i));
+            Some(g) => Segment::eager(
+                Some(i),
+                vec![running_group_row(g, app.spinner_frame, width)],
+                width,
+            ),
+            None => Segment {
+                idx: Some(i),
+                height: row.height(width),
+                lines: None,
+            },
+        };
+        content_h = content_h.saturating_add(seg.height);
+        segs.push(seg);
         if app.expanded.contains(&i) {
             // Detail rows map back to the same owning idx (not `None`), so a
             // click anywhere in an expanded block collapses it -- not just on
@@ -5622,61 +7749,50 @@ fn draw(f: &mut Frame, app: &mut App) {
                     app.subagent_blocks
                         .iter()
                         .find(|b| b.idx == i)
-                        .map(|block| block.detail.clone())
+                        .map(|block| block.detail_lines(width))
                 });
             if let Some(detail) = detail {
-                row_index.extend(std::iter::repeat(Some(i)).take(detail.len()));
-                lines.extend(detail);
+                let seg = Segment::eager(Some(i), detail, width);
+                content_h = content_h.saturating_add(seg.height);
+                segs.push(seg);
             }
         }
     }
-    if !app.subagents.is_empty() {
-        let last_blank = lines
-            .last()
-            .map(|l| l.spans.iter().all(|s| s.content.trim().is_empty()))
-            .unwrap_or(true);
-        if !last_blank {
-            lines.push(Line::raw(""));
-        }
-        let frame = app.spinner();
-        lines.extend(subagent_panel_lines(
-            &mut app.subagents,
-            app.context_window,
-            width,
-            frame,
-        ));
-    }
+
+    // Streaming prose and the awaiting throbbers have no transcript index; they
+    // are rebuilt every frame and ride along as one trailing segment.
+    let mut tail: Vec<Line<'static>> = Vec::new();
     if !app.assistant_buf.is_empty() {
-        let tail = format_assistant_lines(&app.assistant_buf, width);
-        if !tail.is_empty() {
+        let live = live_assistant_lines(&app.assistant_buf, width, !app.show_reasoning);
+        if !live.is_empty() {
             // Mirror flush_assistant's `gap(Kind::Prose)` so the separator above
             // streaming prose is present live, not only once it's finalized.
-            let last_blank = lines
-                .last()
-                .map(|l| l.spans.iter().all(|s| s.content.trim().is_empty()))
-                .unwrap_or(true);
-            if !last_blank {
-                lines.push(Line::raw(""));
+            if !trailing_blank(&tail, &app.transcript, width) {
+                tail.push(Line::raw(""));
             }
             // Live tail: same renderer as finalized messages, so an open
             // (unterminated) <think> block dims and grows during streaming.
-            lines.extend(tail);
+            tail.extend(live);
         }
     }
     // Awaiting throbbers render last: below the assistant's reasoning/message
     // so the "still waiting" state trails the prose that led up to the wait.
-    if !app.awaiting.is_empty() || !app.starting.is_empty() {
-        let last_blank = lines
-            .last()
-            .map(|l| l.spans.iter().all(|s| s.content.trim().is_empty()))
-            .unwrap_or(true);
-        if !last_blank {
-            lines.push(Line::raw(""));
-        }
+    // A child with a live panel already shows its own throbber in the fan-out
+    // block, so only orphaned waits (the child ended, its result has not
+    // landed) get a row -- otherwise every parallel dispatch is listed twice.
+    let orphaned: Vec<&String> = app
+        .awaiting
+        .iter()
+        .filter(|(_, run_id, _)| !app.subagents.iter().any(|p| &p.run_id == run_id))
+        .map(|(_, _, name)| name)
+        .collect();
+    if (!orphaned.is_empty() || !app.starting.is_empty())
+        && !trailing_blank(&tail, &app.transcript, width)
+    {
+        tail.push(Line::raw(""));
     }
-    for (_, _, name) in &app.awaiting {
-        let frame = app.spinner();
-        lines.push(tool_row(
+    for name in orphaned {
+        tail.push(tool_row(
             frame,
             Style::new().cyan(),
             &format!("Awaiting subagent: {name}"),
@@ -5686,55 +7802,33 @@ fn draw(f: &mut Frame, app: &mut App) {
     // In-progress tool calls whose arguments are still streaming: a throbber
     // trails the prose until the full call (with args) arrives and renders its
     // own row.
-    let frame = app.spinner();
     for call in &mut app.starting {
-        lines.extend(starting_call_lines(call, frame));
+        tail.extend(starting_call_lines(call, frame));
     }
-    // Live subagent panels, streaming prose, and awaiting throbbers above have
-    // no transcript index; they're all appended after the transcript loop.
-    row_index.resize(lines.len(), None);
+    if !tail.is_empty() {
+        let seg = Segment::eager(None, tail, width);
+        content_h = content_h.saturating_add(seg.height);
+        segs.push(seg);
+    }
 
     // TOP border only: the rule under the transcript is now its own row below
     // the todo HUD (see the layout above), not this block's bottom border.
-    let block = Block::default().borders(Borders::TOP);
     let inner_h = chunks[1].height.saturating_sub(1);
-
-    // Wrapping only grows the line count, so if the unwrapped count already
-    // fills the viewport no padding is possible; skip the measuring clone and
-    // keep the long-transcript path allocation-free.
-    let pad = if (lines.len() as u16) < inner_h {
-        let total = Paragraph::new(lines.clone())
-            .wrap(Wrap { trim: false })
-            .block(block.clone())
-            .line_count(width)
-            .min(u16::MAX as usize) as u16;
-        transcript_top_padding(total, inner_h)
-    } else {
-        0
-    };
+    let pad = transcript_top_padding(content_h, inner_h);
     if pad > 0 {
-        let mut padded = vec![Line::raw(""); pad as usize];
-        padded.append(&mut lines);
-        lines = padded;
-        reveal_at = reveal_at.map(|n| n + pad as usize);
-        let mut padded_idx = vec![None; pad as usize];
-        padded_idx.append(&mut row_index);
-        row_index = padded_idx;
+        segs.insert(
+            0,
+            Segment {
+                idx: None,
+                height: pad,
+                lines: Some(vec![Line::raw(""); pad as usize]),
+            },
+        );
+        reveal_at = reveal_at.map(|n| n.saturating_add(pad));
     }
-
-    // Wrapped-content offset of the row we want scrolled into view, in the same
-    // coordinate space as `scroll` (TOP/BOTTOM borders don't affect wrapping).
-    let reveal_scroll = reveal_at.map(|n| {
-        Paragraph::new(lines[..n].to_vec())
-            .wrap(Wrap { trim: false })
-            .line_count(width)
-            .min(u16::MAX as usize) as u16
-    });
-
-    let body = Paragraph::new(lines).wrap(Wrap { trim: false }).block(block);
-    let total = body.line_count(width).min(u16::MAX as usize) as u16;
+    let total = content_h.saturating_add(pad);
     let max_back = total.saturating_sub(inner_h);
-    if let Some(target) = reveal_scroll {
+    if let Some(target) = reveal_at {
         // Position the region near the top of the viewport; clamps to pinned
         // bottom when it is already close enough to the end.
         app.scrollback = max_back.saturating_sub(target);
@@ -5742,14 +7836,64 @@ fn draw(f: &mut Frame, app: &mut App) {
     app.reveal = None;
     app.scrollback = app.scrollback.min(max_back);
     let scroll = max_back - app.scrollback;
-    f.render_widget(body.scroll((scroll, 0)), chunks[1]);
+
+    // ---- Materialize the visible window ----
+    // Only segments overlapping [scroll, scroll + inner_h) are cloned, so the
+    // Paragraph below wraps a viewport's worth of lines instead of the session.
+    let end = scroll.saturating_add(inner_h);
+    let mut visible: Vec<Line<'static>> = Vec::new();
+    // Parallel to the *screen* rows of the body, in wrapped coordinates: which
+    // transcript index (if any) owns each one, so a mouse click can be mapped
+    // back to a region to toggle.
+    let mut row_index: Vec<Option<usize>> = Vec::with_capacity(inner_h as usize);
+    let mut first_start: Option<u16> = None;
+    let mut at: u16 = 0;
+    for seg in segs {
+        let seg_end = at.saturating_add(seg.height);
+        if seg_end > scroll && at < end {
+            first_start.get_or_insert(at);
+            visible.extend(match seg.lines {
+                Some(lines) => lines,
+                // Committed rows are cloned out of the cache only here.
+                None => seg
+                    .idx
+                    .and_then(|i| app.transcript.get(i))
+                    .map(|row| row.lines(width))
+                    .unwrap_or_default(),
+            });
+            let visible_rows = seg_end.min(end).saturating_sub(at.max(scroll));
+            row_index.extend(std::iter::repeat_n(seg.idx, visible_rows as usize));
+        }
+        at = seg_end;
+        if at >= end {
+            break;
+        }
+    }
+    row_index.resize(inner_h as usize, None);
+
+    // What the body still has to skip inside the first partially-scrolled
+    // segment; everything before it was never materialized.
+    let offset = scroll.saturating_sub(first_start.unwrap_or(scroll));
+    let body = Paragraph::new(visible)
+        .wrap(Wrap { trim: false })
+        .block(Block::default().borders(Borders::TOP));
+    f.render_widget(body.scroll((offset, 0)), chunks[1]);
+    // The anchor is a screen cell, so content moving under it has to move it
+    // too, or an auto-scrolled drag would keep re-selecting the same rows.
+    if let Some(sel) = app.selection.as_mut().filter(|s| s.dragging) {
+        let delta = scroll as i32 - app.last_scroll as i32;
+        if delta != 0 {
+            sel.anchor.1 = (sel.anchor.1 as i32 - delta).clamp(0, u16::MAX as i32) as u16;
+            sel.moved = true;
+        }
+    }
     app.transcript_rect = chunks[1];
     app.last_scroll = scroll;
     app.row_index = row_index;
 
     // Keep the cursor row visible when the input outgrows the box.
     let input_scroll = if app.status == Status::Idle && app.picker.is_none() {
-        let visible = chunks[2].height.saturating_sub(2);
+        let visible = chunks[2].height.saturating_sub(1);
         let total = Paragraph::new(input_content_lines(&app.input, app.cursor))
             .wrap(Wrap { trim: false })
             .line_count(chunks[2].width.saturating_sub(2).max(1))
@@ -5758,13 +7902,11 @@ fn draw(f: &mut Frame, app: &mut App) {
     } else {
         0
     };
-    if let Some(area) = todo_area {
-        // `todo_area` is only `Some` when `todo_lines` was built above.
-        f.render_widget(Paragraph::new(todo_lines.unwrap()), area);
+    if let Some(lines) = panel_lines {
+        f.render_widget(Paragraph::new(lines), panel_area);
     }
     f.render_widget(input_box(app).scroll((input_scroll, 0)), chunks[2]);
-    f.render_widget(path_line(app), chunks[3]);
-    f.render_widget(footer(app), chunks[4]);
+    f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
 
     // `/login` is modal and user-initiated (only reachable while idle), so it
     // outranks the queues below: nothing else may take keystrokes meant for a key.
@@ -5778,6 +7920,17 @@ fn draw(f: &mut Frame, app: &mut App) {
             height,
         };
         draw_login(f, rect, prompt);
+    } else if let Some(prompt) = &app.settings_prompt {
+        let height = (5 + u16::from(prompt.error.is_some())).min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        let toml_path = app.agent_dir.join("agent.toml");
+        draw_settings_prompt(f, rect, prompt, &toml_path);
     } else if !app.ask_queue.is_empty() {
         let queue_len = app.ask_queue.len();
         let ask = app.ask_queue.front_mut().expect("checked non-empty above");
@@ -5829,6 +7982,28 @@ fn draw(f: &mut Frame, app: &mut App) {
                 height,
             };
             draw_path_hints(f, rect, &app.path_hints, app.path_hint_selected);
+        }
+    }
+
+    // Last, over the finished frame, so the highlight covers every surface --
+    // transcript, dock, overlays -- without each having to know about it.
+    if let Some(sel) = app.selection {
+        let area = f.area();
+        let buf = f.buffer_mut();
+        if std::mem::take(&mut app.copy_armed) {
+            let text = selection_text(buf, sel, area);
+            if !text.trim().is_empty() {
+                app.copied = Some((Instant::now(), text.lines().count()));
+                app.copy_request = Some(text);
+            }
+        }
+        for (row, c0, c1) in sel.spans(area.width) {
+            for col in c0..=c1 {
+                if let Some(cell) = buf.cell_mut((col, row)) {
+                    let style = cell.style().add_modifier(Modifier::REVERSED);
+                    cell.set_style(style);
+                }
+            }
         }
     }
 }
@@ -6001,6 +8176,71 @@ fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) 
     f.render_widget(Paragraph::new(lines), inner);
 }
 
+/// Docked `/settings` edit prompt, styled like the `/login` dock: description,
+/// the current on-disk value, the field being edited, an inline validation
+/// error when one fired, and the save/cancel keys.
+fn draw_settings_prompt(
+    f: &mut Frame,
+    area: ratatui::layout::Rect,
+    prompt: &SettingsPrompt,
+    toml_path: &std::path::Path,
+) {
+    use ratatui::widgets::Clear;
+
+    let dim = Style::new().dark_gray();
+    let def = prompt.def();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            format!(" agent settings: {} ", def.key),
+            Style::new().on_cyan().black().bold(),
+        ));
+
+    let mut lines = vec![Line::from(vec![
+        Span::styled(def.desc, dim),
+        Span::styled("   current: ", dim),
+        Span::styled(
+            current_agent_value(toml_path, def.key).unwrap_or_else(|| "unset".to_string()),
+            Style::new().cyan(),
+        ),
+    ])];
+    lines.push(Line::styled(
+        match def.kind {
+            AgentSettingKind::Int { default, min } => {
+                let d = default
+                    .map(|d| d.to_string())
+                    .unwrap_or_else(|| "unset".to_string());
+                format!("default: {d} · valid: >= {min}")
+            }
+            AgentSettingKind::Enum { options, default } => {
+                format!("default: {default} · valid: {}", options.join(" | "))
+            }
+            AgentSettingKind::Bool { default } => {
+                format!("default: {default} · valid: true | false")
+            }
+        },
+        dim,
+    ));
+    if let Some(error) = &prompt.error {
+        lines.push(Line::styled(error.clone(), Style::new().red()));
+    }
+    lines.push(Line::from(vec![
+        Span::styled("value: ", Style::new().bold()),
+        Span::raw(prompt.input.clone()),
+        Span::styled("█", Style::new().cyan()),
+    ]));
+    lines.push(Line::styled(
+        "Enter save · Esc cancel · clear field to unset (default applies)".to_string(),
+        dim,
+    ));
+
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
 /// Slash-command hint popup: one row per match (`/name [hint]  description`),
 /// the highlighted row reversed. Docked above the input box.
 fn draw_slash_hints(
@@ -6153,7 +8393,12 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
     f.render_stateful_widget(list, rows[2], &mut state);
 }
 
-fn draw_picker(f: &mut Frame, area: ratatui::layout::Rect, picker: &Picker) {
+fn draw_picker(
+    f: &mut Frame,
+    area: ratatui::layout::Rect,
+    picker: &Picker,
+    toml_path: &std::path::Path,
+) {
     use ratatui::widgets::{List, ListItem, ListState};
 
     let items: Vec<ListItem> = picker
@@ -6182,7 +8427,57 @@ fn draw_picker(f: &mut Frame, area: ratatui::layout::Rect, picker: &Picker) {
         .highlight_symbol("▶ ");
     let mut state = ListState::default();
     state.select(Some(picker.selected));
-    f.render_stateful_widget(list, area, &mut state);
+
+    // The settings menu keeps two rows under the list for the selected
+    // setting's description, default, valid range, and current value - the
+    // rows themselves stay terse (`key  = value`) because the detail footer
+    // explains what each knob does.
+    if picker.kind == PickerKind::AgentSettings {
+        let list_area = Rect {
+            height: area.height.saturating_sub(2),
+            ..area
+        };
+        f.render_stateful_widget(list, list_area, &mut state);
+        if let Some(def) = picker
+            .items
+            .get(picker.selected)
+            .and_then(|it| AGENT_SETTINGS.iter().find(|d| d.key == it.value))
+        {
+            let current = current_agent_value(toml_path, def.key)
+                .unwrap_or_else(|| "unset".to_string());
+            let meta = match def.kind {
+                AgentSettingKind::Int { default, min } => {
+                    let d = default
+                        .map(|d| d.to_string())
+                        .unwrap_or_else(|| "unset".to_string());
+                    format!("default: {d} · valid: >= {min} · current: {current}")
+                }
+                AgentSettingKind::Enum { options, default } => {
+                    format!(
+                        "default: {default} · valid: {} · current: {current}",
+                        options.join(" | ")
+                    )
+                }
+                AgentSettingKind::Bool { default } => {
+                    format!("default: {default} · valid: true | false · current: {current}")
+                }
+            };
+            let dim = Style::new().dark_gray();
+            f.render_widget(
+                Paragraph::new(vec![
+                    Line::styled(def.desc.to_string(), dim),
+                    Line::styled(meta, dim),
+                ]),
+                Rect {
+                    y: list_area.y + list_area.height,
+                    height: area.height - list_area.height,
+                    ..area
+                },
+            );
+        }
+    } else {
+        f.render_stateful_widget(list, area, &mut state);
+    }
 }
 
 /// Render a duration as a compact `"12s"` / `"3m12s"` / `"1h04m"` label.
@@ -6193,106 +8488,146 @@ fn tokens_per_second(output_tokens: u64, duration_ms: u64) -> f64 {
     output_tokens as f64 * 1000.0 / d as f64
 }
 
-/// One block for every in-flight subagent, instead of a scattered header-plus-
-/// call-list per child.
+/// Rows the docked status panel may occupy. Both columns elide to fit; a short
+/// terminal shrinks the budget further (see `draw`), and a terminal with no
+/// room left for the conversation drops the panel entirely.
+const PANEL_MAX_ROWS: usize = 8;
+
+/// Conversation rows the panel may never eat into. Below this the panel gives
+/// up its own rows first: the transcript is the point of the screen.
+const MIN_TRANSCRIPT_ROWS: u16 = 4;
+
+/// Narrowest terminal that still gets two side-by-side columns. Under it they
+/// stack, plan first, because a 30-column half fits neither a task nor an agent.
+const PANEL_SPLIT_MIN_WIDTH: u16 = 76;
+
+/// Cells between the two columns, including the divider glyph.
+const PANEL_GUTTER: u16 = 3;
+
+/// Detail rows one agent may occupy under its stats line, when the budget
+/// stretches that far: the dispatch brief and the current activity.
+const AGENT_MAX_ROWS: usize = 3;
+
+/// The live fan-out, as a column: one stats line per child plus as much detail
+/// as `rows` allows.
 ///
-/// Parallel agents were previously unreadable: N separate sections, each
-/// growing, with the interesting question -- which of these is actually making
-/// progress, and is one about to blow its context -- answerable only by
-/// counting rows. Each child now gets exactly two lines, a stats line and its
-/// current activity, so the whole fan-out fits in one glance and stays a fixed
+/// Parallel agents are otherwise unreadable -- N growing sections, with the
+/// interesting question (which of these is progressing, and is one about to
+/// blow its context) answerable only by counting rows. Here every child gets
+/// the same shape, so the whole fan-out reads at a glance and holds a fixed
 /// height as the work runs.
-fn subagent_panel_lines(
+fn agents_column(
     panels: &mut [SubagentPanel],
     context_window: u64,
     width: u16,
+    rows: usize,
     frame: &str,
 ) -> Vec<Line<'static>> {
+    if panels.is_empty() || rows == 0 {
+        return Vec::new();
+    }
     let dim = Style::new().dark_gray();
+    let max = width.max(8) as usize;
     let mut out = vec![Line::from(vec![
         Span::styled("≡ ", Style::new().magenta()),
         Span::styled(
-            format!("Task {}", pluralize("agent", panels.len())),
+            pluralize("agent", panels.len()),
             Style::new().magenta().bold(),
         ),
     ])];
-    // A lone subagent keeps its rolling history and a fuller look at its task
-    // -- there's room, and both are useful context. Once several run at once
-    // that same detail multiplies into an unreadable wall, so each drops to one
-    // line apiece and the block stays a fixed, scannable height.
-    let solo = panels.len() == 1;
-    let window = if solo { SUBAGENT_WINDOW } else { 1 };
-    let task_lines = if solo { SUBAGENT_TASK_LINES } else { 1 };
-    let task_width = width.saturating_sub(8).max(20) as usize;
-    for panel in panels {
-        let mut spans = vec![
-            Span::styled("  • ", Style::new().magenta()),
-            Span::styled(panel.name.clone(), Style::new().magenta()),
-            Span::styled(format!("  {}", pluralize("tool", panel.calls.len())), dim),
-            Span::styled(format!("  ·  {} req", panel.requests), dim),
-        ];
-        // Only once the child has reported usage; "0.0%" before its first
-        // response would read as a stalled agent rather than a starting one.
-        if panel.prompt_tokens > 0 && context_window > 0 {
-            let pct = panel.prompt_tokens as f64 / context_window as f64 * 100.0;
+
+    // Fit as many children as the budget allows at one line each, keeping the
+    // last row for the count of those that did not fit.
+    let body = rows - 1;
+    let (shown, hidden) = if panels.len() <= body {
+        (panels.len(), 0)
+    } else {
+        (body.saturating_sub(1), panels.len() - body.saturating_sub(1))
+    };
+    // Whatever is left over after one line each is spread evenly as detail.
+    let per = (body - shown)
+        .checked_div(shown)
+        .map_or(0, |n| n.min(AGENT_MAX_ROWS - 1));
+
+    for panel in panels.iter_mut().take(shown) {
+        let mut spans = vec![Span::styled(
+            format!("{} ", if panel.queued { "·" } else { frame }),
+            Style::new().magenta(),
+        )];
+        if panel.queued {
+            // Parked on the `max_parallel_subagents` cap; the child has not
+            // started, so there are no live stats -- its queue position instead.
             spans.push(Span::styled(
-                format!("  ·  {pct:.1}%/{}", compact_tokens(context_window)),
-                dim,
+                truncate(&panel.name, max.saturating_sub(14)),
+                Style::new().magenta().dim(),
             ));
+            spans.push(Span::styled(
+                format!("  queued ({})", panel.waiting),
+                Style::new().yellow(),
+            ));
+        } else {
+            spans.push(Span::styled(
+                truncate(&panel.name, max.saturating_sub(20)),
+                Style::new().magenta(),
+            ));
+            // Compact stats: side by side with the plan there is no room for
+            // "33 tools  ·  24 req", and the units are obvious in context.
+            let mut stats = format!("  {}t · {}r", panel.calls.len(), panel.requests);
+            // Only once the child has reported usage; "0%" before its first
+            // response would read as a stalled agent rather than a starting one.
+            // `context_window` arrives as 0 when the session has disproven it,
+            // and the share is clamped: a child on a model with a larger window
+            // than the parent's config would otherwise report past 100%.
+            if panel.prompt_tokens > 0 && context_window > 0 {
+                let pct = (panel.prompt_tokens as f64 / context_window as f64 * 100.0).min(100.0);
+                stats.push_str(&format!(" · {pct:.1}%"));
+            }
+            spans.push(Span::styled(stats, dim));
         }
         out.push(Line::from(spans));
 
-        // The dispatch prompt, so the block says what the fan-out is *for*.
-        // Split on the task's own newlines rather than word-wrapping: models
-        // write these as structured briefs, and the first lines are the summary.
-        for (written, raw) in panel
-            .task
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .enumerate()
-        {
-            if written == task_lines {
-                // Only worth a marker where the brief reads as complete.
-                // Collapsed to a single line it is plainly a summary already,
-                // and the marker would cost the line just saved.
-                if solo {
-                    out.push(indented_row("…", dim));
-                }
-                break;
-            }
-            out.push(indented_row(
-                truncate(raw.trim(), task_width),
-                Style::new().dim().italic(),
-            ));
+        if per == 0 {
+            continue;
         }
-
-        let start = panel.calls.len().saturating_sub(window);
-        for label in &panel.calls[start..] {
-            out.push(indented_row(label.clone(), Style::new().dim()));
-        }
-        // The call currently being assembled trails the finished ones, so the
-        // row keeps moving through a long argument stream.
-        match panel.active.as_mut() {
-            Some(call) => out.push(indented_row(
-                format!("{frame} {}", call.activity_label()),
-                Style::new().cyan().dim(),
-            )),
-            None if panel.calls.is_empty() => {
-                out.push(indented_row("starting…", Style::new().dim()))
+        // The dispatch brief says what this child is *for*. Split on the task's
+        // own newlines rather than word-wrapping: models write these as
+        // structured briefs whose first line is the summary.
+        let brief = panel.task.lines().find(|l| !l.trim().is_empty());
+        let activity = match panel.active.as_mut() {
+            Some(call) => Some((format!("{frame} {}", call.activity_label()), Style::new().cyan().dim())),
+            None => panel
+                .calls
+                .last()
+                .map(|label| (label.clone(), Style::new().dim()))
+                .or_else(|| (!panel.queued).then(|| ("starting…".to_string(), Style::new().dim()))),
+        };
+        // With only one detail row the activity wins: what it is doing now is
+        // worth more than what it was asked, which the transcript already shows.
+        let detail: Vec<(String, Style)> = match (per, brief, activity) {
+            (1, _, Some(a)) => vec![a],
+            (1, Some(b), None) => vec![(b.trim().to_string(), Style::new().dim().italic())],
+            (_, Some(b), Some(a)) => {
+                vec![(b.trim().to_string(), Style::new().dim().italic()), a]
             }
-            None => {}
+            (_, None, Some(a)) => vec![a],
+            (_, Some(b), None) => vec![(b.trim().to_string(), Style::new().dim().italic())],
+            _ => Vec::new(),
+        };
+        for (text, style) in detail {
+            out.push(Line::from(vec![
+                Span::raw("   "),
+                Span::styled(truncate(&text, max.saturating_sub(3)), style),
+            ]));
         }
     }
+    if hidden > 0 {
+        out.push(Line::from(vec![Span::styled(
+            format!("  +{hidden} more running"),
+            dim,
+        )]));
+    }
+    out.truncate(rows);
     out
-}
-
-/// A detail row indented under a subagent's stats line. One place owns the
-/// indent so the block's rows can't drift out of alignment with each other.
-fn indented_row(text: impl Into<String>, style: Style) -> Line<'static> {
-    Line::from(vec![
-        Span::styled("      ", Style::new().dark_gray()),
-        Span::styled(text.into(), style),
-    ])
 }
 
 /// Token counts as `43K` / `1.1K` / `840` -- three significant characters, so a
@@ -6324,10 +8659,10 @@ fn turn_stats_line(prompt_tokens: u64, output_tokens: u64, elapsed: Duration) ->
     Line::from(spans)
 }
 
-/// `YYYY-MM-DD HH:MM:SS` in local time, without pulling in a date library:
+/// `YYYY-MM-DD HH:MM` in local time, without pulling in a date library:
 /// `chrono` is already a dependency, so this is just the formatting choice.
 fn local_timestamp() -> String {
-    chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    chrono::Local::now().format("%Y-%m-%d %H:%M").to_string()
 }
 
 fn format_elapsed(secs: u64) -> String {
@@ -6340,10 +8675,54 @@ fn format_elapsed(secs: u64) -> String {
     }
 }
 
+/// Frames the shimmer rests between sweeps, so the wave reads as a pulse
+/// rather than a continuously scrolling band.
+const SHIMMER_PAUSE: usize = 4;
+
+/// Sweep a crest across `text`, one character per spinner frame: `palette` is
+/// `[crest, trail, base]`, applied to the character under the crest, the one
+/// behind it, and everything else.
+///
+/// Folded reasoning is the one stretch of a run that produces no output at all
+/// -- no prose, no tool rows, nothing moving -- so the badge is the only thing
+/// that can say the model is still going. The sweep animates in place, without
+/// changing the text's width, so nothing to its left shifts as it runs.
+fn shimmer_spans(text: &str, palette: [Style; 3], frame: usize) -> Vec<Span<'static>> {
+    let chars: Vec<char> = text.chars().collect();
+    let head = frame % (chars.len() + SHIMMER_PAUSE);
+    chars
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let style = match head.checked_sub(i) {
+                Some(0) => palette[0],
+                Some(1) => palette[1],
+                _ => palette[2],
+            };
+            Span::styled(c.to_string(), style)
+        })
+        .collect()
+}
+
 fn header(app: &App) -> Paragraph<'static> {
-    let (status, style) = match app.status {
-        Status::Idle => ("ready", Style::new().green()),
-        Status::Running => ("working", Style::new().yellow().bold()),
+    Paragraph::new(Line::from(header_spans(app)))
+}
+
+fn header_spans(app: &App) -> Vec<Span<'static>> {
+    let (status, style): (String, Style) = if let Some(kind) = app.compacting {
+        (kind.label().to_string(), Style::new().magenta().bold())
+    } else if app.status == Status::Idle {
+        ("ready".to_string(), Style::new().green())
+    } else if !app.show_reasoning {
+        // Reasoning folding is on: show the live thought state in place of the
+        // generic 'working'. [thinking] while a  block streams; [thought for
+        // Ns] for the rest of the turn once it closes.
+        match app.reasoning_status() {
+            Some(s) => s,
+            None => ("working".to_string(), Style::new().cyan().bold()),
+        }
+    } else {
+        ("working".to_string(), Style::new().cyan().bold())
     };
     let turn = match app.turn {
         (0, _) => String::new(),
@@ -6354,31 +8733,39 @@ fn header(app: &App) -> Paragraph<'static> {
         .run_started
         .map(|t| format!("  {}", format_elapsed(t.elapsed().as_secs())))
         .unwrap_or_default();
-    let mut spans = vec![
-        Span::styled(" jan agent ", Style::new().on_blue().white().bold()),
-        Span::raw(format!("  {}  ", app.model)),
-    ];
+    // No name chip: the splash names the app (see `Banner`), and the header's
+    // columns are better spent on state that changes. The model leads instead,
+    // bold so the row still has an anchor on the left; an unset model says so
+    // rather than opening the row with blanks.
+    let mut spans = vec![if app.model.is_empty() {
+        Span::styled(" no model  ", Style::new().red().bold())
+    } else {
+        Span::styled(format!(" {}  ", app.model), Style::new().bold())
+    }];
     // Wall-clock (local) segment, mirroring the reference status line's leading
-    // HH:MM:SS. Shown only while a run is active: a clock that ticks once per
-    // second repaints the screen every second, which clears the terminal's text
-    // selection mid-drag. An idle frame must be fully static so the transcript
-    // stays selectable/copyable (the 50ms ticker then emits no output at all).
+    // HH:MM. Shown only while a run is active: a clock that ticks once per
+    // minute repaints the screen only on the minute, which clears the terminal's
+    // text selection mid-drag less often. An idle frame must be fully static so
+    // the transcript stays selectable/copyable (the 50ms ticker then emits no
+    // output at all).
     if app.run_started.is_some() {
         spans.push(Span::styled(
-            format!("  {}", chrono::Local::now().format("%H:%M:%S")),
+            format!("  {}", chrono::Local::now().format("%H:%M")),
             Style::new().dim(),
         ));
     }
     spans.push(Span::raw(format!("  {turn}")));
-    if app.tokens > 0 {
-        spans.push(Span::raw(format!(
+    // The denominator is dropped once an accepted prompt has disproven the
+    // configured window: `ctx 143K/128K` is not a gauge, it is a contradiction.
+    match (app.tokens, app.context_window_trusted) {
+        // Round to nearest K for display clarity.
+        (0, true) => spans.push(Span::raw(format!("ctx 0/{}K  ", app.context_window / 1000))),
+        (n, true) => spans.push(Span::raw(format!(
             "ctx {}K/{}K  ",
-            // Round to nearest K for display clarity.
-            (app.tokens + 500) / 1000,
+            (n + 500) / 1000,
             app.context_window / 1000
-        )));
-    } else {
-        spans.push(Span::raw(format!("ctx 0/{}K  ", app.context_window / 1000)));
+        ))),
+        (n, false) => spans.push(Span::raw(format!("ctx {}K  ", (n + 500) / 1000))),
     }
     spans.push(Span::styled(elapsed, Style::new().dim()));
     // Output rate segment: last completed turn's tokens/sec, cached so it holds
@@ -6408,33 +8795,28 @@ fn header(app: &App) -> Paragraph<'static> {
         ));
     }
     spans.push(Span::raw("  "));
-    spans.push(Span::styled(format!("[{status}]"), style));
-    Paragraph::new(Line::from(spans))
-}
-
-/// Hard ceiling on HUD rows so a huge plan can't crowd out the transcript.
-const MAX_TODO_ROWS: usize = 10;
-/// Per-phase task cap before a `+N more` summary row is shown.
-const TODO_TASK_CAP: usize = 8;
-
-/// Tree connector: `└─` for the last row at a nesting level, `├─` otherwise.
-fn tree_connector(is_last: bool) -> &'static str {
-    if is_last {
-        "└─"
+    if app.is_thinking() {
+        spans.push(Span::styled("[", style));
+        spans.extend(shimmer_spans(
+            &status,
+            [
+                Style::new().yellow().bold(),
+                Style::new().yellow(),
+                Style::new().yellow().dim(),
+            ],
+            app.spinner_frame,
+        ));
+        spans.push(Span::styled("]", style));
     } else {
-        "├─"
+        spans.push(Span::styled(format!("[{status}]"), style));
     }
+    spans
 }
 
-/// One task row: `<indent><connector> <glyph> <text>`, styled by status.
-/// Pending is dim, in-progress accent, completed dim+strikethrough, abandoned
-/// red+strikethrough with a distinct `☒` glyph.
-fn todo_task_line(
-    indent: &str,
-    is_last: bool,
-    task: &crate::core::agent::todo::TodoItem,
-    max: usize,
-) -> Line<'static> {
+/// One task row: ` <glyph> <text>`, styled by status. Pending is dim,
+/// in-progress accent, completed dim+strikethrough, abandoned red+strikethrough
+/// with a distinct `☒` glyph.
+fn todo_task_row(task: &crate::core::agent::todo::TodoItem, max: usize) -> Line<'static> {
     use crate::core::agent::todo::TodoStatus;
     let (glyph, style) = match task.status {
         TodoStatus::Pending => ("☐", Style::new().dim()),
@@ -6443,125 +8825,216 @@ fn todo_task_line(
         TodoStatus::Abandoned => ("☒", Style::new().red().add_modifier(Modifier::CROSSED_OUT)),
     };
     Line::from(vec![
-        Span::styled(
-            format!("{indent}{} ", tree_connector(is_last)),
-            Style::new().dark_gray(),
-        ),
+        Span::raw(" "),
         Span::styled(format!("{glyph} "), style),
         Span::styled(truncate(&task.content, max), style),
     ])
 }
 
-/// Multi-line tree HUD for the session todos, capped at `MAX_TODO_ROWS`:
+/// Which phase holds the in-progress task, if any.
+fn active_phase(todos: &crate::core::agent::todo::TodoList) -> Option<usize> {
+    use crate::core::agent::todo::TodoStatus;
+    todos
+        .phases
+        .iter()
+        .position(|p| p.tasks.iter().any(|t| t.status == TodoStatus::InProgress))
+}
+
+/// `done/total` over a phase's tasks; abandoned counts as closed.
+fn phase_progress(phase: &crate::core::agent::todo::TodoPhase) -> (usize, usize) {
+    use crate::core::agent::todo::TodoStatus;
+    let done = phase
+        .tasks
+        .iter()
+        .filter(|t| matches!(t.status, TodoStatus::Completed | TodoStatus::Abandoned))
+        .count();
+    (done, phase.tasks.len())
+}
+
+/// 1-based index of the phase the plan is on, for the `idx/count` suffix. With
+/// no active task (all done, or none started) this counts the fully finished
+/// phases, so a completed plan reads `N/N`.
+fn phase_position(todos: &crate::core::agent::todo::TodoList) -> usize {
+    active_phase(todos).map(|i| i + 1).unwrap_or_else(|| {
+        todos
+            .phases
+            .iter()
+            .filter(|p| {
+                let (done, total) = phase_progress(p);
+                done == total
+            })
+            .count()
+            .max(1)
+    })
+}
+
+/// Head line of the plan column: the phase the plan is on, how far into it the
+/// agent is, and the command that opens the editor.
 ///
 /// ```text
-/// Todos · 1/2   /todo
-///  └─ backend · 1/3
-///      ├─ ☑ scaffold
-///      └─ ☐ wire routes
+/// Todos · 1/2 · backend 1/3   /todo
 /// ```
-///
-/// Single-phase lists skip the redundant phase header and nest tasks directly
-/// under `Todos`. Multi-phase lists show one connected row per phase with its
-/// `· done/total` progress; only the active phase (the one holding the
-/// in-progress task) expands its task rows, the rest stay header-only.
-fn todo_hud(app: &App) -> Vec<Line<'static>> {
-    use crate::core::agent::todo::TodoStatus;
-    let phases = &app.todos.phases;
-    let multi = phases.len() > 1;
-    let width = app.render_width() as usize;
-
-    // Which phase holds the in-progress task, if any; used both for the root
-    // row's `idx/count` suffix and to pick which phase expands its tasks below.
-    let active_idx = phases
-        .iter()
-        .position(|p| p.tasks.iter().any(|t| t.status == TodoStatus::InProgress));
-
-    // Root row: `Todos`, plus ` · idx/count` when multi-phase, plus the hint.
-    let mut root = vec![Span::styled("Todos", Style::new().cyan().bold())];
-    if multi {
-        // ponytail: no active task (all done, or none started) → count fully
-        // finished phases so a completed plan reads `N/N`.
-        let idx = active_idx.map(|i| i + 1).unwrap_or_else(|| {
-            phases
-                .iter()
-                .filter(|p| {
-                    p.tasks
-                        .iter()
-                        .all(|t| matches!(t.status, TodoStatus::Completed | TodoStatus::Abandoned))
-                })
-                .count()
-                .max(1)
-        });
-        root.push(Span::styled(
-            format!(" · {idx}/{}", phases.len()),
+fn todo_pin(todos: &crate::core::agent::todo::TodoList) -> Line<'static> {
+    let mut spans = vec![Span::styled("Todos", Style::new().cyan().bold())];
+    if todos.phases.len() > 1 {
+        spans.push(Span::styled(
+            format!(" · {}/{}", phase_position(todos), todos.phases.len()),
             Style::new().cyan(),
         ));
     }
-    root.push(Span::styled("   /todo".to_string(), Style::new().dark_gray()));
-    let mut lines = vec![Line::from(root)];
-
-    // Which task rows to emit for a phase, capped with a `+N more` summary.
-    // ponytail: flat cap over all statuses (completed included, so their
-    // strikethrough shows); no completed-omission viewport for v1.
-    let push_tasks = |lines: &mut Vec<Line<'static>>, indent: &str, tasks: &[crate::core::agent::todo::TodoItem]| {
-        let shown = tasks.len().min(TODO_TASK_CAP);
-        let has_more = tasks.len() > shown;
-        let max = width.saturating_sub(indent.chars().count() + 4).max(8);
-        for (i, task) in tasks.iter().take(shown).enumerate() {
-            let is_last = !has_more && i + 1 == shown;
-            lines.push(todo_task_line(indent, is_last, task, max));
-        }
-        if has_more {
-            let more = tasks.len() - shown;
-            lines.push(Line::from(vec![Span::styled(
-                format!("{indent}{} +{more} more", tree_connector(true)),
-                Style::new().dark_gray(),
-            )]));
-        }
-    };
-
-    if multi {
-        for (pi, phase) in phases.iter().enumerate() {
-            let is_last = pi + 1 == phases.len();
-            let done = phase
-                .tasks
-                .iter()
-                .filter(|t| matches!(t.status, TodoStatus::Completed | TodoStatus::Abandoned))
-                .count();
-            let active = Some(pi) == active_idx;
-            let style = if active {
-                Style::new().bold()
-            } else {
-                Style::new().dim()
-            };
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!(" {} ", tree_connector(is_last)),
-                    Style::new().dark_gray(),
-                ),
-                Span::styled(phase.name.clone(), style),
-                Span::styled(format!(" · {done}/{}", phase.tasks.len()), style),
-            ]));
-            // Only the active phase expands its tasks; others stay header-only.
-            if active {
-                push_tasks(&mut lines, "     ", &phase.tasks);
-            }
-        }
-    } else if let Some(phase) = phases.first() {
-        push_tasks(&mut lines, " ", &phase.tasks);
+    // The phase in flight, or the last one, so a finished plan still reports.
+    let idx = active_phase(todos).unwrap_or(todos.phases.len().saturating_sub(1));
+    if let Some(phase) = todos.phases.get(idx) {
+        let (done, total) = phase_progress(phase);
+        let label = if todos.phases.len() > 1 {
+            format!(" · {} {done}/{total}", phase.name)
+        } else {
+            format!(" · {done}/{total}")
+        };
+        spans.push(Span::styled(label, Style::new().dim()));
     }
+    spans.push(Span::styled("   /todo".to_string(), Style::new().dark_gray()));
+    Line::from(spans)
+}
 
-    lines.truncate(MAX_TODO_ROWS);
+/// The plan as a column, capped at `rows`:
+///
+/// ```text
+/// Todos · 1/2 · backend 1/3   /todo
+///  ☑ scaffold
+///  ☐ wire routes
+///  +3 more
+/// ```
+///
+/// Only the phase in flight expands its tasks -- the head line already names it
+/// and counts the rest, so a header per phase would spend rows repeating that.
+fn todo_column(
+    todos: &crate::core::agent::todo::TodoList,
+    width: u16,
+    rows: usize,
+) -> Vec<Line<'static>> {
+    if todos.is_empty() || rows == 0 {
+        return Vec::new();
+    }
+    let mut lines = vec![todo_pin(todos)];
+    let idx = active_phase(todos).unwrap_or(todos.phases.len().saturating_sub(1));
+    let Some(phase) = todos.phases.get(idx) else {
+        return lines;
+    };
+    let max = width.saturating_sub(4).max(8) as usize;
+    let body = rows - 1;
+    let (shown, hidden) = if phase.tasks.len() <= body {
+        (phase.tasks.len(), 0)
+    } else {
+        // Keep the last row for the count of what did not fit.
+        let shown = body.saturating_sub(1);
+        (shown, phase.tasks.len() - shown)
+    };
+    for task in phase.tasks.iter().take(shown) {
+        lines.push(todo_task_row(task, max));
+    }
+    if hidden > 0 {
+        lines.push(Line::from(vec![Span::styled(
+            format!("  +{hidden} more"),
+            Style::new().dark_gray(),
+        )]));
+    }
+    lines.truncate(rows);
     lines
+}
+
+/// Pad `lines` to exactly `rows` entries so a column keeps its shape when the
+/// other one is taller.
+fn pad_column(mut lines: Vec<Line<'static>>, rows: usize) -> Vec<Line<'static>> {
+    lines.resize_with(rows, || Line::raw(""));
+    lines
+}
+
+/// Set two columns side by side, `left` padded out to `left_w` and separated by
+/// a dim divider. Callers pass columns already clamped to their own widths.
+fn join_columns(
+    left: Vec<Line<'static>>,
+    right: Vec<Line<'static>>,
+    left_w: u16,
+) -> Vec<Line<'static>> {
+    let rows = left.len().max(right.len());
+    let (left, right) = (pad_column(left, rows), pad_column(right, rows));
+    left.into_iter()
+        .zip(right)
+        .map(|(l, r)| {
+            let pad = (left_w as usize).saturating_sub(spans_width(&l.spans));
+            let mut spans = l.spans;
+            spans.push(Span::raw(" ".repeat(pad)));
+            spans.push(Span::styled(" │ ", Style::new().dark_gray()));
+            spans.extend(r.spans);
+            Line::from(spans)
+        })
+        .collect()
+}
+
+/// The docked status panel: the plan on the left, the live fan-out on the
+/// right, both bounded by `rows`.
+///
+/// Neither belongs in the transcript -- they describe *now*, not what was said
+/// -- so they sit above the input where the eye already is, and they use the
+/// width instead of stacking. When the terminal is too narrow to split, the
+/// columns stack (plan first, since it is the shorter of the two); when it is
+/// too short, `rows` shrinks and each column elides its own tail.
+fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
+    if rows == 0 {
+        return Vec::new();
+    }
+    let frame = app.spinner();
+    // 0 is the columns' "unknown window" encoding: they suppress the share
+    // rather than divide by a value the session has already disproven.
+    let context_window = if app.context_window_trusted {
+        app.context_window
+    } else {
+        0
+    };
+    let has_todos = !app.todos.is_empty() && !app.todos_expired();
+    let has_agents = !app.subagents.is_empty();
+    match (has_todos, has_agents) {
+        (false, false) => Vec::new(),
+        (true, false) => todo_column(&app.todos, width, rows),
+        (false, true) => agents_column(&mut app.subagents, context_window, width, rows, frame),
+        (true, true) if width < PANEL_SPLIT_MIN_WIDTH => {
+            // Stacked: the plan keeps its head line plus whatever is left after
+            // the agents, which are the thing actually moving.
+            let agents = agents_column(
+                &mut app.subagents,
+                context_window,
+                width,
+                rows.saturating_sub(1),
+                frame,
+            );
+            let mut out = todo_column(&app.todos, width, rows - agents.len());
+            out.extend(agents);
+            out
+        }
+        (true, true) => {
+            let left_w = (width.saturating_sub(PANEL_GUTTER)) / 2;
+            let right_w = width.saturating_sub(left_w + PANEL_GUTTER);
+            let left = todo_column(&app.todos, left_w, rows);
+            let right = agents_column(
+                &mut app.subagents,
+                context_window,
+                right_w,
+                rows,
+                frame,
+            );
+            join_columns(left, right, left_w)
+        }
+    }
 }
 
 /// Max content rows the input box grows to before it scrolls internally.
 const MAX_INPUT_ROWS: u16 = 8;
 
-/// Height (incl. borders) the message box should occupy: 1 content row for the
-/// idle/working placeholder, or the wrapped input height clamped to
-/// `MAX_INPUT_ROWS` while editing.
+/// Rows the message box occupies: 1 content row for the idle/working
+/// placeholder, or the wrapped input height clamped to `MAX_INPUT_ROWS` while
+/// editing, plus one row of air above the dock. The box is borderless, so the
+/// two rows this used to add on top of its content were simply blank.
 fn input_box_height(app: &App, width: u16) -> u16 {
     let content = if app.picker.is_none() && !(app.status == Status::Running && app.input.is_empty()) {
         let inner = width.saturating_sub(2).max(1);
@@ -6573,7 +9046,7 @@ fn input_box_height(app: &App, width: u16) -> u16 {
     } else {
         1
     };
-    content + 2
+    content + 1
 }
 
 /// Visible input as styled lines: `› ` on the first line, 2-space hang on
@@ -6634,7 +9107,22 @@ fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
 
 fn input_box(app: &App) -> Paragraph<'static> {
     let block = Block::default();
-    if app.picker.is_some() {
+    if let Some(kind) = app.compacting.filter(|_| app.input.is_empty()) {
+        // Compaction puts nothing in the transcript while it runs, so the input
+        // row carries the throbber and the elapsed seconds.
+        let elapsed = app
+            .compact_started
+            .map(|t| format!(" {}", format_elapsed(t.elapsed().as_secs())))
+            .unwrap_or_default();
+        Paragraph::new(Line::from(vec![
+            Span::styled(format!("{} ", app.spinner()), Style::new().magenta()),
+            Span::styled(
+                format!("{} conversation…{elapsed}", kind.label()),
+                Style::new().dim().italic(),
+            ),
+        ]))
+        .block(block)
+    } else if app.picker.is_some() {
         Paragraph::new(Line::styled("selecting…", Style::new().dim().italic())).block(block)
     } else if app.status == Status::Running && app.input.is_empty() {
         // Show queue status when running with empty input
@@ -6714,8 +9202,8 @@ fn tilde_path(path: &std::path::Path) -> String {
     }
 }
 
-/// One-line working-dir + branch display shown below the input box.
-fn path_line(app: &App) -> Paragraph<'static> {
+/// Working-dir + branch spans, the left half of the dock row.
+fn path_spans(app: &App) -> Vec<Span<'static>> {
     let mut spans = vec![
         Span::styled("📂 ", Style::new().dark_gray()),
         Span::styled(tilde_path(&app.project_root), Style::new().dark_gray()),
@@ -6726,12 +9214,37 @@ fn path_line(app: &App) -> Paragraph<'static> {
             Style::new().dark_gray(),
         ));
     }
+    spans
+}
+
+/// Display width of a row, in cells. `Span::width` is grapheme-aware, which a
+/// char count is not: the dock opens with an emoji that occupies two cells.
+fn spans_width(spans: &[Span<'static>]) -> usize {
+    spans.iter().map(Span::width).sum()
+}
+
+/// The single row below the input: location on the left, key hints and status
+/// on the right. Two separate rows spent a whole line of a small terminal on
+/// text that is static all session; merged, the location keeps its place and
+/// the hints keep theirs, and only a terminal too narrow for both drops the
+/// location.
+fn dock_line(app: &App, width: u16) -> Paragraph<'static> {
+    let hints = footer_spans(app);
+    let mut spans = path_spans(app);
+    let (used, hint_w) = (spans_width(&spans), spans_width(&hints));
+    // `hint_spans` already opens with a pad; a gap of at least two keeps the
+    // location from running into it.
+    if used + hint_w + 2 > width as usize {
+        return Paragraph::new(Line::from(hints));
+    }
+    spans.push(Span::raw(" ".repeat(width as usize - used - hint_w)));
+    spans.extend(hints);
     Paragraph::new(Line::from(spans))
 }
 
-fn footer(app: &App) -> Paragraph<'static> {
+fn footer_spans(app: &App) -> Vec<Span<'static>> {
     if !app.pending_queue.is_empty() {
-        return Paragraph::new(Line::from(hint_spans(
+        return hint_spans(
             Style::new().yellow().bold(),
             &[
                 ("↑/↓", "select"),
@@ -6739,10 +9252,20 @@ fn footer(app: &App) -> Paragraph<'static> {
                 ("Esc", "deny"),
                 ("Ctrl-C", "cancel"),
             ],
-        )));
+        );
     }
     if let Some(picker) = &app.picker {
-        return Paragraph::new(Line::styled(picker.action_hint(), Style::new().dim()));
+        return vec![Span::styled(picker.action_hint(), Style::new().dim())];
+    }
+    // Briefly, and never over a prompt whose keys the user needs: a copy is
+    // invisible otherwise, and a transcript note would shift the rows the
+    // pointer is still sitting on.
+    if let Some(lines) = app.copy_notice() {
+        let plural = if lines == 1 { "" } else { "s" };
+        return vec![Span::styled(
+            format!(" copied {lines} line{plural}"),
+            Style::new().green().bold(),
+        )];
     }
     let key_style = Style::new().cyan().bold();
     let queue_count = app.message_queue.len();
@@ -6752,7 +9275,7 @@ fn footer(app: &App) -> Paragraph<'static> {
                 key_style,
                 &[
                     ("Esc/Ctrl-C", "cancel"),
-                    ("↑/↓", "scroll"),
+                    ("PgUp/PgDn", "scroll"),
                     ("Ctrl-O", "expand all"),
                 ],
             );
@@ -6766,9 +9289,9 @@ fn footer(app: &App) -> Paragraph<'static> {
         }
         Status::Idle => {
             // Idle is the default state, so a cheat sheet here is permanent
-            // noise. Discovery is already covered without it: the transcript
-            // opens with "type a message to start, or /help for commands", and
-            // `/help` carries the full list (see `KEY_BINDINGS`). Keep only the
+            // noise. Discovery is already covered without it: the session opens
+            // with the splash (`Banner`, which names `/help`), and `/help`
+            // carries the full list (see `KEY_BINDINGS`). Keep only the
             // leading pad `hint_spans` emits, so a queue count or detail suffix
             // lands in the same column as the other states.
             let mut s = vec![Span::raw(" ")];
@@ -6790,51 +9313,125 @@ fn footer(app: &App) -> Paragraph<'static> {
             Style::new().dim(),
         ));
     }
-    Paragraph::new(Line::from(spans))
+    spans
 }
 
 #[cfg(test)]
 mod tests {
+    use super::SessionLimits;
+    use super::{journal, DisplayEntry};
     use super::{
-        age_closed_todos, apply_resume, assistant_is_awaiting_user_answer, build_user_message,
+        age_closed_todos, apply_resume, assistant_is_awaiting_user_answer, brand, build_user_message,
         clipboard_path,
-        diff_lines, group_activity, group_detail_lines, group_summary, handle_ask_key,
+        diff_lines, Row, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
-        compact_tokens, finish_login, finish_update_install, load_image_file, message_text,
-        note_update, open_config_screen,
+        route_paste_event,
+        compact_tokens, finish_compaction, finish_login, finish_update_install,
+        image_mime_of, load_first_file_image, load_image_file, MAX_IMAGE_BYTES,
+        message_text, CompactKind, MAX_OVERFLOW_RETRIES,
+        estimate_token_count, header_spans, status_panel, SubagentPanel,
+        note_update, open_config_screen, spawn_branch_poll, await_branch_poll,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
+        autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
         run_command, starting_call_lines, unescape_partial_json_string,
         running_group_row, split_reasoning, strip_system_xml_tags, subagent_activity,
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
-        transcript_top_padding,
-        user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
-        SnapshotJob, Status, DIFF_MAX_ROWS, KEY_BINDINGS, SLASH_COMMANDS, SPINNER,
+        transcript_top_padding, rewind_to,
+        row_width, user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind,
+        ResumeTarget, RowKind,
+        SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
+        COMMAND_LABEL_MAX, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
+        KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER,
         SPINNER_ADVANCE_MS,
     };
     use std::time::{Duration, Instant};
     use ratatui::crossterm::event::{
-        KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+        Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
+        MouseEventKind,
     };
+    use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
-    use ratatui::{style::Modifier, text::Line};
+    use ratatui::{
+        style::{Color, Modifier, Style},
+        text::Line,
+    };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
     use crate::core::agent::r#loop::PermissionRegistry;
-    use crate::core::agent::tools::gate::PermissionDecision;
+    use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
     use serde_json::json;
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    fn test_app() -> App {
+    /// A bare key press with no modifiers.
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn mouse_at(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    /// Press and release without moving: the gesture that toggles a region.
+    fn click(app: &mut App, column: u16, row: u16) {
+        handle_mouse(
+            app,
+            mouse_at(MouseEventKind::Down(MouseButton::Left), column, row),
+        );
+        handle_mouse(
+            app,
+            mouse_at(MouseEventKind::Up(MouseButton::Left), column, row),
+        );
+    }
+
+    /// Wraps an `App` bound to a temp dir that is removed when the wrapper is
+    /// dropped, so tests that persist threads or journals never leak under
+    /// `/tmp` and never dirty the working tree.
+    struct TestApp {
+        app: App,
+        _dir: tempfile::TempDir,
+    }
+
+    impl std::ops::Deref for TestApp {
+        type Target = App;
+
+        fn deref(&self) -> &App {
+            &self.app
+        }
+    }
+
+    impl std::ops::DerefMut for TestApp {
+        fn deref_mut(&mut self) -> &mut App {
+            &mut self.app
+        }
+    }
+
+    fn test_app() -> TestApp {
         // Persist into a unique temp dir so tests that save threads never
-        // dirty the working tree (src-tauri/threads/).
-        let agent_dir = std::env::temp_dir().join(format!(
-            "jan_tui_{}_{}",
-            std::process::id(),
-            uuid::Uuid::new_v4()
-        ));
-        App::new("m".into(), 8, 128_000, 16_384, None, agent_dir, std::path::PathBuf::from("/tmp/repo"), None)
+        // dirty the working tree (src-tauri/threads/) and the dir is removed on
+        // drop.
+        let dir = tempfile::tempdir().unwrap();
+        let limits = SessionLimits {
+            context_window: 128_000,
+            reserve_tokens: 16_384,
+            max_tokens: None,
+            max_session_tokens: 128_000,
+        };
+        let app = App::new(
+            "m".into(),
+            limits,
+            false,
+            dir.path().to_path_buf(),
+            std::path::PathBuf::from("/tmp/repo"),
+            None,
+        );
+        TestApp { app, _dir: dir }
     }
 
     /// Draw `app` into an off-screen terminal and return its rows as strings.
@@ -6973,8 +9570,23 @@ mod tests {
         assert!(transcript_text(&app).contains("0.8.4-11"));
     }
 
-    fn message_text_of(line: &Line<'static>) -> String {
-        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    fn message_text_of(row: &Row) -> String {
+        row_text(row)
+    }
+
+    /// Text a committed transcript row renders to at a nominal width, joined
+    /// across the lines a multi-line row (prose, a diff panel) expands to.
+    fn row_text(row: &Row) -> String {
+        row_lines(std::slice::from_ref(row))
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Every line the given rows render to at a nominal width.
+    fn row_lines(rows: &[Row]) -> Vec<Line<'static>> {
+        rows.iter().flat_map(|r| r.lines(80)).collect()
     }
 
     #[test]
@@ -7017,6 +9629,182 @@ mod tests {
         // Overflowing viewport: no padding, scrollback path stays untouched.
         assert_eq!(transcript_top_padding(45, 20), 0);
     }
+
+    /// Committed markdown keeps its source, so a resize re-wraps the table to
+    /// the new width instead of leaving rows sized for the old one.
+    #[test]
+    fn committed_prose_reflows_when_the_terminal_resizes() {
+        let mut app = test_app();
+        app.push_assistant_blocks(
+            "| column one heading | column two heading |\n|---|---|\n\
+             | a reasonably long value here | another reasonably long value |",
+        );
+        let wide = render_rows(&mut app, 100, 20);
+        let narrow = render_rows(&mut app, 46, 20);
+        let table_row = |rows: &[String]| {
+            rows.iter()
+                .find(|r| r.contains("column one"))
+                .expect("no table row")
+                .trim_end()
+                .to_string()
+        };
+        let (w, n) = (table_row(&wide), table_row(&narrow));
+        assert!(w.chars().count() > n.chars().count(), "table did not reflow: {w:?} vs {n:?}");
+        assert!(n.chars().count() <= 46, "table overflows the narrow frame: {n:?}");
+    }
+
+    /// The boxed diff panel is re-drawn at the current width, so its right
+    /// border still lands inside the frame after a shrink.
+    #[test]
+    fn a_committed_diff_panel_reboxes_on_resize() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "e1".into(),
+            name: "edit".into(),
+            args: json!({"path": "src/main.rs"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "e1".into(),
+            content: "edited".into(),
+            is_error: false,
+            diff: Some("@@ edit 1/1 @@\n-    let value = compute_something_long(1, 2, 3);\n+    let value = compute_something_much_longer(1, 2, 3, 4);".into()),
+        });
+        let border_width = |rows: &[String]| {
+            rows.iter()
+                .find(|r| r.contains('┌'))
+                .map(|r| r.trim_end().chars().count())
+                .expect("no diff panel")
+        };
+        let wide = border_width(&render_rows(&mut app, 100, 24));
+        let narrow_rows = render_rows(&mut app, 50, 24);
+        let narrow = border_width(&narrow_rows);
+        assert!(narrow < wide, "panel kept its old width: {narrow} vs {wide}");
+        assert!(narrow <= 50, "panel overflows the frame: {narrow}");
+        // Every panel row still closes inside the frame, so the box reads as a box.
+        for row in narrow_rows.iter().filter(|r| r.contains('│')) {
+            assert!(row.trim_end().chars().count() <= 50, "row overflows: {row:?}");
+        }
+    }
+
+    /// A standalone diff row already names the file in past tense, so the
+    /// tool's own "Applied N edit(s) to <path>" summary must not repeat it.
+    #[test]
+    fn standalone_diff_result_drops_the_redundant_summary_line() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "e1".into(),
+            name: "edit".into(),
+            args: json!({"path": "src/core/cli/tui.rs"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "e1".into(),
+            content: "Applied 1 edit(s) to src/core/cli/tui.rs".into(),
+            is_error: false,
+            diff: Some("@@ edit 1/1 @@\n-a\n+b".into()),
+        });
+        let rows = render_rows(&mut app, 100, 24);
+        assert!(
+            rows.iter().any(|r| r.contains("Edited tui.rs")),
+            "call row lost: {rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|r| r.contains("Applied 1 edit(s)")),
+            "duplicate summary line: {rows:?}"
+        );
+        assert!(
+            rows.iter().any(|r| r.contains('┌')),
+            "diff panel lost: {rows:?}"
+        );
+    }
+
+    /// A failed edit's row only says "Edited <file>" with a cross, so the error
+    /// text is the only place the reason survives and must still render.
+    #[test]
+    fn failed_diff_result_keeps_its_error_text() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "e1".into(),
+            name: "edit".into(),
+            args: json!({"path": "src/main.rs"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "e1".into(),
+            content: "ERROR: src/main.rs: edit 1: old_string not found".into(),
+            is_error: true,
+            diff: None,
+        });
+        let rows = render_rows(&mut app, 100, 24);
+        assert!(
+            rows.iter().any(|r| r.contains("old_string not found")),
+            "error text lost: {rows:?}"
+        );
+    }
+
+    /// A tool row's label is stored untruncated and clamped at draw time, so it
+    /// grows back when the terminal widens rather than staying elided.
+    #[test]
+    fn tool_row_labels_retruncate_on_resize() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({"command": "echo the quick brown fox jumps over the lazy dog"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        // Close the group so its row reads as the finished command, not the
+        // live "running 1 command" throbber.
+        app.finalize_tool_group();
+        let label = |rows: &[String]| {
+            rows.iter()
+                .find(|r| r.contains("Ran: echo"))
+                .expect("no tool row")
+                .trim_end()
+                .to_string()
+        };
+        let narrow = label(&render_rows(&mut app, 40, 12));
+        let wide = label(&render_rows(&mut app, 100, 12));
+        assert!(narrow.contains('…'), "narrow row was not elided: {narrow:?}");
+        assert!(narrow.chars().count() <= 40, "narrow row overflows: {narrow:?}");
+        assert!(
+            wide.chars().count() > narrow.chars().count(),
+            "row did not grow back: {wide:?}"
+        );
+    }
+
+    /// Degenerate frames (a sliver of a terminal mid-drag) must render, not panic.
+    #[test]
+    fn tiny_frames_render_without_panicking() {
+        let mut app = test_app();
+        app.push_user_line("hello", &[]);
+        app.push_assistant_blocks("| a | b |\n|---|---|\n| 1 | 2 |\n\n```rs\nlet x = 1;\n```");
+        app.apply(StreamEvent::ToolResult {
+            id: "x".into(),
+            content: "done".into(),
+            is_error: false,
+            diff: Some("@@ edit 1/1 @@\n-a\n+b".into()),
+        });
+        let sizes = [(1, 1), (2, 3), (8, 4), (20, 6), (40, 2), (200, 80)];
+        for (w, h) in sizes {
+            render_rows(&mut app, w, h);
+        }
+        // The permission prompt grows upward from the input dock and sizes its
+        // diff preview from the frame, so it is the overlay most exposed to a
+        // frame that has just shrunk out from under it.
+        let mut p = pending(true);
+        p.diff = Some("@@ edit 1/1 @@\n-old line of code\n+new line of code".into());
+        p.path = Some("src/main.rs".into());
+        app.pending_queue.push_back(p);
+        for (w, h) in sizes {
+            render_rows(&mut app, w, h);
+        }
+    }
+
+
 
     #[test]
     fn always_label_is_command_scoped_for_exec() {
@@ -7163,6 +9951,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ask_keyboard_accepts_repeated_key_events() {
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+        });
+
+        let mut key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        key.kind = KeyEventKind::Repeat;
+        assert!(handle_ask_key(&mut app, key, &registry).await);
+
+        let answers = receiver.await.unwrap().unwrap();
+        assert_eq!(answers[0].selected, vec!["Small"]);
+        assert!(app.ask_queue.is_empty());
+    }
+
+    #[tokio::test]
     async fn ask_keyboard_handles_multi_select_and_cancellation() {
         let mut app = test_app();
         let registry = crate::core::agent::interaction::new_registry();
@@ -7241,6 +10048,83 @@ mod tests {
         assert!(app.ask_queue.is_empty());
     }
 
+    #[tokio::test]
+    async fn ask_paste_event_prefers_login_over_active_custom_editor() {
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+        });
+
+        press_ask(&mut app, &registry, KeyCode::Down).await;
+        press_ask(&mut app, &registry, KeyCode::Down).await;
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        assert!(app.ask_queue.front().unwrap().editing_custom);
+        app.login = Some(super::LoginPrompt::new());
+
+        route_paste_event(&mut app, Event::Paste("tokamak-api-key".into()));
+
+        assert_eq!(app.login.as_ref().unwrap().input, "tokamak-api-key");
+        assert!(app.ask_queue.front().unwrap().custom_input.is_empty());
+        assert!(app.input.is_empty(), "paste leaked into chat composer");
+    }
+
+    #[tokio::test]
+    async fn ask_paste_event_resolves_custom_response() {
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+        });
+
+        press_ask(&mut app, &registry, KeyCode::Down).await;
+        press_ask(&mut app, &registry, KeyCode::Down).await;
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        assert!(app.ask_queue.front().unwrap().editing_custom);
+
+        route_paste_event(&mut app, Event::Paste("pasted answer".into()));
+
+        assert_eq!(
+            app.ask_queue.front().unwrap().custom_input,
+            "pasted answer"
+        );
+        assert!(app.input.is_empty(), "paste leaked into chat composer");
+
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        let answers = receiver.await.unwrap().unwrap();
+        assert_eq!(answers[0].custom_input.as_deref(), Some("pasted answer"));
+        assert!(app.ask_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn ask_paste_event_does_not_leak_during_option_selection() {
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+        });
+
+        route_paste_event(&mut app, Event::Paste("must not become chat".into()));
+
+        assert!(app.ask_queue.front().unwrap().custom_input.is_empty());
+        assert!(app.input.is_empty(), "paste leaked into chat composer");
+    }
+
+    #[test]
+    fn paste_event_routes_to_chat_composer_without_login_or_ask() {
+        let mut app = test_app();
+
+        route_paste_event(&mut app, Event::Paste("chat text".into()));
+
+        assert_eq!(app.input, "chat text");
+    }
+
     #[test]
     fn split_reasoning_separates_think_blocks() {
         let segs = split_reasoning("before<think>hidden</think>after");
@@ -7293,27 +10177,114 @@ mod tests {
     }
 
     #[test]
-    fn live_tail_dims_open_think_block_instead_of_stripping() {
+    fn live_tail_hides_open_think_block_and_shows_it_when_revealed() {
         use ratatui::{backend::TestBackend, Terminal};
         let mut app = test_app();
         app.assistant_buf = "<think>pondering the answer".to_string();
-        let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
-        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
-        let buf = terminal.backend().buffer().clone();
 
-        let mut found_dim = false;
-        for y in 0..buf.area.height {
-            let row: String = (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect();
-            if row.contains("pondering") {
-                let x = row.find("pondering").unwrap() as u16;
-                assert!(
-                    buf[(x, y)].style().add_modifier.contains(Modifier::DIM),
-                    "open <think> content must render dimmed while streaming"
-                );
-                found_dim = true;
-            }
+        let render = |app: &mut App| {
+            let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+            terminal.draw(|f| super::draw(f, app)).unwrap();
+            let buf = terminal.backend().buffer().clone();
+            (0..buf.area.height)
+                .map(|y| {
+                    (0..buf.area.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // Reasoning folding is the default: an open  block is hidden from
+        // the live tail (the header shows [thinking] instead).
+        let hidden = render(&mut app);
+        assert!(
+            !hidden.contains("pondering"),
+            "open reasoning must be hidden by default"
+        );
+
+        // With show_reasoning on, the streaming reasoning renders dimmed as before.
+        app.show_reasoning = true;
+        let shown = render(&mut app);
+        assert!(shown.contains("pondering"), "revealed live tail must contain it");
+    }
+
+    #[test]
+    fn header_shows_thinking_and_thought_for_status_when_folded() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        app.submit_user("hi".to_string());
+
+        let render = |app: &mut App| {
+            let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+            terminal.draw(|f| super::draw(f, app)).unwrap();
+            let buf = terminal.backend().buffer().clone();
+            (0..buf.area.height)
+                .map(|y| {
+                    (0..buf.area.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // Open reasoning -> [thinking] (replacing [working]).
+        app.apply(StreamEvent::Token {
+            text: "<think>pondering the plan".into(),
+        });
+        let thinking = render(&mut app);
+        assert!(thinking.contains("[thinking]"), "thinking: {thinking}");
+        assert!(!thinking.contains("[working]"), "thinking: {thinking}");
+
+        // Block closes -> [thought for Ns] for a short while after.
+        app.apply(StreamEvent::Token {
+            text: "</think>Answer.".into(),
+        });
+        let done = render(&mut app);
+        assert!(done.contains("[thought for"), "thought-for: {done}");
+    }
+
+    #[test]
+    fn thought_for_falls_back_to_working_after_ttl() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        app.submit_user("hi".to_string());
+
+        let render = |app: &mut App| {
+            let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+            terminal.draw(|f| super::draw(f, app)).unwrap();
+            let buf = terminal.backend().buffer().clone();
+            (0..buf.area.height)
+                .map(|y| {
+                    (0..buf.area.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // Open then close a reasoning block so the summary appears.
+        app.apply(StreamEvent::Token {
+            text: "<think>ponder the plan".into(),
+        });
+        app.apply(StreamEvent::Token {
+            text: "</think> responseA.".into(),
+        });
+        let fresh = render(&mut app);
+        assert!(fresh.contains("[thought for"), "fresh: {fresh}");
+
+        // Age the summary beyond its TTL; it must fall back to [working] rather
+        // than pinning [thought for Ns] for the rest of the turn.
+        if let Some(since) = app.thought_for_since {
+            app.thought_for_since =
+                Some(since - super::THOUGHT_FOR_TTL - std::time::Duration::from_secs(1));
         }
-        assert!(found_dim, "open <think> content must still appear in the live tail");
+        let stale = render(&mut app);
+        assert!(stale.contains("[working]"), "stale should be [working]: {stale}");
+        assert!(!stale.contains("[thought for"), "stale thought-for: {stale}");
     }
 
     #[test]
@@ -7518,22 +10489,6 @@ mod tests {
     }
 
     #[test]
-    fn group_activity_is_present_tense_running_breakdown() {
-        assert_eq!(
-            group_activity(&[("file", true), ("file", true), ("command", false)]),
-            "Reading 2 files; running 1 command"
-        );
-        assert_eq!(
-            group_activity(&[("search", false), ("search", false)]),
-            "Running 2 searches"
-        );
-        assert_eq!(
-            group_activity(&[("file", true), ("directory", true)]),
-            "Reading 1 file, 1 directory"
-        );
-    }
-
-    #[test]
     fn tool_activity_is_concise_present_tense() {
         assert_eq!(
             tool_activity("bash", &json!({ "command": "/usr/bin/grep -n foo src/" })),
@@ -7542,6 +10497,13 @@ mod tests {
         assert_eq!(
             tool_activity("bash", &json!({ "command": "cargo test" })),
             "Executing: cargo test"
+        );
+        // Kept whole: the row clamps to the draw width, so a long command fills
+        // the terminal instead of being cut at a fixed 80.
+        let long = format!("echo {}", "x".repeat(2 * COMMAND_LABEL_MAX));
+        assert_eq!(
+            tool_activity("bash", &json!({ "command": long })),
+            format!("Executing: {long}")
         );
         assert_eq!(tool_activity("grep", &json!({ "pattern": "foo" })), "Searching");
         assert_eq!(
@@ -7560,12 +10522,27 @@ mod tests {
             tool_finished("bash", &json!({ "command": "/usr/bin/grep -n foo src/" })),
             "Ran: /usr/bin/grep -n foo src/"
         );
+        // Whole command on the finished row too, for the same reason as
+        // `tool_activity`: the row clamps to the draw width.
+        let long = format!("echo {}", "x".repeat(2 * COMMAND_LABEL_MAX));
+        assert_eq!(
+            tool_finished("bash", &json!({ "command": long })),
+            format!("Ran: {long}")
+        );
         assert_eq!(tool_finished("grep", &json!({ "pattern": "foo" })), "Searched");
         assert_eq!(
             tool_finished("read", &json!({ "path": "src/main.rs" })),
             "Read main.rs"
         );
         assert_eq!(tool_finished("list", &json!({})), "Listed files");
+        assert_eq!(
+            tool_finished("write", &json!({ "path": "src/main.rs" })),
+            "Wrote main.rs"
+        );
+        assert_eq!(
+            tool_finished("edit", &json!({ "path": "src/main.rs" })),
+            "Edited main.rs"
+        );
     }
 
     /// `web_search`/`web_fetch`/`ask`/`todo` used to fall through to the raw
@@ -7737,6 +10714,56 @@ mod tests {
     }
 
     #[test]
+    fn load_first_file_image_skips_unloadable_entries() {
+        let dir = std::env::temp_dir();
+        let id = uuid::Uuid::new_v4();
+        let existing = dir.join(format!("jan_list_{id}.png"));
+        std::fs::write(&existing, [1u8, 2, 3, 4]).unwrap();
+        let missing = dir.join(format!("jan_missing_{id}.png"));
+        let not_image = dir.join(format!("jan_doc_{id}.pdf"));
+        std::fs::write(&not_image, [1u8, 2, 3, 4]).unwrap();
+        let empty = dir.join(format!("jan_empty_{id}.png"));
+        std::fs::write(&empty, []).unwrap();
+
+        // Skips missing, non-image and unloadable entries, keeping the basename.
+        let list = [
+            missing.clone(),
+            not_image.clone(),
+            empty.clone(),
+            existing.clone(),
+        ];
+        let img = load_first_file_image(&list).unwrap();
+        assert!(img.data_url.starts_with("data:image/png;base64,"));
+        assert_eq!(img.name, existing.file_name().unwrap().to_str().unwrap());
+
+        // Nothing loadable in the list yields nothing.
+        assert!(load_first_file_image(&[missing, not_image.clone(), empty.clone()]).is_none());
+
+        for p in [existing, not_image, empty] {
+            std::fs::remove_file(&p).ok();
+        }
+    }
+
+    #[test]
+    fn image_mime_of_rejects_non_image_extensions() {
+        assert_eq!(image_mime_of("a.png"), Some("image/png"));
+        assert_eq!(image_mime_of("a.JPG"), Some("image/jpeg"));
+        assert!(image_mime_of("a.pdf").is_none());
+        assert!(image_mime_of("noext").is_none());
+    }
+
+    #[test]
+    fn load_image_file_rejects_oversized() {
+        let path = std::env::temp_dir().join(format!("jan_big_{}.png", uuid::Uuid::new_v4()));
+        let f = std::fs::File::create(&path).unwrap();
+        f.set_len(MAX_IMAGE_BYTES + 1).unwrap();
+        drop(f);
+        let err = load_image_file(path.to_str().unwrap()).err().unwrap();
+        assert!(err.contains("too large"), "{err}");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
     fn load_image_file_rejects_empty() {
         let path = std::env::temp_dir().join(format!("jan_empty_{}.png", uuid::Uuid::new_v4()));
         std::fs::write(&path, []).unwrap();
@@ -7758,7 +10785,7 @@ mod tests {
         assert_eq!(content[1]["type"], "image_url");
         assert!(app.pending_images.is_empty(), "pending images flushed");
 
-        let rendered: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let rendered: Vec<String> = app.transcript.iter().map(row_text).collect();
         assert!(rendered.iter().any(|l| l.contains("[IMAGE] shot.png")));
     }
 
@@ -7805,6 +10832,81 @@ mod tests {
     }
 
     #[test]
+    fn rewind_to_fills_input_with_target_user_message() {
+        let mut app = test_app();
+        app.repo_root = Some(std::path::PathBuf::from("/tmp/repo"));
+        app.thread_id = Some("t1".into());
+        app.history = vec![
+            json!({ "role": "user", "content": "first" }),
+            json!({ "role": "assistant", "content": "reply" }),
+            json!({ "role": "user", "content": "second" }),
+        ];
+        // Rewind to message #1 (0-indexed target 0): history is cut right
+        // before the first user message, and that message's text should be
+        // left in the input area for re-submission.
+        rewind_to(&mut app, 0, false);
+        assert_eq!(app.history.len(), 0);
+        assert_eq!(app.input, "first");
+        assert_eq!(app.cursor, app.input.len());
+        assert_eq!(app.status, Status::Idle);
+    }
+
+    #[test]
+    fn rewind_trims_recall_to_the_surviving_messages() {
+        let mut app = test_app();
+        app.thread_id = Some("t1".into());
+        app.history = vec![
+            json!({ "role": "user", "content": "first" }),
+            json!({ "role": "assistant", "content": "reply" }),
+            json!({ "role": "user", "content": "second" }),
+            json!({ "role": "assistant", "content": "reply two" }),
+            json!({ "role": "user", "content": "third" }),
+        ];
+        for text in ["first", "second", "third"] {
+            app.record_submitted(text);
+        }
+
+        // Cut just before the second user message: "second" and "third" are
+        // gone from the conversation, so they must be gone from recall too.
+        rewind_to(&mut app, 1, false);
+        assert_eq!(app.input_history, vec!["first"]);
+        // Rewind leaves the target message in the composer, and recall only
+        // starts from an empty one.
+        assert_eq!(app.input, "second");
+        app.input_clear();
+        assert!(app.recall_prev());
+        assert_eq!(app.input, "first");
+
+        // Rewinding to the very first message leaves nothing to recall, so Up
+        // falls through to scrollback again.
+        rewind_to(&mut app, 0, false);
+        assert!(app.input_history.is_empty());
+        app.input_clear();
+        assert!(!app.recall_prev());
+    }
+
+    #[test]
+    fn rewind_to_fills_input_with_target_user_message_with_text_parts() {
+        let mut app = test_app();
+        app.thread_id = Some("t1".into());
+        app.history = vec![
+            json!({
+                "role": "user",
+                "content": [
+                    { "type": "image_url", "image_url": { "url": "data:...", "detail": "auto" } }
+                ]
+            }),
+            json!({ "role": "assistant", "content": "ok" }),
+            json!({ "role": "user", "content": "second" }),
+        ];
+        rewind_to(&mut app, 0, false);
+        // An image-only user message has no text to put in the input area.
+        assert_eq!(app.history.len(), 0);
+        assert_eq!(app.input, "");
+        assert_eq!(app.cursor, 0);
+    }
+
+    #[test]
     fn resolve_snapshot_builds_git_inputs() {
         let mut app = test_app();
         app.repo_root = Some(std::path::PathBuf::from("/tmp/repo"));
@@ -7829,6 +10931,56 @@ mod tests {
         // Disabled (no repo) -> job dropped.
         app.repo_root = None;
         assert!(app.resolve_snapshot(&SnapshotJob::Base).is_none());
+    }
+
+    /// The dock's branch indicator must not stick to whatever `HEAD` was at
+    /// startup: `spawn_branch_poll`/`await_branch_poll` -- the pair
+    /// `chat_loop` drives on `BRANCH_POLL_INTERVAL` -- re-read `HEAD` live, so
+    /// a checkout made outside the TUI while it's running is picked up on the
+    /// next poll instead of only at the next launch.
+    #[tokio::test]
+    async fn branch_poll_picks_up_a_checkout_made_after_the_first_poll() {
+        use std::process::Command;
+        let n = std::process::id();
+        let root = std::env::temp_dir().join(format!("jan_tui_branch_poll_{n}"));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let r = root.to_string_lossy().to_string();
+        let git_ok = Command::new("git")
+            .args(["-C", &r, "init", "-q"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !git_ok {
+            let _ = std::fs::remove_dir_all(&root);
+            return;
+        }
+        std::fs::write(root.join("a.txt"), "one\n").unwrap();
+        Command::new("git").args(["-C", &r, "add", "-A"]).status().unwrap();
+        Command::new("git")
+            .args([
+                "-C", &r, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m",
+                "init", "--no-gpg-sign",
+            ])
+            .status()
+            .unwrap();
+
+        let mut task = Some(spawn_branch_poll(&root));
+        let first = await_branch_poll(&mut task).await;
+        assert!(first.is_some(), "a fresh commit has a branch");
+        assert!(task.is_none(), "the slot clears once the poll lands");
+
+        Command::new("git")
+            .args(["-C", &r, "checkout", "-q", "-b", "feature/x"])
+            .status()
+            .unwrap();
+
+        let mut task = Some(spawn_branch_poll(&root));
+        let second = await_branch_poll(&mut task).await;
+        assert_eq!(second.as_deref(), Some("feature/x"));
+        assert_ne!(first, second, "the poll must see the external checkout");
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -8007,6 +11159,86 @@ mod tests {
         }
     }
 
+    /// Submit `text` from the composer and drop back to idle, as a finished
+    /// turn would, so the next message starts from a fresh input box.
+    async fn submit_line(app: &mut App, text: &str) {
+        type_key_chars(app, text).await;
+        press(app, KeyCode::Enter, KeyModifiers::NONE).await;
+        app.status = Status::Idle;
+    }
+
+    #[tokio::test]
+    async fn up_recalls_submitted_messages_and_down_returns_to_an_empty_one() {
+        let mut app = test_app();
+        submit_line(&mut app, "first").await;
+        submit_line(&mut app, "second").await;
+
+        // With something typed, Up still scrolls the transcript.
+        type_key_chars(&mut app, "draft").await;
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "draft");
+        assert_eq!(app.scrollback, 1);
+
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "second");
+        assert_eq!(app.cursor, "second".len(), "caret sits at the end");
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "first");
+        // The oldest entry is the floor, not a wrap-around.
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "first");
+
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "second");
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "", "past the newest is a fresh message");
+        assert_eq!(app.scrollback, 1, "recall never scrolls the transcript");
+
+        // No longer recalling, so Down scrolls again.
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+        assert_eq!(app.scrollback, 0);
+    }
+
+    #[tokio::test]
+    async fn page_keys_still_scroll_when_there_is_history_to_recall() {
+        let mut app = test_app();
+        submit_line(&mut app, "first").await;
+        press(&mut app, KeyCode::PageUp, KeyModifiers::NONE).await;
+        assert_eq!(app.scrollback, 10);
+        assert!(app.input.is_empty(), "PageUp must not recall");
+        press(&mut app, KeyCode::PageDown, KeyModifiers::NONE).await;
+        assert_eq!(app.scrollback, 0);
+    }
+
+    #[tokio::test]
+    async fn a_recalled_message_is_editable_and_sends_as_a_new_one() {
+        let mut app = test_app();
+        submit_line(&mut app, "hello").await;
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        type_key_chars(&mut app, "!").await;
+        assert_eq!(app.input, "hello!");
+
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(app.input.is_empty());
+        assert!(app.recall_pos.is_none(), "sending leaves recall");
+        assert_eq!(app.input_history, vec!["hello", "hello!"]);
+        assert!(
+            transcript_text(&app).contains("hello!"),
+            "an edited recall is an ordinary user message"
+        );
+    }
+
+    /// A resend of the newest entry must not stack duplicates, or Up has to be
+    /// pressed once per repeat to get past them.
+    #[tokio::test]
+    async fn resending_the_same_message_keeps_one_history_entry() {
+        let mut app = test_app();
+        submit_line(&mut app, "again").await;
+        submit_line(&mut app, "again").await;
+        assert_eq!(app.input_history, vec!["again"]);
+    }
+
     #[test]
     fn slash_commands_include_login() {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/login"));
@@ -8117,8 +11349,59 @@ mod tests {
         app.submit_user("hi".into());
         assert!(!app.want_start, "a fresh install must not start a turn with no model");
         assert!(app.history.is_empty());
-        let text: String = app.transcript.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.to_string()).collect();
+        let text: String = row_lines(&app.transcript).iter().flat_map(|l| l.spans.clone()).map(|s| s.content.to_string()).collect();
         assert!(text.contains("/login"), "{text}");
+    }
+
+    #[test]
+    fn init_starts_a_turn_covering_all_three_artifacts() {
+        let mut app = test_app();
+        super::init_command(&mut app);
+        assert!(app.want_start, "/init must start a turn");
+        let sent = app.history.last().expect("user message").to_string();
+        assert!(sent.contains("JAN.md"), "{sent}");
+        assert!(sent.contains("skill_write"), "{sent}");
+        assert!(sent.contains("memory_write"), "{sent}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// The canned prompt is plumbing: the note announces `/init`, and neither
+    /// the transcript nor the replayable journal carries the prompt body.
+    #[test]
+    fn init_keeps_the_prompt_out_of_the_transcript() {
+        let mut app = test_app();
+        app.pending_images.push(super::PendingImage {
+            name: "shot.png".into(),
+            data_url: "data:image/png;base64,AA".into(),
+        });
+        super::init_command(&mut app);
+        let text: String = row_lines(&app.transcript)
+            .iter()
+            .flat_map(|l| l.spans.clone())
+            .map(|s| s.content.to_string())
+            .collect();
+        assert!(!text.contains("Onboard yourself"), "{text}");
+        assert!(text.contains("init ·"), "{text}");
+        assert!(
+            !app.display_log
+                .iter()
+                .any(|e| matches!(e, DisplayEntry::User { .. })),
+            "a hidden turn must not journal a user row"
+        );
+        assert_eq!(app.pending_images.len(), 1, "staged images stay staged");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// Surveying a project while a turn is mid-change would onboard against a
+    /// moving target, so the command declines rather than queueing.
+    #[test]
+    fn init_declines_while_a_turn_is_running() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        super::init_command(&mut app);
+        assert!(app.history.is_empty());
+        assert!(app.message_queue.is_empty());
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
     #[test]
@@ -8329,7 +11612,7 @@ mod tests {
         assert_eq!(panel.calls.len(), 7);
         assert!(panel.calls.first().unwrap().contains("cmd0"));
         assert!(panel.calls.last().unwrap().contains("cmd6"));
-        // The live panel renders only the last SUBAGENT_WINDOW calls.
+        // The live panel renders only the newest call.
         use ratatui::{backend::TestBackend, Terminal};
         let render = |app: &mut App| {
             let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
@@ -8340,9 +11623,11 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         };
+        // The docked panel has room for the newest call only; the whole list
+        // stays reachable through the finished summary row (Ctrl-O).
         let out = render(&mut app);
-        assert!(out.contains("cmd6") && out.contains("cmd2"), "window tail shown");
-        assert!(!out.contains("cmd0") && !out.contains("cmd1"), "oldest scrolled out: {out}");
+        assert!(out.contains("cmd6"), "newest call shown: {out}");
+        assert!(!out.contains("cmd5") && !out.contains("cmd0"), "older calls elided: {out}");
     }
 
     #[test]
@@ -8373,6 +11658,283 @@ mod tests {
         assert_eq!(alpha.calls.len(), 0, "beta's call must not land on alpha");
         assert_eq!(beta.calls.len(), 1);
         assert!(beta.calls.last().unwrap().contains("beta-cmd"));
+    }
+
+    #[test]
+    fn queued_panel_promotes_to_running_without_duplicate() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentQueued {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+            task: Some("queue up".into()),
+            waiting: 2,
+        });
+        let queued = app.subagents.iter().find(|p| p.run_id == "r1").expect("queued panel");
+        assert!(queued.queued, "dispatch beyond the cap opens a queued panel");
+        assert_eq!(queued.waiting, 2);
+
+        // The child's later SubagentStart must flip the same panel to running,
+        // not push a duplicate.
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+            task: None,
+        });
+        assert_eq!(app.subagents.len(), 1, "no duplicate panel on promotion");
+        let promoted = app.subagents.iter().find(|p| p.run_id == "r1").unwrap();
+        assert!(!promoted.queued, "promoted panel is now running");
+    }
+
+    #[test]
+    fn queued_panel_renders_queue_position() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentQueued {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+            task: Some("task".into()),
+            waiting: 3,
+        });
+        let rows = render_rows(&mut app, 80, 20);
+        assert!(
+            rows.iter().any(|r| r.contains("queued (3)")),
+            "queued panel shows its position: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn settings_command_bare_opens_picker_and_inline_set_writes_toml() {
+        let mut app = test_app();
+        // A minimal agent.toml so the picker shows a real current value.
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\ncontext_window = 64000\n").unwrap();
+
+        super::settings_command(&mut app, "max_parallel_subagents 20");
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(
+            doc.contains("max_parallel_subagents = 20"),
+            "key written: {doc}"
+        );
+        assert!(
+            doc.contains("context_window = 64000"),
+            "other keys preserved: {doc}"
+        );
+
+        // Zero is invalid: rejected, file unchanged.
+        super::settings_command(&mut app, "max_parallel_subagents 0");
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(
+            doc.contains("max_parallel_subagents = 20"),
+            "rejected write must not clobber: {doc}"
+        );
+        assert!(transcript_text(&app).contains("must be at least 1"));
+
+        // Bare opens the settings picker with a row per def, hints carrying
+        // the on-disk current value (no key prefix; the label is the key).
+        super::settings_command(&mut app, "");
+        let picker = app.picker.as_ref().expect("bare /settings opens picker");
+        assert_eq!(picker.kind, PickerKind::AgentSettings);
+        assert_eq!(picker.items.len(), AGENT_SETTINGS.len());
+        let row = picker
+            .items
+            .iter()
+            .find(|i| i.value == "context_window")
+            .expect("context_window row present");
+        assert_eq!(row.hint.as_deref(), Some("= 64000"));
+        let row = picker
+            .items
+            .iter()
+            .find(|i| i.value == "max_parallel_subagents")
+            .expect("max_parallel_subagents row present");
+        assert_eq!(row.hint.as_deref(), Some("= 20"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[tokio::test]
+    async fn settings_picker_x_unsets_selected_key() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\ncontext_window = 64000\n").unwrap();
+
+        super::settings_command(&mut app, "");
+        // Select the context_window row (index 0) and press x: the key must be
+        // removed, the row hint flip back to (unset), the note rendered.
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(!doc.contains("context_window = 64000"), "key removed: {doc}");
+        assert!(transcript_text(&app).contains("context_window unset"));
+        let picker = app.picker.as_ref().expect("picker stays open");
+        let row = picker
+            .items
+            .iter()
+            .find(|i| i.value == "context_window")
+            .expect("context_window row present");
+        assert_eq!(row.hint.as_deref(), Some("(unset)"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_command_rejects_non_integer_and_unknown_keys() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n").unwrap();
+
+        super::settings_command(&mut app, "max_parallel_subagents lots");
+        assert!(transcript_text(&app).contains("is not an integer"));
+        super::settings_command(&mut app, "warp_drive 5");
+        assert!(transcript_text(&app).contains("unknown setting"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_enter_writes_and_closes() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "max_parallel_subagents")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        super::handle_settings_key(&mut app, key(KeyCode::Char('3')), false);
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_none(), "Enter closes the dock");
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("max_parallel_subagents = 3"), "{doc}");
+        assert!(transcript_text(&app).contains("max_parallel_subagents = 3 written"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_esc_cancels_without_writing() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\nmax_parallel_subagents = 7\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "max_parallel_subagents")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, Some("7")));
+        super::handle_settings_key(&mut app, key(KeyCode::Char('9')), false);
+        super::handle_settings_key(&mut app, key(KeyCode::Esc), false);
+        assert!(app.settings_prompt.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("max_parallel_subagents = 7"), "unchanged: {doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_cleared_field_unsets_key() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\ncontext_window = 8\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "context_window")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, Some("8")));
+        super::handle_settings_key(&mut app, key(KeyCode::Backspace), false);
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(!doc.contains("context_window = 8"), "key removed: {doc}");
+        assert!(transcript_text(&app).contains("context_window unset"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_rejects_below_min_and_garbage() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "max_parallel_subagents")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        super::handle_settings_key(&mut app, key(KeyCode::Char('0')), false);
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_some(), "dock stays open on error");
+        let err = app
+            .settings_prompt
+            .as_ref()
+            .and_then(|p| p.error.clone())
+            .expect("error recorded");
+        assert!(err.contains("at least 1"), "{err}");
+        assert_eq!(std::fs::read_to_string(&toml_path).unwrap(), "[agent]\n");
+
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        super::handle_settings_key(&mut app, key(KeyCode::Char('x')), false);
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        let err = app
+            .settings_prompt
+            .as_ref()
+            .and_then(|p| p.error.clone())
+            .expect("error recorded");
+        assert!(err.contains("not an integer"), "{err}");
+        assert_eq!(std::fs::read_to_string(&toml_path).unwrap(), "[agent]\n");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_edits_enum_key() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n[tools]\ndefault = \"read-only\"\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "tools.default")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "deny".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("default = \"deny\""), "written under [tools]: {doc}");
+        assert!(transcript_text(&app).contains("tools.default = deny written"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_rejects_enum_garbage() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n[tools]\ndefault = \"read-only\"\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "tools.default")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "aggressive".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_some(), "dock stays open on error");
+        let err = app
+            .settings_prompt
+            .as_ref()
+            .and_then(|p| p.error.clone())
+            .expect("error recorded");
+        assert!(err.contains("read-only | deny | allow"), "{err}");
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("default = \"read-only\""), "unchanged: {doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
     #[test]
@@ -8451,7 +12013,7 @@ mod tests {
         assert!(app
             .transcript
             .iter()
-            .any(|l| line_text(l).contains("subagent reviewer finished (1 tool call)")));
+            .any(|r| row_text(r).contains("subagent reviewer finished (1 tool call)")));
     }
 
     #[test]
@@ -8652,27 +12214,79 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn a_write_diff_is_syntax_highlighted_from_its_path() {
-        let diff = "+fn main() {\n+    let x = 1;\n+}";
-        let out = diff_lines(diff, 80, "", Some("src/main.rs"));
-        assert!(
-            !diff_syntax_colours(&out).is_empty(),
-            "diff body not highlighted: {:?}",
-            out.iter().map(line_text).collect::<Vec<_>>()
-        );
-        // The add/remove markers must stay legible as such.
-        let greens = out
+    /// The row containing `needle`, panicking if there is none.
+    fn diff_row(rows: &[Line<'static>], needle: &str) -> Line<'static> {
+        rows.iter()
+            .find(|l| line_text(l).contains(needle))
+            .unwrap_or_else(|| panic!("no row containing {needle:?}"))
+            .clone()
+    }
+
+    /// Backgrounds of a row's spans, skipping the box frame and the gutter so
+    /// only the banded interior is left.
+    fn row_backgrounds(rows: &[Line<'static>], needle: &str) -> Vec<Option<ratatui::style::Color>> {
+        diff_row(rows, needle)
+            .spans
             .iter()
-            .flat_map(|l| l.spans.iter())
-            .filter(|s| s.content.starts_with('+') && s.style.fg == Some(ratatui::style::Color::Green))
-            .count();
-        assert_eq!(greens, 3, "one green marker per added line");
+            .filter(|s| !s.content.is_empty() && !s.content.contains('│'))
+            .map(|s| s.style.bg)
+            .collect()
+    }
+
+    /// A changed row is banded by its background, from the left border to the
+    /// right one -- including the padding past the end of the text, or the band
+    /// would stop mid-row on every short line.
+    #[test]
+    fn changed_diff_rows_are_banded_by_background() {
+        let diff = "     1 | keep\n-    2 | before\n+    2 | a much longer added line";
+        let out = diff_lines(diff, 80, DIFF_MAX_ROWS, "│     ", None);
+        assert!(
+            row_backgrounds(&out, "before")
+                .iter()
+                .all(|bg| *bg == Some(DIFF_DEL_BG)),
+            "removed row not fully banded: {:?}",
+            row_backgrounds(&out, "before")
+        );
+        assert!(
+            row_backgrounds(&out, "added line")
+                .iter()
+                .all(|bg| *bg == Some(DIFF_ADD_BG)),
+            "added row not fully banded"
+        );
+        // Unchanged context is left alone, so the bands stand out against it.
+        assert!(
+            row_backgrounds(&out, "keep").iter().all(|bg| bg.is_none()),
+            "context row was banded"
+        );
+    }
+
+    /// The band is a background only: the code inside a changed row keeps the
+    /// same syntax highlighting it has as context, which is what makes it
+    /// readable on top of the tint.
+    #[test]
+    fn changed_diff_rows_keep_their_syntax_highlighting() {
+        use ratatui::style::Color;
+        let diff = "     1 | fn main() {\n-    2 |     let x = 1;\n+    2 |     let y = 2;";
+        let out = diff_lines(diff, 80, DIFF_MAX_ROWS, "", Some("src/main.rs"));
+        for needle in ["let x = 1;", "let y = 2;"] {
+            let row = diff_row(&out, needle);
+            assert!(
+                row.spans
+                    .iter()
+                    .any(|s| matches!(s.style.fg, Some(Color::Rgb(..)))),
+                "changed row {needle:?} lost its highlighting: {row:?}"
+            );
+        }
+        // The marker itself stays red/green, so the sign reads without colour
+        // vision doing all the work.
+        let marker = diff_row(&out, "let y = 2;").spans[3].clone();
+        assert_eq!(marker.content.as_ref(), "+");
+        assert_eq!(marker.style.fg, Some(Color::Green));
     }
 
     #[test]
     fn a_diff_without_a_known_language_stays_plain() {
-        let out = diff_lines("+ foo\n- bar", 80, "", None);
+        let out = diff_lines("+ foo\n- bar", 80, DIFF_MAX_ROWS, "", None);
         assert!(
             diff_syntax_colours(&out).is_empty(),
             "unexpected highlighting without a language"
@@ -8681,7 +12295,13 @@ mod tests {
 
     #[test]
     fn a_hunk_header_is_not_syntax_highlighted() {
-        let out = diff_lines("@@ -1,2 +1,3 @@\n+let x = 1;", 80, "", Some("a.rs"));
+        let out = diff_lines(
+            "@@ -1,2 +1,3 @@\n   1 | let x = 1;",
+            80,
+            DIFF_MAX_ROWS,
+            "",
+            Some("a.rs"),
+        );
         let header = out
             .iter()
             .find(|l| line_text(l).contains("@@"))
@@ -8718,18 +12338,18 @@ mod tests {
             id: "c1".into(),
             content: "wrote 3 lines".into(),
             is_error: false,
-            diff: Some("+fn main() {\n+    let x = 1;\n+}".into()),
+            diff: Some("     1 | fn main() {\n-    2 | let x = 1;\n+    2 | let x = 2;".into()),
         });
         assert!(
-            !diff_syntax_colours(&app.transcript).is_empty(),
+            !diff_syntax_colours(&row_lines(&app.transcript)).is_empty(),
             "result diff not highlighted: {:?}",
-            app.transcript.iter().map(line_text).collect::<Vec<_>>()
+            app.transcript.iter().map(row_text).collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn diff_lines_renders_all_when_under_cap() {
-        let out = diff_lines("- foo\n+ bar", 80, "│     ", None);
+        let out = diff_lines("- foo\n+ bar", 80, DIFF_MAX_ROWS, "│     ", None);
         // 2 content rows framed by a top and bottom border.
         assert_eq!(out.len(), 4);
         assert!(line_text(&out[0]).contains('┌'), "top: {}", line_text(&out[0]));
@@ -8740,18 +12360,82 @@ mod tests {
         );
     }
 
+    /// The panel is sized to the width it is drawn at: gutter, frame and content
+    /// together have to fit, or the closing border wraps onto a line of its own
+    /// and the box reads as double-spaced with no right edge.
     #[test]
-    fn diff_lines_collapses_tail_past_cap() {
-        let diff = (0..30)
+    fn a_boxed_diff_fits_the_draw_width() {
+        let long = format!("+    1 | {}", "x".repeat(300));
+        for gutter in ["", "│   ", "│     ", "│       "] {
+            for width in [40usize, 80, 163] {
+                for line in diff_lines(&long, width, DIFF_MAX_ROWS, gutter, None) {
+                    assert!(
+                        row_width(&line) <= width,
+                        "gutter {:?} at width {width}: row is {} wide: {:?}",
+                        gutter,
+                        row_width(&line),
+                        line_text(&line)
+                    );
+                }
+            }
+        }
+    }
+
+    /// Same, through the row that actually renders in the transcript: the result
+    /// row owns both the gutter and the width, so its diff must fit unaided.
+    #[test]
+    fn a_result_row_diff_fits_the_draw_width() {
+        let row: Row = RowKind::Result {
+            tag: "✓",
+            tag_style: Style::new().green(),
+            content: Some("Wrote notes.md".into()),
+            diff: Some(format!("@@ created file @@\n+    1 | {}", "y".repeat(300))),
+            lang: None,
+        }
+        .into();
+        for width in [40u16, 80, 163] {
+            for line in row.lines(width) {
+                assert!(
+                    row_width(&line) <= width as usize,
+                    "width {width}: row is {} wide: {:?}",
+                    row_width(&line),
+                    line_text(&line)
+                );
+            }
+        }
+    }
+
+    fn plus_rows(n: usize) -> String {
+        (0..n)
             .map(|i| format!("+ line {i}"))
             .collect::<Vec<_>>()
-            .join("\n");
-        let out = diff_lines(&diff, 80, "│     ", None);
-        // DIFF_MAX_ROWS content rows + a `(+N more)` row, framed by 2 borders.
-        assert_eq!(out.len(), DIFF_MAX_ROWS + 1 + 2);
+            .join("\n")
+    }
+
+    #[test]
+    fn diff_lines_collapses_tail_past_cap() {
+        let out = diff_lines(&plus_rows(30), 80, 20, "│     ", None);
+        // 20 content rows + a `(+N more)` row, framed by 2 borders.
+        assert_eq!(out.len(), 20 + 1 + 2);
         // The tail sits just above the closing border.
         let tail = line_text(&out[out.len() - 2]);
         assert!(tail.contains("(+10 more)"), "tail: {tail}");
+    }
+
+    /// The transcript scrolls, so a long edit is shown in full there; the
+    /// permission prompt does not, and keeps the tight cap so the decision list
+    /// is never crowded out.
+    #[test]
+    fn the_result_cap_is_generous_and_the_prompt_cap_is_not() {
+        assert_eq!(DIFF_MAX_ROWS, 1000);
+        let long = plus_rows(400);
+        let result = diff_lines(&long, 80, DIFF_MAX_ROWS, "│     ", None);
+        assert_eq!(result.len(), 400 + 2, "result diff must not collapse");
+
+        let mut prompt = pending(true);
+        prompt.diff = Some(long);
+        let preview = prompt.diff_preview(80);
+        assert_eq!(preview.len(), DIFF_PREVIEW_MAX_ROWS + 1 + 2);
     }
 
     #[test]
@@ -8810,7 +12494,7 @@ mod tests {
             text: "Here is what I found so far".into(),
         });
         app.cancel_run();
-        let body: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let body: Vec<String> = app.transcript.iter().map(row_text).collect();
         let joined = body.join("\n");
         assert!(
             joined.contains("Here is what I found so far"),
@@ -8842,7 +12526,7 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": "grep -n foo src/" }),
         });
-        let running = line_text(app.transcript.last().unwrap());
+        let running = row_text(app.transcript.last().unwrap());
         assert!(running.contains("▸ Executing: grep"), "running: {running}");
         let before = app.transcript.len();
         app.apply(StreamEvent::ToolResult {
@@ -8855,7 +12539,7 @@ mod tests {
         assert_eq!(app.transcript.len(), before);
         // Finalizing (turn boundary / done) marks it complete on the same row.
         app.finalize_tool_group();
-        let row = line_text(app.transcript.last().unwrap());
+        let row = row_text(app.transcript.last().unwrap());
         assert!(row.contains("✓") && row.contains("Ran: grep"), "row: {row}");
         assert!(!row.contains("lines"), "row: {row}");
         assert!(app.tool_group.is_none());
@@ -8909,13 +12593,117 @@ mod tests {
             .transcript
             .iter()
             .rev()
-            .map(line_text)
+            .map(row_text)
             .find(|t| t.contains("Ran: grep"))
             .unwrap();
         assert!(row.contains("✓"), "row: {row}");
         // Later tokens must not re-trigger finalize work.
         app.apply(StreamEvent::Token { text: " goes".into() });
         assert!(app.tool_group.is_none());
+    }
+
+    #[test]
+    fn failed_grouped_call_keeps_its_failure_in_the_expanded_detail() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "foo" }),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "read".into(),
+            args: json!({ "path": "main.rs" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ERROR: tool 'grep' denied by user".into(),
+            is_error: true,
+            diff: None,
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c2".into(),
+            content: "fn main() {}".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.finalize_tool_group();
+        // The collapsed row carries the latest result, but the earlier failure
+        // must still be reachable by expanding the group.
+        let row = row_text(&app.transcript[app.groups[0].idx]);
+        assert!(row.contains("✓"), "row: {row}");
+        let detail: String = group_detail_lines(&app.groups[0], 80)
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            detail.contains("✗") && detail.contains("denied by user"),
+            "failure lost from the expanded detail: {detail}"
+        );
+    }
+
+    #[test]
+    fn cancelled_tool_group_is_not_marked_successful() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 300" }),
+        });
+        let idx = app.tool_group.as_ref().unwrap().idx;
+        app.cancel_run();
+        let row = row_text(&app.transcript[idx]);
+        assert!(
+            !row.contains("✓"),
+            "a cancelled command must not read as succeeded: {row}"
+        );
+        assert!(row.contains("○"), "no interrupted marker: {row}");
+    }
+
+    #[test]
+    fn cancelled_standalone_edit_row_is_marked_interrupted() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "e1".into(),
+            name: "edit".into(),
+            args: json!({ "path": "foo.rs", "old_string": "a", "new_string": "b" }),
+        });
+        let idx = app.transcript.len() - 1;
+        assert!(row_text(&app.transcript[idx]).contains("▸"));
+        app.cancel_run();
+        let row = row_text(&app.transcript[idx]);
+        assert!(
+            !row.contains("▸"),
+            "cancelled edit still reads as in flight: {row}"
+        );
+        assert!(row.contains("○"), "no interrupted marker: {row}");
+    }
+
+    #[test]
+    fn completed_standalone_edit_survives_a_later_cancel() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "e1".into(),
+            name: "edit".into(),
+            args: json!({ "path": "foo.rs", "old_string": "a", "new_string": "b" }),
+        });
+        let idx = app.transcript.len() - 1;
+        app.apply(StreamEvent::ToolResult {
+            id: "e1".into(),
+            content: "edited foo.rs".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.cancel_run();
+        let row = row_text(&app.transcript[idx]);
+        assert!(
+            row.contains("✓ Edited foo.rs") && !row.contains("○"),
+            "a resolved edit must keep its call row: {row}"
+        );
     }
 
     #[test]
@@ -8939,7 +12727,7 @@ mod tests {
             text: "Found it.".into(),
         });
         app.apply(StreamEvent::Step { index: 2, max: 8 });
-        let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
         let prose = rows.iter().position(|r| r.contains("check the README")).unwrap();
         let tool = rows.iter().position(|r| r.contains("Ran: grep")).unwrap();
         let after = rows.iter().position(|r| r.contains("Found it")).unwrap();
@@ -8972,15 +12760,17 @@ mod tests {
         let tool_rows = app
             .transcript
             .iter()
-            .filter(|l| line_text(l).contains("Reading") || line_text(l).contains("Read "))
+            .filter(|r| row_text(r).contains("Reading") || row_text(r).contains("Read "))
             .count();
         assert_eq!(tool_rows, 1);
-        // The live row is an honest present-tense breakdown, not "<latest> (4)".
-        assert!(line_text(app.transcript.last().unwrap())
-            .contains("Reading 3 memory notes, 1 skill"));
-        // The model speaking finalizes it to a short summary sentence.
+        // Every call has reported, so the row already reads as a finished
+        // breakdown -- not "<latest> (4)", and not still-running until the
+        // model speaks.
+        let row = row_text(app.transcript.last().unwrap());
+        assert!(row.contains("✓ Read 3 memory notes, 1 skill"), "row: {row}");
+        // The model speaking closes the group without disturbing the row.
         app.apply(StreamEvent::Token { text: "Done.".into() });
-        let row = line_text(app.transcript.last().unwrap());
+        let row = row_text(app.transcript.last().unwrap());
         assert!(row.contains("✓ Read 3 memory notes, 1 skill"), "row: {row}");
     }
 
@@ -9071,6 +12861,42 @@ mod tests {
         assert!(text.contains("(0s)") || text.contains("(1s)"), "{text}");
     }
 
+    /// A lone in-flight call is specific enough to name: the live row shows its
+    /// own label (the full command for bash), not the "running 1 command" count.
+    #[test]
+    fn running_single_call_row_names_the_call() {
+        let mut app = test_app();
+        let cmd = format!("grep -n foo {}", "src/very/long/path/".repeat(6));
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": cmd }),
+        });
+        let group = app.tool_group.as_ref().expect("group open");
+        let text = line_text(&running_group_row(group, 0, 200));
+        assert!(text.contains(&format!("Executing: {cmd}")), "{text}");
+        assert!(!text.contains("running 1 command"), "{text}");
+    }
+
+    /// Two or more calls in flight still name the tool actively running (the
+    /// latest outstanding one), not a counted breakdown -- a summary like
+    /// "Running 2 commands" would wrongly imply both are executing at once.
+    #[test]
+    fn running_multi_call_row_names_the_in_flight_tool() {
+        let mut app = test_app();
+        for (id, cmd) in [("c1", "cargo test"), ("c2", "cargo clippy")] {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: "bash".into(),
+                args: json!({ "command": cmd }),
+            });
+        }
+        let group = app.tool_group.as_ref().expect("group open");
+        let text = line_text(&running_group_row(group, 0, 200));
+        assert!(text.contains("Executing: cargo clippy"), "{text}");
+        assert!(!text.contains("Running 2 commands"), "{text}");
+    }
+
     #[test]
     fn tool_group_stops_looking_live_once_its_call_resolves() {
         let mut app = test_app();
@@ -9100,6 +12926,128 @@ mod tests {
     }
 
     #[test]
+    fn grouped_row_resolves_when_its_result_lands_not_when_prose_starts() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "foo" }),
+        });
+        let idx = app.tool_group.as_ref().unwrap().idx;
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        // No token has streamed yet: the row must already read as done rather
+        // than sitting on the present-tense running form until prose arrives.
+        let row = row_text(&app.transcript[idx]);
+        assert!(row.contains("✓"), "status lagged behind the result: {row}");
+        assert!(row.contains("Searched"), "row not past tense: {row}");
+
+        // A later call in the same group reopens it as running.
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "read".into(),
+            args: json!({ "path": "main.rs" }),
+        });
+        let row = row_text(&app.transcript[idx]);
+        assert!(row.contains("▸") && !row.contains("✓"), "row: {row}");
+    }
+
+    #[test]
+    fn failed_grouped_row_shows_the_failure_before_the_group_closes() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cargo build" }),
+        });
+        let idx = app.tool_group.as_ref().unwrap().idx;
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ERROR: command not found".into(),
+            is_error: true,
+            diff: None,
+        });
+        let row = row_text(&app.transcript[idx]);
+        assert!(
+            row.contains("✗") && !row.contains("✓"),
+            "failure not shown at result time: {row}"
+        );
+    }
+
+    #[test]
+    fn grouped_row_reports_the_latest_result_not_an_earlier_failure() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cargo buidl" }),
+        });
+        let idx = app.tool_group.as_ref().unwrap().idx;
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ERROR: no such subcommand".into(),
+            is_error: true,
+            diff: None,
+        });
+        // The retry succeeds, so the collapsed row must stop reading as failed.
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cargo build" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c2".into(),
+            content: "Finished".into(),
+            is_error: false,
+            diff: None,
+        });
+        let row = row_text(&app.transcript[idx]);
+        assert!(
+            row.contains("✓") && !row.contains("✗"),
+            "stale failure on the summary row: {row}"
+        );
+    }
+
+    #[test]
+    fn group_row_stays_running_while_a_sibling_call_is_outstanding() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 10" }),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "read".into(),
+            args: json!({ "path": "main.rs" }),
+        });
+        let idx = app.tool_group.as_ref().unwrap().idx;
+        // Results can land out of dispatch order; the row must not claim the
+        // batch is done while an earlier call is still outstanding.
+        app.apply(StreamEvent::ToolResult {
+            id: "c2".into(),
+            content: "fn main() {}".into(),
+            is_error: false,
+            diff: None,
+        });
+        assert!(app.tool_group.as_ref().unwrap().is_running());
+        let row = row_text(&app.transcript[idx]);
+        assert!(!row.contains("✓"), "resolved early: {row}");
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "done".into(),
+            is_error: false,
+            diff: None,
+        });
+        assert!(!app.tool_group.as_ref().unwrap().is_running());
+        assert!(row_text(&app.transcript[idx]).contains("✓"));
+    }
+
+    #[test]
     fn handle_mouse_click_maps_row_to_region_toggle() {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
@@ -9122,27 +13070,11 @@ mod tests {
         app.last_scroll = 0;
         app.row_index = vec![Some(group_idx)];
 
-        handle_mouse(
-            &mut app,
-            MouseEvent {
-                kind: MouseEventKind::Down(MouseButton::Left),
-                column: 5,
-                row: 1,
-                modifiers: KeyModifiers::NONE,
-            },
-        );
+        click(&mut app, 5, 1);
         assert!(app.expanded.contains(&group_idx));
 
         // Clicking outside the viewport (past the bottom border) is a no-op.
-        handle_mouse(
-            &mut app,
-            MouseEvent {
-                kind: MouseEventKind::Down(MouseButton::Left),
-                column: 5,
-                row: 9,
-                modifiers: KeyModifiers::NONE,
-            },
-        );
+        click(&mut app, 5, 9);
         assert!(app.expanded.contains(&group_idx));
     }
 
@@ -9213,15 +13145,7 @@ mod tests {
         app.transcript_rect = Rect::new(0, 0, 80, 10);
         app.last_scroll = 0;
         app.row_index = vec![Some(idx), Some(idx), Some(idx)];
-        handle_mouse(
-            &mut app,
-            MouseEvent {
-                kind: MouseEventKind::Down(MouseButton::Left),
-                column: 5,
-                row: 2, // a detail row, not the header at row 1
-                modifiers: KeyModifiers::NONE,
-            },
-        );
+        click(&mut app, 5, 2); // a detail row, not the header at row 1
         assert!(app.expanded.is_empty(), "click on a detail row should collapse");
     }
 
@@ -9251,14 +13175,17 @@ mod tests {
         let tool_rows = app
             .transcript
             .iter()
-            .filter(|l| { let t = line_text(l); t.contains("Executing") || t.contains("Running") })
+            .filter(|l| {
+                let t = row_text(l);
+                t.contains("Executing") || t.contains("Running") || t.contains("Ran")
+            })
             .count();
         assert_eq!(tool_rows, 1);
         app.on_done("stop".into(), None);
         let row = app
             .transcript
             .iter()
-            .map(line_text)
+            .map(row_text)
             .find(|t| t.contains("Ran "))
             .unwrap();
         assert!(row.contains("✓ Ran 3 commands"), "row: {row}");
@@ -9287,7 +13214,7 @@ mod tests {
         assert!(app.assistant_buf.is_empty());
         // Reasoning folds to a collapsed summary row (raw thought hidden), which
         // still lands above the tool row it preceded (emission order).
-        let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
         assert!(
             !rows.iter().any(|r| r.contains("let me look")),
             "raw reasoning must be hidden by default: {rows:?}"
@@ -9295,7 +13222,7 @@ mod tests {
         let think_at = rows.iter().position(|r| r.contains("reasoning (1 line)")).unwrap();
         let tool_at = rows
             .iter()
-            .position(|r| r.contains("Executing") || r.contains("Running"))
+            .position(|r| r.contains("Executing") || r.contains("Running") || r.contains("Ran"))
             .unwrap();
         assert!(
             think_at < tool_at,
@@ -9313,7 +13240,7 @@ mod tests {
             text: "<think>thinking</think>Hi there!".into(),
         });
         app.apply(StreamEvent::Step { index: 1, max: 8 });
-        let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
         let think_at = rows.iter().position(|r| r.contains("reasoning (1 line)")).unwrap();
         let prose_at = rows.iter().position(|r| r.contains("Hi there!")).unwrap();
         assert!(think_at < prose_at);
@@ -9333,7 +13260,7 @@ mod tests {
         // A turn boundary commits the buffer.
         app.apply(StreamEvent::Step { index: 1, max: 8 });
 
-        let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
         assert!(rows.iter().any(|r| r.contains("reasoning (2 lines)")));
         assert!(rows.iter().any(|r| r.contains("The answer is 42")));
         // Raw reasoning is hidden until expanded.
@@ -9369,8 +13296,8 @@ mod tests {
             .transcript
             .iter()
             .filter(|l| {
-                let t = line_text(l);
-                t.contains("Executing") || t.contains("Running")
+                let t = row_text(l);
+                t.contains("Executing") || t.contains("Running") || t.contains("Ran ")
             })
             .count();
         assert_eq!(tool_rows, 1);
@@ -9381,7 +13308,7 @@ mod tests {
         let row = app
             .transcript
             .iter()
-            .map(line_text)
+            .map(row_text)
             .find(|t| t.contains("Ran "))
             .unwrap();
         assert!(row.contains("✓ Ran 3 commands"), "row: {row}");
@@ -9397,7 +13324,7 @@ mod tests {
         assert!(!app
             .transcript
             .iter()
-            .any(|l| line_text(l).contains("finished")));
+            .any(|l| row_text(l).contains("finished")));
     }
 
     #[test]
@@ -9410,7 +13337,7 @@ mod tests {
         let warn = app
             .transcript
             .iter()
-            .map(line_text)
+            .map(row_text)
             .find(|t| t.contains("finished early"))
             .unwrap();
         assert!(warn.contains("length"), "warn: {warn}");
@@ -9427,7 +13354,7 @@ mod tests {
         assert!(app
             .transcript
             .iter()
-            .any(|l| line_text(l).contains("finished with no answer")));
+            .any(|l| row_text(l).contains("finished with no answer")));
     }
 
     #[test]
@@ -9462,7 +13389,10 @@ mod tests {
         let tool_rows = app
             .transcript
             .iter()
-            .filter(|l| { let t = line_text(l); t.contains("Executing") || t.contains("Running") })
+            .filter(|l| {
+                let t = row_text(l);
+                t.contains("Executing") || t.contains("Running") || t.contains("Ran")
+            })
             .count();
         assert_eq!(tool_rows, 1);
     }
@@ -9487,11 +13417,38 @@ mod tests {
         let joined: String = app
             .transcript
             .iter()
-            .map(|l| line_text(l))
+            .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(joined.contains("Editing a.txt"), "{joined}");
+        // The call row resolves to past tense once the result lands.
+        assert!(joined.contains("Edited a.txt"), "{joined}");
+        assert!(!joined.contains("Editing a.txt"), "{joined}");
         assert!(joined.contains('┌') && joined.contains('┘'), "{joined}");
+    }
+
+    #[test]
+    fn diff_tool_row_reads_present_tense_until_its_result_lands() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "write".into(),
+            args: json!({ "path": "a.txt", "content": "x" }),
+        });
+        assert!(row_text(app.transcript.last().unwrap()).contains("Writing a.txt"));
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "boom".into(),
+            is_error: true,
+            diff: None,
+        });
+        let joined: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(joined.contains("✗ Wrote a.txt"), "{joined}");
+        assert!(app.pending_rows.is_empty());
     }
 
     #[test]
@@ -9503,6 +13460,226 @@ mod tests {
         assert_eq!(summarize_result("a    b\tc", 80), "a b c");
         // Truncates the head to max.
         assert_eq!(summarize_result("abcdefgh", 4), "abc…");
+    }
+
+    /// Run one turn that reasons, calls a diff-producing tool, and answers,
+    /// leaving it persisted (messages + journal) in `app.agent_dir`.
+    fn record_full_turn(app: &mut App) {
+        app.submit_user("do it".to_string());
+        app.apply(StreamEvent::Token {
+            text: "<think>my private reasoning</think>".into(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "write".into(),
+            args: json!({ "path": "a.txt", "content": "x" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "wrote 1 line".into(),
+            is_error: false,
+            diff: Some("@@ created file @@\n+    1 | x".into()),
+        });
+        app.apply(StreamEvent::MessagesUpdated {
+            messages: vec![
+                json!({ "role": "user", "content": "do it" }),
+                json!({ "role": "assistant", "content": "", "tool_calls": [{
+                    "id": "c1",
+                    "type": "function",
+                    "function": { "name": "write", "arguments": "{\"path\":\"a.txt\"}" },
+                }]}),
+                json!({ "role": "tool", "tool_call_id": "c1", "content": "wrote 1 line" }),
+            ],
+        });
+        app.apply(StreamEvent::Token {
+            text: "Answer.".into(),
+        });
+        app.on_done("stop".into(), None);
+        app.join_journal();
+    }
+
+    #[tokio::test]
+    async fn resume_restores_reasoning_tool_rows_and_diffs() {
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        let live: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+        let resumed: String = fresh
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert_eq!(fresh.reasoning_blocks.len(), 1, "folded reasoning is back");
+        assert!(resumed.contains("reasoning (1 line)"), "{resumed}");
+        assert!(resumed.contains("✓ Wrote a.txt"), "tool row: {resumed}");
+        assert!(
+            resumed.contains("@@ created file @@") && resumed.contains("+    1 | x"),
+            "diff panel: {resumed}"
+        );
+        assert!(resumed.contains("Answer."), "{resumed}");
+        // Every rendered row returns; the turn receipt (`↑ tokens ⏱ elapsed`) is
+        // deliberately transient, like notes and permission prompts.
+        assert!(
+            live.lines()
+                .filter(|l| !l.contains('⏱'))
+                .all(|l| resumed.contains(l.trim_end())),
+            "every live row must come back\nlive:\n{live}\nresumed:\n{resumed}"
+        );
+        // Expanding the restored reasoning row reveals its full detail, so the
+        // journal carried the text and not just the summary count.
+        fresh.toggle_regions();
+        let expanded = render_rows(&mut fresh, 60, 30).join("\n");
+        assert!(expanded.contains("my private reasoning"), "{expanded}");
+    }
+
+    /// The common shape: several grouped calls (bash, not the standalone
+    /// edit/write rows), each run separated by the model's prose. Live, the
+    /// prose is what closes each group; a replay must close them the same way or
+    /// every call folds into one row that is never committed.
+    #[tokio::test]
+    async fn resume_restores_grouped_tool_calls_between_prose() {
+        let mut app = test_app();
+        app.submit_user("check it".to_string());
+        for (i, cmd) in ["git status", "git log -1"].iter().enumerate() {
+            app.apply(StreamEvent::Token {
+                text: format!("<think>step {i}</think>"),
+            });
+            app.apply(StreamEvent::ToolCall {
+                id: format!("c{i}"),
+                name: "bash".into(),
+                args: json!({ "command": cmd }),
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: format!("c{i}"),
+                content: "output".into(),
+                is_error: false,
+                diff: None,
+            });
+            app.apply(StreamEvent::Token {
+                text: format!("Ran {cmd}.\n"),
+            });
+        }
+        app.on_done("stop".into(), None);
+        app.join_journal();
+        let live: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(live.contains("git status") && live.contains("git log -1"), "{live}");
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+        let resumed: String = fresh
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            resumed.contains("git status") && resumed.contains("git log -1"),
+            "both grouped calls must come back as their own rows:\n{resumed}"
+        );
+        assert!(
+            fresh.tool_group.is_none(),
+            "no group may be left open after a replay"
+        );
+        assert_eq!(fresh.groups.len(), 2, "one closed group per run of calls");
+        // Expanding a restored group row still shows the call and its output.
+        fresh.toggle_regions();
+        let expanded = render_rows(&mut fresh, 80, 40).join("\n");
+        assert!(expanded.contains("output"), "{expanded}");
+    }
+
+    #[tokio::test]
+    async fn resume_restores_the_model_side_tool_calls() {
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        assert!(
+            !serde_json::to_string(&app.history).unwrap().contains("<think>"),
+            "reasoning must not be resent to the model: {:?}",
+            app.history
+        );
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+
+        assert_eq!(fresh.history, app.history, "the wire conversation round-trips");
+        let called = fresh
+            .history
+            .iter()
+            .find(|m| m.get("tool_calls").is_some())
+            .expect("the call the model made is back");
+        assert_eq!(called["tool_calls"][0]["id"], "c1");
+        let result = fresh
+            .history
+            .iter()
+            .find(|m| m["role"] == "tool")
+            .expect("its result is back");
+        assert_eq!(result["tool_call_id"], "c1");
+        assert_eq!(result["content"], "wrote 1 line");
+    }
+
+    #[tokio::test]
+    async fn resume_falls_back_to_messages_without_a_journal() {
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        let id = app.thread_id.clone().expect("saved");
+        std::fs::remove_file(journal::journal_path(&app.agent_dir, &id)).unwrap();
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+        let resumed: String = fresh
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(resumed.contains("do it") && resumed.contains("Answer."), "{resumed}");
+        assert!(fresh.display_log.is_empty(), "nothing to journal from");
+    }
+
+    #[tokio::test]
+    async fn rewind_keeps_the_kept_turns_tool_rows() {
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        app.submit_user("and again".to_string());
+        app.apply(StreamEvent::Token {
+            text: "Second answer.".into(),
+        });
+        app.on_done("stop".into(), None);
+
+        rewind_to(&mut app, 1, false);
+        let after: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(after.contains("✓ Wrote a.txt"), "first turn keeps its rows: {after}");
+        assert!(after.contains("@@ created file @@"), "{after}");
+        assert!(!after.contains("Second answer."), "rewound turn is gone: {after}");
+        assert!(
+            !app.display_log
+                .iter()
+                .any(|e| matches!(e, DisplayEntry::User { text, .. } if text == "and again")),
+            "the journal is truncated with the conversation"
+        );
+        assert_eq!(app.input, "and again", "the rewound message returns to the input");
     }
 
     #[tokio::test]
@@ -9526,7 +13703,7 @@ mod tests {
         let joined: String = fresh
             .transcript
             .iter()
-            .map(|l| line_text(l))
+            .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains("first") && joined.contains("reply"), "{joined}");
@@ -9541,13 +13718,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resuming_restores_the_recall_history() {
+        let app = test_app();
+        let history = vec![
+            json!({ "role": "user", "content": "first" }),
+            json!({ "role": "assistant", "content": "reply" }),
+            json!({ "role": "user", "content": "second" }),
+        ];
+        super::super::cli_save_thread(&app.agent_dir, None, "saved-model", &history, None).unwrap();
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        // A line typed before the resume belongs to the session being replaced.
+        fresh.record_submitted("stale");
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+
+        assert_eq!(fresh.input_history, vec!["first", "second"]);
+        assert!(fresh.recall_prev(), "Up recalls instead of scrolling");
+        assert_eq!(fresh.input, "second");
+        assert!(fresh.recall_prev());
+        assert_eq!(fresh.input, "first");
+        assert_eq!(fresh.scrollback, 0, "recall must not scroll the transcript");
+    }
+
+    #[tokio::test]
     async fn apply_resume_notes_when_nothing_to_resume() {
         let mut app = test_app();
         apply_resume(&mut app, &ResumeTarget::Latest).await;
         let joined: String = app
             .transcript
             .iter()
-            .map(|l| line_text(l))
+            .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains(super::super::NO_SESSION_TO_RESUME), "{joined}");
@@ -9589,20 +13790,241 @@ mod tests {
         assert_eq!(parse_command(""), ("", ""));
     }
 
-    #[tokio::test]
-    async fn ctrl_t_toggles_mouse_capture() {
+    #[test]
+    fn mouse_tracking_requests_buttons_wheel_and_held_drags() {
+        assert!(MOUSE_TRACK_ON.contains("?1000h"), "buttons and wheel");
+        assert!(MOUSE_TRACK_ON.contains("?1002h"), "drag while held");
+        assert!(MOUSE_TRACK_ON.contains("?1006h"), "SGR coordinates");
+        assert!(
+            !MOUSE_TRACK_ON.contains("1003"),
+            "any-motion would report every idle pointer move: {MOUSE_TRACK_ON:?}"
+        );
+        assert!(
+            ALT_SCROLL_SAVE_OFF.contains("?1007l"),
+            "the wheel must never arrive as arrow keys"
+        );
+        assert!(ALT_SCROLL_RESTORE.contains("?1007r"), "restore on exit");
+    }
+
+    #[test]
+    fn linear_selection_spans_whole_rows_between_the_ends() {
+        let sel = Selection {
+            anchor: (5, 1),
+            head: (2, 3),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(sel.spans(10), vec![(1, 5, 9), (2, 0, 9), (3, 0, 2)]);
+    }
+
+    #[test]
+    fn selection_spans_are_direction_independent() {
+        let forward = Selection {
+            anchor: (5, 1),
+            head: (2, 3),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+        let backward = Selection {
+            anchor: (2, 3),
+            head: (5, 1),
+            ..forward
+        };
+        assert_eq!(forward.spans(10), backward.spans(10));
+    }
+
+    #[test]
+    fn block_selection_spans_a_rectangle() {
+        let sel = Selection {
+            anchor: (6, 3),
+            head: (2, 1),
+            mode: SelectionMode::Block,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(sel.spans(10), vec![(1, 2, 6), (2, 2, 6), (3, 2, 6)]);
+    }
+
+    /// A block drag lifts one column out of a table without the neighbours a
+    /// linear drag would sweep up.
+    #[test]
+    fn selection_text_reads_cells_and_trims_row_padding() {
+        let area = Rect::new(0, 0, 12, 3);
+        let mut buf = Buffer::empty(area);
+        buf.set_string(0, 0, "alpha   one", Style::new());
+        buf.set_string(0, 1, "beta    two", Style::new());
+
+        let linear = Selection {
+            anchor: (0, 0),
+            head: (10, 1),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(selection_text(&buf, linear, area), "alpha   one\nbeta    two");
+
+        let block = Selection {
+            anchor: (8, 0),
+            head: (10, 1),
+            mode: SelectionMode::Block,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(selection_text(&buf, block, area), "one\ntwo");
+
+        // A row selected past its text keeps no trailing padding.
+        let padded = Selection {
+            anchor: (0, 0),
+            head: (11, 0),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+        assert_eq!(selection_text(&buf, padded, area), "alpha   one");
+    }
+
+    #[test]
+    fn a_drag_selects_instead_of_toggling_the_row_under_it() {
         let mut app = test_app();
-        assert!(!app.mouse_capture, "capture starts off so text is selectable");
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "foo" }),
+        });
+        let idx = app.tool_group.as_ref().expect("group open").idx;
+        app.transcript_rect = Rect::new(0, 0, 80, 10);
+        app.last_scroll = 0;
+        app.row_index = vec![Some(idx)];
+
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Down(MouseButton::Left), 5, 1),
+        );
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 30, 1),
+        );
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Up(MouseButton::Left), 30, 1),
+        );
+
+        assert!(app.expanded.is_empty(), "a drag must not expand the row");
+        assert!(app.copy_armed, "the release arms the copy");
+        let sel = app.selection.expect("selection held after release");
+        assert!(!sel.dragging);
+        assert_eq!(sel.spans(80), vec![(1, 5, 30)]);
+    }
+
+    #[test]
+    fn alt_drag_selects_a_block() {
+        let mut app = test_app();
+        handle_mouse(
+            &mut app,
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 5,
+                row: 1,
+                modifiers: KeyModifiers::ALT,
+            },
+        );
+        assert_eq!(
+            app.selection.expect("selection").mode,
+            SelectionMode::Block
+        );
+    }
+
+    #[test]
+    fn scrolling_drops_a_finished_selection() {
+        let mut app = test_app();
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Down(MouseButton::Left), 5, 1),
+        );
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 9, 1),
+        );
+        handle_mouse(&mut app, mouse_at(MouseEventKind::ScrollUp, 5, 1));
+        assert!(app.selection.is_none(), "content moved out from under it");
+    }
+
+    #[test]
+    fn a_held_drag_past_an_edge_scrolls_the_transcript() {
+        let mut app = test_app();
+        app.transcript_rect = Rect::new(0, 0, 80, 10);
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Down(MouseButton::Left), 5, 5),
+        );
+
+        // Above the top border: scroll back through history.
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 5, 0),
+        );
+        autoscroll_selection(&mut app);
+        autoscroll_selection(&mut app);
+        assert_eq!(app.scrollback, 2);
+
+        // Below the last body row: scroll back toward the newest output.
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 5, 9),
+        );
+        autoscroll_selection(&mut app);
+        assert_eq!(app.scrollback, 1);
+
+        // Inside the viewport, nothing moves.
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Drag(MouseButton::Left), 5, 4),
+        );
+        autoscroll_selection(&mut app);
+        assert_eq!(app.scrollback, 1);
+
+        // A released drag stops scrolling even parked past the edge.
+        handle_mouse(
+            &mut app,
+            mouse_at(MouseEventKind::Up(MouseButton::Left), 5, 0),
+        );
+        app.selection.as_mut().expect("selection").head = (5, 0);
+        autoscroll_selection(&mut app);
+        assert_eq!(app.scrollback, 1);
+    }
+
+    #[test]
+    fn copy_notice_expires() {
+        let mut app = test_app();
+        assert_eq!(app.copy_notice(), None);
+        app.copied = Some((Instant::now(), 3));
+        assert_eq!(app.copy_notice(), Some(3));
+        app.copied = Some((Instant::now() - COPY_NOTICE - Duration::from_millis(1), 3));
+        assert_eq!(app.copy_notice(), None);
+    }
+
+    #[tokio::test]
+    async fn mouse_tracking_has_no_toggle_hotkey() {
+        assert!(
+            !KEY_BINDINGS.iter().any(|(k, _)| k.contains("Ctrl-T")),
+            "mouse tracking is a config key now, not a hotkey"
+        );
+        assert!(
+            KEY_BINDINGS.iter().any(|(_, d)| d.contains("Select text")),
+            "the selection gesture still needs advertising"
+        );
+
+        // Ctrl-T is an ordinary unbound key: it must not type into the input.
+        let mut app = test_app();
         let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let mcp_servers: crate::core::state::SharedMcpServers =
             Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let mut current: Option<CurrentRun> = None;
         let key = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
-
         handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
-        assert!(app.mouse_capture);
-        handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
-        assert!(!app.mouse_capture);
+        assert!(app.input.is_empty(), "got: {:?}", app.input);
     }
 
     #[tokio::test]
@@ -9610,10 +14032,79 @@ mod tests {
         let mut app = test_app();
         app.history.push(json!({ "role": "user", "content": "hi" }));
         run_command(&mut app, "compact").await;
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("compaction unavailable"), "got: {text}");
         // History untouched when no session is attached.
         assert_eq!(app.history.len(), 1);
+        assert!(app.compact_request.is_none());
+    }
+
+    #[tokio::test]
+    async fn compact_command_is_refused_while_one_is_in_flight() {
+        let mut app = test_app();
+        app.compacting = Some(CompactKind::Auto);
+        run_command(&mut app, "compact").await;
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("already compacting"), "got: {text}");
+        assert!(app.compact_request.is_none());
+    }
+
+    #[test]
+    fn finish_compaction_keeps_messages_added_while_it_ran() {
+        let mut app = test_app();
+        app.compacting = Some(CompactKind::Manual);
+        app.compact_started = Some(Instant::now());
+        app.history = (0..5)
+            .map(|i| json!({ "role": "user", "content": format!("m{i}") }))
+            .collect();
+        // A message submitted while the summary was being generated.
+        let base_len = 4;
+        finish_compaction(
+            &mut app,
+            Ok(vec![json!({ "role": "user", "content": "summary" })]),
+            base_len,
+        );
+        let contents: Vec<String> = app
+            .history
+            .iter()
+            .map(|m| m["content"].as_str().unwrap_or_default().to_string())
+            .collect();
+        assert_eq!(contents, vec!["summary", "m4"], "tail must survive");
+        assert!(app.compacting.is_none());
+        assert!(app.compact_started.is_none());
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("compacted 4 -> 2 messages"), "got: {text}");
+    }
+
+    #[test]
+    fn finish_compaction_restores_idle_state_on_failure() {
+        let mut app = test_app();
+        app.compacting = Some(CompactKind::Auto);
+        app.history = vec![json!({ "role": "user", "content": "hi" })];
+        finish_compaction(&mut app, Err("upstream 500".into()), 1);
+        assert_eq!(app.history.len(), 1, "history must be left alone");
+        assert!(app.compacting.is_none(), "a failure must allow a retry");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("auto-compacting failed: upstream 500"), "got: {text}");
+    }
+
+    #[test]
+    fn a_running_compaction_shows_a_throbber() {
+        let mut app = test_app();
+        let idle = render_rows(&mut app, 80, 12).join("\n");
+        assert!(!idle.contains("compacting"), "got: {idle}");
+
+        app.compacting = Some(CompactKind::Manual);
+        app.compact_started = Some(Instant::now());
+        let out = render_rows(&mut app, 80, 12).join("\n");
+        assert!(
+            out.contains("compacting conversation"),
+            "the input row must say what is happening: {out}"
+        );
+        assert!(
+            out.contains(SPINNER[app.spinner_frame % SPINNER.len()]),
+            "the input row must carry the throbber: {out}"
+        );
     }
 
     fn start_subagent(app: &mut App, run_id: &str, name: &str) {
@@ -9628,21 +14119,18 @@ mod tests {
         });
     }
 
-    /// The dispatch prompt rides on the event, so the block can say what the
-    /// fan-out is for. A lone agent shows a fuller brief; several collapse to
-    /// their first line each so the block stays a fixed height.
+    /// The dispatch prompt rides on the event, so the panel can say what the
+    /// fan-out is for. Only its first line: the panel is a pinned dock, and the
+    /// brief's later lines are already in the transcript.
     #[test]
-    fn subagent_block_shows_the_dispatch_prompt() {
-        let brief = "Build Flappy Space\nRocket dodging asteroids\n400x600 canvas\nGRAVITY=0.5\nNo external deps";
+    fn subagent_panel_shows_the_dispatch_prompt() {
+        let brief = "Build Flappy Space\nRocket dodging asteroids\n400x600 canvas";
 
         let mut solo = test_app();
         start_subagent_with_task(&mut solo, "r0", "space", Some(brief));
         let out = render_rows(&mut solo, 100, 24).join("\n");
         assert!(out.contains("Build Flappy Space"), "brief missing: {out}");
-        assert!(out.contains("GRAVITY=0.5"), "lone agent should show more: {out}");
-        // Capped, with the overflow marked rather than silently dropped.
-        assert!(!out.contains("No external deps"), "should stop at the cap: {out}");
-        assert!(out.contains('…'), "overflow should be marked: {out}");
+        assert!(!out.contains("400x600"), "only the summary line: {out}");
 
         let mut pair = test_app();
         start_subagent_with_task(&mut pair, "r0", "space", Some(brief));
@@ -9650,9 +14138,7 @@ mod tests {
         let out = render_rows(&mut pair, 100, 24).join("\n");
         assert!(out.contains("Build Flappy Space"), "{out}");
         assert!(out.contains("Build Flappy Fish"), "{out}");
-        // One line each once they're sharing the block.
-        assert!(!out.contains("GRAVITY=0.5"), "should collapse when parallel: {out}");
-        assert!(!out.contains("Underwater"), "should collapse when parallel: {out}");
+        assert!(!out.contains("Underwater"), "{out}");
     }
 
     /// A dispatch with no task (or an older event without the field) still
@@ -9662,7 +14148,7 @@ mod tests {
         let mut app = test_app();
         start_subagent(&mut app, "r0", "alpha");
         let out = render_rows(&mut app, 100, 20).join("\n");
-        assert!(out.contains("Task 1 agent") && out.contains("alpha"), "{out}");
+        assert!(out.contains("1 agent") && out.contains("alpha"), "{out}");
     }
 
     fn subagent_event(app: &mut App, run_id: &str, name: &str, event: StreamEvent) {
@@ -9709,18 +14195,115 @@ mod tests {
 
         let rows = render_rows(&mut app, 100, 24);
         let out = rows.join("\n");
-        assert!(out.contains("Task 2 agents"), "no consolidated header: {out}");
+        assert!(out.contains("2 agents"), "no consolidated header: {out}");
         for (name, pct) in [("alpha", "10.0%"), ("beta", "20.0%")] {
             assert!(out.contains(name), "missing {name}: {out}");
             assert!(out.contains(pct), "missing context share {pct}: {out}");
         }
-        assert!(out.contains("1 tool "), "missing tool count: {out}");
-        assert!(out.contains("1 req"), "missing request count: {out}");
+        assert!(out.contains("1t · 1r"), "missing compact call/request counts: {out}");
         // Two agents -> one activity line each, so the block stays scannable.
         assert_eq!(
             rows.iter().filter(|r| r.contains("alpha.rs") || r.contains("beta.rs")).count(),
             2,
             "expected exactly one activity line per agent: {out}"
+        );
+    }
+
+    /// The fan-out is pinned above the input, not woven into the transcript: it
+    /// describes what is running *now*, so it must sit below prose the parent
+    /// emitted earlier, no matter when the dispatch happened.
+    #[test]
+    fn fan_out_is_pinned_below_the_transcript() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        app.apply(StreamEvent::Token {
+            text: "parent keeps talking".into(),
+        });
+        app.flush_assistant();
+
+        let rows = render_rows(&mut app, 100, 24);
+        let prose = rows
+            .iter()
+            .position(|r| r.contains("parent keeps talking"))
+            .expect("prose row");
+        let panel = rows.iter().position(|r| r.contains("alpha")).expect("panel row");
+        let input = rows
+            .iter()
+            .position(|r| r.contains("Type here to chat with agent"))
+            .expect("input");
+        assert!(prose < panel, "the panel is docked, not inline: {rows:?}");
+        assert!(panel < input, "and it sits above the input: {rows:?}");
+        assert!(
+            rows.iter().any(|r| r.contains("2 agents") || r.contains("1 agent")),
+            "the fan-out is counted: {rows:?}"
+        );
+    }
+
+    /// Every dispatch joins the one panel; nothing is committed to the chat.
+    #[test]
+    fn parallel_dispatches_share_one_pinned_panel() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        let before = app.transcript.len();
+        start_subagent(&mut app, "r1", "beta");
+        assert_eq!(app.transcript.len(), before, "no transcript rows committed");
+        let rows = render_rows(&mut app, 100, 24);
+        assert_eq!(
+            rows.iter().filter(|r| r.contains("agents")).count(),
+            1,
+            "one panel head only: {rows:?}"
+        );
+        assert!(rows.iter().any(|r| r.contains("2 agents")), "{rows:?}");
+    }
+
+    /// The panel is live state: when the last child ends it vanishes, leaving
+    /// the committed summary row as the only trace in the conversation.
+    #[test]
+    fn panel_clears_when_the_last_child_ends() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "r0".into(),
+            name: "alpha".into(),
+        });
+        assert!(app.subagents.is_empty(), "live panel closed");
+        let rows = render_rows(&mut app, 100, 24);
+        assert!(
+            !rows.iter().any(|r| r.contains("1 agent")),
+            "panel must be gone: {rows:?}"
+        );
+        assert!(
+            rows.iter().any(|r| r.contains("subagent alpha finished")),
+            "summary row missing: {rows:?}"
+        );
+    }
+
+    /// `await_subagent` on a child that already has a live panel used to print
+    /// a second "Awaiting subagent: X" row directly under the block that was
+    /// showing that child's progress. Only an orphaned wait gets a row.
+    #[test]
+    fn awaiting_row_is_suppressed_while_the_child_has_a_live_panel() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        app.apply(StreamEvent::ToolCall {
+            id: "a1".into(),
+            name: "await_subagent".into(),
+            args: json!({ "run_id": "r0" }),
+        });
+        assert_eq!(app.awaiting.len(), 1, "wait state is still tracked");
+        let rows = render_rows(&mut app, 100, 24);
+        assert!(
+            !rows.iter().any(|r| r.contains("Awaiting subagent")),
+            "live panel already reports this child: {rows:?}"
+        );
+
+        // The child ends while its result is still in flight: with no panel
+        // left to report it, the wait gets its own row again.
+        app.subagents.clear();
+        let rows = render_rows(&mut app, 100, 24);
+        assert!(
+            rows.iter().any(|r| r.contains("Awaiting subagent")),
+            "orphaned wait must stay visible: {rows:?}"
         );
     }
 
@@ -9757,7 +14340,7 @@ mod tests {
         }
         let out = render_rows(&mut app, 100, 20).join("\n");
         assert!(out.contains("flappy-2d.html"), "destination should surface: {out}");
-        assert!(out.contains("0 tools"), "still no completed call: {out}");
+        assert!(out.contains("0t · "), "still no completed call: {out}");
 
         // The completed call supersedes the in-progress row.
         subagent_event(
@@ -9771,10 +14354,9 @@ mod tests {
             },
         );
         let out = render_rows(&mut app, 100, 20).join("\n");
-        assert!(out.contains("1 tool "), "completed call should count: {out}");
-        assert_eq!(
+        assert!(out.contains("1t · "), "completed call should count: {out}");
+        assert!(
             app.subagents[0].active.is_none(),
-            true,
             "in-flight view should clear once the call lands"
         );
     }
@@ -9786,7 +14368,7 @@ mod tests {
         let mut app = test_app();
         start_subagent(&mut app, "r1", "alpha");
         let out = render_rows(&mut app, 100, 20).join("\n");
-        assert!(out.contains("Task 1 agent"), "{out}");
+        assert!(out.contains("1 agent"), "{out}");
         assert!(out.contains("starting…"), "{out}");
         assert!(!out.contains('%'), "no share before the first response: {out}");
     }
@@ -9862,7 +14444,7 @@ mod tests {
         assert_eq!(app.turn_prompt_tokens, 40_000);
 
         app.on_done("stop".into(), None);
-        let out: String = app.transcript.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        let out: String = app.transcript.iter().map(row_text).collect::<Vec<_>>().join("\n");
         assert!(out.contains("40K"), "input tokens missing: {out}");
         assert!(out.contains("1.5K"), "summed output missing: {out}");
         assert!(out.contains("/s"), "rate missing: {out}");
@@ -9892,7 +14474,7 @@ mod tests {
             .unwrap();
         assert!(!app.todos.is_empty());
 
-        // Open work is never aged away, however many runs go by.
+        // Open work is never aged away, however many turns go by.
         for _ in 0..5 {
             age_closed_todos(&mut app).await;
         }
@@ -9903,13 +14485,13 @@ mod tests {
             .unwrap();
         assert!(app.todos.open_summary().is_none(), "all work closed out");
 
-        // Survives every run up to the cutoff.
-        for i in 1..=super::TODO_KEEP_CLOSED_RUNS {
+        // Survives every turn up to the cutoff.
+        for i in 1..=super::TODO_KEEP_CLOSED_TURNS {
             age_closed_todos(&mut app).await;
-            assert!(!app.todos.is_empty(), "cleared too eagerly at run {i}");
+            assert!(!app.todos.is_empty(), "cleared too eagerly at turn {i}");
         }
 
-        // One run past the grace period and it goes.
+        // One turn past the grace period and it goes.
         age_closed_todos(&mut app).await;
         assert!(app.todos.is_empty(), "finished list should have been dropped");
     }
@@ -9930,7 +14512,7 @@ mod tests {
             .unwrap();
 
         age_closed_todos(&mut app).await;
-        assert_eq!(app.runs_since_todos_closed, 1);
+        assert_eq!(app.turns_since_todos_closed, 1);
 
         app.todos
             .init(vec![crate::core::agent::todo::TodoPhase {
@@ -9939,7 +14521,7 @@ mod tests {
             }])
             .unwrap();
         age_closed_todos(&mut app).await;
-        assert_eq!(app.runs_since_todos_closed, 0, "counter must reset");
+        assert_eq!(app.turns_since_todos_closed, 0, "counter must reset");
         assert!(!app.todos.is_empty(), "new work must not be aged out");
     }
 
@@ -9950,7 +14532,37 @@ mod tests {
         for _ in 0..5 {
             age_closed_todos(&mut app).await;
         }
-        assert_eq!(app.runs_since_todos_closed, 0);
+        assert_eq!(app.turns_since_todos_closed, 0);
+    }
+
+    /// Turn-granular aging: a single run's model roundtrips (`Step` events)
+    /// each count toward the grace period, so a finished plan does not outlive
+    /// the long tool-call run that produced it.
+    #[tokio::test]
+    async fn closed_todos_age_per_turn_not_per_run() {
+        let mut app = test_app();
+        app.todos
+            .init(vec![crate::core::agent::todo::TodoPhase {
+                name: String::new(),
+                tasks: vec![todo_item("a")],
+            }])
+            .unwrap();
+        app.todos
+            .done(crate::core::agent::todo::Target::All)
+            .unwrap();
+
+        // Three roundtrips inside the run that finished the list: the counter
+        // climbs per turn, and once it passes the cutoff the list drops even
+        // though no new run kicked off.
+        for _ in 1..=super::TODO_KEEP_CLOSED_TURNS {
+            app.apply(StreamEvent::Step { index: 1, max: 8 });
+            age_closed_todos(&mut app).await;
+        }
+        assert!(!app.todos.is_empty(), "must survive the full grace period");
+
+        app.apply(StreamEvent::Step { index: 1, max: 8 });
+        age_closed_todos(&mut app).await;
+        assert!(app.todos.is_empty(), "dropped mid-run after the grace period");
     }
 
     #[test]
@@ -10063,6 +14675,41 @@ mod tests {
         assert!(text[0].contains("Preparing bash"), "got {text:?}");
     }
 
+    /// A path-carrying tool that isn't `write` must be named as itself.
+    #[test]
+    fn starting_throbber_names_the_actual_tool() {
+        for name in ["read", "edit", "list"] {
+            let mut call = super::StartingCall::new("c1".into(), name.into());
+            call.args = r#"{"path":"src/main.rs"#.into();
+            let text: Vec<String> = starting_call_lines(&mut call, "⠋")
+                .iter()
+                .map(line_text)
+                .collect();
+            assert_eq!(text.len(), 1);
+            assert!(
+                text[0].contains(&format!("Preparing {name}: src/main.rs")),
+                "got {text:?}"
+            );
+            assert!(!text[0].contains("write"), "wrong tool named: {text:?}");
+        }
+    }
+
+    #[test]
+    fn stream_error_clears_the_preparing_throbber() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "c1".into(),
+            name: "write".into(),
+        });
+        assert!(!app.starting.is_empty());
+        app.on_error("stream".into(), "connection reset".into());
+        assert!(
+            app.starting.is_empty(),
+            "an aborted run leaves a throbber naming a tool that never ran"
+        );
+    }
+
     /// The deltas have to actually reach the call they belong to.
     #[test]
     fn args_deltas_accumulate_onto_the_starting_call() {
@@ -10096,7 +14743,7 @@ mod tests {
     async fn help_lists_every_keybinding() {
         let mut app = test_app();
         run_command(&mut app, "help").await;
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         for (keys, description) in KEY_BINDINGS {
             assert!(text.contains(keys), "missing keys {keys:?} in: {text}");
             assert!(
@@ -10127,11 +14774,12 @@ mod tests {
         for (label, setup) in states {
             setup(&mut app);
             let rows = render_rows(&mut app, 80, 12);
-            // The footer is the last row: ... input, path line, footer.
-            let footer_row = rows.last().expect("non-empty render").trim();
+            // The dock is the last row: location on the left, hints on the
+            // right. Idle contributes no hints, so only the location shows.
+            let dock = rows.last().expect("non-empty render").trim();
             assert!(
-                footer_row.is_empty(),
-                "{label}: idle footer should be blank, got {footer_row:?}"
+                dock.starts_with("📂") && !dock.contains("Ctrl-"),
+                "{label}: idle dock should carry no cheat sheet, got {dock:?}"
             );
         }
     }
@@ -10143,21 +14791,28 @@ mod tests {
         let mut app = test_app();
         app.detail = "stop_reason=stop".into();
         let rows = render_rows(&mut app, 80, 12);
-        assert_eq!(rows.last().unwrap().trim_end(), " stop_reason=stop");
+        let dock = rows.last().unwrap();
+        assert!(dock.trim_end().ends_with("stop_reason=stop"), "{dock:?}");
+        assert!(dock.contains("/tmp/repo"), "location keeps its place: {dock:?}");
     }
 
-    /// Working dir + branch sit below the input, directly above the status
-    /// footer -- not split across the top and bottom of the screen.
+    /// Working dir + branch share the single dock row below the input with the
+    /// key hints -- not split across the top and bottom of the screen, and not
+    /// spending a row of their own.
     #[test]
-    fn path_line_sits_below_the_input() {
+    fn path_shares_the_dock_row_with_the_hints() {
         let mut app = test_app();
         app.git_branch = Some("goal/general-agent".into());
-        let rows = render_rows(&mut app, 80, 12);
-        let path_row = rows.len() - 2;
+        app.status = Status::Running;
+        let rows = render_rows(&mut app, 100, 12);
+        let dock = rows.last().expect("non-empty render");
         assert!(
-            rows[path_row].contains("/tmp/repo") && rows[path_row].contains("goal/general-agent"),
-            "expected dir+branch just above the footer, got {:?}",
-            rows[path_row]
+            dock.contains("/tmp/repo") && dock.contains("goal/general-agent"),
+            "expected dir+branch on the dock row, got {dock:?}"
+        );
+        assert!(
+            dock.contains("cancel") && dock.contains("scroll"),
+            "hints share the same row: {dock:?}"
         );
         // Nothing but the header above the transcript any more.
         assert!(
@@ -10226,7 +14881,7 @@ mod tests {
         app.goal = Some(crate::core::agent::goal::GoalState::new("x"));
         run_command(&mut app, "goal clear").await;
         assert!(app.goal.is_none());
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("goal cleared"), "missing note: {text}");
     }
 
@@ -10235,7 +14890,7 @@ mod tests {
         let mut app = test_app();
         run_command(&mut app, "goal clear").await;
         assert!(app.goal.is_none());
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("no active goal"), "missing note: {text}");
     }
 
@@ -10247,7 +14902,7 @@ mod tests {
         goal.last_reason = "two files still modified".into();
         app.goal = Some(goal);
         run_command(&mut app, "goal").await;
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("make git status clean"), "condition: {text}");
         assert!(text.contains("turns: 3"), "turn count: {text}");
         assert!(text.contains("two files still modified"), "reason: {text}");
@@ -10257,7 +14912,7 @@ mod tests {
     async fn goal_status_with_no_goal_notes() {
         let mut app = test_app();
         run_command(&mut app, "goal").await;
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("no active goal"), "missing note: {text}");
     }
 
@@ -10319,7 +14974,7 @@ mod tests {
 
         let mut restored = test_app();
         restore_goal(&mut restored, Some(&meta));
-        let g = restored.goal.expect("goal restored");
+        let g = restored.goal.clone().expect("goal restored");
         assert_eq!(g.condition, "tests pass");
         assert_eq!(g.turns, 2);
         assert_eq!(g.last_reason, "one failing");
@@ -10371,7 +15026,7 @@ mod tests {
         app.status = Status::Running;
         run_command(&mut app, "plan").await;
         assert_eq!(app.run_mode, RunMode::Normal, "must not switch mid-turn");
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("only settable while idle"), "note: {text}");
     }
 
@@ -10382,7 +15037,7 @@ mod tests {
         run_command(&mut app, "plan make a html cat slide. use 3 subagents to research").await;
         assert_eq!(app.run_mode, RunMode::Plan, "text arg must also enter plan mode");
         assert_eq!(app.status, Status::Running, "seeded text must start a turn");
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(
             text.contains("make a html cat slide"),
             "seeded text must render as the user's message: {text}"
@@ -10397,7 +15052,7 @@ mod tests {
         run_command(&mut app, "plan investigate the auth module").await;
         assert_eq!(app.run_mode, RunMode::Plan);
         assert_eq!(app.status, Status::Running);
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("investigate the auth module"), "{text}");
     }
 
@@ -10470,7 +15125,7 @@ mod tests {
         assert!(injected.contains("unfinished todos"), "got: {injected}");
         assert!(injected.contains("t1") && injected.contains("t2"));
         // The reminder is hidden: no user-authored `› ` row in the transcript.
-        let rows: String = app.transcript.iter().map(line_text).collect();
+        let rows: String = app.transcript.iter().map(row_text).collect();
         assert!(!rows.contains("› "), "reminder must not render as a user row");
     }
 
@@ -10649,10 +15304,9 @@ mod tests {
     }
 
     #[test]
-    fn single_phase_todo_hud_renders_tree_lines() {
+    fn single_phase_plan_column_lists_its_tasks() {
         use crate::core::agent::todo::TodoStatus::*;
-        let mut app = test_app();
-        app.todos = todos_from(vec![(
+        let todos = todos_from(vec![(
             "only",
             vec![
                 ("alpha", InProgress),
@@ -10660,24 +15314,25 @@ mod tests {
                 ("gamma", Completed),
             ],
         )]);
-        let lines: Vec<String> = super::todo_hud(&app).iter().map(line_text).collect();
-        // Root row: `Todos` + hint, no phase-count suffix for a single phase.
-        assert!(lines[0].contains("Todos"), "{lines:?}");
+        let lines: Vec<String> = super::todo_column(&todos, 60, 8)
+            .iter()
+            .map(line_text)
+            .collect();
+        // Head line: progress plus the hint that opens the editor. A single
+        // phase has no idx/count, and its name is not worth a row.
+        assert!(lines[0].contains("Todos · 1/3"), "{lines:?}");
         assert!(lines[0].contains("/todo"), "{lines:?}");
-        assert!(!lines[0].contains(" · "), "single phase has no idx/count: {lines:?}");
-        // No redundant phase header: tasks nest directly under the root.
         assert!(!lines.iter().any(|l| l.contains("only")), "{lines:?}");
-        // Glyphs per status and connectors: non-last `├─`, last `└─`.
-        assert!(lines[1].contains("├─") && lines[1].contains("☐ alpha"), "{lines:?}");
-        assert!(lines[2].contains("├─") && lines[2].contains("☐ beta"), "{lines:?}");
-        assert!(lines[3].contains("└─") && lines[3].contains("☑ gamma"), "{lines:?}");
+        assert!(lines[1].contains("☐ alpha"), "{lines:?}");
+        assert!(lines[2].contains("☐ beta"), "{lines:?}");
+        assert!(lines[3].contains("☑ gamma"), "{lines:?}");
     }
 
-    /// The todo HUD belongs to the input dock: it must render ABOVE the
-    /// horizontal rule that separates the transcript from the input, not
-    /// stranded between that rule and the prompt.
+    /// The panel belongs to the input dock: it must render ABOVE the horizontal
+    /// rule that separates the transcript from the input, not stranded between
+    /// that rule and the prompt.
     #[test]
-    fn todo_hud_sits_above_the_input_separator_rule() {
+    fn status_panel_sits_above_the_input_separator_rule() {
         use crate::core::agent::todo::TodoStatus::*;
         let mut app = test_app();
         app.todos = todos_from(vec![("only", vec![("alpha", InProgress)])]);
@@ -10696,7 +15351,7 @@ mod tests {
 
         assert!(
             todo_row < rule_row,
-            "todos must be above the rule (todos={todo_row}, rule={rule_row}): {rows:#?}"
+            "the panel must be above the rule (todos={todo_row}, rule={rule_row}): {rows:#?}"
         );
         assert!(
             rule_row < input_row,
@@ -10704,8 +15359,8 @@ mod tests {
         );
     }
 
-    /// A todo-free session keeps the original look: one rule directly above the
-    /// input, with no leftover blank row where the HUD would have been.
+    /// A session with nothing live keeps the original look: one rule directly
+    /// above the input, with no leftover blank row where the panel would be.
     #[test]
     fn separator_rule_hugs_the_input_when_there_are_no_todos() {
         let mut app = test_app();
@@ -10727,38 +15382,40 @@ mod tests {
         );
     }
 
+    /// Only the phase in flight spends rows on its tasks; the head line already
+    /// names it and counts the others.
     #[test]
-    fn multi_phase_todo_hud_collapses_inactive_phases() {
+    fn multi_phase_plan_column_expands_only_the_active_phase() {
         use crate::core::agent::todo::TodoStatus::*;
-        let mut app = test_app();
-        app.todos = todos_from(vec![
+        let todos = todos_from(vec![
             ("backend", vec![("scaffold", Completed), ("routes", InProgress)]),
             ("frontend", vec![("ui", Pending), ("polish", Pending)]),
         ]);
-        let hud = super::todo_hud(&app);
-        let lines: Vec<String> = hud.iter().map(line_text).collect();
-        // Root carries the active-phase/count suffix when multi-phase.
-        assert!(lines[0].contains("Todos") && lines[0].contains("· 1/2"), "{lines:?}");
-        // Each phase gets a connected header with its own done/total.
-        assert!(lines.iter().any(|l| l.contains("backend") && l.contains("· 1/2")), "{lines:?}");
-        assert!(lines.iter().any(|l| l.contains("frontend") && l.contains("· 0/2")), "{lines:?}");
-        // Active phase (backend) expands its tasks; inactive phase collapses.
+        let lines: Vec<String> = super::todo_column(&todos, 60, 8)
+            .iter()
+            .map(line_text)
+            .collect();
+        assert!(
+            lines[0].contains("Todos · 1/2") && lines[0].contains("backend 1/2"),
+            "head names the phase and both progressions: {lines:?}"
+        );
         assert!(lines.iter().any(|l| l.contains("routes")), "active tasks shown: {lines:?}");
-        assert!(!lines.iter().any(|l| l.contains("ui") || l.contains("polish")),
-            "inactive phase tasks stay collapsed: {lines:?}");
+        assert!(
+            !lines.iter().any(|l| l.contains("ui") || l.contains("polish")),
+            "inactive phase costs no rows: {lines:?}"
+        );
     }
 
     #[test]
     fn completed_and_abandoned_todos_render_distinctly() {
         use crate::core::agent::todo::TodoStatus::*;
-        let mut app = test_app();
-        app.todos = todos_from(vec![(
+        let todos = todos_from(vec![(
             "only",
             vec![("shipped", Completed), ("dropped", Abandoned)],
         )]);
-        let hud = super::todo_hud(&app);
-        let done = hud.iter().find(|l| line_text(l).contains("shipped")).unwrap();
-        let gone = hud.iter().find(|l| line_text(l).contains("dropped")).unwrap();
+        let col = super::todo_column(&todos, 60, 8);
+        let done = col.iter().find(|l| line_text(l).contains("shipped")).unwrap();
+        let gone = col.iter().find(|l| line_text(l).contains("dropped")).unwrap();
         // Completed: checked glyph + strikethrough.
         assert!(line_text(done).contains("☑"), "{:?}", line_text(done));
         assert!(crossed_out(done), "completed is struck through");
@@ -10771,37 +15428,300 @@ mod tests {
         );
     }
 
-    /// `draw` hides the HUD (reserves 0 layout rows) exactly when the picker is
-    /// open or there are no todos; this mirrors that same guard directly rather
-    /// than through a dedicated height helper, since `draw` now builds the HUD
-    /// once and sizes the layout from its own line count (see `draw`'s
-    /// `todo_lines` local).
-    fn todo_hud_height(app: &App) -> usize {
-        if app.picker.is_some() || app.todos.is_empty() {
-            0
-        } else {
-            super::todo_hud(app).len()
+    /// Folded reasoning puts nothing on screen, so the badge has to carry the
+    /// motion: a crest sweeps the word, one character per spinner frame, and
+    /// wraps back to the start after a pause.
+    #[test]
+    fn thinking_badge_shimmers_across_its_frames() {
+        use ratatui::style::{Modifier, Style};
+        let palette = [
+            Style::new().yellow().bold(),
+            Style::new().yellow(),
+            Style::new().yellow().dim(),
+        ];
+        let crest_at = |frame: usize| {
+            let spans = super::shimmer_spans("thinking", palette, frame);
+            // The text is intact and unmoved at every frame; only style changes.
+            let text: String = spans.iter().map(|s| s.content.as_ref()).collect::<String>();
+            assert_eq!(text, "thinking", "frame {frame} must not move the label");
+            spans
+                .iter()
+                .position(|s| s.style.add_modifier.contains(Modifier::BOLD))
+        };
+
+        assert_eq!(crest_at(0), Some(0));
+        assert_eq!(crest_at(3), Some(3), "the crest advances one char per frame");
+        // Past the end of the word the crest is off-screen (the pause), then
+        // the cycle restarts.
+        assert_eq!(crest_at(8), None, "pause between sweeps");
+        assert_eq!(crest_at(8 + super::SHIMMER_PAUSE), Some(0), "sweep restarts");
+    }
+
+    /// The animation is scoped to the state that needs it: a folded, streaming
+    /// reasoning block. Everything else keeps its flat badge.
+    #[test]
+    fn only_folded_live_reasoning_animates_the_badge() {
+        let mut app = test_app();
+        assert!(!app.is_thinking(), "idle");
+        app.submit_user("hi".into());
+        assert!(!app.is_thinking(), "running, but nothing thinking yet");
+
+        app.apply(StreamEvent::Token {
+            text: "<think>pondering".into(),
+        });
+        assert!(app.is_thinking(), "open reasoning block");
+        let rows = render_rows(&mut app, 60, 12);
+        assert!(rows[0].contains("[thinking]"), "label intact: {:?}", rows[0]);
+
+        app.apply(StreamEvent::Token {
+            text: "</think>done".into(),
+        });
+        assert!(!app.is_thinking(), "the block closed");
+
+        // With reasoning shown inline the transcript itself is moving, so the
+        // badge stays flat.
+        app.show_reasoning = true;
+        app.apply(StreamEvent::Token {
+            text: "<think>more".into(),
+        });
+        assert!(!app.is_thinking(), "unfolded reasoning needs no badge motion");
+    }
+
+    /// Folded reasoning summaries and tool rows are one run of activity: a turn
+    /// that alternates them used to spend a blank line on every switch.
+    #[test]
+    fn reasoning_and_tool_rows_share_one_band() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "<think>weighing options</think>".into(),
+        });
+        app.flush_assistant();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "x" }),
+        });
+        assert!(
+            !app.transcript.iter().any(Row::is_blank),
+            "no separator between a reasoning summary and a tool row"
+        );
+
+        // Prose is a different band and still gets its air.
+        app.apply(StreamEvent::Token { text: "an answer".into() });
+        app.flush_assistant();
+        assert!(
+            app.transcript.iter().any(Row::is_blank),
+            "prose is still separated from the activity above it"
+        );
+    }
+
+    /// The borderless input box used to reserve two blank rows for borders it
+    /// does not draw. One row of air above the dock is all it needs.
+    #[test]
+    fn input_box_reserves_one_row_of_air() {
+        let mut app = test_app();
+        let rows = render_rows(&mut app, 80, 12);
+        let input = rows
+            .iter()
+            .position(|r| r.contains("Type here to chat with agent"))
+            .expect("input");
+        assert_eq!(input + 3, rows.len(), "input, one blank, then the dock: {rows:?}");
+        assert!(rows[input + 1].trim().is_empty());
+        assert!(rows.last().unwrap().contains("/tmp/repo"));
+    }
+
+    /// The pin answers "where are we now" in one line, and carries the hint
+    /// that opens the editor.
+    #[test]
+    fn todo_pin_reports_phase_and_progress() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let multi = todos_from(vec![
+            ("backend", vec![("scaffold", Completed), ("routes", InProgress)]),
+            ("frontend", vec![("ui", Pending)]),
+        ]);
+        let text = line_text(&super::todo_pin(&multi));
+        assert!(text.contains("Todos"), "{text}");
+        assert!(text.contains("1/2"), "phase position: {text}");
+        assert!(text.contains("backend 1/2"), "active phase progress: {text}");
+        assert!(text.contains("/todo"), "editor hint: {text}");
+
+        let single = todos_from(vec![("only", vec![("a", Completed), ("b", Pending)])]);
+        let text = line_text(&super::todo_pin(&single));
+        assert!(text.contains("Todos · 1/2"), "single phase progress: {text}");
+    }
+
+    /// A child's panel normally closes on its own `SubagentEnd`. A run that
+    /// ends without one -- an upstream error mid-fan-out, a `Done` that beats
+    /// the child's own event -- used to strand the block: it kept spinning in
+    /// the dock, on an idle session, until the next `/clear`.
+    #[test]
+    fn run_end_closes_panels_no_subagent_end_ever_closed() {
+        for finish in ["done", "error"] {
+            let mut app = test_app();
+            app.submit_user("go".into());
+            start_subagent(&mut app, "r0", "alpha");
+            subagent_event(
+                &mut app,
+                "r0",
+                "alpha",
+                StreamEvent::ToolCall {
+                    id: "c1".into(),
+                    name: "read".into(),
+                    args: json!({ "path": "a.rs" }),
+                },
+            );
+            assert_eq!(app.subagents.len(), 1, "{finish}: panel open");
+
+            match finish {
+                "done" => app.on_done("stop".into(), None),
+                _ => app.on_error("upstream".into(), "boom".into()),
+            }
+
+            assert!(app.subagents.is_empty(), "{finish}: live panel must close");
+            let rows = render_rows(&mut app, 100, 24);
+            assert!(
+                !rows.iter().any(|r| r.contains("1 agent")),
+                "{finish}: panel must be gone: {rows:?}"
+            );
+            // Not silently: the child did work, so it gets the same kind of
+            // summary row a clean end would leave, marked unfinished.
+            assert!(
+                rows.iter().any(|r| r.contains("subagent alpha interrupted")),
+                "{finish}: unfinished child must be accounted for: {rows:?}"
+            );
         }
     }
 
+    /// A plan with every task closed stops being live state: the dock drops it
+    /// after `TODO_HIDE_AFTER`, giving the rows back to the conversation. The
+    /// list itself survives -- `/todo` still opens it, and the turn-based aging
+    /// still owns clearing it.
     #[test]
-    fn todo_hud_height_zero_when_hidden_and_bounded_otherwise() {
+    fn finished_plan_hides_from_the_dock_after_the_timeout() {
         use crate::core::agent::todo::TodoStatus::*;
-        // Empty list: no rows reserved.
         let mut app = test_app();
-        assert_eq!(todo_hud_height(&app), 0);
-        // Non-empty: at least the root plus a task, capped under MAX_TODO_ROWS.
-        app.todos = todos_from(vec![("only", vec![("t", InProgress)])]);
-        let h = todo_hud_height(&app);
-        assert!(h >= 2 && h <= super::MAX_TODO_ROWS, "bounded height, got {h}");
-        // A picker overlay hides the HUD entirely.
-        super::open_todo_picker(&mut app);
-        assert_eq!(todo_hud_height(&app), 0, "picker suppresses the HUD");
-        // A huge single phase stays clamped at the ceiling.
+        app.todos = todos_from(vec![("only", vec![("ship it", Completed)])]);
+
+        // Closed, but only just: still shown, and the deadline is now armed.
+        let rows = render_rows(&mut app, 80, 20);
+        assert!(rows.iter().any(|r| r.contains("Todos")), "{rows:?}");
+        let closed = app.todos_closed_at.expect("deadline armed on a closed plan");
+
+        // Past the timeout: the dock gives the rows back, the list stays.
+        app.todos_closed_at = closed.checked_sub(super::TODO_HIDE_AFTER);
+        assert!(app.todos_expired());
+        let rows = render_rows(&mut app, 80, 20);
+        assert!(!rows.iter().any(|r| r.contains("Todos")), "{rows:?}");
+        assert!(!app.todos.is_empty(), "the plan itself is untouched");
+
+        // Reopened work brings it straight back, deadline cleared.
+        app.todos = todos_from(vec![("only", vec![("ship it", InProgress)])]);
+        let rows = render_rows(&mut app, 80, 20);
+        assert!(app.todos_closed_at.is_none(), "deadline disarmed");
+        assert!(rows.iter().any(|r| r.contains("Todos")), "{rows:?}");
+    }
+
+    /// The timeout is wall-clock, not turn-based: an open plan is never hidden
+    /// however long the model sits on it.
+    #[test]
+    fn open_plan_is_never_hidden() {
+        use crate::core::agent::todo::TodoStatus::*;
         let mut app = test_app();
-        let many: Vec<(&str, _)> = (0..50).map(|_| ("x", Pending)).collect();
+        app.todos = todos_from(vec![("only", vec![("done", Completed), ("open", Pending)])]);
+        render_rows(&mut app, 80, 20);
+        assert!(app.todos_closed_at.is_none(), "open work arms nothing");
+        assert!(!app.todos_expired());
+    }
+
+    /// A wide terminal sets the plan and the fan-out side by side, each in its
+    /// own half, so the panel spends rows once instead of twice.
+    #[test]
+    fn wide_panel_sets_the_columns_side_by_side() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        app.todos = todos_from(vec![("only", vec![("wire routes", InProgress)])]);
+        start_subagent(&mut app, "r0", "alpha");
+        let rows = render_rows(&mut app, 120, 24);
+        let head = rows
+            .iter()
+            .find(|r| r.contains("Todos"))
+            .expect("panel head");
+        assert!(
+            head.contains("│") && head.contains("1 agent"),
+            "both columns share the row: {head:?}"
+        );
+        assert!(
+            head.find("Todos") < head.find("1 agent"),
+            "plan on the left, agents on the right: {head:?}"
+        );
+    }
+
+    /// Too narrow to split: the columns stack rather than being squeezed into
+    /// halves too thin to hold a task or an agent name.
+    #[test]
+    fn narrow_panel_stacks_the_columns() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        app.todos = todos_from(vec![("only", vec![("wire routes", InProgress)])]);
+        start_subagent(&mut app, "r0", "alpha");
+        let rows = render_rows(&mut app, super::PANEL_SPLIT_MIN_WIDTH - 1, 24);
+        assert!(
+            !rows.iter().any(|r| r.contains("│")),
+            "no divider when stacked: {rows:?}"
+        );
+        let todos = rows.iter().position(|r| r.contains("Todos")).expect("plan");
+        let agents = rows.iter().position(|r| r.contains("≡")).expect("agents");
+        assert!(todos < agents, "plan first when stacked: {rows:?}");
+    }
+
+    /// A short terminal spends its rows on the conversation: the panel shrinks
+    /// first, eliding its own tail, and disappears before the transcript does.
+    #[test]
+    fn short_terminal_shrinks_the_panel_before_the_transcript() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        let many: Vec<(&str, _)> = (0..12).map(|_| ("a task", Pending)).collect();
         app.todos = todos_from(vec![("only", many)]);
-        assert_eq!(todo_hud_height(&app), super::MAX_TODO_ROWS);
+
+        // Roomy: capped at the panel ceiling, never more.
+        assert_eq!(super::panel_budget(40, 2), super::PANEL_MAX_ROWS);
+        // Squeezed: only what is left after the fixed rows and the transcript
+        // floor, and nothing at all once even that is gone.
+        assert_eq!(super::panel_budget(12, 2), 3);
+        assert_eq!(super::panel_budget(9, 2), 0);
+
+        let rows = render_rows(&mut app, 80, 12);
+        let panel: Vec<&String> = rows
+            .iter()
+            .filter(|r| r.contains("Todos") || r.contains("a task") || r.contains("more"))
+            .collect();
+        assert!(panel.len() <= 3, "panel clamped to its budget: {rows:?}");
+        assert!(
+            rows.iter().any(|r| r.contains("+11 more")),
+            "the tail is elided, not dropped silently: {rows:?}"
+        );
+
+        // No room at all: the panel yields entirely and the dock still renders.
+        let rows = render_rows(&mut app, 80, 9);
+        assert!(!rows.iter().any(|r| r.contains("Todos")), "{rows:?}");
+        assert!(rows.last().unwrap().contains("/tmp/repo"), "{rows:?}");
+    }
+
+    /// Many parallel agents cannot push the plan off the screen: the column
+    /// shows what fits and counts the rest.
+    #[test]
+    fn crowded_fan_out_elides_with_a_running_count() {
+        let mut app = test_app();
+        for i in 0..9 {
+            start_subagent(&mut app, &format!("r{i}"), &format!("agent-{i}"));
+        }
+        let rows = render_rows(&mut app, 100, 24);
+        let shown = rows.iter().filter(|r| r.contains("agent-")).count();
+        assert!(shown < 9, "not every agent fits: {rows:?}");
+        assert!(
+            rows.iter().any(|r| r.contains("more running")),
+            "the rest are counted: {rows:?}"
+        );
     }
 
     #[tokio::test]
@@ -10905,7 +15825,7 @@ mod tests {
         // Atomic handoff: no staged plan => stay in Plan, no continuation.
         assert_eq!(app.run_mode, RunMode::Plan);
         assert!(app.message_queue.is_empty());
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("no plan staged"), "note: {text}");
     }
 
@@ -10999,7 +15919,7 @@ mod tests {
         assert!(app.history.is_empty());
         assert!(app.thread_id.is_none(), "must detach from the saved thread");
         assert_eq!(app.tokens, 0);
-        let text: String = app.transcript.iter().map(line_text).collect();
+        let text: String = app.transcript.iter().map(row_text).collect();
         assert!(!text.contains("old content"), "transcript not reset: {text}");
         assert!(text.contains("started a new session"), "missing note: {text}");
     }
@@ -11199,6 +16119,213 @@ mod tests {
         assert!(!app.should_auto_compact());
     }
 
+    fn overflow_error() -> String {
+        format!(
+            "[{}] Upstream returned HTTP 400: context_length_exceeded",
+            crate::core::agent::upstream::CONTEXT_OVERFLOW_MARKER
+        )
+    }
+
+    fn app_with_history(n: usize) -> TestApp {
+        let mut app = test_app();
+        for i in 0..n {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        app
+    }
+
+    #[test]
+    fn context_overflow_error_queues_a_compaction_and_retry() {
+        let mut app = app_with_history(6);
+        app.on_error("upstream_error".into(), overflow_error());
+        assert_eq!(
+            app.compact_request,
+            Some(CompactKind::Auto),
+            "an overflow must queue a compaction instead of going idle"
+        );
+        assert!(app.retry_after_compact, "the turn must be retried");
+        assert!(!app.want_start, "the retry waits for the compaction to land");
+    }
+
+    #[test]
+    fn ordinary_error_does_not_queue_a_compaction() {
+        let mut app = app_with_history(6);
+        app.on_error("upstream_error".into(), "invalid api key".into());
+        assert_eq!(app.compact_request, None);
+        assert!(!app.retry_after_compact);
+    }
+
+    #[test]
+    fn overflow_on_a_short_history_does_not_retry() {
+        // Nothing to compact: retrying would just re-send the same request.
+        let mut app = app_with_history(2);
+        app.on_error("upstream_error".into(), overflow_error());
+        assert_eq!(app.compact_request, None);
+        assert!(!app.retry_after_compact);
+    }
+
+    #[test]
+    fn compaction_after_an_overflow_restarts_the_turn() {
+        let mut app = app_with_history(6);
+        app.on_error("upstream_error".into(), overflow_error());
+        app.compacting = app.compact_request.take();
+        let compacted = vec![serde_json::json!({ "role": "system", "content": "summary" })];
+        finish_compaction(&mut app, Ok(compacted), 7);
+        assert!(app.want_start, "a landed compaction resumes the errored turn");
+        assert!(!app.retry_after_compact);
+        assert_eq!(app.status, Status::Running);
+    }
+
+    #[test]
+    fn a_no_op_compaction_after_an_overflow_does_not_retry() {
+        // Compaction could not shrink the history, so a retry would overflow
+        // again on exactly the same request.
+        let mut app = app_with_history(6);
+        app.on_error("upstream_error".into(), overflow_error());
+        app.compacting = app.compact_request.take();
+        let unchanged = app.history.clone();
+        let base = unchanged.len();
+        finish_compaction(&mut app, Ok(unchanged), base);
+        assert!(!app.want_start);
+        assert!(!app.retry_after_compact);
+    }
+
+    #[test]
+    fn repeated_overflows_stop_retrying_within_one_turn() {
+        let mut app = app_with_history(6);
+        for _ in 0..MAX_OVERFLOW_RETRIES {
+            app.on_error("upstream_error".into(), overflow_error());
+            assert!(app.retry_after_compact);
+            app.compacting = app.compact_request.take();
+            let shorter = app.history[..app.history.len() - 1].to_vec();
+            let base = app.history.len();
+            finish_compaction(&mut app, Ok(shorter), base);
+        }
+        app.on_error("upstream_error".into(), overflow_error());
+        assert_eq!(
+            app.compact_request, None,
+            "the retry budget is spent for this turn"
+        );
+        assert!(!app.retry_after_compact);
+    }
+
+    #[test]
+    fn a_new_user_turn_rearms_the_overflow_retry_budget() {
+        let mut app = app_with_history(6);
+        app.overflow_retries = MAX_OVERFLOW_RETRIES;
+        app.submit_user("next".into());
+        assert_eq!(app.overflow_retries, 0);
+    }
+
+    fn usage_of(prompt: u64, completion: u64) -> Usage {
+        Usage {
+            prompt_tokens: Some(prompt),
+            completion_tokens: Some(completion),
+            total_tokens: Some(prompt + completion),
+        }
+    }
+
+    #[test]
+    fn estimate_counts_tool_call_arguments() {
+        // Arguments live at `function.arguments`; reading `arguments` off the
+        // call itself scored every tool-heavy history as empty.
+        let args = "x".repeat(4_000);
+        let with_calls = vec![serde_json::json!({
+            "role": "assistant",
+            "content": serde_json::Value::Null,
+            "tool_calls": [{
+                "id": "c1",
+                "function": { "name": "bash", "arguments": args }
+            }]
+        })];
+        assert!(
+            estimate_token_count(&with_calls) >= 1_000,
+            "tool-call arguments must be counted: {}",
+            estimate_token_count(&with_calls)
+        );
+    }
+
+    #[test]
+    fn estimate_counts_multimodal_text_parts() {
+        let msgs = vec![serde_json::json!({
+            "role": "user",
+            "content": [{ "type": "text", "text": "y".repeat(4_000) }]
+        })];
+        assert!(estimate_token_count(&msgs) >= 1_000);
+    }
+
+    #[test]
+    fn an_accepted_prompt_above_the_window_stops_trusting_it() {
+        let mut app = test_app();
+        assert!(app.context_window_trusted);
+        app.apply(StreamEvent::TurnUsage {
+            usage: usage_of(200_000, 100),
+        });
+        assert!(
+            !app.context_window_trusted,
+            "a prompt the provider accepted proves the configured window wrong"
+        );
+        // The gauge has no denominator it can trust, so it must not divide.
+        assert!(!app.should_auto_compact(), "and it must not compact on it");
+    }
+
+    #[test]
+    fn a_prompt_within_the_window_keeps_it_trusted() {
+        let mut app = test_app();
+        app.apply(StreamEvent::TurnUsage {
+            usage: usage_of(50_000, 100),
+        });
+        assert!(app.context_window_trusted);
+    }
+
+    #[test]
+    fn header_drops_the_denominator_once_the_window_is_untrusted() {
+        let mut app = test_app();
+        app.apply(StreamEvent::TurnUsage {
+            usage: usage_of(200_000, 100),
+        });
+        let text: String = header_spans(&app)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect::<String>();
+        assert!(text.contains("ctx 200K"), "usage still shown: {text}");
+        assert!(
+            !text.contains("/128K"),
+            "a disproven window must not be a denominator: {text}"
+        );
+    }
+
+    #[test]
+    fn subagent_share_is_suppressed_when_the_window_is_untrusted() {
+        let mut app = test_app();
+        app.subagents.push(SubagentPanel {
+            run_id: "r".into(),
+            name: "alpha".into(),
+            task: "t".into(),
+            calls: Vec::new(),
+            requests: 1,
+            prompt_tokens: 200_000,
+            active: None,
+            queued: false,
+            waiting: 0,
+        });
+        app.apply(StreamEvent::TurnUsage {
+            usage: usage_of(200_000, 100),
+        });
+        let rows = status_panel(&mut app, 120, 8);
+        let text: String = rows
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect::<String>();
+        assert!(
+            !text.contains('%'),
+            "no share against a wrong window: {text}"
+        );
+    }
+
     #[test]
     fn body_omits_max_tokens_when_unset() {
         let app = test_app();
@@ -11213,8 +16340,354 @@ mod tests {
         let body = app.body();
         assert_eq!(body.get("max_tokens").and_then(|v| v.as_u64()), Some(4096));
     }
+
+    /// The session token budget is the only cap: it is always forwarded, and no
+    /// turn limit is sent at all.
+    #[test]
+    fn body_forwards_session_budget_and_no_turn_cap() {
+        let mut app = test_app();
+        app.max_session_tokens = 64_000;
+        let body = app.body();
+        assert_eq!(
+            body.get("max_session_tokens").and_then(|v| v.as_u64()),
+            Some(64_000)
+        );
+        assert!(body.get("max_turns").is_none());
+    }
+
+    #[test]
+    fn body_flags_goal_mode_only_while_a_goal_runs() {
+        use crate::core::agent::goal::{GoalState, GoalStatus};
+        let mut app = test_app();
+        assert!(app.body().get("goal_mode").is_none());
+
+        app.goal = Some(GoalState::new("ship the release"));
+        assert_eq!(app.body().get("goal_mode").and_then(|v| v.as_bool()), Some(true));
+
+        if let Some(goal) = app.goal.as_mut() {
+            goal.status = GoalStatus::Achieved;
+        }
+        assert!(app.body().get("goal_mode").is_none());
+    }
+
+    /// The splash row's rendered text at `width`, one string per line.
+    fn banner_text(app: &App, width: u16) -> Vec<String> {
+        app.transcript
+            .iter()
+            .flat_map(|row| row.lines(width))
+            .map(|l| l.spans.iter().map(|s| s.content.to_string()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn banner_opens_with_the_wordmark_and_this_sessions_facts() {
+        let mut app = test_app();
+        app.model = "tokamak-1-preview".into();
+        app.git_branch = Some("fix/tui-panel-width".into());
+        app.push_banner("auto-approved inside the OS sandbox", true);
+
+        let text = banner_text(&app, 90);
+        let joined = text.join("\n");
+        assert!(
+            text.iter().any(|l| l.contains(brand::LOGO[0].trim())),
+            "the wordmark is missing:\n{joined}"
+        );
+        // The model is the header's job, not the splash's (it would otherwise
+        // appear twice on the first screen).
+        assert!(!joined.contains("tokamak-1-preview"), "{joined}");
+        assert!(joined.contains("/tmp/repo"), "{joined}");
+        assert!(joined.contains("fix/tui-panel-width"), "{joined}");
+        assert!(joined.contains("auto-approved inside the OS sandbox"), "{joined}");
+        assert!(joined.contains("/help"), "{joined}");
+        assert!(joined.contains("type a message to start"), "{joined}");
+        assert!(
+            joined.contains(super::super::updater::build_version()),
+            "{joined}"
+        );
+    }
+
+    /// `/init` is the first thing a new project wants and is invisible unless
+    /// promoted, so the splash lists it beside `/help`.
+    #[test]
+    fn banner_promotes_init() {
+        let mut app = test_app();
+        app.push_banner("--safe", true);
+        let joined = banner_text(&app, 90).join("\n");
+        assert!(joined.contains("/init"), "{joined}");
+        assert!(joined.contains("onboard this project"), "{joined}");
+    }
+
+    /// The invitation is conditional on the same rule the system prompt uses, so
+    /// an already-onboarded project (its own JAN.md, or an ancestor's) is quiet.
+    #[test]
+    fn init_invitation_tracks_whether_the_project_has_instructions() {
+        let root = std::env::temp_dir().join(format!("jan_init_invite_{}", std::process::id()));
+        let nested = root.join("pkg");
+        std::fs::create_dir_all(&nested).unwrap();
+        assert!(!crate::core::agent::context::has_context_file(&nested));
+        std::fs::write(root.join("JAN.md"), "ROOT_RULES").unwrap();
+        assert!(
+            crate::core::agent::context::has_context_file(&nested),
+            "an ancestor's JAN.md already onboards this project"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_seeded_session_is_not_invited_to_type() {
+        let mut app = test_app();
+        app.push_banner("--safe", false);
+        let joined = banner_text(&app, 90).join("\n");
+        assert!(!joined.contains("type a message to start"), "{joined}");
+        assert!(joined.contains("--safe"), "{joined}");
+    }
+
+    #[test]
+    fn a_narrow_terminal_gets_the_name_instead_of_a_clipped_wordmark() {
+        let mut app = test_app();
+        app.push_banner("--safe", true);
+
+        let wide = banner_text(&app, 90).join("\n");
+        assert!(wide.contains('█'), "{wide}");
+
+        // Same row, re-laid out: the source is data, not rendered lines.
+        let narrow = banner_text(&app, 24);
+        let joined = narrow.join("\n");
+        assert!(!joined.contains('█'), "{joined}");
+        assert!(joined.contains("jan"), "{joined}");
+        for line in &narrow {
+            assert!(
+                line.chars().count() <= 24,
+                "row overflows a 24-column terminal: {line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn header_leads_with_the_model_not_a_name_chip() {
+        let mut app = test_app();
+        app.model = "tokamak-1-preview".into();
+        let top = render_rows(&mut app, 60, 12).remove(0);
+        assert!(
+            top.starts_with(" tokamak-1-preview"),
+            "the name chip is back: {top:?}"
+        );
+        // The freed columns are what let the status survive a 60-column frame.
+        assert!(top.contains("[ready]"), "{top:?}");
+
+        app.model.clear();
+        let top = render_rows(&mut app, 60, 12).remove(0);
+        assert!(top.starts_with(" no model"), "{top:?}");
+    }
+
+    #[test]
+    fn hints_wrap_between_pairs_never_mid_pair() {
+        let pairs = super::BANNER_HINTS;
+        let rows = super::hint_rows(pairs, 30);
+        assert!(rows.len() > 1, "narrow width must wrap");
+        for row in &rows {
+            assert!(row_width(row) <= 30 || row.spans.len() <= 3, "{row:?}");
+        }
+        let all: String = rows
+            .iter()
+            .flat_map(|r| r.spans.iter().map(|s| s.content.to_string()))
+            .collect();
+        for (key, label) in pairs {
+            assert!(all.contains(key), "dropped {key}");
+            assert!(all.contains(label), "dropped {label}");
+        }
+        assert_eq!(super::hint_rows(pairs, 200).len(), 1, "one row when it fits");
+    }
+    /// Spans of the last committed transcript row, as `(text, style)`.
+    fn last_row(app: &App) -> Vec<(String, Style)> {
+        app.transcript
+            .last()
+            .expect("a row")
+            .lines(80)
+            .remove(0)
+            .spans
+            .iter()
+            .map(|s| (s.content.to_string(), s.style))
+            .collect()
+    }
+
+    #[test]
+    fn every_transcript_class_owns_a_distinct_gutter() {
+        let mut app = test_app();
+
+        app.note("conversation cleared");
+        assert_eq!(last_row(&app)[0].0, "\u{2022} ", "system note");
+
+        app.push_user_line("do it", &[]);
+        assert_eq!(last_row(&app)[0].0, "\u{203a} ", "user message");
+
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({"command": "ls"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.finalize_tool_group();
+        assert_eq!(last_row(&app)[0].0, "\u{2502} ", "tool row");
+
+        // Model prose is the one class with no gutter, which is what makes the
+        // others readable as "not the model".
+        app.assistant_buf = "Done.".into();
+        app.flush_assistant();
+        let prose = last_row(&app);
+        assert!(
+            !prose[0].0.starts_with('\u{2022}') && !prose[0].0.starts_with('\u{203a}'),
+            "prose took a gutter: {prose:?}"
+        );
+    }
+
+    #[test]
+    fn severity_colours_the_gutter_and_the_body() {
+        let mut app = test_app();
+
+        app.note("saved");
+        let info = last_row(&app);
+        assert_eq!(info[0].1.fg, Some(Color::LightBlue), "info gutter");
+        assert!(info[1].1.add_modifier.contains(Modifier::DIM), "info body");
+
+        app.system(super::Level::Warn, "finished early");
+        assert_eq!(last_row(&app)[0].1.fg, Some(Color::Yellow));
+
+        app.system(super::Level::Error, "denied: rm -rf /");
+        let err = last_row(&app);
+        assert_eq!(err[0].1.fg, Some(Color::Red));
+        assert!(err[1].1.add_modifier.contains(Modifier::BOLD), "{err:?}");
+
+        // A category with its own glyph keeps it, so the column never carries
+        // two markers.
+        app.system_marked(super::GOAL_GLYPH, super::Level::Good, "goal achieved");
+        let goal = last_row(&app);
+        assert_eq!(goal[0].0, "\u{25ce} ");
+        assert_eq!(goal[0].1.fg, Some(Color::Green));
+    }
+
+    #[tokio::test]
+    async fn probe_blocks() {
+        let mut app = test_app();
+        app.note("conversation cleared");
+        run_command(&mut app, "help").await;
+        for l in render_rows(&mut app, 84, 40) { println!("|{}", l.trim_end()); }
+    }
+
+    /// Every rendered line of the last row, as plain text.
+    fn last_row_lines(app: &App, width: u16) -> Vec<String> {
+        app.transcript
+            .last()
+            .expect("a row")
+            .lines(width)
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.to_string()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn a_wrapped_note_indents_instead_of_repeating_its_marker() {
+        let mut app = test_app();
+        app.note("not signed in - run /login to sign in to Tokamak, or jan config set to configure a provider manually");
+
+        let lines = last_row_lines(&app, 60);
+        assert!(lines.len() > 1, "expected a wrap: {lines:?}");
+        assert!(lines[0].starts_with("\u{2022} "), "{lines:?}");
+        for line in &lines[1..] {
+            assert!(
+                line.starts_with("  ") && !line.starts_with('\u{2022}'),
+                "a continuation must not read as a second note: {line:?}"
+            );
+        }
+        // Wrapped at a space, not mid-word.
+        assert!(
+            lines.iter().all(|l| !l.ends_with("Tokam") && !l.ends_with("provi")),
+            "{lines:?}"
+        );
+        assert!(lines.iter().all(|l| l.chars().count() <= 60), "{lines:?}");
+    }
+
+    #[test]
+    fn a_wrapped_block_body_keeps_its_edge() {
+        let mut app = test_app();
+        app.note("commands:");
+        app.system_detail_text("/plan [exit|text]  Enter read-only plan mode, optionally seeding it with a message");
+
+        let lines = last_row_lines(&app, 50);
+        assert!(lines.len() > 1, "expected a wrap: {lines:?}");
+        for line in &lines {
+            assert!(
+                line.starts_with("\u{2506} "),
+                "the block's left edge breaks on a wrap: {line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn system_rows_relay_out_on_a_resize() {
+        let mut app = test_app();
+        app.system_detail_text("a fairly long block body that has to wrap somewhere sensible");
+        let (wide, narrow) = (last_row_lines(&app, 90), last_row_lines(&app, 30));
+        assert_eq!(wide.len(), 1, "{wide:?}");
+        assert!(narrow.len() > 1, "{narrow:?}");
+    }
+
+
+
+    /// The transcript is laid out on every 50ms tick, so any per-frame work
+    /// proportional to history (rather than to the viewport) compounds into an
+    /// unusable session. `draw` must materialize only the rows on screen.
+    #[test]
+    fn draw_materializes_only_the_visible_rows() {
+        let mut app = test_app();
+        for i in 0..4000 {
+            app.transcript.push(
+                RowKind::Markdown(format!(
+                    "Turn {i}: lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                ))
+                .into(),
+            );
+        }
+        // Warm every row's cache so the count below reflects steady-state
+        // frames, not the first layout at a new width.
+        render_rows(&mut app, 100, 40);
+        super::ROW_CLONES.with(|n| n.set(0));
+        render_rows(&mut app, 100, 40);
+        let cloned = super::ROW_CLONES.with(|n| n.get());
+        assert!(
+            cloned <= 64,
+            "a frame cloned {cloned} rows out of 4000; draw is laying out the \
+             whole transcript instead of the viewport"
+        );
+    }
+
+    /// `row_index` is in wrapped screen coordinates, so a click still maps to
+    /// the row it landed on even when earlier rows wrapped to several lines.
+    #[test]
+    fn click_maps_through_wrapped_rows() {
+        let mut app = test_app();
+        // Wraps to ~4 lines at width 40, so an unwrapped index would drift.
+        app.transcript
+            .push(RowKind::Line(Line::raw("w".repeat(150))).into());
+        for i in 0..5 {
+            app.transcript
+                .push(RowKind::Line(Line::raw(format!("row {i}"))).into());
+        }
+        render_rows(&mut app, 40, 20);
+        let rect = app.transcript_rect;
+        let last = app.transcript.len() - 1;
+        // Bottom-pinned, so the final body row is the last transcript row.
+        let bottom = rect.y + rect.height - 1;
+        super::click_region(&mut app, rect.x + 1, bottom);
+        assert_eq!(
+            app.row_index.get((bottom - rect.y - 1) as usize),
+            Some(&Some(last)),
+            "the last body row must map to the last transcript row"
+        );
+    }
 }
-
-
-
-

@@ -544,6 +544,8 @@ pub(crate) fn is_context_overflow_body(body: &str) -> bool {
         || b.contains("prompt is too long")
         || b.contains("exceeds the maximum number of tokens")
         || b.contains("the request exceeds the available context")
+        || b.contains("exceeds the available context size")
+        || b.contains("exceed_context_size_error")
         || b.contains("exceed context")
         || b.contains("context window")
         || (b.contains("context") && b.contains("too long"))
@@ -1116,6 +1118,11 @@ mod tests {
         assert!(is_context_overflow_body("prompt is too long: 210000 tokens > 200000"));
         assert!(is_context_overflow_body(
             "the request exceeds the available context size"
+        ));
+        assert!(is_context_overflow_body(
+            "{\"error\":{\"code\":400,\"message\":\"request (4267 tokens) exceeds the available \
+             context size (4096 tokens), try increasing it\",\"type\":\"exceed_context_size_error\",\
+             \"n_prompt_tokens\":4267,\"n_ctx\":4096}}"
         ));
         assert!(!is_context_overflow_body("invalid api key"));
         assert!(!is_context_overflow_body("rate limit exceeded"));

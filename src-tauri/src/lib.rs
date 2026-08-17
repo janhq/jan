@@ -198,7 +198,7 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
     use std::sync::atomic::Ordering;
     // Reap any still-running agent bash command trees before we tear down, so
     // no shell (or child it spawned) outlives the app.
-    crate::core::agent::tools::proc::kill_all();
+    tauri_plugin_agent_tools::tools::proc::kill_all();
     let mut emitted = false;
     loop {
         if SHUTTING_DOWN.load(Ordering::SeqCst) {
@@ -263,7 +263,8 @@ pub fn run() {
         .plugin(tauri_plugin_llamacpp::init())
         .plugin(tauri_plugin_vector_db::init())
         .plugin(tauri_plugin_rag::init())
-        .plugin(tauri_plugin_websearch::init());
+        .plugin(tauri_plugin_websearch::init())
+        .plugin(tauri_plugin_agent_tools::init());
 
     #[cfg(feature = "deep-link")]
     {

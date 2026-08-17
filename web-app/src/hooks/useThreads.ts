@@ -8,6 +8,7 @@ import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
+import { cleanupThreadWorkspace } from '@/lib/agentTools'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -56,6 +57,14 @@ const cleanupVectorDB = async (threadId: string) => {
       e
     )
   }
+}
+
+// Everything belonging to a thread that lives outside the thread store: its
+// vector DB collection and its ephemeral agent sandbox. Fire-and-forget, since
+// every caller runs inside a `set` reducer; both log their own failures.
+const cleanupThreadArtifacts = (threadId: string) => {
+  cleanupVectorDB(threadId)
+  cleanupThreadWorkspace(threadId)
 }
 
 export const useThreads = create<ThreadState>()((set, get) => ({
@@ -164,7 +173,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       useAgentMode.getState().removeThread(threadId)
       useChatSessions.getState().removeSession(threadId)
       useAppState.getState().clearThreadState(threadId)
-      cleanupVectorDB(threadId)
+      cleanupThreadArtifacts(threadId)
       getServiceHub().threads().deleteThread(threadId)
 
       return {
@@ -198,9 +207,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
           !state.threads[threadId].metadata?.project
       )
 
-      // Delete threads and clean up their vector DB collections
+      // Delete threads and clean up their out-of-store artifacts
       threadsToDeleteIds.forEach((threadId) => {
-        cleanupVectorDB(threadId)
+        cleanupThreadArtifacts(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
 
@@ -234,7 +243,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useAgentMode.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupVectorDB(threadId)
+        cleanupThreadArtifacts(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
 
@@ -260,7 +269,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       threadsToDeleteIds.forEach((threadId) => {
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupVectorDB(threadId)
+        cleanupThreadArtifacts(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
 

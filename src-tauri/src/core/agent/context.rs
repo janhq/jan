@@ -7,13 +7,12 @@ use std::path::Path;
 use chrono::Local;
 
 use crate::core::agent::git;
-use crate::core::agent::skills;
+use tauri_plugin_agent_tools::{memory, skills, workspace};
 
 /// Default persona used only when no assistant instructions are supplied, so a
 /// bare project run still opens with a role statement instead of "# Working
 /// Directory". An assistant's own instructions replace this entirely.
-const DEFAULT_IDENTITY: &str = "You are Jan, an AI coding agent. You help users by reading files, \
-running commands, editing code, and writing new files.";
+const DEFAULT_IDENTITY: &str = "You're currently running on Jan agent harness";
 
 /// Always-on behavioral guidelines. Kept short and model-facing.
 const GUIDELINES: &str =
@@ -25,25 +24,23 @@ missing output: when output is cut it always carries an explicit `[output trunca
 its absence means you have everything. A command's `[exit N]` line is the authoritative result -- \
 `[exit 0]` is success even if there is text on stderr (many tools write normal status there).";
 
-/// Context-file names discovered by walking from the project root up to the
-/// filesystem root, most general (top ancestor) first so the nearest file wins.
-const CONTEXT_FILE_NAMES: &[&str] = &["AGENTS.md", "CLAUDE.md"];
+/// The one instructions file Jan reads, discovered by walking from the project
+/// root up to the filesystem root. Another agent's file (`AGENTS.md`,
+/// `CLAUDE.md`) is deliberately not ingested: only what a user wrote for Jan --
+/// by hand or through `/init` -- becomes authoritative project context.
+const CONTEXT_FILE_NAME: &str = "JAN.md";
 
-/// Ingest project instruction files (`AGENTS.md` / `CLAUDE.md`) from the project
-/// root and its ancestors, wrapped in a `<project_context>` block so the model
-/// treats them as authoritative project instructions. Returns None when none
-/// exist. At most one file per directory (first match by `CONTEXT_FILE_NAMES`).
+/// Ingest `JAN.md` from the project root and its ancestors, wrapped in a
+/// `<project_context>` block so the model treats them as authoritative project
+/// instructions. Returns None when none exist.
 pub(crate) fn load_context_files(project_root: &Path) -> Option<String> {
     let mut files: Vec<(std::path::PathBuf, String)> = Vec::new();
     let mut dir = Some(project_root);
     while let Some(current) = dir {
-        for name in CONTEXT_FILE_NAMES {
-            let path = current.join(name);
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if !content.trim().is_empty() {
-                    files.push((path, content));
-                }
-                break;
+        let path = current.join(CONTEXT_FILE_NAME);
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if !content.trim().is_empty() {
+                files.push((path, content));
             }
         }
         dir = current.parent();
@@ -68,6 +65,15 @@ pub(crate) fn load_context_files(project_root: &Path) -> Option<String> {
     Some(block)
 }
 
+/// Whether this project has usable instructions, by the same rule the system
+/// prompt uses: a non-empty `JAN.md` at the root or in any ancestor. Drives the
+/// `/init` invitation on the CLI splash, so an ancestor's file (a monorepo root)
+/// correctly counts as already onboarded.
+#[cfg(feature = "cli")]
+pub(crate) fn has_context_file(project_root: &Path) -> bool {
+    load_context_files(project_root).is_some()
+}
+
 /// Built-in guide teaching the model the skills/memory file conventions. Always
 /// injected for project runs so the model can read and maintain both without
 /// prior knowledge. Embedded in the binary at compile time.
@@ -80,14 +86,8 @@ const DEFAULT_SKILL_GUIDE: &str = include_str!("default_skill.md");
 /// Covers folder skills (`<name>/SKILL.md`) and legacy flat `<name>.md`. Returns
 /// None when no advertisable skill exists.
 pub(crate) fn load_skills(project_root: &Path) -> Option<String> {
-    // Honor the project's `[skills].enabled` whitelist (empty = all). Reading the
-    // config here keeps load_skills self-contained; a missing/malformed config
-    // falls back to "all skills" rather than erroring.
-    let enabled = crate::core::agent::project::load_agent_config(project_root)
-        .ok()
-        .map(|c| c.skills.enabled)
-        .unwrap_or_default();
-    let entries = skills::catalog(project_root, &enabled);
+    let enabled = crate::core::agent::project::enabled_skills(project_root);
+    let entries = skills::catalog(&workspace::project_store(project_root), &enabled);
     if entries.is_empty() {
         return None;
     }
@@ -142,17 +142,44 @@ in its own window and returns only the distilled answer. Dispatch independent su
 their work doesn't depend on each other, then `await_subagent` each. Do inline work yourself for small, \
 targeted tasks where delegating would cost more than it saves.";
 
+/// System-prompt addendum for a `/goal` run with no staged plan: an unattended
+/// loop that keeps firing turns until a condition is met needs the phased list
+/// up front, both to work through and for the user to read on return. Paired
+/// with a forced `tool_choice` on that turn (see `should_force_goal_todo_plan`
+/// and its caller), so this is a real requirement, not a suggestion the model
+/// can silently skip -- the imperative wording matches that guarantee. Normal
+/// turns never get it: there the model decides when a list is worth keeping.
+pub(crate) const EAGER_TODO_PROMPT_ADDENDUM: &str = "Before substantial work on this request, create a \
+phased todo. You MUST call `todo` first in this turn with a single `init` op covering \
+investigation through implementation and verification, not just the next step. Keep each task \
+to a concise, specific 5-10 word label; `init` only accepts phase names and task-label strings, \
+passed as the `list` argument (e.g. `list: [{phase: \"Setup\", items: [\"...\"]}]`) -- never as \
+top-level `phase`/`task` strings, which are for later ops (start/done/drop), not init. After \
+`todo` succeeds, continue the request in the same turn.";
+
+/// Upkeep half of the todo guidance, applied on every turn that has a non-empty
+/// list, in every mode -- including a list the model staged on its own. The
+/// init addendum above only ever fires under `/goal`, so a normal or resumed
+/// session would otherwise carry a list the model was never told to maintain --
+/// which is exactly how a run ends reading 0/N with every task finished but
+/// still marked pending.
+pub(crate) const TODO_UPKEEP_PROMPT_ADDENDUM: &str = "You have an active todo list. Keep it honest as you \
+work: the moment you finish a task call `todo` with `done` for it (or `drop` if you are skipping \
+it), before moving on to the next one. Do not leave finished work sitting as pending, and do not \
+batch the close-out to the end of the turn.";
+
+fn display_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 /// Build a compact runtime environment block injected into the system prompt at
 /// session start so the agent is grounded from turn one. Mirrors the
 /// `<workstation>` / cwd / date context blocks that harnesses like this one
 /// already inject. Fields: working directory, OS/platform/arch, date, shell, and
 /// git state (branch name when the project is inside a git repo). Kept short —
 /// a few lines, not a wall of text.
-fn runtime_environment_block(project_root: &Path) -> String {
-    let cwd = std::env::current_dir()
-        .ok()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "unknown".to_string());
+fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> String {
+    let cwd = display_path(project_root);
 
     let os = format!(
         "{} {}",
@@ -173,14 +200,51 @@ fn runtime_environment_block(project_root: &Path) -> String {
         None => "Git: not a git repository (or no commits yet)".to_string(),
     };
 
+    // Where to do temporary work. Named by the one spelling that resolves from
+    // both `bash` and the filesystem tools on this platform: `/tmp` where the
+    // sandbox binds the scratch over it, the real path where nothing is mounted
+    // there. Same directory either way, and the shell's `TMPDIR`/`TMP`/`TEMP`
+    // point at it too.
+    let scratch_line = match scratch {
+        Some(scratch) => format!(
+            "\nScratch: `{}` is a writable scratch space for temporary work; it persists for this session.",
+            tauri_plugin_agent_tools::tools::sandbox::scratch_display_path(Some(scratch), scratch)
+        ),
+        None => String::new(),
+    };
+
     format!(
         "# Runtime Environment\n\n\
 Work directory: `{cwd}`\n\
 OS: `{os}`\n\
 Date: `{date}`\n\
 Shell: `{shell}`\n\
-{git_line}"
+{git_line}{scratch_line}"
     )
+}
+
+/// A catalog of curated memory notes (names + one-line summaries), injected so
+/// the model can read a note on demand with `memory_read`. None when no note
+/// exists. Mirrors `load_skills`: progressive disclosure, not full bodies.
+pub(crate) fn load_memory_catalog(project_root: &Path) -> Option<String> {
+    let entries = memory::catalog(&workspace::project_store(project_root));
+    if entries.is_empty() {
+        return None;
+    }
+    let list = entries
+        .iter()
+        .map(|(name, description)| {
+            if description.is_empty() {
+                format!("- `{name}` - no summary")
+            } else {
+                format!("- `{name}` - {description}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some(format!(
+        "# Available Memories\n\nDurable facts recorded in this project. Read a note's full contents with `memory_read` when it is relevant to the current task.\n\n{list}"
+    ))
 }
 
 /// Assemble the project system prompt: the optional base prompt, the always-on
@@ -189,6 +253,7 @@ Shell: `{shell}`\n\
 pub(crate) fn build_system_prompt(
     base: Option<&str>,
     project_root: &Path,
+    scratch: Option<&Path>,
     subagents_enabled: bool,
 ) -> Option<String> {
     let mut blocks: Vec<String> = Vec::new();
@@ -201,7 +266,7 @@ pub(crate) fn build_system_prompt(
         "# Working Directory\n\nCurrent project directory: `{}`\n\nAll relative paths in tool calls resolve against this directory unless stated otherwise.",
         project_root.display()
     ));
-    blocks.push(runtime_environment_block(project_root));
+    blocks.push(runtime_environment_block(project_root, scratch));
     if subagents_enabled {
         blocks.push(SUBAGENT_GUIDE.to_string());
     }
@@ -212,6 +277,9 @@ pub(crate) fn build_system_prompt(
     }
     if let Some(skills) = load_skills(project_root) {
         blocks.push(skills);
+    }
+    if let Some(memory) = load_memory_catalog(project_root) {
+        blocks.push(memory);
     }
     Some(blocks.join("\n\n"))
 }
@@ -235,10 +303,17 @@ mod tests {
         std::fs::write(dir.join(name), body).unwrap();
     }
 
+    fn write_memory(root: &Path, name: &str, body: &str) {
+        let dir = root.join(".jan").join("agent").join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(name), body).unwrap();
+    }
+
     #[test]
-    fn no_skills_dir_yields_none() {
+    fn built_in_jan_skill_is_advertised_without_project_skills() {
         let root = scratch_project("nodir");
-        assert!(load_skills(&root).is_none());
+        let block = load_skills(&root).expect("built-in skills block");
+        assert!(block.contains("## Skill: jan"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -279,10 +354,36 @@ mod tests {
     }
 
     #[test]
+    fn memory_catalog_advertises_summary_not_full_body() {
+        let root = scratch_project("memcatalog");
+        write_memory(&root, "decisions.md", "We use Yarn not npm.\nSECRET_BODY_MARKER follow-up detail.");
+        write_memory(&root, "prefs.md", "Keep it minimal.");
+        write_memory(&root, "ignored.txt", "not markdown");
+
+        let block = load_memory_catalog(&root).expect("memory block");
+        assert!(block.starts_with("# Available Memories"));
+        assert!(block.contains("- `decisions` - We use Yarn not npm."));
+        assert!(block.contains("- `prefs` - Keep it minimal."));
+        // Progressive disclosure: only the first line is advertised; the rest
+        // of the body stays out until memory_read.
+        assert!(!block.contains("SECRET_BODY_MARKER"));
+        assert!(block.contains("memory_read"));
+        assert!(!block.contains("ignored.txt"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn memory_catalog_is_none_when_no_notes() {
+        let root = scratch_project("memnone");
+        assert!(load_memory_catalog(&root).is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn build_system_prompt_orders_base_guide_then_skills() {
         let root = scratch_project("merge");
         write_skill(&root, "s.md", "Do the thing.");
-        let out = build_system_prompt(Some("You are Jan."), &root, false).expect("prompt");
+        let out = build_system_prompt(Some("You are Jan."), &root, None, false).expect("prompt");
         assert!(out.starts_with("You are Jan."));
         assert!(out.contains("Do the thing."));
         // Guide sits between the base prompt and the project skills.
@@ -295,7 +396,7 @@ mod tests {
     #[test]
     fn build_system_prompt_advertises_native_web_tools() {
         let root = scratch_project("web");
-        let out = build_system_prompt(None, &root, false).expect("prompt");
+        let out = build_system_prompt(None, &root, None, false).expect("prompt");
         assert!(out.contains("# Web Access"));
         assert!(out.contains("web_search"));
         assert!(out.contains("web_fetch"));
@@ -313,13 +414,13 @@ mod tests {
     fn build_system_prompt_always_includes_guide() {
         let root = scratch_project("guide");
         // No base and no project skills: the built-in guide is still injected.
-        let out = build_system_prompt(None, &root, false).expect("guide always present");
+        let out = build_system_prompt(None, &root, None, false).expect("guide always present");
         assert!(out.contains("Skills and Project Memory"));
         assert!(out.contains("skill_write"));
         assert!(out.contains("memory_write"));
 
         // Base is preserved and precedes the guide.
-        let with_base = build_system_prompt(Some("base"), &root, false).expect("prompt");
+        let with_base = build_system_prompt(Some("base"), &root, None, false).expect("prompt");
         assert!(with_base.starts_with("base"));
         assert!(with_base.contains("Skills and Project Memory"));
         let _ = std::fs::remove_dir_all(&root);
@@ -328,8 +429,8 @@ mod tests {
     #[test]
     fn default_identity_and_guidelines_present_without_base() {
         let root = scratch_project("identity");
-        let out = build_system_prompt(None, &root, false).expect("prompt");
-        assert!(out.starts_with("You are Jan, an AI coding agent."));
+        let out = build_system_prompt(None, &root, None, false).expect("prompt");
+        assert!(out.starts_with("You're currently running on Jan agent harness"));
         assert!(out.contains("# Guidelines"));
         assert!(out.contains("Be concise"));
         assert!(out.contains("Reach for `todo` only when work genuinely needs tracking"));
@@ -345,8 +446,8 @@ mod tests {
         let root = scratch_project("ctxfiles");
         let nested = root.join("sub");
         std::fs::create_dir_all(&nested).unwrap();
-        std::fs::write(root.join("AGENTS.md"), "ROOT_RULES").unwrap();
-        std::fs::write(nested.join("CLAUDE.md"), "NESTED_RULES").unwrap();
+        std::fs::write(root.join("JAN.md"), "ROOT_RULES").unwrap();
+        std::fs::write(nested.join("JAN.md"), "NESTED_RULES").unwrap();
 
         let block = load_context_files(&nested).expect("context block");
         assert!(block.starts_with("<project_context>"));
@@ -356,7 +457,7 @@ mod tests {
         // Nearest (nested) file wins by appearing last.
         assert!(block.find("ROOT_RULES").unwrap() < block.find("NESTED_RULES").unwrap());
 
-        let prompt = build_system_prompt(None, &nested, false).expect("prompt");
+        let prompt = build_system_prompt(None, &nested, None, false).expect("prompt");
         // Context files precede the skills catalog position and follow the guide.
         assert!(prompt.contains("NESTED_RULES"));
         let _ = std::fs::remove_dir_all(&root);
@@ -373,9 +474,9 @@ mod tests {
     #[test]
     fn build_system_prompt_advertises_subagents_only_when_enabled() {
         let root = scratch_project("subagents");
-        let without = build_system_prompt(None, &root, false).expect("prompt");
+        let without = build_system_prompt(None, &root, None, false).expect("prompt");
         assert!(!without.contains("dispatch_subagent"));
-        let with = build_system_prompt(None, &root, true).expect("prompt");
+        let with = build_system_prompt(None, &root, None, true).expect("prompt");
         assert!(with.contains("dispatch_subagent"));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -386,7 +487,7 @@ mod tests {
     fn runtime_environment_block_is_compact() {
         let root = scratch_project("env");
         std::fs::create_dir_all(&root).unwrap();
-        let block = runtime_environment_block(&root);
+        let block = runtime_environment_block(&root, None);
         // Must be a handful of lines, not a wall of text.
         let lines: Vec<_> = block.lines().filter(|l| !l.is_empty()).collect();
         assert!(lines.len() <= 15, "env block is too large: {} lines", lines.len());
@@ -407,7 +508,7 @@ mod tests {
     fn runtime_environment_block_injected_into_system_prompt() {
         let root = scratch_project("inject");
         std::fs::create_dir_all(&root).unwrap();
-        let out = build_system_prompt(None, &root, false).expect("prompt");
+        let out = build_system_prompt(None, &root, None, false).expect("prompt");
         assert!(out.contains("# Runtime Environment"));
         assert!(out.contains("Work directory:"));
         // The block sits right after the Working Directory section.
@@ -421,13 +522,84 @@ mod tests {
     fn runtime_environment_block_answers_os_date_cwd() {
         let root = scratch_project("answer");
         std::fs::create_dir_all(&root).unwrap();
-        let block = runtime_environment_block(&root);
+        let block = runtime_environment_block(&root, None);
         // The date field must be a real-looking ISO date.
         assert!(block.contains("Date: `20"), "date should be a 20xx year");
         // The OS field must identify the host platform.
         assert!(block.contains(format!("OS: `{}", std::env::consts::OS).as_str()));
         // Work directory should be present and non-empty.
         assert!(!block.contains("Work directory: ``"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The scratch must be advertised under the name that resolves from both
+    /// `bash` and the filesystem tools: `/tmp` where the sandbox binds it there,
+    /// the real path where nothing is mounted over `/tmp`. Naming the host path
+    /// on Linux (or `/tmp` anywhere else) would send the model to a directory
+    /// one of the two surfaces cannot reach.
+    #[test]
+    fn runtime_environment_block_advertises_the_scratch_the_tools_share() {
+        let root = scratch_project("scratch");
+        std::fs::create_dir_all(&root).unwrap();
+        let scratch = root.join("agent-scratch");
+        let block = runtime_environment_block(&root, Some(&scratch));
+        let expected = if cfg!(target_os = "linux") {
+            "/tmp".to_string()
+        } else {
+            scratch.to_string_lossy().into_owned()
+        };
+        assert!(
+            block.contains(&format!("Scratch: `{expected}`")),
+            "want {expected}: {block}"
+        );
+        assert!(block.contains("persists for this session"), "{block}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A run with no scratch (the server proxy path) must not promise one.
+    #[test]
+    fn runtime_environment_block_omits_the_scratch_when_there_is_none() {
+        let root = scratch_project("noscratch");
+        std::fs::create_dir_all(&root).unwrap();
+        let block = runtime_environment_block(&root, None);
+        assert!(!block.contains("Scratch:"), "{block}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn work_directory_is_the_project_root_not_the_process_cwd() {
+        let root = scratch_project("cwd_is_root");
+        std::fs::create_dir_all(&root).unwrap();
+        let process_cwd = std::env::current_dir().expect("cwd");
+        assert_ne!(
+            root, process_cwd,
+            "the test is meaningless unless the two differ"
+        );
+
+        let block = runtime_environment_block(&root, None);
+        let expected = root.to_string_lossy().replace('\\', "/");
+        assert!(
+            block.contains(&format!("Work directory: `{expected}`")),
+            "block should report the project root, got: {block}"
+        );
+        let cwd_shown = process_cwd.to_string_lossy().replace('\\', "/");
+        assert!(
+            !block.contains(&format!("Work directory: `{cwd_shown}`")),
+            "block must not report the process cwd"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn work_directory_is_written_with_forward_slashes() {
+        let root = scratch_project("cwd_slashes");
+        std::fs::create_dir_all(&root).unwrap();
+        let block = runtime_environment_block(&root, None);
+        let line = block
+            .lines()
+            .find(|l| l.starts_with("Work directory:"))
+            .expect("work directory line");
+        assert!(!line.contains('\\'), "path should be slash-normalised: {line}");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

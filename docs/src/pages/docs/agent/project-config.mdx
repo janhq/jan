@@ -58,10 +58,10 @@ Point at a different file with `instructions_file` if you already keep conventio
 ```toml
 [agent]
 # model = "Jan-V4"
-max_turns = 400
 # context_window = 128000
 # compaction_reserve_tokens = 16384
 # max_tokens = 4096
+# max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
 instructions_file = "AGENT.md"
 
 # [provider]
@@ -70,9 +70,11 @@ instructions_file = "AGENT.md"
 # base_url = "https://api.openai.com/v1"
 # models = ["gpt-4o"]
 
+# The run's only cap: new token spend across all turns (replayed context is not
+# recharged each turn). There is no turn limit. Defaults to 128000 when unset;
+# 0 disables the cap.
 [budget]
-max_steps = 40
-max_tokens = 200000
+# max_tokens = 128000
 
 [tools]
 default = "read-only"
@@ -90,10 +92,10 @@ inject = "always"
 | Key | Default | Description |
 | --- | --- | --- |
 | `model` | inherited | Model id. Overridden by `--model` |
-| `max_turns` | `400` | Turns per message, clamped to 1-400 |
 | `context_window` | `128000` | Context limit in tokens |
 | `compaction_reserve_tokens` | `16384` | Headroom kept free before [compaction](/docs/agent/context) |
 | `max_tokens` | unset | Cap on tokens generated per response. Omitted from the request when unset |
+| `max_parallel_subagents` | `10` | Subagents that may run at once (min 1); extra dispatches queue FIFO |
 | `instructions_file` | `AGENT.md` | Markdown injected into the system prompt |
 
 ### `[provider]`
@@ -103,12 +105,12 @@ Desktop. Most projects don't need it. See [Providers](/docs/agent/providers#per-
 
 ### `[budget]`
 
-| Key | Description |
-| --- | --- |
-| `max_steps` | Stop the run after this many steps |
-| `max_tokens` | Stop the run after this many tokens |
+| Key | Default | Description |
+| --- | --- | --- |
+| `max_tokens` | `128000` | Token-spend ceiling for one run (new spend across all turns). The only cap on run length - there is no turn limit. Set `0` to disable the cap. Defaults to `128000` when unset |
 
-A bound on how far one run goes, distinct from the per-request context window.
+A bound on how far one run goes, distinct from the per-request context window. It bounds the run's
+marginal token spend (replayed context is not recharged each turn).
 
 ### `[tools]`
 

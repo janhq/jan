@@ -23,6 +23,25 @@ folder asks first.
 None of these prompt. Truncation is deliberate: a tool that dumps a 40MB file would spend the
 context window in one call, so large results come back bounded and the agent pages through them.
 
+## Referencing paths in a message
+
+Type `@path` in a message and the console resolves it before the model sees the text:
+
+- `@src/parser.rs` reads the file and injects its content (UTF-8, capped at 1MB).
+- `@src/` injects a listing of the directory's immediate children (capped at 20KB).
+- `@image.png` is noted inline as `(image: image/png)` rather than dumped - the model reads it if it
+  supports vision.
+- A missing or unreadable path becomes an inline error notice, so the agent sees that the lookup
+  failed instead of silently losing the reference.
+
+The `@token` is removed after resolution, so the model sees the injected content directly, not the
+raw `@` text. Typing `@` opens a path-hint popup filtered as you type; <kbd>Tab</kbd> accepts the
+highlighted suggestion.
+
+References are path-shaped only. `@http://` and `@https://` URLs are left alone, and `user@host`,
+emails, and bare IPv4 addresses like `@1.2.3.4` pass through untouched - `ssh user@host` stays
+intact.
+
 ## Changing files
 
 | Tool | What it does |

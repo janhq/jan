@@ -34,10 +34,9 @@ jan <COMMAND>
 | `--project <PATH>` | Project root containing `.jan/agent/agent.toml`. Defaults to `.` |
 | `--task <TEXT>` | Seed the session with a first message |
 | `--model <ID>` | Model id, overriding `[agent].model` |
-| `--max-turns <N>` | Turns per message, clamped to 1-400 |
 | `--image <PATH>` | Attach an image to the first message. Repeatable |
 | `--plan` | Start in read-only plan mode |
-| `--yolo` | Disable the sandbox and auto-approve every tool call |
+| `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
 | `--resume [ID]` | Resume the most recent session, or one whose id starts with `ID` |
 | `-c`, `--continue` | Resume the most recent session |
 | `--provider <ID>` | Target a specific provider for this run |
@@ -50,12 +49,14 @@ jan --task "fix the failing test"       # with a first message
 jan -c                                  # resume the latest session
 jan --resume 3f7a91c2                   # resume by id prefix
 jan --plan                              # read-only
-jan --yolo                              # no prompts (see the warning below)
+jan --safe                              # ask before writes and shell commands
 ```
 
-<Callout type="warning">
-`--yolo` gives the agent unrestricted shell access. Use it only in a container, VM, or scratch
-checkout.
+<Callout type="info">
+Tool calls are auto-approved by default. Shell commands still run inside the OS sandbox
+(bubblewrap, Seatbelt, or AppContainer), confined to the project directory, and the hard denies
+never lift: `.jan/agent/` internals, anything in `[tools] deny`, and everything plan mode blocks.
+`--safe` adds the interactive approval prompt on top of that.
 </Callout>
 
 ## `jan cli agent`
@@ -64,29 +65,82 @@ Run the agent without a UI. This is the form to use in scripts.
 
 ### `run`
 
-Run to completion, or until the turn/token budget is spent.
+Run to completion, or until the session token budget is spent. There is no turn cap - the agent
+runs as many turns as the task needs, bounded only by `[budget].max_tokens`, or by cancelling it.
 
 ```bash
 jan cli agent run "fix the failing test in tests/auth"
 jan cli agent run --project ~/code/app "update the changelog"
-jan cli agent run --model gpt-4o --max-turns 20 "add unit tests for the parser"
-jan cli agent run --yolo "run the migration"
+jan cli agent run --model gpt-4o "add unit tests for the parser"
+jan cli agent run --safe "run the migration"   # approve each step
 ```
 
 | Flag | Description |
 | --- | --- |
 | `--project <PATH>` | Project root. Defaults to `.` |
 | `--model <ID>` | Model id, overriding `[agent].model` |
-| `--max-turns <N>` | Turns, overriding `[agent].max_turns`. Clamped to 1-400 |
-| `--yolo` | Disable the sandbox and auto-approve every tool call |
+| `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
 | `--resume[=ID]` | Resume the most recent session, or one by id |
 | `-c`, `--continue` | Resume the most recent session |
 | `--provider`, `--api-key` | Credential overrides for this run |
+| `--output-format <FORMAT>` | `text` (default) streams the answer; `json` prints one result object |
 
 <Callout type="info">
 `run` takes a positional task, so a space-separated `--resume ID` would swallow it. Write the value
 form with an equals sign: `--resume=3f7a91c2`.
 </Callout>
+
+#### JSON output
+
+`--output-format json` suppresses the streamed answer and prints a single object on stdout when the
+run finishes. Progress and diagnostics still go to stderr, so stdout is safe to pipe into `jq`.
+
+```bash
+jan cli agent run --output-format json "review auth.rs" | jq -r .result
+```
+
+```json
+{
+  "type": "result",
+  "is_error": false,
+  "result": "APPROVED: the retry loop is correct...",
+  "stop_reason": "end_turn",
+  "session_id": "3f7a91c2",
+  "model": "tokamak-1-preview",
+  "num_turns": 3,
+  "duration_ms": 48213,
+  "usage": { "prompt_tokens": 9011, "completion_tokens": 655, "total_tokens": 9666 }
+}
+```
+
+A failed run adds an `error` object, sets `stop_reason` to `error`, and reports whatever the model
+had said before it broke as `result`:
+
+```json
+{
+  "type": "result",
+  "is_error": true,
+  "result": "I started reviewing auth.rs and...",
+  "stop_reason": "error",
+  "error": { "code": "upstream_error", "message": "[400] tool_choice does not match any of the specified tools" },
+  "session_id": null,
+  "model": "tokamak-1-preview",
+  "num_turns": 1,
+  "duration_ms": 1204,
+  "usage": { "prompt_tokens": 8123, "completion_tokens": 0, "total_tokens": 8123 }
+}
+```
+
+| Field | Notes |
+| --- | --- |
+| `result` | The final answer, or the partial answer of the turn that failed. Reasoning is stripped |
+| `stop_reason` | The upstream finish reason, or `error` |
+| `error.code` | `context_overflow`, `upstream_error`, `setup_error`, or the raw code |
+| `session_id` | Short session id for `--resume`. `null` when the run failed before producing one |
+| `num_turns` | Agent turns taken. Subagent turns are not counted |
+| `usage` | Summed over every request the run made, subagents included |
+
+The process exit code is unchanged: `0` on success, `1` on failure.
 
 ### `step`
 
@@ -201,10 +255,9 @@ export ANTHROPIC_API_KEY="$SECRET_KEY"
 jan cli agent run \
   --project . \
   --provider anthropic \
-  --max-turns 30 \
-  --yolo \
   "update the changelog for the current release"
 ```
 
-`--yolo` is appropriate here for the same reason it usually isn't: a CI runner is a disposable
-environment, and there's nobody at a keyboard to answer a prompt.
+No flag is needed: tool calls are auto-approved by default, which is what a CI runner wants since
+there's nobody at a keyboard to answer a prompt. Do not pass `--safe` here. With no TTY on stdin
+there is no way to answer, so every prompt is denied and the run stalls out on its first write.

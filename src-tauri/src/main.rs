@@ -9,5 +9,8 @@ fn main() {
     // Exits early if invoked as the out-of-process lddtree helper.
     tauri_plugin_llamacpp::deps_analyzer::run_deps_analyzer_if_requested();
 
+    // Exits early if invoked as the Windows sandbox helper for a `bash` tool call.
+    tauri_plugin_agent_tools::run_sandbox_helper_if_requested();
+
     app_lib::run();
 }

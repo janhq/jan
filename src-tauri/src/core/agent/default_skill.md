@@ -37,5 +37,6 @@ would otherwise forget.
 
 Record a memory when you learn something durable and non-obvious. Remove facts
 that become wrong by overwriting the note. Do not record transient details that
-only matter to the current turn. Recent conversation from this project is also
-recalled automatically, so you need not restate it here.
+only matter to the current turn. The "Available Memories" section of your
+system prompt is a catalog of these notes; call `memory_read` to load a note's
+full contents when it is relevant to the current task.
