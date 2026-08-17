@@ -40,6 +40,16 @@ pub struct AccountLogin {
     model_base_url: Option<String>,
 }
 
+impl AccountLogin {
+    pub const fn provider(&self) -> AccountProvider {
+        self.provider
+    }
+
+    pub fn parse_manual_input(&self, raw: &str) -> Result<String, String> {
+        parse_manual_callback(raw, &self.state)
+    }
+}
+
 pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
     let (client_id, authorization_endpoint, token_endpoint, redirect_uri, scopes) = match provider {
         AccountProvider::Codex => (
@@ -113,6 +123,57 @@ pub fn parse_callback(raw: &str, expected_state: &str) -> Result<String, String>
         .filter(|code| !code.is_empty())
         .ok_or_else(|| "the redirect URL is missing its authorization code".to_string())
 }
+
+pub fn parse_manual_callback(raw: &str, expected_state: &str) -> Result<String, String> {
+    fn code_from_pairs<'a>(
+        pairs: impl Iterator<Item = (std::borrow::Cow<'a, str>, std::borrow::Cow<'a, str>)>,
+        expected_state: &str,
+    ) -> Result<String, String> {
+        let mut code = None;
+        let mut state = None;
+        for (key, value) in pairs {
+            match key.as_ref() {
+                "code" => code = Some(value.into_owned()),
+                "state" => state = Some(value.into_owned()),
+                _ => {}
+            }
+        }
+        if state.is_some_and(|state| state != expected_state) {
+            return Err("the redirect state did not match".to_string());
+        }
+        code.filter(|code| !code.is_empty())
+            .ok_or_else(|| "the authorization code was empty".to_string())
+    }
+
+    let input = raw.trim();
+    if input.is_empty() {
+        return Err("enter the redirect URL or authorization code".to_string());
+    }
+
+    if let Ok(url) = url::Url::parse(input) {
+        return code_from_pairs(url.query_pairs(), expected_state);
+    }
+
+    if input.starts_with("code=") || input.starts_with("?code=") {
+        return code_from_pairs(
+            url::form_urlencoded::parse(input.trim_start_matches('?').as_bytes()),
+            expected_state,
+        );
+    }
+
+    let (code, state) = input
+        .split_once('#')
+        .map_or((input, None), |(code, state)| (code, Some(state)));
+    if state.is_some_and(|state| state.trim() != expected_state) {
+        return Err("the redirect state did not match".to_string());
+    }
+    let code = code.trim();
+    if code.is_empty() {
+        return Err("the authorization code was empty".to_string());
+    }
+    Ok(code.to_string())
+}
+
 pub async fn accept_callback(
     listener: tokio::net::TcpListener,
     login: &AccountLogin,
@@ -358,9 +419,53 @@ pub async fn complete_callback_login(
     login: AccountLogin,
 ) -> Result<AccountProvider, String> {
     let code = accept_callback(listener, &login).await?;
+    complete_code_login(login, code).await
+}
+
+pub async fn complete_callback_login_with_manual(
+    listener: tokio::net::TcpListener,
+    login: AccountLogin,
+    mut manual: tokio::sync::mpsc::UnboundedReceiver<String>,
+) -> Result<AccountProvider, String> {
+    let code = {
+        let callback = accept_callback(listener, &login);
+        tokio::pin!(callback);
+        loop {
+            match manual.try_recv() {
+                Ok(input) => {
+                    if let Ok(code) = login.parse_manual_input(&input) {
+                        break code;
+                    }
+                }
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
+                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                    break callback.await?;
+                }
+            }
+            tokio::select! {
+                result = &mut callback => break result?,
+                input = manual.recv() => match input {
+                    Some(input) => {
+                        if let Ok(code) = login.parse_manual_input(&input) {
+                            break code;
+                        }
+                    }
+                    None => break callback.await?,
+                },
+            }
+        }
+    };
+    complete_code_login(login, code).await
+}
+
+async fn complete_code_login(
+    login: AccountLogin,
+    code: String,
+) -> Result<AccountProvider, String> {
+    let provider = login.provider;
     let token = exchange(&login, &code).await?;
     let definition =
-        crate::core::cli::auth::provider_by_id(login.provider.credential_provider())
+        crate::core::cli::auth::provider_by_id(provider.credential_provider())
             .ok_or_else(|| "selected account is unavailable".to_string())?;
     #[cfg(test)]
     let definition = {
@@ -374,7 +479,7 @@ pub async fn complete_callback_login(
         crate::core::cli::auth::providers::discover_models(&definition, &token.access_token)
             .await
             .map_err(|_| "could not discover account models".to_string())?;
-    store(login.provider, &token)?;
+    store(provider, &token)?;
     if let Err(error) = crate::core::agent::global_config::set_provider(
         definition.id,
         crate::core::agent::global_config::ProviderUpdate {
@@ -389,12 +494,12 @@ pub async fn complete_callback_login(
             .then_some("anthropic".to_string()),
         },
     ) {
-        let _ = CredentialStore::delete(login.provider.credential_provider());
+        let _ = CredentialStore::delete(provider.credential_provider());
         return Err(format!(
             "could not save the provider configuration: {error}"
         ));
     }
-    Ok(login.provider)
+    Ok(provider)
 }
 #[cfg(test)]
 mod tests {
@@ -513,6 +618,25 @@ mod tests {
         .expect("account completion thread must not panic")
     }
 
+    fn complete_account_manually_for_test(
+        models_base_url: String,
+    ) -> Result<AccountProvider, String> {
+        std::thread::spawn(move || {
+            tokio::runtime::Runtime::new().unwrap().block_on(async move {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let mut login = begin(AccountProvider::Codex).unwrap();
+                login.token_endpoint = token_server();
+                login.model_base_url = Some(models_base_url);
+                let manual_input = format!("authorization-code#{}", login.state);
+                let (manual, receiver) = tokio::sync::mpsc::unbounded_channel();
+                manual.send(manual_input).unwrap();
+                complete_callback_login_with_manual(listener, login, receiver).await
+            })
+        })
+        .join()
+        .expect("manual account completion thread must not panic")
+    }
+
     #[test]
     fn codex_browser_login_uses_pkce_and_loopback_callback() {
         let login = begin(AccountProvider::Codex).unwrap();
@@ -582,6 +706,42 @@ mod tests {
         assert!(parse_callback(
             "http://localhost:1455/auth/callback?code=authorization-code&state=wrong",
             &login.state
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn manual_callback_accepts_a_complete_redirect_url() {
+        let login = begin(AccountProvider::Codex).unwrap();
+        let raw = format!(
+            "{}?code=authorization-code&state={}",
+            login.redirect_uri, login.state
+        );
+        assert_eq!(
+            parse_manual_callback(&raw, &login.state).unwrap(),
+            "authorization-code"
+        );
+    }
+
+    #[test]
+    fn manual_callback_accepts_a_raw_code_and_optional_state_suffix() {
+        assert_eq!(
+            parse_manual_callback("authorization-code", "expected-state").unwrap(),
+            "authorization-code"
+        );
+        assert_eq!(
+            parse_manual_callback("authorization-code#expected-state", "expected-state").unwrap(),
+            "authorization-code"
+        );
+    }
+
+    #[test]
+    fn manual_callback_rejects_empty_code_and_mismatched_state() {
+        assert!(parse_manual_callback("", "expected-state").is_err());
+        assert!(parse_manual_callback("authorization-code#wrong-state", "expected-state").is_err());
+        assert!(parse_manual_callback(
+            "http://localhost:1455/auth/callback?code=authorization-code&state=wrong-state",
+            "expected-state"
         )
         .is_err());
     }
@@ -680,6 +840,52 @@ mod tests {
                 models_request.contains("authorization: Bearer exchanged-account-token")
                     || models_request.contains("Authorization: Bearer exchanged-account-token"),
                 "{models_request}"
+            );
+
+            let token = OAuthToken {
+                access_token: "exchanged-account-token".into(),
+                refresh_token: Some("refresh".into()),
+                expires_at: CredentialStore::load("openai")
+                    .unwrap()
+                    .and_then(|credential| {
+                        credential.as_oauth().and_then(|token| token.expires_at)
+                    }),
+                token_type: "Bearer".into(),
+                scopes: vec!["profile".into(), "offline_access".into()],
+            };
+            assert_eq!(
+                CredentialStore::load("openai").unwrap(),
+                Some(Credential::OAuthToken(token))
+            );
+
+            let cfg = load_global_config().unwrap().get("openai").unwrap().clone();
+            assert!(cfg.api_key.is_none());
+            assert!(cfg.api_keys.is_empty());
+            assert_eq!(cfg.base_url.as_deref(), Some(models_base_url.as_str()));
+            assert_eq!(
+                cfg.models,
+                vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()]
+            );
+        });
+    }
+
+    #[test]
+    fn manual_account_completion_persists_models_and_token() {
+        let _tmp = TempSecrets::new();
+        with_temp_home(|_| {
+            let body = r#"{"data":[{"id":"gpt-4o-mini"},{"id":"gpt-4o"},{"id":"gpt-4o"}]}"#;
+            let (models_base_url, request) = account_models_server("200 OK", body);
+
+            assert_eq!(
+                complete_account_manually_for_test(models_base_url.clone()).unwrap(),
+                AccountProvider::Codex
+            );
+
+            let models_request = request.recv().unwrap();
+            assert!(models_request.starts_with("GET /v1/models HTTP/1.1"));
+            assert!(
+                models_request.contains("authorization: Bearer exchanged-account-token")
+                    || models_request.contains("Authorization: Bearer exchanged-account-token")
             );
 
             let token = OAuthToken {
