@@ -168,6 +168,10 @@ work: the moment you finish a task call `todo` with `done` for it (or `drop` if 
 it), before moving on to the next one. Do not leave finished work sitting as pending, and do not \
 batch the close-out to the end of the turn.";
 
+fn display_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 /// Build a compact runtime environment block injected into the system prompt at
 /// session start so the agent is grounded from turn one. Mirrors the
 /// `<workstation>` / cwd / date context blocks that harnesses like this one
@@ -175,10 +179,7 @@ batch the close-out to the end of the turn.";
 /// git state (branch name when the project is inside a git repo). Kept short —
 /// a few lines, not a wall of text.
 fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> String {
-    let cwd = std::env::current_dir()
-        .ok()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "unknown".to_string());
+    let cwd = display_path(project_root);
 
     let os = format!(
         "{} {}",
@@ -562,6 +563,43 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let block = runtime_environment_block(&root, None);
         assert!(!block.contains("Scratch:"), "{block}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn work_directory_is_the_project_root_not_the_process_cwd() {
+        let root = scratch_project("cwd_is_root");
+        std::fs::create_dir_all(&root).unwrap();
+        let process_cwd = std::env::current_dir().expect("cwd");
+        assert_ne!(
+            root, process_cwd,
+            "the test is meaningless unless the two differ"
+        );
+
+        let block = runtime_environment_block(&root, None);
+        let expected = root.to_string_lossy().replace('\\', "/");
+        assert!(
+            block.contains(&format!("Work directory: `{expected}`")),
+            "block should report the project root, got: {block}"
+        );
+        let cwd_shown = process_cwd.to_string_lossy().replace('\\', "/");
+        assert!(
+            !block.contains(&format!("Work directory: `{cwd_shown}`")),
+            "block must not report the process cwd"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn work_directory_is_written_with_forward_slashes() {
+        let root = scratch_project("cwd_slashes");
+        std::fs::create_dir_all(&root).unwrap();
+        let block = runtime_environment_block(&root, None);
+        let line = block
+            .lines()
+            .find(|l| l.starts_with("Work directory:"))
+            .expect("work directory line");
+        assert!(!line.contains('\\'), "path should be slash-normalised: {line}");
         let _ = std::fs::remove_dir_all(&root);
     }
 }
