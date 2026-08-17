@@ -1896,10 +1896,22 @@ impl App {
     /// work that is still running or that succeeded.
     fn abort_tool_rows(&mut self) {
         self.close_tool_group(true);
+        self.resolve_orphan_tool_rows();
+    }
+
+    /// Retire every in-flight tool row the stream will never speak for again.
+    /// Shared by the abort paths and by `on_done`: a run that ends normally can
+    /// still leave both behind (an upstream that stops mid tool call, or a soft
+    /// stop that returns before the calls are dispatched), and neither a
+    /// "Preparing X" throbber nor a `▸` row has anything left to resolve it.
+    fn resolve_orphan_tool_rows(&mut self) {
         // A call whose args were still streaming never gets its "Preparing X"
         // throbber cleared by the `ToolCall` that would have superseded it, so
         // it animates on past the end of the run, naming a tool that never ran.
         self.starting.clear();
+        // Same for a wait whose `ToolResult` never landed: its child cannot
+        // outlive the run, so the row has nothing left to wait for.
+        self.awaiting.clear();
         for row in std::mem::take(&mut self.pending_rows) {
             if row.idx < self.transcript.len() {
                 self.transcript[row.idx] = RowKind::Tool {
@@ -3056,6 +3068,9 @@ impl App {
 
     fn on_done(&mut self, stop_reason: String, usage: Option<Usage>) {
         self.finalize_tool_group();
+        // Done is terminal: nothing more arrives on this stream, so a call that
+        // never completed cannot be left animating for the rest of the session.
+        self.resolve_orphan_tool_rows();
         // Children cannot outlive the run that dispatched them: their events
         // arrive on its stream. Any panel still open here never got its own
         // `SubagentEnd`.
@@ -14667,6 +14682,59 @@ mod tests {
             app.starting.is_empty(),
             "an aborted run leaves a throbber naming a tool that never ran"
         );
+    }
+
+    /// A run can end normally while a tool call was still streaming its
+    /// arguments: the upstream stops mid-call and the assembled completion
+    /// carries no `tool_calls`, so no `ToolCall` ever supersedes the throbber
+    /// and no `ToolResult` ever resolves the pending row.
+    #[test]
+    fn normal_done_clears_an_unfinished_tool_call() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "c1".into(),
+            name: "write".into(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "write".into(),
+            args: serde_json::json!({ "path": "a.txt", "content": "x" }),
+        });
+        assert_eq!(app.starting.len(), 1);
+        assert_eq!(app.pending_rows.len(), 1);
+
+        app.on_done("stop".into(), None);
+
+        assert!(
+            app.starting.is_empty(),
+            "a finished run leaves a throbber naming a tool that never ran"
+        );
+        assert!(
+            app.pending_rows.is_empty(),
+            "a finished run leaves a call row spinning for a result that never comes"
+        );
+    }
+
+    /// An `await_subagent` whose result never lands is the same orphan: the
+    /// child cannot outlive the run whose stream carried its events.
+    #[test]
+    fn terminal_events_clear_an_unresolved_await() {
+        for terminal in [0, 1] {
+            let mut app = test_app();
+            app.submit_user("do a thing".into());
+            app.awaiting
+                .push(("c1".into(), "run-1".into(), "explorer".into()));
+            if terminal == 0 {
+                app.on_done("stop".into(), None);
+            } else {
+                app.on_error("stream".into(), "connection reset".into());
+            }
+            assert!(
+                app.awaiting.is_empty(),
+                "an awaiting throbber outlived the run that could resolve it"
+            );
+        }
     }
 
     /// The deltas have to actually reach the call they belong to.
