@@ -228,6 +228,50 @@ jan cli models list
 This includes providers inherited from Jan Desktop, so it can list models even when
 `jan config list` shows none of its own.
 
+## `jan cli mcp`
+
+Manage Model Context Protocol servers in the shared `mcp_config.json` -- the same store Jan
+Desktop and the interactive console read. Servers you add or enable here are available in both.
+
+The desktop-only `Jan Browser MCP` bridge is never listed or editable from the CLI.
+
+```bash
+jan cli mcp list                            # JSON, env/header values redacted
+jan cli mcp list --show-secrets             # include secret values
+jan cli mcp get <NAME>                      # one server's full config
+jan cli mcp add <NAME> --command npx --arg -y --arg my-mcp
+jan cli mcp remove <NAME>
+jan cli mcp enable <NAME>                   # connect on the next session
+jan cli mcp disable <NAME>
+```
+
+A stdio server needs a command and optional args; an `http`/`sse` server needs a URL.
+
+```bash
+# stdio (the default transport)
+jan cli mcp add files --command npx --arg -y --arg @modelcontextprotocol/server-filesystem \
+  --env FOO=bar
+
+# http, with a header and marked active immediately
+jan cli mcp add exa --type http --url https://mcp.exa.ai/mcp --header Authorization=Bearer-secret \
+  --active
+```
+
+| `add` flag | Description |
+| --- | --- |
+| `--command <CMD>` | Command for a stdio server (e.g. `npx`, `uvx`). Required for stdio |
+| `--arg <ARG>` | Argument for the command. Repeatable |
+| `--env KEY=VALUE` | Environment variable for a stdio server. Repeatable |
+| `--type <TYPE>` | Transport: `stdio` (default), `http`, or `sse` |
+| `--url <URL>` | URL for an `http`/`sse` server. Required unless stdio |
+| `--header KEY=VALUE` | Header for an `http`/`sse` server. Repeatable |
+| `--active` | Mark the server active immediately. Defaults to inactive |
+
+Adding a server that already exists replaces it (an edit); its `active` flag is preserved. Newly
+added servers default to inactive, so they are persisted but not connected until you `enable` them.
+
+See [MCP](/docs/agent/mcp).
+
 ## `jan update`
 
 Update the binary to the latest build of the channel it was built for.
