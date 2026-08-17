@@ -230,9 +230,15 @@ fn describe(parsed: &ParsedSkill) -> String {
         .unwrap_or_else(|| first_line(&parsed.body))
 }
 
-/// A discovered skill's metadata with its invocation flags resolved.
-const DEFAULT_JAN_SKILL_NAME: &str = "jan";
-const DEFAULT_JAN_SKILL: &str = include_str!("default_jan_skill.md");
+/// The built-in Jan skill's identity and embedded body: always resolvable
+/// (catalog entry + `skill_read`/`/skill:jan` body) even with zero project
+/// skills installed, but never force-loaded -- it costs a description line
+/// in the catalog like any other skill, and the model/human still has to
+/// invoke it to load the body. `core::agent::skills` mirrors this injection
+/// for the system-prompt catalog and `/skill:` dispatch, which resolve
+/// project + plugin skills but never see this plugin-embedded one.
+pub const DEFAULT_JAN_SKILL_NAME: &str = "jan";
+pub const DEFAULT_JAN_SKILL: &str = include_str!("default_jan_skill.md");
 
 /// Whether a name refers to the built-in Jan skill (aliased `jan`), which is
 /// always available even with no project skills installed.

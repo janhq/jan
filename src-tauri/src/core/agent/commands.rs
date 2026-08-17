@@ -76,6 +76,8 @@ fn build_orchestration_args<R: Runtime>(
         max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
         auto_approve: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
+        session_id: None,
+        sandbox: None,
     }
 }
 

@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use tauri_plugin_agent_tools::skills::{DEFAULT_JAN_SKILL, DEFAULT_JAN_SKILL_NAME};
 use tauri_plugin_agent_tools::workspace::workspace_filename;
 
 /// `<project_root>/.jan/agent/skills`.
@@ -442,6 +443,28 @@ fn meta_for(entry: &SkillEntry, parsed: &ParsedSkill) -> SkillMeta {
         model_invocable: parsed.model_invocable,
     }
 }
+/// Whether a name refers to the built-in Jan skill (aliased `jan`), which is
+/// always available even with no project skills installed.
+fn is_default_jan_skill(name: &str) -> bool {
+    safe_stem(name).ok().as_deref() == Some(DEFAULT_JAN_SKILL_NAME)
+}
+
+/// The built-in Jan skill's metadata: the plugin-embedded onboarding skill is
+/// advertised in every catalog even with zero project skills installed, but
+/// never force-loaded - its full body stays embedded and is fetched on demand
+/// via `skill_read` / `/skill:jan`, honoring the same invocation flags as any
+/// other skill. A project or plugin skill named "jan" shadows this default.
+fn default_jan_skill_meta() -> SkillMeta {
+    let parsed = parse(DEFAULT_JAN_SKILL);
+    SkillMeta {
+        name: DEFAULT_JAN_SKILL_NAME.to_string(),
+        description: describe(&parsed),
+        plugin: None,
+        user_invocable: true,
+        model_invocable: true,
+    }
+}
+
 
 /// Metadata for every project skill (name + description + invocation
 /// flags) — for the management UI, which must see disabled and private skills
@@ -460,13 +483,12 @@ pub(crate) fn list_meta(root: &Path) -> Vec<SkillMeta> {
 
 /// Filter discovered skills (project + plugins) by the `[skills].enabled`
 /// whitelist and one invocation side. Skills with neither a description nor a
-/// body are skipped (nothing to advertise or invoke).
 fn side_catalog(
     root: &Path,
     enabled: &[String],
     side: impl Fn(&ParsedSkill) -> bool,
 ) -> Vec<SkillMeta> {
-    discover_all(root)
+    let mut skills: Vec<SkillMeta> = discover_all(root)
         .into_iter()
         .filter(|e| is_enabled(enabled, e))
         .filter_map(|e| {
@@ -480,7 +502,18 @@ fn side_catalog(
             }
             Some(meta_for(&e, &parsed))
         })
-        .collect()
+        .collect();
+    // The built-in Jan skill is always advertised so onboarding works even in
+    // an empty project (mirrors the plugin's side_catalog). It honors the
+    // enabled whitelist and side filter, and is skipped if a project or plugin
+    // skill named "jan" already shadows it.
+    if (enabled.is_empty() || enabled.iter().any(|n| n == DEFAULT_JAN_SKILL_NAME))
+        && side(&parse(DEFAULT_JAN_SKILL))
+        && !skills.iter().any(|m| m.name == DEFAULT_JAN_SKILL_NAME)
+    {
+        skills.push(default_jan_skill_meta());
+    }
+    skills
 }
 
 /// Skills worth advertising in the system prompt: name + description, skipping
@@ -516,8 +549,10 @@ pub(crate) fn plugin_skill_metas(root: &Path, plugin: &str) -> Vec<SkillMeta> {
 
 /// Raw SKILL.md text (frontmatter included) for the editor. Resolves project
 /// and plugin skills alike.
-#[cfg(any(not(feature = "cli"), test))]
 pub(crate) fn read_raw(root: &Path, name: &str) -> Result<String, String> {
+    if is_default_jan_skill(name) {
+        return Ok(parse(DEFAULT_JAN_SKILL).body);
+    }
     let entry = resolve_readable(root, name)?;
     std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))
 }
@@ -603,19 +638,32 @@ pub(crate) fn build_invocation_message(
     let user_skills = user_catalog(root, &enabled);
     let meta =
         find_user_skill(&user_skills, name).ok_or_else(|| format!("skill '{name}' not found"))?;
-    let entry = resolve_readable(root, name)?;
-    let body =
-        parse(&std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))?).body;
+    let body = match resolve_readable(root, name) {
+        Ok(entry) => {
+            let body = parse(
+                &std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))?,
+            )
+            .body;
+            // Folder skills (and single-skill plugins) may bundle files next to
+            // their SKILL.md; announce that directory so relative paths resolve.
+            let dir_note = entry.is_folder.then(|| {
+                let base = entry.file.parent().unwrap_or_else(|| root);
+                format!(
+                    "\n\n---\n[Skill directory: {}]\nResolve relative paths in the skill against that directory.\n",
+                    base.display()
+                )
+            });
+            (body, dir_note)
+        }
+        // The built-in Jan skill has no file on disk; serve its embedded body
+        // on demand, exactly like the plugin's skill_read path.
+        Err(_) if is_default_jan_skill(name) => (parse(DEFAULT_JAN_SKILL).body, None),
+        Err(e) => return Err(e),
+    };
     let args = args.trim();
-    let mut msg = format!("{}\n\n{body}", invocation_wrapper(name, "skill"));
-    // Folder skills (and single-skill plugins) may bundle files next to their
-    // SKILL.md; announce that directory so relative paths resolve.
-    if entry.is_folder {
-        let base = entry.file.parent().unwrap_or_else(|| root);
-        msg.push_str(&format!(
-            "\n\n---\n[Skill directory: {}]\nResolve relative paths in the skill against that directory.\n",
-            base.display()
-        ));
+    let mut msg = format!("{}\n\n{}", invocation_wrapper(name, "skill"), body.0);
+    if let Some(note) = body.1 {
+        msg.push_str(&note);
     }
     if !args.is_empty() {
         msg.push_str(&format!("User: {args}\n"));
@@ -817,12 +865,12 @@ mod tests {
         write("user_only", "disable-model-invocation: true\n");
 
         let model: Vec<_> = catalog(&root, &[]).into_iter().map(|m| m.name).collect();
-        assert_eq!(model, vec!["both", "model_only"], "model side: {model:?}");
+        assert_eq!(model, vec!["both", "model_only", "jan"], "model side: {model:?}");
         let user: Vec<_> = user_catalog(&root, &[])
             .into_iter()
             .map(|m| m.name)
             .collect();
-        assert_eq!(user, vec!["both", "user_only"], "user side: {user:?}");
+        assert_eq!(user, vec!["both", "user_only", "jan"], "user side: {user:?}");
 
         // Both flags still visible to the management list.
         let all = list_meta(&root);
@@ -897,10 +945,8 @@ mod tests {
         ));
         write(&root, "a", "body a").unwrap();
         write(&root, "b", "body b").unwrap();
-
-        // Empty whitelist = all skills.
-        assert_eq!(catalog(&root, &[]).len(), 2);
-
+        // Empty whitelist = all skills (both project skills + built-in jan).
+        assert_eq!(catalog(&root, &[]).len(), 3);
         // Non-empty whitelist restricts to the listed names.
         let only_a = catalog(&root, &["a".to_string()]);
         assert_eq!(only_a.len(), 1);
