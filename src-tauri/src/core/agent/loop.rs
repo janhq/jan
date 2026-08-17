@@ -1659,6 +1659,24 @@ fn body_session_budget(json_body: &serde_json::Value) -> Option<u64> {
         .filter(|v| *v > 0)
 }
 
+/// Hand the client the conversation a failed cycle got to, so the turn it
+/// retries resumes from the work already done instead of the prompt that
+/// started it. Only from a round boundary, where every tool call is paired with
+/// its result: an upstream rejects a conversation ending on an unanswered
+/// `tool_calls`. No-op until a round has actually closed -- before that the
+/// client's own copy is already current.
+fn publish_progress(
+    events: &mpsc::UnboundedSender<StreamEvent>,
+    conversation_messages: &[serde_json::Value],
+    progressed: bool,
+) {
+    if progressed {
+        let _ = events.send(StreamEvent::MessagesUpdated {
+            messages: conversation_messages.to_vec(),
+        });
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_turn_cycle(
     events: &mpsc::UnboundedSender<StreamEvent>,
@@ -1694,6 +1712,9 @@ async fn run_turn_cycle(
     let mut mid_run_nudge_count: u32 = 0;
     // One-shot: asked the model to close out its todos before handing back.
     let mut closeout_nudged = false;
+    // Whether a tool round has closed, i.e. whether the client's copy of the
+    // conversation is behind this one. See `publish_progress`.
+    let mut progressed = false;
 
     while unlimited || turn < max_turns {
         let _ = events.send(StreamEvent::Step {
@@ -1729,6 +1750,7 @@ async fn run_turn_cycle(
                         )
                         .await;
                         if compacted.len() >= conversation_messages.len() {
+                            publish_progress(events, &conversation_messages, progressed);
                             return Err(e);
                         }
                         log::info!(
@@ -1748,7 +1770,10 @@ async fn run_turn_cycle(
                         keep_recent = (keep_recent / 2).max(2);
                         attempts += 1;
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        publish_progress(events, &conversation_messages, progressed);
+                        return Err(e);
+                    }
                 }
             }
         };
@@ -1870,6 +1895,11 @@ async fn run_turn_cycle(
         // for the specific model that needs it (scoped, content preserved), so
         // the agent can speak standard OpenAI tool protocol on the wire again.
         // See janhq/jan-internal#238.
+        //
+        // Everything appended from here until this round's results are in is an
+        // unanswered `tool_calls`, which no upstream accepts as the tail of a
+        // conversation: a failure in between resumes from `round_start`.
+        let round_start = conversation_messages.len();
         if let Some(choice_message) = extract_choice_message(&completion) {
             let assistant_content = choice_message
                 .get("content")
@@ -1911,11 +1941,18 @@ async fn run_turn_cycle(
                     "content": content
                 }));
             }
+            progressed = true;
             turn += 1;
             continue;
         }
 
-        let tool_results = tools.invoke(&tool_calls).await?;
+        let tool_results = match tools.invoke(&tool_calls).await {
+            Ok(results) => results,
+            Err(e) => {
+                publish_progress(events, &conversation_messages[..round_start], progressed);
+                return Err(e);
+            }
+        };
 
         // Standard OpenAI tool protocol: each result is a `role: "tool"` message
         // carrying its `tool_call_id` (see note above the assistant push -- the
@@ -2000,9 +2037,14 @@ async fn run_turn_cycle(
                 }));
             }
         }
+        // This round is closed and its calls are all answered, so the
+        // conversation is a valid resume point for whatever kills the cycle
+        // next.
+        progressed = true;
         turn += 1;
     }
 
+    publish_progress(events, &conversation_messages, progressed);
     Err(format!(
         "reached the {max_turns}-turn limit while the model was still calling tools"
     ))
@@ -2824,6 +2866,108 @@ mod tests {
         assert!(
             len < original_len,
             "published history must be shorter than the overflowing one ({len} vs {original_len})"
+        );
+    }
+
+    /// A run that dies partway through has already done work: the client owns
+    /// the conversation it will retry with, so a failing cycle has to hand over
+    /// the rounds it completed. Publishing only on success means the retry
+    /// resends the turn's opening prompt and the model redoes everything.
+    #[tokio::test]
+    async fn turn_cycle_publishes_progress_when_the_cycle_fails() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = ResultQueueModel {
+            results: StdMutex::new(
+                vec![Ok(tool_call_completion()), Err("upstream 500".to_string())]
+                    .into_iter()
+                    .collect(),
+            ),
+        };
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let convo = vec![json!({ "role": "user", "content": "hi" })];
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_err());
+        drop(tx);
+        let mut published: Option<Vec<serde_json::Value>> = None;
+        while let Ok(ev) = rx.try_recv() {
+            if let StreamEvent::MessagesUpdated { messages } = ev {
+                published = Some(messages);
+            }
+        }
+        let messages = published.expect("the completed tool round must be published");
+        assert_eq!(messages[0]["role"], "user");
+        assert_eq!(messages[1]["role"], "assistant");
+        assert!(messages[1]["tool_calls"].is_array());
+        assert_eq!(
+            messages[2]["role"], "tool",
+            "the published history must pair every call with its result"
+        );
+    }
+
+    /// The round that failed is not a resume point: its `tool_calls` never got
+    /// results, and an upstream rejects a conversation ending on one. The
+    /// published history stops at the last round that closed.
+    #[tokio::test]
+    async fn turn_cycle_progress_never_ends_on_an_unanswered_tool_call() {
+        struct FailingTool;
+        #[async_trait]
+        impl ToolInvoker for FailingTool {
+            async fn invoke(
+                &self,
+                _tool_calls: &[serde_json::Value],
+            ) -> Result<Vec<ToolOutcome>, String> {
+                Err("tool dispatch failed".to_string())
+            }
+        }
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![tool_call_completion(), tool_call_completion()]);
+        let mut budget = SessionBudget::new(None);
+        let convo = vec![json!({ "role": "user", "content": "hi" })];
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &FailingTool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_err());
+        drop(tx);
+        let mut published: Option<Vec<serde_json::Value>> = None;
+        while let Ok(ev) = rx.try_recv() {
+            if let StreamEvent::MessagesUpdated { messages } = ev {
+                published = Some(messages);
+            }
+        }
+        assert!(
+            published.is_none(),
+            "no round closed, so there is nothing to resume from"
         );
     }
 
