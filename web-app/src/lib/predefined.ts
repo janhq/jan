@@ -132,6 +132,7 @@ export const modelSettings = {
         'e.g., {% for message in messages %}...{% endfor %} (default is read from GGUF)',
       type: 'text',
       textAlign: 'right',
+      rows: 10,
     },
   },
   cpu_moe: {
