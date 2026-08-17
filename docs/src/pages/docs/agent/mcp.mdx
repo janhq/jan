@@ -34,7 +34,9 @@ The first turn waits for the connecting servers, so the model sees the full tool
 half-connected one. A slow stdio server delays that first turn, not the whole session.
 </Callout>
 
-## Toggling servers
+## Managing servers
+
+### In the console
 
 ```
 /mcp
@@ -43,7 +45,22 @@ half-connected one. A slow stdio server delays that first turn, not the whole se
 Lists every configured server with its state. <kbd>Enter</kbd> toggles the highlighted one. Turning
 one on connects it in the background; the tools appear once it lands.
 
+While the picker is open you can also manage the list itself:
+
+- <kbd>a</kbd> opens an add form (`name`, transport, then the transport-specific fields)
+- <kbd>e</kbd> edits the highlighted server, prefilled
+- <kbd>d</kbd> removes the highlighted server after writing it out
+
+A newly added server defaults to inactive, so it is persisted but not connected until you toggle
+it on.
+
 The change is written back to `mcp_config.json`, so it persists - and applies to Jan Desktop too.
+
+### From the command line
+
+Add, list, edit, remove, and toggle servers headlessly with `jan cli mcp ...` - `jan cli mcp add
+files --command npx --arg -y --arg my-mcp`, `jan cli mcp list`, `jan cli mcp remove files`. See the
+[CLI reference](/docs/agent/cli#jan-cli-mcp).
 
 ## Tool policy
 
