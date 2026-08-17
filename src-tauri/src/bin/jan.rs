@@ -1162,6 +1162,8 @@ mod tests {
         assert!(matches!(
             parsed_mcp(&["disable", "files"]),
             McpCommands::Disable { name } if name == "files"
+        ));
+    }
     #[test]
     fn plugin_list_defaults_to_compact_output_and_supports_json() {
         let cli = Cli::try_parse_from(["jan", "plugin", "list"]).unwrap();
