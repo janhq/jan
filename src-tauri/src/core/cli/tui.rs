@@ -2254,7 +2254,13 @@ impl App {
             self.input = new_input;
             self.cursor = at_idx + replacement.len();
         } else {
-            let replacement = &selected.path;
+            // Replace the `@query` token but keep the `@` marker so the result
+            // stays a reference, and append `/` for directories so the user
+            // can keep drilling into them.
+            let marker = "@";
+            let path = &selected.path;
+            let trailing = if selected.is_dir { "/" } else { "" };
+            let replacement = format!("{marker}{path}{trailing}");
             let new_input = format!("{}{}{}", &self.input[..at_idx], replacement, after);
             self.input = new_input;
             self.cursor = at_idx + replacement.len();
@@ -16051,6 +16057,37 @@ mod tests {
         }];
         app.accept_path_hint();
         assert_eq!(app.input, r#"use @"notes/report.md""#);
+    }
+
+    #[test]
+    fn accept_directory_path_hint_keeps_at_and_slash() {
+        let mut app = test_app();
+        app.input = "use @docs".into();
+        app.cursor = app.input.len();
+        app.path_hints = vec![super::PathHintItem {
+            path: "docs".into(),
+            name: "docs".into(),
+            is_dir: true,
+        }];
+        app.accept_path_hint();
+        // The reference marker and a trailing slash survive, so the user can
+        // keep drilling into the directory. Accepting must not turn the token
+        // into a plain, non-reference path.
+        assert_eq!(app.input, "use @docs/");
+    }
+
+    #[test]
+    fn accept_file_path_hint_keeps_at_marker() {
+        let mut app = test_app();
+        app.input = "use @report".into();
+        app.cursor = app.input.len();
+        app.path_hints = vec![super::PathHintItem {
+            path: "docs/report.md".into(),
+            name: "report.md".into(),
+            is_dir: false,
+        }];
+        app.accept_path_hint();
+        assert_eq!(app.input, "use @docs/report.md");
     }
 
     #[test]
