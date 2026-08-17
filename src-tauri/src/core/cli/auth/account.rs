@@ -57,18 +57,18 @@ pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
             "https://auth.openai.com/oauth/authorize",
             "https://auth.openai.com/oauth/token",
             "http://localhost:1455/auth/callback",
-            "openid profile email offline_access",
+            "openid profile email offline_access api.connectors.read api.connectors.invoke",
         ),
         AccountProvider::Claude => (
             "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
             "https://claude.ai/oauth/authorize",
-            "https://api.anthropic.com/v1/oauth/token",
+            "https://platform.claude.com/v1/oauth/token",
             "http://localhost:54545/callback",
-            "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload",
+            "user:inference user:profile user:sessions:claude_code user:mcp_servers",
         ),
     };
     let verifier = random_url_safe(32);
-    let state = random_url_safe(16);
+    let state = random_url_safe(32);
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let mut url = url::Url::parse(authorization_endpoint).map_err(|e| e.to_string())?;
     {
@@ -336,7 +336,7 @@ pub async fn refresh(provider: AccountProvider, token: &OAuthToken) -> Result<OA
         ),
         AccountProvider::Claude => (
             "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
-            "https://api.anthropic.com/v1/oauth/token",
+            "https://platform.claude.com/v1/oauth/token",
         ),
     };
     let response = reqwest::Client::new()
@@ -704,7 +704,55 @@ mod tests {
             "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
         );
         assert_eq!(login.client_id, "9d1c250a-e61b-44d9-88ed-5944d1962f5e");
-        assert_eq!(login.token_endpoint, "https://api.anthropic.com/v1/oauth/token");
+        assert_eq!(
+            login.token_endpoint,
+            "https://platform.claude.com/v1/oauth/token"
+        );
+    }
+
+    #[test]
+    fn claude_browser_login_matches_reference_state_and_scopes() {
+        let login = begin(AccountProvider::Claude).unwrap();
+        let url = url::Url::parse(&login.authorization_url).unwrap();
+
+        assert_eq!(
+            url.query_pairs()
+                .find(|(key, _)| key == "scope")
+                .unwrap()
+                .1,
+            "user:inference user:profile user:sessions:claude_code user:mcp_servers"
+        );
+        assert_eq!(login.state.len(), 43, "state must be 43-char base64url");
+        assert!(
+            login
+                .state
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'),
+            "state must be URL-safe base64"
+        );
+    }
+
+    #[test]
+    fn codex_browser_login_matches_reference_flow() {
+        let login = begin(AccountProvider::Codex).unwrap();
+        let url = url::Url::parse(&login.authorization_url).unwrap();
+
+        assert_eq!(
+            url.query_pairs()
+                .find(|(key, _)| key == "scope")
+                .unwrap()
+                .1,
+            "openid profile email offline_access api.connectors.read api.connectors.invoke"
+        );
+        assert_eq!(
+            url.query_pairs()
+                .find(|(key, _)| key == "originator")
+                .unwrap()
+                .1,
+            "jan"
+        );
+        assert_eq!(url.query_pairs().find(|(key, _)| key == "client_id").unwrap().1, "app_EMoamEEZ73f0CkXaXp7hrann");
+        assert_eq!(login.token_endpoint, "https://auth.openai.com/oauth/token");
     }
 
     #[test]
