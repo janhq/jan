@@ -17,7 +17,7 @@ use crate::tools::jail;
 use crate::tools::proc;
 use crate::tools::sandbox::{
     escapes_project, in_scratch, is_hidden_jan_path, lexical_normalize, resolve_path,
-    scratch_display_path,
+    scratch_display_path, symlink_escapes_root,
 };
 use crate::tools::{BuiltinTool, ToolContext};
 
@@ -454,6 +454,11 @@ async fn read(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
     let offset = arg_u64(args, "offset").map(|v| v as usize);
     let limit = arg_u64(args, "limit").map(|v| v as usize);
     let target = resolve_path(root, scratch, path);
+    // Fail closed: a component swapped to a symlink after the gate validated
+    // the path must not redirect the open out of the workspace.
+    if symlink_escapes_root(root, scratch, &target) {
+        return format!("ERROR: refused to read through a symlink out of the workspace: {path}");
+    }
 
     let bytes = match tokio::fs::read(&target).await {
         Ok(b) => b,
@@ -496,7 +501,12 @@ async fn ls(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> St
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
         .unwrap_or(LS_DEFAULT_LIMIT);
-    let mut entries = match tokio::fs::read_dir(resolve_path(root, scratch, path)).await {
+    let target = resolve_path(root, scratch, path);
+    // Names are content too: a symlinked directory would list a host directory.
+    if symlink_escapes_root(root, scratch, &target) {
+        return format!("ERROR: refused to list through a symlink out of the workspace: {path}");
+    }
+    let mut entries = match tokio::fs::read_dir(&target).await {
         Ok(rd) => rd,
         Err(e) => return format!("ERROR: {e}"),
     };
@@ -546,6 +556,13 @@ async fn write(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, co
     // Report the resolved location, not the raw argument: an absolute or `../`
     // path lands outside the project and the model must see where it went.
     let shown = display_path(root, scratch, &target);
+    // Re-validate before `create_dir_all`, not just before the write: a
+    // concurrent sandboxed process can swap a path component between the gate
+    // decision and this call, and creating the parents first would already have
+    // made directories through the swapped link. Fail closed.
+    if symlink_escapes_root(root, scratch, &target) {
+        return format!("ERROR: refused to write through a symlink out of the workspace: {path}");
+    }
     if let Some(parent) = target.parent() {
         if let Err(e) = tokio::fs::create_dir_all(parent).await {
             return format!("ERROR: {shown}: {e}");
@@ -582,6 +599,11 @@ async fn edit(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, con
         return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
     let shown = display_path(root, scratch, &target);
+    // Re-validate before the final read+write pair so a swapped symlink cannot
+    // redirect either the read or the later write.
+    if symlink_escapes_root(root, scratch, &target) {
+        return format!("ERROR: refused to edit through a symlink out of the workspace: {path}");
+    }
     let mut content = match tokio::fs::read_to_string(&target).await {
         Ok(c) => c,
         Err(e) => return format!("ERROR: {shown}: {e}"),
@@ -631,8 +653,6 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         );
     }
 
-    // No confinement available means no shell: running unsandboxed would give the
-    // command the whole machine, which is never what the caller asked for.
     let mut policy = jail::Policy::new(root, ctx.allow_network)
         .with_home_readonly(ctx.home_readonly)
         .with_hide_root(&root.join(crate::tools::sandbox::JAN_DIR));
@@ -642,13 +662,31 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     if let Some(scratch) = ctx.scratch_root {
         policy = policy.with_scratch_root(scratch);
     }
-    let Some(shell) = jail::wrap(proc::shell(), &policy) else {
-        return "ERROR: bash is unavailable because no OS sandbox could be established on this \
-                system. Use the read/ls/find/grep tools instead."
-            .to_string();
+    // With the sandbox off the shell is spawned bare, the way the user's own
+    // terminal would: no wrapper, no policy, the real `$HOME` and `/tmp`. Only
+    // a surface that opted in gets here (the CLI's `--sandbox`/`sandbox`
+    // setting); the desktop never does, so `bash` there is still confined or
+    // withheld. `policy` is still built either way -- it is what
+    // `denial_hint` reads, and an unconfined command can still hit a plain
+    // filesystem permission error worth explaining.
+    let shell = if ctx.sandbox {
+        // No confinement available means no shell: running unsandboxed would give
+        // the command the whole machine, which is never what the caller asked for.
+        let Some(wrapped) = jail::wrap(proc::shell(), &policy) else {
+            return "ERROR: bash is unavailable because no OS sandbox could be established on \
+                    this system. Use the read/ls/find/grep tools instead."
+                .to_string();
+        };
+        wrapped
+    } else {
+        proc::shell().clone()
     };
 
-    let sandbox_tmp = jail::scratch_env_path(jail::backend(), &policy);
+    let sandbox_tmp = if ctx.sandbox {
+        jail::scratch_env_path(jail::backend(), &policy)
+    } else {
+        None
+    };
     let child = match proc::spawn(&shell, command, root, sandbox_tmp.as_deref()).await {
         Ok(c) => c,
         Err(e) => return format!("ERROR: failed to run command: {e}"),
@@ -662,12 +700,15 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // reap its whole process tree if it is still running.
     let (tx, mut rx) = oneshot::channel();
     let spill_scratch = ctx.scratch_root.map(Path::to_path_buf);
+    let sandboxed = ctx.sandbox;
     tokio::spawn(async move {
         let mut out = collect_and_format(child, spill_scratch).await;
         // Appended inside the task so a backgrounded job carries the hint too.
         // `Permission denied` on its own tells the model nothing about *why*;
-        // without this it retries the same command until it gives up.
-        if bash_result_failed(&out) && jail::looks_denied(&out) {
+        // without this it retries the same command until it gives up. Only when
+        // confined: unsandboxed, a denial is an ordinary filesystem permission
+        // and the hint would name limits that are not in force.
+        if sandboxed && bash_result_failed(&out) && jail::looks_denied(&out) {
             out.push_str(&jail::denial_hint(&policy));
         }
         if let Some(pid) = pid {
@@ -767,14 +808,15 @@ impl BashCapture {
         // yet), so dumping it captures the full prefix before we start
         // dropping from the front.
         if self.spill.is_none() && self.tail.len() + chunk.len() > BASH_MAX_BYTES {
-            let path = new_temp_path(self.scratch.as_deref());
-            if let Ok(file) = std::fs::File::create(&path) {
-                let mut w = std::io::BufWriter::new(file);
-                let (a, b) = self.tail.as_slices();
-                let _ = w.write_all(a);
-                let _ = w.write_all(b);
-                self.spill = Some(w);
-                self.spill_path = Some(path);
+            if let Some(path) = new_temp_path(self.scratch.as_deref()) {
+                if let Ok(file) = open_spill_file(&path) {
+                    let mut w = std::io::BufWriter::new(file);
+                    let (a, b) = self.tail.as_slices();
+                    let _ = w.write_all(a);
+                    let _ = w.write_all(b);
+                    self.spill = Some(w);
+                    self.spill_path = Some(path);
+                }
             }
         }
         if let Some(w) = self.spill.as_mut() {
@@ -817,7 +859,7 @@ impl BashCapture {
 
         if !truncated {
             if let Some(p) = self.spill_path.take() {
-                let _ = std::fs::remove_file(p);
+                remove_spill_file(&p);
             }
             return body;
         }
@@ -871,7 +913,7 @@ impl Drop for BashCapture {
     /// fires on the leak paths.
     fn drop(&mut self) {
         if let Some(p) = self.spill_path.take() {
-            let _ = std::fs::remove_file(p);
+            remove_spill_file(&p);
         }
     }
 }
@@ -918,29 +960,82 @@ fn tail_cap(s: &str, max_lines: usize, max_bytes: usize) -> String {
 /// same `/tmp/jan-bash/...` name from both the filesystem tools and the shell,
 /// and is reclaimed when the session's scratch is removed.
 ///
+/// The directory is validated as a real, non-symlink directory before use: the
+/// sandboxed shell can write the scratch, so it could have redirected `jan-bash`
+/// at a host directory. Refuse to spill through a redirect (returning `None`)
+/// rather than write the model's bytes through an attacker-chosen path.
+///
 /// Deliberately not swept on first use: the files are removed individually by
 /// [`BashCapture::finish`] and its `Drop`, and the host fallback is a shared
 /// path, so a global purge there would delete a concurrent instance's live
 /// spill files rather than only stale ones.
-fn spill_dir(scratch: Option<&Path>) -> PathBuf {
+fn spill_dir(scratch: Option<&Path>) -> Option<PathBuf> {
     let base = scratch
         .map(Path::to_path_buf)
         .unwrap_or_else(std::env::temp_dir);
     let dir = base.join("jan-bash");
-    let _ = std::fs::create_dir_all(&dir);
-    dir
+    match std::fs::symlink_metadata(&dir) {
+        Ok(meta) if !meta.is_dir() => return None,
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // create_dir (not create_dir_all) refuses to follow a planted
+            // symlink in the path it creates.
+            let r = std::fs::create_dir(&dir);
+            if let Err(e) = r {
+                if e.kind() != std::io::ErrorKind::AlreadyExists {
+                    return None;
+                }
+            }
+        }
+        Err(_) => return None,
+    }
+    // Re-verify the node is a real directory, not a symlink a concurrent
+    // process swapped in between the create and this check.
+    match std::fs::symlink_metadata(&dir) {
+        Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() => Some(dir),
+        _ => None,
+    }
 }
 
-fn new_temp_path(scratch: Option<&Path>) -> PathBuf {
+fn new_temp_path(scratch: Option<&Path>) -> Option<PathBuf> {
     let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-    spill_dir(scratch).join(format!("jan-bash-{}-{}.txt", std::process::id(), n))
+    Some(
+        spill_dir(scratch)?.join(format!("jan-bash-{}-{}.txt", std::process::id(), n)),
+    )
 }
 
-/// Write `content` to a uniquely named temp file, returning its path on success.
+/// Open a spill file atomically with `O_EXCL` so we never truncate or write
+/// through an existing symlink the shell planted: `create_new` fails if the
+/// path already exists (as a file or a symlink). Combined with the validated
+/// non-symlink parent from [`spill_dir`], the model-controlled spill bytes
+/// cannot be redirected onto a host file.
+fn open_spill_file(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::OpenOptions::new().write(true).create_new(true).open(path)
+}
+
+/// Write `content` to a uniquely named temp file, returning its path on
+/// success. Uses [`open_spill_file`] so the write never follows a symlink.
 fn write_temp_output(content: &str, scratch: Option<&Path>) -> Option<PathBuf> {
-    let path = new_temp_path(scratch);
-    std::fs::write(&path, content).ok()?;
+    use std::io::Write;
+    let path = new_temp_path(scratch)?;
+    let mut file = open_spill_file(&path).ok()?;
+    file.write_all(content.as_bytes()).ok()?;
     Some(path)
+}
+
+/// Remove a spill file only through a real, non-symlink parent directory. The
+/// shell controls the scratch, so a redirected `jan-bash` dir must not redirect
+/// our cleanup either; if it has been swapped, leave the file behind (it is
+/// reclaimed with the session's scratch). `remove_file` itself unlinks a
+/// symlink rather than following it, so only the parent needs re-checking.
+fn remove_spill_file(path: &Path) {
+    if let Some(parent) = path.parent() {
+        match std::fs::symlink_metadata(parent) {
+            Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() => {}
+            _ => return,
+        }
+    }
+    let _ = std::fs::remove_file(path);
 }
 
 async fn find(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> String {
@@ -950,6 +1045,9 @@ async fn find(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
         .map(|v| v as usize)
         .unwrap_or(FIND_DEFAULT_LIMIT);
     let base = resolve_path(root, scratch, &path);
+    if symlink_escapes_root(root, scratch, &base) {
+        return format!("ERROR: refused to search through a symlink out of the workspace: {path}");
+    }
     let root_owned = root.to_path_buf();
 
     let Some(pattern) = pattern else {
@@ -1007,7 +1105,11 @@ async fn grep(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
         .map(|v| v as usize)
         .unwrap_or(GREP_DEFAULT_LIMIT);
     let base = resolve_path(root, scratch, &path);
+    if symlink_escapes_root(root, scratch, &base) {
+        return format!("ERROR: refused to search through a symlink out of the workspace: {path}");
+    }
     let root_owned = root.to_path_buf();
+    let scratch_owned = scratch.map(Path::to_path_buf);
 
     let Some(pattern) = pattern else {
         return "ERROR: missing required argument 'pattern'".to_string();
@@ -1092,7 +1194,19 @@ async fn grep(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
                 .build()
                 .flatten()
             {
-                if entry.file_type().map(|t| t.is_dir()).unwrap_or(true) {
+                let Some(file_type) = entry.file_type() else {
+                    continue;
+                };
+                if file_type.is_dir() {
+                    continue;
+                }
+                // The walk does not descend symlinked directories, but a symlink
+                // to a *file* is not a directory and would be opened and read.
+                // Checked (not skipped outright) so a link that stays inside the
+                // workspace -- every yarn workspace has them -- is still searched.
+                if file_type.is_symlink()
+                    && symlink_escapes_root(&root_owned, scratch_owned.as_deref(), entry.path())
+                {
                     continue;
                 }
                 if is_hidden_jan_path(&root_owned, &entry.path().to_string_lossy()) {
@@ -1692,6 +1806,99 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 
+    /// A recursive `grep` must not follow a *file* symlink out of the root.
+    /// The directory-symlink case is covered by WalkBuilder's no-follow default
+    /// (directories are recursed, symlinks to dirs are not entered), but a
+    /// symlink to a file is not classified as a directory and would be opened
+    /// and read. Skip every symlink so a planted `key -> $HOME/.ssh/id_rsa`
+    /// cannot be disclosed without a separate approval.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn grep_does_not_read_a_file_symlink_out_of_the_root() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::fs::write(outside.join("secret.txt"), b"classified").unwrap();
+        std::os::unix::fs::symlink(outside.join("secret.txt"), root.join("key.txt")).unwrap();
+        std::fs::write(root.join("real.txt"), b"plain").unwrap();
+        let out = execute_builtin(lookup("grep").unwrap(), &json!({"pattern": "classified", "path": "."}), &root).await;
+        assert!(
+            !out.contains("secret") && !out.contains("classified"),
+            "read through a file symlink outside the root: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// The escaping-symlink refusals must not become a blanket "no symlinks":
+    /// a link that stays inside the workspace is ordinary (every yarn workspace
+    /// links `node_modules/<pkg>` back into the repo), so `grep` still searches
+    /// through it and `read` still opens it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn in_root_symlinks_stay_readable_and_searchable() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
+        std::fs::write(root.join("pkg/index.js"), b"needle here").unwrap();
+        std::os::unix::fs::symlink(root.join("pkg/index.js"), root.join("linked.js")).unwrap();
+
+        let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "linked.js"}), &root).await;
+        assert!(out.contains("needle"), "in-root symlink was refused: {out}");
+
+        let out = execute_builtin(lookup("grep").unwrap(), &json!({"pattern": "needle", "path": "."}), &root).await;
+        assert!(out.contains("linked.js"), "in-root symlink was skipped: {out}");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A redirected spill directory must refuse to write through it. The shell
+    /// can replace `scratch/jan-bash` with a symlink to a host directory (or
+    /// point `jan-bash` at one), so both spill entry points must come up empty
+    /// rather than place the model's bytes at an attacker-chosen location.
+    #[cfg(unix)]
+    #[test]
+    fn spill_writing_refuses_a_redirected_spill_dir() {
+        let scratch = unique_root();
+        let outside = unique_root();
+        std::os::unix::fs::symlink(&outside, scratch.join("jan-bash")).unwrap();
+
+        assert!(new_temp_path(Some(&scratch)).is_none(), "dir symlink accepted");
+        assert!(
+            write_temp_output("x", Some(&scratch)).is_none(),
+            "wrote through a redirected spill dir"
+        );
+        // The outside host directory is untouched.
+        assert_eq!(
+            std::fs::read_dir(&outside).unwrap().count(),
+            0,
+            "host files created via a symlinked spill dir"
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A spill *file* that is a planted symlink must never be opened (truncated
+    /// and written through), so the host target it points at stays intact.
+    #[cfg(unix)]
+    #[test]
+    fn spill_file_writes_never_follow_a_planted_symlink() {
+        let scratch = unique_root();
+        let outside = unique_root();
+        std::fs::create_dir_all(scratch.join("jan-bash")).unwrap();
+        let victim = outside.join("victim.txt");
+        std::fs::write(&victim, b"precious").unwrap();
+        let planted = scratch.join("jan-bash/spill.txt");
+        std::os::unix::fs::symlink(&victim, &planted).unwrap();
+
+        assert!(open_spill_file(&planted).is_err(), "opened a spill symlink");
+        assert_eq!(
+            std::fs::read_to_string(&victim).unwrap(),
+            "precious",
+            "wrote through the spill symlink to the host file"
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
     /// The write escape the scratch clamp is there to stop, spelled with a
     /// symlink instead of `..`: a confined `write` through `/tmp/esc` must be
     /// refused and must leave nothing behind outside the scratch.
@@ -1722,9 +1929,68 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 
+    /// The handler itself re-checks for symlinks immediately before opening,
+    /// closing the gate-vs-use window. A read through a planted symlink must be
+    /// refused (not silently resolved), even when the gate already allowed the
+    /// path inside the root.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_refuses_a_symlink_redirected_file() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::fs::write(outside.join("secret.txt"), b"classified").unwrap();
+        std::os::unix::fs::symlink(outside.join("secret.txt"), root.join("link.txt")).unwrap();
+        let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "link.txt"}), &root).await;
+        assert!(out.starts_with("ERROR"), "must refuse, got: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// The same re-check on the writing side, and it must fire *before* the
+    /// parent directories are created: a refused write that has already made
+    /// directories through the planted link has still touched the host.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_and_edit_refuse_a_symlink_redirected_file() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::fs::write(outside.join("victim.txt"), b"precious").unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("escape")).unwrap();
+
+        let out = execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "escape/victim.txt", "content": "owned"}),
+            &root,
+        )
+        .await;
+        assert!(out.starts_with("ERROR"), "write must refuse, got: {out}");
+
+        let out = execute_builtin(
+            lookup("edit").unwrap(),
+            &json!({"path": "escape/victim.txt", "edits": [{"old_string": "precious", "new_string": "owned"}]}),
+            &root,
+        )
+        .await;
+        assert!(out.starts_with("ERROR"), "edit must refuse, got: {out}");
+
+        assert_eq!(
+            std::fs::read_to_string(outside.join("victim.txt")).unwrap(),
+            "precious"
+        );
+        // Nothing was created through the link on the way to the refusal.
+        assert_eq!(
+            std::fs::read_dir(&outside).unwrap().count(),
+            1,
+            "directories were created through the symlink"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
     /// A `write` to `/tmp/x` lands in the session scratch, and a `read` of the
     /// same path sees it: every fs tool shares the one `/tmp` the shell sees.
     #[tokio::test]
+    #[cfg(target_os = "linux")]
     async fn write_then_read_via_tmp_persists_in_scratch() {
         let root = unique_root();
         let scratch = unique_root();
@@ -1756,6 +2022,7 @@ mod tests {
     /// The bare `/tmp` dir resolves to the scratch root; files written there by
     /// the shell (or a sibling tool) are listable through the file tools.
     #[test]
+    #[cfg(target_os = "linux")]
     fn resolve_path_maps_tmp_into_scratch() {
         let root = unique_root();
         let scratch = unique_root();
@@ -1781,6 +2048,7 @@ mod tests {
     /// scratch root (chroot semantics, matching the `/tmp` bind mount), so it
     /// can never reach the host temp.
     #[test]
+    #[cfg(target_os = "linux")]
     fn tmp_path_cannot_climb_out_with_dotdot() {
         let root = unique_root();
         let scratch = unique_root();
@@ -1801,6 +2069,7 @@ mod tests {
 
     /// The gate treats a scratch-backed `/tmp` write as inside, not an escape.
     #[test]
+    #[cfg(target_os = "linux")]
     fn gate_allows_tmp_write_when_scratch_is_set() {
         let root = unique_root();
         let scratch = unique_root();
@@ -2267,6 +2536,58 @@ mod tests {
         assert!(
             full.contains("015999") || full.contains("016000"),
             "spill at {path} must be readable back: {full}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// With the sandbox off, `bash` runs bare instead of being wrapped or
+    /// withheld. The point of the opt-out is that it works on a machine where
+    /// no backend can be established, so this must not depend on one.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unsandboxed_bash_runs_without_a_backend() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[]).with_sandbox(false);
+        let out = super::execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "echo unconfined"}),
+            &ctx,
+        )
+        .await;
+        assert!(out.contains("unconfined"), "unsandboxed bash did not run: {out}");
+        assert!(
+            !out.contains("no OS sandbox could be established"),
+            "withheld despite the opt-out: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Dropping the sandbox drops the scratch with it, in either builder order.
+    /// A scratch that outlived the sandbox would leave the fs tools rewriting
+    /// `/tmp/...` into a directory the unconfined shell never looks at.
+    #[test]
+    fn unsandboxed_context_has_no_scratch() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let store = crate::workspace::project_store(&root);
+        assert!(ToolContext::new(&root, &store, &[])
+            .with_scratch_root(&scratch)
+            .with_sandbox(false)
+            .scratch_root
+            .is_none());
+        assert!(ToolContext::new(&root, &store, &[])
+            .with_sandbox(false)
+            .with_scratch_root(&scratch)
+            .scratch_root
+            .is_none());
+        // The sandboxed default still binds it.
+        assert_eq!(
+            ToolContext::new(&root, &store, &[])
+                .with_scratch_root(&scratch)
+                .scratch_root,
+            Some(scratch.as_path())
         );
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);

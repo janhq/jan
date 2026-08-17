@@ -19,6 +19,9 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # defaults to `default_model` when unset
 # mouse = false                      # disable TUI mouse tracking (scroll wheel,
 #                                     # click-to-expand); on by default
+# sandbox = true                      # run `bash` under OS confinement (same as
+#                                     # passing --sandbox); off by default, so
+#                                     # shell commands run with your own access
 #
 # [providers.my-provider]
 # api_key = "sk-..."
@@ -40,6 +43,11 @@ struct GlobalConfigToml {
     /// default, on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     mouse: Option<bool>,
+    /// Run the CLI's `bash` tool under OS confinement. `None` = the default,
+    /// off. This is the "permanently on" answer to the per-invocation
+    /// `--sandbox` flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sandbox: Option<bool>,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
 }
@@ -146,6 +154,17 @@ pub(crate) fn mouse_enabled() -> bool {
         .ok()
         .and_then(|config| config.mouse)
         .unwrap_or(true)
+}
+
+/// Whether `bash` runs sandboxed by default (`sandbox` in `~/.jan/config.toml`).
+/// `None` when unset, so the caller can let a project's `agent.toml` or the
+/// `--sandbox` flag decide before falling back to the surface default.
+///
+/// An unreadable or malformed config yields `None` rather than an error: the
+/// resolved default is the *safe* direction to fall back to, and a config the
+/// user cannot parse must not be the thing that blocks a session from starting.
+pub(crate) fn sandbox_setting() -> Option<bool> {
+    load_raw().ok().and_then(|config| config.sandbox)
 }
 
 /// Read `~/.jan/config.toml` into the raw TOML struct for editing. Missing file

@@ -81,11 +81,112 @@ pub fn scratch_dir(session: &str) -> PathBuf {
 /// its teardown: thread deletion on the desktop, run end on the CLI, and
 /// session end in the TUI.
 pub async fn ensure_scratch_dir(session: &str) -> Result<PathBuf, String> {
-    let dir = scratch_dir(session);
-    tokio::fs::create_dir_all(&dir)
-        .await
-        .map_err(|e| format!("ERROR: {e}"))?;
-    Ok(dir)
+    ensure_scratch_dir_path(&scratch_dir(session)).await
+}
+
+/// Create a scratch directory at an explicit path, hardening it against a
+/// pre-planted symlink: the sandbox must never bind or trust an
+/// attacker-selected directory as its sanctioned scratch. Refuses (fail
+/// closed) when the target already exists as a symlink or is not a real
+/// directory, and applies restrictive 0700 permissions on Unix so no other
+/// local user can read the session's scratch files. `create_dir` (not
+/// `create_dir_all`) is used so the final component is created directly and a
+/// parent symlink cannot redirect it.
+pub async fn ensure_scratch_dir_path(dir: &Path) -> Result<PathBuf, String> {
+    match tokio::fs::symlink_metadata(dir).await {
+        Ok(meta) => {
+            if !meta.file_type().is_symlink() && meta.is_dir() {
+                // Already a real directory; keep it.
+            } else {
+                return Err(format!(
+                    "ERROR: scratch path {:?} is not a real directory",
+                    dir
+                ));
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(parent) = dir.parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| format!("ERROR: {e}"))?;
+            }
+            // `create_dir` (not `create_dir_all`) so the final component is made
+            // directly and a parent symlink cannot redirect it. A concurrent
+            // creator is fine: re-verify the existing node is a real directory.
+            if let Err(e) = tokio::fs::create_dir(dir).await {
+                if e.kind() != std::io::ErrorKind::AlreadyExists {
+                    return Err(format!("ERROR: {e}"));
+                }
+            }
+            // Re-verify after creation: a concurrent swap could have replaced
+            // the freshly made directory with a symlink.
+            match tokio::fs::symlink_metadata(dir).await {
+                Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() => {}
+                _ => return Err(format!("ERROR: scratch path {:?} is not a real directory", dir)),
+            }
+        }
+        Err(e) => return Err(format!("ERROR: {e}")),
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = tokio::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).await;
+    }
+    Ok(dir.to_path_buf())
+}
+
+/// How long a scratch directory may sit untouched before the startup sweep
+/// treats it as abandoned. Age-based rather than "remove every scratch at
+/// startup" so a second Jan instance cannot wipe the first one's live scratch.
+const SCRATCH_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// Delete abandoned scratch directories in the host temp dir, returning how many
+/// were removed.
+///
+/// Every scratch has an owner that removes it (run end, thread deletion, session
+/// end), but a kill -9 or a power loss leaves one behind with nobody left to
+/// claim it: the id it is keyed to lives in the caller's state, not on disk, so
+/// no `keep` list can be reconstructed the way [`sweep_thread_workspaces`] does
+/// it. Age is the only signal available, so anything untouched for
+/// [`SCRATCH_STALE_AFTER`] is collected. Called once at startup.
+///
+/// Failures are silent per entry: another user's `jan-agent-*` in a shared
+/// `/tmp` is not ours to delete and simply fails the unlink.
+pub async fn sweep_stale_scratch_dirs() -> usize {
+    sweep_scratch_older_than(SCRATCH_STALE_AFTER).await
+}
+
+/// [`sweep_stale_scratch_dirs`] with an explicit age, so a test can collect a
+/// scratch it just created instead of waiting a day.
+async fn sweep_scratch_older_than(max_age: std::time::Duration) -> usize {
+    let Ok(mut entries) = tokio::fs::read_dir(std::env::temp_dir()).await else {
+        return 0;
+    };
+    let mut removed = 0;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !name.starts_with("jan-agent-") {
+            continue;
+        }
+        // `symlink_metadata`: a symlink named like a scratch is not one, and
+        // following it would delete whatever it points at.
+        let Ok(meta) = tokio::fs::symlink_metadata(entry.path()).await else {
+            continue;
+        };
+        if meta.file_type().is_symlink() || !meta.is_dir() {
+            continue;
+        }
+        let stale = meta
+            .modified()
+            .ok()
+            .and_then(|m| m.elapsed().ok())
+            .is_some_and(|age| age >= max_age);
+        if stale && tokio::fs::remove_dir_all(entry.path()).await.is_ok() {
+            removed += 1;
+        }
+    }
+    removed
 }
 
 /// Delete a session's scratch directory. Idempotent: a missing scratch is Ok.
@@ -278,6 +379,58 @@ mod tests {
         assert!(!scratch.exists());
         // Idempotent.
         remove_scratch_dir(session).await.unwrap();
+    }
+
+    /// A scratch whose owner died (kill -9, power loss) has nobody left to
+    /// remove it and no `keep` list to rebuild, so the startup sweep collects it
+    /// by age. Nothing else in the temp dir is touched, and a fresh scratch
+    /// survives the real 24h threshold.
+    #[tokio::test]
+    async fn stale_scratch_dirs_are_swept_and_fresh_ones_are_not() {
+        let session = format!("sweep-stale-{}", std::process::id());
+        let orphan = ensure_scratch_dir(&session).await.unwrap();
+        std::fs::write(orphan.join("spill.txt"), b"leaked").unwrap();
+        let bystander = std::env::temp_dir().join(format!("not-a-scratch-{session}"));
+        std::fs::create_dir_all(&bystander).unwrap();
+
+        assert_eq!(sweep_stale_scratch_dirs().await, 0, "a fresh scratch is live");
+        assert!(orphan.is_dir());
+
+        assert!(sweep_scratch_older_than(std::time::Duration::ZERO).await >= 1);
+        assert!(!orphan.exists(), "an abandoned scratch must be collected");
+        assert!(bystander.is_dir(), "swept a directory that is not a scratch");
+
+        let _ = std::fs::remove_dir_all(&bystander);
+    }
+
+    /// The scratch root must never be a pre-planted symlink to another
+    /// directory: the sandbox binds it as `/tmp`, so trusting a redirect would
+    /// sanction an attacker-selected directory as the session's scratch.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn scratch_root_refuses_a_pre_planted_symlink() {
+        let dir = unique_data_folder();
+        let outside = unique_data_folder();
+        std::os::unix::fs::symlink(&outside, &dir).unwrap();
+        let r = ensure_scratch_dir_path(&dir).await;
+        assert!(r.is_err(), "symlinked scratch root accepted: {:?}", r);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A freshly created scratch root is a real, restrictive directory.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn scratch_root_creation_is_a_real_private_dir() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = unique_data_folder();
+        let r = ensure_scratch_dir_path(&dir).await;
+        assert_eq!(r.unwrap(), dir);
+        let meta = std::fs::symlink_metadata(&dir).unwrap();
+        assert!(!meta.file_type().is_symlink());
+        assert!(meta.is_dir());
+        assert_eq!(meta.permissions().mode() & 0o777, 0o700);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

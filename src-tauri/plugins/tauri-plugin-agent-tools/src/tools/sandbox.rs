@@ -159,11 +159,12 @@ fn tmp_relative(raw: &str) -> Option<String> {
     if !path.is_absolute() {
         return None;
     }
-    let rest = raw.strip_prefix("/tmp")?;
-    if rest.is_empty() {
+    // Match only the exact `/tmp` dir or a genuine `/tmp/...` descendant: a
+    // raw string prefix would treat `/tmpx` and `/tmp-archive` as inside /tmp.
+    if raw == "/tmp" {
         return Some(String::new());
     }
-    Some(rest.strip_prefix('/').unwrap_or(rest).to_string())
+    Some(raw.strip_prefix("/tmp/")?.to_string())
 }
 
 /// The agent's own state directory inside a project. Hidden wholesale rather
@@ -204,6 +205,49 @@ pub fn command_touches_hidden_jan_path(project_root: &Path, command: &str) -> bo
         .split(|c: char| c.is_whitespace() || ";|&><()\"'`".contains(c))
         .filter(|t| !t.is_empty())
         .any(|t| is_hidden_jan_path(project_root, t))
+}
+
+/// True when `target` *claims* to be inside a trusted root but resolves outside
+/// every one of them: the fail-closed re-check a handler runs immediately
+/// before its final open, closing the window between the gate's
+/// decision-time canonicalization and the handler's use of the raw path.
+///
+/// Containment, not symlink-avoidance: a link that stays beneath a trusted root
+/// is ordinary and must keep working (a yarn workspace's
+/// `node_modules/<pkg> -> ../../pkg` is one, and refusing those would make the
+/// tools useless in a monorepo). Only a link whose target leaves the roots is an
+/// escape.
+///
+/// A target that is not even lexically under a root is left alone: it is an
+/// escape the gate already put to the user, and re-deciding it here would
+/// override their approval. An unresolvable path fails closed.
+///
+/// Still a re-check, not a guarantee: a swap landing between this call and the
+/// open is not covered. That needs descriptor-relative no-follow opens
+/// (`openat2` with `RESOLVE_BENEATH`, reparse-point handling on Windows).
+pub fn symlink_escapes_root(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    target: &Path,
+) -> bool {
+    let mut roots = vec![project_root];
+    if let Some(s) = scratch {
+        roots.push(s);
+    }
+    let normalized = lexical_normalize(target);
+    if !roots
+        .iter()
+        .any(|r| normalized.starts_with(lexical_normalize(r)))
+    {
+        return false;
+    }
+    let Ok(resolved) = canonicalize_lenient(&normalized) else {
+        return true;
+    };
+    !roots
+        .iter()
+        .filter_map(|r| r.canonicalize().ok())
+        .any(|r| resolved.starts_with(r))
 }
 
 /// Canonicalize a path that may not fully exist: canonicalize the deepest
@@ -500,5 +544,51 @@ mod tests {
         assert_eq!(escapes_project(&root, None, "link/secret.txt"), Ok(true));
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// The re-check flags only symlinks that *leave* the trusted roots. An
+    /// in-root link (the shape every yarn workspace has) resolves back inside
+    /// and must stay usable; a link out of the root is an escape; a path that
+    /// was never under a root at all is the gate's business, not this check's.
+    #[cfg(unix)]
+    #[test]
+    fn symlink_escape_recheck_allows_in_root_links() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
+        std::fs::write(root.join("pkg/index.js"), b"x").unwrap();
+        std::fs::write(outside.join("secret.txt"), b"s").unwrap();
+
+        let inward = root.join("linked");
+        std::os::unix::fs::symlink(root.join("pkg"), &inward).unwrap();
+        let outward = root.join("escape");
+        std::os::unix::fs::symlink(&outside, &outward).unwrap();
+
+        assert!(!symlink_escapes_root(&root, None, &inward.join("index.js")));
+        assert!(symlink_escapes_root(&root, None, &outward.join("secret.txt")));
+        // A not-yet-existing leaf under a real directory is not an escape.
+        assert!(!symlink_escapes_root(&root, None, &root.join("pkg/new.txt")));
+        // Outside both roots: the gate already decided, so this check abstains.
+        assert!(!symlink_escapes_root(&root, None, &outside.join("secret.txt")));
+        // The scratch counts as a trusted root, so a link between the two is in.
+        let scratch = unique_root();
+        let cross = scratch.join("into-project");
+        std::os::unix::fs::symlink(root.join("pkg"), &cross).unwrap();
+        assert!(!symlink_escapes_root(&root, Some(&scratch), &cross.join("index.js")));
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// `/tmpx` and `/tmp-archive` are not descendants of `/tmp` and must not be
+    /// silently redirected into the scratch.
+    #[test]
+    fn tmp_lookalikes_are_not_remapped() {
+        assert_eq!(tmp_relative("/tmp"), Some(String::new()));
+        assert_eq!(tmp_relative("/tmp/"), Some(String::new()));
+        assert_eq!(tmp_relative("/tmp/a.txt"), Some("a.txt".to_string()));
+        assert_eq!(tmp_relative("/tmpx"), None);
+        assert_eq!(tmp_relative("/tmp-archive/a.txt"), None);
     }
 }

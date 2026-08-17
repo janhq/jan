@@ -13,15 +13,20 @@ without you.
 
 | Mode | Reads | Writes and commands | Start with |
 | --- | --- | --- | --- |
-| Default | Free | Auto-approved, inside the sandbox | `jan` |
+| Default | Free | Auto-approved | `jan` |
 | Safe | Free | Prompt for approval | `jan --safe` |
 | Plan | Free | Blocked | `jan --plan` |
 
 ## Default
 
-The agent works without stopping to ask. That is not the same as unrestricted: shell commands run
-inside an OS sandbox (bubblewrap on Linux, Seatbelt on macOS, AppContainer on Windows) confined to
-the project directory, and if no sandbox can be established the `bash` tool refuses to run at all.
+The agent works without stopping to ask. That is not the same as unrestricted - file paths are still
+checked against the project root - but a shell command you never saw runs with your own access,
+because the CLI does not sandbox commands by default.
+
+Add `--sandbox` to run them under OS confinement (bubblewrap on Linux, Seatbelt on macOS,
+AppContainer on Windows), confined to the project directory; with it on, if no sandbox can be
+established the `bash` tool refuses to run at all. It can also be turned on permanently - see
+[the shell sandbox](/docs/agent/permissions#the-shell-sandbox).
 
 Some things are denied outright and no mode lifts them:
 
