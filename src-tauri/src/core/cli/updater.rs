@@ -66,6 +66,7 @@ pub fn build_version() -> &'static str {
 fn platform_key() -> Option<&'static str> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("linux", "x86_64") => Some("linux-x86_64"),
+        ("linux", "aarch64") => Some("linux-aarch64"),
         ("macos", _) => Some("darwin-universal"),
         ("windows", "x86_64") => Some("windows-x86_64"),
         _ => None,
@@ -493,10 +494,15 @@ mod tests {
 
     #[test]
     fn manifest_fields_are_read_per_platform() {
+        // Key the manifest by this platform's real key and assert the fields
+        // are read back. Every supported platform must resolve a key here; if
+        // platform_key() is None the expect() fails loudly instead of silently
+        // skipping the url/sha asserts, so an unsupported platform cannot slip
+        // past the suite unnoticed.
         let manifest: UpdateManifest = serde_json::from_value(serde_json::json!({
             "version": "0.8.4-12",
             "platforms": {
-                platform_key().unwrap_or("linux-x86_64"): {
+                platform_key().expect("test must run on a supported platform"): {
                     "url": "https://delta.jan.ai/agent-nightly/jan.tar.gz",
                     "sha256": "abc123"
                 }
@@ -505,13 +511,11 @@ mod tests {
         .unwrap();
         let update = read_update(&manifest, "agent-nightly");
         assert_eq!(update.latest, "0.8.4-12");
-        if platform_key().is_some() {
-            assert_eq!(
-                update.url.as_deref(),
-                Some("https://delta.jan.ai/agent-nightly/jan.tar.gz")
-            );
-            assert_eq!(update.sha256.as_deref(), Some("abc123"));
-        }
+        assert_eq!(
+            update.url.as_deref(),
+            Some("https://delta.jan.ai/agent-nightly/jan.tar.gz")
+        );
+        assert_eq!(update.sha256.as_deref(), Some("abc123"));
     }
 
     #[test]
