@@ -2239,10 +2239,11 @@ impl App {
 
         // Quoted reference: replace @"..." with @"selected/path"
         if after_at.starts_with('"') {
-            // Find the closing quote in the original input (may be past cursor).
+            // rest[0] is the opening quote; the closing quote may be past the
+            // cursor. A missing closing quote means the user is still typing
+            // the token, so delete through the end of the input.
             let rest = &self.input[at_idx + 1..];
-            let close_offset = rest.find('"').unwrap_or(rest.len());
-            let full_len = close_offset + 1; // include closing quote
+            let full_len = rest[1..].find('"').map(|i| i + 2).unwrap_or(rest.len());
             let replacement = format!("@\"{}\"", selected.path);
             let new_input = format!(
                 "{}{}{}",
@@ -16036,6 +16037,20 @@ mod tests {
         app.input_insert('\t');
         assert_eq!(app.input, "use credential for api.txt");
         assert_eq!(app.cursor, app.input.len());
+    }
+
+    #[test]
+    fn accept_quoted_path_hint_replaces_whole_quoted_token() {
+        let mut app = test_app();
+        app.input = r#"use @"my file.txt""#.into(); // fully typed, closing quote present
+        app.cursor = app.input.len();
+        app.path_hints = vec![super::PathHintItem {
+            path: "notes/report.md".into(),
+            name: "report.md".into(),
+            is_dir: false,
+        }];
+        app.accept_path_hint();
+        assert_eq!(app.input, r#"use @"notes/report.md""#);
     }
 
     #[test]
