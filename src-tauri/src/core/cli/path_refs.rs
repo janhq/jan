@@ -111,7 +111,7 @@ pub fn last_ref_start(text: &str) -> Option<usize> {
 /// Returns the raw path strings in order of appearance (deduplicated).
 /// Quoted references (`@"path with spaces"`) have their surrounding quotes
 /// stripped so the path is usable as a filesystem path.
-pub fn parse_references(text: &str) -> Vec<String> {
+fn parse_references(text: &str) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut refs = Vec::new();
     for m in ref_matches(text) {
@@ -129,7 +129,7 @@ pub fn parse_references(text: &str) -> Vec<String> {
 }
 
 /// Remove all `@path` references from `text` and normalise whitespace.
-pub fn strip_references(text: &str) -> String {
+fn strip_references(text: &str) -> String {
     let mut kept = String::with_capacity(text.len());
     let mut last = 0;
     for m in ref_matches(text) {

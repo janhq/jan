@@ -18,7 +18,7 @@ pub mod updater;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::core::app::commands::{resolve_config_file_path, resolve_jan_data_folder};
+use crate::core::app::commands::resolve_jan_data_folder;
 use crate::core::threads::{
     constants::THREADS_FILE,
     helpers::{read_messages_from_file, update_thread_metadata, write_messages_to_file},
@@ -457,21 +457,6 @@ fn default_thread_title(history: &[serde_json::Value]) -> String {
     } else {
         collapsed
     }
-}
-
-// ── App config ────────────────────────────────────────────────────────────
-
-pub fn cli_get_data_folder() -> PathBuf {
-    resolve_jan_data_folder()
-}
-
-pub fn cli_get_config() -> Result<serde_json::Value, String> {
-    let path = resolve_config_file_path();
-    if !path.exists() {
-        return Err(format!("Config file not found at: {}", path.display()));
-    }
-    let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&data).map_err(|e| e.to_string())
 }
 
 // ── Agent operations ───────────────────────────────────────────────────────
@@ -1737,14 +1722,6 @@ mod tests {
         assert_eq!(stored["metadata"]["base_snapshot"], "abc");
 
         let _ = std::fs::remove_dir_all(&base);
-    }
-
-    // ── cli_get_data_folder returns a path ────────────────────────────────
-
-    #[test]
-    fn cli_get_data_folder_returns_non_empty_path() {
-        let p = cli_get_data_folder();
-        assert!(!p.as_os_str().is_empty());
     }
 
     // ── prepare_agent_session model resolution ────────────────────────────

@@ -5632,7 +5632,7 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     // Ctrl-V: terminals deliver a normal paste as `Event::Paste`, but some send
     // Ctrl-V through as a key, so read the clipboard directly for those.
     if ctrl && key.code == KeyCode::Char('v') {
-        match clipboard_text() {
+        match super::secret_input::clipboard_text() {
             Ok(text) => {
                 if let Some(prompt) = app.login.as_mut() {
                     prompt.paste(&text);
@@ -5671,12 +5671,6 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
         _ => {}
     }
-}
-
-/// Plain text from the OS clipboard, for Ctrl-V in the `/login` prompt (the
-/// image path is `clipboard_image`).
-fn clipboard_text() -> Result<String, String> {
-    super::secret_input::clipboard_text()
 }
 
 async fn handle_key(

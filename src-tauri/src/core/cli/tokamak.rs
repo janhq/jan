@@ -53,7 +53,7 @@ pub fn sanitize_key(raw: &str) -> Result<String, String> {
 /// Verify `api_key` against Tokamak and return the model ids it grants access
 /// to. An empty list is a valid answer (the account has no models yet), so the
 /// caller decides whether that is usable.
-pub async fn verify_key(api_key: &str) -> Result<Vec<String>, String> {
+async fn verify_key(api_key: &str) -> Result<Vec<String>, String> {
     let client = reqwest::Client::builder()
         .timeout(VERIFY_TIMEOUT)
         .build()
