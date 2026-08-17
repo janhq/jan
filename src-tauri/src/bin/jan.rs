@@ -9,14 +9,17 @@ use console::Style;
 
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
+use app_lib::core::agent::plugins::InstalledPlugin;
 use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use app_lib::core::cli::mcp::{self, split_kv, McpServerEntry};
 use app_lib::core::cli::run_report::OutputFormat;
 use app_lib::core::cli::{
     cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
-    cli_get_thread, cli_list_messages, cli_list_threads, ResumeTarget, SessionFlags,
+    cli_get_thread, cli_list_messages, cli_list_threads, cli_plugin_install, cli_plugin_list,
+    cli_plugin_remove, cli_plugin_search, ResumeTarget, SessionFlags,
 };
+use std::fmt::Write as _;
 
 // ── Top-level CLI ──────────────────────────────────────────────────────────
 
@@ -162,8 +165,14 @@ enum Commands {
         #[command(subcommand)]
         cmd: AgentConfigCommands,
     },
-    /// Update this binary to the latest build of the channel it was built for
+    /// Manage project-local plugins and their skills
     #[command(display_order = 4)]
+    Plugin {
+        #[command(subcommand)]
+        cmd: PluginCommands,
+    },
+    /// Update this binary to the latest build of the channel it was built for
+    #[command(display_order = 5)]
     Update {
         /// Report whether an update exists without installing it
         #[arg(long)]
@@ -171,6 +180,36 @@ enum Commands {
         /// Reinstall even when already on the latest version
         #[arg(long, conflicts_with = "check")]
         force: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum PluginCommands {
+    /// List plugins installed in a project
+    List {
+        #[arg(long, default_value = ".")]
+        project: String,
+        /// Print complete plugin metadata as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Install a git URL or marketplace plugin
+    Install {
+        spec: String,
+        #[arg(long, default_value = ".")]
+        project: String,
+    },
+    /// Remove an installed plugin by name
+    Remove {
+        name: String,
+        #[arg(long, default_value = ".")]
+        project: String,
+    },
+    /// Search the configured plugin marketplace
+    Search {
+        query: Option<String>,
+        #[arg(long, default_value = ".")]
+        project: String,
     },
 }
 
@@ -512,6 +551,7 @@ async fn main() {
                 std::process::exit(1);
             }
         }
+        Commands::Plugin { cmd } => handle_plugin(cmd).await,
         Commands::Update { check, force } => handle_update(check, force).await,
     }
 }
@@ -547,6 +587,89 @@ async fn handle_update(check: bool, force: bool) {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
+}
+
+async fn handle_plugin(cmd: PluginCommands) {
+    let result = match cmd {
+        PluginCommands::List { project, json } => {
+            let plugins = cli_plugin_list(&project);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&plugins).unwrap());
+            } else {
+                print!("{}", format_plugin_list(&plugins));
+            }
+            Ok(())
+        }
+        PluginCommands::Install { spec, project } => cli_plugin_install(&project, &spec)
+            .await
+            .map(|plugin| println!("{}", serde_json::to_string_pretty(&plugin).unwrap())),
+        PluginCommands::Remove { name, project } => {
+            cli_plugin_remove(&project, &name).map(|()| println!("Removed plugin '{name}'"))
+        }
+        PluginCommands::Search { query, project } => {
+            cli_plugin_search(&project, query.as_deref().unwrap_or(""))
+                .await
+                .map(|entries| println!("{}", serde_json::to_string_pretty(&entries).unwrap()))
+        }
+    };
+    if let Err(e) = result {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
+}
+
+fn format_plugin_list(plugins: &[InstalledPlugin]) -> String {
+    if plugins.is_empty() {
+        return "No plugins installed.\n".into();
+    }
+
+    let name_width = plugins
+        .iter()
+        .map(|plugin| plugin.name.len())
+        .max()
+        .unwrap_or(0)
+        .max("PLUGIN".len());
+    let version_width = plugins
+        .iter()
+        .map(|plugin| plugin.version.len())
+        .max()
+        .unwrap_or(0)
+        .max("VERSION".len());
+    let skills_width = plugins
+        .iter()
+        .map(|plugin| plugin.skills.to_string().len())
+        .max()
+        .unwrap_or(0)
+        .max("SKILLS".len());
+    let commands_width = plugins
+        .iter()
+        .map(|plugin| plugin.commands.to_string().len())
+        .max()
+        .unwrap_or(0)
+        .max("COMMANDS".len());
+    let agents_width = plugins
+        .iter()
+        .map(|plugin| plugin.agents.to_string().len())
+        .max()
+        .unwrap_or(0)
+        .max("AGENTS".len());
+
+    let mut output = String::new();
+    writeln!(
+        output,
+        "{:<name_width$}  {:<version_width$}  {:>skills_width$}  {:>commands_width$}  {:>agents_width$}",
+        "PLUGIN", "VERSION", "SKILLS", "COMMANDS", "AGENTS"
+    )
+    .unwrap();
+    for plugin in plugins {
+        writeln!(
+            output,
+            "{:<name_width$}  {:<version_width$}  {:>skills_width$}  {:>commands_width$}  {:>agents_width$}",
+            plugin.name, plugin.version, plugin.skills, plugin.commands, plugin.agents
+        )
+        .unwrap();
+    }
+    output
 }
 
 // ── CLI dispatch ─────────────────────────────────────────────────────────
@@ -1041,11 +1164,66 @@ mod tests {
             McpCommands::Disable { name } if name == "files"
         ));
     }
+    #[test]
+    fn plugin_list_defaults_to_compact_output_and_supports_json() {
+        let cli = Cli::try_parse_from(["jan", "plugin", "list"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Plugin {
+                cmd: PluginCommands::List { project, json }
+            }) if project == "." && !json
+        ));
+
+        let cli = Cli::try_parse_from(["jan", "plugin", "list", "--json"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Plugin {
+                cmd: PluginCommands::List { json, .. }
+            }) if json
+        ));
+}
 
     #[test]
     fn split_kv_rejects_without_separator() {
         assert_eq!(split_kv("K=V", "env").unwrap(), ("K".to_string(), "V".to_string()));
         assert!(split_kv("novalue", "env").is_err());
         assert!(split_kv("=V", "header").is_err());
+    }
+
+    #[test]
+    fn compact_plugin_list_omits_long_metadata() {
+        let plugins = vec![
+            InstalledPlugin {
+                name: "alpha".into(),
+                description: "A long description that should not appear".into(),
+                version: "1.2.3".into(),
+                repo: "https://example.com/alpha".into(),
+                skills: 2,
+                commands: 1,
+                agents: 3,
+            },
+            InstalledPlugin {
+                name: "beta".into(),
+                description: "Another description".into(),
+                version: "0.0.0".into(),
+                repo: String::new(),
+                skills: 0,
+                commands: 0,
+                agents: 0,
+            },
+        ];
+
+        let output = format_plugin_list(&plugins);
+        assert_eq!(output.lines().count(), 3);
+        assert!(output.lines().next().unwrap().contains("PLUGIN"));
+        assert!(output.lines().next().unwrap().contains("COMMANDS"));
+        assert!(output.lines().next().unwrap().contains("AGENTS"));
+        assert!(output.contains("alpha"));
+        assert!(output.contains("1.2.3"));
+        assert!(output.contains("2"));
+        assert!(output.contains("1"));
+        assert!(output.contains("3"));
+        assert!(!output.contains("long description"));
+        assert!(!output.contains("example.com"));
     }
 }

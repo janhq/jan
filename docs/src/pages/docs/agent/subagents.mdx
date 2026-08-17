@@ -115,6 +115,21 @@ Definitions are TOML files, merged from two scopes:
 The two are merged, and the project scope shadows the user scope by name - so a project can
 override one of your personal subagents without renaming it.
 
+Plugins can also ship subagents as markdown agent files (`agents/*.md` in an installed plugin, the
+Claude Code convention). They load as a third, read-only scope:
+
+- The plugin scope loads first, so a user or project TOML definition shadows a plugin agent of the
+  same name.
+- Plugin agents cannot be created or edited through `create_subagent` - they are managed by
+  installing or removing the plugin.
+- Claude-runtime frontmatter is translated: `model` and `color` are ignored (the agent runs on the
+  session's model), and `tools` is mapped onto Jan's tool names (`Read` -> `read`, `Glob` -> `glob`,
+  `Grep` -> `grep`, `WebSearch` -> `web_search`, `WebFetch` -> `web_fetch`, `TodoWrite` -> `todo`).
+  Names with no Jan equivalent are dropped; an agent listing only unknown tools inherits the
+  parent's full tool policy.
+
+See [Plugins](/docs/agent/plugins#plugin-agents) for how plugin agents are discovered.
+
 Each definition carries a name, a one-line description, a system prompt, and an optional default
 tool allowlist. The agent can write one for you:
 
@@ -143,6 +158,11 @@ A subagent's tools are narrowed, never widened:
 
 Either way it can only ever reach a subset of what the parent could reach, so delegation cannot be
 used to escape your project's [tool policy](/docs/agent/permissions#project-policy).
+
+One exception: `skill_list` and `skill_read` are always available to a subagent, whatever its
+allowlist says. Skills are how a subagent executes its procedure, and plugin `agents/*.md` files
+never list them, so a narrowed toolset keeps the read side - a subagent can always load the skills
+it was told to follow. A policy that explicitly denies a skill tool still wins.
 
 ## When not to delegate
 

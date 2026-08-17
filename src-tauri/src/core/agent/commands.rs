@@ -14,18 +14,20 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::core::agent::events::StreamEvent;
 use crate::core::agent::git;
-use tauri_plugin_agent_tools::permissions::ToolPermissions;
+use crate::core::agent::plugins;
 use crate::core::agent::project::{
     agent_toml_path, ensure_project, load_agent_config, permissions_from,
     set_skills_enabled_in_agent_toml,
 };
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs};
 use crate::core::agent::skill_hub;
-use tauri_plugin_agent_tools::skills::{self, SkillMeta};
-use tauri_plugin_agent_tools::workspace;
-use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+use crate::core::agent::skills as agent_skills;
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
+use tauri_plugin_agent_tools::permissions::ToolPermissions;
+use tauri_plugin_agent_tools::skills::{self, SkillMeta};
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::workspace;
 
 /// Registry of in-flight agent runs keyed by client-supplied `run_id`, holding a
 /// one-shot cancel sender per run. Managed via `app.manage(AgentRuns::default())`.
@@ -104,12 +106,6 @@ pub async fn agent_run<R: Runtime>(
         let cfg = load_agent_config(&project_root)?;
         args.permissions = permissions_from(&cfg);
         args.project_root = Some(project_root);
-        // Give this run its own scratch. Without this the session-less desktop
-        // path would fall back to a shared `<project>/agent-scratch` that
-        // accumulates across runs and across sessions; a per-run id also means
-        // the scratch can be wiped when the run ends (success, error, or
-        // cancel) instead of persisting in the user's project.
-        args.session_id = Some(uuid::Uuid::new_v4().to_string());
     }
 
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
@@ -140,14 +136,6 @@ pub async fn agent_run<R: Runtime>(
     drop(tx);
     let _ = forward.await;
     runs.0.lock().await.remove(&run_id);
-
-    // Wipe this run's dedicated scratch on every terminal path (success, error,
-    // or cancel) so scratch and bash spill files never accumulate. A hard kill
-    // is the one path that skips this; the startup sweep collects what it
-    // leaves behind (`workspace::sweep_stale_scratch_dirs`).
-    if let Some(session) = args.session_id.as_deref() {
-        let _ = workspace::remove_scratch_dir(session).await;
-    }
 
     result.map(|_| ())
 }
@@ -253,6 +241,58 @@ pub async fn agent_skill_enabled_set(
     let root = std::path::PathBuf::from(&project);
     ensure_project(&root)?;
     set_skills_enabled_in_agent_toml(&agent_toml_path(&root), &enabled).map_err(ui_error)
+}
+
+/// Build the user message for invoking an enabled skill (`/skill:<name>` /
+/// `<skill>` semantics shared with the console): the full skill body wrapped
+/// in an invocation header, skill directory announcement for bundled files,
+/// and the user's `args` threaded in. Err when the skill is unknown or
+/// disabled. UIs submit the returned message through their own session flow.
+#[tauri::command]
+pub async fn agent_skill_invoke(
+    project: String,
+    name: String,
+    args: String,
+) -> Result<String, String> {
+    let root = std::path::PathBuf::from(&project);
+    agent_skills::build_invocation_message(&root, &name, &args)
+        .map(|(message, _)| message)
+        .map_err(ui_error)
+}
+
+/// List installed plugins under `<project>/.jan/agent/plugins/` with metadata
+/// and skill counts.
+#[tauri::command]
+pub async fn agent_plugin_list(project: String) -> Result<Vec<plugins::InstalledPlugin>, String> {
+    let root = std::path::PathBuf::from(&project);
+    Ok(plugins::installed(&root))
+}
+
+/// Install a plugin from a git URL or configured marketplace name.
+#[tauri::command]
+pub async fn agent_plugin_install(
+    project: String,
+    spec: String,
+) -> Result<plugins::InstalledPlugin, String> {
+    let root = std::path::PathBuf::from(&project);
+    plugins::install(&root, &spec).await.map_err(ui_error)
+}
+
+/// Remove an installed plugin by directory name.
+#[tauri::command]
+pub async fn agent_plugin_remove(project: String, name: String) -> Result<(), String> {
+    let root = std::path::PathBuf::from(&project);
+    plugins::remove(&root, &name).map_err(ui_error)
+}
+
+/// Search the configured plugin marketplace.
+#[tauri::command]
+pub async fn agent_plugin_search(
+    project: String,
+    query: String,
+) -> Result<Vec<plugins::MarketEntry>, String> {
+    let root = std::path::PathBuf::from(&project);
+    plugins::search(&root, &query).await.map_err(ui_error)
 }
 
 /// Return the git branch name for the project at `project`, or `None` when the

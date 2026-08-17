@@ -165,6 +165,28 @@ jan cli agent status
 jan cli agent status --project ~/code/app
 ```
 
+## `jan plugin`
+
+Manage project-local plugins without the interactive console. Plugin commands use
+`.jan/agent/plugins/` under `--project` (default `.`) and print JSON for list, install, and search.
+
+```bash
+jan plugin list
+jan plugin install https://github.com/acme/release-tools
+jan plugin install https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-code-setup
+jan plugin remove release-tools
+jan plugin search prepare
+```
+
+Direct git URLs, optional `#ref` suffixes, marketplace names, and GitHub tree URLs selecting a
+repository subdirectory are supported. A project marketplace is configured in `agent.toml`:
+
+```toml
+[plugins]
+marketplace = "https://example.com/jan-plugins/index.json"
+```
+
+
 ## `jan config`
 
 Manage provider credentials in `~/.jan/config.toml`.

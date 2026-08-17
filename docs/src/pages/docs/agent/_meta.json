@@ -16,6 +16,8 @@
   "subagents": "Subagents",
   "memory": "Memory",
   "skills": "Skills",
+  "skill-invocation": "Skill Invocation",
+  "plugins": "Plugins",
   "config-separator": { "title": "Configuration", "type": "separator" },
   "providers": "Providers",
   "project-config": "Project Config",

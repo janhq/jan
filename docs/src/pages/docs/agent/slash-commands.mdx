@@ -10,6 +10,22 @@ import { Callout } from 'nextra/components'
 
 Type `/` in the input to filter the list as you type. <kbd>Enter</kbd> runs the highlighted command.
 
+The filter is fuzzy: it matches the tail of a command or skill name, a subsequence of it, or a close
+typo, so you rarely need to type a name exactly. `/rse` finds `/resume`, and typing `/simplifyer`
+still lines up the `simplifier` in `/code-simplifier`. Built-ins, plugin commands, and skills all
+join the same list, ranked by how closely they match the start of the name. The first one or two
+characters match strictly as a prefix, so a barely-started buffer stays tight instead of surfacing
+every name that merely contains those letters.
+
+Installed project skills ([Skills](/docs/agent/skills)) join the same popup: typing `/deploy` matches a skill named `deploy` (magenta row, alongside the cyan commands), <kbd>Tab</kbd> completes it, and <kbd>Enter</kbd> tells the agent to follow the skill. Disabled skills (via `[skills].enabled`) are not offered, and neither are `user-invocable: false` skills - those stay agent-invoked only.
+
+Skills accept arguments, and there are two ways to invoke one:
+
+- `/deploy staging` - short form; arguments after the name are passed to the skill. If the name collides with a built-in command, the command wins.
+- `/skill:deploy staging` - explicit form, never collides with a command, and also works mid-prompt: `fix the auth flow /skill:deploy harden` runs the skill with the surrounding prose as its arguments.
+
+Either form loads the skill's full instructions into the conversation (no separate fetch step), announces the skill's folder so bundled files resolve relative paths, and renders one compact `[skill:deploy]` row in the transcript.
+
 ## Session
 
 | Command | Description |
@@ -41,11 +57,12 @@ See [Run modes](/docs/agent/run-modes), [Goals and todos](/docs/agent/goals-and-
 | --- | --- |
 | `/model [id]` | Switch model. Bare: pick interactively |
 | `/mcp` | List, toggle, add, edit, and remove MCP servers |
+| `/plugin [list\|install <spec>\|remove <name>\|search [query]]` | Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace |
 | `/login` | Sign in to Tokamak and save the API key |
 | `/config` | View provider config (`~/.jan/config.toml`) |
 | `/settings [max_parallel_subagents N]` | Edit `agent.toml` settings in an interactive menu - `[agent]` knobs (`context_window`, `compaction_reserve_tokens`, `max_tokens`, `max_parallel_subagents`, `instructions_file`), `[budget]` limits, and the `[tools]` / `[skills]` toggles (Enter edits a row, `x` resets to default, Esc cancels, clearing the field unsets). `max_parallel_subagents N` works as a one-shot shortcut. Writes apply on the next run |
 
-See [Providers](/docs/agent/providers) and [MCP](/docs/agent/mcp).
+See [Providers](/docs/agent/providers), [MCP](/docs/agent/mcp), and [Plugins](/docs/agent/plugins).
 
 ## Other
 

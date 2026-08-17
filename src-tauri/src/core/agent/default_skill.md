@@ -14,9 +14,13 @@ system prompt is a catalog: it lists each skill's name and a one-line purpose,
 but NOT its full instructions. When a skill's purpose matches the task, call
 `skill_read` to load its complete instructions before applying it.
 
-- `skill_list` - list skills with their descriptions.
+- `skill_list` - list skills with their descriptions. A skill with
+  `disable-model-invocation: true` in its frontmatter is intentionally absent:
+  only the human can invoke it, and its description is never loaded into your
+  context.
 - `skill_read` (name) - load a skill's full instructions. Do this before
-  applying a skill; the catalog only shows its purpose.
+  applying a skill; the catalog only shows its purpose. The same
+  `disable-model-invocation: true` rule applies: such skills read as not found.
 - `skill_write` (name, content) - create a new skill or update an existing one
   (same name overwrites). Use a short, descriptive name; keep the skill concise.
   Start the skill with a one-line description so the catalog can summarize it.

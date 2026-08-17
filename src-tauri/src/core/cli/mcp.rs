@@ -24,8 +24,8 @@ use serde_json::Value;
 use tokio::process::Command;
 
 use crate::core::app::commands::resolve_jan_data_folder;
-use crate::core::mcp::models::{extract_active_status, extract_command_args};
 use crate::core::mcp::models::McpSettings;
+use crate::core::mcp::models::{extract_active_status, extract_command_args};
 use crate::core::state::{RunningServiceEnum, SharedMcpServers};
 
 /// The Jan Browser MCP needs the desktop bridge/lockfile machinery, so it is

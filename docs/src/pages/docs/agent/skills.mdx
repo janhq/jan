@@ -55,6 +55,22 @@ You can write the file yourself, or ask the agent to:
 Write a skill for how we cut releases, based on what you see in CHANGELOG.md and the CI config
 ```
 
+## Who can invoke a skill
+
+A skill has two invocation sides, and frontmatter closes either one:
+
+- **User-invoked** - you type `/release` (or `/skill:release`) in the console, or pick it from the
+  slash popup.
+- **Model-invoked** - the agent sees the skill's `description` in its catalog and can fire it on
+  its own by loading it with `skill_read`.
+
+By default both sides are open. `user-invocable: false` hides a skill from you; `disable-model-invocation: true`
+hides it from the agent. See [Skill Invocation](/docs/agent/skill-invocation) for the full
+mechanics, the trade-offs, and when to use which.
+
+Skills can also be installed as [plugins](/docs/agent/plugins) - whole skill collections cloned
+from a git repo or picked from a marketplace, invocable under `<plugin>:<skill>` names.
+
 ## Tools
 
 | Tool | Approval |

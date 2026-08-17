@@ -127,12 +127,19 @@ const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 /// Stage a single relative path into `idx`: `add` if it still exists on disk,
 /// `rm --cached` (ignoring paths not currently tracked) if it was deleted.
-/// Never touches any other path, so cost is O(1) per call, not O(repo size).
+/// `force_add` is reserved for paths proven tracked by `git diff --name-only
+/// HEAD`: a later .gitignore rule must not prevent the base snapshot from
+/// preserving their dirty state. Never touches any other path, so cost is O(1)
+/// per call, not O(repo size).
 #[cfg(feature = "cli")]
-fn stage_path(repo: &Path, idx: &Path, rel: &Path) -> Result<(), String> {
+fn stage_path(repo: &Path, idx: &Path, rel: &Path, force_add: bool) -> Result<(), String> {
     let rel_str = rel.to_string_lossy();
     if repo.join(rel).exists() {
-        run(repo, Some(idx), &["add", "--", &rel_str])?;
+        if force_add {
+            run(repo, Some(idx), &["add", "-f", "--", &rel_str])?;
+        } else {
+            run(repo, Some(idx), &["add", "--", &rel_str])?;
+        }
     } else {
         run(repo, Some(idx), &["rm", "--cached", "--ignore-unmatch", "--", &rel_str])?;
     }
@@ -168,12 +175,12 @@ pub(crate) fn snapshot(
         run(repo, Some(&idx), &["read-tree", &base_tree])?;
         if let Ok(dirty) = run(repo, None, &["diff", "--name-only", "HEAD"]) {
             for rel in dirty.lines().filter(|l| !l.is_empty()) {
-                stage_path(repo, &idx, Path::new(rel))?;
+                stage_path(repo, &idx, Path::new(rel), true)?;
             }
         }
     }
     for rel in changed {
-        stage_path(repo, &idx, rel)?;
+        stage_path(repo, &idx, rel, false)?;
     }
     let tree = run(repo, Some(&idx), &["write-tree"])?;
     let mut args = vec!["commit-tree", &tree];
@@ -228,8 +235,8 @@ pub(crate) fn restore(repo: &Path, target: &str, latest: &str) -> Result<(), Str
 #[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
-    use std::sync::atomic::Ordering;
     use std::sync::atomic::AtomicU32;
+    use std::sync::atomic::Ordering;
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -309,7 +316,41 @@ mod tests {
 
         let head_tree = run(&root, None, &["rev-parse", "HEAD^{tree}"]).unwrap();
         let base_tree = run(&root, None, &["rev-parse", &format!("{base}^{{tree}}")]).unwrap();
-        assert_ne!(base_tree, head_tree, "base tree must include the pre-existing dirty edit");
+        assert_ne!(
+            base_tree, head_tree,
+            "base tree must include the pre-existing dirty edit"
+        );
+
+        cleanup_snapshot_index(thread_id);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn base_snapshot_includes_dirty_tracked_file_that_became_ignored() {
+        let Some(root) = init_repo() else { return };
+        let thread_id = "test-thread-dirty-now-ignored";
+        cleanup_snapshot_index(thread_id);
+
+        // Generated files can be committed before their directory is added to
+        // .gitignore. Git rejects a normal `add` for a dirty file under that
+        // newly ignored directory, even though the file is already tracked.
+        let generated = root.join("generated");
+        std::fs::create_dir_all(&generated).unwrap();
+        std::fs::write(generated.join("a.txt"), "committed\n").unwrap();
+        run(&root, None, &["add", "-f", "--", "generated/a.txt"]).unwrap();
+        run(
+            &root,
+            None,
+            &["commit", "-q", "-m", "generated", "--no-gpg-sign"],
+        )
+        .unwrap();
+        std::fs::write(root.join(".gitignore"), "ignored/\ngenerated/\n").unwrap();
+        std::fs::write(generated.join("a.txt"), "dirty-and-now-ignored\n").unwrap();
+        let base = snapshot(&root, None, "base", thread_id, &[]).expect("base snapshot");
+
+        let base_contents =
+            run(&root, None, &["show", &format!("{base}:generated/a.txt")]).unwrap();
+        assert_eq!(base_contents, "dirty-and-now-ignored");
 
         cleanup_snapshot_index(thread_id);
         let _ = std::fs::remove_dir_all(&root);

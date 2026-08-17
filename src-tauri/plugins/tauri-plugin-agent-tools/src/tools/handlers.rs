@@ -384,7 +384,8 @@ fn skill_list(ctx: &ToolContext<'_>) -> String {
 }
 
 /// `skill_read` tool: a skill's full instructions (frontmatter stripped). A
-/// disabled skill is treated as absent so it never reaches the model.
+/// disabled skill — or one with `disable-model-invocation: true` — is treated
+/// as absent so it never reaches the model.
 fn skill_read(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let Some(name) = arg_str(args, "name") else {
         return "ERROR: missing required argument 'name'".to_string();
@@ -392,10 +393,15 @@ fn skill_read(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     if !skills::is_enabled(ctx.enabled_skills, name) {
         return format!("ERROR: skill '{name}' not found");
     }
-    match skills::read_body(ctx.store_root, name) {
-        Ok(body) => body,
-        Err(e) => e,
+    let raw = match skills::read_raw(ctx.store_root, name) {
+        Ok(raw) => raw,
+        Err(e) => return e,
+    };
+    let parsed = skills::parse(&raw);
+    if !parsed.model_invocable {
+        return format!("ERROR: skill '{name}' not found");
     }
+    parsed.body
 }
 
 /// `skill_write` tool: create/update a skill (new ones as `<name>/SKILL.md`).
@@ -2822,13 +2828,56 @@ mod tests {
             write_off.starts_with("ERROR"),
             "disabled write: {write_off}"
         );
-        let r = super::execute_builtin(
-            lookup("skill_read").unwrap(),
-            &json!({"name": "off"}),
-            &ctx,
+        let r =
+            super::execute_builtin(lookup("skill_read").unwrap(), &json!({"name": "off"}), &ctx)
+                .await;
+        assert!(r.starts_with("ERROR"), "still disabled after write");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn skill_tools_hide_user_invoked_skills_from_model() {
+        let root = unique_root();
+        // A `disable-model-invocation: true` skill: only the human may fire it.
+        execute_builtin(
+            lookup("skill_write").unwrap(),
+            &json!({"name": "secret",
+                    "content": "---\ndescription: internal ritual\ndisable-model-invocation: true\n---\nsecret body"}),
+            &root,
         )
         .await;
-        assert!(r.starts_with("ERROR"), "still disabled after write");
+        execute_builtin(
+            lookup("skill_write").unwrap(),
+            &json!({"name": "plain", "content": "---\ndescription: open\n---\nplain body"}),
+            &root,
+        )
+        .await;
+
+        let list = execute_builtin(lookup("skill_list").unwrap(), &json!({}), &root).await;
+        assert!(list.contains("plain"), "list: {list}");
+        assert!(
+            !list.contains("internal ritual"),
+            "user-only skill leaked: {list}"
+        );
+
+        let read_secret = execute_builtin(
+            lookup("skill_read").unwrap(),
+            &json!({"name": "secret"}),
+            &root,
+        )
+        .await;
+        assert!(
+            read_secret.starts_with("ERROR"),
+            "user-only read: {read_secret}"
+        );
+
+        let read_plain = execute_builtin(
+            lookup("skill_read").unwrap(),
+            &json!({"name": "plain"}),
+            &root,
+        )
+        .await;
+        assert_eq!(read_plain, "plain body");
         let _ = std::fs::remove_dir_all(&root);
     }
 

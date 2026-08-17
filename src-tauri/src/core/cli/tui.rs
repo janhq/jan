@@ -6,6 +6,7 @@
 //! inline workflow elements (turn steps, tool calls/results). Gated tool calls
 //! are approved interactively via the shared `PermissionRegistry`.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::future::pending;
 use std::io::{self, Write};
@@ -1138,6 +1139,12 @@ struct App {
     /// Set by Esc to hide the hint popup without clearing the buffer; cleared on
     /// the next keystroke that edits the input so typing re-shows it.
     slash_dismissed: bool,
+    /// Plugin command and skill metadata loaded before interactive rendering.
+    /// Refresh only after an in-app plugin mutation, never while drawing.
+    slash_catalog: SlashCatalog,
+    /// Filesystem-backed slash matches cached for the unchanged input buffer.
+    /// Rendering asks for these every tick, so discovery must not run per frame.
+    slash_matches_cache: RefCell<Option<(String, Vec<SlashMatch>)>>,
     /// File-path hint entries matching the current `@query` in the input buffer.
     path_hints: Vec<PathHintItem>,
     /// Highlighted row in the path-hint popup (clamped to matches).
@@ -1416,6 +1423,7 @@ impl App {
         project_root: PathBuf,
         repo_root: Option<PathBuf>,
     ) -> Self {
+        let slash_catalog = SlashCatalog::load(&project_root);
         Self {
             smol_model: model.clone(),
             model,
@@ -1460,6 +1468,8 @@ impl App {
             cursor: 0,
             slash_selected: 0,
             slash_dismissed: false,
+            slash_matches_cache: RefCell::new(None),
+            slash_catalog,
             path_hints: Vec::new(),
             path_hint_selected: 0,
             path_hint_dismissed: false,
@@ -2134,12 +2144,22 @@ impl App {
         self.slash_selected = 0;
         self.slash_dismissed = false;
         self.path_hint_dismissed = false;
+        self.slash_matches_cache.replace(None);
     }
 
-    /// Slash commands whose name prefixes the current buffer, or empty when the
-    /// popup should not show: not idle, buffer isn't a bare `/name` token (no
-    /// whitespace yet), the popup was Esc-dismissed, or nothing matches.
-    fn slash_matches(&self) -> Vec<&'static SlashCommand> {
+    fn refresh_slash_catalog(&mut self) {
+        self.slash_catalog = SlashCatalog::load(&self.project_root);
+        self.slash_matches_cache.replace(None);
+    }
+
+    /// Slash commands and installed project skills whose name prefixes the
+    /// current buffer, or empty when the popup should not show: not idle,
+    /// buffer isn't a bare `/name` token (no whitespace yet), the popup was
+    /// Esc-dismissed, or nothing matches. Skills honor the `[skills].enabled`
+    /// whitelist and the `user-invocable` frontmatter flag: the popup offers
+    /// exactly what the human may fire, which is a subset of what the model
+    /// sees via `skill_list`.
+    fn slash_matches(&self) -> Vec<SlashMatch> {
         if self.status != Status::Idle
             || self.slash_dismissed
             || !self.input.starts_with('/')
@@ -2147,10 +2167,170 @@ impl App {
         {
             return Vec::new();
         }
-        SLASH_COMMANDS
+        if let Some((input, matches)) = self.slash_matches_cache.borrow().as_ref() {
+            if input == &self.input {
+                return matches.clone();
+            }
+        }
+        let query: Vec<char> = self
+            .input
+            .trim_start_matches('/')
+            .chars()
+            .map(|c| c.to_ascii_lowercase())
+            .collect();
+        let mut out: Vec<SlashMatch> = SLASH_COMMANDS
             .iter()
-            .filter(|c| c.name.starts_with(&self.input))
-            .collect()
+            .filter(|c| slash_match_score(&query, c.name).is_some())
+            .map(SlashMatch::Command)
+            .collect();
+        // A command wins a name collision: a skill named `cancel` is dropped
+        // from the short form (it could never run - the command arm wins) but
+        // stays reachable via its unambiguous `/skill:cancel` form.
+        let taken: std::collections::HashSet<String> = out
+            .iter()
+            .filter_map(|m| match m {
+                SlashMatch::Command(c) => Some(c.name.to_string()),
+                SlashMatch::PluginCommand { name, .. } => Some(name.clone()),
+                SlashMatch::Skill { .. } => None,
+            })
+            .collect();
+        let skill_colon = self.input.starts_with("/skill:");
+        let command_colon = self.input.starts_with("/command:");
+        let enabled = crate::core::agent::project::load_agent_config(&self.project_root)
+            .ok()
+            .map(|c| c.skills.enabled)
+            .unwrap_or_default();
+        // Plugin commands sit between built-ins and skills in precedence.
+        // Short-form ownership: a command's plain name is claimed by the
+        // command - a skill of the same name loses its short form (explicit
+        // `/command:` and `/skill:` forms always stay).
+        let commands = &self.slash_catalog.commands;
+        let mut command_plain_counts: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        let mut command_owned: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for cmd in commands {
+            if !SlashCatalog::command_enabled(cmd, &enabled) {
+                continue;
+            }
+            command_owned.insert(cmd.name.as_str());
+            *command_plain_counts.entry(cmd.name.as_str()).or_insert(0) += 1;
+        }
+        for cmd in commands {
+            if !SlashCatalog::command_enabled(cmd, &enabled) {
+                continue;
+            }
+            if !command_colon {
+                // Short form: built-in wins, ambiguity drops the form.
+                if taken.contains(&format!("/{}", cmd.name))
+                    || command_plain_counts
+                        .get(cmd.name.as_str())
+                        .copied()
+                        .unwrap_or(0)
+                        > 1
+                {
+                    continue;
+                }
+            }
+            let name = if command_colon {
+                format!("/command:{}:{}", cmd.plugin, cmd.name)
+            } else {
+                format!("/{}", cmd.name)
+            };
+            if slash_match_score(&query, &name).is_some()
+                && (command_colon || !taken.contains(&name))
+            {
+                out.push(SlashMatch::PluginCommand {
+                    name,
+                    description: cmd.description.clone(),
+                    hints: cmd.hints.clone(),
+                });
+            }
+        }
+        // User-invocable skills only: `user-invocable: false` skills stay out
+        // of the human's popup (the agent can still fire them via skill_read).
+        let catalog = &self.slash_catalog.skills;
+        // Short-form ownership: a project skill owns its plain name; a plain
+        // name shared by two plugins is ambiguous, so everyone loses the short
+        // form (the explicit `/skill:<plugin>:<name>` form always stays).
+        let mut project_names: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut plugin_plain_counts: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        for meta in catalog {
+            if !SlashCatalog::skill_enabled(meta, &enabled) {
+                continue;
+            }
+            if meta.plugin.is_none() {
+                project_names.insert(meta.name.as_str());
+            } else {
+                let plain = meta
+                    .name
+                    .rsplit_once(':')
+                    .map(|(_, s)| s)
+                    .unwrap_or(&meta.name);
+                *plugin_plain_counts.entry(plain).or_insert(0) += 1;
+            }
+        }
+        let mut seen_short: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for meta in catalog {
+            if !SlashCatalog::skill_enabled(meta, &enabled) {
+                continue;
+            }
+            if meta.plugin.is_some() {
+                let plain = meta
+                    .name
+                    .rsplit_once(':')
+                    .map(|(_, s)| s)
+                    .unwrap_or(&meta.name);
+                if !skill_colon {
+                    // Short form: command wins, project wins, ambiguity drops.
+                    if taken.contains(&format!("/{plain}"))
+                        || command_owned.contains(plain)
+                        || project_names.contains(plain)
+                        || plugin_plain_counts.get(plain).copied().unwrap_or(0) > 1
+                        || !seen_short.insert(plain.to_string())
+                    {
+                        continue;
+                    }
+                }
+            } else if !skill_colon
+                && (!seen_short.insert(meta.name.clone())
+                    || command_owned.contains(meta.name.as_str()))
+            {
+                continue;
+            }
+            let name = if skill_colon {
+                format!("/skill:{}", meta.name)
+            } else {
+                let plain = meta
+                    .plugin
+                    .as_ref()
+                    .map(|_| {
+                        meta.name
+                            .rsplit_once(':')
+                            .map(|(_, s)| s)
+                            .unwrap_or(&meta.name)
+                    })
+                    .unwrap_or(&meta.name);
+                format!("/{plain}")
+            };
+            if slash_match_score(&query, &name).is_some() && (skill_colon || !taken.contains(&name))
+            {
+                out.push(SlashMatch::Skill {
+                    name,
+                    description: meta.description.clone(),
+                });
+            }
+        }
+        // Best match first: rank by fuzzy score, keeping collision/precedence
+        // order (commands before plugin commands before skills) on ties.
+        out.sort_by(|a, b| {
+            let sa = slash_match_score(&query, a.name()).unwrap_or(0);
+            let sb = slash_match_score(&query, b.name()).unwrap_or(0);
+            sb.cmp(&sa)
+        });
+        self.slash_matches_cache
+            .replace(Some((self.input.clone(), out.clone())));
+        out
     }
 
     /// Move the hint selection, wrapping within the current match count.
@@ -2163,14 +2343,15 @@ impl App {
         self.slash_selected = (cur + delta).rem_euclid(len as isize) as usize;
     }
 
-    /// Fill the buffer with the highlighted command name plus a trailing space,
-    /// ready for arguments; the space hides the popup via `slash_matches`.
+    /// Fill the buffer with the highlighted command or skill name plus a
+    /// trailing space, ready for arguments; the space hides the popup via
+    /// `slash_matches`.
     fn accept_slash(&mut self) {
         let matches = self.slash_matches();
         if matches.is_empty() {
             return;
         }
-        let name = matches[self.slash_selected.min(matches.len() - 1)].name;
+        let name = matches[self.slash_selected.min(matches.len() - 1)].name();
         self.input = format!("{name} ");
         self.cursor = self.input.len();
         self.slash_selected = 0;
@@ -2357,6 +2538,14 @@ impl App {
             self.note(&format!("⏳ message queued ({} in queue)", self.message_queue.len()));
             return;
         }
+        // Mid-prompt `/skill:<name>` token: dispatch to the skill, threading
+        // the surrounding prose as its arguments (queued messages re-enter
+        // this method via `dequeue_next`, so the token is re-parsed there too).
+        if let Some((name, args)) = crate::core::agent::skills::parse_invocation(&text) {
+            if self.dispatch_skill(&name, &args) {
+                return;
+            }
+        }
         self.ensure_base_snapshot();
         let images = if display {
             std::mem::take(&mut self.pending_images)
@@ -2397,6 +2586,87 @@ impl App {
         self.overflow_retries = 0;
         self.want_start = true;
         self.persist();
+    }
+
+    /// Invoke an enabled project skill by name: load its full instructions and
+    /// submit them as the user message so the agent follows the procedure
+    /// directly (no `skill_read` round trip). The transcript shows one compact
+    /// `[skill:<name>]` row with the user's args, never the body text. `args`
+    /// are threaded into the message like a command's arguments. Returns false
+    /// when the skill is unknown or disabled, leaving the caller to treat the
+    /// text as a plain message. Message assembly lives in
+    /// `skills::build_invocation_message` so other UIs (desktop/web) invoke
+    /// skills with identical semantics.
+    fn dispatch_skill(&mut self, name: &str, args: &str) -> bool {
+        let root = &self.project_root;
+        let (msg, description) =
+            match crate::core::agent::skills::build_invocation_message(root, name, args) {
+                Ok(pair) => pair,
+                Err(_) => return false,
+            };
+        self.ensure_base_snapshot();
+        let args = args.trim();
+        self.history
+            .push(serde_json::json!({ "role": "user", "content": msg }));
+        let mut spans = vec![Span::styled("› ", Style::new().light_magenta().bold())];
+        spans.push(Span::styled(
+            format!("[skill:{name}]"),
+            Style::new().cyan().bold(),
+        ));
+        if !args.is_empty() {
+            spans.push(Span::raw(format!(" {args}")));
+        } else if !description.is_empty() {
+            spans.push(Span::raw(format!(" - {description}")));
+        }
+        self.gap(Kind::User);
+        self.push(Line::from(spans));
+        self.begin_turn();
+        // A fresh user turn is new context: same reminder reset as submit_user.
+        self.last_todo_reminder = None;
+        self.reminder_count = 0;
+        self.reminder_awaiting_progress = false;
+        self.want_start = true;
+        self.persist();
+        true
+    }
+
+    /// Invoke a plugin command by name: substitute `$ARGUMENTS`/`$N`
+    /// placeholders into its prompt template and submit the result as the
+    /// user message, so the agent follows the procedure directly. The
+    /// transcript shows one compact `[command:<name>]` row with the user's
+    /// args, never the template text. Returns false when the command is
+    /// unknown, leaving the caller to fall through to skills.
+    fn dispatch_command(&mut self, name: &str, args: &str) -> bool {
+        let root = &self.project_root;
+        let (msg, description) =
+            match crate::core::agent::plugin_commands::build_message(root, name, args) {
+                Ok(pair) => pair,
+                Err(_) => return false,
+            };
+        self.ensure_base_snapshot();
+        let args = args.trim();
+        self.history
+            .push(serde_json::json!({ "role": "user", "content": msg }));
+        let mut spans = vec![Span::styled("› ", Style::new().light_magenta().bold())];
+        spans.push(Span::styled(
+            format!("[command:{name}]"),
+            Style::new().cyan().bold(),
+        ));
+        if !args.is_empty() {
+            spans.push(Span::raw(format!(" {args}")));
+        } else if !description.is_empty() {
+            spans.push(Span::raw(format!(" - {description}")));
+        }
+        self.gap(Kind::User);
+        self.push(Line::from(spans));
+        self.begin_turn();
+        // A fresh user turn is new context: same reminder reset as submit_user.
+        self.last_todo_reminder = None;
+        self.reminder_count = 0;
+        self.reminder_awaiting_progress = false;
+        self.want_start = true;
+        self.persist();
+        true
     }
 
     /// Inject a hidden todo reminder and continue with one more model turn. The
@@ -2511,6 +2781,16 @@ impl App {
                 Span::styled(label, Style::new().cyan()),
             ]));
         }
+    }
+
+    /// One compact transcript row for a persisted skill/command invocation:
+    /// the label only, never the template body (see `super::invocation_label`).
+    fn push_invocation_label(&mut self, label: String) {
+        self.gap(Kind::User);
+        self.push(Line::from(vec![
+            Span::styled("› ", Style::new().light_magenta().bold()),
+            Span::styled(label, Style::new().cyan().bold()),
+        ]));
     }
 
     /// Stage the OS clipboard's image for the next message, noting the result.
@@ -5353,7 +5633,7 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     // Ctrl-V: terminals deliver a normal paste as `Event::Paste`, but some send
     // Ctrl-V through as a key, so read the clipboard directly for those.
     if ctrl && key.code == KeyCode::Char('v') {
-        match clipboard_text() {
+        match super::secret_input::clipboard_text() {
             Ok(text) => {
                 if let Some(prompt) = app.login.as_mut() {
                     prompt.paste(&text);
@@ -5392,12 +5672,6 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
         _ => {}
     }
-}
-
-/// Plain text from the OS clipboard, for Ctrl-V in the `/login` prompt (the
-/// image path is `clipboard_image`).
-fn clipboard_text() -> Result<String, String> {
-    super::secret_input::clipboard_text()
 }
 
 async fn handle_key(
@@ -5683,7 +5957,7 @@ async fn handle_key(
             KeyCode::Enter => {
                 let matches = app.slash_matches();
                 let sel = app.slash_selected.min(matches.len() - 1);
-                if app.input.trim() != matches[sel].name {
+                if app.input.trim() != matches[sel].name() {
                     app.accept_slash();
                     return;
                 }
@@ -5839,6 +6113,215 @@ struct SlashCommand {
     description: &'static str,
 }
 
+/// Slash popup metadata is intentionally loaded outside the render path.
+/// Plugin installation and removal explicitly refresh this snapshot.
+struct SlashCatalog {
+    commands: Vec<crate::core::agent::plugin_commands::CommandEntry>,
+    skills: Vec<crate::core::agent::skills::SkillMeta>,
+}
+
+impl SlashCatalog {
+    fn load(root: &std::path::Path) -> Self {
+        Self {
+            commands: crate::core::agent::plugin_commands::catalog(root, &[]),
+            // Keep every user-invocable skill here. The enabled whitelist is
+            // re-read below so edits to agent.toml take effect immediately.
+            skills: crate::core::agent::skills::user_catalog(root, &[]),
+        }
+    }
+
+    fn command_enabled(
+        command: &crate::core::agent::plugin_commands::CommandEntry,
+        enabled: &[String],
+    ) -> bool {
+        enabled.is_empty()
+            || enabled.iter().any(|entry| {
+                entry == &command.plugin
+                    || entry == &command.name
+                    || entry == &format!("{}:{}", command.plugin, command.name)
+            })
+    }
+
+    fn skill_enabled(meta: &crate::core::agent::skills::SkillMeta, enabled: &[String]) -> bool {
+        if enabled.is_empty() {
+            return true;
+        }
+        let plain = meta
+            .name
+            .rsplit_once(':')
+            .map(|(_, name)| name)
+            .unwrap_or(&meta.name);
+        enabled.iter().any(|entry| {
+            entry == &meta.name
+                || entry == plain
+                || meta.plugin.as_ref().is_some_and(|plugin| entry == plugin)
+        })
+    }
+}
+
+/// One row of the slash-command popup: a built-in command, an installed
+/// plugin command (`<plugin>/commands/<name>.md`), or an installed project
+/// skill (`.jan/agent/skills/<name>/SKILL.md`) offered by name so `/deploy`
+/// behaves like a command the user can tab-complete and run.
+#[derive(Clone)]
+enum SlashMatch {
+    Command(&'static SlashCommand),
+    /// A plugin command prompt template. `name` is the full invocation
+    /// (`/feature-dev` short form or `/command:<plugin>:<name>` explicit);
+    /// `hints` are the placeholders the template accepts (`$ARGUMENTS`, `$1`).
+    PluginCommand {
+        name: String,
+        description: String,
+        hints: Vec<String>,
+    },
+    Skill {
+        name: String,
+        description: String,
+    },
+}
+
+impl SlashMatch {
+    /// Full invocation name including the leading slash.
+    fn name(&self) -> &str {
+        match self {
+            SlashMatch::Command(c) => c.name,
+            SlashMatch::PluginCommand { name, .. } => name,
+            SlashMatch::Skill { name, .. } => name,
+        }
+    }
+}
+
+/// Lowercased, slash-stripped query characters used to match slash popup
+/// rows. Matching is deliberately fuzzy so typos and partial names surface
+/// the right command/skill: a subsequence match ranks by how tightly it hugs
+/// the front of the name (prefix first, then contiguous runs, then sparse),
+/// and a near-miss within a small edit distance still shows up below real
+/// matches instead of vanishing.
+fn slash_match_score(query: &[char], name: &str) -> Option<u32> {
+    if query.is_empty() {
+        return Some(u32::MAX);
+    }
+    let stripped = name.trim_start_matches('/');
+    // Match against the full display name (`/command:plugin:name` or
+    // `/my-skill`), its last `:`-segment, and its last `-`-segment. This way a
+    // user typing the memorable tail of a longer name still lines up: e.g.
+    // `simplifyer` finds the `simplifier` in `/code-simplifier`.
+    let mut parts: Vec<String> = Vec::with_capacity(3);
+    parts.push(stripped.to_lowercase());
+    if let Some((_, last)) = stripped.rsplit_once(':') {
+        let last = last.to_lowercase();
+        if !last.is_empty() && !parts.contains(&last) {
+            parts.push(last);
+        }
+    }
+    if let Some((_, last)) = stripped.rsplit_once('-') {
+        let last = last.to_lowercase();
+        if !last.is_empty() && !parts.contains(&last) {
+            parts.push(last);
+        }
+    }
+
+    // A barely-started buffer (1-2 chars) matches as a prefix only, mirroring
+    // the old strict-prefix behaviour so it stays tight instead of surfacing
+    // every command that merely contains those two letters.
+    if query.len() < 3 {
+        let prefix: String = query.iter().collect();
+        return parts.iter().any(|p| p.starts_with(&prefix)).then_some(100);
+    }
+
+    // Subsequence match, scored by how tightly it hugs the front of the name.
+    let mut best: Option<u32> = None;
+    for part in &parts {
+        let chars: Vec<char> = part.chars().collect();
+        if let Some(s) = subseq_score(query, &chars) {
+            best = Some(best.map_or(s, |b| b.max(s)));
+        }
+    }
+    if let Some(b) = best {
+        return Some(b);
+    }
+
+    // No subsequence hit: for a longer query, still accept a close typo (e.g.
+    // `simplifyer` for `simplifier`), but rank it below every real subsequence
+    // match and scale the tolerance with query length so it stays a fallback,
+    // never a noise source for short input.
+    if query.len() >= 4 {
+        let max_edits = 2.min(query.len() / 4 + 1);
+        if parts
+            .iter()
+            .any(|p| edit_distance(query, &p.chars().collect::<Vec<char>>()) <= max_edits)
+        {
+            return Some(1);
+        }
+    }
+    None
+}
+
+/// Score how well `query` appears as a subsequence of `hay`, higher is
+/// better. Every start position is tried (not just the greedy one) so a
+/// transposed/typo'd query like `/rse` can find the `/resume` run starting at
+/// index 1 rather than only a sparse index-0 solution. Prefix and contiguous
+/// matches score highest; every contribution stays positive so any
+/// subsequence beats no match.
+fn subseq_score(query: &[char], hay: &[char]) -> Option<u32> {
+    if query.is_empty() {
+        return Some(0);
+    }
+    let mut best: Option<u32> = None;
+    for start in 0..hay.len() {
+        let mut total: u32 = 0;
+        let mut qi = 0usize;
+        let mut prev: Option<usize> = None;
+        let mut hi = start;
+        while qi < query.len() && hi < hay.len() {
+            if hay[hi] != query[qi] {
+                hi += 1;
+                continue;
+            }
+            let gap = hi.saturating_sub(prev.unwrap_or(start.saturating_sub(1)));
+            total += if hi == 0 {
+                100
+            } else if gap <= 1 {
+                20
+            } else {
+                20u32.saturating_sub((gap as u32) * 3).max(1)
+            };
+            prev = Some(hi);
+            qi += 1;
+            hi += 1;
+        }
+        if qi == query.len() {
+            best = Some(best.map_or(total, |b| b.max(total)));
+        }
+    }
+    best
+}
+
+/// Classic Levenshtein edit distance, used as a typo fallback so a slightly
+/// misspelled query still matches a command/skill name.
+fn edit_distance(a: &[char], b: &[char]) -> usize {
+    if b.is_empty() {
+        return a.len();
+    }
+    if a.is_empty() {
+        return b.len();
+    }
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for i in 1..=a.len() {
+        let mut cur = vec![0usize; b.len() + 1];
+        cur[0] = i;
+        for j in 1..=b.len() {
+            cur[j] = if a[i - 1] == b[j - 1] {
+                prev[j - 1]
+            } else {
+                1 + prev[j - 1].min(prev[j]).min(cur[j - 1])
+            };
+        }
+        prev = cur;
+    }
+    prev[b.len()]
+}
+
 const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/help",
@@ -5899,6 +6382,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "/mcp",
         hint: "",
         description: "List, add, edit, remove, or toggle MCP servers",
+    },
+    SlashCommand {
+        name: "/plugin",
+        hint: "[list|install <spec>|remove <name>|search [query]]",
+        description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace",
     },
     SlashCommand {
         name: "/cancel",
@@ -6024,6 +6512,7 @@ async fn run_command(app: &mut App, line: &str) {
             }
         }
         "mcp" => open_mcp_picker(app),
+        "plugin" => plugin_command(app, arg).await,
         "login" => open_login_prompt(app),
         "update" => update_command(app),
         "config" => open_config_screen(app),
@@ -6034,7 +6523,32 @@ async fn run_command(app: &mut App, line: &str) {
         "todo" => todo_command(app, arg).await,
         "cancel" => cancel_command(app, arg),
         "quit" | "exit" => app.should_quit = true,
-        other => app.note(&format!("unknown command '/{other}' (try /help)")),
+        other => {
+            // A `/name` that isn't a built-in is a plugin command or an
+            // installed project skill. Precedence: plugin command first,
+            // then skill. `/command:<plugin>:<name>` is the explicit command
+            // form (never collides); `/skill:<name>` the explicit skill form;
+            // plain `/name` falls through in that order, with args threaded
+            // into the prompt template / skill message. Unknown names note.
+            if let Some(command) = other.strip_prefix("command:") {
+                if app.dispatch_command(command, arg) {
+                    return;
+                }
+                app.note(&format!("unknown command '/{other}' (try /help)"));
+                return;
+            }
+            if app.dispatch_command(other, arg) {
+                return;
+            }
+            let (skill_name, skill_args) = match other.split_once(':') {
+                Some(("skill", name)) => (name, arg),
+                _ => (other, arg),
+            };
+            if app.dispatch_skill(skill_name, skill_args) {
+                return;
+            }
+            app.note(&format!("unknown command '/{other}' (try /help)"));
+        }
     }
 }
 
@@ -6229,6 +6743,7 @@ struct AgentSettingDef {
 
 enum AgentSettingKind {
     Int { default: Option<u64>, min: u64 },
+    Text { default: &'static str },
     /// Exact-match choice: Enter writes one of `options`, cleared field
     /// unsets. Covers the `read-only | deny | allow` and `always | relevance`
     /// toggles that hand-editing agent.toml previously required.
@@ -6261,7 +6776,18 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         key: "max_parallel_subagents",
         label: "max_parallel_subagents",
         desc: "subagents that may run at once; extra dispatches queue FIFO",
-        kind: AgentSettingKind::Int { default: Some(10), min: 1 },
+        kind: AgentSettingKind::Int {
+            default: Some(10),
+            min: 1,
+        },
+    },
+    AgentSettingDef {
+        key: "instructions_file",
+        label: "instructions_file",
+        desc: "markdown injected into the system prompt",
+        kind: AgentSettingKind::Text {
+            default: "AGENT.md",
+        },
     },
     AgentSettingDef {
         key: "budget.max_tokens",
@@ -6628,6 +7154,10 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.co
                         }
                     }
                 }
+                AgentSettingKind::Text { .. } => {
+                    (!prompt.input.trim().is_empty())
+                        .then(|| toml_edit::value(prompt.input.trim().to_string()))
+                }
                 AgentSettingKind::Enum { options, default } => {
                     let input = prompt.input.trim();
                     if input.is_empty() {
@@ -6990,6 +7520,158 @@ fn cancel_command(app: &mut App, arg: &str) {
         "usage: /cancel [N]  — cancel all or the Nth queued message (queue has {})",
         app.message_queue.len()
     ));
+}
+
+/// `/plugin` handler: manage plugins installed under `.jan/agent/plugins/`.
+///   - `/plugin` or `/plugin list`   — installed plugins + the skills they ship
+///   - `/plugin install <spec>`      — git URL (optionally `#ref`) or a name
+///     from the configured `[plugins] marketplace`
+///   - `/plugin remove <name>`       — uninstall by directory name
+///   - `/plugin search [query]`      — marketplace listing, name/description match
+///
+/// Install and search hit the network, so this is async like `/todo`.
+async fn plugin_command(app: &mut App, arg: &str) {
+    let root = app.project_root.clone();
+    let mut parts = arg.split_whitespace();
+    let op = parts.next().unwrap_or("list");
+    let rest = parts.collect::<Vec<_>>().join(" ");
+    // One compact summary per plugin: name, version, and payload counts.
+    fn summary_line(p: &crate::core::agent::plugins::InstalledPlugin) -> String {
+        let noun = if p.skills == 1 { "skill" } else { "skills" };
+        let mut bits: Vec<String> = Vec::new();
+        if p.skills > 0 {
+            bits.push(format!("{} {}", p.skills, noun));
+        }
+        if p.commands > 0 {
+            bits.push(format!(
+                "{} command{}",
+                p.commands,
+                if p.commands == 1 { "" } else { "s" }
+            ));
+        }
+        if p.agents > 0 {
+            bits.push(format!(
+                "{} agent{}",
+                p.agents,
+                if p.agents == 1 { "" } else { "s" }
+            ));
+        }
+        if bits.is_empty() {
+            bits.push("no payload".into());
+        }
+        format!("plugin {} (v{} - {})", p.name, p.version, bits.join(", "))
+    }
+    match op {
+        "list" => {
+            let plugins = crate::core::agent::plugins::installed(&root);
+            if rest.is_empty() {
+                if plugins.is_empty() {
+                    app.note("no plugins installed (try /plugin install <git-url>)");
+                    return;
+                }
+                for p in &plugins {
+                    app.push(Line::styled(summary_line(p), Style::new().cyan().bold()));
+                }
+            } else {
+                match crate::core::agent::plugins::find_installed(&root, &rest) {
+                    Some((directory, p)) => {
+                        app.push(Line::styled(summary_line(&p), Style::new().cyan().bold()));
+                        if !p.description.is_empty() {
+                            app.push(Line::styled(
+                                format!("  {}", p.description),
+                                Style::new().dim(),
+                            ));
+                        }
+                        let metas =
+                            crate::core::agent::skills::plugin_skill_metas(&root, &directory);
+                        if !metas.is_empty() {
+                            app.push(Line::styled("  skills:", Style::new().dim()));
+                            for meta in metas {
+                                app.push(Line::styled(
+                                    format!("    {}", meta.name),
+                                    Style::new().dim(),
+                                ));
+                            }
+                        }
+                        let commands = crate::core::agent::plugin_commands::discover(&root)
+                            .into_iter()
+                            .filter(|e| e.plugin == directory)
+                            .collect::<Vec<_>>();
+                        if !commands.is_empty() {
+                            app.push(Line::styled("  commands:", Style::new().dim()));
+                            for cmd in &commands {
+                                app.push(Line::styled(
+                                    format!("    {}", cmd.name),
+                                    Style::new().dim(),
+                                ));
+                            }
+                        }
+                        let agents =
+                            crate::core::agent::subagent::plugin_agent_metas(&root, &directory);
+                        if !agents.is_empty() {
+                            app.push(Line::styled("  agents:", Style::new().dim()));
+                            for (name, _) in &agents {
+                                app.push(Line::styled(format!("    {name}"), Style::new().dim()));
+                            }
+                        }
+                    }
+                    None => app.note(&format!("plugin '{}' is not installed", rest)),
+                }
+            }
+            app.gap(Kind::Meta);
+        }
+        "install" => {
+            if rest.is_empty() {
+                app.note("usage: /plugin install <git-url[#ref]> | <marketplace-name>");
+                return;
+            }
+            match crate::core::agent::plugins::install(&root, &rest).await {
+                Ok(p) => {
+                    app.refresh_slash_catalog();
+                    app.note(&format!(
+                        "installed plugin '{}' ({} skills)",
+                        p.name, p.skills
+                    ));
+                }
+                Err(e) => app.note(&e),
+            }
+        }
+        "remove" => {
+            if rest.is_empty() {
+                app.note("usage: /plugin remove <name>");
+                return;
+            }
+            match crate::core::agent::plugins::remove(&root, &rest) {
+                Ok(()) => {
+                    app.refresh_slash_catalog();
+                    app.note(&format!("removed plugin '{rest}'"));
+                }
+                Err(e) => app.note(&e),
+            }
+        }
+        "search" => match crate::core::agent::plugins::search(&root, &rest).await {
+            Ok(entries) if entries.is_empty() => {
+                app.note("no marketplace plugins match (set [plugins] marketplace in agent.toml to enable)");
+            }
+            Ok(entries) => {
+                for e in &entries {
+                    app.push(Line::styled(
+                        format!("plugin {}", e.name),
+                        Style::new().cyan().bold(),
+                    ));
+                    app.push(Line::styled(
+                        format!("  {}  ({})", e.description, e.repo),
+                        Style::new().dim(),
+                    ));
+                }
+                app.gap(Kind::Meta);
+            }
+            Err(e) => app.note(&e),
+        },
+        other => app.note(&format!(
+            "unknown /plugin subcommand '{other}' (try list|install|remove|search)"
+        )),
+    }
 }
 
 /// Print the active goal's condition, turn count, duration, and the evaluator's
@@ -7598,7 +8280,12 @@ fn rebuild_transcript(app: &mut App) {
             if text.is_empty() && images.is_empty() {
                 continue;
             }
-            app.push_user_line(&text, &images);
+            // Same compact treatment as resume: invocation templates are stored
+            // verbatim in history but must not flood the transcript.
+            match super::invocation_label(&text) {
+                Some(label) => app.push_invocation_label(label),
+                None => app.push_user_line(&text, &images),
+            }
         } else if role == "assistant" {
             let text = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
             if !text.is_empty() {
@@ -8561,6 +9248,7 @@ fn draw_settings_prompt(
                     .unwrap_or_else(|| "unset".to_string());
                 format!("default: {d} · valid: >= {min}")
             }
+            AgentSettingKind::Text { default } => format!("default: {default}"),
             AgentSettingKind::Enum { options, default } => {
                 format!("default: {default} · valid: {}", options.join(" | "))
             }
@@ -8654,10 +9342,14 @@ fn draw_mcp_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &McpPromp
 }
 
 /// the highlighted row reversed. Docked above the input box.
+/// Slash hint popup: one row per match (`/name [hint]  description`), the
+/// highlighted row reversed. Built-in commands render cyan; installed project
+/// skills render magenta so a `/deploy` completion is distinguishable from a
+/// command at a glance. Docked above the input box.
 fn draw_slash_hints(
     f: &mut Frame,
     area: ratatui::layout::Rect,
-    matches: &[&SlashCommand],
+    matches: &[SlashMatch],
     selected: usize,
 ) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
@@ -8665,19 +9357,54 @@ fn draw_slash_hints(
     let dim = Style::new().dark_gray();
     let items: Vec<ListItem> = matches
         .iter()
-        .map(|c| {
+        .map(|m| match m {
+            SlashMatch::Command(c) => {
             let mut spans = vec![Span::styled(c.name, Style::new().cyan().bold())];
             if !c.hint.is_empty() {
                 spans.push(Span::styled(format!(" {}", c.hint), dim));
             }
             spans.push(Span::styled(format!("  {}", c.description), dim));
             ListItem::new(Line::from(spans))
+            }
+            SlashMatch::PluginCommand {
+                name,
+                description,
+                hints,
+            } => {
+                let desc = if description.is_empty() {
+                    "plugin command".to_string()
+                } else {
+                    description.clone()
+                };
+                let mut spans = vec![
+                    Span::styled(name.clone(), Style::new().green().bold()),
+                    Span::styled(format!("  {desc}"), dim),
+                ];
+                if !hints.is_empty() {
+                    spans.push(Span::styled(
+                        format!("  [{}]", hints.join(" ")),
+                        Style::new().dark_gray(),
+                    ));
+                }
+                ListItem::new(Line::from(spans))
+            }
+            SlashMatch::Skill { name, description } => {
+                let desc = if description.is_empty() {
+                    "project skill".to_string()
+                } else {
+                    description.clone()
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(name.clone(), Style::new().magenta().bold()),
+                    Span::styled(format!("  {desc}"), dim),
+                ]))
+            }
         })
         .collect();
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::new().dark_gray())
-        .title(Span::styled(" commands ", Style::new().dim()));
+        .title(Span::styled(" commands + skills ", Style::new().dim()));
     f.render_widget(Clear, area);
     let list = List::new(items)
         .block(block)
@@ -8862,6 +9589,9 @@ fn draw_picker(
                         .map(|d| d.to_string())
                         .unwrap_or_else(|| "unset".to_string());
                     format!("default: {d} · valid: >= {min} · current: {current}")
+                }
+                AgentSettingKind::Text { default } => {
+                    format!("default: {default} · current: {current}")
                 }
                 AgentSettingKind::Enum { options, default } => {
                     format!(
@@ -9757,7 +10487,9 @@ mod tests {
         KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER,
         SPINNER_ADVANCE_MS,
     };
-    use std::time::{Duration, Instant};
+    use crate::core::agent::events::{StreamEvent, Usage};
+    use crate::core::agent::r#loop::PermissionRegistry;
+    use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
     use ratatui::crossterm::event::{
         Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
         MouseEventKind,
@@ -9768,13 +10500,11 @@ mod tests {
         style::{Color, Modifier, Style},
         text::Line,
     };
-    use crate::core::agent::events::{StreamEvent, Usage};
-    use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
-    use crate::core::agent::r#loop::PermissionRegistry;
     use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
     use serde_json::json;
     use std::collections::HashMap;
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
 
     /// A bare key press with no modifiers.
     fn key(code: KeyCode) -> KeyEvent {
@@ -9844,6 +10574,53 @@ mod tests {
             None,
         );
         TestApp { app, _dir: dir }
+    }
+
+    /// App whose project has one installed skill `<name>/SKILL.md` with the
+    /// given frontmatter description, so slash-popup and dispatch tests run
+    /// against a real `.jan/agent/skills/` tree. Returns the temp project
+    /// root for cleanup.
+    fn skill_test_app(name: &str, description: &str) -> (App, std::path::PathBuf) {
+        skill_test_app_fm(name, description, "")
+    }
+
+    /// Like `skill_test_app` but with extra frontmatter lines (before the
+    /// closing `---`), for invocation-flag tests.
+    fn skill_test_app_fm(
+        name: &str,
+        description: &str,
+        extra_fm: &str,
+    ) -> (App, std::path::PathBuf) {
+        let root = std::env::temp_dir().join(format!(
+            "jan_tui_skill_{}_{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let agent_dir = root.join(".jan/agent");
+        std::fs::create_dir_all(agent_dir.join("skills").join(name)).unwrap();
+        std::fs::write(
+            agent_dir.join("skills").join(name).join("SKILL.md"),
+            format!(
+                "---\nname: {name}\ndescription: {description}\n{extra_fm}---\n\n# {name}\n\nBody.\n"
+            ),
+        )
+        .unwrap();
+        (
+            App::new(
+                "m".into(),
+                super::SessionLimits {
+                    context_window: 128_000,
+                    reserve_tokens: 16_384,
+                    max_tokens: None,
+                    max_session_tokens: 128_000,
+                },
+                false,
+                agent_dir,
+                root.clone(),
+                None,
+            ),
+            root,
+        )
     }
 
     /// Draw `app` into an off-screen terminal and return its rows as strings.
@@ -12222,6 +12999,29 @@ mod tests {
     }
 
     #[test]
+    fn settings_prompt_edits_text_key() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "instructions_file")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "PROMPT.md".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+
+        assert!(app.settings_prompt.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("instructions_file = \"PROMPT.md\""), "{doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
     fn settings_prompt_esc_cancels_without_writing() {
         let mut app = test_app();
         std::fs::create_dir_all(&app.agent_dir).unwrap();
@@ -14189,6 +14989,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn apply_resume_renders_invocation_messages_compactly() {
+        let app = test_app();
+        let body =
+            "Build: $ARGUMENTS\n\nFull template body that must not leak into the transcript.";
+        let history = vec![json!({
+            "role": "user",
+            "content": format!(
+                "[IMPORTANT: You have invoked the \"feature-dev\" command - follow its instructions. The full command content is loaded below.]\n\n{body}"
+            )
+        })];
+        super::super::cli_save_thread(&app.agent_dir, None, "m", &history, None).unwrap();
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+
+        // History keeps the full template (the model needs it on continuation)...
+        assert_eq!(fresh.history, history);
+        // ...but the transcript shows only the compact invocation row.
+        let joined: String = fresh
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(joined.contains("[command:feature-dev]"), "{joined}");
+        assert!(
+            !joined.contains("must not leak into the transcript"),
+            "template body leaked into the resumed transcript: {joined}"
+        );
+        let _ = std::fs::remove_dir_all(&fresh.agent_dir);
+    }
+
+    #[tokio::test]
     async fn resuming_restores_the_recall_history() {
         let app = test_app();
         let history = vec![
@@ -15923,9 +16756,14 @@ mod tests {
             lines[0].contains("Todos · 1/2") && lines[0].contains("backend 1/2"),
             "head names the phase and both progressions: {lines:?}"
         );
-        assert!(lines.iter().any(|l| l.contains("routes")), "active tasks shown: {lines:?}");
         assert!(
-            !lines.iter().any(|l| l.contains("ui") || l.contains("polish")),
+            lines.iter().any(|l| l.contains("routes")),
+            "active tasks shown: {lines:?}"
+        );
+        assert!(
+            !lines
+                .iter()
+                .any(|l| l.contains("ui") || l.contains("polish")),
             "inactive phase costs no rows: {lines:?}"
         );
     }
@@ -16477,24 +17315,65 @@ mod tests {
         assert_eq!(message_text(&empty), "");
     }
 
-    fn names(app: &App) -> Vec<&'static str> {
-        app.slash_matches().iter().map(|c| c.name).collect()
+    fn names(app: &App) -> Vec<String> {
+        app.slash_matches()
+            .iter()
+            .map(|m| m.name().to_string())
+            .collect()
     }
 
     #[test]
     fn slash_bare_lists_all_commands() {
         let mut app = test_app();
         app.input = "/".into();
-        assert_eq!(names(&app).len(), super::SLASH_COMMANDS.len());
+        // All built-ins plus the always-advertised built-in jan skill.
+        assert_eq!(
+            names(&app).len(),
+            super::SLASH_COMMANDS.len() + 1,
+            "{:?}",
+            names(&app)
+        );
+        assert!(
+            names(&app).contains(&"/jan".to_string()),
+            "built-in jan skill row: {:?}",
+            names(&app)
+        );
     }
 
     #[test]
     fn slash_prefix_narrows_and_unmatched_hides() {
         let mut app = test_app();
         app.input = "/re".into();
-        assert_eq!(names(&app), vec!["/resume"]);
+        assert_eq!(names(&app), vec!["/resume".to_string()]);
         app.input = "/xyz".into();
         assert!(app.slash_matches().is_empty());
+    }
+
+    #[test]
+    fn slash_fuzzy_matches_transposed_and_typo_queries() {
+        // Reordered/omitted letters still surface the command: `threds` is a
+        // subsequence of `threads` (the `a` is missing).
+        let mut app = test_app();
+        app.input = "/threds".into();
+        assert!(
+            names(&app).contains(&"/threads".to_string()),
+            "transposed query surfaces the command: {:?}",
+            names(&app)
+        );
+        // A close typo: `simplifyer` differs from `simplifier` by one letter.
+        // No built-in is that close, so assert against the scorer directly.
+        let q: Vec<char> = "simplifyer".chars().collect();
+        assert!(
+            super::slash_match_score(&q, "/code-simplifier").is_some(),
+            "typo within tolerance should match"
+        );
+        // A distant query still hides.
+        let far: Vec<char> = "zzzzzz".chars().collect();
+        assert!(super::slash_match_score(&far, "/threads").is_none());
+        // A short query stays prefix-only (tight), not fuzzy.
+        let short: Vec<char> = "re".chars().collect();
+        assert!(super::slash_match_score(&short, "/threads").is_none());
+        assert!(super::slash_match_score(&short, "/resume").is_some());
     }
 
     #[test]
@@ -16519,7 +17398,8 @@ mod tests {
     fn slash_move_wraps_within_matches() {
         let mut app = test_app();
         app.input = "/".into();
-        let n = super::SLASH_COMMANDS.len();
+        // Built-ins plus the always-advertised built-in jan skill.
+        let n = names(&app).len();
         app.slash_move(-1);
         assert_eq!(app.slash_selected, n - 1);
         app.slash_move(1);
@@ -16544,9 +17424,625 @@ mod tests {
         app.cursor = app.input.len();
         app.slash_dismissed = true;
         assert!(app.slash_matches().is_empty());
-        // Editing the buffer re-shows the popup.
+        // Editing the buffer re-shows the popup; fuzzy matching offers both
+        // commands whose name contains `res` as a subsequence, resume first.
         app.input_insert('s');
-        assert_eq!(names(&app), vec!["/resume"]);
+        assert_eq!(
+            names(&app),
+            vec!["/resume".to_string(), "/threads".to_string()]
+        );
+    }
+
+    #[test]
+    fn slash_matches_include_installed_skills() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.input = "/dep".into();
+        assert!(
+            names(&app).iter().any(|n| n == "/deploy"),
+            "skill offered by prefix: {:?}",
+            names(&app)
+        );
+        // Prefix narrowing works for skills too.
+        app.input = "/deplo".into();
+        assert_eq!(names(&app), vec!["/deploy".to_string()]);
+        // Unmatched prefix hides the skill row.
+        app.input = "/zzz".into();
+        assert!(!names(&app).iter().any(|n| n == "/deploy"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_popup_uses_startup_catalog_after_files_change() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        std::fs::remove_dir_all(root.join(".jan/agent/skills/deploy")).unwrap();
+        app.input = "/dep".into();
+
+        assert_eq!(names(&app), vec!["/deploy".to_string()]);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_matches_hide_disabled_skills() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        // Whitelist a different skill: deploy must vanish from the popup,
+        // matching the user-side catalog semantics.
+        std::fs::write(
+            root.join(".jan/agent/agent.toml"),
+            "[agent]\n[skills]\nenabled = [\"other\"]\n",
+        )
+        .unwrap();
+        app.input = "/dep".into();
+        assert!(
+            !names(&app).iter().any(|n| n == "/deploy"),
+            "disabled skill must not be offered: {:?}",
+            names(&app)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_matches_dedupe_command_collisions() {
+        let (mut app, root) = skill_test_app("cancel", "Cancels things.");
+        app.input = "/".into();
+        let all = names(&app);
+        let hits = all.iter().filter(|n| *n == "/cancel").count();
+        assert_eq!(hits, 1, "command wins, skill row dropped: {all:?}");
+        // The unambiguous form is still completable.
+        app.input = "/skill:can".into();
+        assert!(names(&app).iter().any(|n| n == "/skill:cancel"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_matches_hide_model_only_skills() {
+        // `user-invocable: false` (Claude Code convention): the agent may fire
+        // it via skill_read, but the human's popup must not offer it.
+        let (mut app, root) =
+            skill_test_app_fm("internal", "Agent-only ritual.", "user-invocable: false\n");
+        let (mut app2, root2) = skill_test_app("open", "Everyone.");
+        app.input = "/int".into();
+        assert!(
+            !names(&app).iter().any(|n| n.contains("internal")),
+            "model-only skill offered to the user: {:?}",
+            names(&app)
+        );
+        // The `/skill:` form is equally hidden.
+        app.input = "/skill:int".into();
+        assert!(names(&app).is_empty(), "{:?}", names(&app));
+        // A normal skill is still offered alongside.
+        app2.input = "/op".into();
+        assert_eq!(names(&app2), vec!["/open".to_string()]);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root2);
+    }
+
+    #[test]
+    fn accept_slash_fills_skill_name() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.input = "/dep".into();
+        app.cursor = app.input.len();
+        app.accept_slash();
+        assert_eq!(app.input, "/deploy ");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_hints_render_skill_rows() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.input = "/dep".into();
+        app.cursor = app.input.len();
+        let rows = render_rows(&mut app, 100, 30);
+        assert!(
+            rows.iter()
+                .any(|r| r.contains("/deploy") && r.contains("How to deploy.")),
+            "skill row rendered:\n{}",
+            rows.join("\n")
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A plugin with one folder skill under the app's project root.
+    fn plugin_skill_in_app(root: &std::path::Path, plugin: &str, name: &str, description: &str) {
+        let dir = root
+            .join(".jan/agent/plugins")
+            .join(plugin)
+            .join("skills")
+            .join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            format!("---\ndescription: {description}\n---\n\n# {name}\n\nPlugin body.\n"),
+        )
+        .unwrap();
+    }
+
+    /// A plugin with one command prompt template under the app's project root.
+    fn plugin_command_in_app(root: &std::path::Path, plugin: &str, name: &str, content: &str) {
+        let dir = root
+            .join(".jan/agent/plugins")
+            .join(plugin)
+            .join("commands");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(format!("{name}.md")), content).unwrap();
+    }
+
+    #[test]
+    fn slash_matches_offer_plugin_commands() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_command_in_app(
+            &root,
+            "feature-dev",
+            "feature-dev",
+            "---\ndescription: Guided feature workflow\n---\nDo it with $ARGUMENTS.",
+        );
+        app.refresh_slash_catalog();
+        // Short form: the plain name is offered.
+        app.input = "/fea".into();
+        assert!(
+            names(&app).contains(&"/feature-dev".to_string()),
+            "command short form offered: {:?}",
+            names(&app)
+        );
+        // Explicit form: the qualified `<plugin>:<name>` name.
+        app.input = "/command:".into();
+        assert!(
+            names(&app).contains(&"/command:feature-dev:feature-dev".to_string()),
+            "command explicit form offered: {:?}",
+            names(&app)
+        );
+        // Template placeholders surface as hints on the popup row.
+        assert!(app.slash_matches().iter().any(|m| matches!(
+            m,
+            super::SlashMatch::PluginCommand { hints, .. } if hints == &vec!["$ARGUMENTS".to_string()]
+        )));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_popup_reuses_startup_catalog_until_refresh() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_command_in_app(
+            &root,
+            "feature-dev",
+            "feature-dev",
+            "---\ndescription: Guided feature workflow\n---\nDo it.",
+        );
+        app.refresh_slash_catalog();
+        app.input = "/feature".into();
+        assert!(names(&app).contains(&"/feature-dev".to_string()));
+
+        std::fs::remove_file(root.join(".jan/agent/plugins/feature-dev/commands/feature-dev.md"))
+            .unwrap();
+        app.input = "/fea".into();
+        app.reset_slash_hint();
+        assert!(
+            names(&app).contains(&"/feature-dev".to_string()),
+            "the startup catalog must not rediscover files after the input changes"
+        );
+
+        app.refresh_slash_catalog();
+        assert!(!names(&app).contains(&"/feature-dev".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_matches_command_owns_short_form_over_skill() {
+        let (mut app, root) = skill_test_app("prepare", "Project prep.");
+        plugin_command_in_app(
+            &root,
+            "release",
+            "prepare",
+            "---\ndescription: Release prep\n---\nDo it.",
+        );
+        app.refresh_slash_catalog();
+        app.input = "/pre".into();
+        let all = names(&app);
+        assert_eq!(
+            all.iter().filter(|n| *n == "/prepare").count(),
+            1,
+            "command owns the short form, skill row dropped: {all:?}"
+        );
+        // The skill is still reachable explicitly.
+        app.input = "/skill:pre".into();
+        assert!(names(&app).contains(&"/skill:prepare".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_matches_builtin_wins_over_command() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_command_in_app(&root, "x", "resume", "---\ndescription: r\n---\nDo it.");
+        app.refresh_slash_catalog();
+        app.input = "/res".into();
+        let all = names(&app);
+        // Built-in wins the `/resume` collision: no `/command:x:resume` row and
+        // no skill row. `/threads` is a separate fuzzy hit (res is a
+        // subsequence of its name), not a collision.
+        assert_eq!(
+            all,
+            vec!["/resume".to_string(), "/threads".to_string()],
+            "built-in only"
+        );
+        // The command is still reachable explicitly.
+        app.input = "/command:".into();
+        assert!(names(&app).contains(&"/command:x:resume".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dispatch_command_submits_template_with_substituted_args() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_command_in_app(
+            &root,
+            "feature-dev",
+            "feature-dev",
+            "---\ndescription: Build a feature\n---\nBuild: $ARGUMENTS",
+        );
+        assert!(app.dispatch_command("feature-dev", "add auth"));
+        // The model sees the substituted template as the user message.
+        let user_msgs: Vec<&serde_json::Value> = app
+            .history
+            .iter()
+            .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))
+            .collect();
+        let last = user_msgs.last().expect("user message");
+        assert!(
+            last.get("content")
+                .and_then(|c| c.as_str())
+                .is_some_and(
+                    |c| c.contains("Build: add auth") && c.contains("feature-dev\" command")
+                ),
+            "substituted template in history: {last}"
+        );
+        // Unknown command returns false and does not dispatch.
+        let before = app.history.len();
+        assert!(!app.dispatch_command("nope", ""));
+        assert_eq!(app.history.len(), before);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dispatch_command_arms_base_snapshot_before_starting() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_command_in_app(&root, "feature-dev", "feature-dev", "Build: $ARGUMENTS");
+        app.repo_root = Some(root.clone());
+
+        assert!(app.dispatch_command("feature-dev", "add auth"));
+        assert!(app.base_requested);
+        assert!(matches!(app.snap_queue.front(), Some(SnapshotJob::Base)));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dispatch_skill_arms_base_snapshot_before_starting() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.repo_root = Some(root.clone());
+
+        assert!(app.dispatch_skill("deploy", "staging"));
+        assert!(app.base_requested);
+        assert!(matches!(app.snap_queue.front(), Some(SnapshotJob::Base)));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn run_command_dispatches_plugin_command_plain_and_explicit() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_command_in_app(
+            &root,
+            "feature-dev",
+            "feature-dev",
+            "---\ndescription: Build a feature\n---\nBuild: $ARGUMENTS",
+        );
+        // Plain short form.
+        run_command(&mut app, "feature-dev add auth").await;
+        let user = app.history.iter().last().unwrap();
+        assert!(
+            user.get("content")
+                .and_then(|c| c.as_str())
+                .is_some_and(|c| c.contains("Build: add auth")),
+            "plain dispatch: {user}"
+        );
+        assert!(
+            transcript_text(&app).contains("[command:feature-dev]"),
+            "compact row: {}",
+            transcript_text(&app)
+        );
+        // Explicit qualified form.
+        run_command(&mut app, "command:feature-dev:feature-dev fix tests").await;
+        let user = app.history.iter().last().unwrap();
+        assert!(
+            user.get("content")
+                .and_then(|c| c.as_str())
+                .is_some_and(|c| c.contains("Build: fix tests")),
+            "explicit dispatch: {user}"
+        );
+        // Unknown command still notes.
+        run_command(&mut app, "warp_drive").await;
+        assert!(transcript_text(&app).contains("unknown command '/warp_drive'"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_matches_offer_plugin_skills() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_skill_in_app(&root, "release", "prepare", "Prep the release.");
+        app.refresh_slash_catalog();
+        // Short form: the plain name is offered when it is unambiguous.
+        app.input = "/pre".into();
+        assert!(
+            names(&app).contains(&"/prepare".to_string()),
+            "plugin short form offered: {:?}",
+            names(&app)
+        );
+        // Explicit form: the qualified `<plugin>:<skill>` name.
+        app.input = "/skill:rel".into();
+        assert!(
+            names(&app).contains(&"/skill:release:prepare".to_string()),
+            "plugin explicit form offered: {:?}",
+            names(&app)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_matches_ambiguous_plugin_plain_names_drop_short_form() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_skill_in_app(&root, "release", "prepare", "Release prep.");
+        plugin_skill_in_app(&root, "triage", "prepare", "Triage prep.");
+        app.refresh_slash_catalog();
+        app.input = "/pre".into();
+        let all = names(&app);
+        assert!(
+            !all.contains(&"/prepare".to_string()),
+            "ambiguous short form must be dropped: {all:?}"
+        );
+        // Explicit forms stay completable for both.
+        app.input = "/skill:rel".into();
+        assert!(names(&app).contains(&"/skill:release:prepare".to_string()));
+        app.input = "/skill:tri".into();
+        assert!(names(&app).contains(&"/skill:triage:prepare".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_matches_project_skill_owns_short_form() {
+        let (mut app, root) = skill_test_app("prepare", "Project prep.");
+        plugin_skill_in_app(&root, "release", "prepare", "Plugin prep.");
+        app.refresh_slash_catalog();
+        app.input = "/pre".into();
+        let hits: Vec<_> = names(&app)
+            .into_iter()
+            .filter(|n| n.contains("prepare"))
+            .collect();
+        assert_eq!(
+            hits,
+            vec!["/prepare".to_string()],
+            "project owns the short form"
+        );
+        // The plugin copy stays reachable explicitly.
+        app.input = "/skill:rel".into();
+        assert!(names(&app).contains(&"/skill:release:prepare".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn plugin_command_installs_lists_dispatch_removes() {
+        // Local git repo fixture with a plugin payload.
+        let repo =
+            std::env::temp_dir().join(format!("jan_tui_plugin_repo_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(repo.join("skills").join("prepare")).unwrap();
+        std::fs::write(
+            repo.join("skills").join("prepare").join("SKILL.md"),
+            "---\ndescription: Prep\n---\n\n# prepare\n\nBody.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo.join("plugin.toml"),
+            "name = \"release-tools\"\ndescription = \"Release automation\"\nversion = \"1.2.0\"\n",
+        )
+        .unwrap();
+        let st = std::process::Command::new("git")
+            .args(["init", repo.to_str().unwrap()])
+            .status()
+            .unwrap();
+        assert!(st.success());
+        let st = std::process::Command::new("git")
+            .args(["-C", repo.to_str().unwrap(), "add", "-A"])
+            .status()
+            .unwrap();
+        assert!(st.success());
+        let st = std::process::Command::new("git")
+            .args([
+                "-C",
+                repo.to_str().unwrap(),
+                "commit",
+                "-m",
+                "init",
+                "--author=Jan Test <test@jan.ai>",
+            ])
+            .status()
+            .unwrap();
+        assert!(st.success());
+
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(
+            &mut app,
+            &format!("plugin install file://{}", repo.display()),
+        )
+        .await;
+        assert!(
+            transcript_text(&app).contains("installed plugin 'release-tools' (1 skills)"),
+            "install note: {}",
+            transcript_text(&app)
+        );
+
+        std::fs::create_dir_all(
+            crate::core::agent::skills::plugins_dir(&root).join(".installing-stale"),
+        )
+        .unwrap();
+        run_command(&mut app, "plugin list").await;
+        let text = transcript_text(&app);
+        assert!(
+            text.contains("plugin release-tools (v1.2.0 - 1 skill)"),
+            "{text}"
+        );
+        assert!(!text.contains("Release automation"), "{text}");
+        assert!(!text.contains("release-tools:prepare"), "{text}");
+
+        run_command(&mut app, "plugin list release-tools").await;
+        let detail = transcript_text(&app);
+        assert!(detail.contains("Release automation"), "{detail}");
+        assert!(detail.contains("release-tools:prepare"), "{detail}");
+
+        run_command(&mut app, "plugin list missing").await;
+        assert!(
+            transcript_text(&app).contains("plugin 'missing' is not installed"),
+            "{}",
+            transcript_text(&app)
+        );
+
+        // The installed plugin's skill resolves and dispatches like a project
+        // skill (qualified form here; the short form is covered by unit tests).
+        run_command(&mut app, "release-tools:prepare").await;
+        assert!(
+            transcript_text(&app).contains("[skill:release-tools:prepare]"),
+            "dispatch: {}",
+            transcript_text(&app)
+        );
+
+        run_command(&mut app, "plugin remove release-tools").await;
+        assert!(
+            transcript_text(&app).contains("removed plugin 'release-tools'"),
+            "remove note: {}",
+            transcript_text(&app)
+        );
+        run_command(&mut app, "plugin list").await;
+        assert!(
+            transcript_text(&app).contains("no plugins installed"),
+            "empty list: {}",
+            transcript_text(&app)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[tokio::test]
+    async fn run_command_dispatches_installed_skill() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "deploy").await;
+        assert!(
+            transcript_text(&app).contains("[skill:deploy]"),
+            "compact row: {}",
+            transcript_text(&app)
+        );
+        // The full skill body is injected into history, not deferred to
+        // skill_read, and the folder directory is announced for relative paths.
+        let user = app
+            .history
+            .iter()
+            .rev()
+            .find(|m| m["role"] == "user")
+            .expect("user message pushed");
+        let content = user["content"].as_str().unwrap();
+        assert!(
+            content.contains("You have invoked the \"deploy\" skill"),
+            "{content}"
+        );
+        assert!(content.contains("# deploy"), "body injected: {content}");
+        assert!(content.contains("Skill directory:"), "base dir: {content}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn run_command_threads_skill_args() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "deploy staging --force").await;
+        let user = app
+            .history
+            .iter()
+            .rev()
+            .find(|m| m["role"] == "user")
+            .expect("user message pushed");
+        assert!(
+            user["content"]
+                .as_str()
+                .unwrap()
+                .contains("User: staging --force"),
+            "{}",
+            user["content"]
+        );
+        assert!(transcript_text(&app).contains("[skill:deploy] staging --force"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn skill_colon_form_dispatches_and_beats_collisions() {
+        // A skill named like a builtin command: the short form runs the
+        // command; `/skill:cancel` still reaches the skill.
+        let (mut app, root) = skill_test_app("cancel", "Cancels things.");
+        run_command(&mut app, "cancel").await;
+        assert!(
+            !transcript_text(&app).contains("[skill:cancel]"),
+            "command wins the short form: {}",
+            transcript_text(&app)
+        );
+        run_command(&mut app, "skill:cancel").await;
+        assert!(transcript_text(&app).contains("[skill:cancel]"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn submit_user_mid_prompt_skill_invocation() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.submit_user("fix the auth flow /skill:deploy focus on security".into());
+        let user = app
+            .history
+            .iter()
+            .rev()
+            .find(|m| m["role"] == "user")
+            .expect("user message pushed");
+        let content = user["content"].as_str().unwrap();
+        assert!(
+            content.contains("fix the auth flow focus on security"),
+            "surrounding prose becomes args: {content}"
+        );
+        assert!(
+            content.contains("User: fix the auth flow focus on security"),
+            "{content}"
+        );
+        assert!(
+            transcript_text(&app).contains("[skill:deploy] fix the auth flow focus on security")
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn submit_user_unknown_skill_token_passes_through() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.submit_user("read /skill:nope for me".into());
+        let user = app
+            .history
+            .iter()
+            .rev()
+            .find(|m| m["role"] == "user")
+            .expect("user message pushed");
+        assert_eq!(
+            user["content"].as_str().unwrap(),
+            "read /skill:nope for me",
+            "unknown skill stays a plain message"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn run_command_unknown_still_notes() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "warp_drive").await;
+        assert!(transcript_text(&app).contains("unknown command '/warp_drive'"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

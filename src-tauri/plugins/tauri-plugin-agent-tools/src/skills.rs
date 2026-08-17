@@ -8,6 +8,14 @@
 //! desktop's permanent store or a project's co-located one. A skill is a
 //! reusable procedure, so it must outlive the ephemeral per-thread sandbox.
 //!
+//! Skills have two invocation sides, matching the SKILL.md ecosystem:
+//! `user-invocable: false` hides a skill from the human (slash popup, `/skill:`
+//! dispatch) while keeping it model-invocable; `disable-model-invocation: true`
+//! hides it from the model (system-prompt catalog, `skill_list`/`skill_read`)
+//! while keeping it user-invocable. Default is both sides; setting both keys
+//! makes a skill private. `[skills].enabled` stays the orthogonal availability
+//! whitelist applied to both sides.
+//!
 //! Sync (std::fs) so the sync `context::load_skills` and the async `agent_skill_*`
 //! commands share one code path; the ops are tiny single-file reads/writes.
 
@@ -18,13 +26,6 @@ use serde::Deserialize;
 use crate::workspace::{store_dir, workspace_filename};
 
 const KIND: &str = "skills";
-
-const DEFAULT_JAN_SKILL_NAME: &str = "jan";
-const DEFAULT_JAN_SKILL: &str = include_str!("default_jan_skill.md");
-
-fn is_default_jan_skill(name: &str) -> bool {
-    safe_stem(name).ok().as_deref() == Some(DEFAULT_JAN_SKILL_NAME)
-}
 
 /// `<store_root>/skills`.
 pub fn skills_dir(store: &Path) -> PathBuf {
@@ -45,6 +46,10 @@ pub struct SkillEntry {
 pub struct SkillMeta {
     pub name: String,
     pub description: String,
+    /// Offered in the user-facing invoke surface (slash popup, `/skill:`).
+    pub user_invocable: bool,
+    /// Offered to the model (system-prompt catalog, `skill_list`/`skill_read`).
+    pub model_invocable: bool,
 }
 
 /// Frontmatter fields we recognize; everything else is ignored.
@@ -53,6 +58,15 @@ struct Frontmatter {
     #[allow(dead_code)]
     name: Option<String>,
     description: Option<String>,
+    /// Claude Code convention: `user-invocable: false` keeps the skill
+    /// model-invocable while hiding it from the human's invoke list.
+    #[serde(rename = "user-invocable")]
+    user_invocable: Option<bool>,
+    /// Matt Pocock's SKILL-MECHANICS convention: `disable-model-invocation:
+    /// true` keeps the skill user-invocable while removing its description
+    /// from the model's reach (no context load).
+    #[serde(rename = "disable-model-invocation")]
+    disable_model_invocation: Option<bool>,
 }
 
 /// A skill's parsed content: optional frontmatter description + markdown body
@@ -60,6 +74,8 @@ struct Frontmatter {
 pub struct ParsedSkill {
     pub description: Option<String>,
     pub body: String,
+    pub user_invocable: bool,
+    pub model_invocable: bool,
 }
 
 /// Split leading `---\n...\n---` YAML frontmatter from the markdown body.
@@ -71,6 +87,8 @@ pub fn parse(content: &str) -> ParsedSkill {
         return ParsedSkill {
             description: None,
             body: content.to_string(),
+            user_invocable: true,
+            model_invocable: true,
         };
     }
     let mut yaml = String::new();
@@ -93,12 +111,16 @@ pub fn parse(content: &str) -> ParsedSkill {
         return ParsedSkill {
             description: None,
             body: content.to_string(),
+            user_invocable: true,
+            model_invocable: true,
         };
     }
     let fm = serde_yaml::from_str::<Frontmatter>(&yaml).unwrap_or_default();
     ParsedSkill {
         description: fm.description.map(|d| d.trim().to_string()),
         body: body.join("\n").trim_start_matches('\n').to_string(),
+        user_invocable: fm.user_invocable.unwrap_or(true),
+        model_invocable: !fm.disable_model_invocation.unwrap_or(false),
     }
 }
 
@@ -208,39 +230,69 @@ fn describe(parsed: &ParsedSkill) -> String {
         .unwrap_or_else(|| first_line(&parsed.body))
 }
 
+/// The built-in Jan skill's identity and embedded body: always resolvable
+/// (catalog entry + `skill_read`/`/skill:jan` body) even with zero project
+/// skills installed, but never force-loaded -- it costs a description line
+/// in the catalog like any other skill, and the model/human still has to
+/// invoke it to load the body. `core::agent::skills` mirrors this injection
+/// for the system-prompt catalog and `/skill:` dispatch, which resolve
+/// project + plugin skills but never see this plugin-embedded one.
+pub const DEFAULT_JAN_SKILL_NAME: &str = "jan";
+pub const DEFAULT_JAN_SKILL: &str = include_str!("default_jan_skill.md");
+
+/// Whether a name refers to the built-in Jan skill (aliased `jan`), which is
+/// always available even with no project skills installed.
+fn is_default_jan_skill(name: &str) -> bool {
+    safe_stem(name).ok().as_deref() == Some(DEFAULT_JAN_SKILL_NAME)
+}
 fn default_jan_skill_meta() -> SkillMeta {
     let parsed = parse(DEFAULT_JAN_SKILL);
     SkillMeta {
         name: DEFAULT_JAN_SKILL_NAME.to_string(),
         description: describe(&parsed),
+        // The built-in Jan skill is available on both invocation sides: dev's
+        // baseline ships it as the model-facing onboarding skill (listed in
+        // `skill_list`, body loaded via `skill_read`), and the user may also
+        // invoke it directly.
+        user_invocable: true,
+        model_invocable: true,
     }
 }
 
-/// Metadata for every discovered skill (name + description) — for the UI list.
+
+fn meta_for(name: String, parsed: &ParsedSkill) -> SkillMeta {
+    SkillMeta {
+        name,
+        description: describe(parsed),
+        user_invocable: parsed.user_invocable,
+        model_invocable: parsed.model_invocable,
+    }
+}
+
+/// Metadata for every discovered skill (name + description + invocation
+/// flags) — for the management UI, which must see disabled and private skills.
 /// Keeps empty stubs so the user can see and edit them.
 pub fn list_meta(store: &Path) -> Vec<SkillMeta> {
     discover(store)
         .into_iter()
         .filter_map(|e| {
             let parsed = parse(&std::fs::read_to_string(&e.file).ok()?);
-            Some(SkillMeta {
-                name: e.name,
-                description: describe(&parsed),
-            })
+            Some(meta_for(e.name, &parsed))
         })
         .collect()
 }
 
-/// Skills worth advertising in the system prompt: name + description, skipping
-/// skills with neither a description nor a body. This is the progressive-
-/// disclosure catalog - the model calls `skill_read` to load a body on demand.
-///
-/// `enabled` is a whitelist of skill names; an empty list means "all skills"
-/// (backward-compatible with the agent.toml scaffold, which ships `enabled = []`).
-pub fn catalog(store: &Path, enabled: &[String]) -> Vec<SkillMeta> {
+/// Filter discovered skills by the `[skills].enabled` whitelist and one
+/// invocation side. Skills with neither a description nor a body are skipped
+/// (nothing to advertise or invoke).
+fn side_catalog(
+    root: &Path,
+    enabled: &[String],
+    side: impl Fn(&ParsedSkill) -> bool,
+) -> Vec<SkillMeta> {
     let allow: Option<std::collections::HashSet<&str>> =
         (!enabled.is_empty()).then(|| enabled.iter().map(String::as_str).collect());
-    let mut skills = discover(store)
+    let mut skills = discover(root)
         .into_iter()
         .filter_map(|e| {
             if let Some(allow) = &allow {
@@ -249,43 +301,53 @@ pub fn catalog(store: &Path, enabled: &[String]) -> Vec<SkillMeta> {
                 }
             }
             let parsed = parse(&std::fs::read_to_string(&e.file).ok()?);
+            if !side(&parsed) {
+                return None;
+            }
             let description = describe(&parsed);
             if description.is_empty() && parsed.body.trim().is_empty() {
                 return None;
             }
-            Some(SkillMeta {
-                name: e.name,
-                description,
-            })
+            Some(meta_for(e.name, &parsed))
         })
         .collect::<Vec<_>>();
     if is_enabled(enabled, DEFAULT_JAN_SKILL_NAME)
+        && side(&parse(DEFAULT_JAN_SKILL))
         && !skills
             .iter()
             .any(|skill| skill.name == DEFAULT_JAN_SKILL_NAME)
     {
         skills.push(default_jan_skill_meta());
     }
-    skills.sort_by(|a, b| a.name.cmp(&b.name));
     skills
+}
+
+/// Skills worth advertising in the system prompt: name + description, skipping
+/// skills with neither a description nor a body. This is the progressive-
+/// disclosure catalog — the model calls `skill_read` to load a body on demand.
+/// Skills with `disable-model-invocation: true` are excluded: their
+/// description would cost permanent context load, and only the human may fire
+/// them (Matt Pocock's SKILL-MECHANICS model-invoked vs user-invoked cut).
+///
+/// `enabled` is a whitelist of skill names; an empty list means "all skills"
+/// (backward-compatible with the agent.toml scaffold, which ships `enabled = []`).
+pub(crate) fn catalog(root: &Path, enabled: &[String]) -> Vec<SkillMeta> {
+    side_catalog(root, enabled, |p| p.model_invocable)
 }
 
 /// Raw SKILL.md text (frontmatter included) for the editor.
 pub fn read_raw(store: &Path, name: &str) -> Result<String, String> {
+    if is_default_jan_skill(name) {
+        return Ok(parse(DEFAULT_JAN_SKILL).body);
+    }
     let entry = resolve(store, name)?;
     std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))
 }
 
-/// A skill's markdown body with the frontmatter fence stripped - what the
+/// A skill's markdown body with the frontmatter fence stripped — what the
 /// `skill_read` tool hands the model when it loads a skill on demand.
 pub fn read_body(store: &Path, name: &str) -> Result<String, String> {
-    match resolve(store, name) {
-        Ok(entry) => std::fs::read_to_string(&entry.file)
-            .map(|content| parse(&content).body)
-            .map_err(|e| format!("ERROR: {e}")),
-        Err(_) if is_default_jan_skill(name) => Ok(parse(DEFAULT_JAN_SKILL).body),
-        Err(error) => Err(error),
-    }
+    Ok(parse(&read_raw(store, name)?).body)
 }
 
 /// Create or overwrite a skill. Existing skills are written in place (preserving
@@ -391,6 +453,68 @@ mod tests {
     }
 
     #[test]
+    fn parse_invocation_flags_from_frontmatter() {
+        // Default: both sides.
+        let p = parse("---\ndescription: d\n---\nbody");
+        assert!(p.user_invocable && p.model_invocable);
+        // Claude Code convention: model-only.
+        let p = parse("---\ndescription: d\nuser-invocable: false\n---\nbody");
+        assert!(!p.user_invocable && p.model_invocable);
+        // Matt Pocock convention: user-only.
+        let p = parse("---\ndescription: d\ndisable-model-invocation: true\n---\nbody");
+        assert!(p.user_invocable && !p.model_invocable);
+        // Both set: fully private.
+        let p = parse("---\nuser-invocable: false\ndisable-model-invocation: true\n---\nbody");
+        assert!(!p.user_invocable && !p.model_invocable);
+        // No frontmatter at all: both sides.
+        let p = parse("just a body");
+        assert!(p.user_invocable && p.model_invocable);
+    }
+
+    #[test]
+    fn catalog_respects_invocation_flags() {
+        let root = std::env::temp_dir().join(format!(
+            "jan_skills_sides_{}",
+            std::time::SystemTime::UNIX_EPOCH
+                .elapsed()
+                .unwrap()
+                .as_nanos()
+        ));
+        let dir = skills_dir(&root);
+        let write = |name: &str, fm: &str| {
+            std::fs::create_dir_all(dir.join(name)).unwrap();
+            std::fs::write(
+                dir.join(name).join("SKILL.md"),
+                format!("---\ndescription: {name} desc\n{fm}---\nbody of {name}"),
+            )
+            .unwrap();
+        };
+        write("both", "");
+        write("model_only", "user-invocable: false\n");
+        write("user_only", "disable-model-invocation: true\n");
+
+        let model: Vec<_> = catalog(&root, &[]).into_iter().map(|m| m.name).collect();
+        assert_eq!(model, vec!["both", "model_only", "jan"], "model side: {model:?}");
+
+        // Both flags still visible to the management list.
+        let all = list_meta(&root);
+        assert_eq!(all.len(), 3);
+        assert!(
+            !all.iter()
+                .find(|m| m.name == "model_only")
+                .unwrap()
+                .user_invocable
+        );
+        assert!(
+            !all.iter()
+                .find(|m| m.name == "user_only")
+                .unwrap()
+                .model_invocable
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn catalog_enabled_whitelist_filters() {
         let root = std::env::temp_dir().join(format!(
             "jan_skills_wl_{}",
@@ -399,46 +523,13 @@ mod tests {
         write(&root, "a", "body a").unwrap();
         write(&root, "b", "body b").unwrap();
 
-        // Empty whitelist = all project skills plus the built-in Jan skill.
+        // Empty whitelist = all skills.
         assert_eq!(catalog(&root, &[]).len(), 3);
 
-        // Non-empty whitelist restricts every skill, including the default.
+        // Non-empty whitelist restricts to the listed names.
         let only_a = catalog(&root, &["a".to_string()]);
         assert_eq!(only_a.len(), 1);
         assert_eq!(only_a[0].name, "a");
-        let only_jan = catalog(&root, &["jan".to_string()]);
-        assert_eq!(only_jan.len(), 1);
-        assert_eq!(only_jan[0].name, "jan");
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn default_jan_skill_is_safe_to_read_and_project_skills_override_it() {
-        let root = std::env::temp_dir().join(format!(
-            "jan_default_skill_{}",
-            std::time::SystemTime::UNIX_EPOCH
-                .elapsed()
-                .unwrap()
-                .as_nanos()
-        ));
-        assert!(!read_body(&root, "jan").unwrap().trim().is_empty());
-        assert!(read_body(&root, "../jan").is_err());
-
-        write(
-            &root,
-            "jan",
-            "---\ndescription: Custom Jan guidance\n---\ncustom body",
-        )
-        .unwrap();
-        assert_eq!(read_body(&root, "jan").unwrap(), "custom body");
-        assert_eq!(
-            catalog(&root, &[])
-                .into_iter()
-                .find(|skill| skill.name == "jan")
-                .unwrap()
-                .description,
-            "Custom Jan guidance"
-        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -474,6 +474,9 @@ impl CompositeToolInvoker {
                 let scope_label = match scope {
                     SubagentScope::User => "user",
                     SubagentScope::Project => "project",
+                    // Unreachable: create_subagent rejects the plugin scope
+                    // before this point.
+                    SubagentScope::Plugin => "plugin",
                 };
                 let mut registry = SubagentRegistry::load(&self.project_root);
                 match registry.create_in(&dir, def.clone(), scope, overwrite) {
@@ -1072,6 +1075,29 @@ fn stop_reason_of(completion: &serde_json::Value) -> String {
         .to_string()
 }
 
+/// The text of the most recent user message: a bare string, or the joined
+/// text parts of array-form content. Used to recall project memory for the
+/// current query before it is indexed.
+fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
+    let content = messages
+        .iter()
+        .rev()
+        .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))?
+        .get("content")?;
+    match content {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Array(parts) => {
+            let text: String = parts
+                .iter()
+                .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+                .collect::<Vec<_>>()
+                .join(" ");
+            (!text.is_empty()).then_some(text)
+        }
+        _ => None,
+    }
+}
+
 /// Assembles the run's system prompt: `override_prompt` (a subagent's
 /// definition prompt) replaces the assistant identity when set, but the
 /// project-context and tool-use guidance from `build_system_prompt` is still
@@ -1238,7 +1264,7 @@ async fn orchestrate_inner(
     // nothing binds.
     let settings = project_root.as_deref().map(|root| resolve_run_settings(root, *sandbox));
 
-    let system_prompt = build_run_system_prompt(
+    let mut system_prompt = build_run_system_prompt(
         assistant_instructions.as_deref(),
         system_prompt_override.as_deref(),
         project_root.as_deref(),
@@ -1246,6 +1272,27 @@ async fn orchestrate_inner(
         *subagents_enabled,
         settings.as_ref().is_some_and(|s| s.sandbox),
     );
+    // Normal parent runs recall project memory for the current query before it
+    // is indexed. Child runs keep their isolated history and skip memory.
+    if system_prompt_override.is_none() {
+        if let Some(root) = project_root {
+            if let Some(query) = latest_user_text(&conversation_messages) {
+                if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
+                    system_prompt = Some(match system_prompt {
+                        Some(s) => format!("{s}\n\n{mem}"),
+                        None => mem,
+                    });
+                }
+            }
+        }
+    }
+    // Always tell the model today's date, including isolated child runs.
+    let date_line = format!("Today's date is {}.", chrono::Local::now().format("%Y-%m-%d"));
+    let system_prompt = match system_prompt {
+        Some(sys) => format!("{date_line}\n\n{sys}"),
+        None => date_line,
+    };
+    let system_prompt = Some(system_prompt);
     // Child (subagent) runs are excluded via `system_prompt_override`, the
     // same gate the memory-recall block above uses to distinguish a
     // top-level run from a subagent's isolated context.
@@ -1441,6 +1488,10 @@ async fn orchestrate_inner(
     let max_session_tokens = body_session_budget(json_body);
     let mut budget = SessionBudget::new(max_session_tokens);
 
+    // Top-level runs index their final assistant answer into project memory;
+    // isolated child (subagent) runs skip it to keep history independent.
+    let index_memory = system_prompt_override.is_none();
+
     if let Some(root) = project_root {
         // Background subagents are scoped to this run: `_bg_guard` aborts any
         // still-running child when `orchestrate_inner` returns or is cancelled.
@@ -1509,6 +1560,15 @@ async fn orchestrate_inner(
         // `_bg_guard`. On an error, teardown still aborts them.
         if result.is_ok() {
             bg.join_all().await;
+        }
+        if index_memory {
+            if let Ok(completion) = &result {
+                if let Some(answer) = extract_choice_message(completion)
+                    .and_then(|m| m.get("content").and_then(|c| c.as_str()).map(str::to_string))
+                {
+                    crate::core::agent::memory::index_message(root, "assistant", &answer);
+                }
+            }
         }
         result
     } else {
@@ -1660,24 +1720,6 @@ fn body_session_budget(json_body: &serde_json::Value) -> Option<u64> {
         .filter(|v| *v > 0)
 }
 
-/// Hand the client the conversation a failed cycle got to, so the turn it
-/// retries resumes from the work already done instead of the prompt that
-/// started it. Only from a round boundary, where every tool call is paired with
-/// its result: an upstream rejects a conversation ending on an unanswered
-/// `tool_calls`. No-op until a round has actually closed -- before that the
-/// client's own copy is already current.
-fn publish_progress(
-    events: &mpsc::UnboundedSender<StreamEvent>,
-    conversation_messages: &[serde_json::Value],
-    progressed: bool,
-) {
-    if progressed {
-        let _ = events.send(StreamEvent::MessagesUpdated {
-            messages: conversation_messages.to_vec(),
-        });
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn run_turn_cycle(
     events: &mpsc::UnboundedSender<StreamEvent>,
@@ -1713,9 +1755,6 @@ async fn run_turn_cycle(
     let mut mid_run_nudge_count: u32 = 0;
     // One-shot: asked the model to close out its todos before handing back.
     let mut closeout_nudged = false;
-    // Whether a tool round has closed, i.e. whether the client's copy of the
-    // conversation is behind this one. See `publish_progress`.
-    let mut progressed = false;
 
     while unlimited || turn < max_turns {
         let _ = events.send(StreamEvent::Step {
@@ -1751,7 +1790,6 @@ async fn run_turn_cycle(
                         )
                         .await;
                         if compacted.len() >= conversation_messages.len() {
-                            publish_progress(events, &conversation_messages, progressed);
                             return Err(e);
                         }
                         log::info!(
@@ -1771,10 +1809,7 @@ async fn run_turn_cycle(
                         keep_recent = (keep_recent / 2).max(2);
                         attempts += 1;
                     }
-                    Err(e) => {
-                        publish_progress(events, &conversation_messages, progressed);
-                        return Err(e);
-                    }
+                    Err(e) => return Err(e),
                 }
             }
         };
@@ -1896,11 +1931,6 @@ async fn run_turn_cycle(
         // for the specific model that needs it (scoped, content preserved), so
         // the agent can speak standard OpenAI tool protocol on the wire again.
         // See janhq/jan-internal#238.
-        //
-        // Everything appended from here until this round's results are in is an
-        // unanswered `tool_calls`, which no upstream accepts as the tail of a
-        // conversation: a failure in between resumes from `round_start`.
-        let round_start = conversation_messages.len();
         if let Some(choice_message) = extract_choice_message(&completion) {
             let assistant_content = choice_message
                 .get("content")
@@ -1942,18 +1972,11 @@ async fn run_turn_cycle(
                     "content": content
                 }));
             }
-            progressed = true;
             turn += 1;
             continue;
         }
 
-        let tool_results = match tools.invoke(&tool_calls).await {
-            Ok(results) => results,
-            Err(e) => {
-                publish_progress(events, &conversation_messages[..round_start], progressed);
-                return Err(e);
-            }
-        };
+        let tool_results = tools.invoke(&tool_calls).await?;
 
         // Standard OpenAI tool protocol: each result is a `role: "tool"` message
         // carrying its `tool_call_id` (see note above the assistant push -- the
@@ -2038,14 +2061,9 @@ async fn run_turn_cycle(
                 }));
             }
         }
-        // This round is closed and its calls are all answered, so the
-        // conversation is a valid resume point for whatever kills the cycle
-        // next.
-        progressed = true;
         turn += 1;
     }
 
-    publish_progress(events, &conversation_messages, progressed);
     Err(format!(
         "reached the {max_turns}-turn limit while the model was still calling tools"
     ))
@@ -2870,108 +2888,6 @@ mod tests {
         );
     }
 
-    /// A run that dies partway through has already done work: the client owns
-    /// the conversation it will retry with, so a failing cycle has to hand over
-    /// the rounds it completed. Publishing only on success means the retry
-    /// resends the turn's opening prompt and the model redoes everything.
-    #[tokio::test]
-    async fn turn_cycle_publishes_progress_when_the_cycle_fails() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let model = ResultQueueModel {
-            results: StdMutex::new(
-                vec![Ok(tool_call_completion()), Err("upstream 500".to_string())]
-                    .into_iter()
-                    .collect(),
-            ),
-        };
-        let tool = MockTool::default();
-        let mut budget = SessionBudget::new(None);
-        let convo = vec![json!({ "role": "user", "content": "hi" })];
-
-        let result = run_turn_cycle(
-            &tx,
-            &json!({}),
-            "m",
-            &[],
-            convo,
-            8,
-            &mut budget,
-            &model,
-            &tool,
-            crate::core::agent::plan::RunMode::Normal,
-            None,
-            None,
-        )
-        .await;
-
-        assert!(result.is_err());
-        drop(tx);
-        let mut published: Option<Vec<serde_json::Value>> = None;
-        while let Ok(ev) = rx.try_recv() {
-            if let StreamEvent::MessagesUpdated { messages } = ev {
-                published = Some(messages);
-            }
-        }
-        let messages = published.expect("the completed tool round must be published");
-        assert_eq!(messages[0]["role"], "user");
-        assert_eq!(messages[1]["role"], "assistant");
-        assert!(messages[1]["tool_calls"].is_array());
-        assert_eq!(
-            messages[2]["role"], "tool",
-            "the published history must pair every call with its result"
-        );
-    }
-
-    /// The round that failed is not a resume point: its `tool_calls` never got
-    /// results, and an upstream rejects a conversation ending on one. The
-    /// published history stops at the last round that closed.
-    #[tokio::test]
-    async fn turn_cycle_progress_never_ends_on_an_unanswered_tool_call() {
-        struct FailingTool;
-        #[async_trait]
-        impl ToolInvoker for FailingTool {
-            async fn invoke(
-                &self,
-                _tool_calls: &[serde_json::Value],
-            ) -> Result<Vec<ToolOutcome>, String> {
-                Err("tool dispatch failed".to_string())
-            }
-        }
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let model = MockModel::new(vec![tool_call_completion(), tool_call_completion()]);
-        let mut budget = SessionBudget::new(None);
-        let convo = vec![json!({ "role": "user", "content": "hi" })];
-
-        let result = run_turn_cycle(
-            &tx,
-            &json!({}),
-            "m",
-            &[],
-            convo,
-            8,
-            &mut budget,
-            &model,
-            &FailingTool,
-            crate::core::agent::plan::RunMode::Normal,
-            None,
-            None,
-        )
-        .await;
-
-        assert!(result.is_err());
-        drop(tx);
-        let mut published: Option<Vec<serde_json::Value>> = None;
-        while let Ok(ev) = rx.try_recv() {
-            if let StreamEvent::MessagesUpdated { messages } = ev {
-                published = Some(messages);
-            }
-        }
-        assert!(
-            published.is_none(),
-            "no round closed, so there is nothing to resume from"
-        );
-    }
-
     #[tokio::test]
     async fn turn_cycle_skips_execution_on_truncated_tool_calls() {
         let (tx, _rx) = mpsc::unbounded_channel();
@@ -3063,9 +2979,9 @@ mod tests {
         assert_eq!(map.keys().collect::<Vec<_>>(), vec!["search"]);
     }
 
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
     use tauri_plugin_agent_tools::tools::gate::{PermissionDecision, SessionGrants};
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     static TEST_ROOT_SEQ: AtomicUsize = AtomicUsize::new(0);
 
@@ -3585,6 +3501,112 @@ mod tests {
                 "arguments": serde_json::to_string(&args).unwrap()
             }
         })
+    }
+
+    #[tokio::test]
+    async fn ask_result_content_reaches_the_outgoing_request() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let asks = crate::core::agent::interaction::new_registry();
+        let mut invoker = build_prompting_invoker(root.clone(), tx.clone(), permissions);
+        invoker.ask_requests = Some(asks.clone());
+        let invoker = Arc::new(invoker);
+
+        // Script: the model first calls `ask`, then finishes with plain text.
+        let model = Arc::new(MockModel::new(vec![
+            json!({
+                "choices": [{
+                    "message": {
+                        "content": serde_json::Value::Null,
+                        "tool_calls": [{
+                            "id": "call_ask1",
+                            "type": "function",
+                            "function": {
+                                "name": "ask",
+                                "arguments": serde_json::to_string(&json!({
+                                    "questions": [{
+                                        "id": "scope",
+                                        "question": "Which scope?",
+                                        "options": [{"label": "Small"}, {"label": "Large"}]
+                                    }]
+                                })).unwrap()
+                            }
+                        }]
+                    },
+                    "finish_reason": "tool_calls"
+                }]
+            }),
+            json!({ "choices": [{ "message": { "content": "final answer" }, "finish_reason": "stop" }] }),
+        ]));
+        let mut budget = SessionBudget::new(None);
+        let convo = vec![json!({ "role": "user", "content": "use the ask tool" })];
+
+        let task = tokio::spawn({
+            let tx = tx.clone();
+            let model = model.clone();
+            let invoker = invoker.clone();
+            async move {
+                run_turn_cycle(
+                    &tx,
+                    &json!({}),
+                    "m",
+                    &[crate::core::agent::interaction::ask_tool_schema()],
+                    convo,
+                    0,
+                    &mut budget,
+                    model.as_ref(),
+                    invoker.as_ref(),
+                    crate::core::agent::plan::RunMode::Normal,
+                    None,
+                    None,
+                )
+                .await
+            }
+        });
+
+        // Answer the ask the way the TUI does: a user selection on the question.
+        let request_id = loop {
+            match rx.recv().await.unwrap() {
+                StreamEvent::AskRequest { request_id, .. } => break request_id,
+                _ => continue,
+            }
+        };
+        crate::core::agent::interaction::respond(
+            &asks,
+            &request_id,
+            Ok(vec![crate::core::agent::interaction::QuestionResult {
+                id: "scope".into(),
+                selected: vec!["Small".into()],
+                custom_input: None,
+            }]),
+        )
+        .await
+        .unwrap();
+
+        let result = task.await.unwrap();
+        assert!(result.is_ok(), "cycle failed: {result:?}");
+
+        // The request after the ask MUST carry the tool result with content.
+        let requests = model.requests.lock().unwrap();
+        assert!(
+            requests.len() >= 2,
+            "expected two outgoing requests, got {}",
+            requests.len()
+        );
+        let second = &requests[1];
+        let tool_msg = second["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("tool"))
+            .expect("tool result message present in second request");
+        let content = tool_msg["content"].as_str().expect("content is a string");
+        assert!(
+            content.contains("Small"),
+            "ask result content missing from outgoing request: {content}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]

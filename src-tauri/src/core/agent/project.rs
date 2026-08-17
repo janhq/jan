@@ -23,6 +23,18 @@ pub(crate) struct AgentToml {
     pub tools: ToolsSection,
     #[serde(default)]
     pub skills: SkillsSection,
+    #[serde(default)]
+    pub plugins: PluginsSection,
+}
+
+/// `[plugins]` — plugin installs and marketplace. Installed plugins live in
+/// `.jan/agent/plugins/`; this section only carries configuration.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct PluginsSection {
+    /// URL of a JSON marketplace index (`[{ name, description, repo, ref? }]`).
+    /// Unset disables name-based installs; direct git URLs still work.
+    #[serde(default)]
+    pub marketplace: Option<String>,
 }
 
 /// `[provider]` — project-local override of a single provider's config,

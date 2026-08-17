@@ -6,9 +6,9 @@ pub mod brand;
 pub mod journal;
 pub mod login;
 pub mod mcp;
-pub mod providers;
 mod path_refs;
 pub mod run_report;
+pub mod providers;
 mod secret_input;
 pub mod telemetry;
 pub mod tokamak;
@@ -18,7 +18,7 @@ pub mod updater;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::core::app::commands::{resolve_config_file_path, resolve_jan_data_folder};
+use crate::core::app::commands::resolve_jan_data_folder;
 use crate::core::threads::{
     constants::THREADS_FILE,
     helpers::{read_messages_from_file, update_thread_metadata, write_messages_to_file},
@@ -414,6 +414,29 @@ fn openai_content_text(content: Option<&serde_json::Value>) -> String {
     }
 }
 
+/// If `text` is a machine-generated skill or plugin-command invocation message
+/// (the `[IMPORTANT: You have invoked the "<name>" <kind> - follow its
+/// instructions...]` wrapper produced by `skills::build_invocation_message` and
+/// `commands::build_message`), return the compact transcript label
+/// (`[skill:<name>]` or `[command:<name>]`). `None` for any other text, so a
+/// user who types that prefix verbatim still renders normally.
+pub fn invocation_label(text: &str) -> Option<String> {
+    const PREFIX: &str = "[IMPORTANT: You have invoked the \"";
+    let rest = text.strip_prefix(PREFIX)?;
+    let (name, rest) = rest.split_once('"')?;
+    if name.is_empty() {
+        return None;
+    }
+    let kind = if rest.starts_with(" skill - follow its instructions") {
+        "skill"
+    } else if rest.starts_with(" command - follow its instructions") {
+        "command"
+    } else {
+        return None;
+    };
+    Some(format!("[{kind}:{name}]"))
+}
+
 /// Fallback thread title: the first user message, whitespace-collapsed and
 /// truncated. Used only when no summarized title exists yet.
 fn default_thread_title(history: &[serde_json::Value]) -> String {
@@ -422,6 +445,9 @@ fn default_thread_title(history: &[serde_json::Value]) -> String {
         .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
         .map(|m| openai_content_text(m.get("content")))
         .unwrap_or_default();
+    if let Some(label) = invocation_label(&first_user) {
+        return label;
+    }
     let collapsed = first_user.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.is_empty() {
         return "Agent chat".to_string();
@@ -433,21 +459,6 @@ fn default_thread_title(history: &[serde_json::Value]) -> String {
     }
 }
 
-// ── App config ────────────────────────────────────────────────────────────
-
-pub fn cli_get_data_folder() -> PathBuf {
-    resolve_jan_data_folder()
-}
-
-pub fn cli_get_config() -> Result<serde_json::Value, String> {
-    let path = resolve_config_file_path();
-    if !path.exists() {
-        return Err(format!("Config file not found at: {}", path.display()));
-    }
-    let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&data).map_err(|e| e.to_string())
-}
-
 // ── Agent operations ───────────────────────────────────────────────────────
 
 use crate::core::agent::events::StreamEvent;
@@ -457,13 +468,13 @@ use crate::core::agent::project::{
 use crate::core::agent::r#loop::{
     run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
 };
-use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tauri_plugin_agent_tools::workspace;
 use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use crate::core::cli::run_report::{OutputFormat, RunReport};
 use crate::core::mcp::models::McpSettings;
 use std::collections::HashMap;
 use std::io::Write as _;
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tokio::sync::{mpsc, Mutex};
 
 /// Token-spend ceiling for one agent run when `agent.toml [budget].max_tokens`
@@ -591,6 +602,32 @@ pub fn cli_agent_config_list() -> Result<serde_json::Value, String> {
         "config_path": crate::core::agent::global_config::global_config_path()?.to_string_lossy(),
         "providers": providers,
     }))
+}
+
+/// List plugins installed for a project.
+pub fn cli_plugin_list(project: &str) -> Vec<crate::core::agent::plugins::InstalledPlugin> {
+    crate::core::agent::plugins::installed(&resolve_project_root(project))
+}
+
+/// Install a git or marketplace plugin for a project.
+pub async fn cli_plugin_install(
+    project: &str,
+    spec: &str,
+) -> Result<crate::core::agent::plugins::InstalledPlugin, String> {
+    crate::core::agent::plugins::install(&resolve_project_root(project), spec).await
+}
+
+/// Remove a plugin from a project.
+pub fn cli_plugin_remove(project: &str, name: &str) -> Result<(), String> {
+    crate::core::agent::plugins::remove(&resolve_project_root(project), name)
+}
+
+/// Search the configured plugin marketplace for a project.
+pub async fn cli_plugin_search(
+    project: &str,
+    query: &str,
+) -> Result<Vec<crate::core::agent::plugins::MarketEntry>, String> {
+    crate::core::agent::plugins::search(&resolve_project_root(project), query).await
 }
 
 /// Autonomous run: as many turns as the task needs, bounded only by the
@@ -1552,7 +1589,49 @@ mod tests {
         );
     }
 
-    // ── default_thread_title ───────────────────────────────────────────────
+    // ── invocation_label / default_thread_title ────────────────────────────
+
+    #[test]
+    fn invocation_label_recognizes_skill_and_command_wrappers() {
+        assert_eq!(
+            invocation_label(
+                "[IMPORTANT: You have invoked the \"deploy\" skill - follow its instructions. The full skill content is loaded below.]\n\nBody."
+            ),
+            Some("[skill:deploy]".to_string())
+        );
+        assert_eq!(
+            invocation_label(
+                "[IMPORTANT: You have invoked the \"feature-dev\" command - follow its instructions. The full command content is loaded below.]\n\nBuild: $ARGUMENTS"
+            ),
+            Some("[command:feature-dev]".to_string())
+        );
+        // Anything that is not the exact machine wrapper stays None.
+        assert_eq!(invocation_label("deploy"), None);
+        assert_eq!(
+            invocation_label("[IMPORTANT: You have invoked the \"\" skill - x"),
+            None
+        );
+        assert_eq!(
+            invocation_label("[IMPORTANT: You have invoked the \"deploy\" skill"), // truncated wrapper
+            None
+        );
+        assert_eq!(
+            invocation_label("[IMPORTANT: You have invoked the \"deploy\""), // no kind
+            None
+        );
+    }
+
+    #[test]
+    fn default_thread_title_uses_invocation_label_for_first_message() {
+        let history = serde_json::json!([{
+            "role": "user",
+            "content": "[IMPORTANT: You have invoked the \"feature-dev\" command - follow its instructions. The full command content is loaded below.]\n\nBuild: auth"
+        }]);
+        assert_eq!(
+            default_thread_title(history.as_array().unwrap()),
+            "[command:feature-dev]"
+        );
+    }
 
     #[test]
     fn default_thread_title_uses_first_user_message() {
@@ -1642,14 +1721,6 @@ mod tests {
         assert_eq!(stored["metadata"]["base_snapshot"], "abc");
 
         let _ = std::fs::remove_dir_all(&base);
-    }
-
-    // ── cli_get_data_folder returns a path ────────────────────────────────
-
-    #[test]
-    fn cli_get_data_folder_returns_non_empty_path() {
-        let p = cli_get_data_folder();
-        assert!(!p.as_os_str().is_empty());
     }
 
     // ── prepare_agent_session model resolution ────────────────────────────
