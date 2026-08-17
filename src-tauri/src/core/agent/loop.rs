@@ -3075,7 +3075,13 @@ mod tests {
     #[cfg(not(feature = "cli"))]
     #[test]
     fn desktop_sandbox_cannot_be_turned_off() {
-        assert!(DEFAULT_SANDBOX);
+        // Every input, including the two that turn it off on the CLI. Asserted
+        // through `resolve_sandbox` rather than on `DEFAULT_SANDBOX` directly:
+        // the constant being true is not the property worth pinning, the
+        // resolver ignoring its arguments is.
+        assert!(resolve_sandbox(None, None));
+        assert!(resolve_sandbox(None, Some(false)));
+        assert!(resolve_sandbox(Some(false), None));
         assert!(resolve_sandbox(Some(false), Some(false)));
     }
 
