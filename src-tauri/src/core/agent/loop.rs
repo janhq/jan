@@ -5,6 +5,7 @@
 //! completion JSON, so the API server's original contract is unchanged.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -98,6 +99,12 @@ pub(crate) struct OrchestrationArgs {
     /// code paths with no session (server proxy runs) keeps the default
     /// throwaway per-command tmpfs.
     pub session_id: Option<String>,
+    /// Per-invocation override for `bash` confinement (the CLI's `--sandbox`).
+    /// `None` falls through to `[tools].sandbox`, then the user's global
+    /// `sandbox`, then the surface default -- see [`resolve_sandbox`]. Inherited
+    /// by dispatched subagents via the cloned parent args, so a child shell is
+    /// confined exactly as its parent's was.
+    pub sandbox: Option<bool>,
 }
 
 #[async_trait]
@@ -213,6 +220,9 @@ struct CompositeToolInvoker {
     /// Whether the sandboxed shell may read `$HOME`. Resolved once per run
     /// from `[tools].allow_home_read`, falling back to `true` on the CLI.
     allow_home_read: bool,
+    /// Whether `bash` is confined at all. Resolved once per run by
+    /// [`resolve_sandbox`]; always true on the desktop.
+    sandbox: bool,
     /// Session-scoped scratch directory the shell and the filesystem tools share
     /// (see `workspace::scratch_dir`), so `bash` scratch files persist across
     /// calls for the whole run. Created at run start and wiped at run end.
@@ -266,23 +276,71 @@ fn resolve_allow_home_read(configured: Option<bool>) -> bool {
     configured.unwrap_or(DEFAULT_ALLOW_HOME_READ)
 }
 
+/// Default for whether `bash` runs under OS confinement.
+///
+/// The desktop is not configurable here: its shell is either sandboxed or
+/// withheld, because the workspace it runs in is ephemeral and there is no one
+/// to prompt about a command that could reach the whole machine.
+///
+/// The CLI defaults off. It runs against the user's own project, from their own
+/// terminal, on their behalf -- the same trust a `make`, a `git push`, or any
+/// other tool they run there already has -- and the shell is what the agent
+/// does most of its work with, so confining it breaks the tools the project
+/// builds with far more often than it stops anything. Confinement is opt-in per
+/// invocation (`--sandbox`), per user (`sandbox` in `~/.jan/config.toml`) or
+/// per project (`[tools].sandbox`). The permission gate is unchanged either
+/// way: an unconfined command is still one the user approved.
+#[cfg(feature = "cli")]
+const DEFAULT_SANDBOX: bool = false;
+#[cfg(not(feature = "cli"))]
+const DEFAULT_SANDBOX: bool = true;
+
+/// Resolve whether the shell is confined, most specific source first: the
+/// per-invocation `--sandbox` flag, then the project's `[tools].sandbox`, then
+/// the user's global `sandbox`, then this surface's default.
+#[cfg(feature = "cli")]
+fn resolve_sandbox(flag: Option<bool>, configured: Option<bool>) -> bool {
+    flag.or(configured)
+        .or_else(crate::core::agent::global_config::sandbox_setting)
+        .unwrap_or(DEFAULT_SANDBOX)
+}
+
+/// The desktop has no opt-out: its shell is sandboxed or withheld, so neither
+/// a project file nor the user's global config is consulted (reading them here
+/// would also be reaching into the CLI's config from the app).
+#[cfg(not(feature = "cli"))]
+fn resolve_sandbox(_flag: Option<bool>, _configured: Option<bool>) -> bool {
+    DEFAULT_SANDBOX
+}
+
+/// Whether `bash` would be confined in `project_root` with no `--sandbox` flag
+/// passed: the answer `jan cli agent status` reports and the TUI notices on.
+pub fn effective_sandbox(project_root: &std::path::Path) -> bool {
+    resolve_sandbox(None, crate::core::agent::project::run_settings(project_root).sandbox)
+}
+
 /// agent.toml resolved for one run: the skill whitelist, plus the network
 /// decision with this surface's default already applied.
 struct ResolvedSettings {
     enabled_skills: Vec<String>,
     allow_network: bool,
     allow_home_read: bool,
+    sandbox: bool,
 }
 
 /// Kept out of the invoker's struct literal so it is reachable from a test.
 /// Inline, it was silently passing `None` instead of the parsed value, which
 /// made `[tools].allow_network` a no-op that nothing detected.
-fn resolve_run_settings(project_root: &std::path::Path) -> ResolvedSettings {
+fn resolve_run_settings(
+    project_root: &std::path::Path,
+    sandbox_flag: Option<bool>,
+) -> ResolvedSettings {
     let settings = crate::core::agent::project::run_settings(project_root);
     ResolvedSettings {
         enabled_skills: settings.enabled_skills,
         allow_network: resolve_allow_network(settings.allow_network),
         allow_home_read: resolve_allow_home_read(settings.allow_home_read),
+        sandbox: resolve_sandbox(sandbox_flag, settings.sandbox),
     }
 }
 
@@ -295,6 +353,7 @@ impl CompositeToolInvoker {
         )
         .with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
+        .with_sandbox(self.sandbox)
         .with_scratch_root(&self.scratch_root)
     }
 
@@ -761,11 +820,13 @@ impl ToolInvoker for CompositeToolInvoker {
                 let enabled = self.enabled_skills.clone();
                 let allow_network = self.allow_network;
                 let allow_home_read = self.allow_home_read;
+                let sandbox = self.sandbox;
                 let scratch = self.scratch_root.clone();
                 read_futures.push(async move {
                     let ctx = ToolContext::new(&root, &store, &enabled)
                         .with_network(allow_network)
                         .with_home_readonly(allow_home_read)
+                        .with_sandbox(sandbox)
                         .with_scratch_root(&scratch);
                     let (text, diff) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
@@ -913,6 +974,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         auto_approve: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
         session_id: None,
+        sandbox: None,
     };
     let body = match json_body.get("max_turns") {
         Some(_) => std::borrow::Cow::Borrowed(json_body),
@@ -1021,15 +1083,19 @@ fn build_run_system_prompt(
     project_root: Option<&std::path::Path>,
     session_id: Option<&str>,
     subagents_enabled: bool,
+    sandbox: bool,
 ) -> Option<String> {
     let base = override_prompt.or(assistant_instructions);
     match project_root {
         Some(root) => {
-            let scratch = scratch_root_for(session_id, root);
+            // No sandbox, no scratch: unconfined, the shell already has the
+            // real `/tmp`, and advertising a scratch nothing binds would send
+            // the model to a directory only the filesystem tools can see.
+            let scratch = sandbox.then(|| scratch_root_for(session_id, root));
             crate::core::agent::context::build_system_prompt(
                 base,
                 root,
-                Some(&scratch),
+                scratch.as_deref(),
                 subagents_enabled,
             )
         }
@@ -1039,16 +1105,27 @@ fn build_run_system_prompt(
 
 /// Where this run's scratch lives. Session-keyed so it persists across turns in
 /// the interactive TUI (and across calls in a one-shot run), then is wiped at the
-/// session boundary; a run with no session (the server proxy) gets a per-project
-/// directory instead. Pure path math -- [`ensure_scratch_dir`] is what creates
-/// it -- so the system prompt can name the scratch before the tools are built.
+/// session boundary. Pure path math -- [`ensure_scratch_dir`] is what creates it
+/// -- so the system prompt can name the scratch before the tools are built.
+///
+/// A session-less run gets a throwaway in the host temp dir, never a directory
+/// inside the project: a project-level scratch is shared by every session
+/// working that checkout, accumulates spill files with no owner to remove them,
+/// and fails outright on a read-only checkout. Nothing wipes a throwaway at run
+/// end (there is no session boundary to hang it on), so it is left to the
+/// startup sweep -- which is why it must live where that sweep looks.
 fn scratch_root_for(
     session_id: Option<&str>,
-    project_root: &std::path::Path,
+    _project_root: &std::path::Path,
 ) -> std::path::PathBuf {
+    static ANONYMOUS_RUN: AtomicUsize = AtomicUsize::new(0);
     match session_id {
         Some(session) => tauri_plugin_agent_tools::workspace::scratch_dir(session),
-        None => project_root.join("agent-scratch"),
+        None => tauri_plugin_agent_tools::workspace::scratch_dir(&format!(
+            "anon-{}-{}",
+            std::process::id(),
+            ANONYMOUS_RUN.fetch_add(1, Ordering::Relaxed)
+        )),
     }
 }
 
@@ -1115,6 +1192,7 @@ async fn orchestrate_inner(
         auto_approve,
         run_mode,
         session_id,
+        sandbox,
     } = args;
 
     // Per-turn override: the TUI toggles plan mode live via the request body
@@ -1153,12 +1231,19 @@ async fn orchestrate_inner(
         (None, None)
     };
 
+    // Resolved here rather than where the tools are built: the system prompt
+    // names the scratch, and whether there *is* one is the sandbox decision, so
+    // both have to read the same answer or the model is told about a directory
+    // nothing binds.
+    let settings = project_root.as_deref().map(|root| resolve_run_settings(root, *sandbox));
+
     let system_prompt = build_run_system_prompt(
         assistant_instructions.as_deref(),
         system_prompt_override.as_deref(),
         project_root.as_deref(),
         session_id.as_deref(),
         *subagents_enabled,
+        settings.as_ref().is_some_and(|s| s.sandbox),
     );
     // Child (subagent) runs are excluded via `system_prompt_override`, the
     // same gate the memory-recall block above uses to distinguish a
@@ -1369,22 +1454,28 @@ async fn orchestrate_inner(
             max_session_tokens,
             bg: bg.clone(),
         });
-        let settings = resolve_run_settings(root);
+        // Resolved once above, where the system prompt also needed it.
+        let settings = settings.expect("resolved whenever there is a project root");
         // The same path `build_run_system_prompt` advertised (both go through
         // `scratch_root_for`), created here before the first tool call reaches
         // for it. Created for a session-less run too: the policy binds this path
         // either way, and bubblewrap refuses to bind a directory that is not
-        // there -- which would take `bash` down with it.
+        // there -- which would take `bash` down with it. Hardened against a
+        // pre-planted symlink so the sandbox never binds an attacker-selected
+        // directory as its sanctioned scratch. Skipped entirely when the shell
+        // is unconfined: nothing binds it, so creating it would only leave an
+        // empty directory behind.
         let scratch_root = scratch_root_for(session_id.as_deref(), root);
-        tokio::fs::create_dir_all(&scratch_root)
-            .await
-            .map_err(|e| format!("ERROR: {e}"))?;
+        if settings.sandbox {
+            tauri_plugin_agent_tools::workspace::ensure_scratch_dir_path(&scratch_root).await?;
+        }
         let tools = CompositeToolInvoker {
             mcp: mcp_tools,
             store_root: tauri_plugin_agent_tools::workspace::project_store(root),
             enabled_skills: settings.enabled_skills,
             allow_network: settings.allow_network,
             allow_home_read: settings.allow_home_read,
+            sandbox: settings.sandbox,
             scratch_root: scratch_root.clone(),
             project_root: root.clone(),
             permissions: permissions.clone(),
@@ -2034,21 +2125,27 @@ mod tests {
     /// The prompt names the scratch and the tools bind it, so both must derive
     /// it the same way or the model is told about a directory nothing set up.
     #[test]
-    fn scratch_root_is_session_keyed_and_falls_back_to_the_project() {
+    fn scratch_root_is_session_keyed_and_never_lands_in_the_project() {
         let root = unique_project_root();
         assert_eq!(
             scratch_root_for(Some("sess-1"), &root),
             tauri_plugin_agent_tools::workspace::scratch_dir("sess-1")
         );
-        assert_eq!(
-            scratch_root_for(None, &root),
-            root.join("agent-scratch"),
-            "a session-less run still needs a scratch to bind"
-        );
         // Two sessions never share one scratch.
         assert_ne!(
             scratch_root_for(Some("sess-1"), &root),
             scratch_root_for(Some("sess-2"), &root)
+        );
+        // A session-less run still needs a scratch to bind, but it belongs in
+        // the host temp dir: a directory inside the project would be shared by
+        // every session on that checkout and never collected.
+        let anon = scratch_root_for(None, &root);
+        assert!(!anon.starts_with(&root), "scratch leaked into the project");
+        assert!(anon.starts_with(std::env::temp_dir()));
+        assert_ne!(
+            anon,
+            scratch_root_for(None, &root),
+            "two session-less runs must not share a scratch"
         );
     }
 
@@ -2061,6 +2158,7 @@ mod tests {
             Some(&root),
             Some("test-session"),
             false,
+            true,
         )
         .expect("prompt");
 
@@ -2851,6 +2949,7 @@ mod tests {
         registry: PermissionRegistry,
     ) -> CompositeToolInvoker {
         CompositeToolInvoker {
+            sandbox: true,
             mcp: McpToolInvoker {
                 tool_to_server: HashMap::new(),
                 mcp_servers: Arc::new(Mutex::new(HashMap::new())),
@@ -2895,19 +2994,19 @@ mod tests {
         };
 
         write("[tools]\nallow_network = false\n[skills]\nenabled = [\"deploy\"]\n");
-        let denied = resolve_run_settings(&root);
+        let denied = resolve_run_settings(&root, None);
         assert!(!denied.allow_network, "explicit false must be honoured");
         assert_eq!(denied.enabled_skills, vec!["deploy".to_string()]);
 
         write("[tools]\nallow_network = true\n");
         assert!(
-            resolve_run_settings(&root).allow_network,
+            resolve_run_settings(&root, None).allow_network,
             "explicit true must be honoured"
         );
 
         write("[tools]\ndefault = \"read-only\"\n");
         assert_eq!(
-            resolve_run_settings(&root).allow_network,
+            resolve_run_settings(&root, None).allow_network,
             DEFAULT_ALLOW_NETWORK,
             "unset must fall back to the surface default"
         );
@@ -2932,6 +3031,68 @@ mod tests {
         assert!(resolve_allow_home_read(Some(true)));
         assert!(!resolve_allow_home_read(Some(false)));
         assert_eq!(resolve_allow_home_read(None), DEFAULT_ALLOW_HOME_READ);
+    }
+
+    /// Sandbox precedence, most specific source first: the `--sandbox` flag
+    /// beats the project's `[tools].sandbox`, which beats the user's global
+    /// `sandbox`, which beats the surface default. Each level must be able to
+    /// push in *both* directions, or a user who turned confinement on
+    /// permanently could never run a single command without it.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn sandbox_precedence_runs_flag_then_project_then_global() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            // Nothing set anywhere: the CLI surface default.
+            assert_eq!(resolve_sandbox(None, None), DEFAULT_SANDBOX);
+            // The flag wins over everything below it, both ways.
+            assert!(resolve_sandbox(Some(true), Some(false)));
+            assert!(!resolve_sandbox(Some(false), Some(true)));
+            // With no flag, the project decides.
+            assert!(resolve_sandbox(None, Some(true)));
+            assert!(!resolve_sandbox(None, Some(false)));
+
+            let path =
+                crate::core::agent::global_config::ensure_global_config().expect("config path");
+            // The scaffolded template leaves `sandbox` commented out, so the
+            // default still stands until it is actually set.
+            assert_eq!(resolve_sandbox(None, None), DEFAULT_SANDBOX);
+            std::fs::write(&path, "sandbox = true\n").unwrap();
+            assert!(resolve_sandbox(None, None), "global sandbox ignored");
+            assert!(!resolve_sandbox(None, Some(false)), "project must win");
+            assert!(!resolve_sandbox(Some(false), None), "--no-sandbox must win");
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert_eq!(
+                resolve_sandbox(None, None),
+                DEFAULT_SANDBOX,
+                "an unparseable config falls back to the default, not an error"
+            );
+        });
+    }
+
+    /// The desktop has no opt-out: its shell is confined or withheld, and
+    /// neither a project file nor the CLI's global config can change that.
+    #[cfg(not(feature = "cli"))]
+    #[test]
+    fn desktop_sandbox_cannot_be_turned_off() {
+        assert!(DEFAULT_SANDBOX);
+        assert!(resolve_sandbox(Some(false), Some(false)));
+    }
+
+    /// An unconfined run has no scratch, so the prompt must not name one: the
+    /// shell sees the real `/tmp` and would never find the directory the
+    /// scratch line points at.
+    #[test]
+    fn unsandboxed_prompt_does_not_advertise_a_scratch() {
+        let root = unique_project_root();
+        let confined =
+            build_run_system_prompt(None, Some("do things"), Some(&root), Some("s1"), false, true)
+                .expect("prompt");
+        assert!(confined.contains("Scratch:"), "{confined}");
+        let bare =
+            build_run_system_prompt(None, Some("do things"), Some(&root), Some("s1"), false, false)
+                .expect("prompt");
+        assert!(!bare.contains("Scratch:"), "{bare}");
     }
 
     /// The CLI agent's shell keeps its network namespace. Before the sandbox

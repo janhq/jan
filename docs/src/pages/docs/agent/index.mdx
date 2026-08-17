@@ -116,15 +116,17 @@ Desktop's [local API server](/docs/desktop/api-server), with `jan config set --b
 
 ## Staying in control
 
-The agent edits files and runs commands without stopping to ask, but a shell command runs inside an
-OS sandbox confined to the project directory, and `.jan/agent/` internals and anything in
-`[tools] deny` are refused outright.
+The agent edits files and runs commands without stopping to ask. File paths are checked against the
+project root, and `.jan/agent/` internals and anything in `[tools] deny` are refused outright - but
+shell commands are not sandboxed by default, so one runs with your own access.
 
-Two ways to change that:
+Three ways to change that:
 
 - **Plan mode** (`jan --plan`) makes the session read-only. The agent investigates and proposes, but
   cannot change anything.
 - **Safe mode** (`jan --safe`) asks before every write and shell command, instead of auto-approving
-  them inside the sandbox.
+  them.
+- **Sandbox** (`jan --sandbox`) confines shell commands to the project with an OS sandbox. Off by
+  default on the CLI, always on in the desktop app.
 
 See [Tools & permissions](/docs/agent/permissions) for the full picture.

@@ -4558,11 +4558,19 @@ pub async fn run(
     let seeded = initial_task
         .as_deref()
         .is_some_and(|t| !t.trim().is_empty());
+    // The banner has to name the confinement, not assume it: "auto-approved
+    // inside the OS sandbox" is a promise, and with the sandbox off it is the
+    // wrong one. Unconfined, an approved command has exactly the access the
+    // user does, and that is the thing worth saying up front.
+    let sandboxed = args
+        .sandbox
+        .unwrap_or_else(|| crate::core::agent::r#loop::effective_sandbox(&app.project_root));
     app.push_banner(
-        if args.auto_approve {
-            "auto-approved inside the OS sandbox (start with --safe to be asked first)"
-        } else {
-            "--safe: writes, shell commands and MCP tool calls need approval"
+        match (args.auto_approve, sandboxed) {
+            (true, true) => "auto-approved inside the OS sandbox (start with --safe to be asked first)",
+            (true, false) => "auto-approved and unsandboxed: commands run with your own access (--safe to be asked first, --sandbox to confine)",
+            (false, true) => "--safe: writes, shell commands and MCP tool calls need approval",
+            (false, false) => "--safe: approval needed, but unsandboxed - what you approve runs with your own access (--sandbox to confine)",
         },
         !seeded,
     );

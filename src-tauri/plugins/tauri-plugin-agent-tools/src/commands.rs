@@ -118,11 +118,18 @@ pub async fn thread_workspace_delete(
 /// Delete every sandbox not belonging to a surviving thread, returning how many
 /// were removed. Called once at startup: sandboxes are ephemeral, but a crash or
 /// a thread deleted while the app was closed would otherwise leave one behind.
+///
+/// Abandoned host-temp scratch directories are collected in the same pass. They
+/// need their own sweep because they are keyed to ids the caller holds (a run,
+/// a thread, a CLI session), so unlike a thread sandbox there is no `keep` list
+/// to compare against -- see [`workspace::sweep_stale_scratch_dirs`]. Their
+/// count is not added to the return value, which names thread sandboxes.
 #[tauri::command]
 pub async fn thread_workspace_sweep(
     data_folder: String,
     keep: Vec<String>,
 ) -> Result<usize, AgentToolsError> {
+    workspace::sweep_stale_scratch_dirs().await;
     workspace::sweep_thread_workspaces(Path::new(&data_folder), &keep)
         .await
         .map_err(Into::into)

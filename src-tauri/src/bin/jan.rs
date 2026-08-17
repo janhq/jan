@@ -14,7 +14,7 @@ use app_lib::core::cli::run_report::OutputFormat;
 use app_lib::core::cli::{
     cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
-    cli_get_thread, cli_list_messages, cli_list_threads, ResumeTarget,
+    cli_get_thread, cli_list_messages, cli_list_threads, ResumeTarget, SessionFlags,
 };
 
 // ── Top-level CLI ──────────────────────────────────────────────────────────
@@ -70,6 +70,36 @@ struct Cli {
     /// Ignored when a subcommand is given.
     #[arg(long)]
     plan: bool,
+    #[command(flatten)]
+    sandbox: SandboxArgs,
+}
+
+/// Whether this invocation confines the shell, shared by every surface that
+/// starts an agent.
+///
+/// Two flags rather than one because the setting is also persistent
+/// (`sandbox` in `~/.jan/config.toml`, `[tools].sandbox` in agent.toml): with
+/// only `--sandbox` there would be no way to run unconfined once, and a user who
+/// turned it on permanently would have to edit a file to get out of it.
+#[derive(Args, Clone, Copy)]
+struct SandboxArgs {
+    /// Run shell commands under OS confinement (bubblewrap, Seatbelt, AppContainer)
+    #[arg(long)]
+    sandbox: bool,
+    /// Run shell commands unconfined, overriding a persistent sandbox setting
+    #[arg(long, conflicts_with = "sandbox")]
+    no_sandbox: bool,
+}
+
+impl SandboxArgs {
+    /// `None` when neither flag was passed, so the config files decide.
+    fn into_flag(self) -> Option<bool> {
+        match (self.sandbox, self.no_sandbox) {
+            (true, _) => Some(true),
+            (_, true) => Some(false),
+            _ => None,
+        }
+    }
 }
 
 /// Session-resume selection, shared by the bare TUI and `jan cli agent run`.
@@ -211,6 +241,8 @@ enum AgentCommands {
         #[command(flatten)]
         providers: ProviderArgs,
         #[command(flatten)]
+        sandbox: SandboxArgs,
+        #[command(flatten)]
         resume: ResumeRunArgs,
         /// `text` streams the answer as it arrives; `json` prints one result
         /// object on stdout when the run finishes
@@ -232,6 +264,8 @@ enum AgentCommands {
         safe: bool,
         #[command(flatten)]
         providers: ProviderArgs,
+        #[command(flatten)]
+        sandbox: SandboxArgs,
     },
     /// Print resolved project config and available providers as JSON
     Status {
@@ -369,8 +403,12 @@ async fn main() {
             cli.model,
             cli.images,
             overrides,
-            !cli.safe,
-            cli.plan,
+            SessionFlags {
+                auto_approve: !cli.safe,
+                plan: cli.plan,
+                sandbox: cli.sandbox.into_flag(),
+                ..Default::default()
+            },
             cli.resume.into_target(),
         )
         .await
@@ -461,6 +499,7 @@ async fn handle_agent(cmd: AgentCommands) {
             model,
             safe,
             providers,
+            sandbox,
             resume,
             output_format,
         } => {
@@ -469,7 +508,11 @@ async fn handle_agent(cmd: AgentCommands) {
                 &task,
                 model,
                 providers.into_overrides(),
-                !safe,
+                SessionFlags {
+                    auto_approve: !safe,
+                    sandbox: sandbox.into_flag(),
+                    ..Default::default()
+                },
                 resume.into_target(),
                 output_format,
             )
@@ -481,7 +524,21 @@ async fn handle_agent(cmd: AgentCommands) {
             model,
             safe,
             providers,
-        } => cli_agent_step(&project, &task, model, providers.into_overrides(), !safe).await,
+            sandbox,
+        } => {
+            cli_agent_step(
+                &project,
+                &task,
+                model,
+                providers.into_overrides(),
+                SessionFlags {
+                    auto_approve: !safe,
+                    sandbox: sandbox.into_flag(),
+                    ..Default::default()
+                },
+            )
+            .await
+        }
         AgentCommands::Status { project, providers } => {
             match cli_agent_status(&project, &providers.into_overrides()) {
                 Ok(status) => {

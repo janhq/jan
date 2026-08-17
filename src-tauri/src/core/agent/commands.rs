@@ -75,6 +75,7 @@ fn build_orchestration_args<R: Runtime>(
         auto_approve: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
         session_id: None,
+        sandbox: None,
     }
 }
 
@@ -103,6 +104,12 @@ pub async fn agent_run<R: Runtime>(
         let cfg = load_agent_config(&project_root)?;
         args.permissions = permissions_from(&cfg);
         args.project_root = Some(project_root);
+        // Give this run its own scratch. Without this the session-less desktop
+        // path would fall back to a shared `<project>/agent-scratch` that
+        // accumulates across runs and across sessions; a per-run id also means
+        // the scratch can be wiped when the run ends (success, error, or
+        // cancel) instead of persisting in the user's project.
+        args.session_id = Some(uuid::Uuid::new_v4().to_string());
     }
 
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
@@ -133,6 +140,14 @@ pub async fn agent_run<R: Runtime>(
     drop(tx);
     let _ = forward.await;
     runs.0.lock().await.remove(&run_id);
+
+    // Wipe this run's dedicated scratch on every terminal path (success, error,
+    // or cancel) so scratch and bash spill files never accumulate. A hard kill
+    // is the one path that skips this; the startup sweep collects what it
+    // leaves behind (`workspace::sweep_stale_scratch_dirs`).
+    if let Some(session) = args.session_id.as_deref() {
+        let _ = workspace::remove_scratch_dir(session).await;
+    }
 
     result.map(|_| ())
 }

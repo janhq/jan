@@ -522,6 +522,16 @@ pub fn cli_agent_status(
             "allow_write": cfg.tools.allow_write,
             "allow_network": cfg.tools.allow_network,
             "allow_home_read": cfg.tools.allow_home_read,
+            "sandbox": cfg.tools.sandbox,
+        },
+        // What `bash` will actually do, with the config files already resolved
+        // (the `--sandbox` flag is per-invocation and so cannot be reported
+        // here). `backend` names the confinement that would be used and is
+        // `none` where none can be established -- with `enabled` true that
+        // combination is what withholds `bash` entirely.
+        "sandbox": {
+            "enabled": crate::core::agent::r#loop::effective_sandbox(&project_root),
+            "backend": tauri_plugin_agent_tools::tools::jail::backend().as_str(),
         },
         "providers": providers,
     }))
@@ -591,21 +601,11 @@ pub async fn cli_agent_run(
     task: &str,
     model: Option<String>,
     overrides: ProviderOverrides,
-    auto_approve: bool,
+    flags: SessionFlags,
     resume: Option<ResumeTarget>,
     format: OutputFormat,
 ) -> Result<(), String> {
-    run_agent_loop(
-        project,
-        task,
-        model,
-        false,
-        overrides,
-        auto_approve,
-        resume,
-        format,
-    )
-    .await
+    run_agent_loop(project, task, model, false, overrides, flags, resume, format).await
 }
 
 /// Single-turn run for debugging: the one place a turn cap is still applied,
@@ -615,7 +615,7 @@ pub async fn cli_agent_step(
     task: &str,
     model: Option<String>,
     overrides: ProviderOverrides,
-    auto_approve: bool,
+    flags: SessionFlags,
 ) -> Result<(), String> {
     run_agent_loop(
         project,
@@ -623,7 +623,7 @@ pub async fn cli_agent_step(
         model,
         true,
         overrides,
-        auto_approve,
+        flags,
         None,
         OutputFormat::Text,
     )
@@ -641,6 +641,7 @@ fn build_cli_orchestration_args(
     auto_approve: bool,
     plan: bool,
     max_parallel_subagents: u32,
+    sandbox: Option<bool>,
 ) -> OrchestrationArgs {
     OrchestrationArgs {
         client: reqwest::Client::new(),
@@ -667,6 +668,9 @@ fn build_cli_orchestration_args(
         // reuses `args` across turns and wipes it when the interactive session
         // ends.
         session_id: Some(uuid::Uuid::new_v4().to_string()),
+        // `--sandbox` only when passed; unset falls through to the project's
+        // `[tools].sandbox` and then the user's global `sandbox`.
+        sandbox,
     }
 }
 
@@ -748,15 +752,33 @@ impl AgentSession {
     }
 }
 
+/// The per-invocation switches a session starts with.
+///
+/// A struct rather than a run of positional `bool`s: `(.., false, false, true)`
+/// at a call site names none of them, and the compiler cannot catch two of them
+/// being swapped.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SessionFlags {
+    /// Skip the permission prompt for writes, shell, and MCP calls.
+    pub auto_approve: bool,
+    /// Start in read-only plan mode.
+    pub plan: bool,
+    /// Fail when no model resolves instead of launching with an empty one. The
+    /// TUI leaves this off so `/login` can fill the model in later.
+    pub require_model: bool,
+    /// `--sandbox`: run `bash` under OS confinement. `None` (not passed) defers
+    /// to `[tools].sandbox`, then the global `sandbox`, then the CLI default of
+    /// off.
+    pub sandbox: Option<bool>,
+}
+
 /// Resolve project config + credentials into a ready-to-run engine handle.
 /// Shared by `run_agent_loop` (plain CLI) and `cli_agent_ui` (TUI).
 fn prepare_agent_session(
     project: &str,
     model_override: Option<String>,
     overrides: ProviderOverrides,
-    auto_approve: bool,
-    plan: bool,
-    require_model: bool,
+    flags: SessionFlags,
 ) -> Result<AgentSession, String> {
     let project_root = resolve_project_root(project);
     ensure_project(&project_root)?;
@@ -782,7 +804,7 @@ fn prepare_agent_session(
     // (--model/--api-key) or some provider can actually be reached; otherwise
     // treat it as unset so the TUI's sign-in notice fires instead of failing on
     // the first message.
-    let model = if !require_model
+    let model = if !flags.require_model
         && !explicit
         && !crate::core::cli::providers::has_usable_provider(Some(&project_root))
     {
@@ -790,7 +812,7 @@ fn prepare_agent_session(
     } else {
         model.unwrap_or_default()
     };
-    if model.is_empty() && require_model {
+    if model.is_empty() && flags.require_model {
         return Err(
             "no model specified: run `jan login` to sign in to Tokamak, or pass --model, set [agent].model in agent.toml, set default_model in ~/.jan/config.toml, or select a model in the desktop app"
                 .to_string(),
@@ -851,9 +873,10 @@ fn prepare_agent_session(
         mcp_servers.clone(),
         mcp_settings,
         permission_requests.clone(),
-        auto_approve,
-        plan,
+        flags.auto_approve,
+        flags.plan,
         max_parallel_subagents,
+        flags.sandbox,
     );
 
     Ok(AgentSession {
@@ -907,18 +930,21 @@ fn prepare_agent_run(
     model_override: Option<String>,
     single_turn: bool,
     overrides: ProviderOverrides,
-    auto_approve: bool,
+    flags: SessionFlags,
     resume: Option<ResumeTarget>,
 ) -> Result<PreparedRun, String> {
     // Non-interactive runs (`agent run`/`step`) have no plan-review handoff, so
-    // plan mode stays a TUI-only startup option.
+    // plan mode stays a TUI-only startup option, and a run with no model has no
+    // terminal to recover in, so it must fail rather than launch empty.
     let session = prepare_agent_session(
         project,
         model_override,
         overrides,
-        auto_approve,
-        false,
-        true,
+        SessionFlags {
+            plan: false,
+            require_model: true,
+            ..flags
+        },
     )?;
     let project_root = resolve_project_root(project);
     let (clean_task, injected) = path_refs::resolve_references(task, &project_root);
@@ -980,7 +1006,7 @@ async fn run_agent_loop(
     model_override: Option<String>,
     single_turn: bool,
     overrides: ProviderOverrides,
-    auto_approve: bool,
+    flags: SessionFlags,
     resume: Option<ResumeTarget>,
     format: OutputFormat,
 ) -> Result<(), String> {
@@ -991,7 +1017,7 @@ async fn run_agent_loop(
         model_override,
         single_turn,
         overrides,
-        auto_approve,
+        flags,
         resume,
     );
     // A setup failure never reaches the event stream, so a JSON consumer would
@@ -1153,8 +1179,7 @@ pub async fn cli_agent_ui(
     model: Option<String>,
     images: Vec<String>,
     overrides: ProviderOverrides,
-    auto_approve: bool,
-    plan: bool,
+    flags: SessionFlags,
     resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
     let project_root = resolve_project_root(project);
@@ -1167,7 +1192,15 @@ pub async fn cli_agent_ui(
     // Fresh install with a terminal attached: launch with no model rather than
     // forcing sign-in here. The TUI shows a one-line notice and `/login` (or
     // `jan login`) picks a model up once the user is ready.
-    let session = prepare_agent_session(project, model, overrides, auto_approve, plan, false)?;
+    let session = prepare_agent_session(
+        project,
+        model,
+        overrides,
+        SessionFlags {
+            require_model: false,
+            ..flags
+        },
+    )?;
     // TUI threads persist under the project's .jan/agent dir, separate from the
     // desktop store, so continuing here never mutates desktop threads.
     let agent_dir = agent_dir_for(&project_root);
@@ -1640,9 +1673,7 @@ mod tests {
                 dir.path().to_str().unwrap(),
                 None,
                 ProviderOverrides::default(),
-                false,
-                false,
-                false,
+                SessionFlags::default(),
             )
             .expect("TUI session prep must not fail with nothing configured");
             assert_eq!(session.model, "");
@@ -1675,9 +1706,7 @@ mod tests {
                 dir.path().to_str().unwrap(),
                 None,
                 ProviderOverrides::default(),
-                false,
-                false,
-                false,
+                SessionFlags::default(),
             )
             .expect("session prep");
             assert_eq!(session.model, "tokamak-1-preview");

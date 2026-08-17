@@ -122,6 +122,13 @@ pub(crate) struct ToolsSection {
     /// `$HOME` entirely. Writes are confined to the workspace either way.
     #[serde(default)]
     pub allow_home_read: Option<bool>,
+    /// Whether the shell runs under OS confinement. `None` (unset) leaves the
+    /// choice to the surface: the desktop always confines, the CLI defaults to
+    /// off and opts in with `--sandbox` or the global `sandbox` setting.
+    /// Setting it here is how a repo requires confinement for everyone who
+    /// checks it out.
+    #[serde(default)]
+    pub sandbox: Option<bool>,
 }
 
 const AGENT_TOML_TEMPLATE: &str = r#"[agent]
@@ -166,6 +173,11 @@ allow_write = []
 # credential helpers and ~/.ssh/config). Unset follows the surface: the CLI
 # allows it (true), the desktop masks $HOME. Writes stay in the workspace.
 # allow_home_read = true
+# Whether `bash` runs under OS confinement at all. Unset follows the surface:
+# the CLI runs unconfined unless you pass --sandbox or set sandbox = true in
+# ~/.jan/config.toml; the desktop always confines. Set it here to require
+# confinement for anyone working in this project.
+# sandbox = true
 
 [skills]
 enabled = []
@@ -201,6 +213,9 @@ pub(crate) struct RunSettings {
     /// `[tools].allow_home_read`; `None` when unset, so the caller applies the
     /// default appropriate to its surface.
     pub allow_home_read: Option<bool>,
+    /// `[tools].sandbox`; `None` when unset, so the caller applies the default
+    /// appropriate to its surface.
+    pub sandbox: Option<bool>,
 }
 
 /// A missing or malformed config yields defaults rather than an error: a project
@@ -213,6 +228,7 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
         enabled_skills: cfg.skills.enabled,
         allow_network: cfg.tools.allow_network,
         allow_home_read: cfg.tools.allow_home_read,
+        sandbox: cfg.tools.sandbox,
     }
 }
 

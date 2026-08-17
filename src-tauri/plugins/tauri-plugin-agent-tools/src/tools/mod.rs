@@ -61,6 +61,15 @@ pub struct ToolContext<'a> {
     /// default throwaway per-command tmpfs. Cleaned up with the session (run end
     /// on the CLI, thread teardown on the desktop).
     pub scratch_root: Option<&'a Path>,
+    /// Whether `bash` runs under OS confinement. On by default, and the desktop
+    /// keeps it that way: there, `bash` is either sandboxed or withheld.
+    ///
+    /// The CLI turns it off (see its `--sandbox` flag and the `sandbox` config
+    /// key), which runs the shell exactly as the user's own terminal would --
+    /// no mounts, no policy, the user's real `$HOME` and `/tmp`. The permission
+    /// gate is then the only thing between the model and the machine, which is
+    /// why nothing else about the gate changes when this is off.
+    pub sandbox: bool,
 }
 
 impl<'a> ToolContext<'a> {
@@ -74,6 +83,7 @@ impl<'a> ToolContext<'a> {
             mask_root: None,
             home_readonly: false,
             scratch_root: None,
+            sandbox: true,
         }
     }
 
@@ -100,8 +110,27 @@ impl<'a> ToolContext<'a> {
 
     /// Bind `scratch_root` over the sandbox's `/tmp` so scratch files survive
     /// across `bash` calls. See [`Self::scratch_root`].
+    /// Ignored when the sandbox is off, so the two builders commute (see
+    /// [`Self::with_sandbox`] for why an unconfined run has no scratch).
     pub fn with_scratch_root(mut self, scratch_root: &'a Path) -> Self {
-        self.scratch_root = Some(scratch_root);
+        if self.sandbox {
+            self.scratch_root = Some(scratch_root);
+        }
+        self
+    }
+
+    /// Run `bash` under OS confinement (the default). See [`Self::sandbox`].
+    ///
+    /// Turning it off also drops the scratch: the scratch only makes sense as
+    /// the thing bound over the sandbox's `/tmp`. Unconfined, the shell sees the
+    /// real `/tmp`, and leaving the scratch set would have the filesystem tools
+    /// still rewriting `/tmp/...` into a directory the shell never looks at --
+    /// two tools disagreeing about what one path means.
+    pub fn with_sandbox(mut self, sandbox: bool) -> Self {
+        self.sandbox = sandbox;
+        if !sandbox {
+            self.scratch_root = None;
+        }
         self
     }
 }

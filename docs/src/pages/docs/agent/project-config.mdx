@@ -81,6 +81,7 @@ default = "read-only"
 allow = []
 deny = []
 allow_write = []
+# sandbox = true
 
 [skills]
 enabled = []
@@ -114,7 +115,9 @@ marginal token spend (replayed context is not recharged each turn).
 
 ### `[tools]`
 
-See [Tool permissions](/docs/agent/permissions#project-policy).
+See [Tool permissions](/docs/agent/permissions#project-policy). `sandbox` is how a project requires
+[shell confinement](/docs/agent/permissions#the-shell-sandbox) for everyone who checks it out; it is
+off by default on the CLI.
 
 ### `[skills]`
 

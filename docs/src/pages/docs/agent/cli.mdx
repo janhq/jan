@@ -37,6 +37,8 @@ jan <COMMAND>
 | `--image <PATH>` | Attach an image to the first message. Repeatable |
 | `--plan` | Start in read-only plan mode |
 | `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
+| `--sandbox` | Run shell commands under OS confinement. Off by default |
+| `--no-sandbox` | Run shell commands unconfined, overriding a persistent `sandbox` setting |
 | `--resume [ID]` | Resume the most recent session, or one whose id starts with `ID` |
 | `-c`, `--continue` | Resume the most recent session |
 | `--provider <ID>` | Target a specific provider for this run |
@@ -50,13 +52,15 @@ jan -c                                  # resume the latest session
 jan --resume 3f7a91c2                   # resume by id prefix
 jan --plan                              # read-only
 jan --safe                              # ask before writes and shell commands
+jan --sandbox                           # confine shell commands to the project
 ```
 
-<Callout type="info">
-Tool calls are auto-approved by default. Shell commands still run inside the OS sandbox
-(bubblewrap, Seatbelt, or AppContainer), confined to the project directory, and the hard denies
-never lift: `.jan/agent/` internals, anything in `[tools] deny`, and everything plan mode blocks.
-`--safe` adds the interactive approval prompt on top of that.
+<Callout type="warning">
+Tool calls are auto-approved by default, and shell commands are **not** sandboxed by default - an
+approved command runs with your own access. The hard denies never lift: `.jan/agent/` internals,
+anything in `[tools] deny`, and everything plan mode blocks. `--safe` adds the interactive approval
+prompt; `--sandbox` adds OS confinement (bubblewrap, Seatbelt, or AppContainer). See
+[tool permissions](/docs/agent/permissions#the-shell-sandbox).
 </Callout>
 
 ## `jan cli agent`
@@ -80,6 +84,8 @@ jan cli agent run --safe "run the migration"   # approve each step
 | `--project <PATH>` | Project root. Defaults to `.` |
 | `--model <ID>` | Model id, overriding `[agent].model` |
 | `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
+| `--sandbox` | Run shell commands under OS confinement. Off by default |
+| `--no-sandbox` | Run shell commands unconfined, overriding a persistent `sandbox` setting |
 | `--resume[=ID]` | Resume the most recent session, or one by id |
 | `-c`, `--continue` | Resume the most recent session |
 | `--provider`, `--api-key` | Credential overrides for this run |
