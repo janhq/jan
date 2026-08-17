@@ -30,6 +30,8 @@ pub struct ApiKeyMetadata {
     pub keys_url: &'static str,
     /// Short hint shown above the masked input.
     pub hint: &'static str,
+    /// Whether the TUI should open the keys page automatically for this provider.
+    pub open_in_browser: bool,
 }
 
 /// Grant type an issued Jan OAuth registration permits.
@@ -80,6 +82,7 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
             api_key: ApiKeyMetadata {
                 keys_url: "https://platform.openai.com/account/api-keys",
                 hint: "get a key at platform.openai.com/account/api-keys",
+                open_in_browser: false,
             },
             oauth: None,
         },
@@ -91,6 +94,7 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
             api_key: ApiKeyMetadata {
                 keys_url: "https://console.anthropic.com/settings/keys",
                 hint: "get a key at console.anthropic.com/settings/keys",
+                open_in_browser: false,
             },
             oauth: None,
         },
@@ -102,6 +106,7 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
             api_key: ApiKeyMetadata {
                 keys_url: "https://opencode.ai/docs",
                 hint: "see opencode.ai/docs for how to get a key",
+                open_in_browser: true,
             },
             oauth: None,
         },
@@ -113,6 +118,7 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
             api_key: ApiKeyMetadata {
                 keys_url: "https://platform.deepseek.com/api_keys",
                 hint: "get a key at platform.deepseek.com/api_keys",
+                open_in_browser: false,
             },
             oauth: None,
         },
@@ -124,6 +130,7 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
             api_key: ApiKeyMetadata {
                 keys_url: "https://tokamak.sh/settings/api-keys",
                 hint: "get a key at tokamak.sh/settings/api-keys",
+                open_in_browser: false,
             },
             oauth: None,
         },
@@ -188,6 +195,16 @@ mod tests {
         );
         assert_eq!(provider_by_id("deepseek").unwrap().name, "DeepSeek");
         assert!(provider_by_id("nope").is_none());
+    }
+
+    #[test]
+    fn only_opencode_api_key_prompt_opens_keys_page_in_browser() {
+        let enabled: Vec<&str> = provider_catalog()
+            .iter()
+            .filter(|provider| provider.api_key.open_in_browser)
+            .map(|provider| provider.id)
+            .collect();
+        assert_eq!(enabled, vec!["opencode"]);
     }
 
 }

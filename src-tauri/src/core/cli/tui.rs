@@ -364,7 +364,6 @@ impl Pending {
 enum PickerKind {
     ResumeThread,
     SelectModel,
-    LoginMethod,
     LoginProvider,
     ToggleMcp,
     /// Double-Esc rewind: pick a past user message to roll back to.
@@ -396,7 +395,6 @@ struct Picker {
     /// `d` on the same row confirms it. `None` = nothing armed. Resets on
     /// navigation so an unrelated keypress can never delete by accident.
     armed_delete: Option<usize>,
-    provider: Option<String>,
 }
 
 impl Picker {
@@ -434,15 +432,6 @@ impl Picker {
             PickerKind::ResumeThread => " resume thread ".to_string(),
             PickerKind::SelectModel => " select model ".to_string(),
             PickerKind::LoginProvider => " sign in ".to_string(),
-            PickerKind::LoginMethod => {
-                let provider = self
-                    .provider
-                    .as_deref()
-                    .and_then(crate::core::cli::auth::provider_by_id)
-                    .map(|definition| definition.name)
-                    .unwrap_or("provider");
-                format!(" {provider} sign in ")
-            }
             PickerKind::ToggleMcp => " mcp servers ".to_string(),
             PickerKind::RewindMessage => " rewind to message ".to_string(),
             PickerKind::RewindScope => " restore ".to_string(),
@@ -462,8 +451,7 @@ impl Picker {
         match self.kind {
             PickerKind::ResumeThread => " ↑/↓ select   Enter resume   Esc cancel",
             PickerKind::SelectModel => " type to filter   ↑/↓ select   Enter choose   Esc cancel",
-            PickerKind::LoginProvider => " ↑/↓ select   Enter continue   Esc cancel",
-            PickerKind::LoginMethod => " ↑/↓ select   Enter continue   Esc back to providers",
+            PickerKind::LoginProvider => " ↑/↓ select   Enter sign in   Esc cancel",
             PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   a add   e edit   d delete   Esc close",
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
@@ -515,6 +503,40 @@ impl LoginPrompt {
 
     fn paste(&mut self, text: &str) {
         if !self.verifying {
+            self.input.push_str(super::secret_input::pasted(text));
+        }
+    }
+}
+
+/// `/login` account entry: owns an OAuth descriptor while the browser callback
+/// task races the loopback callback with a manually pasted redirect URL/code.
+struct AccountLoginPrompt {
+    login: crate::core::cli::auth::account::AccountLogin,
+    input: String,
+    error: Option<String>,
+    submitting: bool,
+}
+
+impl AccountLoginPrompt {
+    fn new(login: crate::core::cli::auth::account::AccountLogin) -> Self {
+        Self {
+            login,
+            input: String::new(),
+            error: None,
+            submitting: false,
+        }
+    }
+
+    fn provider_id(&self) -> &'static str {
+        self.login.provider().credential_provider()
+    }
+
+    fn masked(&self) -> String {
+        super::secret_input::mask(self.input.chars().count())
+    }
+
+    fn paste(&mut self, text: &str) {
+        if !self.submitting {
             self.input.push_str(super::secret_input::pasted(text));
         }
     }
@@ -1429,12 +1451,12 @@ struct App {
     probed_models: std::collections::HashSet<String>,
     /// Key handed off to the loop to verify off the render loop. Taken once.
     login_submit: Option<(String, String)>,
+    /// Active OAuth account prompt; owns the keyboard while open.
+    account_login: Option<AccountLoginPrompt>,
     /// Account sign-in handed off to the loop after its local callback is ready.
     account_login_submit: Option<crate::core::cli::auth::account::AccountLogin>,
-    /// Whether an account sign-in remains active and may complete.
-    account_login_active: bool,
-    /// Provider id for the active account sign-in, kept so failures can name it.
-    account_login_provider: Option<String>,
+    /// Manual OAuth redirect/code sender for the active account task.
+    account_login_manual_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
     update_requested: bool,
     /// Compaction handed off to the loop, which spawns the summarizing model
@@ -1797,9 +1819,9 @@ impl App {
             provider_prompt: None,
             probed_models: std::collections::HashSet::new(),
             login_submit: None,
+            account_login: None,
             account_login_submit: None,
-            account_login_active: false,
-            account_login_provider: None,
+            account_login_manual_tx: None,
             update_requested: false,
             update_installing: false,
             compact_request: None,
@@ -6065,7 +6087,8 @@ async fn chat_loop<B: Backend>(
                 task.abort();
             }
         }
-        if !app.account_login_active {
+        if app.account_login.is_none() {
+            app.account_login_manual_tx = None;
             if let Some(task) = account_login_task.take() {
                 task.abort();
             }
@@ -6073,12 +6096,18 @@ async fn chat_loop<B: Backend>(
 
         if account_login_task.is_none() {
             if let Some(login) = app.account_login_submit.take() {
+                let (manual_tx, manual_rx) = tokio::sync::mpsc::unbounded_channel();
+                app.account_login_manual_tx = Some(manual_tx);
                 account_login_task = Some(tokio::spawn(async move {
                     let listener = crate::core::cli::auth::account::bind_callback(&login).await?;
                     open_browser(&login.authorization_url)?;
                     let provider = tokio::time::timeout(
                         ACCOUNT_CALLBACK_TIMEOUT,
-                        crate::core::cli::auth::account::complete_callback_login(listener, login),
+                        crate::core::cli::auth::account::complete_callback_login_with_manual(
+                            listener,
+                            login,
+                            manual_rx,
+                        ),
                     )
                     .await
                     .map_err(|_| "account sign-in timed out".to_string())??;
@@ -6558,7 +6587,10 @@ fn route_paste_event(app: &mut App, event: Event) {
     let Event::Paste(text) = event else {
         return;
     };
-    if let Some(prompt) = app.login.as_mut() {
+    if let Some(prompt) = app.account_login.as_mut() {
+        // A pasted redirect/code belongs to the OAuth prompt, not chat.
+        prompt.paste(&text);
+    } else if let Some(prompt) = app.login.as_mut() {
         // A pasted API key belongs to the login field, not the chat composer
         // (where it would echo).
         prompt.paste(&text);
@@ -6618,6 +6650,78 @@ async fn handle_ask_mouse(
         resolve_front_ask(app, registry, false).await;
     }
     true
+}
+
+fn cancel_account_login(app: &mut App) {
+    app.account_login = None;
+    app.account_login_submit = None;
+    app.account_login_manual_tx = None;
+}
+
+/// Keys for the account OAuth prompt. Manual input is locally validated for fast
+/// feedback; the account task validates again before exchanging anything.
+fn handle_account_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+    let cancel = key.code == KeyCode::Esc
+        || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')));
+    if cancel {
+        cancel_account_login(app);
+        return;
+    }
+    if ctrl && key.code == KeyCode::Char('v') {
+        match clipboard_text() {
+            Ok(text) => {
+                if let Some(prompt) = app.account_login.as_mut() {
+                    prompt.paste(&text);
+                }
+            }
+            Err(e) => {
+                if let Some(prompt) = app.account_login.as_mut() {
+                    prompt.error = Some(format!("could not read the clipboard: {e}"));
+                }
+            }
+        }
+        return;
+    }
+
+    let Some(prompt) = app.account_login.as_mut() else {
+        return;
+    };
+    if prompt.submitting {
+        return;
+    }
+    match key.code {
+        KeyCode::Enter => {
+            if prompt.input.trim().is_empty() {
+                prompt.error = Some("enter the redirect URL or authorization code".to_string());
+                return;
+            }
+            match prompt.login.parse_manual_input(&prompt.input) {
+                Ok(_) => {
+                    prompt.submitting = true;
+                    prompt.error = None;
+                    let input = prompt.input.clone();
+                    let retry = prompt.login.clone();
+                    let sent = app
+                        .account_login_manual_tx
+                        .as_ref()
+                        .is_some_and(|tx| tx.send(input).is_ok());
+                    if !sent {
+                        app.account_login_manual_tx = None;
+                        app.account_login_submit = Some(retry);
+                    }
+                }
+                Err(e) => {
+                    prompt.input.clear();
+                    prompt.error = Some(e);
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            prompt.input.pop();
+        }
+        KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
+        _ => {}
+    }
 }
 
 /// Keys for the `/login` prompt. Enter hands the key to the loop for
@@ -6693,6 +6797,13 @@ async fn handle_key(
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let ctrl_c = ctrl && key.code == KeyCode::Char('c');
     let ctrl_d = ctrl && key.code == KeyCode::Char('d');
+
+    // The account OAuth prompt also owns typed/pasted secrets and callback URLs,
+    // and outranks the API-key prompt if both are somehow present.
+    if app.account_login.is_some() {
+        handle_account_login_key(app, key, ctrl);
+        return;
+    }
 
     // The `/login` prompt owns the keyboard while open: every keystroke is part
     // of a secret being typed, so none of it may reach the input box or the
@@ -6947,17 +7058,19 @@ async fn handle_key(
             KeyCode::Enter => {
                 let kind = picker.kind;
                 let value = picker.items[picker.selected].value.clone();
-                let provider = picker.provider.clone();
                 app.picker = None;
                 match kind {
                     PickerKind::ResumeThread => resume_thread(app, &value).await,
                     PickerKind::SelectModel => app.set_model(value),
-                    PickerKind::LoginMethod => match (provider.as_deref(), value.as_str()) {
-                        (Some(provider), "account") => open_account_login(app, provider),
-                        (Some(provider), "api_key") => open_login_prompt(app, provider),
-                        _ => app.note("selected sign-in method is unavailable"),
-                    },
-                    PickerKind::LoginProvider => open_login_method_picker(app, &value),
+                    PickerKind::LoginProvider => {
+                        if crate::core::cli::auth::account::AccountProvider::from_credential_provider(&value)
+                            .is_some()
+                        {
+                            open_account_login(app, &value);
+                        } else {
+                            open_login_prompt(app, &value);
+                        }
+                    }
                     PickerKind::ToggleMcp => {}
                     PickerKind::RewindMessage => {
                         if let Ok(idx) = value.parse::<usize>() {
@@ -6996,11 +7109,6 @@ async fn handle_key(
                     // Todo Enter is handled by the guarded action arm above.
                     PickerKind::Todo => {}
                 }
-            }
-            KeyCode::Esc if picker.kind == PickerKind::LoginMethod && !ctrl => {
-                let provider = picker.provider.clone();
-                app.picker = None;
-                open_login_picker_at(app, provider.as_deref());
             }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
                 app.picker = None;
@@ -7084,12 +7192,6 @@ async fn handle_key(
 
     match key.code {
         KeyCode::Esc => {
-            if app.account_login_active {
-                app.account_login_active = false;
-                app.account_login_submit = None;
-                app.account_login_provider = None;
-                return;
-            }
             // Esc cancels a run or clears typed input; it never quits (that's
             // Ctrl-D / Ctrl-C when idle), so a stray Esc can't close the app.
             if app.status == Status::Running {
@@ -8488,7 +8590,6 @@ fn open_settings_screen(app: &mut App) {
         query: String::new(),
         selected: 0,
         armed_delete: None,
-        provider: None,
     });
 }
 
@@ -8532,7 +8633,6 @@ fn open_provider_settings(app: &mut App) {
         items,
         selected: 0,
         armed_delete: None,
-        provider: None,
     });
 }
 
@@ -8988,7 +9088,6 @@ fn open_todo_picker(app: &mut App) {
         query: String::new(),
         selected: 0,
         armed_delete: None,
-        provider: None,
     });
 }
 
@@ -9344,7 +9443,6 @@ fn open_thread_picker(app: &mut App) {
                     query: String::new(),
                     selected: 0,
                     armed_delete: None,
-                    provider: None,
                 });
             }
         }
@@ -9398,7 +9496,6 @@ async fn open_model_picker(app: &mut App) {
         query: String::new(),
         selected,
         armed_delete: None,
-        provider: None,
     });
 }
 
@@ -9426,7 +9523,6 @@ fn open_mcp_picker(app: &mut App) {
         armed_delete: None,
         all_items: Vec::new(),
         query: String::new(),
-        provider: None,
     });
 }
 
@@ -9461,39 +9557,9 @@ fn open_login_picker_at(app: &mut App, selected_provider: Option<&str>) {
         selected,
         all_items: Vec::new(),
         query: String::new(),
-        provider: None,
     });
 }
 
-fn open_login_method_picker(app: &mut App, provider: &str) {
-    let Some(definition) = crate::core::cli::auth::provider_by_id(provider) else {
-        return app.note("selected provider is unavailable");
-    };
-    let mut items = vec![PickerItem {
-        value: "api_key".to_string(),
-        label: "sign in with an API key".to_string(),
-        hint: Some(definition.api_key.hint.to_string()),
-        checkbox: None,
-    }];
-    if crate::core::cli::auth::account::AccountProvider::from_credential_provider(definition.id)
-        .is_some()
-    {
-        items.push(PickerItem {
-            value: "account".to_string(),
-            label: "sign in with an account".to_string(),
-            hint: Some("sign in in your browser".to_string()),
-            checkbox: None,
-        });
-    }
-    app.picker = Some(Picker {
-        kind: PickerKind::LoginMethod,
-        items,
-        selected: 0,
-        all_items: Vec::new(),
-        query: String::new(),
-        provider: Some(definition.id.to_string()),
-    });
-}
 
 fn open_account_login(app: &mut App, provider: &str) {
     open_account_login_with_begin(app, provider, crate::core::cli::auth::account::begin);
@@ -9516,10 +9582,9 @@ fn open_account_login_with_begin(
     let provider_id = provider.credential_provider();
     match begin(provider) {
         Ok(login) => {
-            app.account_login_active = true;
-            app.account_login_provider = Some(provider_id.to_string());
+            app.account_login = Some(AccountLoginPrompt::new(login.clone()));
             app.account_login_submit = Some(login);
-            app.note("opening sign-in in your browser...");
+            app.account_login_manual_tx = None;
         }
         Err(_) => app.note(&account_login_error_message(provider_id)),
     }
@@ -9571,7 +9636,11 @@ fn open_login_prompt(app: &mut App, provider: &str) {
         definition.api_key.keys_url,
         Style::new().cyan(),
     )]);
-    app.login = Some(LoginPrompt::new(provider));
+    let mut prompt = LoginPrompt::new(provider);
+    if definition.api_key.open_in_browser && open_browser(definition.api_key.keys_url).is_err() {
+        prompt.error = Some("could not open the browser; use the URL below".to_string());
+    }
+    app.login = Some(prompt);
 }
 
 fn finish_login(
@@ -9596,13 +9665,28 @@ fn finish_login(
 }
 
 fn finish_account_login(app: &mut App, result: Result<String, String>) {
-    app.account_login_active = false;
-    let pending_provider = app.account_login_provider.take();
+    app.account_login_manual_tx = None;
+    if app.account_login.is_none() {
+        return;
+    }
     match result {
-        Ok(provider) => app.note(&login_success_message(&provider)),
-        Err(_) => {
-            let provider = pending_provider.unwrap_or_else(|| "account".to_string());
-            app.note(&account_login_error_message(&provider));
+        Ok(provider) => {
+            app.account_login = None;
+            app.account_login_submit = None;
+            app.note(&login_success_message(&provider));
+            adopt_account_login_model(app, &provider);
+        }
+        Err(error) => {
+            if let Some(prompt) = app.account_login.as_mut() {
+                let provider = prompt.provider_id();
+                prompt.submitting = false;
+                prompt.input.clear();
+                prompt.error = Some(if error == "could not open the browser" {
+                    "could not open the browser; use the URL below".to_string()
+                } else {
+                    account_login_error_message(provider)
+                });
+            }
         }
     }
 }
@@ -9635,6 +9719,20 @@ fn login_error_message(provider: &str, error: crate::core::cli::auth::LoginError
     format!("{provider} sign-in failed: {message}")
 }
 
+
+fn adopt_account_login_model(app: &mut App, provider: &str) {
+    let models = crate::core::agent::global_config::load_global_config()
+        .ok()
+        .and_then(|configs| configs.get(provider).map(|config| config.models.clone()))
+        .unwrap_or_default();
+    let login = crate::core::cli::auth::LoginResult {
+        provider: provider.to_string(),
+        models,
+        config_path: std::path::PathBuf::new(),
+        default_model: None,
+    };
+    adopt_login_model(app, &login);
+}
 fn adopt_login_model(app: &mut App, login: &crate::core::cli::auth::LoginResult) {
     let runnable = super::providers::list_provider_models(Some(&app.project_root));
     if runnable.iter().any(|(_, model)| *model == app.model) {
@@ -9719,7 +9817,6 @@ fn open_config_screen(app: &mut App) {
         query: String::new(),
         selected: 0,
         armed_delete: None,
-        provider: None,
     });
 }
 
@@ -9864,7 +9961,6 @@ fn open_rewind_picker(app: &mut App) {
         query: String::new(),
         selected,
         armed_delete: None,
-        provider: None,
     });
 }
 
@@ -9893,7 +9989,6 @@ fn open_rewind_scope(app: &mut App, user_index: usize) {
         query: String::new(),
         selected: 0,
         armed_delete: None,
-        provider: None,
     });
 }
 
@@ -10740,12 +10835,22 @@ fn draw(f: &mut Frame, app: &mut App) {
     f.render_widget(input_box(app).scroll((input_scroll, 0)), chunks[2]);
     f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
 
-    // `/login` is modal and user-initiated (only reachable while idle), so it
-    // outranks the queues below: nothing else may take keystrokes meant for a key.
-    if let Some(prompt) = &app.login {
-        let height = (login_prompt_lines(prompt, chunks[2].width.saturating_sub(2)).len() as u16
-            + 2)
-        .min(chunks[1].height);
+    // Login prompts are modal and user-initiated (only reachable while idle), so
+    // they outrank the queues below: nothing else may take keystrokes meant for
+    // a secret or OAuth redirect.
+    if let Some(prompt) = &app.account_login {
+        let height =
+            (ACCOUNT_LOGIN_PROMPT_ROWS + u16::from(prompt.error.is_some())).min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        draw_account_login(f, rect, prompt);
+    } else if let Some(prompt) = &app.login {
+        let height = (LOGIN_PROMPT_ROWS + u16::from(prompt.error.is_some())).min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -10945,6 +11050,79 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
     f.render_widget(Paragraph::new(help), rows[2]);
 }
 
+/// Rows the account OAuth box needs: two borders plus status, authorization
+/// destination, callback URI, masked field, and help. An error adds one more.
+const ACCOUNT_LOGIN_PROMPT_ROWS: u16 = 7;
+
+fn safe_url_origin_path(raw: &str) -> String {
+    url::Url::parse(raw).map_or_else(
+        |_| "unknown URL".to_string(),
+        |mut url| {
+            url.set_query(None);
+            url.set_fragment(None);
+            format!("{}{}", url.origin().ascii_serialization(), url.path())
+        },
+    )
+}
+
+fn draw_account_login(
+    f: &mut Frame,
+    area: ratatui::layout::Rect,
+    prompt: &AccountLoginPrompt,
+) {
+    use ratatui::widgets::Clear;
+
+    let dim = Style::new().dark_gray();
+    let provider = prompt.provider_id();
+    let name = crate::core::cli::auth::provider_by_id(provider)
+        .map_or("provider", |definition| definition.name);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            format!(" {name} sign-in "),
+            Style::new().on_cyan().black().bold(),
+        ));
+    let mut lines = vec![
+        Line::styled("open the browser to continue", dim),
+        Line::from(vec![
+            Span::styled("authorization: ", dim),
+            Span::styled(
+                safe_url_origin_path(&prompt.login.authorization_url),
+                Style::new().cyan(),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("callback: ", dim),
+            Span::styled(safe_url_origin_path(prompt.login.redirect_uri), Style::new().cyan()),
+        ]),
+    ];
+    if let Some(error) = &prompt.error {
+        lines.push(Line::styled(error.clone(), Style::new().red()));
+    }
+    lines.push(Line::from(vec![
+        Span::styled("authorization code or redirect URL: ", Style::new().bold()),
+        Span::raw(prompt.masked()),
+        Span::styled("█", Style::new().cyan()),
+    ]));
+    lines.push(Line::styled(
+        if prompt.submitting {
+            "waiting for browser sign-in · Esc cancel"
+        } else {
+            "Enter submit · Esc cancel"
+        },
+        dim,
+    ));
+
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// Rows the `/login` box needs: two borders, the URL, the field, and the help
+/// line. An error adds one more (see the `draw` call site).
+const LOGIN_PROMPT_ROWS: u16 = 5;
 /// The `/login` prompt: the API-keys URL, a masked key field, and a help line.
 /// The key is never rendered, so a shared screen or scrollback capture cannot
 /// leak it.
@@ -15247,139 +15425,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn login_method_picker_offers_account_only_for_account_login_providers() {
-        let expectations = [
-            ("openai", vec!["api_key", "account"]),
-            ("anthropic", vec!["api_key", "account"]),
-            ("opencode", vec!["api_key"]),
-            ("deepseek", vec!["api_key"]),
-            ("tokamak", vec!["api_key"]),
-        ];
-
-        for (provider, expected_methods) in expectations {
-            let mut app = test_app();
-            super::open_login_method_picker(&mut app, provider);
-
-            let picker = app
-                .picker
-                .as_ref()
-                .expect("provider selection must open its method picker");
-            assert_eq!(picker.kind, PickerKind::LoginMethod);
-            assert_eq!(picker.provider.as_deref(), Some(provider));
-            assert_eq!(
-                picker
-                    .items
-                    .iter()
-                    .map(|item| item.value.as_str())
-                    .collect::<Vec<_>>(),
-                expected_methods,
-                "{provider} must expose only its supported sign-in methods"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn login_method_picker_routes_account_and_api_key_from_explicit_provider_state() {
-        for provider in ["openai", "anthropic"] {
-            let mut app = test_app();
-            super::open_login_method_picker(&mut app, provider);
-            {
-                let picker = app.picker.as_mut().unwrap();
-                picker.selected = picker
-                    .items
-                    .iter()
-                    .position(|item| item.value == "account")
-                    .expect("account method must be present");
-            }
-
-            press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
-
-            assert!(
-                app.account_login_active,
-                "{provider} must start account sign-in"
-            );
-            assert!(app.account_login_submit.is_some());
-            assert!(app.login.is_none());
-        }
-
-        for provider in ["openai", "anthropic", "opencode", "deepseek", "tokamak"] {
-            let mut app = test_app();
-            super::open_login_method_picker(&mut app, provider);
-            {
-                let picker = app.picker.as_mut().unwrap();
-                assert_eq!(picker.provider.as_deref(), Some(provider));
-                picker.selected = picker
-                    .items
-                    .iter()
-                    .position(|item| item.value == "api_key")
-                    .expect("API-key method must be present");
-            }
-
-            press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
-
-            let prompt = app
-                .login
-                .as_mut()
-                .expect("API-key method must open masked prompt");
-            assert_eq!(prompt.provider, provider);
-            prompt.paste("provider-secret");
-            assert_eq!(prompt.masked(), "***************");
-            assert!(app.account_login_submit.is_none());
-            assert!(!app.account_login_active);
-        }
-    }
-
-    #[tokio::test]
-    async fn login_provider_enter_opens_scoped_method_picker_then_api_key_prompt() {
+    async fn login_provider_selection_starts_account_login_directly() {
         let mut app = test_app();
         super::open_login_picker(&mut app);
-        let tokamak_index = crate::core::cli::auth::provider_catalog()
-            .iter()
-            .position(|provider| provider.id == "tokamak")
-            .unwrap();
-
-        {
-            let picker = app
-                .picker
-                .as_mut()
-                .expect("/login must open a provider picker");
-            assert_eq!(
-                picker
-                    .items
-                    .iter()
-                    .map(|item| item.value.as_str())
-                    .collect::<Vec<_>>(),
-                crate::core::cli::auth::provider_catalog()
-                    .iter()
-                    .map(|provider| provider.id)
-                    .collect::<Vec<_>>()
-            );
-            picker.selected = tokamak_index;
-        }
-
-        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
-        let picker = app
+        let openai = app
             .picker
             .as_ref()
-            .expect("provider selection must open its method picker");
-        assert_eq!(picker.kind, PickerKind::LoginMethod);
-        assert_eq!(picker.provider.as_deref(), Some("tokamak"));
-        assert_eq!(
-            picker
-                .items
-                .iter()
-                .map(|item| item.value.as_str())
-                .collect::<Vec<_>>(),
-            vec!["api_key"]
-        );
+            .unwrap()
+            .items
+            .iter()
+            .position(|item| item.value == "openai")
+            .unwrap();
+        app.picker.as_mut().unwrap().selected = openai;
 
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
-        assert_eq!(
-            app.login.as_ref().map(|prompt| prompt.provider.as_str()),
-            Some("tokamak")
-        );
-        assert!(app.login_submit.is_none());
-        assert!(!app.account_login_active);
+
+        assert!(app.picker.is_none());
+        assert!(app.account_login.is_some());
+        assert!(app.account_login_submit.is_some());
+        assert!(app.login.is_none());
+    }
+
+    #[tokio::test]
+    async fn login_api_key_provider_selection_starts_masked_prompt_directly() {
+        let mut app = test_app();
+        super::open_login_picker(&mut app);
+        let tokamak = app
+            .picker
+            .as_ref()
+            .unwrap()
+            .items
+            .iter()
+            .position(|item| item.value == "tokamak")
+            .unwrap();
+        app.picker.as_mut().unwrap().selected = tokamak;
+
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+
+        assert!(app.picker.is_none());
+        assert_eq!(app.login.as_ref().map(|p| p.provider.as_str()), Some("tokamak"));
+        assert!(app.account_login.is_none());
     }
 
     #[tokio::test]
@@ -15393,30 +15478,7 @@ mod tests {
         assert!(app.login.is_none());
         assert!(app.login_submit.is_none());
         assert!(app.account_login_submit.is_none());
-        assert!(!app.account_login_active);
-    }
-    #[tokio::test]
-    async fn login_method_picker_shows_provider_context_and_esc_returns_to_providers() {
-        let mut app = test_app();
-        super::open_login_method_picker(&mut app, "openai");
-
-        let picker = app.picker.as_ref().expect("method picker must open");
-        assert!(picker.title().contains("Codex"), "{}", picker.title());
-        assert!(
-            picker.action_hint().contains("back to providers"),
-            "{}",
-            picker.action_hint()
-        );
-
-        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
-
-        let picker = app.picker.as_ref().expect("Esc must return to providers");
-        assert_eq!(picker.kind, PickerKind::LoginProvider);
-        assert_eq!(picker.items[picker.selected].value, "openai");
-        assert_eq!(
-            picker.items.len(),
-            crate::core::cli::auth::provider_catalog().len()
-        );
+        assert!(app.account_login.is_none());
     }
 
     #[tokio::test]
@@ -15510,196 +15572,171 @@ mod tests {
     async fn esc_cancels_a_pending_account_sign_in() {
         let mut app = test_app();
         super::open_account_login(&mut app, "openai");
-        assert!(app.account_login_active);
+        assert!(app.account_login.is_some());
         assert!(app.account_login_submit.is_some());
 
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
 
-        assert!(!app.account_login_active);
+        assert!(app.account_login.is_none());
         assert!(app.account_login_submit.is_none());
+        assert!(app.account_login_manual_tx.is_none());
         assert!(!transcript_text(&app).contains("cancelled"));
         assert!(!transcript_text(&app).contains("failed"));
         assert!(!transcript_text(&app).contains("signed in"));
     }
 
     #[tokio::test]
-    async fn login_stays_cancellable_while_verifying() {
+    async fn account_prompt_captures_manual_input_and_never_renders_secrets() {
         let mut app = test_app();
-        super::open_login_prompt(&mut app, "tokamak");
-        app.login.as_mut().unwrap().paste("tk-abc");
-        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
-        app.login_submit.take();
+        super::open_account_login(&mut app, "openai");
+        let state = app.account_login.as_ref().unwrap().login.state.clone();
+        let verifier = app.account_login.as_ref().unwrap().login.verifier.clone();
+        let authorization_url = app
+            .account_login
+            .as_ref()
+            .unwrap()
+            .login
+            .authorization_url
+            .clone();
+        let manual = format!("authorization-code#{state}");
 
-        // Read-only while in flight: no edit may change the key being checked.
-        type_key_chars(&mut app, "xyz").await;
-        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE).await;
-        assert_eq!(app.login.as_ref().unwrap().input, "tk-abc");
-        let rows = render_rows(&mut app, 80, 24);
-        assert!(rows.iter().any(|r| r.contains("verifying")), "{rows:?}");
+        for ch in manual.chars() {
+            press(&mut app, KeyCode::Char(ch), KeyModifiers::NONE).await;
+        }
 
-        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
-        assert!(app.login.is_none(), "Ctrl-C must not wedge the prompt");
+        let prompt = app.account_login.as_ref().unwrap();
+        assert_eq!(prompt.input, manual);
+        assert_eq!(prompt.masked().chars().count(), 32);
+        let screen = render_rows(&mut app, 100, 24).join("\n");
+        assert!(screen.contains("Codex sign-in"), "{screen}");
+        assert!(screen.contains("authorization: https://auth.openai.com/oauth/authorize"), "{screen}");
+        assert!(screen.contains("callback: http://localhost:1455/auth/callback"), "{screen}");
+        assert!(!screen.contains("authorization-code"), "{screen}");
+        assert!(!screen.contains(&state), "{screen}");
+        assert!(!screen.contains(&verifier), "{screen}");
+        assert!(!screen.contains(&authorization_url), "{screen}");
+        assert!(!screen.contains("code_challenge"), "{screen}");
     }
 
     #[tokio::test]
-    async fn failed_verification_keeps_the_prompt_open_with_the_reason() {
+    async fn account_enter_rejects_bad_manual_input_before_sending() {
         let mut app = test_app();
-        super::open_login_prompt(&mut app, "tokamak");
-        app.login.as_mut().unwrap().paste("tk-abc");
-        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
-        app.login_submit.take();
+        super::open_account_login(&mut app, "openai");
+        app.account_login.as_mut().unwrap().paste("authorization-code#wrong-state");
 
-        finish_login(
-            &mut app,
-            Err(crate::core::cli::auth::LoginError::Unavailable(
-                "Tokamak rejected that API key.".to_string(),
-            )),
-        );
-        let prompt = app.login.as_ref().expect("prompt stays open to retry");
-        assert!(!prompt.verifying);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+
+        let prompt = app.account_login.as_ref().unwrap();
+        assert!(!prompt.submitting);
         assert!(prompt.input.is_empty());
-        assert_eq!(
-            prompt.error.as_deref(),
-            Some("tokamak sign-in failed: Tokamak rejected that API key.")
-        );
+        assert_eq!(prompt.error.as_deref(), Some("the redirect state did not match"));
+    }
+
+    #[tokio::test]
+    async fn account_enter_sends_manual_input_to_active_task_sender() {
+        let mut app = test_app();
+        super::open_account_login(&mut app, "openai");
+        let state = app.account_login.as_ref().unwrap().login.state.clone();
+        let manual = format!("authorization-code#{state}");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        app.account_login_manual_tx = Some(tx);
+        app.account_login.as_mut().unwrap().paste(&manual);
+
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+
+        assert_eq!(rx.recv().await.as_deref(), Some(manual.as_str()));
+        assert!(app.account_login.as_ref().unwrap().submitting);
+    }
+
+    #[tokio::test]
+    async fn account_enter_retries_after_task_failure() {
+        let mut app = test_app();
+        super::open_account_login(&mut app, "openai");
+        finish_account_login(&mut app, Err("could not discover account models".to_string()));
+        let state = app.account_login.as_ref().unwrap().login.state.clone();
+        app.account_login_submit = None;
+        app.account_login
+            .as_mut()
+            .unwrap()
+            .paste(&format!("authorization-code#{state}"));
+
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+
+        assert!(app.account_login.as_ref().unwrap().submitting);
+        assert!(app.account_login_submit.is_some());
     }
 
     #[test]
-    fn successful_api_key_login_reports_only_model_guidance() {
+    fn account_login_completion_handles_success_failure_and_stale_results() {
         crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "openai",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: None,
+                    clear_api_key: true,
+                    base_url: Some("https://api.openai.com/v1".into()),
+                    models: Some(vec!["gpt-4o-mini".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
             let mut app = test_app();
-            app.login = Some(super::LoginPrompt::new("tokamak"));
+            super::open_account_login(&mut app, "openai");
 
-            finish_login(
-                &mut app,
-                Ok(crate::core::cli::auth::LoginResult {
-                    provider: "tokamak".into(),
-                    models: vec!["tokamak-1-preview".into(), "tokamak-1-mini".into()],
-                    config_path: std::path::PathBuf::from("/tmp/config.toml"),
-                    default_model: Some("tokamak-1-preview".into()),
-                }),
-            );
-
+            finish_account_login(&mut app, Ok("openai".to_string()));
             let text = transcript_text(&app);
             assert!(
-                text.contains("signed in to tokamak. Use /model to select a model."),
+                text.contains("signed in to openai. Use /model to select a model."),
                 "{text}"
             );
-            assert!(!text.contains("model(s)"), "{text}");
-            assert!(!text.contains("/tmp/config.toml"), "{text}");
-            assert!(!text.contains("tokamak-1-preview"), "{text}");
+            assert!(app.account_login.is_none());
+            assert_eq!(app.model, "gpt-4o-mini");
         });
-    }
 
-    #[test]
-    fn failed_api_key_login_reports_provider_safe_error_without_key() {
         let mut app = test_app();
-        super::open_login_prompt(&mut app, "tokamak");
-        app.login.as_mut().unwrap().paste("tk-secret-do-not-render");
-
-        finish_login(
-            &mut app,
-            Err(crate::core::cli::auth::LoginError::Unauthorized),
-        );
-
-        let prompt = app.login.as_ref().expect("prompt stays open to retry");
-        assert_eq!(
-            prompt.error.as_deref(),
-            Some("tokamak sign-in failed: that API key was not accepted")
-        );
-        let screen = render_rows(&mut app, 80, 24).join("\n");
-        assert!(screen.contains("tokamak sign-in failed"), "{screen}");
-        assert!(!screen.contains("tk-secret-do-not-render"), "{screen}");
-    }
-
-    #[test]
-    fn login_error_message_sanitizes_persistence_failure_details() {
-        let message = super::login_error_message(
-            "tokamak",
-            crate::core::cli::auth::LoginError::Persist(
-                "could not save provider configuration to /Users/alice/.jan/config.toml with key tk-secret-do-not-render".to_string(),
-            ),
-        );
-
-        assert_eq!(
-            message,
-            "tokamak sign-in failed: could not save sign-in securely"
-        );
-        assert!(
-            !message.contains("/Users/alice/.jan/config.toml"),
-            "{message}"
-        );
-        assert!(!message.contains("tk-secret-do-not-render"), "{message}");
-    }
-
-    #[test]
-    fn login_error_message_sanitizes_oauth_failure_details() {
-        let message = super::login_error_message(
-            "anthropic",
-            crate::core::cli::auth::LoginError::OAuth(
-                "callback contained code=sk-secret-do-not-render from /Users/alice/.jan/config.toml".to_string(),
-            ),
-        );
-
-        assert_eq!(
-            message,
-            "anthropic sign-in failed: could not complete browser sign-in"
-        );
-        assert!(
-            !message.contains("/Users/alice/.jan/config.toml"),
-            "{message}"
-        );
-        assert!(!message.contains("sk-secret-do-not-render"), "{message}");
-    }
-
-    #[test]
-    fn account_login_completion_reports_matching_success_and_failure_outcomes() {
-        let mut app = test_app();
-
         finish_account_login(&mut app, Ok("openai".to_string()));
-        let text = transcript_text(&app);
         assert!(
-            text.contains("signed in to openai. Use /model to select a model."),
-            "{text}"
+            !transcript_text(&app).contains("signed in"),
+            "stale result must stay silent"
         );
-        assert!(!text.contains("/model <id>"), "{text}");
 
         let mut app = test_app();
-        app.account_login_provider = Some("anthropic".to_string());
+        super::open_account_login(&mut app, "anthropic");
         finish_account_login(
             &mut app,
             Err("the redirect state did not match".to_string()),
         );
-        let text = transcript_text(&app);
-        assert!(
-            text.contains("anthropic sign-in failed: could not complete browser sign-in"),
-            "{text}"
+        let prompt = app.account_login.as_ref().expect("prompt stays open");
+        assert_eq!(
+            prompt.error.as_deref(),
+            Some("anthropic sign-in failed: could not complete browser sign-in")
         );
-        assert!(!text.contains("signed in to anthropic"), "{text}");
+        assert!(!prompt.submitting);
+        assert!(!transcript_text(&app).contains("signed in to anthropic"));
     }
 
     #[test]
     fn account_login_failure_sanitizes_callback_and_secret_details() {
         let mut app = test_app();
-        app.account_login_provider = Some("anthropic".to_string());
+        super::open_account_login(&mut app, "anthropic");
 
         finish_account_login(
             &mut app,
             Err("could not save provider configuration to /Users/alice/.jan/config.toml after callback code=callback-code-do-not-render with client_secret=sk-secret-do-not-render access_token=tok-secret-do-not-render scope=openid profile model.write model=claude-3 provider_payload={\"error\":\"invalid_grant\"}".to_string()),
         );
 
-        let text = transcript_text(&app);
+        let screen = render_rows(&mut app, 100, 24).join("\n");
         assert!(
-            text.contains("anthropic sign-in failed: could not complete browser sign-in"),
-            "{text}"
+            screen.contains("anthropic sign-in failed: could not complete browser sign-in"),
+            "{screen}"
         );
-        assert!(!text.contains("/Users/alice/.jan/config.toml"), "{text}");
-        assert!(!text.contains("callback-code-do-not-render"), "{text}");
-        assert!(!text.contains("sk-secret-do-not-render"), "{text}");
-        assert!(!text.contains("tok-secret-do-not-render"), "{text}");
-        assert!(!text.contains("model.write"), "{text}");
-        assert!(!text.contains("claude-3"), "{text}");
-        assert!(!text.contains("invalid_grant"), "{text}");
+        assert!(!screen.contains("/Users/alice/.jan/config.toml"), "{screen}");
+        assert!(!screen.contains("callback-code-do-not-render"), "{screen}");
+        assert!(!screen.contains("sk-secret-do-not-render"), "{screen}");
+        assert!(!screen.contains("tok-secret-do-not-render"), "{screen}");
+        assert!(!screen.contains("model.write"), "{screen}");
+        assert!(!screen.contains("claude-3"), "{screen}");
+        assert!(!screen.contains("invalid_grant"), "{screen}");
     }
 
     #[test]
@@ -15717,7 +15754,7 @@ mod tests {
         );
         assert!(!text.contains("/Users/alice/.jan/config.toml"), "{text}");
         assert!(!text.contains("sk-secret-do-not-render"), "{text}");
-        assert!(!app.account_login_active);
+        assert!(app.account_login.is_none());
         assert!(app.account_login_submit.is_none());
     }
 
@@ -24020,7 +24057,6 @@ mod tests {
             items: Vec::new(),
             query: "CoDeX".to_string(),
             selected: 1,
-            provider: None,
         };
         picker.refresh_model_items();
         assert_eq!(picker.items.len(), 1);
@@ -24052,7 +24088,6 @@ mod tests {
             items: Vec::new(),
             query: "codex luna".to_string(),
             selected: 0,
-            provider: None,
         };
 
         picker.refresh_model_items();
