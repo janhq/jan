@@ -5016,8 +5016,9 @@ async fn chat_loop<B: Backend>(
 
     // `/login` key verification: an HTTP round trip, so it runs off the render
     // loop and the prompt keeps repainting ("verifying...") while it's in flight.
-    let mut login_task: Option<tokio::task::JoinHandle<Result<super::tokamak::Login, String>>> =
-        None;
+    let mut login_task: Option<
+        tokio::task::JoinHandle<Result<super::tokamak::Login, String>>,
+    > = None;
 
     // The update check is a network round trip, so it runs off the render loop
     // and notes itself whenever it lands rather than delaying the first frame.
@@ -7119,8 +7120,7 @@ fn open_settings_screen(app: &mut App) {
 /// Keyboard for the `/settings` edit dock: chars/backspace edit the field,
 /// Enter validates and writes (empty clears the key), Esc cancels. Mirrors
 /// `handle_login_key`, minus the secret/verify machinery.
-fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
-    if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c'))) && app.settings_prompt.is_some()
+fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c'))) && app.settings_prompt.is_some()
     {
         app.settings_prompt = None;
         return;

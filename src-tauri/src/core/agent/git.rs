@@ -138,7 +138,7 @@ fn stage_path(repo: &Path, idx: &Path, rel: &Path, force_add: bool) -> Result<()
         if force_add {
             run(repo, Some(idx), &["add", "-f", "--", &rel_str])?;
         } else {
-        run(repo, Some(idx), &["add", "--", &rel_str])?;
+            run(repo, Some(idx), &["add", "--", &rel_str])?;
         }
     } else {
         run(repo, Some(idx), &["rm", "--cached", "--ignore-unmatch", "--", &rel_str])?;

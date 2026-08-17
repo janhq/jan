@@ -1142,7 +1142,6 @@ async fn run_agent_loop(
                 }
                 session_id = Some(id);
             }
-
             Err(e) => eprintln!("(could not save session: {e})"),
         }
     }

@@ -186,6 +186,7 @@ async fn summarize(dropped: &[Value], model_id: &str, model: &dyn ModelInvoker) 
         Err(_) => FALLBACK_NOTE.to_string(),
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
