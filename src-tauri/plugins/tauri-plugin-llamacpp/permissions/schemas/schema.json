@@ -703,18 +703,6 @@
           "markdownDescription": "Denies the prioritize_backends command without any pre-configured scope."
         },
         {
-          "description": "Enables the probe_backend_load command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-probe-backend-load",
-          "markdownDescription": "Enables the probe_backend_load command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the probe_backend_load command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-probe-backend-load",
-          "markdownDescription": "Denies the probe_backend_load command without any pre-configured scope."
-        },
-        {
           "description": "Enables the read_gguf_metadata command without any pre-configured scope.",
           "type": "string",
           "const": "allow-read-gguf-metadata",
