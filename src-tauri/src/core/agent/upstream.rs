@@ -333,6 +333,7 @@ pub(crate) fn copy_optional_chat_params(
         "stop",
         "frequency_penalty",
         "presence_penalty",
+        "reasoning_effort",
     ] {
         if let Some(v) = from.get(key) {
             into.insert(key.to_string(), v.clone());
