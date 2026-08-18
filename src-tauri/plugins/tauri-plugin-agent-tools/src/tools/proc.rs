@@ -50,15 +50,22 @@ fn resolve_shell() -> ShellConfig {
     }
     #[cfg(unix)]
     {
-        if Path::new("/bin/bash").exists() {
-            return c("/bin/bash", &["-c"]);
-        }
+        // Prefer the bash on `PATH` over the fixed `/bin/bash`: on NixOS the
+        // shell lives only at a Nix-store path resolved via `which`, so a
+        // hardcoded `/bin/bash` does not exist there and the fixed path would be
+        // wrong.
+        // `/bin/bash` stays as the fallback for systems where `which` is absent
+        // or `PATH` is degenerate but `/bin/bash` is real (e.g. cron); `/bin/sh`
+        // is the guaranteed-POSIX last resort.
         if let Some(p) = which("bash") {
             return ShellConfig {
                 program: p,
                 args: vec!["-c".to_string()],
                 via_stdin: false,
             };
+        }
+        if Path::new("/bin/bash").exists() {
+            return c("/bin/bash", &["-c"]);
         }
         c("/bin/sh", &["-c"])
     }
@@ -100,8 +107,10 @@ fn resolve_shell() -> ShellConfig {
     }
 }
 
-/// Locate an executable on PATH via the platform's own resolver.
-fn which(name: &str) -> Option<PathBuf> {
+/// Locate an executable on PATH via the platform's own resolver. Also used by
+/// [`super::jail`] to find `bwrap` on distros with no FHS paths (NixOS keeps it
+/// only at a Nix-store path).
+pub(crate) fn which(name: &str) -> Option<PathBuf> {
     #[cfg(unix)]
     let finder = "which";
     #[cfg(windows)]
