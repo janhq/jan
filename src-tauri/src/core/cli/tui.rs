@@ -326,6 +326,9 @@ enum PickerKind {
     /// `/settings`: browse editable `[agent]` keys from agent.toml; Enter opens
     /// a docked edit prompt for the selected row.
     AgentSettings,
+    /// `/settings > providers`: manage `~/.jan/config.toml` providers via a
+    /// docked add/edit wizard (`a`/`e`) or deletion (`d`).
+    ProviderSettings,
     /// `/todo` editor: browse the phased list and mutate the selected task
     /// (done/drop/rm) through the same canonical `TodoList` the model uses.
     Todo,
@@ -337,6 +340,10 @@ struct Picker {
     kind: PickerKind,
     items: Vec<PickerItem>,
     selected: usize,
+    /// Index of the provider row a first `d` armed for deletion, so a second
+    /// `d` on the same row confirms it. `None` = nothing armed. Resets on
+    /// navigation so an unrelated keypress can never delete by accident.
+    armed_delete: Option<usize>,
 }
 
 impl Picker {
@@ -349,6 +356,7 @@ impl Picker {
             PickerKind::RewindScope => " restore ",
             PickerKind::ViewConfig => " provider config ",
             PickerKind::AgentSettings => " agent settings ",
+            PickerKind::ProviderSettings => " providers ",
             PickerKind::Todo => " todo ",
         }
     }
@@ -362,6 +370,7 @@ impl Picker {
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
             PickerKind::AgentSettings => " ↑/↓ select   Enter edit   x unset   Esc close",
+            PickerKind::ProviderSettings => " ↑/↓ select   Enter edit   a add   dd delete   Esc close",
             PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
         }
     }
@@ -1207,6 +1216,13 @@ struct App {
     settings_prompt: Option<SettingsPrompt>,
     /// Active MCP add/edit wizard (docked); owns the keyboard while open.
     mcp_prompt: Option<McpPrompt>,
+    /// Active OpenAI-compatible provider wizard (docked); owns the keyboard.
+    provider_prompt: Option<ProviderPrompt>,
+    /// Providers already probed for a missing model list this session
+    /// (success or failure). A dead/unreachable upstream must not be re-contacted
+    /// on every bare `/model` -- that would freeze the render loop for the whole
+    /// request timeout -- so only unprobed providers are fetched once.
+    probed_models: std::collections::HashSet<String>,
     /// Key handed off to the loop to verify off the render loop. Taken once.
     login_submit: Option<String>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
@@ -1510,6 +1526,8 @@ impl App {
             login: None,
             settings_prompt: None,
             mcp_prompt: None,
+            provider_prompt: None,
+            probed_models: std::collections::HashSet::new(),
             login_submit: None,
             update_requested: false,
             update_installing: false,
@@ -5583,7 +5601,10 @@ async fn handle_ask_key(
     true
 }
 
-/// Route a bracketed paste event to the active input owner.
+/// Route a bracketed paste event to the active input owner. The order mirrors
+/// `handle_key`: each docked prompt owns the keyboard while open, so a paste
+/// must land in its fields rather than the chat composer (where a pasted API
+/// key would echo).
 fn route_paste_event(app: &mut App, event: Event) {
     let Event::Paste(text) = event else {
         return;
@@ -5591,6 +5612,12 @@ fn route_paste_event(app: &mut App, event: Event) {
     if let Some(prompt) = app.login.as_mut() {
         // A pasted API key belongs to the login field, not the chat composer
         // (where it would echo).
+        prompt.paste(&text);
+    } else if let Some(prompt) = app.settings_prompt.as_mut() {
+        prompt.paste(&text);
+    } else if let Some(prompt) = app.mcp_prompt.as_mut() {
+        prompt.paste(&text);
+    } else if let Some(prompt) = app.provider_prompt.as_mut() {
         prompt.paste(&text);
     } else if !app.ask_queue.is_empty() {
         handle_ask_paste(app, &text);
@@ -5737,6 +5764,12 @@ async fn handle_key(
         return;
     }
 
+    // The provider add/edit wizard owns the keyboard while open.
+    if app.provider_prompt.is_some() {
+        handle_provider_prompt_key(app, key, ctrl);
+        return;
+    }
+
     // A pending permission prompt captures y/a/n; Ctrl-C cancels the run and
     // Ctrl-D quits, so it can't be wedged waiting on an unanswered prompt.
     // Several subagents can have requests queued at once (see `pending_queue`),
@@ -5803,9 +5836,11 @@ async fn handle_key(
     if let Some(picker) = app.picker.as_mut() {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
+                picker.armed_delete = None;
                 picker.selected = picker.selected.saturating_sub(1);
             }
             KeyCode::Down | KeyCode::Char('j') => {
+                picker.armed_delete = None;
                 picker.selected = (picker.selected + 1).min(picker.items.len() - 1);
             }
             KeyCode::Enter if picker.kind == PickerKind::ToggleMcp => {
@@ -5816,8 +5851,8 @@ async fn handle_key(
                 toggle_mcp_server(app, mcp_servers, name, enable);
             }
             // `/mcp` picker: `a` opens the add wizard, `e` opens the edit
-            // wizard prefilled from the selected row, `d` removes it after a
-            // confirmation keystroke. All act through the shared config layer.
+            // wizard prefilled from the selected row, `d` removes the selected
+            // server. All act through the shared config layer.
             KeyCode::Char('a') if picker.kind == PickerKind::ToggleMcp => {
                 app.picker = None;
                 app.mcp_prompt = Some(McpPrompt {
@@ -5852,6 +5887,41 @@ async fn handle_key(
                 } else {
                     super::mcp::disconnect(&name, mcp_servers).await;
                     app.note(&format!("removed MCP server '{name}'"));
+                }
+            }
+            // `/settings > providers` picker: `a` opens the add wizard, `d`
+            // deletes the selected provider only after a confirmation `d` on
+            // the same row (an API key is unrecoverable). The leading
+            // watermark row (an empty list) is inert. All writes go through
+            // the shared headless `~/.jan/config.toml` path.
+            KeyCode::Char('a') if picker.kind == PickerKind::ProviderSettings => {
+                app.picker = None;
+                app.provider_prompt = Some(ProviderPrompt::new());
+            }
+            KeyCode::Char('d') if picker.kind == PickerKind::ProviderSettings => {
+                let Some(item) = picker.items.get(picker.selected) else {
+                    return;
+                };
+                let name = item.value.clone();
+                if name.is_empty() {
+                    // The watermark row: nothing to delete.
+                    return;
+                }
+                let sel = picker.selected;
+                if picker.armed_delete == Some(sel) {
+                    // Second `d` on the same row confirms the delete.
+                    app.picker = None;
+                    if crate::core::agent::global_config::remove_provider(&name)
+                        .unwrap_or(false)
+                    {
+                        app.note(&format!("removed provider '{name}'"));
+                    } else {
+                        app.note(&format!("provider '{name}' was not configured"));
+                    }
+                } else {
+                    // First `d` arms; a second `d` on this row confirms.
+                    picker.armed_delete = Some(sel);
+                    app.note(&format!("press d again to delete provider '{name}'"));
                 }
             }
             // `/todo` editor: d/Enter = done, x = abandon (drop), r = remove.
@@ -5927,13 +5997,27 @@ async fn handle_key(
                         }
                     }
                     PickerKind::ViewConfig => {}
-                    // `/settings`: open the edit dock for the selected row.
+                    // `/settings`: open the edit dock for the selected row,
+                    // or the provider screen for the leading "providers" row.
                     PickerKind::AgentSettings => {
-                        if let Some(def) = AGENT_SETTINGS.iter().find(|d| d.key == value) {
+                        if value == PROVIDERS_SETTINGS_ROW {
+                            open_provider_settings(app);
+                        } else if let Some(def) =
+                            AGENT_SETTINGS.iter().find(|d| d.key == value)
+                        {
                             let toml_path = app.agent_dir.join("agent.toml");
                             let current = current_agent_value(&toml_path, def.key);
                             app.settings_prompt =
                                 Some(SettingsPrompt::new(def, current.as_deref()));
+                        }
+                    }
+                    // `/settings > providers`: open the wizard for the row.
+                    PickerKind::ProviderSettings => {
+                        let entry = crate::core::agent::global_config::load_global_config()
+                            .ok()
+                            .and_then(|c| c.get(&value).cloned());
+                        if let Some(entry) = entry {
+                            app.provider_prompt = Some(ProviderPrompt::from_entry(&entry));
                         }
                     }
                     // Todo Enter is handled by the guarded action arm above.
@@ -6534,7 +6618,7 @@ async fn run_command(app: &mut App, line: &str) {
         }
         "model" => {
             if arg.is_empty() {
-                open_model_picker(app);
+                open_model_picker(app).await;
             } else {
                 app.set_model(arg.to_string());
             }
@@ -6781,6 +6865,10 @@ enum AgentSettingKind {
     Bool { default: bool },
 }
 
+/// Sentinel row value in the `/settings` picker that opens the provider
+/// management screen instead of an `[agent]` edit dock.
+const PROVIDERS_SETTINGS_ROW: &str = "__providers__";
+
 const AGENT_SETTINGS: &[AgentSettingDef] = &[
     AgentSettingDef {
         key: "context_window",
@@ -6871,6 +6959,12 @@ impl SettingsPrompt {
             .iter()
             .find(|d| d.key == self.key)
             .expect("settings prompt always opens for a def row")
+    }
+
+    /// Apply a bracketed paste to the field, dropping the whitespace terminals
+    /// add around a paste.
+    fn paste(&mut self, text: &str) {
+        self.input.push_str(super::secret_input::pasted(text));
     }
 }
 
@@ -7041,6 +7135,22 @@ impl McpPrompt {
         }
         Ok(())
     }
+
+    /// Apply a bracketed paste to the active text field. Toggle fields
+    /// (transport, active) ignore pastes exactly as they ignore typed
+    /// characters.
+    fn paste(&mut self, text: &str) {
+        let text = super::secret_input::pasted(text);
+        match self.field {
+            McpField::Name => self.name.push_str(text),
+            McpField::Command => self.command.push_str(text),
+            McpField::Args => self.args.push_str(text),
+            McpField::Env => self.env.push_str(text),
+            McpField::Url => self.url.push_str(text),
+            McpField::Headers => self.headers.push_str(text),
+            _ => {}
+        }
+    }
 }
 
 /// Render a `KEY=VALUE` map as a comma-separated string, for pre-filling the
@@ -7053,6 +7163,191 @@ fn pairs_to_str(map: Option<&serde_json::Map<String, Value>>) -> String {
             .join(",")
     })
     .unwrap_or_default()
+}
+
+/// A docked multi-field wizard for adding or editing an OpenAI-compatible
+/// provider in `~/.jan/config.toml`. Mirrors `McpPrompt`: Up/Down move between
+/// fields, chars/backspace edit the current field, Enter saves. The API key is
+/// never echoed (see `secret_input::mask`). `edit` mode prefills from the
+/// existing entry and defaults `name` to it; `add` mode starts blank.
+struct ProviderPrompt {
+    /// `Some(original_name)` when editing; `None` when adding a new provider.
+    editing: Option<String>,
+    /// Which field the keyboard is currently filling in.
+    field: ProviderField,
+    name: String,
+    base_url: String,
+    api_key: String,
+    /// Whether the user edited the api-key field this session. While editing a
+    /// provider the stored key is never loaded into the prompt (it must not be
+    /// echoable), so an untouched field means "keep the stored key" and a
+    /// touched one replaces it on save -- including with nothing, which clears
+    /// it (e.g. a local endpoint that dropped auth).
+    key_touched: bool,
+    /// Whitespace-separated model ids (replaces the existing list on save).
+    models: String,
+    error: Option<String>,
+}
+
+/// The fields of `ProviderPrompt`, in input order.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ProviderField {
+    Name,
+    BaseUrl,
+    ApiKey,
+    Models,
+}
+
+impl ProviderPrompt {
+    const FIELD_ORDER: [ProviderField; 4] = [
+        ProviderField::Name,
+        ProviderField::BaseUrl,
+        ProviderField::ApiKey,
+        ProviderField::Models,
+    ];
+
+    fn next_field(&mut self) {
+        if self.editing.is_some() {
+            // Name is read-only while editing; cycle through the editable
+            // fields only (BaseUrl -> ApiKey -> Models -> BaseUrl).
+            self.field = match self.field {
+                ProviderField::BaseUrl => ProviderField::ApiKey,
+                ProviderField::ApiKey => ProviderField::Models,
+                _ => ProviderField::BaseUrl,
+            };
+        } else {
+            let pos = Self::FIELD_ORDER
+                .iter()
+                .position(|f| *f == self.field)
+                .unwrap_or(0);
+            self.field = Self::FIELD_ORDER[(pos + 1) % Self::FIELD_ORDER.len()];
+        }
+    }
+
+    fn prev_field(&mut self) {
+        if self.editing.is_some() {
+            // Name is read-only while editing; cycle backwards through the
+            // editable fields only (BaseUrl <- ApiKey <- Models <- BaseUrl).
+            self.field = match self.field {
+                ProviderField::ApiKey => ProviderField::BaseUrl,
+                ProviderField::Models => ProviderField::ApiKey,
+                _ => ProviderField::Models,
+            };
+        } else {
+            let pos = Self::FIELD_ORDER
+                .iter()
+                .position(|f| *f == self.field)
+                .unwrap_or(0);
+            self.field = Self::FIELD_ORDER[
+                (pos + Self::FIELD_ORDER.len() - 1) % Self::FIELD_ORDER.len()
+            ];
+        }
+    }
+
+    fn from_entry(entry: &crate::core::state::ProviderConfig) -> Self {
+        Self {
+            editing: Some(entry.provider.clone()),
+            field: ProviderField::BaseUrl,
+            name: entry.provider.clone(),
+            base_url: entry.base_url.clone().unwrap_or_default(),
+            api_key: String::new(),
+            key_touched: false,
+            models: entry.models.join(" "),
+            error: None,
+        }
+    }
+
+    fn new() -> Self {
+        Self {
+            editing: None,
+            field: ProviderField::Name,
+            name: String::new(),
+            base_url: String::new(),
+            api_key: String::new(),
+            key_touched: false,
+            models: String::new(),
+            error: None,
+        }
+    }
+
+    /// Apply a bracketed paste to the active field, dropping the whitespace
+    /// terminals add around a paste. The name field is read-only while editing
+    /// (renaming would orphan the config entry), so a paste lands in the
+    /// editable fields only.
+    fn paste(&mut self, text: &str) {
+        let text = super::secret_input::pasted(text);
+        if self.editing.is_some() && self.field == ProviderField::Name {
+            return;
+        }
+        match self.field {
+            ProviderField::Name => self.name.push_str(text),
+            ProviderField::BaseUrl => self.base_url.push_str(text),
+            ProviderField::ApiKey => {
+                self.api_key.push_str(text);
+                self.key_touched = true;
+            }
+            ProviderField::Models => self.models.push_str(text),
+        }
+    }
+
+    /// API key field for rendering: the stored key is never loaded into the
+    /// prompt, so an untouched field while editing says `(unchanged)`; anything
+    /// typed/pasted renders masked so a key never reaches the screen or
+    /// scrollback.
+    fn masked_key(&self) -> String {
+        if self.editing.is_some() && !self.key_touched {
+            return "(unchanged)".to_string();
+        }
+        super::secret_input::mask(self.api_key.chars().count())
+    }
+
+    /// An error explaining why a base URL is not a usable http(s) upstream.
+    /// Only `https` (or `http` for a loopback host) is accepted, so a bearer
+    /// key is never sent over a plaintext remote connection.
+    fn validate_base_url(&self) -> Option<String> {
+        use super::providers::is_loopback_url;
+        let url = self.base_url.trim();
+        if url.is_empty() {
+            return Some("base URL is required".to_string());
+        }
+        if url.starts_with("https://") {
+            return None;
+        }
+        if url.starts_with("http://") && is_loopback_url(url) {
+            return None;
+        }
+        Some(
+            "base URL must be https:// (or http:// for a localhost/loopback host)"
+                .to_string(),
+        )
+    }
+
+    /// Persist the provider to `~/.jan/config.toml` via the headless config
+    /// path the CLI shares. `api_type` stays default (OpenAI-compatible
+    /// passthrough) unless an explicit type is chosen elsewhere. Returns an
+    /// error keeping the prompt open on invalid input. The name is read-only
+    /// while editing, so `save` always writes under the original key and never
+    /// orphans the prior entry. An untouched api-key field keeps the stored
+    /// key; a touched one replaces it -- with nothing, if emptied, which clears
+    /// the key (see `key_touched`).
+    fn save(&self) -> Result<(), String> {
+        let name = self.name.trim();
+        if name.is_empty() {
+            return Err("provider name is required".to_string());
+        }
+        if let Some(err) = self.validate_base_url() {
+            return Err(err);
+        }
+        let base_url = self.base_url.trim().to_string();
+        let api_key = (self.key_touched || self.editing.is_none())
+            .then(|| self.api_key.trim().to_string());
+        let models: Vec<String> = self
+            .models
+            .split_whitespace()
+            .map(str::to_string)
+            .collect();
+        super::cli_agent_config_set(name, api_key, Some(base_url), Some(models), None).map(|_| ())
+    }
 }
 
 /// Value of an `[agent]` key in `agent.toml` as a display string, `None` when
@@ -7112,25 +7407,36 @@ fn settings_command(app: &mut App, arg: &str) {
     }
 }
 
-/// One picker row per `[agent]` def; the hint carries the current on-disk
-/// value (`= 400`) or `(unset)` when the default applies. `value` is the key
-/// so the edit dock and the `x` unset shortcut can act on it.
+/// One picker row per `[agent]` def, plus a leading "providers" entry that
+/// opens the provider-management screen (see `open_provider_settings`). The
+/// hint carries the current on-disk value (`= 400`) or `(unset)` when the
+/// default applies. `value` is the key so the edit dock and the `x` unset
+/// shortcut can act on it.
 fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
-    AGENT_SETTINGS
-        .iter()
-        .map(|def| {
-            let current = current_agent_value(toml_path, def.key);
-            PickerItem {
-                value: def.key.to_string(),
-                label: def.label.to_string(),
-                hint: Some(match &current {
-                    Some(v) => format!("= {v}"),
-                    None => "(unset)".to_string(),
-                }),
-                checkbox: None,
-            }
-        })
-        .collect()
+    let mut items = vec![PickerItem {
+        value: PROVIDERS_SETTINGS_ROW.to_string(),
+        label: "providers".to_string(),
+        hint: Some("configure OpenAI-compatible providers".to_string()),
+        checkbox: None,
+    }];
+    items.extend(
+        AGENT_SETTINGS
+            .iter()
+            .map(|def| {
+                let current = current_agent_value(toml_path, def.key);
+                PickerItem {
+                    value: def.key.to_string(),
+                    label: def.label.to_string(),
+                    hint: Some(match &current {
+                        Some(v) => format!("= {v}"),
+                        None => "(unset)".to_string(),
+                    }),
+                    checkbox: None,
+                }
+            })
+            .collect::<Vec<_>>(),
+    );
+    items
 }
 
 /// Open the `/settings` menu: a picker row per `[agent]` key, hint showing the
@@ -7142,6 +7448,50 @@ fn open_settings_screen(app: &mut App) {
         kind: PickerKind::AgentSettings,
         items: build_agent_settings_items(&toml_path),
         selected: 0,
+        armed_delete: None,
+    });
+}
+
+/// Open the `/settings > providers` screen: a picker row per provider in
+/// `~/.jan/config.toml` (the standalone-agent credential store), with `a` to
+/// add, Enter to edit the selected row, and `d` pressed twice to delete it
+/// (the first `d` arms, the second confirms; see the picker key handler).
+fn open_provider_settings(app: &mut App) {
+    let providers = match crate::core::agent::global_config::load_global_config() {
+        Ok(c) => c,
+        Err(e) => return app.note(&format!("failed to read ~/.jan/config.toml: {e}")),
+    };
+    let mut providers: Vec<_> = providers.into_values().collect();
+    providers.sort_by(|a, b| a.provider.cmp(&b.provider));
+
+    let items: Vec<PickerItem> = if providers.is_empty() {
+        vec![PickerItem {
+            label: "no providers configured - press a to add an OpenAI-compatible one"
+                .to_string(),
+            value: String::new(),
+            hint: None,
+            checkbox: None,
+        }]
+    } else {
+        providers
+            .into_iter()
+            .map(|c| {
+                let key = if c.api_key.is_some() { "key set" } else { "no key" };
+                let base = c.base_url.as_deref().unwrap_or("default url");
+                PickerItem {
+                    label: format!("{key}  {base}  {} model(s)", c.models.len()),
+                    value: c.provider.clone(),
+                    hint: Some(c.provider),
+                    checkbox: None,
+                }
+            })
+            .collect()
+    };
+    app.picker = Some(Picker {
+        kind: PickerKind::ProviderSettings,
+        items,
+        selected: 0,
+        armed_delete: None,
     });
 }
 
@@ -7239,7 +7589,8 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.co
 
 /// Keyboard for the MCP add/edit wizard: Up/Down move between fields, chars/
 /// backspace edit the current text field, Space toggles the transport/active
-/// rows, Enter saves and connects, Esc cancels.
+/// rows, Enter saves and connects, Esc cancels. Only arrow keys steer: `k`/`j`
+/// are ordinary characters in these fields (URLs, paths), so they always type.
 #[allow(clippy::too_many_lines)]
 async fn handle_mcp_prompt_key(
     app: &mut App,
@@ -7257,8 +7608,8 @@ async fn handle_mcp_prompt_key(
         return;
     };
     match key.code {
-        KeyCode::Up | KeyCode::Char('k') => prompt.prev_field(),
-        KeyCode::Down | KeyCode::Char('j') => prompt.next_field(),
+        KeyCode::Up => prompt.prev_field(),
+        KeyCode::Down => prompt.next_field(),
         KeyCode::Tab => prompt.next_field(),
         KeyCode::Enter => {
             // Take the prompt out so `save` can borrow `app` freely for notes
@@ -7310,6 +7661,78 @@ async fn handle_mcp_prompt_key(
                 _ => {}
             }
         }
+        _ => {}
+    }
+}
+
+/// Keyboard for the provider add/edit wizard: Up/Down move between fields,
+/// chars/backspace edit the current field, Enter saves, Esc cancels. The API
+/// key field masks what is typed (see `ProviderPrompt::masked_key`). Only
+/// arrow keys steer: `k`/`j` are ordinary characters in these fields (API keys
+/// start with `sk-...`), so they always type.
+fn handle_provider_prompt_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+    if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c')))
+        && app.provider_prompt.is_some()
+    {
+        app.provider_prompt = None;
+        return;
+    }
+    let Some(prompt) = app.provider_prompt.as_mut() else {
+        return;
+    };
+    match key.code {
+        KeyCode::Up => prompt.prev_field(),
+        KeyCode::Down => prompt.next_field(),
+        KeyCode::Tab => prompt.next_field(),
+        KeyCode::Enter => {
+            // Take the prompt out so `save` can borrow `app` freely for notes
+            // and put it back on error.
+            let mut taken = app.provider_prompt.take().expect("prompt is Some");
+            match taken.save() {
+                Ok(()) => {
+                    let name = taken.name.trim().to_string();
+                    if taken.editing.is_some() {
+                        app.note(&format!("updated provider '{name}'"));
+                    } else {
+                        app.note(&format!("added provider '{name}'"));
+                    }
+                }
+                Err(e) => {
+                    taken.error = Some(e);
+                    app.provider_prompt = Some(taken);
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            if prompt.editing.is_some() && prompt.field == ProviderField::Name {
+                return;
+            }
+            match prompt.field {
+                ProviderField::Name => {
+                    prompt.name.pop();
+                }
+                ProviderField::BaseUrl => {
+                    prompt.base_url.pop();
+                }
+                ProviderField::ApiKey => {
+                    prompt.api_key.pop();
+                    prompt.key_touched = true;
+                }
+                ProviderField::Models => {
+                    prompt.models.pop();
+                }
+            }
+        }
+        KeyCode::Char(ch) if !ctrl => match prompt.field {
+            ProviderField::Name if prompt.editing.is_some() => {}
+            ProviderField::Name => prompt.name.push(ch),
+            ProviderField::BaseUrl => prompt.base_url.push(ch),
+            ProviderField::ApiKey => {
+                prompt.api_key.push(ch);
+                prompt.key_touched = true;
+            }
+            ProviderField::Models => prompt.models.push(ch),
+        },
         _ => {}
     }
 }
@@ -7461,6 +7884,7 @@ fn open_todo_picker(app: &mut App) {
         kind: PickerKind::Todo,
         items: build_todo_items(&app.todos),
         selected: 0,
+        armed_delete: None,
     });
 }
 
@@ -7811,6 +8235,7 @@ fn open_thread_picker(app: &mut App) {
                     kind: PickerKind::ResumeThread,
                     items,
                     selected: 0,
+                    armed_delete: None,
                 });
             }
         }
@@ -7819,9 +8244,29 @@ fn open_thread_picker(app: &mut App) {
 }
 
 /// Open the `/model` selector listing the `provider / model` pairs this build
-/// can actually run, with the current model pre-highlighted.
-fn open_model_picker(app: &mut App) {
-    let pairs = super::providers::list_provider_models(Some(&app.project_root));
+/// can actually run, with the current model pre-highlighted. A reachable
+/// provider with no configured model list (e.g. just added via the settings
+/// wizard) is queried for its `GET /models` on the spot and the discovered ids
+/// persisted, so a bare provider becomes selectable immediately.
+async fn open_model_picker(app: &mut App) {
+    let project_root = app.project_root.clone();
+    match super::providers::fetch_missing_models(
+        Some(&project_root),
+        &mut app.probed_models,
+    )
+    .await
+    {
+        Ok(true) => {
+            // The discovered ids now live on disk; refresh the session's
+            // in-memory provider snapshot so a picked model resolves on the
+            // next run without a restart (#8688 parallels the /login reload).
+            reload_provider_configs(app).await;
+            app.note("fetched models for provider(s) with no configured list");
+        }
+        Ok(_) => {}
+        Err(e) => app.note(&format!("could not fetch models: {e}")),
+    }
+    let pairs = super::providers::list_provider_models(Some(&project_root));
     if pairs.is_empty() {
         return app.note(
             "no models available (add a provider with `jan config set`, or configure one in the desktop app)",
@@ -7841,6 +8286,7 @@ fn open_model_picker(app: &mut App) {
         kind: PickerKind::SelectModel,
         items,
         selected,
+        armed_delete: None,
     });
 }
 
@@ -7865,6 +8311,7 @@ fn open_mcp_picker(app: &mut App) {
         kind: PickerKind::ToggleMcp,
         items,
         selected: 0,
+        armed_delete: None,
     });
 }
 
@@ -7993,6 +8440,7 @@ fn open_config_screen(app: &mut App) {
         kind: PickerKind::ViewConfig,
         items,
         selected: 0,
+        armed_delete: None,
     });
 }
 
@@ -8134,6 +8582,7 @@ fn open_rewind_picker(app: &mut App) {
         kind: PickerKind::RewindMessage,
         items,
         selected,
+        armed_delete: None,
     });
 }
 
@@ -8159,6 +8608,7 @@ fn open_rewind_scope(app: &mut App, user_index: usize) {
         kind: PickerKind::RewindScope,
         items,
         selected: 0,
+        armed_delete: None,
     });
 }
 
@@ -9021,6 +9471,16 @@ fn draw(f: &mut Frame, app: &mut App) {
             height,
         };
         draw_mcp_prompt(f, rect, prompt);
+    } else if let Some(prompt) = &app.provider_prompt {
+        let height = (4 + 3 + u16::from(prompt.error.is_some())).min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        draw_provider_prompt(f, rect, prompt);
     } else if !app.ask_queue.is_empty() {
         let queue_len = app.ask_queue.len();
         let ask = app.ask_queue.front_mut().expect("checked non-empty above");
@@ -9389,6 +9849,66 @@ fn draw_mcp_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &McpPromp
         "↑/↓ move · Enter save · Space toggle · Esc cancel".to_string(),
         dim,
     ));
+
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// Dock the provider add/edit wizard above the input: one row per field, the
+/// active field highlighted, with the API key masked so it never reaches the
+/// screen or scrollback.
+fn draw_provider_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &ProviderPrompt) {
+    use ratatui::widgets::Clear;
+
+    let dim = Style::new().dark_gray();
+    let title = if prompt.editing.is_some() {
+        " provider: edit "
+    } else {
+        " provider: add "
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(title, Style::new().on_cyan().black().bold()));
+
+    let mut lines = Vec::new();
+    for field in ProviderPrompt::FIELD_ORDER {
+        let read_only = prompt.editing.is_some() && field == ProviderField::Name;
+        let selected = field == prompt.field && !read_only;
+        let (label, value): (&str, String) = match field {
+            ProviderField::Name => ("name", prompt.name.clone()),
+            ProviderField::BaseUrl => ("base url", prompt.base_url.clone()),
+            ProviderField::ApiKey => ("api key", prompt.masked_key()),
+            ProviderField::Models => ("models", prompt.models.clone()),
+        };
+        let marker = if selected { "› " } else { "  " };
+        let style = if selected {
+            Style::new().bold()
+        } else if read_only {
+            // A renamed provider would orphan its config entry and lose the
+            // API key, so the name is fixed while editing.
+            Style::new().dark_gray()
+        } else {
+            dim
+        };
+        let mut spans = vec![Span::styled(format!("{marker}{label}: "), style)];
+        spans.push(Span::styled(value, style));
+        if selected {
+            spans.push(Span::styled("█", Style::new().cyan()));
+        }
+        lines.push(Line::from(spans));
+    }
+    if let Some(error) = &prompt.error {
+        lines.push(Line::styled(error.clone(), Style::new().red()));
+    }
+    let hint = if prompt.editing.is_some() {
+        "↑/↓ move · Enter save · Esc cancel (api key: type to replace, blank out to clear)"
+    } else {
+        "↑/↓ move · Enter save · Esc cancel (models space-separated)"
+    };
+    lines.push(Line::styled(hint.to_string(), dim));
 
     f.render_widget(Clear, area);
     let inner = block.inner(area);
@@ -10529,6 +11049,7 @@ mod tests {
         note_update, open_config_screen, spawn_branch_poll, await_branch_poll,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
         McpPrompt, McpField, pairs_to_str,
+        ProviderField,
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
         run_command, starting_call_lines, unescape_partial_json_string,
         running_group_row, split_reasoning, strip_system_xml_tags, subagent_activity,
@@ -10539,7 +11060,7 @@ mod tests {
         ResumeTarget, RowKind,
         SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
         COMMAND_LABEL_MAX, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
-        KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER,
+        KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER, PROVIDERS_SETTINGS_ROW,
         SPINNER_ADVANCE_MS, alt_scroll_restore, alt_scroll_save_off,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
@@ -13053,7 +13574,9 @@ mod tests {
         super::settings_command(&mut app, "");
         let picker = app.picker.as_ref().expect("bare /settings opens picker");
         assert_eq!(picker.kind, PickerKind::AgentSettings);
-        assert_eq!(picker.items.len(), AGENT_SETTINGS.len());
+        // One leading "providers" row plus a row per `[agent]` def.
+        assert_eq!(picker.items.len(), AGENT_SETTINGS.len() + 1);
+        assert_eq!(picker.items[0].value, PROVIDERS_SETTINGS_ROW);
         let row = picker
             .items
             .iter()
@@ -13077,8 +13600,18 @@ mod tests {
         std::fs::write(&toml_path, "[agent]\ncontext_window = 64000\n").unwrap();
 
         super::settings_command(&mut app, "");
-        // Select the context_window row (index 0) and press x: the key must be
-        // removed, the row hint flip back to (unset), the note rendered.
+        // Select the context_window row and press x: the key must be removed,
+        // the row hint flip back to (unset), the note rendered. (Found by value
+        // rather than index since index 0 is the leading "providers" row.)
+        let idx = app
+            .picker
+            .as_ref()
+            .unwrap()
+            .items
+            .iter()
+            .position(|i| i.value == "context_window")
+            .expect("context_window row");
+        app.picker.as_mut().unwrap().selected = idx;
         press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
         let doc = std::fs::read_to_string(&toml_path).unwrap();
         assert!(!doc.contains("context_window = 64000"), "key removed: {doc}");
@@ -13280,6 +13813,52 @@ mod tests {
         assert_eq!(p.field, McpField::Active);
     }
 
+    /// `k`/`j` are ordinary characters in MCP text fields (URLs, paths), so
+    /// they must be typed, not steered with vim-style keys.
+    #[test]
+    fn mcp_prompt_types_k_and_j_into_fields() {
+        let mut app = test_app();
+        app.mcp_prompt = Some(McpPrompt {
+            editing: None,
+            field: McpField::Name,
+            name: String::new(),
+            transport: "http".to_string(),
+            command: String::new(),
+            args: String::new(),
+            env: String::new(),
+            url: String::new(),
+            headers: String::new(),
+            active: false,
+            error: None,
+        });
+        let servers: crate::core::state::SharedMcpServers =
+            Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            // Skip to the Url field: Name -> Transport -> Url.
+            super::handle_mcp_prompt_key(
+                &mut app, key(KeyCode::Down), false, &servers,
+            )
+            .await;
+            super::handle_mcp_prompt_key(
+                &mut app, key(KeyCode::Down), false, &servers,
+            )
+            .await;
+            assert_eq!(app.mcp_prompt.as_ref().unwrap().field, McpField::Url);
+            for ch in "https://jk.example/".chars() {
+                super::handle_mcp_prompt_key(
+                    &mut app, key(KeyCode::Char(ch)), false, &servers,
+                )
+                .await;
+            }
+        });
+
+        let prompt = app.mcp_prompt.as_ref().expect("still open");
+        assert_eq!(prompt.field, McpField::Url, "typing k must not move up");
+        assert_eq!(prompt.url, "https://jk.example/");
+    }
+
     #[test]
     fn pairs_to_str_roundtrips() {
         let map = crate::core::cli::mcp::parse_pairs("A=1,B=2", "env").unwrap();
@@ -13336,6 +13915,659 @@ mod tests {
         let doc = std::fs::read_to_string(&toml_path).unwrap();
         assert!(doc.contains("default = \"read-only\""), "unchanged: {doc}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn provider_prompt_field_navigation_wraps() {
+        let mut p = super::ProviderPrompt::new();
+        p.field = ProviderField::Name;
+        p.next_field();
+        assert_eq!(p.field, ProviderField::BaseUrl);
+        p.next_field();
+        assert_eq!(p.field, ProviderField::ApiKey);
+        p.prev_field();
+        assert_eq!(p.field, ProviderField::BaseUrl);
+        p.field = ProviderField::Models;
+        p.next_field();
+        assert_eq!(p.field, ProviderField::Name);
+        p.prev_field();
+        assert_eq!(p.field, ProviderField::Models);
+    }
+
+    #[test]
+    fn provider_prompt_validates_base_url() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut p = super::ProviderPrompt::new();
+            assert!(p.save().is_err(), "empty name rejected");
+            p.name = "myprovider".to_string();
+            assert!(p.save().is_err(), "empty base url rejected");
+            p.base_url = "not-a-url".to_string();
+            assert!(p.save().is_err(), "scheme required");
+            p.base_url = "https://my-provider.example/v1".to_string();
+            assert!(p.save().is_ok(), "valid https provider saved");
+        });
+    }
+
+    #[test]
+    fn provider_prompt_save_writes_global_config() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut p = super::ProviderPrompt::new();
+            p.name = "myprovider".to_string();
+            p.base_url = "https://my-provider.example/v1".to_string();
+            p.api_key = "sk-test-123".to_string();
+            p.models = "gpt-4o gpt-4o-mini".to_string();
+            assert!(p.save().is_ok());
+
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            let cfg = configs.get("myprovider").expect("provider written");
+            assert_eq!(cfg.base_url.as_deref(), Some("https://my-provider.example/v1"));
+            assert_eq!(cfg.api_key.as_deref(), Some("sk-test-123"));
+            assert_eq!(cfg.models, vec!["gpt-4o", "gpt-4o-mini"]);
+        });
+    }
+
+    #[test]
+    fn provider_prompt_save_and_cancel_via_keys() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            app.provider_prompt = Some(super::ProviderPrompt::new());
+
+            // Type name, advance, type base url, advance to models (skip key).
+            for ch in "myprovider".chars() {
+                super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+            for ch in "https://my.example/v1".chars() {
+                super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            // Advance past the API-key field to models.
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+            for ch in "model-a".chars() {
+                super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Enter), false);
+
+            // Enter closed the dock and wrote the global config.
+            assert!(app.provider_prompt.is_none());
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            let cfg = configs.get("myprovider").expect("provider written");
+            assert_eq!(cfg.base_url.as_deref(), Some("https://my.example/v1"));
+            assert_eq!(cfg.models, vec!["model-a"]);
+            assert!(transcript_text(&app).contains("added provider 'myprovider'"));
+
+            // Cancel leaves the store untouched.
+            app.provider_prompt = Some(super::ProviderPrompt::new());
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Esc), false);
+            assert!(app.provider_prompt.is_none());
+        });
+    }
+
+    /// `k`/`j` are ordinary characters in text fields (API keys start with
+    /// `sk-...`), so they must be typed, not steered with vim-style keys.
+    #[test]
+    fn provider_prompt_types_k_and_j_into_fields() {
+        let mut app = test_app();
+        app.provider_prompt = Some(super::ProviderPrompt::new());
+
+        // Type a name containing both letters, then an API key shaped like a
+        // real secret. Neither may move the active field.
+        for ch in "kitty-jet".chars() {
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+        super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+        assert_eq!(app.provider_prompt.as_ref().unwrap().field, ProviderField::ApiKey);
+        for ch in "sk-ant-k3y-j".chars() {
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+
+        let prompt = app.provider_prompt.as_ref().expect("still open");
+        assert_eq!(prompt.field, ProviderField::ApiKey, "typing k must not move up");
+        assert_eq!(prompt.name, "kitty-jet");
+        assert_eq!(prompt.api_key, "sk-ant-k3y-j");
+    }
+
+    /// Editing a provider: an untouched api-key field keeps the stored key on
+    /// save, so a user who opens a provider and saves without touching the key
+    /// must never silently lose or replace it.
+    #[test]
+    fn provider_edit_untouched_key_keeps_stored_key() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "p",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("sk-old".into()),
+                    base_url: Some("https://api.example/v1".into()),
+                    models: Some(vec!["m1".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+            let entry = crate::core::agent::global_config::load_global_config()
+                .unwrap()
+                .remove("p")
+                .unwrap();
+            let mut app = test_app();
+            app.provider_prompt = Some(super::ProviderPrompt::from_entry(&entry));
+
+            // Add a model so the save `models` value changes, proving the save
+            // ran; the key field is never touched.
+            app.provider_prompt.as_mut().unwrap().models = "m1 m2".to_string();
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Enter), false);
+
+            assert!(app.provider_prompt.is_none(), "edit saved");
+            let cfg = crate::core::agent::global_config::load_global_config()
+                .unwrap()
+                .get("p")
+                .cloned()
+                .unwrap();
+            assert_eq!(cfg.api_key.as_deref(), Some("sk-old"), "stored key kept");
+        });
+    }
+
+    /// Editing a provider: typing in the api-key field must replace the stored
+    /// key on save, and emptying it must clear the stored key (a local
+    /// endpoint that dropped auth).
+    #[test]
+    fn provider_edit_touched_key_replaces_or_clears() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let fresh = || {
+                crate::core::agent::global_config::set_provider(
+                    "p",
+                    crate::core::agent::global_config::ProviderUpdate {
+                        api_key: Some("sk-old".into()),
+                        base_url: Some("https://api.example/v1".into()),
+                        models: Some(vec!["m1".into()]),
+                        api_type: None,
+                    },
+                )
+                .unwrap();
+                let entry = crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .remove("p")
+                    .unwrap();
+                Some(super::ProviderPrompt::from_entry(&entry))
+            };
+
+            let stored_key = || {
+                crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .get("p")
+                    .and_then(|c| c.api_key.clone())
+            };
+
+            let mut app = test_app();
+            app.provider_prompt = fresh();
+            // Type a new key: it replaces the stored one on save.
+            app.provider_prompt.as_mut().unwrap().field = ProviderField::ApiKey;
+            for ch in "sk-new-key".chars() {
+                super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Enter), false);
+            assert!(app.provider_prompt.is_none());
+            assert_eq!(stored_key().as_deref(), Some("sk-new-key"), "typed key replaces");
+
+            // Empty the key field: the stored key is cleared.
+            app.provider_prompt = fresh();
+            app.provider_prompt.as_mut().unwrap().field = ProviderField::ApiKey;
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Backspace), false);
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Enter), false);
+            assert!(app.provider_prompt.is_none());
+            assert_eq!(stored_key(), None, "emptied key clears the stored one");
+        });
+    }
+
+    /// The masked key placeholder must not pretend a stored key is present: an
+    /// untouched edit shows `(unchanged)`, whereas typing a replacement shows
+    /// mask characters.
+    #[test]
+    fn provider_edit_masked_key_renders_unchanged_until_touched() {
+        let mut p = super::ProviderPrompt {
+            editing: Some("p".into()),
+            field: ProviderField::BaseUrl,
+            name: "p".into(),
+            base_url: String::new(),
+            api_key: String::new(),
+            key_touched: false,
+            models: String::new(),
+            error: None,
+        };
+        assert_eq!(p.masked_key(), "(unchanged)", "untouched edit shows unchanged");
+        p.key_touched = true;
+        p.api_key = "sk-abc".to_string();
+        assert_eq!(p.masked_key(), "******", "touched key masks its length");
+    }
+
+    /// A bracketed paste while the provider wizard is open must land in the
+    /// active field, not the chat composer (where a pasted API key would echo).
+    #[test]
+    fn provider_prompt_paste_routes_to_active_field() {
+        let mut app = test_app();
+        app.provider_prompt = Some(super::ProviderPrompt::new());
+
+        // Paste into the name field; outer whitespace is trimmed.
+        route_paste_event(&mut app, Event::Paste(" my-provider ".into()));
+        assert_eq!(
+            app.provider_prompt.as_ref().unwrap().name,
+            "my-provider",
+            "outer whitespace is trimmed"
+        );
+
+        // Advance to the API key field and paste a key shaped like a real one.
+        super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+        super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+        assert_eq!(app.provider_prompt.as_ref().unwrap().field, ProviderField::ApiKey);
+        route_paste_event(&mut app, Event::Paste("sk-ant-pasted-key".into()));
+        assert_eq!(
+            app.provider_prompt.as_ref().unwrap().api_key,
+            "sk-ant-pasted-key"
+        );
+
+        assert!(app.input.is_empty(), "paste leaked into chat composer");
+    }
+
+    /// A paste while the MCP wizard is open lands in the active text field,
+    /// is ignored on a toggle field, and never leaks to the chat composer.
+    #[test]
+    fn mcp_prompt_paste_routes_to_active_text_field() {
+        let mut app = test_app();
+        app.mcp_prompt = Some(McpPrompt {
+            editing: None,
+            field: McpField::Name,
+            name: String::new(),
+            transport: "http".to_string(),
+            command: String::new(),
+            args: String::new(),
+            env: String::new(),
+            url: String::new(),
+            headers: String::new(),
+            active: false,
+            error: None,
+        });
+
+        // Name field: paste a name, trimmed of outer whitespace.
+        route_paste_event(&mut app, Event::Paste(" my-server ".into()));
+        assert_eq!(app.mcp_prompt.as_ref().unwrap().name, "my-server");
+
+        // Paste into the Url field.
+        app.mcp_prompt.as_mut().unwrap().field = McpField::Url;
+        route_paste_event(&mut app, Event::Paste("https://jk.example/mcp".into()));
+        assert_eq!(
+            app.mcp_prompt.as_ref().unwrap().url,
+            "https://jk.example/mcp"
+        );
+
+        // A paste on a toggle field is ignored, not typed or leaked.
+        app.mcp_prompt.as_mut().unwrap().field = McpField::Transport;
+        let transport_before = app.mcp_prompt.as_ref().unwrap().transport.clone();
+        route_paste_event(&mut app, Event::Paste("stdio".into()));
+        assert_eq!(
+            app.mcp_prompt.as_ref().unwrap().transport,
+            transport_before,
+            "pasting on a toggle field must not change it"
+        );
+
+        assert!(app.input.is_empty(), "paste leaked into chat composer");
+    }
+
+    /// A paste while a settings edit dock is open lands in its field, not the
+    /// chat composer.
+    #[test]
+    fn settings_prompt_paste_routes_to_field() {
+        let mut app = test_app();
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "max_parallel_subagents")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+
+        route_paste_event(&mut app, Event::Paste(" 4 ".into()));
+        assert_eq!(app.settings_prompt.as_ref().unwrap().input, "4");
+        assert!(app.input.is_empty(), "paste leaked into chat composer");
+    }
+
+    #[test]
+    fn open_provider_settings_lists_configured_providers() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "myprovider",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("https://my.example/v1".into()),
+                    models: Some(vec!["m1".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let picker = app.picker.as_ref().expect("picker opened");
+            assert_eq!(picker.kind, PickerKind::ProviderSettings);
+            assert_eq!(picker.items.len(), 1);
+            assert_eq!(picker.items[0].value, "myprovider");
+            assert!(picker.items[0].label.contains("key set"));
+            assert!(picker.items[0].label.contains("1 model(s)"));
+        });
+    }
+
+    /// Deleting a provider is unrecoverable (the API key is lost), so a single
+    /// `d` must only arm a confirmation and a second `d` on the same row must be
+    /// required to actually remove it. Navigating away disarms.
+    #[test]
+    fn provider_delete_requires_two_d_presses() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "myprovider",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("https://my.example/v1".into()),
+                    models: Some(vec![]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            assert!(
+                crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .contains_key("myprovider")
+            );
+
+            // First `d` arms but must not delete.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            assert!(
+                crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .contains_key("myprovider"),
+                "first d must only arm, not delete"
+            );
+            assert!(
+                transcript_text(&app).contains("press d again to delete provider 'myprovider'"),
+                "note tells the user to confirm: {}",
+                transcript_text(&app)
+            );
+
+            // Second `d` on the same row confirms and removes it.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            assert!(
+                !crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .contains_key("myprovider"),
+                "second d confirms the delete"
+            );
+            assert!(app.picker.is_none(), "picker closes after delete");
+            assert!(transcript_text(&app).contains("removed provider 'myprovider'"));
+        });
+    }
+
+    /// Navigating away must disarm a pending delete so an unrelated keystroke
+    /// can never confirm an arm from a different row.
+    #[test]
+    fn provider_delete_arms_reset_on_navigation() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            for p in ["a", "b"] {
+                crate::core::agent::global_config::set_provider(
+                    p,
+                    crate::core::agent::global_config::ProviderUpdate {
+                        api_key: Some("k".into()),
+                        base_url: Some("https://my.example/v1".into()),
+                        models: Some(vec![]),
+                        api_type: None,
+                    },
+                )
+                .unwrap();
+            }
+
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let p = app.picker.as_ref().expect("picker");
+            assert_eq!(p.items.len(), 2);
+            let idx_a = p.items.iter().position(|i| i.value == "a").unwrap();
+            let idx_b = p.items.iter().position(|i| i.value == "b").unwrap();
+            app.picker.as_mut().unwrap().selected = idx_a;
+            let rt = tokio::runtime::Runtime::new().unwrap();
+
+            // Arm on `a`.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            assert!(app.picker.as_ref().unwrap().armed_delete == Some(idx_a));
+
+            // Move down to `b` (disarms), then press `d`: this must arm `b`,
+            // not delete `a`.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            assert!(configs.contains_key("a"), "a must still exist, only armed on b");
+            assert!(configs.contains_key("b"));
+            assert!(app.picker.as_ref().unwrap().armed_delete == Some(idx_b));
+        });
+    }
+
+    /// The watermark row (no providers configured) must be inert: `d` on it
+    /// must not arm/delete an empty-named entry, and Enter must not open a
+    /// wizard for it.
+    #[test]
+    fn provider_picker_empty_watermark_is_inert() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let picker = app.picker.as_ref().expect("picker opened");
+            assert_eq!(picker.items.len(), 1);
+            assert!(picker.items[0].value.is_empty(), "watermark row has no value");
+            let rt = tokio::runtime::Runtime::new().unwrap();
+
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            assert!(
+                app.picker.as_ref().unwrap().armed_delete.is_none(),
+                "no arm on watermark"
+            );
+            assert!(
+                !crate::core::agent::global_config::load_global_config().unwrap().contains_key(""),
+                "d on the watermark must not delete an empty-named entry"
+            );
+
+            rt.block_on(async {
+                press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+            });
+            assert!(app.provider_prompt.is_none(), "Enter on the watermark opens no wizard");
+        });
+    }
+
+    /// Editing a provider must keep its name read-only so the save writes back
+    /// under the original key: renaming would orphan the old entry and lose the
+    /// API key. The existing key and models must be preserved on save.
+    #[test]
+    fn provider_edit_preserves_name_key_and_models() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "myprovider",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("sk-secret".into()),
+                    base_url: Some("https://my.example/v1".into()),
+                    models: Some(vec!["m1".into(), "m2".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            // Enter opens the edit wizard prefilled from the row.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+            });
+            let prompt = app.provider_prompt.as_ref().expect("edit wizard opened");
+            assert_eq!(prompt.name, "myprovider");
+            assert!(prompt.editing.is_some());
+
+            // The name field is read-only while editing; typing must not change it.
+            assert_eq!(prompt.field, ProviderField::BaseUrl, "edit starts on base url");
+            app.provider_prompt.as_mut().unwrap().field = ProviderField::Name;
+            for ch in "RENAMED".chars() {
+                super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            assert_eq!(
+                app.provider_prompt.as_ref().unwrap().name,
+                "myprovider",
+                "name is read-only while editing"
+            );
+
+            // Back to an editable field; change base_url and save.
+            app.provider_prompt.as_mut().unwrap().field = ProviderField::BaseUrl;
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Backspace), false);
+            rt.block_on(async {
+                press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+            });
+
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            assert_eq!(configs.len(), 1, "no orphaned entry");
+            let cfg = configs.get("myprovider").expect("still under original key");
+            assert_eq!(cfg.api_key.as_deref(), Some("sk-secret"), "key preserved");
+            assert_eq!(cfg.models, vec!["m1", "m2"], "models preserved");
+        });
+    }
+
+    /// Editing navigation skips the read-only name field: from BaseUrl it
+    /// cycles BaseUrl -> ApiKey -> Models -> BaseUrl.
+    #[test]
+    fn provider_edit_navigation_skips_name() {
+        let mut p = super::ProviderPrompt {
+            editing: Some("p".into()),
+            field: ProviderField::BaseUrl,
+            name: "p".into(),
+            base_url: String::new(),
+            api_key: String::new(),
+            key_touched: false,
+            models: String::new(),
+            error: None,
+        };
+        p.next_field();
+        assert_eq!(p.field, ProviderField::ApiKey);
+        p.next_field();
+        assert_eq!(p.field, ProviderField::Models);
+        p.next_field();
+        assert_eq!(p.field, ProviderField::BaseUrl);
+        p.prev_field();
+        assert_eq!(p.field, ProviderField::Models);
+        p.prev_field();
+        assert_eq!(p.field, ProviderField::ApiKey);
+    }
+
+    /// The base URL is validated before the bearer key is ever sent: only
+    /// https (or http to a loopback host) is accepted.
+    #[test]
+    fn provider_prompt_rejects_plaintext_remote_base_url() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut p = super::ProviderPrompt::new();
+            p.name = "p".to_string();
+            p.base_url = "http://remote.example/v1".to_string();
+            assert!(p.save().is_err(), "plaintext remote rejected");
+            p.base_url = "http://127.0.0.1:8080/v1".to_string();
+            assert!(p.save().is_ok(), "loopback http allowed");
+            p.base_url = "https://remote.example/v1".to_string();
+            assert!(p.save().is_ok(), "https allowed");
+        });
+    }
+
+    /// A provider added through the wizard with no model list would otherwise
+    /// vanish from `/model`, since the picker only offers explicitly configured
+    /// ids. Opening the picker must fetch that provider's `GET /models` and
+    /// populate the list so a bare provider is usable immediately.
+    #[test]
+    fn model_picker_autofetches_models_for_empty_provider() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            // A local `/models` endpoint returning one id.
+            let body = serde_json::json!({"object": "list", "data": [{"id": "discovered-model"}]})
+                .to_string();
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap();
+            std::thread::spawn(move || {
+                for stream in listener.incoming().take(1) {
+                    let Ok(mut stream) = stream else { continue };
+                    let mut buf = [0u8; 4096];
+                    let _ = std::io::Read::read(&mut stream, &mut buf);
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = std::io::Write::write_all(&mut stream, resp.as_bytes());
+                }
+            });
+
+            crate::core::agent::global_config::set_provider(
+                "myprovider",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec![]), // no models configured
+                    api_type: None,
+                },
+            )
+            .expect("seed provider");
+
+            let mut app = test_app();
+            // `with_temp_home` is sync; drive the async command on a dedicated runtime.
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(super::run_command(&mut app, "model"));
+
+            let picker = app.picker.as_ref().expect("model picker opened");
+            assert_eq!(picker.kind, PickerKind::SelectModel);
+            assert!(
+                picker.items.iter().any(|i| i.label.contains("discovered-model")),
+                "discovered model must be offered: {:?}",
+                picker.items.iter().map(|i| &i.label).collect::<Vec<_>>()
+            );
+        });
+    }
+
+    /// A reachable-looking but dead provider (empty model list, unreachable
+    /// endpoint) must not break or block the `/model` picker: the fetch is
+    /// skipped with a note, and the picker still opens with what is reachable.
+    #[test]
+    fn model_picker_survives_unreachable_provider() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            // A dead endpoint fills the empty-model-list probe slot and fails
+            // fast on 127.0.0.1:9 (nothing listens there).
+            crate::core::agent::global_config::set_provider(
+                "dead",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("http://127.0.0.1:9/v1".into()),
+                    models: Some(vec![]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let mut app = test_app();
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(super::run_command(&mut app, "model"));
+
+            // The picker opened (no reachable pairs => the note path fires,
+            // but there is no panic, no hang, and the provider stays put).
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            assert!(configs.contains_key("dead"), "provider not removed by a failed probe");
+
+            // Opening once more must not re-contact the dead endpoint: the
+            // session short-circuit means the second open is near-instant.
+            rt.block_on(super::run_command(&mut app, "model"));
+        });
     }
 
     #[test]

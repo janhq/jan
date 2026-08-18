@@ -147,7 +147,7 @@ fn snippet(body: &str) -> String {
 /// the "N models" report are stable across calls. Accepts the OpenAI shape
 /// (`{"data":[{"id":...}]}`) plus the bare-array and array-of-strings variants
 /// smaller gateways serve.
-fn parse_models(value: &serde_json::Value) -> Vec<String> {
+pub(crate) fn parse_models(value: &serde_json::Value) -> Vec<String> {
     let entries = value
         .get("data")
         .and_then(|d| d.as_array())
