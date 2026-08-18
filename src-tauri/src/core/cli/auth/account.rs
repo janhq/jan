@@ -604,10 +604,28 @@ async fn complete_code_login(
         match codex_chatgpt_account_id(&token.access_token) {
             Ok(account_id) => {
                 debug_log(&format!("codex: verified chatgpt_account_id {account_id}"));
-                (
-                    vec!["gpt-5-chat-latest".to_string()],
-                    Some("openai-responses".to_string()),
+                // Fetch the account's real model roster from the ChatGPT backend
+                // (a Codex account token is a ChatGPT credential, not an OpenAI
+                // API key, so `api.openai.com/v1/models` rejects it). Fall back
+                // to a single default model so a transient roster failure never
+                // hard-fails an otherwise valid login.
+                let models = crate::core::cli::auth::providers::discover_codex_models(
+                    &token.access_token,
+                    &definition.default_base_url,
                 )
+                .await
+                .map(|mut m| {
+                    if m.is_empty() {
+                        vec!["gpt-5-chat-latest".to_string()]
+                    } else {
+                        m
+                    }
+                })
+                .unwrap_or_else(|error| {
+                    debug_log(&format!("codex: model discovery failed: {error:?}"));
+                    vec!["gpt-5-chat-latest".to_string()]
+                });
+                (models, Some("openai-responses".to_string()))
             }
             Err(error) => {
                 debug_log(&format!("codex: account validation failed: {error}"));
@@ -1195,17 +1213,23 @@ mod tests {
     fn codex_login_persists_token_and_responses_config() {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
-            // Codex does not call /v1/models - it verifies the account via the
-            // JWT chatgpt_account_id claim and configures the Responses API.
-            let (models_base_url, request) = account_models_server("200 OK", "{}");
+            // Codex verifies the account via the JWT chatgpt_account_id claim
+            // and fetches its real model roster from the (ChatGPT-backed)
+            // `/models` endpoint served here by the mock, then configures the
+            // Responses API with that roster.
+            let roster = r#"{"models":[{"slug":"gpt-5.5","display_name":"GPT-5.5"},{"slug":"gpt-5.4","display_name":"GPT-5.4"}]}"#;
+            let (models_base_url, request) = account_models_server("200 OK", roster);
 
             assert_eq!(
                 complete_account_for_test(models_base_url.clone()).unwrap(),
                 AccountProvider::Codex
             );
 
-            // No /v1/models discovery should have happened.
-            assert!(request.try_recv().is_err(), "Codex must not call /v1/models");
+            // Codex does perform model discovery (against the Codex backend).
+            assert!(
+                request.try_recv().is_ok(),
+                "Codex must call the backend /models endpoint"
+            );
 
             let token = OAuthToken {
                 access_token: codex_jwt("account-321").into(),
@@ -1227,6 +1251,28 @@ mod tests {
             assert!(cfg.api_key.is_none());
             assert!(cfg.api_keys.is_empty());
             assert_eq!(cfg.base_url.as_deref(), Some(models_base_url.as_str()));
+            assert_eq!(
+                cfg.models,
+                vec!["gpt-5.4".to_string(), "gpt-5.5".to_string()]
+            );
+            assert_eq!(cfg.api_type.as_deref(), Some("openai-responses"));
+        });
+    }
+
+    #[test]
+    fn codex_login_falls_back_to_default_when_roster_unavailable() {
+        let _tmp = TempSecrets::new();
+        with_temp_home(|_| {
+            // A failed/empty roster must not hard-fail an otherwise valid
+            // login; the account persists with a single usable default model.
+            let (models_base_url, _request) = account_models_server("200 OK", "{}");
+
+            assert_eq!(
+                complete_account_for_test(models_base_url.clone()).unwrap(),
+                AccountProvider::Codex
+            );
+
+            let cfg = load_global_config().unwrap().get("openai").unwrap().clone();
             assert_eq!(cfg.models, vec!["gpt-5-chat-latest".to_string()]);
             assert_eq!(cfg.api_type.as_deref(), Some("openai-responses"));
         });
@@ -1236,15 +1282,19 @@ mod tests {
     fn manual_codex_login_persists_token_and_responses_config() {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
-            let (models_base_url, request) = account_models_server("200 OK", "{}");
+            let roster = r#"{"models":[{"slug":"gpt-5.5","display_name":"GPT-5.5"},{"slug":"gpt-5.4","display_name":"GPT-5.4"}]}"#;
+            let (models_base_url, request) = account_models_server("200 OK", roster);
 
             assert_eq!(
                 complete_account_manually_for_test(models_base_url.clone()).unwrap(),
                 AccountProvider::Codex
             );
 
-            // No /v1/models discovery should have happened for a Codex account.
-            assert!(request.try_recv().is_err(), "Codex must not call /v1/models");
+            // Codex does perform model discovery (against the Codex backend).
+            assert!(
+                request.try_recv().is_ok(),
+                "Codex must call the backend /models endpoint"
+            );
 
             let token = OAuthToken {
                 access_token: codex_jwt("account-321").into(),
@@ -1266,10 +1316,14 @@ mod tests {
             assert!(cfg.api_key.is_none());
             assert!(cfg.api_keys.is_empty());
             assert_eq!(cfg.base_url.as_deref(), Some(models_base_url.as_str()));
-            assert_eq!(cfg.models, vec!["gpt-5-chat-latest".to_string()]);
+            assert_eq!(
+                cfg.models,
+                vec!["gpt-5.4".to_string(), "gpt-5.5".to_string()]
+            );
             assert_eq!(cfg.api_type.as_deref(), Some("openai-responses"));
         });
     }
+
 
     #[test]
     fn account_model_discovery_unauthorized_leaves_no_account_state() {

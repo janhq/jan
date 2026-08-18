@@ -111,6 +111,74 @@ pub(crate) async fn discover_models(
     Ok(parse_models(&parsed))
 }
 
+/// Discover the models available to a Codex (ChatGPT account) OAuth token.
+///
+/// A Codex account token is a ChatGPT account credential, not an OpenAI API
+/// key, so `api.openai.com/v1/models` rejects it with 401. The models are
+/// instead served by ChatGPT's own backend at `chatgpt.com/backend-api/models`,
+/// which the Codex provider (OAuth/accounts) hits with the same token. The
+/// response shape differs from OpenAI's (`{"models":[{slug,display_name}]}`
+/// instead of `{"data":[...]}`), so it is parsed separately. `base_url` is the
+/// ChatGPT backend origin (injectable in tests).
+pub(crate) async fn discover_codex_models(
+    credential: &str,
+    base_url: &str,
+) -> Result<Vec<String>, LoginError> {
+    // The persisted Codex default_base_url points at the OpenAI API-key
+    // surface (`api.openai.com/v1`), which rejects an account token. Discovery
+    // must target the ChatGPT backend instead; a test override (the mock
+    // model server) is used verbatim.
+    let backend = if base_url.trim_end_matches('/').ends_with("api.openai.com/v1") {
+        "https://chatgpt.com/backend-api"
+    } else {
+        base_url
+    };
+    let url = format!("{}/models", backend.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(VERIFY_TIMEOUT)
+        .build()
+        .map_err(|e| LoginError::Unavailable(format!("could not build an HTTP client: {e}")))?;
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {credential}"))
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| {
+            LoginError::Unavailable(format!("could not reach the ChatGPT backend: {e}"))
+        })?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(match status.as_u16() {
+            401 | 403 => LoginError::Unauthorized,
+            429 => LoginError::RateLimited,
+            500..=599 => LoginError::Unavailable(format!(
+                "the ChatGPT backend is unavailable right now (HTTP {status})."
+            )),
+            _ => LoginError::Unavailable(format!(
+                "the ChatGPT backend returned HTTP {status}."
+            )),
+        });
+    }
+    let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|e| {
+        LoginError::Unavailable(format!("the ChatGPT backend returned a response we could not read: {e}"))
+    })?;
+    let mut ids: Vec<String> = parsed
+        .get("models")
+        .and_then(|m| m.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.get("slug").and_then(|s| s.as_str()))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+    ids.sort();
+    ids.dedup();
+    Ok(ids)
+}
+
 /// Human-readable reason a verification request was rejected. Never includes
 /// the key.
 fn failure_for(definition: &ProviderDefinition, status: u16, _body: &str) -> LoginError {
