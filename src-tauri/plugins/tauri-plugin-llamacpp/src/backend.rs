@@ -231,7 +231,25 @@ pub fn determine_supported_backends(
             }
         }
         "windows-aarch64" | "windows-arm64" => {
+            // Windows-on-ARM64 still pairs with discrete NVIDIA/AMD GPUs, so the
+            // GPU backends are offered alongside the CPU build, using the same
+            // `-arm64` suffix as `win-arm64` to which the CUDA/ROCm runtimes map.
             supported_backends.push("win-arm64".to_string());
+            if features.cuda11 {
+                supported_backends.push("win-cuda-11-common_cpus-arm64".to_string());
+            }
+            if features.cuda12 {
+                supported_backends.push("win-cuda-12-common_cpus-arm64".to_string());
+            }
+            if features.cuda13 {
+                supported_backends.push("win-cuda-13-common_cpus-arm64".to_string());
+            }
+            if features.vulkan {
+                supported_backends.push("win-vulkan-common_cpus-arm64".to_string());
+            }
+            if features.hip {
+                supported_backends.push("win-hip-common_cpus-arm64".to_string());
+            }
         }
         "linux-x86_64" | "linux-x86" => {
             supported_backends.push("linux-common_cpus-x64".to_string());
@@ -1649,6 +1667,20 @@ mod tests {
             map_old_backend_to_new("linux-arm64".to_string()),
             "linux-arm64" // Does not match specific migration patterns, returns original
         );
+        // The arm64-suffixed GPU backends are already the canonical id and must
+        // map back to themselves (no accidental x64 rewrite).
+        assert_eq!(
+            map_old_backend_to_new("win-cuda-12-common_cpus-arm64".to_string()),
+            "win-cuda-12-common_cpus-arm64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("win-vulkan-common_cpus-arm64".to_string()),
+            "win-vulkan-common_cpus-arm64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("win-hip-common_cpus-arm64".to_string()),
+            "win-hip-common_cpus-arm64"
+        );
     }
 
     // --- Tests for compare_versions (Private helper) ---
@@ -1768,6 +1800,51 @@ mod tests {
         assert!(result.contains(&"win-vulkan-common_cpus-x64".to_string()));
         assert!(result.contains(&"win-hip-common_cpus-x64".to_string()));
         assert!(!result.contains(&"win-cuda-13-common_cpus-x64".to_string()));
+    }
+
+    #[test]
+    fn test_determine_supported_backends_windows_arm_with_gpu() {
+        let features = SystemFeatures {
+            cuda11: true,
+            cuda12: true,
+            cuda13: true,
+            vulkan: true,
+            hip: true,
+        };
+
+        let result = determine_supported_backends(
+            "windows".to_string(),
+            "arm64".to_string(),
+            features,
+        )
+        .unwrap();
+
+        assert!(result.contains(&"win-arm64".to_string()));
+        assert!(result.contains(&"win-cuda-11-common_cpus-arm64".to_string()));
+        assert!(result.contains(&"win-cuda-12-common_cpus-arm64".to_string()));
+        assert!(result.contains(&"win-cuda-13-common_cpus-arm64".to_string()));
+        assert!(result.contains(&"win-vulkan-common_cpus-arm64".to_string()));
+        assert!(result.contains(&"win-hip-common_cpus-arm64".to_string()));
+    }
+
+    #[test]
+    fn test_determine_supported_backends_windows_arm_cpu_only() {
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: false,
+            hip: false,
+        };
+
+        let result = determine_supported_backends(
+            "windows".to_string(),
+            "aarch64".to_string(),
+            features,
+        )
+        .unwrap();
+
+        assert_eq!(result, vec!["win-arm64".to_string()]);
     }
 
     #[test]
