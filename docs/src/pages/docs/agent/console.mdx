@@ -21,7 +21,7 @@ jan --task "..."    # with a first message already sent
 ## The screen
 
 ```
- jan agent   tokamak-1-preview   10:40:49   turn 1/400   ctx 6K/128K   30.1/s   [ready]
+ jan agent   tokamak-1-preview  effort medium   10:40:49   turn 1/400   ctx 6K/128K   30.1/s   [ready]
 ─────────────────────────────────────────────────────────────────────────────────────
  MCP ready: sequential-thinking, serper
 
@@ -41,7 +41,7 @@ jan --task "..."    # with a first message already sent
 
 | Region | What it shows |
 | --- | --- |
-| Header | Model, clock, turn count, context usage, throughput, state |
+| Header | Model, reasoning effort, clock, turn count, context usage, throughput, state |
 | Transcript | The conversation, with tool calls folded into summary rows |
 | Receipt | Per turn: context sent, tokens produced, elapsed, rate |
 | Input | Where you type |
