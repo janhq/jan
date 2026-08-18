@@ -20,6 +20,7 @@ import {
   type CodeTurn,
   type CodeMessage,
   type SubagentRun,
+  type TodoList,
 } from '@/hooks/useCodeSessions'
 import {
   useCodeRun,
@@ -151,8 +152,27 @@ const SLASH_COMMANDS = [
   { name: '/compact', descKey: 'common:cmdCompact', mode: 'run' },
   { name: '/goal', descKey: 'common:cmdGoal', mode: 'args' },
   { name: '/models', descKey: 'common:cmdModels', mode: 'args' },
+  { name: '/init', descKey: 'common:cmdInit', mode: 'run' },
+  { name: '/plan', descKey: 'common:cmdPlan', mode: 'args' },
+  { name: '/todo', descKey: 'common:cmdTodo', mode: 'args' },
+  { name: '/threads', descKey: 'common:cmdThreads', mode: 'run' },
+  { name: '/resume', descKey: 'common:cmdResume', mode: 'args' },
 ] as const
 
+// Canned onboarding prompt for `/init`, mirroring the TUI's (tui.rs). Sent as
+// the user turn so the agent runs it with the normal toolset and permission
+// gate; the web transcript shows the turn like any other user message.
+const INIT_PROMPT = `Onboard yourself to this project so future sessions start informed.
+
+1. Study the project first. Read the README and any contributor docs, map the directory layout, and find the real build, test, lint, and type-check commands (from the manifests and CI config, not from guesswork). Note the conventions the code actually follows.
+
+2. Write JAN.md in the project root. It is the only instructions file loaded into your system prompt, and it is loaded every session, so it must earn its tokens: the commands to build/test/lint, the architecture a newcomer cannot infer from the tree, and the conventions worth enforcing. Skip anything obvious from a directory listing, and do not pad it. If JAN.md already exists, read it and correct what has drifted instead of rewriting it wholesale.
+
+3. Write skills with skill_write for the project's repeatable procedures - releasing, running migrations, adding a module, debugging a subsystem - one skill per procedure, only where a real multi-step recipe exists. Do not invent skills to fill space.
+
+4. Record durable project facts with memory_write: decisions, constraints, and gotchas that are true beyond this session and not already stated in the code.
+
+Then report what you wrote and why, briefly.`
 // A row in the slash menu — commands and model options share one shape so the
 // keyboard navigation works uniformly across both.
 type MenuItem = {
@@ -494,6 +514,171 @@ function CodePage() {
         submitTurn(condition, currentId).catch((err) => {
           console.error('Failed to start goal turn:', err)
         })
+        break
+      }
+      case '/init': {
+        if (running) {
+          toast.error(t('common:cmdBusy'))
+          break
+        }
+        if (!current?.folder) {
+          toast.error(t('common:cmdNeedFolder'))
+          break
+        }
+        if (!selectedModel?.id) {
+          toast.error(t('common:cmdNeedModel'))
+          break
+        }
+        toast.success(t('common:cmdInitRunning'))
+        const sid = currentId ?? ensureCurrentSession()
+        submitTurn(INIT_PROMPT, sid).catch((err) => {
+          console.error('Failed to start init:', err)
+        })
+        break
+      }
+      case '/plan': {
+        const sid = currentId ?? ensureCurrentSession()
+        const session = useCodeSessions
+          .getState()
+          .sessions.find((s) => s.id === sid)
+        const curMode = session?.mode ?? DEFAULT_CODE_RUN_MODE
+        const p = arg.trim()
+        if (p === 'exit') {
+          if (curMode === 'plan') {
+            useCodeSessions.getState().setMode(sid, 'normal')
+            toast(t('common:cmdPlanOff'))
+          } else {
+            toast(t('common:cmdPlanNotIn'))
+          }
+          break
+        }
+        if (curMode === 'plan') {
+          if (!p) {
+            toast(t('common:cmdPlanAlready'))
+          } else {
+            toast.success(t('common:cmdPlanOn'))
+            submitTurn(p, sid).catch((err) => {
+              console.error('Failed to submit plan turn:', err)
+            })
+          }
+          break
+        }
+        // Enter plan mode, optionally seeding it with a message.
+        useCodeSessions.getState().setMode(sid, 'plan')
+        toast.success(t('common:cmdPlanOn'))
+        if (p) {
+          submitTurn(p, sid).catch((err) => {
+            console.error('Failed to submit plan turn:', err)
+          })
+        }
+        break
+      }
+      case '/todo': {
+        const sid = currentId ?? ensureCurrentSession()
+        const session = useCodeSessions
+          .getState()
+          .sessions.find((s) => s.id === sid)
+        const todos: TodoList = session?.todos ?? { phases: [] }
+        const p = arg.trim()
+        if (!p) {
+          // Bare `/todo`: open the todo editor panel.
+          setActivePanel('todos')
+          break
+        }
+        if (p === 'clear') {
+          if (todos.phases.length === 0) {
+            toast(t('common:cmdTodoNone'))
+            break
+          }
+          useCodeSessions.getState().setTodos(sid, { phases: [] })
+          toast.success(t('common:cmdTodoCleared'))
+          break
+        }
+        const rest = p.startsWith('add') ? p.slice('add'.length).trim() : null
+        if (rest === null) {
+          toast(t('common:cmdTodoUsage'))
+          break
+        }
+        const [phase, text] = rest.includes('|')
+          ? (() => {
+              const i = rest.indexOf('|')
+              return [rest.slice(0, i).trim(), rest.slice(i + 1).trim()]
+            })()
+          : ['Tasks', rest]
+        if (!text) {
+          toast(t('common:cmdTodoUsage'))
+          break
+        }
+        const next: TodoList = {
+          phases: todos.phases.some((ph) => ph.name === phase)
+            ? todos.phases.map((ph) =>
+                ph.name === phase
+                  ? {
+                      ...ph,
+                      tasks: [...ph.tasks, { content: text, status: 'pending' }],
+                    }
+                  : ph
+              )
+            : [
+                ...todos.phases,
+                { name: phase, tasks: [{ content: text, status: 'pending' }] },
+              ],
+        }
+        useCodeSessions.getState().setTodos(sid, next)
+        toast.success(t('common:cmdTodoAdded', { phase }))
+        break
+      }
+      case '/threads': {
+        const sessions = useCodeSessions.getState().sessions
+        if (sessions.length === 0) {
+          toast(t('common:cmdThreadsEmpty'))
+          break
+        }
+        toast(t('common:cmdThreads'), {
+          description: sessions
+            .filter((s) => s.turns.length > 0 || s.history.length > 0)
+            .map(
+              (s, i) =>
+                `${i + 1}. ${s.title || 'untitled'} ${
+                  s.folder ? `(${s.folder.split(/[/\\]/).pop()})` : ''
+                }`
+            )
+            .join('\n'),
+        })
+        break
+      }
+      case '/resume': {
+        const sessions = useCodeSessions
+          .getState()
+          .sessions.filter((s) => s.turns.length > 0 || s.history.length > 0)
+        const p = arg.trim()
+        if (!p) {
+          if (sessions.length === 0) {
+            toast(t('common:cmdThreadsEmpty'))
+            break
+          }
+          // Bare `/resume`: list sessions in a toast with 1-based indices.
+          toast(t('common:cmdThreads'), {
+            description: sessions
+              .map(
+                (s, i) =>
+                  `${i + 1}. ${s.title || 'untitled'} - /resume ${i + 1}`
+              )
+              .join('\n'),
+          })
+          break
+        }
+        const idx = Number(p)
+        const target = Number.isInteger(idx)
+          ? sessions[idx - 1]
+          : sessions.find((s) => s.id === p) ??
+            sessions.find((s) => s.title === p)
+        if (!target) {
+          toast(t('common:cmdUnknown', { name: `/resume ${p}` }))
+          break
+        }
+        useCodeSessions.getState().selectSession(target.id)
+        toast.success(t('common:cmdResumed', { title: target.title || 'untitled' }))
         break
       }
       case '/models': {
