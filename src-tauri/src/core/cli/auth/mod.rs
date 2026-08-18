@@ -104,8 +104,8 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
             default_base_url: "https://opencode.ai/zen/v1".to_string(),
             transport: Transport::OpenAi,
             api_key: ApiKeyMetadata {
-                keys_url: "https://opencode.ai/docs",
-                hint: "see opencode.ai/docs for how to get a key",
+                keys_url: "https://opencode.ai/auth",
+                hint: "sign in at opencode.ai/auth to copy your OpenCode API key",
                 open_in_browser: true,
             },
             oauth: None,
