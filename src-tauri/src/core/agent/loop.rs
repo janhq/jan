@@ -20,9 +20,10 @@ use tauri_plugin_agent_tools::tools::gate::{DenyReason, PermissionDecision};
 use crate::core::agent::upstream::{
     collect_mcp_openai_tools, copy_optional_chat_params, execute_mcp_tool_calls,
     extract_choice_message, extract_tool_calls, load_assistant_config, parse_openai_messages,
-    repair_dangling_tool_calls, resolve_upstream_for_model, set_system_prompt,
-    stream_openai_chat_completions,
+    repair_dangling_tool_calls, resolve_api_type_for_model, resolve_upstream_for_model,
+    set_system_prompt, stream_openai_chat_completions,
 };
+use crate::core::server::converters::{converter_for, UpstreamConverter};
 #[cfg(not(feature = "cli"))]
 use crate::core::server::proxy::router_first_model;
 #[cfg(not(feature = "cli"))]
@@ -144,6 +145,11 @@ struct HttpModelInvoker {
     client: Client,
     upstream_url: String,
     api_keys: Vec<String>,
+    /// When the provider fronts a native (non-chat/completions) wire API
+    /// (Anthropic `/messages`, OpenAI `/responses`, Google `generateContent`),
+    /// this converter translates the request and decodes the upstream stream
+    /// back into chat shape. `None` keeps the verbatim chat/completions path.
+    converter: Option<Box<dyn UpstreamConverter>>,
 }
 
 #[async_trait]
@@ -153,16 +159,29 @@ impl ModelInvoker for HttpModelInvoker {
         request: &serde_json::Value,
         events: &mpsc::UnboundedSender<StreamEvent>,
     ) -> Result<serde_json::Value, String> {
-        stream_openai_chat_completions(
-            &self.client,
-            &self.upstream_url,
-            &self.api_keys,
-            request,
-            events,
-        )
-        .await
+        if let Some(converter) = &self.converter {
+            crate::core::agent::upstream::stream_converted_chat_completions(
+                &self.client,
+                &self.upstream_url,
+                &self.api_keys,
+                converter.as_ref(),
+                request,
+                events,
+            )
+            .await
+        } else {
+            stream_openai_chat_completions(
+                &self.client,
+                &self.upstream_url,
+                &self.api_keys,
+                request,
+                events,
+            )
+            .await
+        }
     }
 }
+
 
 struct McpToolInvoker {
     tool_to_server: HashMap<String, String>,
@@ -1485,6 +1504,9 @@ async fn orchestrate_inner(
         client: client.clone(),
         upstream_url,
         api_keys: session_api_keys,
+        converter: resolve_api_type_for_model(&model_id, provider_configs.clone())
+            .await
+            .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
     };
     let mcp_tools = McpToolInvoker {
         tool_to_server,
@@ -1695,6 +1717,9 @@ pub(crate) async fn compact_history(
         client: args.client.clone(),
         upstream_url,
         api_keys,
+        converter: resolve_api_type_for_model(model_id, args.provider_configs.clone())
+            .await
+            .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
     };
     Ok(crate::core::agent::compaction::compact_conversation(
         messages,
@@ -1729,6 +1754,9 @@ pub(crate) async fn evaluate_goal(
         client: args.client.clone(),
         upstream_url,
         api_keys,
+        converter: resolve_api_type_for_model(smol_model_id, args.provider_configs.clone())
+            .await
+            .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
     };
     crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
 }

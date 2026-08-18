@@ -2,7 +2,6 @@
 // CLI is a headless agent client with no local API server.
 #[cfg(not(feature = "cli"))]
 pub mod commands;
-#[cfg(not(feature = "cli"))]
 pub mod converters;
 pub mod provider_secrets;
 #[cfg(not(feature = "cli"))]

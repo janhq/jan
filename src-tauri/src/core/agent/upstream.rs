@@ -20,6 +20,7 @@ use crate::core::agent::events::StreamEvent;
 use crate::core::openai_schema::{
     http_status_indicates_api_key_retry, normalize_openai_tool_parameters_schema,
 };
+use crate::core::server::converters::UpstreamConverter;
 #[cfg(not(feature = "cli"))]
 use crate::core::server::proxy::router_upstream;
 #[cfg(not(feature = "cli"))]
@@ -294,10 +295,19 @@ pub(crate) async fn resolve_upstream_for_model(
             // engine loaded from persisted settings has none -- fall through to
             // the MLX session / llama-server router resolution below.
             if let Some(api_url) = provider_cfg.base_url.clone().filter(|u| !u.is_empty()) {
-                let api_keys = crate::core::cli::auth::account::access_token(&provider_cfg.provider)
-                    .await?
-                    .map(|token| vec![token])
-                    .unwrap_or_else(|| provider_cfg.bearer_key_chain());
+                // A registered account takes its OAuth access token (refreshed if
+                // needed) ahead of any stored API key. Account auth is a `cli`
+                // concern; the desktop resolves credentials through its own
+                // proxy path and falls back to the bearer key chain here.
+                #[cfg(feature = "cli")]
+                let api_keys = crate::core::cli::auth::account::access_token(
+                    &provider_cfg.provider,
+                )
+                .await?
+                .map(|token| vec![token])
+                .unwrap_or_else(|| provider_cfg.bearer_key_chain());
+                #[cfg(not(feature = "cli"))]
+                let api_keys = provider_cfg.bearer_key_chain();
                 let url = format!("{}{}", api_url, destination_path);
                 return Ok((url, api_keys));
             }
@@ -322,6 +332,54 @@ pub(crate) async fn resolve_upstream_for_model(
     }
 
     Err(format!("No upstream session found for model '{model_id}'"))
+}
+
+/// Resolve the wire API for `model_id`'s provider, mirroring the
+/// model-to-provider lookup in [`resolve_upstream_for_model`]. Returns the
+/// provider's `api_type` and whether its credential is an OAuth account token
+/// rather than an API key, when the model maps to a reachable HTTP provider
+/// that declares a non-default wire API. `None` otherwise (OpenAI
+/// chat/completions or a model with no provider entry).
+pub(crate) async fn resolve_api_type_for_model(
+    model_id: &str,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+) -> Option<(String, bool)> {
+    let pc = provider_configs.lock().await;
+    let offers = |config: &ProviderConfig| config.models.iter().any(|m| m == model_id);
+
+    // A converter is only meaningful for an HTTP provider (it needs a base_url
+    // to append the native path to), so prefer a reachable entry and otherwise
+    // fall back to the first model-claiming entry, exactly as resolution does.
+    #[cfg(feature = "cli")]
+    let first_match = pc
+        .iter()
+        .filter(|(_, config)| {
+            config.base_url.as_deref().is_some_and(|u| !u.is_empty()) && offers(config)
+        })
+        .min_by_key(|(name, _)| name.to_string())
+        .or_else(|| pc.iter().find(|(_, config)| offers(config)));
+    #[cfg(not(feature = "cli"))]
+    let first_match = pc.iter().find(|(_, config)| offers(config));
+
+    let provider_name = first_match
+        .map(|(_, config)| config.provider.clone())
+        .or_else(|| {
+            if let Some(sep_pos) = model_id.find('/') {
+                let potential_provider: &str = &model_id[..sep_pos];
+                if pc.contains_key(potential_provider) {
+                    return Some(potential_provider.to_string());
+                }
+            }
+            pc.get(model_id).map(|c| c.provider.clone())
+        });
+    let cfg = provider_name.and_then(|p| pc.get(&p).cloned());
+    drop(pc);
+
+    let api_type = cfg.as_ref().and_then(|c| c.api_type.clone())?;
+    let oauth = cfg
+        .map(|c| matches!(c.provider.as_str(), "openai" | "anthropic"))
+        .unwrap_or(false);
+    Some((api_type, oauth))
 }
 
 pub(crate) fn copy_optional_chat_params(
@@ -825,6 +883,178 @@ pub(crate) async fn stream_openai_chat_completions(
     }
 
     Err(last_err)
+}
+
+/// Streaming counterpart of [`stream_openai_chat_completions`] for providers
+/// that speak a native (non-chat/completions) wire API. Uses the provider's
+/// [`UpstreamConverter`] to rewrite the request body, point at the native path,
+/// and translate the upstream stream back into chat/completions SSE chunks,
+/// which are then fed through the same [`SseAccumulator::ingest_line`] decode
+/// as the OpenAI path so `StreamEvent`s (Token / ToolCallStarted /
+/// ToolCallArgsDelta) are emitted identically.
+///
+/// `upstream_url` is the resolved base + "/chat/completions" (see
+/// [`resolve_upstream_for_model`]); the base is recovered by stripping that
+/// suffix and the native path appended in its place.
+pub(crate) async fn stream_converted_chat_completions(
+    client: &Client,
+    upstream_url: &str,
+    api_keys: &[String],
+    converter: &dyn UpstreamConverter,
+    body: &serde_json::Value,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+) -> Result<serde_json::Value, String> {
+    // Base is upstream_url minus the trailing "/chat/completions". Recover it
+    // the same way the proxy does when it swaps the destination path.
+    let base = upstream_url
+        .strip_suffix("/chat/completions")
+        .unwrap_or(upstream_url)
+        .trim_end_matches('/');
+    let native_path = converter.upstream_path(body);
+    let native_url = format!("{base}{native_path}");
+
+    // Force streaming so the converter emits the SSE form and `upstream_path`
+    // (Google) selects the `?alt=sse` variant, matching the OpenAI path.
+    let mut native_body = body.clone();
+    if let Some(obj) = native_body.as_object_mut() {
+        obj.insert("stream".to_string(), serde_json::json!(true));
+    }
+    let native_body = converter.convert_request(&native_body);
+
+    let attempts: Vec<Option<&str>> = if api_keys.is_empty() {
+        vec![None]
+    } else {
+        api_keys.iter().map(|s| Some(s.as_str())).collect()
+    };
+
+    let mut last_err = String::new();
+    for (i, key_ref) in attempts.iter().enumerate() {
+        let mut req = client
+            .post(&native_url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream")
+            .header("Accept-Encoding", "identity");
+
+        // The converter decides the auth scheme (Bearer default, but Google
+        // uses x-goog-api-key and Anthropic x-api-key).
+        if let Some(key) = key_ref {
+            let (auth_name, auth_value) = converter.auth_header(key);
+            req = req.header(auth_name, auth_value);
+        }
+        // Fixed headers the native API requires (Anthropic: anthropic-version).
+        for (name, value) in converter.extra_headers() {
+            req = req.header(name, value);
+        }
+
+        let resp = req
+            .body(native_body.to_string())
+            .send()
+            .await
+            .map_err(|e| format!("Upstream request failed: {e}"))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            last_err = format!("Upstream returned HTTP {status}: {text}");
+            if is_context_overflow_body(&text) {
+                last_err = format!("[{CONTEXT_OVERFLOW_MARKER}] {last_err}");
+            }
+            if http_status_indicates_api_key_retry(status) && i + 1 < attempts.len() {
+                log::warn!(
+                    "converted stream: HTTP {status} with API key index {i}, trying next key"
+                );
+                continue;
+            }
+            return Err(last_err);
+        }
+
+        // A native stream arrives as SSE (translate per event); anything else
+        // is a non-streaming native response to reshape with `convert_response`.
+        let is_sse = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|ct| ct.contains("event-stream"))
+            .unwrap_or(false);
+
+        if is_sse {
+            return consume_converted_sse(resp, converter, events).await;
+        }
+
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| format!("Upstream body read failed: {e}"))?;
+        return decode_converted_response(&bytes, converter);
+    }
+
+    Err(last_err)
+}
+
+/// Read a native SSE stream, translating each event through `converter` and
+/// feeding the produced chat-shaped chunks into the OpenAI [`SseAccumulator`]
+/// so `StreamEvent`s match the chat/completions path exactly.
+async fn consume_converted_sse(
+    resp: reqwest::Response,
+    converter: &dyn UpstreamConverter,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+) -> Result<serde_json::Value, String> {
+    let mut stream = resp.bytes_stream();
+    let mut frame = crate::core::server::converters::SseAccumulator::new();
+    let mut state = crate::core::server::converters::StreamState::default();
+    // Reassembles the translated chat/completions SSE into one completion.
+    let mut acc = SseAccumulator::default();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Upstream stream error: {e}"))?;
+        let text = String::from_utf8_lossy(&chunk);
+        for event in frame.push(&text) {
+            for payload in converter.convert_stream_event(&event, &mut state) {
+                // Each payload is one chat-shaped JSON chunk or `[DONE]`.
+                acc.ingest(&payload, events);
+            }
+        }
+    }
+    if let Some(event) = frame.finish() {
+        for payload in converter.convert_stream_event(&event, &mut state) {
+            acc.ingest(&payload, events);
+        }
+    }
+
+    if let Some(err) = acc.error.take() {
+        let msg = format!("Upstream stream error: {err}");
+        return Err(if is_context_overflow_body(&err) {
+            format!("[{CONTEXT_OVERFLOW_MARKER}] {msg}")
+        } else {
+            msg
+        });
+    }
+
+    Ok(acc.into_completion())
+}
+
+/// Translate a non-streaming native response into a chat.completion object.
+fn decode_converted_response(
+    bytes: &[u8],
+    converter: &dyn UpstreamConverter,
+) -> Result<serde_json::Value, String> {
+    let upstream: serde_json::Value = serde_json::from_slice(bytes)
+        .map_err(|e| format!("Upstream returned invalid JSON: {e}"))?;
+    let completion = converter.convert_response(&upstream);
+    if let Some(err) = completion.get("error") {
+        let message = err
+            .get("message")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| err.to_string());
+        let msg = format!("Upstream stream error: {message}");
+        return Err(if is_context_overflow_body(&message) {
+            format!("[{CONTEXT_OVERFLOW_MARKER}] {msg}")
+        } else {
+            msg
+        });
+    }
+    Ok(completion)
 }
 
 #[derive(Default)]
@@ -1999,5 +2229,62 @@ mod tests {
         );
         assert_eq!(completion["choices"][0]["message"]["content"], "ok");
         assert_eq!(completion["choices"][0]["finish_reason"], "stop");
+    }
+
+    /// The converted-stream decode path: a native (non-chat/completions) SSE
+    /// event is run through its [`UpstreamConverter::convert_stream_event`],
+    /// and each produced chat-shaped payload is fed into the same
+    /// [`SseAccumulator`] the OpenAI path uses, so `StreamEvent`s come out
+    /// identical. This mirrors `consume_converted_sse` (minus the live HTTP).
+    #[test]
+    fn converted_stream_emits_chat_shaped_events() {
+        use crate::core::server::converters::{
+            AnthropicMessagesConverter, SseEvent, StreamState,
+        };
+
+        let (tx, mut rx) = sink();
+        let converter = AnthropicMessagesConverter::new();
+        let mut state = StreamState::default();
+        let mut acc = SseAccumulator::default();
+
+        // A single Anthropic `message_start` event -> role header chunk, then a
+        // `content_block_delta` with text -> token chunk, then `message_stop`.
+        let events = [
+            SseEvent {
+                event: "message_start".into(),
+                data: json!({
+                    "type": "message_start",
+                    "message": { "id": "msg_1", "model": "claude-sonnet-4" }
+                })
+                .to_string(),
+            },
+            SseEvent {
+                event: "content_block_delta".into(),
+                data: json!({
+                    "type": "content_block_delta",
+                    "delta": { "type": "text_delta", "text": "hi" }
+                })
+                .to_string(),
+            },
+            SseEvent {
+                event: "message_stop".into(),
+                data: json!({ "type": "message_stop" }).to_string(),
+            },
+        ];
+        for event in &events {
+            for payload in converter.convert_stream_event(event, &mut state) {
+                acc.ingest(&payload, &tx);
+            }
+        }
+
+        // Exactly one Token event with the translated text.
+        let mut tokens = Vec::new();
+        while let Ok(StreamEvent::Token { text }) = rx.try_recv() {
+            tokens.push(text);
+        }
+        assert!(tokens.contains(&"hi".to_string()), "token delta decoded: {tokens:?}");
+
+        let completion = acc.into_completion();
+        assert_eq!(completion["choices"][0]["message"]["content"], "hi");
     }
 }
