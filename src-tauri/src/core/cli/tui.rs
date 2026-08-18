@@ -9655,8 +9655,25 @@ fn open_thread_picker(app: &mut App) {
 
 /// Open the `/model` hub listing the `provider / model` pairs this build can
 /// actually run, with the current raw model pre-highlighted.
-fn open_model_picker(app: &mut App) {
-    let pairs = super::providers::list_provider_models(Some(&app.project_root));
+async fn open_model_picker(app: &mut App) {
+    let project_root = app.project_root.clone();
+    match super::providers::fetch_missing_models(
+        Some(&project_root),
+        &mut app.probed_models,
+    )
+    .await
+    {
+        Ok(true) => {
+            // The discovered ids now live on disk; refresh the session's
+            // in-memory provider snapshot so a picked model resolves on the
+            // next run without a restart (#8688 parallels the /login reload).
+            reload_provider_configs(app).await;
+            app.note("fetched models for provider(s) with no configured list");
+        }
+        Ok(_) => {}
+        Err(e) => app.note(&format!("could not fetch models: {e}")),
+    }
+    let pairs = super::providers::list_provider_models(Some(&project_root));
     match ModelPicker::from_pairs(pairs, &app.model) {
         Some(picker) => {
             app.picker = None;
@@ -9731,6 +9748,7 @@ fn open_login_picker_at(app: &mut App, selected_provider: Option<&str>) {
         kind: PickerKind::LoginProvider,
         items,
         selected,
+        armed_delete: None,
     });
 }
 
@@ -17287,6 +17305,7 @@ mod tests {
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("sk-old".into()),
                     base_url: Some("https://api.example/v1".into()),
+                    clear_api_key: false,
                     models: Some(vec!["m1".into()]),
                     api_type: None,
                 },
@@ -17326,6 +17345,7 @@ mod tests {
                     crate::core::agent::global_config::ProviderUpdate {
                         api_key: Some("sk-old".into()),
                         base_url: Some("https://api.example/v1".into()),
+                        clear_api_key: false,
                         models: Some(vec!["m1".into()]),
                         api_type: None,
                     },
@@ -17483,6 +17503,7 @@ mod tests {
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("k".into()),
                     base_url: Some("https://my.example/v1".into()),
+                    clear_api_key: false,
                     models: Some(vec!["m1".into()]),
                     api_type: None,
                 },
@@ -17511,6 +17532,7 @@ mod tests {
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("k".into()),
                     base_url: Some("https://my.example/v1".into()),
+                    clear_api_key: false,
                     models: Some(vec![]),
                     api_type: None,
                 },
@@ -17568,6 +17590,7 @@ mod tests {
                     crate::core::agent::global_config::ProviderUpdate {
                         api_key: Some("k".into()),
                         base_url: Some("https://my.example/v1".into()),
+                        clear_api_key: false,
                         models: Some(vec![]),
                         api_type: None,
                     },
@@ -17646,6 +17669,7 @@ mod tests {
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("sk-secret".into()),
                     base_url: Some("https://my.example/v1".into()),
+                    clear_api_key: false,
                     models: Some(vec!["m1".into(), "m2".into()]),
                     api_type: None,
                 },
@@ -17763,6 +17787,7 @@ mod tests {
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("k".into()),
                     base_url: Some(format!("http://{addr}/v1")),
+                    clear_api_key: false,
                     models: Some(vec![]), // no models configured
                     api_type: None,
                 },
@@ -17774,12 +17799,14 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(super::run_command(&mut app, "model"));
 
-            let picker = app.picker.as_ref().expect("model picker opened");
-            assert_eq!(picker.kind, PickerKind::SelectModel);
+            let picker = app.model_picker.as_ref().expect("model picker opened");
             assert!(
-                picker.items.iter().any(|i| i.label.contains("discovered-model")),
+                picker
+                    .all_items
+                    .iter()
+                    .any(|i| i.model.contains("discovered-model")),
                 "discovered model must be offered: {:?}",
-                picker.items.iter().map(|i| &i.label).collect::<Vec<_>>()
+                picker.all_items.iter().map(|i| &i.model).collect::<Vec<_>>()
             );
         });
     }
@@ -17797,6 +17824,7 @@ mod tests {
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("k".into()),
                     base_url: Some("http://127.0.0.1:9/v1".into()),
+                    clear_api_key: false,
                     models: Some(vec![]),
                     api_type: None,
                 },
@@ -24670,7 +24698,8 @@ mod tests {
             .unwrap();
 
             let mut app = test_app();
-            super::open_model_picker(&mut app);
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(super::open_model_picker(&mut app));
             assert!(app
                 .model_picker
                 .as_ref()
@@ -24691,7 +24720,7 @@ mod tests {
             )
             .unwrap();
 
-            super::open_model_picker(&mut app);
+            rt.block_on(super::open_model_picker(&mut app));
             let picker = app.model_picker.as_ref().unwrap();
             assert!(picker
                 .all_items
