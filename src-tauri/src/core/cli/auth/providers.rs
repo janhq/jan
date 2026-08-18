@@ -115,13 +115,23 @@ pub(crate) async fn discover_models(
 ///
 /// A Codex account token is a ChatGPT account credential, not an OpenAI API
 /// key, so `api.openai.com/v1/models` rejects it with 401. The models are
-/// instead served by ChatGPT's own backend at `chatgpt.com/backend-api/models`,
-/// which the Codex provider (OAuth/accounts) hits with the same token. The
-/// response shape differs from OpenAI's (`{"models":[{slug,display_name}]}`
-/// instead of `{"data":[...]}`), so it is parsed separately. `base_url` is the
-/// ChatGPT backend origin (injectable in tests).
+/// instead served by ChatGPT's own backend, which the Codex CLI (and pi)
+/// targets at `chatgpt.com/backend-api/codex/models`. That endpoint is distinct
+/// from `chatgpt.com/backend-api/models`: the latter returns the internal
+/// rolling/user-scoped ChatGPT roster (e.g. `gpt-5.6-luna-wm`) that has no real
+/// upstream session, whereas `/codex/models` returns the stable Codex slugs
+/// (`gpt-5.5`, `gpt-5.4`, ...) that the Responses API actually serves. The
+/// Codex client identifiers (`client_version`, `chatgpt-account-id`,
+/// `OpenAI-Beta`, `originator`, `version`) are mirrored from the pi coding
+/// agent so the backend returns the Codex roster instead of the ChatGPT one.
+///
+/// `base_url` is the persisted Codex provider base (the OpenAI API-key surface
+/// `api.openai.com/v1`); it is rewritten to the ChatGPT backend origin, or used
+/// verbatim in tests. Falls back to `/models` when `/codex/models` is not
+/// served.
 pub(crate) async fn discover_codex_models(
     credential: &str,
+    account_id: Option<&str>,
     base_url: &str,
 ) -> Result<Vec<String>, LoginError> {
     // The persisted Codex default_base_url points at the OpenAI API-key
@@ -133,50 +143,110 @@ pub(crate) async fn discover_codex_models(
     } else {
         base_url
     };
-    let url = format!("{}/models", backend.trim_end_matches('/'));
     let client = reqwest::Client::builder()
         .timeout(VERIFY_TIMEOUT)
         .build()
         .map_err(|e| LoginError::Unavailable(format!("could not build an HTTP client: {e}")))?;
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {credential}"))
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .map_err(|e| {
-            LoginError::Unavailable(format!("could not reach the ChatGPT backend: {e}"))
-        })?;
-    let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-    if !status.is_success() {
-        return Err(match status.as_u16() {
-            401 | 403 => LoginError::Unauthorized,
-            429 => LoginError::RateLimited,
-            500..=599 => LoginError::Unavailable(format!(
-                "the ChatGPT backend is unavailable right now (HTTP {status})."
-            )),
-            _ => LoginError::Unavailable(format!(
-                "the ChatGPT backend returned HTTP {status}."
-            )),
-        });
+
+    // `/codex/models` is the Codex roster; `/models` is the plain ChatGPT
+    // roster and is kept only as a fallback for backends that omit the Codex
+    // route (matching pi's `DEFAULT_MODEL_LIST_PATHS`).
+    let paths = ["/codex/models", "/models"];
+    let mut last_error: Option<LoginError> = None;
+    for path in paths {
+        let url = format!("{}{}", backend.trim_end_matches('/'), path);
+        let mut request = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {credential}"))
+            .header("Accept", "application/json");
+        // Only the Codex route is marked with the Codex client identifiers.
+        if path == "/codex/models" {
+            request = request
+                .query(&[("client_version", "0.144.1")])
+                .header("OpenAI-Beta", "responses=experimental")
+                .header("originator", "jan")
+                .header("version", "0.144.1");
+            if let Some(account_id) = account_id {
+                request = request.header("chatgpt-account-id", account_id);
+            }
+        }
+        match request.send().await {
+            Ok(response) => {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                if !status.is_success() {
+                    last_error = Some(match status.as_u16() {
+                        401 | 403 => LoginError::Unauthorized,
+                        429 => LoginError::RateLimited,
+                        500..=599 => LoginError::Unavailable(format!(
+                            "the ChatGPT backend is unavailable right now (HTTP {status})."
+                        )),
+                        _ => LoginError::Unavailable(format!(
+                            "the ChatGPT backend returned HTTP {status}."
+                        )),
+                    });
+                    continue;
+                }
+                let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|e| {
+                    LoginError::Unavailable(format!(
+                        "the ChatGPT backend returned a response we could not read: {e}"
+                    ))
+                })?;
+                return Ok(parse_codex_models(&parsed));
+            }
+            Err(e) => {
+                last_error = Some(LoginError::Unavailable(format!(
+                    "could not reach the ChatGPT backend: {e}"
+                )));
+                continue;
+            }
+        }
     }
-    let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|e| {
-        LoginError::Unavailable(format!("the ChatGPT backend returned a response we could not read: {e}"))
-    })?;
-    let mut ids: Vec<String> = parsed
+    Err(last_error.unwrap_or(LoginError::Unavailable(
+        "the ChatGPT backend returned no usable model roster".to_string(),
+    )))
+}
+
+/// Stable Codex model slugs from a `/codex/models` payload, sorted, deduped,
+/// and with hidden/rolling entries filtered out. Accepts both the ChatGPT
+/// backend shape (`{"models":[{slug,display_name,visibility}]}`) and the
+/// OpenAI shape (`{"data":[{"id"}]}`) for backends that serve either.
+fn parse_codex_models(value: &serde_json::Value) -> Vec<String> {
+    let entries = value
         .get("models")
         .and_then(|m| m.as_array())
+        .or_else(|| value.get("data").and_then(|d| d.as_array()))
         .into_iter()
-        .flatten()
-        .filter_map(|entry| entry.get("slug").and_then(|s| s.as_str()))
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(String::from)
+        .flatten();
+    let mut ids: Vec<String> = entries
+        .filter_map(|entry| {
+            // A `visibility` of `hide` shadows internal/rolling roster entries.
+            let visibility = entry
+                .get("visibility")
+                .and_then(|v| v.as_str())
+                .map(str::to_ascii_lowercase)
+                .unwrap_or_default();
+            if visibility == "hide" || visibility == "hidden" {
+                return None;
+            }
+            // Stable slug/id, or a bare string slug for minimal gateways.
+            let id = entry
+                .get("slug")
+                .and_then(|s| s.as_str())
+                .or_else(|| entry.get("id").and_then(|s| s.as_str()))
+                .or_else(|| entry.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+            id
+        })
         .collect();
+    // Rolling ChatGPT codenames carry a user-scoped suffix (e.g.
+    // `gpt-5.6-luna-wm`); they are not stable Codex models, so drop them.
+    ids.retain(|id| !matches!(id.split('-').last(), Some("wm")));
     ids.sort();
     ids.dedup();
-    Ok(ids)
+    ids
 }
 
 /// Human-readable reason a verification request was rejected. Never includes
@@ -381,6 +451,31 @@ mod tests {
         );
         assert!(parse_models(&json!({"data": []})).is_empty());
         assert!(parse_models(&json!({"unexpected": 1})).is_empty());
+    }
+    #[test]
+    fn codex_models_filters_rolling_codenames_and_hidden_entries() {
+        // Stable Codex slugs are kept; rolling user-scoped ChatGPT codenames
+        // (the `-wm` suffix that has no upstream session) and `visibility: hide`
+        // entries are dropped, exactly so the picker never offers a model that
+        // later fails "No upstream session found for model ...".
+        let body = json!({
+            "models": [
+                {"slug": "gpt-5.5", "display_name": "GPT-5.5"},
+                {"slug": "gpt-5.6-luna-wm", "display_name": "GPT-5.6 Luna"},
+                {"slug": "gpt-5.4", "display_name": "GPT-5.4", "visibility": "hide"},
+                {"slug": "gpt-5.3", "display_name": "GPT-5.3", "visibility": "hidden"}
+            ]
+        });
+        assert_eq!(
+            parse_codex_models(&body),
+            vec!["gpt-5.5".to_string()]
+        );
+        // Accepts the OpenAI `data` shape for backends that serve either.
+        assert_eq!(
+            parse_codex_models(&json!({"data": [{"id": "gpt-5.4"}, {"id": "gpt-5.5"}]})),
+            vec!["gpt-5.4".to_string(), "gpt-5.5".to_string()]
+        );
+        assert!(parse_codex_models(&json!({"models": []})).is_empty());
     }
 
     #[test]
