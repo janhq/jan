@@ -714,6 +714,10 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let (tx, mut rx) = oneshot::channel();
     let spill_scratch = ctx.scratch_root.map(Path::to_path_buf);
     let sandboxed = ctx.sandbox;
+    // The model writes POSIX commands by default, which `cmd` rejects. Surface
+    // the resolved shell so it can adapt when the only shell on a Windows box
+    // is cmd, instead of the tool silently presenting cmd as bash.
+    let shell_description = shell.description;
     tokio::spawn(async move {
         let mut out = collect_and_format(child, spill_scratch).await;
         // Appended inside the task so a backgrounded job carries the hint too.
@@ -723,6 +727,14 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         // and the hint would name limits that are not in force.
         if sandboxed && bash_result_failed(&out) && jail::looks_denied(&out) {
             out.push_str(&jail::denial_hint(&policy));
+        }
+        if shell_description == "cmd" {
+            out.insert_str(
+                0,
+                "[shell: cmd.exe - no bash is installed. Write commands in cmd syntax \
+                 (e.g. `dir`, `type`, `set`, `mkdir`, `%VAR%` for variables), not \
+                 POSIX/bash. Alternatively install git-bash and this tool will use it.]\n",
+            );
         }
         if let Some(pid) = pid {
             proc::unregister(pid);
