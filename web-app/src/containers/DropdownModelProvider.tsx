@@ -22,6 +22,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/constants/providers'
 import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
+import { isManuallyAdded } from '@/lib/models'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { ChevronsUpDown } from 'lucide-react'
@@ -264,9 +265,16 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     providers.forEach((provider) => {
       if (!provider.active) return
 
+      // Check if this provider has any manually-added/pinned models.
+      // If so, only show those in the dropdown to keep the list manageable.
+      const hasManualModels = provider.models.some(isManuallyAdded)
+
       provider.models.forEach((modelItem) => {
         // Skip embedding models - they can't be used for chat
         if (modelItem.embedding) return
+
+        // If the provider has pinned models, hide auto-fetched ones
+        if (hasManualModels && !isManuallyAdded(modelItem)) return
 
         // Skip models that require API key but don't have one (except llamacpp)
         // For custom providers, allow if they have at least one model loaded

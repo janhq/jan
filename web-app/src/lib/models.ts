@@ -110,3 +110,19 @@ export const extractQuantLabel = (modelId?: string): string | null => {
   )
   return match ? match[1].toUpperCase() : null
 }
+
+/**
+ * Single source of truth for whether a model was curated by the user.
+ *
+ * A model is "manually added" when it carries the explicit `manuallyAdded`
+ * flag (set when added/pinned via the Add Model dialog or edited) or when it
+ * was `imported` from a local file. Both are real persisted flags, so the
+ * settings "manual only" filter and the chat model dropdown stay consistent.
+ *
+ * The displayName / _userConfiguredCapabilities heuristics are intentionally
+ * NOT consulted here — they are only used once, by the v17→18 migration, to
+ * backfill `manuallyAdded` for users who customized models before this flag
+ * existed.
+ */
+export const isManuallyAdded = (model: Model): boolean =>
+  model.manuallyAdded === true || model.imported === true
