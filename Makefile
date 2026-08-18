@@ -152,15 +152,15 @@ test: test-prepare install-rust-targets
 # stamps these paths emit.
 stub-resources:
 ifeq ($(DETECTED_OS),Windows)
-	-powershell -Command "New-Item -ItemType Directory -Force -Path src-tauri/resources/bin | Out-Null; if (-not (Test-Path 'src-tauri/resources/bin/jan-cli.exe')) { New-Item -ItemType File -Path 'src-tauri/resources/bin/jan-cli.exe' | Out-Null }"
+	-powershell -Command "New-Item -ItemType Directory -Force -Path src-tauri/resources/bin | Out-Null; if (-not (Test-Path 'src-tauri/resources/bin/jan.exe')) { New-Item -ItemType File -Path 'src-tauri/resources/bin/jan.exe' | Out-Null }"
 else ifeq ($(DETECTED_OS),Darwin)
 	@mkdir -p src-tauri/resources/bin
-	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
+	@[ -e src-tauri/resources/bin/jan ] || touch src-tauri/resources/bin/jan
 	@[ -e src-tauri/resources/bin/mlx-server ] || touch src-tauri/resources/bin/mlx-server
 	@[ -e src-tauri/resources/bin/mlx-swift_Cmlx.bundle ] || mkdir -p src-tauri/resources/bin/mlx-swift_Cmlx.bundle
 else
 	@mkdir -p src-tauri/resources/bin
-	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
+	@[ -e src-tauri/resources/bin/jan ] || touch src-tauri/resources/bin/jan
 endif
 
 test-ci: test-prepare stub-resources
@@ -169,7 +169,7 @@ test-ci: test-prepare stub-resources
 # Cheap compile guard for the CLI feature set, covering what test-ci no longer
 # builds. `make build` still builds the real binary on every platform.
 check-cli:
-	cd src-tauri && cargo check --locked --features cli --bin jan-cli
+	cd src-tauri && cargo check --locked --no-default-features --features cli --bin jan
 
 # Build MLX server (macOS Apple Silicon only) - always builds
 build-mlx-server:
