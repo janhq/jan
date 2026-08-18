@@ -1484,14 +1484,38 @@ const SPINNER_ADVANCE_MS: u64 = 80;
 
 /// Rotating action words for the running input placeholder, replacing a static
 /// "working…" so a long turn does not read as a hung UI.
-const WORKING_WORDS: [&str; 6] =
-    ["working", "computing", "processing", "analyzing", "crunching", "grinding"];
+const WORKING_WORDS: [&str; 12] = [
+    "working",
+    "computing",
+    "processing",
+    "analyzing",
+    "crunching",
+    "grinding",
+    "executing",
+    "running",
+    "handling",
+    "compiling",
+    "operating",
+    "fetching",
+];
 
 /// Rotating action words shown while the model is reasoning (a ` think>` block
 /// is streaming), coloured orange. Mirrors the working list so the two states
 /// read as the same kind of progress, just distinct in wording and colour.
-const THINKING_WORDS: [&str; 6] =
-    ["thinking", "reasoning", "pondering", "reflecting", "deliberating", "musing"];
+const THINKING_WORDS: [&str; 12] = [
+    "thinking",
+    "reasoning",
+    "pondering",
+    "reflecting",
+    "deliberating",
+    "musing",
+    "ruminating",
+    "meditating",
+    "contemplating",
+    "weighing",
+    "cogitating",
+    "calculating",
+];
 
 /// Spinner frames per placeholder-word change, so the action word turns over
 /// at a relaxed pace (60 frames x 80ms ~= 4.8s) rather than shifting under
@@ -11542,7 +11566,7 @@ mod tests {
         row_width, user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind,
         ResumeTarget, RowKind,
         SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
-        COMMAND_LABEL_MAX, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
+        DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
         KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER, PROVIDERS_SETTINGS_ROW,
         SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
         alt_scroll_restore, alt_scroll_save_off,
