@@ -365,8 +365,6 @@ enum AgentConfigCommands {
     Path,
 }
 
-
-
 // ── Threads subcommands ────────────────────────────────────────────────────
 
 #[derive(Subcommand)]
