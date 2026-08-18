@@ -5239,7 +5239,11 @@ async fn chat_loop<B: Backend>(
                 }
             }
             login_res = await_login(&mut login_task) => {
+                let login_ok = login_res.is_ok();
                 finish_login(app, login_res);
+                if login_ok {
+                    reload_provider_configs(app).await;
+                }
             }
             update = await_update_check(&mut update_task) => {
                 note_update(app, update);
@@ -7920,6 +7924,33 @@ fn adopt_login_model(app: &mut App, login: &super::tokamak::Login) {
     }
     if let Some(model) = login.models.first() {
         app.set_model(model.clone());
+    }
+}
+
+/// Re-read `~/.jan/config.toml` (plus desktop and project layers) into the
+/// session's in-memory `args.provider_configs` map. Must be called after any
+/// mid-session credential write (`/login`, `jan config set`) because
+/// `prepare_agent_session` snapshots the provider map once at startup and
+/// never re-reads it. Without this, the first turn after sign-in fails
+/// upstream resolution (`"No upstream session found for model ..."`) and
+/// requires a restart.
+async fn reload_provider_configs(app: &mut App) {
+    let Some(args) = app.args.clone() else {
+        return;
+    };
+    let project_root = app.project_root.clone();
+    match super::providers::load_provider_configs(
+        Some(&project_root),
+        &super::providers::ProviderOverrides::default().with_env(),
+    ) {
+        Ok(configs) => {
+            *args.provider_configs.lock().await = configs;
+        }
+        Err(e) => {
+            app.note(&format!(
+                "could not reload provider config after sign-in: {e}"
+            ));
+        }
     }
 }
 
@@ -12662,6 +12693,81 @@ mod tests {
                 }),
             );
             assert_eq!(app.model, "m", "a working model must survive a re-login");
+        });
+    }
+
+    /// After login writes a provider to disk, the in-memory `args.provider_configs`
+    /// snapshot (built at startup) must be refreshed so upstream resolution sees
+    /// the new provider without a restart (#8688).
+    #[test]
+    fn reload_provider_configs_picks_up_login_credentials() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            // Seed a tokamak provider in the global config (simulates what
+            // `/login` persisted to `~/.jan/config.toml`).
+            crate::core::agent::global_config::set_provider(
+                "tokamak",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("tk".into()),
+                    base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
+                    models: Some(vec!["tokamak-1-preview".into()]),
+                    api_type: None,
+                },
+            )
+            .expect("seed provider");
+
+            let mut app = test_app();
+            // Give the app a provider_configs map that is stale (empty, as it
+            // would be on a fresh launch before login).
+            let provider_configs: std::collections::HashMap<String, crate::core::state::ProviderConfig> =
+                std::collections::HashMap::new();
+            let args = std::sync::Arc::new(super::OrchestrationArgs {
+                client: reqwest::Client::new(),
+                provider_configs: std::sync::Arc::new(tokio::sync::Mutex::new(
+                    provider_configs,
+                )),
+                mcp_servers: std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+                mcp_settings: std::sync::Arc::new(tokio::sync::Mutex::new(
+                    crate::core::mcp::models::McpSettings::default(),
+                )),
+                jan_data_folder: String::new(),
+                permissions: tauri_plugin_agent_tools::permissions::ToolPermissions::default(),
+                project_root: Some(app.project_root.clone()),
+                permission_requests: std::sync::Arc::new(tokio::sync::Mutex::new(
+                    std::collections::HashMap::new(),
+                )),
+                ask_requests: None,
+                todo_registry: None,
+                system_prompt_override: None,
+                subagents_enabled: true,
+                max_parallel_subagents: 4,
+                auto_approve: false,
+                run_mode: crate::core::agent::plan::RunMode::Normal,
+                session_id: None,
+                sandbox: None,
+            });
+            app.args = Some(args.clone());
+
+            // Build a dedicated multi-threaded runtime so we can .await
+            // inside `with_temp_home` (which is sync and holds HOME set).
+            let rt = tokio::runtime::Runtime::new().expect("runtime");
+
+            // Before reload, the map is empty.
+            assert!(rt.block_on(args.provider_configs.lock()).is_empty());
+
+            // Reload from disk (the config we seeded above).
+            rt.block_on(super::reload_provider_configs(&mut app));
+
+            // After reload, tokamak provider must be present with the right key.
+            let map = rt.block_on(args.provider_configs.lock());
+            let tokamak = map
+                .get("tokamak")
+                .expect("tokamak provider should be present after reload");
+            assert_eq!(tokamak.api_key.as_deref(), Some("tk"));
+            assert_eq!(
+                tokamak.base_url.as_deref(),
+                Some(crate::core::cli::tokamak::BASE_URL)
+            );
+            assert!(tokamak.models.iter().any(|m| m == "tokamak-1-preview"));
         });
     }
 
