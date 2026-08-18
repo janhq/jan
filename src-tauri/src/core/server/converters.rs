@@ -121,11 +121,17 @@ pub trait UpstreamConverter: Send + Sync {
 }
 
 /// Select the converter for a provider's `api_type`. `None`, `"openai"`, and
-/// unknown values keep the verbatim chat/completions passthrough.
-pub fn converter_for(api_type: Option<&str>) -> Option<Box<dyn UpstreamConverter>> {
+/// unknown values keep the verbatim chat/completions passthrough. `oauth`
+/// selects the Anthropic OAuth auth scheme (Bearer + beta header) when the
+/// credential is an account access token instead of an API key.
+pub fn converter_for(
+    api_type: Option<&str>,
+    oauth: bool,
+) -> Option<Box<dyn UpstreamConverter>> {
     match api_type {
         Some("openai-responses") => Some(Box::new(OpenAIResponsesConverter::new())),
         Some("google") => Some(Box::new(GoogleGenerateContentConverter::new())),
+        Some("anthropic") if oauth => Some(Box::new(AnthropicMessagesConverter::new_oauth())),
         Some("anthropic") => Some(Box::new(AnthropicMessagesConverter::new())),
         _ => None,
     }
@@ -792,13 +798,25 @@ const ANTHROPIC_DEFAULT_MAX_TOKENS: i64 = 4096;
 /// `anthropic-version` header. The registered provider `base_url` should include
 /// the version prefix, e.g. `https://api.anthropic.com/v1`.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct AnthropicMessagesConverter;
+pub struct AnthropicMessagesConverter {
+    /// `true` when the credential is an OAuth access token (Account login)
+    /// rather than a standard `sk-ant-` API key. Anthropic authenticates an
+    /// OAuth token as `Authorization: Bearer` plus the `anthropic-beta` oauth
+    /// header; a plain API key goes as `x-api-key`. Defaults to the API-key
+    /// scheme, matching the pre-account behaviour.
+    oauth: bool,
+}
 
 impl AnthropicMessagesConverter {
     pub fn new() -> Self {
-        Self
+        Self { oauth: false }
+    }
+
+    pub fn new_oauth() -> Self {
+        Self { oauth: true }
     }
 }
+
 
 fn map_anthropic_finish(reason: &str, saw_tool: bool) -> &'static str {
     if saw_tool {
@@ -844,11 +862,19 @@ impl UpstreamConverter for AnthropicMessagesConverter {
     }
 
     fn auth_header(&self, key: &str) -> (&'static str, String) {
-        ("x-api-key", key.to_string())
+        if self.oauth {
+            ("authorization", format!("Bearer {key}"))
+        } else {
+            ("x-api-key", key.to_string())
+        }
     }
 
     fn extra_headers(&self) -> Vec<(&'static str, &'static str)> {
-        vec![("anthropic-version", "2023-06-01")]
+        let mut headers = vec![("anthropic-version", "2023-06-01")];
+        if self.oauth {
+            headers.push(("anthropic-beta", "oauth-2025-04-20"));
+        }
+        headers
     }
 
     fn convert_request(&self, body: &Value) -> Value {
@@ -1740,6 +1766,41 @@ mod anthropic_messages_tests {
         assert_eq!(c.auth_header("k"), ("x-api-key", "k".to_string()));
         assert_eq!(c.extra_headers(), vec![("anthropic-version", "2023-06-01")]);
         assert_eq!(c.upstream_path(&json!({})), "/messages");
+    }
+
+
+    #[test]
+    fn oauth_auth_and_headers_use_bearer_plus_beta() {
+        let c = AnthropicMessagesConverter::new_oauth();
+        assert_eq!(c.auth_header("k"), ("authorization", "Bearer k".to_string()));
+        assert_eq!(
+            c.extra_headers(),
+            vec![
+                ("anthropic-version", "2023-06-01"),
+                ("anthropic-beta", "oauth-2025-04-20"),
+            ]
+        );
+        // The upstream path is unchanged for OAuth credentials.
+        assert_eq!(c.upstream_path(&json!({})), "/messages");
+    }
+
+    #[test]
+    fn converter_for_selects_oauth_scheme_only_for_anthropic_accounts() {
+        assert!(matches!(
+            converter_for(Some("anthropic"), true),
+            Some(c) if {
+                let (name, _) = c.auth_header("k");
+                name == "authorization"
+            }
+        ));
+        // Non-account Anthropic keeps the API-key scheme, and unknown
+        // api_types keep the verbatim passthrough regardless of `oauth`.
+        assert!(matches!(
+            converter_for(Some("anthropic"), false),
+            Some(c) if c.auth_header("k").0 == "x-api-key"
+        ));
+        assert!(converter_for(Some("openai"), true).is_none());
+        assert!(converter_for(None, true).is_none());
     }
 
     #[test]

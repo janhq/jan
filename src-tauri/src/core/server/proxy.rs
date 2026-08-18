@@ -1582,9 +1582,16 @@ async fn proxy_request(
 
                             if let Some(provider_cfg) = provider_config {
                                 // A converter only applies to chat/completions; other
-                                // paths keep verbatim forwarding.
+                                // paths keep verbatim forwarding. The credential is
+                                // an OAuth account token when the provider is one of
+                                // Jan's account credential providers (openai/anthropic),
+                                // which selects the Anthropic OAuth auth scheme.
                                 let converter = if destination_path == "/chat/completions" {
-                                    converter_for(provider_cfg.api_type.as_deref())
+                                    let oauth = matches!(
+                                        provider_cfg.provider.as_str(),
+                                        "openai" | "anthropic"
+                                    );
+                                    converter_for(provider_cfg.api_type.as_deref(), oauth)
                                 } else {
                                     None
                                 };
