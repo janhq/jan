@@ -13,7 +13,7 @@
 //!    env fallback via [`ProviderOverrides::with_env`]) win over all of the
 //!    above - the most explicit, most ephemeral signal.
 
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, time::Duration};
 
 use crate::core::agent::global_config::load_global_config;
 use crate::core::agent::project::ProviderSection;
@@ -313,6 +313,7 @@ pub async fn fetch_missing_models(
             crate::core::agent::global_config::ProviderUpdate {
                 api_key: None,
                 base_url: None,
+                clear_api_key: false,
                 models: Some(models),
                 api_type: None,
             },
@@ -964,6 +965,7 @@ mod tests {
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("k".into()),
                     base_url: Some(format!("http://{addr}/v1")),
+                    clear_api_key: false,
                     models: Some(vec![]),
                     api_type: None,
                 },
@@ -991,6 +993,7 @@ mod tests {
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("k".into()),
                     base_url: Some("http://127.0.0.1:9/v1".into()), // would refuse
+                    clear_api_key: false,
                     models: Some(vec!["my-model".into()]),
                     api_type: None,
                 },
@@ -1019,6 +1022,7 @@ mod tests {
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: None,
                     base_url: Some(format!("http://{addr}/v1")),
+                    clear_api_key: false,
                     models: Some(vec![]),
                     api_type: None,
                 },
@@ -1068,6 +1072,7 @@ mod tests {
                     crate::core::agent::global_config::ProviderUpdate {
                         api_key: Some("k".into()),
                         base_url: Some(format!("http://{addr}/v1")),
+                        clear_api_key: false,
                         models: Some(vec![]),
                         api_type: None,
                     },
@@ -1095,6 +1100,7 @@ mod tests {
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("k".into()),
                     base_url: Some("http://127.0.0.1:9/v1".into()), // refuses instantly
+                    clear_api_key: false,
                     models: Some(vec![]),
                     api_type: None,
                 },
