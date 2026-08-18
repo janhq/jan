@@ -105,6 +105,14 @@ pub(crate) struct OrchestrationArgs {
     /// by dispatched subagents via the cloned parent args, so a child shell is
     /// confined exactly as its parent's was.
     pub sandbox: Option<bool>,
+    /// Externally-tracked background-subagent registry for this run, so a
+    /// Tauri command (`agent_cancel_subagent`) can reach a specific dispatched
+    /// subagent by run_id from outside the loop without cancelling the whole
+    /// run. `None` falls back to a fresh, purely-local registry created inside
+    /// `orchestrate_inner` (the CLI/TUI/proxy paths, and every subagent child
+    /// run, which must never share the parent's — see `run_subagent`).
+    pub background_subagents:
+        Option<std::sync::Arc<crate::core::agent::subagent::BackgroundSubagents>>,
 }
 
 #[async_trait]
@@ -368,6 +376,7 @@ impl CompositeToolInvoker {
             .insert(request_id.clone(), tx);
         let _ = self.events.send(StreamEvent::PermissionRequest {
             request_id: request_id.clone(),
+            tool_call_id: None,
             tool_name: tool_name.to_string(),
             capability: "run".to_string(),
             path: None,
@@ -391,6 +400,7 @@ impl CompositeToolInvoker {
             .await
             .insert(request_id.clone(), tx);
         let _ = self.events.send(StreamEvent::PermissionRequest {
+            tool_call_id: None,
             request_id: request_id.clone(),
             tool_name: "create_subagent".to_string(),
             capability: "write".to_string(),
@@ -880,6 +890,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     let diff = preview_diff(tool, &args, &self.tool_context()).await;
                     let _ = self.events.send(StreamEvent::PermissionRequest {
                         request_id: request_id.clone(),
+                        tool_call_id: Some(id.clone()),
                         tool_name: name.to_string(),
                         capability: capability.to_string(),
                         path,
@@ -977,6 +988,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
         auto_approve: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
+        background_subagents: None,
         session_id: None,
         sandbox: None,
     };
@@ -1218,6 +1230,7 @@ async fn orchestrate_inner(
         max_parallel_subagents,
         auto_approve,
         run_mode,
+        background_subagents,
         session_id,
         sandbox,
     } = args;
@@ -1499,9 +1512,15 @@ async fn orchestrate_inner(
         // Background subagents are scoped to this run: `_bg_guard` aborts any
         // still-running child when `orchestrate_inner` returns or is cancelled.
         // The cap (`max_parallel_subagents`) is snapshotted here, at run start.
-        let bg = std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
-            *max_parallel_subagents,
-        ));
+        let bg = background_subagents
+            .clone()
+            .unwrap_or_else(|| {
+                std::sync::Arc::new(
+                    crate::core::agent::subagent::BackgroundSubagents::new(
+                        *max_parallel_subagents,
+                    ),
+                )
+            });
         let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),
@@ -1636,7 +1655,7 @@ fn build_completion_request(
 /// `args` and reusing the same summarization path as the reactive loop. Used by
 /// the TUI `/compact` command, which holds `OrchestrationArgs` + a model id but
 /// no `ModelInvoker`.
-#[cfg(feature = "cli")]
+
 pub(crate) async fn compact_history(
     args: &OrchestrationArgs,
     model_id: &str,
@@ -1670,7 +1689,7 @@ pub(crate) async fn compact_history(
 /// fast "smol" role). Mirrors [`compact_history`]: resolve the upstream for the
 /// evaluator model, then make a single tool-free model call that judges whether
 /// `condition` is satisfied by `messages`. No tools, no streaming to the user.
-#[cfg(feature = "cli")]
+
 pub(crate) async fn evaluate_goal(
     args: &OrchestrationArgs,
     smol_model_id: &str,

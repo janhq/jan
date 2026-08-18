@@ -12751,6 +12751,7 @@ mod tests {
                 auto_approve: false,
                 run_mode: crate::core::agent::plan::RunMode::Normal,
                 session_id: None,
+                background_subagents: None,
                 sandbox: None,
             });
             app.args = Some(args.clone());

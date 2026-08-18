@@ -11,12 +11,11 @@
 pub mod commands;
 pub mod compaction;
 pub mod context;
-pub mod env_provider;
+
 pub mod events;
 pub mod git;
 #[cfg(feature = "cli")]
 pub mod global_config;
-#[cfg(feature = "cli")]
 pub mod goal;
 pub mod interaction;
 pub mod r#loop;

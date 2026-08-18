@@ -29,15 +29,30 @@ use tauri_plugin_agent_tools::skills::{self, SkillMeta};
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tauri_plugin_agent_tools::workspace;
 
-/// Registry of in-flight agent runs keyed by client-supplied `run_id`, holding a
-/// one-shot cancel sender per run. Managed via `app.manage(AgentRuns::default())`.
+/// One in-flight `agent_run`'s cancel sender plus its background-subagent
+/// registry, so `agent_cancel_subagent` can reach a specific dispatched
+/// subagent from outside the loop without cancelling the whole run.
+pub struct RunEntry {
+    pub cancel_tx: oneshot::Sender<()>,
+    pub background_subagents: Arc<crate::core::agent::subagent::BackgroundSubagents>,
+}
+
+/// Registry of in-flight agent runs keyed by client-supplied `run_id`.
+/// Managed via `app.manage(AgentRuns::default())`.
 #[derive(Default)]
-pub struct AgentRuns(pub Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>);
+pub struct AgentRuns(pub Arc<Mutex<HashMap<String, RunEntry>>>);
 
 /// Registry of in-flight permission prompts keyed by request_id, shared with the
 /// agent loop so `agent_permission_respond` can resolve the awaiting tool call.
 #[derive(Default)]
 pub struct AgentPermissions(pub Arc<Mutex<HashMap<String, oneshot::Sender<PermissionDecision>>>>);
+
+/// Registry of in-flight `ask` tool questions keyed by request_id, shared with
+/// the agent loop so `agent_ask_respond` can resolve the awaiting tool call.
+/// Global (not per-run) like `AgentPermissions`, since request ids are unique
+/// across every run.
+#[derive(Default)]
+pub struct AgentAsks(pub crate::core::agent::interaction::AskRegistry);
 
 fn build_orchestration_args<R: Runtime>(
     app_handle: &AppHandle<R>,
@@ -76,6 +91,7 @@ fn build_orchestration_args<R: Runtime>(
         max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
         auto_approve: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
+        background_subagents: None,
         session_id: None,
         sandbox: None,
     }
@@ -90,12 +106,26 @@ pub async fn agent_run<R: Runtime>(
     state: State<'_, AppState>,
     runs: State<'_, AgentRuns>,
     perms_registry: State<'_, AgentPermissions>,
+    asks_registry: State<'_, AgentAsks>,
     run_id: String,
     body: serde_json::Value,
     on_event: Channel<StreamEvent>,
 ) -> Result<(), String> {
     let mut args = build_orchestration_args(&app_handle, &state);
     args.permission_requests = perms_registry.0.clone();
+    args.ask_requests = Some(asks_registry.0.clone());
+    let background_subagents =
+        Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+    args.background_subagents = Some(background_subagents.clone());
+    // The session's todo list is client-persisted (there is no long-lived
+    // Rust-side session here, unlike the TUI's App): the client sends back
+    // whatever it last saw, we seed a fresh registry from it, and `todo`-tool
+    // mutations stream back out as `TodoUpdate` events for the client to persist.
+    let todo_list: crate::core::agent::todo::TodoList = body
+        .get("todos")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    args.todo_registry = Some(Arc::new(Mutex::new(todo_list)));
 
     // When a project is explicitly named, its agent.toml governs tool permissions.
     // The project is auto-managed: scaffold a `.jan/agent/` on first use, then
@@ -108,6 +138,18 @@ pub async fn agent_run<R: Runtime>(
         args.project_root = Some(project_root);
     }
 
+    // Desktop's Bypass-permissions mode: an explicit per-request opt-in to
+    // auto-allow every tool call. Desktop defaults to false (the CLI defaults
+    // the other way). Omitted or non-bool keeps the safe `false` set above.
+    if let Some(auto_approve) = body.get("auto_approve").and_then(|v| v.as_bool()) {
+        args.auto_approve = auto_approve;
+    }
+    // Mirrors the CLI's `--plan`/`/plan`: read-only mode where mutation-capable
+    // tools are hard-denied at the dispatcher. Omitted or non-bool keeps Normal.
+    if body.get("plan").and_then(|v| v.as_bool()).unwrap_or(false) {
+        args.run_mode = crate::core::agent::plan::RunMode::Plan;
+    }
+
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
     let forward = tokio::spawn(async move {
         while let Some(ev) = rx.recv().await {
@@ -118,7 +160,13 @@ pub async fn agent_run<R: Runtime>(
     });
 
     let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
-    runs.0.lock().await.insert(run_id.clone(), cancel_tx);
+    runs.0.lock().await.insert(
+        run_id.clone(),
+        RunEntry {
+            cancel_tx,
+            background_subagents,
+        },
+    );
 
     // Cancellation is a normal terminal state: emit one `cancelled` event and
     // resolve Ok so the invoke promise does not also surface as an error.
@@ -144,9 +192,81 @@ pub async fn agent_run<R: Runtime>(
 /// finished or never existed.
 #[tauri::command]
 pub async fn agent_cancel(runs: State<'_, AgentRuns>, run_id: String) -> Result<(), String> {
-    if let Some(cancel_tx) = runs.0.lock().await.remove(&run_id) {
-        let _ = cancel_tx.send(());
+    if let Some(entry) = runs.0.lock().await.remove(&run_id) {
+        let _ = entry.cancel_tx.send(());
     }
+    Ok(())
+}
+
+/// Cancel one background subagent within an in-flight `agent_run`, without
+/// affecting the parent run or any other dispatched subagent. No-op if the
+/// parent run or the subagent has already finished (or never existed) - a
+/// closing `SubagentEnd` is delivered to the client (from `abort_one`, same as
+/// when the whole parent run tears down) so its tasks panel stays bracketed.
+#[tauri::command]
+pub async fn agent_cancel_subagent(
+    runs: State<'_, AgentRuns>,
+    run_id: String,
+    subagent_run_id: String,
+) -> Result<(), String> {
+    if let Some(entry) = runs.0.lock().await.get(&run_id) {
+        entry.background_subagents.abort_one(&subagent_run_id);
+    }
+    Ok(())
+}
+
+/// Manually compact a conversation's history for the given model, mirroring
+/// the TUI's `/compact` command (see `compact_history` in loop.rs). Takes the
+/// same `messages` shape the Code UI already persists as session history.
+#[tauri::command]
+pub async fn agent_compact<R: Runtime>(
+    app_handle: AppHandle<R>,
+    state: State<'_, AppState>,
+    model_id: String,
+    messages: Vec<serde_json::Value>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let args = build_orchestration_args(&app_handle, &state);
+    crate::core::agent::r#loop::compact_history(
+        &args,
+        &model_id,
+        &messages,
+        crate::core::agent::compaction::MANUAL_KEEP_RECENT,
+    )
+    .await
+}
+
+/// Run one stateless `/goal` completion check for `condition` against
+/// `messages`, using `smol_model_id` (the session's fast "smol" role model).
+/// Mirrors `agent_compact`: same `OrchestrationArgs` resolution, no streaming,
+/// no tools. Used by the Code UI's `/goal` slash command after each turn to
+/// decide whether to keep nudging the agent or hand control back (mirrors the
+/// TUI's in-loop evaluator, see `goal.rs`).
+#[tauri::command]
+pub async fn agent_goal_evaluate<R: Runtime>(
+    app_handle: AppHandle<R>,
+    state: State<'_, AppState>,
+    smol_model_id: String,
+    condition: String,
+    messages: Vec<serde_json::Value>,
+) -> Result<crate::core::agent::goal::GoalVerdict, String> {
+    let args = build_orchestration_args(&app_handle, &state);
+    crate::core::agent::r#loop::evaluate_goal(&args, &smol_model_id, &condition, &messages).await
+}
+
+/// Resolve an in-flight `ask` tool question. `answers` is `None` when the user
+/// dismisses the dialog without answering, which the loop treats as cancelled
+/// (a no-op if the request is no longer pending - already answered/timed out).
+#[tauri::command]
+pub async fn agent_ask_respond(
+    asks_registry: State<'_, AgentAsks>,
+    request_id: String,
+    answers: Option<Vec<crate::core::agent::interaction::QuestionResult>>,
+) -> Result<(), String> {
+    let outcome = match answers {
+        Some(results) => Ok(results),
+        None => Err(crate::core::agent::interaction::AskError::Cancelled),
+    };
+    let _ = crate::core::agent::interaction::respond(&asks_registry.0, &request_id, outcome).await;
     Ok(())
 }
 
@@ -336,7 +456,7 @@ pub async fn agent_render_preview(
         .await
         .map_err(|e| format!("could not stage the preview for rendering: {e}"))?;
     let rendered =
-        crate::core::agent::tools::handlers::render_html_png(&page, width, height, scale).await;
+        tauri_plugin_agent_tools::tools::handlers::render_html_png(&page, width, height, scale).await;
     let _ = tokio::fs::remove_file(&page).await;
 
     use base64::Engine as _;

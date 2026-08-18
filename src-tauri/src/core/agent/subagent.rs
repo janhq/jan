@@ -1834,6 +1834,7 @@ mod tests {
             max_parallel_subagents: 1,
             auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
+            background_subagents: None,
             session_id: None,
             sandbox: None,
         }
