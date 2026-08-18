@@ -3511,6 +3511,21 @@ impl App {
             Err(e) => self.note(&format!("model set to {} (not saved: {e})", self.model)),
         }
     }
+    /// Header label for the current selection: `provider/model` when the bare
+    /// model id resolves to exactly one provider, so the reader can tell where
+    /// it is served from (the picker already shows the pair) instead of a bare
+    /// `mimo-v2.5` that could route through any of several gateways. Falls back
+    /// to the raw model id when no provider is reachable or the lock is busy.
+    fn header_model_label(&self) -> String {
+        let Some(args) = self.args.as_ref() else {
+            return self.model.clone();
+        };
+        if let Ok(pc) = args.provider_configs.try_lock() {
+            provider_label_for_model(&self.model, &pc)
+        } else {
+            self.model.clone()
+        }
+    }
 
     /// Non-terminal stream events. `Done`/`Error` are handled by the loop since
     /// they mutate history and the run handle.
@@ -12320,6 +12335,39 @@ fn shimmer_spans(text: &str, palette: [Style; 3], frame: usize) -> Vec<Span<'sta
         .collect()
 }
 
+
+/// Resolve the display label for `model`: the `provider/model` pair when the
+/// bare id maps to a configured provider (mirroring upstream resolution:
+/// an exact hit in a provider's `models` list, or a `<provider>/<model>`
+/// prefix). A bare id stays bare when no provider claims it, so a fresh or
+/// custom id is not mislabeled.
+fn provider_label_for_model(
+    model: &str,
+    pc: &HashMap<String, crate::core::state::ProviderConfig>,
+) -> String {
+    use crate::core::cli::providers::is_cli_reachable;
+    // Explicit `<provider>/<model>` form: verify the prefix names a provider.
+    if let Some(sep) = model.find('/') {
+        if pc.contains_key(&model[..sep]) {
+            return model.to_string();
+        }
+    }
+    // Bare id: find the (preferentially reachable, credentialed) provider that
+    // offers it, matching `resolve_upstream_for_model`'s deterministic pick.
+    let offers = |c: &&crate::core::state::ProviderConfig| c.models.iter().any(|m| m == model);
+    let reachable = pc
+        .iter()
+        .filter(|(_, c)| is_cli_reachable(c) && offers(c))
+        .min_by_key(|(name, c)| (std::cmp::Reverse(c.api_key.is_some()), name.clone()))
+        .or_else(|| pc.iter().find(|(_, c)| offers(c)));
+    match reachable {
+        Some((name, _)) if name != model => format!("{name}/{model}"),
+        Some(_) => model.to_string(),
+        None => model.to_string(),
+    }
+}
+
+
 fn header(app: &App) -> Paragraph<'static> {
     Paragraph::new(Line::from(header_spans(app)))
 }
@@ -12356,7 +12404,7 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
     let mut spans = vec![if app.model.is_empty() {
         Span::styled(" no model  ", Style::new().red().bold())
     } else {
-        Span::styled(format!(" {}  ", app.model), Style::new().bold())
+        Span::styled(format!(" {}  ", app.header_model_label()), Style::new().bold())
     }];
     // Reasoning-effort badge: `effort high` after the model, so the configured
     // reasoning depth is visible at a glance. Reported low/medium/high exactly
@@ -12971,6 +13019,7 @@ mod tests {
         image_mime_of, load_first_file_image, load_image_file, MAX_IMAGE_BYTES,
         message_text, CompactKind, MAX_OVERFLOW_RETRIES,
         estimate_token_count, header_spans, status_panel, SubagentPanel,
+        provider_label_for_model,
         note_update, open_config_screen, spawn_branch_poll, await_branch_poll,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
         McpPrompt, McpField, pairs_to_str,
@@ -24180,6 +24229,48 @@ mod tests {
         assert!(
             !text.contains("/128K"),
             "a disproven window must not be a denominator: {text}"
+        );
+    }
+    #[test]
+    fn header_labels_a_bare_model_with_its_single_provider() {
+        let mut pc = std::collections::HashMap::new();
+        pc.insert(
+            "opencode".to_string(),
+            crate::core::state::ProviderConfig {
+                provider: "opencode".into(),
+                base_url: Some("https://opencode.ai/zen/go/v1".into()),
+                api_key: Some("sk-x".into()),
+                models: vec!["mimo-v2.5".into()],
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            provider_label_for_model("mimo-v2.5", &pc),
+            "opencode/mimo-v2.5"
+        );
+    }
+
+    #[test]
+    fn header_keeps_an_unknown_model_id_bare() {
+        let pc = std::collections::HashMap::new();
+        assert_eq!(provider_label_for_model("my-model", &pc), "my-model");
+    }
+
+    #[test]
+    fn header_preserves_an_explicit_provider_qualifier() {
+        let mut pc = std::collections::HashMap::new();
+        pc.insert(
+            "openai".to_string(),
+            crate::core::state::ProviderConfig {
+                provider: "openai".into(),
+                base_url: Some("https://api.openai.com/v1".into()),
+                models: vec!["gpt-5.6-luna".into()],
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            provider_label_for_model("openai/gpt-5.6-luna", &pc),
+            "openai/gpt-5.6-luna"
         );
     }
 
