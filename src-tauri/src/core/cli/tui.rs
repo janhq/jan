@@ -7104,6 +7104,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Switch model (bare: pick interactively)",
     },
     SlashCommand {
+        name: "/effort",
+        hint: "[low|medium|high]",
+        description: "Set reasoning effort (bare: show current; low: faster, high: deeper thinking)",
+    },
+    SlashCommand {
         name: "/mcp",
         hint: "",
         description: "List, add, edit, remove, or toggle MCP servers",
