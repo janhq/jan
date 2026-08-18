@@ -6780,6 +6780,13 @@ async fn handle_key(
         KeyCode::Home => {
             app.cursor = 0;
         }
+        // Shift+Tab cycles reasoning effort (low -> medium -> high -> low),
+        // matching Claude Code's effort toggle. Plain Tab stays a no-op in
+        // normal input mode (slash-command and path-hint popups intercept it
+        // before reaching this arm).
+        KeyCode::Tab if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.cycle_reasoning_effort();
+        }
         KeyCode::End => {
             app.cursor = app.input.len();
         }
@@ -7153,6 +7160,7 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("PgUp/PgDn", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
+    ("Shift+Tab", "Cycle reasoning effort (low/medium/high)"),
     ("Alt+T", "Toggle reasoning effort (low / last)"),
     ("Drag", "Select text, copied on release (Alt+drag for a block)"),
     ("Ctrl-D", "Quit"),
@@ -8435,6 +8443,24 @@ impl App {
         } else {
             self.last_non_low_effort = self.reasoning_effort.clone();
             self.reasoning_effort = "low".into();
+        }
+        self.note(&format!("reasoning effort: {}", self.reasoning_effort));
+    }
+
+    /// Advance through the effort levels (low -> medium -> high -> low),
+    /// Claude Code-style. `Shift+Tab` calls this; it always updates
+    /// `last_non_low_effort` so a subsequent `Alt+T` low/non-low toggle stays
+    /// coherent.
+    fn cycle_reasoning_effort(&mut self) {
+        let next = match self.reasoning_effort.as_str() {
+            "low" => "medium",
+            "medium" => "high",
+            "high" => "low",
+            _ => "medium",
+        };
+        self.reasoning_effort = next.to_string();
+        if next != "low" {
+            self.last_non_low_effort = next.to_string();
         }
         self.note(&format!("reasoning effort: {}", self.reasoning_effort));
     }
@@ -19413,6 +19439,19 @@ mod tests {
         assert_eq!(app.reasoning_effort, "low");
         app.toggle_reasoning_effort();
         assert_eq!(app.reasoning_effort, "high", "restores the latest non-low, not a hardcoded default");
+    }
+
+    #[test]
+    fn shift_tab_cycles_effort_through_all_levels() {
+        let mut app = test_app();
+        app.reasoning_effort = "low".into();
+        app.cycle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "medium");
+        app.cycle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "high");
+        app.cycle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "low", "cycles back to low");
+        assert_eq!(app.last_non_low_effort, "high", "tracks the most recent non-low");
     }
 
     #[test]
