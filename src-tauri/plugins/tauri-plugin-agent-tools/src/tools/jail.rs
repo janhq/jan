@@ -258,6 +258,11 @@ pub fn wrap(cfg: &ShellConfig, policy: &Policy) -> Option<ShellConfig> {
 // bubblewrap (Linux)
 // ---------------------------------------------------------------------------
 
+/// The fixed FHS locations are preferred so a directory prepended to `PATH`
+/// cannot shadow the system bwrap; `PATH` is the fallback for distros with no
+/// FHS layout at all (NixOS keeps bwrap only at a Nix-store path). A planted
+/// `bwrap` found via `PATH` gains nothing: it runs as the same user, and
+/// [`bwrap_usable`]'s live probe still has to pass before it is trusted.
 #[cfg(target_os = "linux")]
 fn bwrap_path() -> Option<PathBuf> {
     static PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
@@ -266,6 +271,7 @@ fn bwrap_path() -> Option<PathBuf> {
             .into_iter()
             .map(PathBuf::from)
             .find(|p| p.is_file())
+            .or_else(|| super::proc::which("bwrap"))
     })
     .clone()
 }
