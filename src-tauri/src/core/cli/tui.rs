@@ -9811,6 +9811,9 @@ fn finish_account_login(app: &mut App, result: Result<String, String>) {
         Err(error) => {
             if let Some(prompt) = app.account_login.as_mut() {
                 let provider = prompt.provider_id();
+                crate::core::cli::auth::account::debug_log(&format!(
+                    "account login failed for {provider}: {error}"
+                ));
                 prompt.submitting = false;
                 prompt.input.clear();
                 prompt.error = Some(if error == "could not open the browser" {

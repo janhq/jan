@@ -62,13 +62,18 @@ pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
         AccountProvider::Claude => (
             "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
             "https://claude.ai/oauth/authorize",
-            "https://platform.claude.com/v1/oauth/token",
+            "https://api.anthropic.com/v1/oauth/token",
             "http://localhost:54545/callback",
-            "user:inference user:profile user:sessions:claude_code user:mcp_servers",
+            "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload",
         ),
     };
-    let verifier = random_url_safe(32);
-    let state = random_url_safe(32);
+    // Verifier and state sizes mirror the reference CLI implementations these
+    // providers were built against (96-byte verifier, 16-byte hex state) --
+    // both providers' authorization servers were only ever exercised against
+    // those exact shapes, and off-spec sizes have been observed to trip
+    // `Invalid request format` at the authorize endpoint.
+    let verifier = random_url_safe(96);
+    let state = random_hex(16);
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let mut url = url::Url::parse(authorization_endpoint).map_err(|e| e.to_string())?;
     {
@@ -101,10 +106,43 @@ pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
     })
 }
 
+/// Append one line to the account-oauth debug log (under the Jan data
+/// folder's `logs/` directory). Best-effort: a failing login must never be
+/// blocked by a failing log write. The on-screen message stays sanitized;
+/// this file carries the real stage/status/body detail for diagnostics.
+pub fn debug_log(message: &str) {
+    use std::io::Write;
+
+    let data_folder = crate::core::app::commands::resolve_jan_data_folder();
+    let path = data_folder.join("logs").join("account-oauth.log");
+    let _ = std::fs::create_dir_all(path.parent().expect("log path has a parent"));
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        let _ = writeln!(file, "[{timestamp}] {message}");
+    }
+}
+
 fn random_url_safe(bytes: usize) -> String {
     let mut value = vec![0; bytes];
     rand::thread_rng().fill_bytes(&mut value);
     URL_SAFE_NO_PAD.encode(value)
+}
+
+/// CSRF state token. Lower-entropy hex (not base64url) to match what both
+/// providers' authorization servers were validated against by the reference
+/// implementations; the format is opaque to us either way; only the
+/// authorize/callback round trip cares that it matches.
+fn random_hex(bytes: usize) -> String {
+    let mut value = vec![0; bytes];
+    rand::thread_rng().fill_bytes(&mut value);
+    hex::encode(value)
 }
 
 pub fn parse_callback(raw: &str, expected_state: &str) -> Result<String, String> {
@@ -229,16 +267,23 @@ fn token_request_body(
     login: &AccountLogin,
     code: &str,
 ) -> std::collections::BTreeMap<String, String> {
-    [
+    let mut fields = vec![
         ("grant_type", "authorization_code".to_string()),
         ("client_id", login.client_id.to_string()),
         ("code", code.to_string()),
         ("code_verifier", login.verifier.clone()),
         ("redirect_uri", login.redirect_uri.to_string()),
-    ]
-    .into_iter()
-    .map(|(key, value)| (key.to_string(), value))
-    .collect()
+    ];
+    // Anthropic's token endpoint expects `state` echoed back in the exchange
+    // body (pi's `AnthropicOAuthFlow.exchangeToken` sends it); OpenAI's does
+    // not accept it on this grant.
+    if login.provider == AccountProvider::Claude {
+        fields.push(("state", login.state.clone()));
+    }
+    fields
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value))
+        .collect()
 }
 fn refresh_request_body(
     client_id: &str,
@@ -277,17 +322,31 @@ pub async fn exchange(login: &AccountLogin, code: &str) -> Result<OAuthToken, St
         "Bearer".to_string()
     }
 
-    let response = reqwest::Client::new()
-        .post(&login.token_endpoint)
-        .form(&token_request_body(login, code))
+    let request = reqwest::Client::new().post(&login.token_endpoint);
+    let request = match login.provider {
+        // Anthropic's /v1/oauth/token expects a JSON body (pi posts
+        // application/json); OpenAI's accepts only form-encoded.
+        AccountProvider::Claude => request.json(&token_request_body(login, code)),
+        AccountProvider::Codex => request.form(&token_request_body(login, code)),
+    };
+    let response = request
         .send()
         .await
-        .map_err(|_| "could not exchange the authorization code".to_string())?;
+        .map_err(|error| {
+            debug_log(&format!(
+                "exchange: could not reach {}: {error}",
+                login.token_endpoint
+            ));
+            "could not exchange the authorization code".to_string()
+        })?;
     if !response.status().is_success() {
-        return Err(format!(
-            "account sign-in was rejected (HTTP {})",
-            response.status()
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        debug_log(&format!(
+            "exchange: rejected by {} with HTTP {status} body={body}",
+            login.token_endpoint
         ));
+        return Err(format!("account sign-in was rejected (HTTP {status})"));
     }
     let token = response
         .json::<TokenResponse>()
@@ -311,6 +370,23 @@ pub async fn exchange(login: &AccountLogin, code: &str) -> Result<OAuthToken, St
     })
 }
 
+/// Client id and token endpoint for the refresh grant. Kept in sync with
+/// `begin()` -- Claude's `platform.claude.com` console endpoint only grants
+/// `org:create_api_key`, not `user:inference`, so refreshing against it would
+/// silently downgrade an inference-capable session.
+fn refresh_endpoint(provider: AccountProvider) -> (&'static str, &'static str) {
+    match provider {
+        AccountProvider::Codex => (
+            "app_EMoamEEZ73f0CkXaXp7hrann",
+            "https://auth.openai.com/oauth/token",
+        ),
+        AccountProvider::Claude => (
+            "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+            "https://api.anthropic.com/v1/oauth/token",
+        ),
+    }
+}
+
 pub async fn refresh(provider: AccountProvider, token: &OAuthToken) -> Result<OAuthToken, String> {
     #[derive(serde::Deserialize)]
     struct TokenResponse {
@@ -329,26 +405,37 @@ pub async fn refresh(provider: AccountProvider, token: &OAuthToken) -> Result<OA
         "Bearer".to_string()
     }
 
-    let (client_id, token_endpoint) = match provider {
-        AccountProvider::Codex => (
-            "app_EMoamEEZ73f0CkXaXp7hrann",
-            "https://auth.openai.com/oauth/token",
-        ),
-        AccountProvider::Claude => (
-            "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
-            "https://platform.claude.com/v1/oauth/token",
-        ),
+    let (client_id, token_endpoint) = refresh_endpoint(provider);
+    let body = refresh_request_body(client_id, token)?;
+    let request = reqwest::Client::new().post(token_endpoint);
+    let request = match provider {
+        // Anthropic refresh expects JSON plus the versioned beta header and a
+        // recognizable user agent (pi's refreshAnthropicToken sends both);
+        // OpenAI's endpoint accepts only form-encoded.
+        AccountProvider::Claude => request
+            .header("anthropic-beta", "oauth-2025-04-20")
+            .header(
+                "user-agent",
+                "anthropic-sdk-typescript/0.94.0 userOAuthProvider",
+            )
+            .json(&body),
+        AccountProvider::Codex => request.form(&body),
     };
-    let response = reqwest::Client::new()
-        .post(token_endpoint)
-        .form(&refresh_request_body(client_id, token)?)
+    let response = request
         .send()
         .await
-        .map_err(|_| "could not refresh the account token".to_string())?;
+        .map_err(|error| {
+            debug_log(&format!("refresh: could not reach {token_endpoint}: {error}"));
+            "could not refresh the account token".to_string()
+        })?;
     if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        debug_log(&format!(
+            "refresh: rejected by {token_endpoint} with HTTP {status} body={body}"
+        ));
         return Err(format!(
-            "account token refresh was rejected (HTTP {})",
-            response.status()
+            "account token refresh was rejected (HTTP {status})"
         ));
     }
     let refreshed = response
@@ -478,7 +565,13 @@ async fn complete_code_login(
     let models =
         crate::core::cli::auth::providers::discover_models(&definition, &token.access_token)
             .await
-            .map_err(|_| "could not discover account models".to_string())?;
+            .map_err(|error| {
+                debug_log(&format!(
+                    "model discovery: {} rejected the token: {error:?}",
+                    definition.id
+                ));
+                "could not discover account models".to_string()
+            })?;
     store(provider, &token)?;
     if let Err(error) = crate::core::agent::global_config::set_provider(
         definition.id,
@@ -706,7 +799,7 @@ mod tests {
         assert_eq!(login.client_id, "9d1c250a-e61b-44d9-88ed-5944d1962f5e");
         assert_eq!(
             login.token_endpoint,
-            "https://platform.claude.com/v1/oauth/token"
+            "https://api.anthropic.com/v1/oauth/token"
         );
     }
 
@@ -720,15 +813,12 @@ mod tests {
                 .find(|(key, _)| key == "scope")
                 .unwrap()
                 .1,
-            "user:inference user:profile user:sessions:claude_code user:mcp_servers"
+            "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
         );
-        assert_eq!(login.state.len(), 43, "state must be 43-char base64url");
+        assert_eq!(login.state.len(), 32, "state must be 32-char hex");
         assert!(
-            login
-                .state
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'),
-            "state must be URL-safe base64"
+            login.state.bytes().all(|b| b.is_ascii_hexdigit()),
+            "state must be lowercase hex"
         );
     }
 
@@ -825,6 +915,13 @@ mod tests {
             Some(&login.redirect_uri.to_string())
         );
         assert!(fields.get("client_id").is_some());
+        // Anthropic's token endpoint expects `state` echoed back on exchange;
+        // OpenAI's rejects the extra field, so it must stay Claude-only.
+        assert_eq!(fields.get("state"), Some(&login.state));
+
+        let codex_login = begin(AccountProvider::Codex).unwrap();
+        let codex_fields = token_request_body(&codex_login, "authorization-code");
+        assert!(!codex_fields.contains_key("state"));
     }
 
     #[tokio::test]
@@ -857,6 +954,83 @@ mod tests {
         assert_eq!(token.token_type, "Bearer");
         assert_eq!(token.scopes, vec!["profile", "offline_access"]);
         assert!(token.expires_at.is_some());
+    }
+
+    /// Each provider's token endpoint expects a specific request encoding:
+    /// Anthropic posts JSON, OpenAI posts form-encoded. Sending the wrong one
+    /// gets the exchange rejected even when every other parameter is right.
+    #[tokio::test]
+    async fn exchange_posts_json_for_claude_and_form_for_codex() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        async fn run_case(provider: AccountProvider, expected: &str) {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let endpoint = format!("http://{}/token", listener.local_addr().unwrap());
+            let body = r#"{"access_token":"access","expires_in":3600,"token_type":"Bearer"}"#;
+            let expected = expected.to_string();
+            let handle = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = Vec::new();
+                let mut chunk = [0; 8192];
+                // Read until the full body has arrived: a single read can
+                // return headers only while the body is still in flight, and
+                // answering early makes reqwest's send() fail mid-write.
+                loop {
+                    match stream.read(&mut chunk).unwrap() {
+                        0 => break,
+                        n => {
+                            request.extend_from_slice(&chunk[..n]);
+                            if let Some(header_end) =
+                                request.windows(4).position(|w| w == b"\r\n\r\n")
+                            {
+                                let head = String::from_utf8_lossy(&request[..header_end]);
+                                let content_length = head
+                                    .lines()
+                                    .find_map(|line| {
+                                        line.to_ascii_lowercase()
+                                            .strip_prefix("content-length:")
+                                            .map(|v| v.trim().parse::<usize>().unwrap_or(0))
+                                    })
+                                    .unwrap_or(0);
+                                if request.len() >= header_end + 4 + content_length {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                let request = String::from_utf8_lossy(&request);
+                assert!(
+                    request.starts_with(&format!("POST /token HTTP/1.1\r\n")),
+                    "{request}"
+                );
+                let lower = request.to_ascii_lowercase();
+                assert!(
+                    lower.contains(&expected.to_ascii_lowercase()),
+                    "missing {expected} in: {request}"
+                );
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .unwrap();
+            });
+
+            let mut login = begin(provider).unwrap();
+            login.token_endpoint = endpoint;
+            exchange(&login, "authorization-code").await.unwrap();
+            handle.join().unwrap();
+        }
+
+        run_case(AccountProvider::Claude, "Content-Type: application/json").await;
+        run_case(
+            AccountProvider::Codex,
+            "Content-Type: application/x-www-form-urlencoded",
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -1071,5 +1245,19 @@ mod tests {
         );
         assert_eq!(fields.get("client_id"), Some(&"client".to_string()));
         assert!(!fields.contains_key("access_token"));
+    }
+
+    #[test]
+    fn refresh_endpoint_matches_the_endpoint_begin_authorized_against() {
+        // A refresh grant against a different endpoint than the one the user
+        // consented to at `begin()` can silently swap token scope (Claude's
+        // console endpoint grants org:create_api_key only, not
+        // user:inference) even though the request itself succeeds.
+        for provider in [AccountProvider::Codex, AccountProvider::Claude] {
+            let login = begin(provider).unwrap();
+            let (client_id, token_endpoint) = refresh_endpoint(provider);
+            assert_eq!(client_id, login.client_id);
+            assert_eq!(token_endpoint, login.token_endpoint);
+        }
     }
 }
