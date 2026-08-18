@@ -20,6 +20,7 @@
   "plugins": "Plugins",
   "config-separator": { "title": "Configuration", "type": "separator" },
   "providers": "Providers",
+  "contributing-providers": "Contributing a Provider",
   "project-config": "Project Config",
   "permissions": "Tool Permissions",
   "mcp": "MCP",
