@@ -15,4 +15,5 @@ export enum ModelCapabilities {
   AUDIO_TO_TEXT = 'audio_to_text',
   // Need to consolidate the capabilities list
   VISION = 'vision',
+  VIDEO = 'video',
 }
