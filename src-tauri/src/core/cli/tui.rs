@@ -64,6 +64,30 @@ const MOUSE_TRACK_ON: &str = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
 const ALT_SCROLL_SAVE_OFF: &str = "\x1b[?1007s\x1b[?1007l";
 const ALT_SCROLL_RESTORE: &str = "\x1b[?1007r";
 
+/// Whether to hand the wheel to the terminal's native alternate-scroll instead
+/// of asking it to report wheel events to the app. Disabling alternate scroll
+/// (`?1007l`) makes an xterm-family terminal deliver the wheel as SGR mouse
+/// reports for the app to turn into scrollback. Windows Terminal accepts the
+/// mode but does not do the same: with it forced off the wheel goes dead in the
+/// alternate buffer, so there the app keeps `?1000h` SGR mouse as the sole wheel
+/// path and leaves alternate scroll alone. Same decision on save/restore, so
+/// the pair is always balanced.
+fn alt_scroll_save_off() -> &'static str {
+    if cfg!(windows) {
+        ""
+    } else {
+        ALT_SCROLL_SAVE_OFF
+    }
+}
+
+fn alt_scroll_restore() -> &'static str {
+    if cfg!(windows) {
+        ""
+    } else {
+        ALT_SCROLL_RESTORE
+    }
+}
+
 /// How long the dock advertises a finished copy.
 const COPY_NOTICE: Duration = Duration::from_millis(1500);
 /// Terminals cap the OSC 52 payload they will accept; past this the sequence is
@@ -4882,7 +4906,7 @@ pub async fn run(
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableBracketedPaste).map_err(|e| e.to_string())?;
-    let mut modes = String::from(ALT_SCROLL_SAVE_OFF);
+    let mut modes = String::from(alt_scroll_save_off());
     if crate::core::agent::global_config::mouse_enabled() {
         modes.push_str(MOUSE_TRACK_ON);
     }
@@ -4972,7 +4996,7 @@ pub async fn run(
         terminal.backend_mut(),
         DisableBracketedPaste,
         DisableMouseCapture,
-        Print(ALT_SCROLL_RESTORE),
+        Print(alt_scroll_restore()),
         LeaveAlternateScreen,
     );
     let _ = terminal.show_cursor();
@@ -10485,7 +10509,7 @@ mod tests {
         SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
         COMMAND_LABEL_MAX, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
         KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER,
-        SPINNER_ADVANCE_MS,
+        SPINNER_ADVANCE_MS, alt_scroll_restore, alt_scroll_save_off,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -15108,6 +15132,21 @@ mod tests {
             "the wheel must never arrive as arrow keys"
         );
         assert!(ALT_SCROLL_RESTORE.contains("?1007r"), "restore on exit");
+    }
+
+    #[test]
+    fn alt_scroll_is_disabled_only_where_the_terminal_reports_wheel() {
+        // The app keeps native alternate scroll (i.e. sends nothing) on Windows,
+        // where forcing `?1007l` kills the wheel; everywhere else it disables it
+        // so the wheel arrives as SGR mouse reports. The save/off and restore
+        // pair must always agree so the mode is left balanced on exit.
+        if cfg!(windows) {
+            assert_eq!(alt_scroll_save_off(), "", "Windows must not disable alt scroll");
+            assert_eq!(alt_scroll_restore(), "", "Windows must not restore alt scroll");
+        } else {
+            assert_eq!(alt_scroll_save_off(), ALT_SCROLL_SAVE_OFF);
+            assert_eq!(alt_scroll_restore(), ALT_SCROLL_RESTORE);
+        }
     }
 
     #[test]
