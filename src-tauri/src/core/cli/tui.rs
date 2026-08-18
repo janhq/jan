@@ -1366,6 +1366,26 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 /// Milliseconds per spinner frame, decoupled from the 50ms render tick.
 const SPINNER_ADVANCE_MS: u64 = 80;
 
+/// Rotating action words for the running input placeholder, replacing a static
+/// "working…" so a long turn does not read as a hung UI.
+const WORKING_WORDS: [&str; 6] =
+    ["working", "computing", "processing", "analyzing", "crunching", "grinding"];
+
+/// Rotating action words shown while the model is reasoning (a ` think>` block
+/// is streaming), coloured orange. Mirrors the working list so the two states
+/// read as the same kind of progress, just distinct in wording and colour.
+const THINKING_WORDS: [&str; 6] =
+    ["thinking", "reasoning", "pondering", "reflecting", "deliberating", "musing"];
+
+/// Spinner frames per placeholder-word change, so the action word turns over
+/// at a readable pace (10 frames x 80ms ~= 0.8s) rather than on the braille
+/// spinner's every sub-frame.
+const WORD_ROTATE_FRAMES: usize = 10;
+
+/// Orange used for the "thinking" action word, matching the markdown bold
+/// accent so reasoning reads consistently across the TUI.
+const THINKING_ORANGE: Color = Color::Rgb(255, 165, 0);
+
 /// How long the `[thought for Ns]` header summary lingers after a reasoning
 /// block closes before it falls back to the plain `[working]` status. The
 /// summary is only a transient cue that a block finished; it should not pin the
@@ -10907,12 +10927,27 @@ fn input_box(app: &App) -> Paragraph<'static> {
     } else if app.status == Status::Running && app.input.is_empty() {
         // Show queue status when running with empty input
         if app.message_queue.is_empty() {
-            // The spinner carries the motion; the rest of the row is static so
-            // the text stays readable rather than shifting under the eye.
+            // The spinner carries the fast motion; the action word turns over
+            // on a slower cadence, cycling "working" synonyms -- or "thinking"
+            // synonyms in orange while a reasoning block streams -- so the row
+            // reads alive without shifting under the eye.
+            let step = app.spinner_frame / WORD_ROTATE_FRAMES;
+            let (word, style) = if thinking_open(&app.assistant_buf) {
+                (
+                    THINKING_WORDS[step % THINKING_WORDS.len()],
+                    Style::new().fg(THINKING_ORANGE).italic(),
+                )
+            } else {
+                (
+                    WORKING_WORDS[step % WORKING_WORDS.len()],
+                    Style::new().dim().italic(),
+                )
+            };
             Paragraph::new(Line::from(vec![
                 Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
+                Span::styled(format!("{word}…"), style),
                 Span::styled(
-                    "working… (Esc to cancel, type to queue next message)",
+                    " (Esc to cancel, type to queue next message)",
                     Style::new().dim().italic(),
                 ),
             ]))
@@ -11125,7 +11160,8 @@ mod tests {
         SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
         COMMAND_LABEL_MAX, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
         KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER, PROVIDERS_SETTINGS_ROW,
-        SPINNER_ADVANCE_MS, alt_scroll_restore, alt_scroll_save_off,
+        SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
+        alt_scroll_restore, alt_scroll_save_off,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -17184,7 +17220,8 @@ mod tests {
 
     /// The running placeholder is the row a user stares at during a long turn.
     /// A static "working…" reads as a hung UI, so it animates on the same
-    /// cadence as every other throbber.
+    /// cadence as every other throbber: the spinner glyph rotates, and the
+    /// action word cycles through synonyms of "working".
     #[test]
     fn working_placeholder_animates() {
         let mut app = test_app();
@@ -17194,7 +17231,7 @@ mod tests {
         let frame_of = |app: &mut App| {
             render_rows(app, 80, 12)
                 .into_iter()
-                .find(|r| r.contains("working…"))
+                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
                 .expect("running placeholder present")
         };
 
@@ -17202,13 +17239,90 @@ mod tests {
         let first = frame_of(&mut app);
         assert!(first.contains(SPINNER[0]), "expected frame 0 glyph: {first:?}");
 
+        // While a plain turn is running (no reasoning), the row shows a
+        // rotating synonym of "working".
+        assert!(
+            WORKING_WORDS.iter().any(|w| first.contains(w)),
+            "expected a working synonym in: {first:?}"
+        );
+
         app.spinner_frame = 3;
         let later = frame_of(&mut app);
         assert!(later.contains(SPINNER[3]), "expected frame 3 glyph: {later:?}");
         assert_ne!(first, later, "row must change as the frame advances");
 
-        // The wording itself does not move, only the glyph.
         assert!(later.contains("(Esc to cancel, type to queue next message)"), "{later:?}");
+    }
+
+    /// When the model is reasoning (a ` think>` block is streaming), the input
+    /// placeholder cycles through synonyms of "thinking".
+    #[test]
+    fn thinking_placeholder_uses_thinking_synonyms() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Token {
+            text: "<think>ponder the plan".into(),
+        });
+        let row = render_rows(&mut app, 80, 12)
+            .into_iter()
+            .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+            .expect("running placeholder present");
+        assert!(
+            THINKING_WORDS.iter().any(|w| row.contains(w)),
+            "expected a thinking synonym in: {row:?}"
+        );
+        assert!(
+            !WORKING_WORDS.iter().any(|w| row.contains(w)),
+            "no working synonym while reasoning: {row:?}"
+        );
+    }
+
+    /// Thinking synonyms are coloured orange so the active reasoning state
+    /// stands out from the quiet working rows.
+    #[test]
+    fn thinking_synonym_is_orange() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Token {
+            text: "<think>ponder the plan".into(),
+        });
+        let mut terminal = Terminal::new(TestBackend::new(80, 12)).unwrap();
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        // Locate the placeholder row, then assert the action word's cells are
+        // orange (the trailing hint stays dim, so only the word carries it).
+        let orange = (0..buf.area.height).any(|y| {
+            let row: String = (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect();
+            if !THINKING_WORDS.iter().any(|w| row.contains(w)) {
+                return false;
+            }
+            (0..buf.area.width)
+                .any(|x| buf[(x, y)].style().fg == Some(super::THINKING_ORANGE))
+        });
+        assert!(orange, "thinking synonym not orange");
+    }
+
+    /// The working word rotates to a different synonym as the frame advances.
+    #[test]
+    fn working_synonym_rotates_across_frames() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        let mut word_at = |frame: usize| {
+            app.spinner_frame = frame;
+            let row = render_rows(&mut app, 80, 12)
+                .into_iter()
+                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                .expect("running placeholder present");
+            WORKING_WORDS
+                .iter()
+                .find(|w| row.contains(*w))
+                .map(|w| w.to_string())
+                .expect("working synonym present")
+        };
+        let a = word_at(0);
+        let b = word_at(super::WORD_ROTATE_FRAMES);
+        assert_ne!(a, b, "working word must rotate as frames advance: {a}");
     }
 
     /// A queued-message row is still a running row, so it animates too.
