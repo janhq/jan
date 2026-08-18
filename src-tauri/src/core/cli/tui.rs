@@ -5591,7 +5591,10 @@ async fn handle_ask_key(
     true
 }
 
-/// Route a bracketed paste event to the active input owner.
+/// Route a bracketed paste event to the active input owner. The order mirrors
+/// `handle_key`: each docked prompt owns the keyboard while open, so a paste
+/// must land in its fields rather than the chat composer (where a pasted API
+/// key would echo).
 fn route_paste_event(app: &mut App, event: Event) {
     let Event::Paste(text) = event else {
         return;
@@ -5599,6 +5602,12 @@ fn route_paste_event(app: &mut App, event: Event) {
     if let Some(prompt) = app.login.as_mut() {
         // A pasted API key belongs to the login field, not the chat composer
         // (where it would echo).
+        prompt.paste(&text);
+    } else if let Some(prompt) = app.settings_prompt.as_mut() {
+        prompt.paste(&text);
+    } else if let Some(prompt) = app.mcp_prompt.as_mut() {
+        prompt.paste(&text);
+    } else if let Some(prompt) = app.provider_prompt.as_mut() {
         prompt.paste(&text);
     } else if !app.ask_queue.is_empty() {
         handle_ask_paste(app, &text);
@@ -6920,6 +6929,12 @@ impl SettingsPrompt {
             .find(|d| d.key == self.key)
             .expect("settings prompt always opens for a def row")
     }
+
+    /// Apply a bracketed paste to the field, dropping the whitespace terminals
+    /// add around a paste.
+    fn paste(&mut self, text: &str) {
+        self.input.push_str(super::secret_input::pasted(text));
+    }
 }
 
 /// A docked multi-field wizard for adding or editing an MCP server. Collects
@@ -7089,6 +7104,22 @@ impl McpPrompt {
         }
         Ok(())
     }
+
+    /// Apply a bracketed paste to the active text field. Toggle fields
+    /// (transport, active) ignore pastes exactly as they ignore typed
+    /// characters.
+    fn paste(&mut self, text: &str) {
+        let text = super::secret_input::pasted(text);
+        match self.field {
+            McpField::Name => self.name.push_str(text),
+            McpField::Command => self.command.push_str(text),
+            McpField::Args => self.args.push_str(text),
+            McpField::Env => self.env.push_str(text),
+            McpField::Url => self.url.push_str(text),
+            McpField::Headers => self.headers.push_str(text),
+            _ => {}
+        }
+    }
 }
 
 /// Render a `KEY=VALUE` map as a comma-separated string, for pre-filling the
@@ -7175,6 +7206,18 @@ impl ProviderPrompt {
             api_key: String::new(),
             models: String::new(),
             error: None,
+        }
+    }
+
+    /// Apply a bracketed paste to the active field, dropping the whitespace
+    /// terminals add around a paste.
+    fn paste(&mut self, text: &str) {
+        let text = super::secret_input::pasted(text);
+        match self.field {
+            ProviderField::Name => self.name.push_str(text),
+            ProviderField::BaseUrl => self.base_url.push_str(text),
+            ProviderField::ApiKey => self.api_key.push_str(text),
+            ProviderField::Models => self.models.push_str(text),
         }
     }
 
@@ -13864,6 +13907,94 @@ mod tests {
         assert_eq!(prompt.field, ProviderField::ApiKey, "typing k must not move up");
         assert_eq!(prompt.name, "kitty-jet");
         assert_eq!(prompt.api_key, "sk-ant-k3y-j");
+    }
+
+    /// A bracketed paste while the provider wizard is open must land in the
+    /// active field, not the chat composer (where a pasted API key would echo).
+    #[test]
+    fn provider_prompt_paste_routes_to_active_field() {
+        let mut app = test_app();
+        app.provider_prompt = Some(super::ProviderPrompt::new());
+
+        // Paste into the name field; outer whitespace is trimmed.
+        route_paste_event(&mut app, Event::Paste(" my-provider ".into()));
+        assert_eq!(
+            app.provider_prompt.as_ref().unwrap().name,
+            "my-provider",
+            "outer whitespace is trimmed"
+        );
+
+        // Advance to the API key field and paste a key shaped like a real one.
+        super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+        super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+        assert_eq!(app.provider_prompt.as_ref().unwrap().field, ProviderField::ApiKey);
+        route_paste_event(&mut app, Event::Paste("sk-ant-pasted-key".into()));
+        assert_eq!(
+            app.provider_prompt.as_ref().unwrap().api_key,
+            "sk-ant-pasted-key"
+        );
+
+        assert!(app.input.is_empty(), "paste leaked into chat composer");
+    }
+
+    /// A paste while the MCP wizard is open lands in the active text field,
+    /// is ignored on a toggle field, and never leaks to the chat composer.
+    #[test]
+    fn mcp_prompt_paste_routes_to_active_text_field() {
+        let mut app = test_app();
+        app.mcp_prompt = Some(McpPrompt {
+            editing: None,
+            field: McpField::Name,
+            name: String::new(),
+            transport: "http".to_string(),
+            command: String::new(),
+            args: String::new(),
+            env: String::new(),
+            url: String::new(),
+            headers: String::new(),
+            active: false,
+            error: None,
+        });
+
+        // Name field: paste a name, trimmed of outer whitespace.
+        route_paste_event(&mut app, Event::Paste(" my-server ".into()));
+        assert_eq!(app.mcp_prompt.as_ref().unwrap().name, "my-server");
+
+        // Paste into the Url field.
+        app.mcp_prompt.as_mut().unwrap().field = McpField::Url;
+        route_paste_event(&mut app, Event::Paste("https://jk.example/mcp".into()));
+        assert_eq!(
+            app.mcp_prompt.as_ref().unwrap().url,
+            "https://jk.example/mcp"
+        );
+
+        // A paste on a toggle field is ignored, not typed or leaked.
+        app.mcp_prompt.as_mut().unwrap().field = McpField::Transport;
+        let transport_before = app.mcp_prompt.as_ref().unwrap().transport.clone();
+        route_paste_event(&mut app, Event::Paste("stdio".into()));
+        assert_eq!(
+            app.mcp_prompt.as_ref().unwrap().transport,
+            transport_before,
+            "pasting on a toggle field must not change it"
+        );
+
+        assert!(app.input.is_empty(), "paste leaked into chat composer");
+    }
+
+    /// A paste while a settings edit dock is open lands in its field, not the
+    /// chat composer.
+    #[test]
+    fn settings_prompt_paste_routes_to_field() {
+        let mut app = test_app();
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "max_parallel_subagents")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+
+        route_paste_event(&mut app, Event::Paste(" 4 ".into()));
+        assert_eq!(app.settings_prompt.as_ref().unwrap().input, "4");
+        assert!(app.input.is_empty(), "paste leaked into chat composer");
     }
 
     #[test]
