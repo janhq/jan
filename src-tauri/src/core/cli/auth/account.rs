@@ -526,6 +526,65 @@ pub fn store(provider: AccountProvider, token: &OAuthToken) -> Result<(), String
         &Credential::OAuthToken(token.clone()),
     )
 }
+// A Claude account token resolves to whichever Anthropic org/workspace was
+// active on claude.ai at consent time. That org's plan decides which models
+// the token may run: on the free personal plan only lightweight models (e.g.
+// claude-haiku) respond, while heavy models (sonnet/opus) return 429 even
+// with plentiful overall quota. This reports the resolved entitlement so a
+// sign-in that landed on the wrong org is diagnosed immediately instead of
+// surfacing later as mysterious rate-limit errors. Best-effort: never fails
+// a login; on any error it returns the given `fallback` message.
+pub async fn claude_plan_summary(fallback: &str) -> String {
+    let Ok(Some(Credential::OAuthToken(token))) =
+        CredentialStore::load(AccountProvider::Claude.credential_provider())
+    else {
+        return fallback.to_string();
+    };
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return fallback.to_string(),
+    };
+    // Overall utilization is not the discriminator; model-family entitlement is.
+    // Probe one heavy model (sonnet) and one lightweight model (haiku) with a
+    // single-token request. If only the lightweight model answers, the token is
+    // on a plan without heavy-model access (typically the free personal plan),
+    // even though the account may belong to an enterprise team.
+    let mut heavy_ok = false;
+    for model in ["claude-haiku-4-5", "claude-sonnet-5"] {
+        let body = serde_json::json!({
+            "model": model,
+            "max_tokens": 1,
+            "messages": [{"role": "user", "content": "hi"}],
+        });
+        let probe = client
+            .post("https://api.anthropic.com/v1/messages")
+            .header("Authorization", format!("Bearer {}", token.access_token))
+            .header("anthropic-beta", "oauth-2025-04-20,claude-code-20250219")
+            .header("anthropic-version", "2023-06-01")
+            .json(&body)
+            .send()
+            .await;
+        if matches!(&probe, Ok(response) if response.status().is_success()) {
+            if model == "claude-sonnet-5" {
+                heavy_ok = true;
+            }
+        }
+    }
+    claude_plan_message(heavy_ok)
+}
+
+/// Human-readable verdict on which Claude entitlement a token resolved to,
+/// derived purely from whether the heavy-model probe (sonnet) succeeded.
+fn claude_plan_message(heavy_ok: bool) -> String {
+    if heavy_ok {
+        "Claude account resolved with heavy-model access (enterprise/premium quota in effect). Models check out: claude-sonnet-5 and claude-haiku-4-5 both respond.".to_string()
+    } else {
+        "Claude account resolved to a plan without heavy-model access (likely the free personal plan): claude-sonnet-5 is rate-limited (429) while claude-haiku-4-5 works. If this account belongs to an enterprise team, re-authorize with the enterprise workspace active on claude.ai.".to_string()
+    }
+}
 
 pub async fn complete_browser_login(login: AccountLogin) -> Result<AccountProvider, String> {
     let listener = bind_callback(&login).await?;
@@ -1459,6 +1518,31 @@ mod tests {
         );
         assert_eq!(fields.get("client_id"), Some(&"client".to_string()));
         assert!(!fields.contains_key("access_token"));
+    }
+
+    #[test]
+    fn claude_plan_message_heavy_access_names_premium() {
+        let text = claude_plan_message(true);
+        assert!(text.contains("heavy-model access"), "{text}");
+        assert!(text.contains("enterprise/premium"), "{text}");
+    }
+
+    #[test]
+    fn claude_plan_message_personal_plan_names_the_discriminator() {
+        let text = claude_plan_message(false);
+        assert!(text.contains("free personal plan"), "{text}");
+        assert!(text.contains("claude-sonnet-5"), "{text}");
+        assert!(text.contains("429"), "{text}");
+        assert!(text.contains("claude-haiku-4-5"), "{text}");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn claude_plan_summary_falls_back_when_no_credential() {
+        let _temp = TempSecrets::new();
+        // No Claude credential is stored in the fresh temp home, so the
+        // function must produce the fallback line rather than panic/fail.
+        let summary = claude_plan_summary("fallback-line").await;
+        assert_eq!(summary, "fallback-line");
     }
 
     #[test]

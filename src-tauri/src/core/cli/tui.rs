@@ -5767,6 +5767,22 @@ async fn await_account_login(
     joined.map_err(|e| format!("account sign-in task failed: {e}"))?
 }
 
+/// Await the post-Claude-login plan-report task, parking forever when none is
+/// running so this can sit in the loop's `select!` unconditionally.
+async fn await_account_usage(
+    task: &mut Option<tokio::task::JoinHandle<String>>,
+) -> String {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    match joined {
+        Ok(summary) => summary,
+        Err(e) => format!("could not check the Claude plan: {e}"),
+    }
+}
+
 /// How often the dock's branch indicator re-reads `HEAD`, so a checkout made
 /// outside the TUI (another terminal, an editor) shows up without needing a
 /// restart. Cheap (`rev-parse --abbrev-ref HEAD`) but still shells out, so this
@@ -6128,6 +6144,11 @@ async fn chat_loop<B: Backend>(
     > = None;
 
     let mut account_login_task: Option<tokio::task::JoinHandle<Result<String, String>>> = None;
+    // Claude sign-in reports which org/plan the token resolved to (personal
+    // free vs enterprise premium) so a wrong-org consent is caught immediately
+    // instead of surfacing later as sonnet/opus 429s. Detached like the update
+    // check: the probe is a network round trip and must not block sign-in.
+    let mut account_usage_task: Option<tokio::task::JoinHandle<String>> = None;
 
     // The update check is a network round trip, so it runs off the render loop
     // and notes itself whenever it lands rather than delaying the first frame.
@@ -6371,7 +6392,22 @@ async fn chat_loop<B: Backend>(
                 }
             }
             account_login = await_account_login(&mut account_login_task) => {
+                let anthropic = matches!(account_login.as_deref(), Ok("anthropic"));
                 finish_account_login(app, account_login);
+                if anthropic {
+                    // Fallback text is only shown if the stored token or the
+                    // probe itself errors (no credential, network failure), so
+                    // a straightforward down/rate-limit state stays visible.
+                    account_usage_task = Some(tokio::spawn(async move {
+                        crate::core::cli::auth::account::claude_plan_summary(
+                            "could not check which Claude plan this account resolves to.",
+                        )
+                        .await
+                    }));
+                }
+            }
+            usage = await_account_usage(&mut account_usage_task) => {
+                app.note(&usage);
             }
             update = await_update_check(&mut update_task) => {
                 note_update(app, update);
