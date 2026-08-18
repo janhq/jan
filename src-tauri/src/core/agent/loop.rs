@@ -145,6 +145,9 @@ struct HttpModelInvoker {
     client: Client,
     upstream_url: String,
     api_keys: Vec<String>,
+    /// Provider registry, used to strip a `<provider>/` qualifier from the
+    /// request's `model` field (the upstream must receive the bare model id).
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     /// When the provider fronts a native (non-chat/completions) wire API
     /// (Anthropic `/messages`, OpenAI `/responses`, Google `generateContent`),
     /// this converter translates the request and decodes the upstream stream
@@ -159,13 +162,25 @@ impl ModelInvoker for HttpModelInvoker {
         request: &serde_json::Value,
         events: &mpsc::UnboundedSender<StreamEvent>,
     ) -> Result<serde_json::Value, String> {
+        // `provider/model` is the CLI's explicit selection syntax. The upstream
+        // URL + credential have already been resolved from that qualifier, so
+        // the body must carry the bare model id - providers like OpenCode GO
+        // reject a provider-qualified id with "model not supported".
+        let mut normalized = request.clone();
+        if let Some(model) = normalized.get("model").and_then(|m| m.as_str()) {
+            let pc = self.provider_configs.lock().await;
+            let bare = crate::core::agent::upstream::strip_provider_prefix(model, &pc);
+            if bare != model {
+                normalized["model"] = serde_json::json!(bare);
+            }
+        }
         if let Some(converter) = &self.converter {
             crate::core::agent::upstream::stream_converted_chat_completions(
                 &self.client,
                 &self.upstream_url,
                 &self.api_keys,
                 converter.as_ref(),
-                request,
+                &normalized,
                 events,
             )
             .await
@@ -174,7 +189,7 @@ impl ModelInvoker for HttpModelInvoker {
                 &self.client,
                 &self.upstream_url,
                 &self.api_keys,
-                request,
+                &normalized,
                 events,
             )
             .await
@@ -1504,6 +1519,7 @@ async fn orchestrate_inner(
         client: client.clone(),
         upstream_url,
         api_keys: session_api_keys,
+        provider_configs: provider_configs.clone(),
         converter: resolve_api_type_for_model(&model_id, provider_configs.clone())
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
@@ -1717,6 +1733,7 @@ pub(crate) async fn compact_history(
         client: args.client.clone(),
         upstream_url,
         api_keys,
+        provider_configs: args.provider_configs.clone(),
         converter: resolve_api_type_for_model(model_id, args.provider_configs.clone())
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
@@ -1754,6 +1771,7 @@ pub(crate) async fn evaluate_goal(
         client: args.client.clone(),
         upstream_url,
         api_keys,
+        provider_configs: args.provider_configs.clone(),
         converter: resolve_api_type_for_model(smol_model_id, args.provider_configs.clone())
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),

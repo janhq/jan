@@ -349,6 +349,27 @@ pub(crate) async fn resolve_upstream_for_model(
 
     Err(format!("No upstream session found for model '{model_id}'"))
 }
+/// Strip a leading `<provider>/` qualifier from `model_id` when that prefix
+/// names a configured provider, mirroring the disambiguation in
+/// [`resolve_upstream_for_model`]. `provider/model` is the CLI's explicit
+/// selection syntax; once the upstream URL and credential are resolved the
+/// request body must carry the bare model id, or providers that reject a
+/// provider-qualified id (e.g. OpenCode GO) fail with "model not supported".
+/// A slash inside a real model id (e.g. an org-scoped name) is left alone
+/// unless the leading segment is literally a provider key.
+pub(crate) fn strip_provider_prefix(
+    model_id: &str,
+    provider_configs: &HashMap<String, ProviderConfig>,
+) -> String {
+    if let Some(sep_pos) = model_id.find('/') {
+        let potential_provider: &str = &model_id[..sep_pos];
+        if provider_configs.contains_key(potential_provider) {
+            return model_id[sep_pos + 1..].to_string();
+        }
+    }
+    model_id.to_string()
+}
+
 
 /// Resolve the wire API for `model_id`'s provider, mirroring the
 /// model-to-provider lookup in [`resolve_upstream_for_model`]. Returns the
@@ -1392,6 +1413,51 @@ mod tests {
         mpsc::UnboundedReceiver<StreamEvent>,
     ) {
         mpsc::unbounded_channel()
+    }
+    fn provider_configs(map: &[(&str, &str)]) -> HashMap<String, ProviderConfig> {
+        map.iter()
+            .map(|(name, url)| {
+                (
+                    name.to_string(),
+                    ProviderConfig {
+                        provider: name.to_string(),
+                        base_url: Some(url.to_string()),
+                        models: vec![],
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// A `<provider>/<model>` id resolves to the bare model once the prefix
+    /// names a configured provider - the body the upstream receives must not
+    /// carry the selection qualifier.
+    #[test]
+    fn provider_prefix_is_stripped_when_it_names_a_provider() {
+        let pc = provider_configs(&[("opencode", "https://opencode.ai/zen/go/v1")]);
+        assert_eq!(
+            strip_provider_prefix("opencode/gpt-5.6-luna", &pc),
+            "gpt-5.6-luna"
+        );
+    }
+
+    /// A slash inside a real model id is preserved when the leading segment is
+    /// not a provider key, so org-scoped ids survive untouched.
+    #[test]
+    fn unknown_slash_prefix_is_left_alone() {
+        let pc = provider_configs(&[("opencode", "https://opencode.ai/zen/go/v1")]);
+        assert_eq!(
+            strip_provider_prefix("mistral-technologies/mixtral", &pc),
+            "mistral-technologies/mixtral"
+        );
+    }
+
+    /// A bare model id (no slash) is returned unchanged.
+    #[test]
+    fn bare_model_id_is_unchanged() {
+        let pc = provider_configs(&[("opencode", "https://opencode.ai/zen/go/v1")]);
+        assert_eq!(strip_provider_prefix("gpt-5.6-luna", &pc), "gpt-5.6-luna");
     }
 
     /// `reqwest` prints only its own layer, so the cause chain is where the

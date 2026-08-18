@@ -1326,6 +1326,13 @@ async fn proxy_request(
                     return Ok(error_response.body(full(e)).unwrap());
                 }
             };
+            // `provider/model` records the provider qualifier used to resolve
+            // the upstream above; the request body must carry the bare model id.
+            let body_model_id = {
+                let pc = provider_configs.lock().await;
+                crate::core::agent::upstream::strip_provider_prefix(&model_id, &pc)
+            };
+
 
             let max_turns = json_body
                 .get("max_turns")
@@ -1338,7 +1345,7 @@ async fn proxy_request(
             for _turn in 0..max_turns {
                 // Build upstream request body for each turn so messages are updated.
                 let mut completion_map = serde_json::Map::new();
-                completion_map.insert("model".to_string(), serde_json::json!(model_id));
+                completion_map.insert("model".to_string(), serde_json::json!(body_model_id));
                 completion_map.insert(
                     "messages".to_string(),
                     serde_json::Value::Array(conversation_messages.clone()),
