@@ -279,6 +279,46 @@ impl Pending {
         }
     }
 
+    /// The prompt's header rows -- who is asking, for what capability, and on
+    /// which command or path -- laid out at `inner`. A command keeps its own
+    /// newlines and wraps, so a heredoc is approved on what it actually says
+    /// rather than on its first 60 columns.
+    fn detail_lines(&self, inner: u16) -> Vec<Line<'static>> {
+        let dim = Style::new().dark_gray();
+        let max = inner.max(1) as usize;
+        let mut out = Vec::new();
+        if let Some(name) = &self.subagent {
+            out.push(Line::from(vec![
+                Span::styled("subagent ", dim),
+                Span::styled(name.clone(), Style::new().magenta().bold()),
+                Span::styled(" is asking:", dim),
+            ]));
+        }
+        out.extend(
+            wrap_spans_hard(
+                vec![
+                    Span::styled(self.tool_name.clone(), Style::new().cyan().bold()),
+                    Span::styled(" wants ", dim),
+                    Span::styled(self.capability.clone(), Style::new().yellow().bold()),
+                ],
+                max,
+            )
+            .into_iter()
+            .map(Line::from),
+        );
+        let (lead, body) = match (&self.command, &self.path) {
+            (Some(command), _) => ("$ ", command.clone()),
+            (None, Some(path)) => ("on ", path.clone()),
+            (None, None) => return out,
+        };
+        out.extend(gutter_lines(
+            wrap_text(&body, Style::new().white(), max.saturating_sub(2).max(1)),
+            vec![Span::styled(lead, dim)],
+            vec![Span::raw("  ")],
+        ));
+        out
+    }
+
     /// Boxed diff preview for the prompt, sized to `inner` width; empty when the
     /// tool carries no diff (exec/read). No gutter: the panel sits flush in the
     /// prompt box, unlike the tool-row-aligned result diff.
@@ -819,19 +859,17 @@ impl Row {
             } => {
                 let lead = glyph.chars().count() + 1;
                 let max = width.saturating_sub(lead as u16).max(8) as usize;
-                markdown::wrap_spans_at_words(body.clone(), max)
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, spans)| {
-                        let mark = if i == 0 { *glyph } else { *cont };
-                        let mut row = vec![Span::styled(
-                            format!("{mark:<width$}", width = lead),
-                            *gutter,
-                        )];
-                        row.extend(spans);
-                        Line::from(row)
-                    })
-                    .collect()
+                gutter_lines(
+                    wrap_spans_hard(body.clone(), max),
+                    vec![Span::styled(
+                        format!("{glyph:<width$}", width = lead),
+                        *gutter,
+                    )],
+                    vec![Span::styled(
+                        format!("{cont:<width$}", width = lead),
+                        *gutter,
+                    )],
+                )
             }
             RowKind::Tool {
                 tag,
@@ -841,12 +879,25 @@ impl Row {
                 reserve,
             } => {
                 let max = width.saturating_sub(*reserve).max(1) as usize;
-                vec![tool_row(
-                    tag,
-                    *tag_style,
-                    &truncate(label, max),
-                    *label_style,
-                )]
+                let tag_w = tag.chars().count() + 1;
+                let mut rows = wrap_text(label, *label_style, max);
+                if rows.len() > TOOL_ROW_MAX_LINES {
+                    rows.truncate(TOOL_ROW_MAX_LINES);
+                    if let Some(last) = rows.last_mut() {
+                        last.push(Span::styled(" …", *label_style));
+                    }
+                }
+                gutter_lines(
+                    rows,
+                    vec![
+                        Span::styled("│ ", Style::new().dark_gray()),
+                        Span::styled(format!("{tag} "), *tag_style),
+                    ],
+                    vec![
+                        Span::styled("│ ", Style::new().dark_gray()),
+                        Span::raw(" ".repeat(tag_w)),
+                    ],
+                )
             }
             RowKind::Result {
                 tag,
@@ -968,6 +1019,84 @@ impl PendingAsk {
     }
     fn row_count(&self) -> usize {
         self.question().options.len() + 1 + usize::from(self.question().multi)
+    }
+
+    /// Cells the `List` leaves an item after `highlight_symbol`.
+    const HIGHLIGHT_W: u16 = 2;
+
+    /// The question, wrapped to `width`.
+    fn question_lines(&self, width: u16) -> Vec<Line<'static>> {
+        wrap_text(
+            &self.question().question,
+            Style::new().bold(),
+            width.max(1) as usize,
+        )
+        .into_iter()
+        .map(Line::from)
+        .collect()
+    }
+
+    /// One entry per selectable row, each already laid out at `width`. Both the
+    /// box height and `draw_ask` build from this, so a wrapped label cannot put
+    /// the mouse hitboxes out of step with what is on screen.
+    fn option_lines(&self, width: u16) -> Vec<Vec<Line<'static>>> {
+        let question = self.question();
+        let answer = &self.answers[self.question_index];
+        let dim = Style::new().dark_gray();
+        let mark_w = if question.multi { 4 } else { 2 };
+        let body = width.saturating_sub(Self::HIGHLIGHT_W + mark_w).max(1) as usize;
+        let indent = || vec![Span::raw(" ".repeat(mark_w as usize))];
+        let mark = |selected: bool| {
+            let glyph = match (question.multi, selected) {
+                (true, true) => "[x] ",
+                (true, false) => "[ ] ",
+                (false, true) => "● ",
+                (false, false) => "○ ",
+            };
+            vec![Span::styled(glyph, Style::new().cyan())]
+        };
+
+        let mut out: Vec<Vec<Line<'static>>> = Vec::with_capacity(self.row_count());
+        for (index, option) in question.options.iter().enumerate() {
+            let mut head = vec![Span::raw(option.label.clone())];
+            if question.recommended == Some(index) {
+                head.push(Span::styled("  recommended", Style::new().green().dim()));
+            }
+            let selected = answer.selected.iter().any(|label| label == &option.label);
+            let mut lines = gutter_lines(wrap_spans_hard(head, body), mark(selected), indent());
+            // The description gets its own rows rather than trailing the label:
+            // inline, one long description pushes the next option's label off
+            // the bottom of a box that has to fit above the input.
+            if let Some(description) = &option.description {
+                lines.extend(gutter_lines(
+                    wrap_text(description, dim, body),
+                    indent(),
+                    indent(),
+                ));
+            }
+            out.push(lines);
+        }
+        out.push(gutter_lines(
+            wrap_text("Other (type your own)", Style::new(), body),
+            mark(answer.custom_input.is_some()),
+            indent(),
+        ));
+        if question.multi {
+            out.push(vec![Line::styled(
+                "Submit answers",
+                Style::new().green().bold(),
+            )]);
+        }
+        out
+    }
+
+    /// Rows the whole box needs at `width`: borders, question, every option and
+    /// the help line.
+    fn box_height(&self, width: u16) -> u16 {
+        let inner = width.saturating_sub(2);
+        let options: usize = self.option_lines(inner).iter().map(|item| item.len()).sum();
+        let question = self.question_lines(inner).len();
+        (question + options + 3).min(u16::MAX as usize) as u16
     }
 
     fn move_selection(&mut self, delta: isize) {
@@ -2861,10 +2990,15 @@ impl App {
     /// attached image ending in an `[IMAGE]` label (basename when known).
     fn push_user_line(&mut self, text: &str, images: &[String]) {
         self.gap(Kind::User);
-        self.push(Line::from(vec![
-            Span::styled("› ", Style::new().light_magenta().bold()),
-            Span::styled(text.to_string(), Style::new().bold()),
-        ]));
+        // A `System` row rather than a `Line`: a pasted or shift-entered message
+        // carries its own newlines, and a single `Line` renders those as blank
+        // cells in one run-on row.
+        self.push_row(RowKind::System {
+            glyph: "›",
+            cont: " ",
+            gutter: Style::new().light_magenta().bold(),
+            body: vec![Span::styled(text.to_string(), Style::new().bold())],
+        });
         for name in images {
             let label = if name.is_empty() {
                 "[IMAGE]".to_string()
@@ -3863,6 +3997,65 @@ fn truncate(s: &str, max: usize) -> String {
     format!("{head}…")
 }
 
+/// `s` on one line: every newline (and the whitespace around it) becomes a
+/// single space. For the surfaces whose height is fixed at one row -- the live
+/// group row, the subagent panel -- where an embedded `\n` would either be
+/// swallowed by ratatui or silently change the row's height.
+fn single_line(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Word-wrap `spans` to `max`, breaking hard at their embedded newlines first.
+/// `wrap_spans_at_words` treats `\n` as an ordinary character, so a multi-line
+/// command or user message laid out through it alone renders as one run-on line
+/// with blank cells where the breaks were.
+fn wrap_spans_hard(spans: Vec<Span<'static>>, max: usize) -> Vec<Vec<Span<'static>>> {
+    let mut segments: Vec<Vec<Span<'static>>> = vec![Vec::new()];
+    for span in spans {
+        let style = span.style;
+        let mut parts = span.content.split('\n').peekable();
+        while let Some(part) = parts.next() {
+            let part = part.strip_suffix('\r').unwrap_or(part);
+            if !part.is_empty() {
+                segments
+                    .last_mut()
+                    .expect("seeded with one segment")
+                    .push(Span::styled(part.to_string(), style));
+            }
+            if parts.peek().is_some() {
+                segments.push(Vec::new());
+            }
+        }
+    }
+    segments
+        .into_iter()
+        .flat_map(|segment| markdown::wrap_spans_at_words(segment, max))
+        .collect()
+}
+
+/// `text` laid out at `max` in one style. The single-span case of
+/// `wrap_spans_hard`.
+fn wrap_text(text: &str, style: Style, max: usize) -> Vec<Vec<Span<'static>>> {
+    wrap_spans_hard(vec![Span::styled(text.to_string(), style)], max)
+}
+
+/// Prefix each wrapped row with its gutter: `lead` on the first, `cont` on the
+/// rest, so the body keeps one left edge no matter how many rows it took.
+fn gutter_lines(
+    rows: Vec<Vec<Span<'static>>>,
+    lead: Vec<Span<'static>>,
+    cont: Vec<Span<'static>>,
+) -> Vec<Line<'static>> {
+    rows.into_iter()
+        .enumerate()
+        .map(|(i, spans)| {
+            let mut row = if i == 0 { lead.clone() } else { cont.clone() };
+            row.extend(spans);
+            Line::from(row)
+        })
+        .collect()
+}
+
 /// Per-message envelope (role, delimiters) in the estimate below, the usual
 /// OpenAI-accounting constant.
 const TOKENS_PER_MESSAGE: u64 = 4;
@@ -3943,8 +4136,14 @@ const DIFF_PREVIEW_MAX_ROWS: usize = 20;
 const COMMAND_LABEL_MAX: usize = 80;
 
 /// Cells a `tool_row` spends on its gutter and tag, subtracted from the draw
-/// width to bound the label so the row never wraps.
+/// width before the label is wrapped.
 const TOOL_ROW_RESERVE: u16 = 6;
+
+/// Rows one tool label may occupy before it elides. A label is wrapped rather
+/// than cut so a long command stays readable, but a heredoc body would
+/// otherwise push the conversation off screen; the full text is still under
+/// Ctrl-O.
+const TOOL_ROW_MAX_LINES: usize = 8;
 
 /// Diff row backgrounds. Dark and desaturated on purpose: the syntax-highlighted
 /// foreground is drawn on top of them, so the tint has to read as added/removed
@@ -4119,6 +4318,19 @@ fn subagent_name_from_run_id(run_id: &str) -> &str {
     }
 }
 
+/// A command as the transcript shows it: each line's internal whitespace
+/// collapsed, but the line structure kept, so a heredoc or a script written one
+/// step per line reads the way it was authored. `RowKind::Tool` breaks on those
+/// newlines and wraps whatever is still too wide.
+fn collapse_command(cmd: &str) -> String {
+    cmd.lines()
+        .map(single_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim_matches('\n')
+        .to_string()
+}
+
 fn tool_activity(name: &str, args: &serde_json::Value) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
     let base = |p: &str| {
@@ -4134,10 +4346,9 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             if cmd.trim().is_empty() {
                 "Executing command".to_string()
             } else {
-                // Untruncated: the row clamps to the draw width, so the command
+                // Untruncated: the row wraps at the draw width, so the command
                 // fills the terminal rather than eliding at a fixed 80.
-                let collapsed = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-                format!("Executing: {collapsed}")
+                format!("Executing: {}", collapse_command(cmd))
             }
         }
         "grep" | "search" => "Searching".to_string(),
@@ -4232,7 +4443,9 @@ fn subagent_activity(name: &str, args: &serde_json::Value) -> String {
             if cmd.trim().is_empty() {
                 "command".to_string()
             } else {
-                format!("$ {}", cmd.split_whitespace().collect::<Vec<_>>().join(" "))
+                // The live panel gives each call exactly one row, so this one
+                // stays flattened where the transcript's label keeps its breaks.
+                format!("$ {}", single_line(cmd))
             }
         }
         "grep" | "search" => format!("grep {}", s("pattern")),
@@ -4262,8 +4475,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
             if cmd.trim().is_empty() {
                 "Ran command".to_string()
             } else {
-                let collapsed = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-                format!("Ran: {collapsed}")
+                format!("Ran: {}", collapse_command(cmd))
             }
         }
         "grep" | "search" => "Searched".to_string(),
@@ -4550,11 +4762,14 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
     };
     for call in &group.calls {
         if show_headers {
-            out.push(Line::from(vec![
-                Span::styled("│   ", Style::new().dark_gray()),
-                Span::styled("▸ ", Style::new().cyan()),
-                Span::styled(truncate(&call.done, max), Style::new().dim()),
-            ]));
+            out.extend(gutter_lines(
+                wrap_text(&call.done, Style::new().dim(), max),
+                vec![
+                    Span::styled("│   ", Style::new().dark_gray()),
+                    Span::styled("▸ ", Style::new().cyan()),
+                ],
+                vec![Span::styled("│     ", Style::new().dark_gray())],
+            ));
         }
         if let Some(content) = &call.content {
             let (tag, tag_style) = if call.is_error {
@@ -4562,22 +4777,19 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
             } else {
                 ("✓", Style::new().green())
             };
-            // Expanded view shows the full output verbatim (one row per line,
-            // width-clamped): the tag rides the first line, the rest indent to
-            // align under it. Empty content still gets a bare tag row.
-            let mut content_lines = content.lines();
-            let first = content_lines.next().unwrap_or("");
-            out.push(Line::from(vec![
-                Span::styled(tag_gutter, Style::new().dark_gray()),
-                Span::styled(format!("{tag} "), tag_style),
-                Span::styled(truncate(first, max), Style::new().dim()),
-            ]));
-            for line in content_lines {
-                out.push(Line::from(vec![
-                    Span::styled(cont_gutter, Style::new().dark_gray()),
-                    Span::styled(truncate(line, max), Style::new().dim()),
-                ]));
-            }
+            // Expanded view shows the full output verbatim: the tag rides the
+            // first line, the rest indent to align under it, and a line wider
+            // than the terminal wraps rather than eliding -- this is the surface
+            // the transcript's one-line summary sends the user to. Empty content
+            // still gets a bare tag row.
+            out.extend(gutter_lines(
+                wrap_text(content, Style::new().dim(), max),
+                vec![
+                    Span::styled(tag_gutter, Style::new().dark_gray()),
+                    Span::styled(format!("{tag} "), tag_style),
+                ],
+                vec![Span::styled(cont_gutter, Style::new().dark_gray())],
+            ));
             if let Some(diff) = &call.diff {
                 for line in diff_lines(diff, width as usize, DIFF_MAX_ROWS, cont_gutter, None) {
                     out.push(line);
@@ -4619,7 +4831,7 @@ fn group_summary(nouns: &[(&str, bool)]) -> String {
 fn running_group_row(group: &ToolGroup, spinner_frame: usize, width: u16) -> Line<'static> {
     let frame = SPINNER[spinner_frame % SPINNER.len()];
     let elapsed = group.started.elapsed().as_secs();
-    let text = format!("{} ({elapsed}s)", group.activity());
+    let text = format!("{} ({elapsed}s)", single_line(&group.activity()));
     let max = (width as usize).saturating_sub(6).max(1);
     tool_row(frame, Style::new().cyan(), &truncate(&text, max), Style::new().cyan().dim())
 }
@@ -9669,7 +9881,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     } else if !app.ask_queue.is_empty() {
         let queue_len = app.ask_queue.len();
         let ask = app.ask_queue.front_mut().expect("checked non-empty above");
-        let height = (ask.row_count() as u16 + 4).min(chunks[1].height);
+        let height = ask.box_height(chunks[2].width).min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -9679,10 +9891,9 @@ fn draw(f: &mut Frame, app: &mut App) {
         };
         draw_ask(f, rect, ask, queue_len);
     } else if let Some(pending) = app.pending() {
-        let detail_rows = 1
-            + u16::from(pending.path.is_some() || pending.command.is_some())
-            + u16::from(pending.subagent.is_some());
-        let diff_rows = pending.diff_preview(chunks[2].width.saturating_sub(2)).len() as u16;
+        let inner_w = chunks[2].width.saturating_sub(2);
+        let detail_rows = pending.detail_lines(inner_w).len() as u16;
+        let diff_rows = pending.diff_preview(inner_w).len() as u16;
         let height =
             (pending.options().len() as u16 + detail_rows + diff_rows + 2).min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
@@ -9746,12 +9957,10 @@ fn draw(f: &mut Frame, app: &mut App) {
 fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
-    let question = ask.question().clone();
-    let answer = ask.answers[ask.question_index].clone();
     let dim = Style::new().dark_gray();
     let title = if queue_len > 1 {
         format!(
-            " question {}/{} · request 1/{queue_len} ",
+            " question {}/{} \u{b7} request 1/{queue_len} ",
             ask.question_index + 1,
             ask.request.questions.len()
         )
@@ -9767,93 +9976,57 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
         .border_style(Style::new().cyan())
         .title(Span::styled(title, Style::new().on_cyan().black().bold()));
     let inner = block.inner(area);
+    let question = ask.question_lines(inner.width);
+    let items = ask.option_lines(inner.width);
+    let heights: Vec<u16> = items.iter().map(|item| item.len() as u16).collect();
     let rows = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Min(ask.row_count() as u16),
+        Constraint::Length(question.len() as u16),
+        Constraint::Min(1),
         Constraint::Length(1),
     ])
     .split(inner);
 
-    let mut items = Vec::with_capacity(ask.row_count());
-    for (index, option) in question.options.iter().enumerate() {
-        let selected = answer.selected.iter().any(|label| label == &option.label);
-        let mark = if question.multi {
-            if selected {
-                "[x] "
-            } else {
-                "[ ] "
-            }
-        } else if selected {
-            "● "
-        } else {
-            "○ "
-        };
-        let mut spans = vec![
-            Span::styled(mark, Style::new().cyan()),
-            Span::raw(option.label.clone()),
-        ];
-        if question.recommended == Some(index) {
-            spans.push(Span::styled("  recommended", Style::new().green().dim()));
-        }
-        if let Some(description) = &option.description {
-            spans.push(Span::styled(format!("  {description}"), dim));
-        }
-        items.push(ListItem::new(Line::from(spans)));
-    }
-    let custom_mark = if question.multi {
-        if answer.custom_input.is_some() {
-            "[x] "
-        } else {
-            "[ ] "
-        }
-    } else if answer.custom_input.is_some() {
-        "● "
-    } else {
-        "○ "
-    };
-    items.push(ListItem::new(Line::from(vec![
-        Span::styled(custom_mark, Style::new().cyan()),
-        Span::raw("Other (type your own)"),
-    ])));
-    if question.multi {
-        items.push(ListItem::new(Line::styled(
-            "Submit answers",
-            Style::new().green().bold(),
-        )));
-    }
-
-    ask.rect = area;
-    ask.row_hitboxes = (0..items.len())
-        .filter_map(|index| {
-            let y = rows[1].y.saturating_add(index as u16);
-            (y < rows[1].y.saturating_add(rows[1].height)).then_some((y, index))
-        })
-        .collect();
-
     f.render_widget(Clear, area);
     f.render_widget(block, area);
-    f.render_widget(
-        Paragraph::new(Line::styled(question.question, Style::new().bold())),
-        rows[0],
-    );
-    let list = List::new(items)
+    f.render_widget(Paragraph::new(question), rows[0]);
+
+    let list = List::new(items.into_iter().map(ListItem::new).collect::<Vec<_>>())
         .highlight_style(Style::new().reversed().bold())
-        .highlight_symbol("▶ ");
+        .highlight_symbol("\u{25b6} ");
     let mut state = ListState::default();
     state.select(Some(ask.selected));
     f.render_stateful_widget(list, rows[1], &mut state);
+
+    // Hitboxes come from the same heights the list just laid out, offset by the
+    // scroll the list chose to keep the selection visible -- an item may be
+    // several rows tall, and a box clamped to the space above the input may not
+    // show every item at all.
+    ask.rect = area;
+    ask.row_hitboxes.clear();
+    let mut y = rows[1].y;
+    let bottom = rows[1].y.saturating_add(rows[1].height);
+    for (index, height) in heights.iter().enumerate().skip(state.offset()) {
+        for _ in 0..*height {
+            if y >= bottom {
+                break;
+            }
+            ask.row_hitboxes.push((y, index));
+            y = y.saturating_add(1);
+        }
+    }
+
     let help = if ask.editing_custom {
         Line::from(vec![
             Span::styled("Other: ", Style::new().cyan()),
             Span::raw(ask.custom_input.clone()),
-            Span::styled("█", Style::new().cyan()),
+            Span::styled("\u{2588}", Style::new().cyan()),
         ])
     } else {
         Line::styled(
-            if question.multi {
-                "↑↓ move · Space toggle · Enter choose · ←→ question · Esc cancel"
+            if ask.question().multi {
+                "\u{2191}\u{2193} move \u{b7} Space toggle \u{b7} Enter choose \u{b7} \u{2190}\u{2192} question \u{b7} Esc cancel"
             } else {
-                "↑↓ move · Enter choose · ←→ question · Esc cancel"
+                "\u{2191}\u{2193} move \u{b7} Enter choose \u{b7} \u{2190}\u{2192} question \u{b7} Esc cancel"
             },
             dim,
         )
@@ -10227,32 +10400,6 @@ fn draw_path_hints(
 fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending, queue_len: usize) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
-    let dim = Style::new().dark_gray();
-    let mut detail = Vec::new();
-    if let Some(name) = &pending.subagent {
-        detail.push(Line::from(vec![
-            Span::styled("subagent ", dim),
-            Span::styled(name.clone(), Style::new().magenta().bold()),
-            Span::styled(" is asking:", dim),
-        ]));
-    }
-    detail.push(Line::from(vec![
-        Span::styled(pending.tool_name.clone(), Style::new().cyan().bold()),
-        Span::styled(" wants ", dim),
-        Span::styled(pending.capability.clone(), Style::new().yellow().bold()),
-    ]));
-    if let Some(command) = &pending.command {
-        detail.push(Line::from(vec![
-            Span::styled("$ ", dim),
-            Span::styled(command.clone(), Style::new().white()),
-        ]));
-    } else if let Some(path) = &pending.path {
-        detail.push(Line::from(vec![
-            Span::styled("on ", dim),
-            Span::styled(path.clone(), Style::new().white()),
-        ]));
-    }
-
     let title = if queue_len > 1 {
         format!(" permission required (1 of {queue_len}) ")
     } else {
@@ -10266,6 +10413,7 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
     f.render_widget(Clear, area);
     f.render_widget(block, area);
 
+    let detail = pending.detail_lines(inner.width);
     let diff = pending.diff_preview(inner.width);
     let rows = Layout::vertical([
         Constraint::Length(detail.len() as u16),
@@ -10273,7 +10421,7 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
         Constraint::Length(pending.options().len() as u16),
     ])
     .split(inner);
-    f.render_widget(Paragraph::new(detail).wrap(Wrap { trim: false }), rows[0]);
+    f.render_widget(Paragraph::new(detail), rows[0]);
     if !diff.is_empty() {
         f.render_widget(Paragraph::new(diff), rows[1]);
     }
@@ -11706,10 +11854,11 @@ mod tests {
         );
     }
 
-    /// A tool row's label is stored untruncated and clamped at draw time, so it
-    /// grows back when the terminal widens rather than staying elided.
+    /// A tool row's label is stored untruncated and laid out at draw time: it
+    /// wraps onto as many rows as the width needs, and re-packs onto fewer when
+    /// the terminal widens.
     #[test]
-    fn tool_row_labels_retruncate_on_resize() {
+    fn tool_row_labels_rewrap_on_resize() {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
             id: "t1".into(),
@@ -11725,21 +11874,171 @@ mod tests {
         // Close the group so its row reads as the finished command, not the
         // live "running 1 command" throbber.
         app.finalize_tool_group();
-        let label = |rows: &[String]| {
-            rows.iter()
-                .find(|r| r.contains("Ran: echo"))
-                .expect("no tool row")
-                .trim_end()
-                .to_string()
+        // The label's rows, stripped of gutter and tag and joined back into the
+        // text they display.
+        let label = |rows: &[String], width: usize| {
+            let start = rows
+                .iter()
+                .position(|r| r.contains("Ran: echo"))
+                .expect("no tool row");
+            let body: Vec<String> = rows[start..]
+                .iter()
+                .take_while(|r| r.starts_with('│') && r.trim_end() != "│")
+                .map(|r| {
+                    assert!(
+                        r.trim_end().chars().count() <= width,
+                        "row overflows: {r:?}"
+                    );
+                    r.trim_end().trim_start_matches(['│', ' ', '✓']).to_string()
+                })
+                .collect();
+            (body.len(), body.join(" "))
         };
-        let narrow = label(&render_rows(&mut app, 40, 12));
-        let wide = label(&render_rows(&mut app, 100, 12));
-        assert!(narrow.contains('…'), "narrow row was not elided: {narrow:?}");
-        assert!(narrow.chars().count() <= 40, "narrow row overflows: {narrow:?}");
+        let (narrow_rows, narrow) = label(&render_rows(&mut app, 40, 12), 40);
+        let (wide_rows, wide) = label(&render_rows(&mut app, 100, 12), 100);
+        let full = "Ran: echo the quick brown fox jumps over the lazy dog";
+        assert_eq!(narrow, full, "narrow layout dropped text");
+        assert_eq!(wide, full, "wide layout dropped text");
         assert!(
-            wide.chars().count() > narrow.chars().count(),
-            "row did not grow back: {wide:?}"
+            narrow_rows > wide_rows,
+            "label did not re-pack when widened: {narrow_rows} vs {wide_rows}"
         );
+    }
+
+    /// A multi-line command keeps its breaks in the transcript row: the label
+    /// is not flattened onto one line, and the row is not one wide `Line` whose
+    /// newlines ratatui swallows.
+    #[test]
+    fn multiline_command_label_keeps_its_line_breaks() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({"command": "cd /tmp\ncargo build\ncargo test"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.finalize_tool_group();
+        let rows = render_rows(&mut app, 80, 16);
+        let has = |needle: &str| rows.iter().any(|r| r.trim_end().ends_with(needle));
+        assert!(has("Ran: cd /tmp"), "first command line missing: {rows:?}");
+        assert!(has("cargo build"), "second command line missing: {rows:?}");
+        assert!(has("cargo test"), "third command line missing: {rows:?}");
+    }
+
+    /// A tool label wraps, but a pathological one (a pasted heredoc body) is
+    /// bounded so it cannot push the conversation off screen.
+    #[test]
+    fn tool_label_wrapping_is_bounded() {
+        let mut app = test_app();
+        let command = (0..40)
+            .map(|i| format!("echo line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": command }),
+        });
+        app.finalize_tool_group();
+        let rendered = app.transcript.last().expect("no row").lines(80);
+        assert_eq!(
+            rendered.len(),
+            super::TOOL_ROW_MAX_LINES,
+            "label was not bounded"
+        );
+        let last: String = rendered[super::TOOL_ROW_MAX_LINES - 1]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            last.ends_with('\u{2026}'),
+            "elision was not marked: {last:?}"
+        );
+    }
+
+    /// A newline in a user message is a line break in the transcript, not a
+    /// blank cell in one run-on row.
+    #[test]
+    fn user_message_keeps_its_line_breaks() {
+        let mut app = test_app();
+        app.push_user_line("first line\nsecond line", &[]);
+        let rows = render_rows(&mut app, 60, 12);
+        assert!(
+            rows.iter().any(|r| r.trim_end().ends_with("\u{203a} first line")),
+            "first line not on its own row: {rows:?}"
+        );
+        assert!(
+            rows.iter().any(|r| r.trim_end().ends_with("  second line")),
+            "second line not on its own row: {rows:?}"
+        );
+    }
+
+    /// The expanded (Ctrl-O) view is where the full output lives, so a line
+    /// wider than the terminal wraps there instead of eliding.
+    #[test]
+    fn expanded_group_detail_wraps_instead_of_eliding() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({"command": "cat notes"}),
+        });
+        let long = "alpha bravo charlie delta echo foxtrot golf hotel india juliett kilo lima";
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: long.into(),
+            is_error: false,
+            diff: None,
+        });
+        app.finalize_tool_group();
+        let group = app.groups.last().expect("no group");
+        let text: String = super::group_detail_lines(group, 40)
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect::<String>();
+        assert!(!text.contains('\u{2026}'), "detail elided: {text:?}");
+        for word in long.split(' ') {
+            assert!(text.contains(word), "detail dropped {word:?}: {text:?}");
+        }
+    }
+
+    /// A long option label and its description wrap inside the ask box, and the
+    /// box grows to hold them rather than clipping.
+    #[test]
+    fn ask_options_wrap_and_size_the_box() {
+        let mut app = test_app();
+        let request = crate::core::agent::interaction::AskRequest::parse(&json!({
+            "questions": [{
+                "id": "scope",
+                "question": "Which of these two rather long scopes should the agent take on next?",
+                "options": [
+                    {"label": "A thoroughly long option label that cannot fit one row",
+                     "description": "and a description that is longer still, needing rows of its own"},
+                    {"label": "Short"}
+                ],
+                "multi": false
+            }]
+        }))
+        .expect("valid ask request");
+        app.apply(StreamEvent::AskRequest {
+            request_id: "r1".into(),
+            request,
+        });
+        let rows = render_rows(&mut app, 50, 30);
+        let joined = rows.join("\n");
+        for word in ["thoroughly", "fit one row", "longer still", "Short"] {
+            assert!(joined.contains(word), "ask box clipped {word:?}:\n{joined}");
+        }
+        for row in &rows {
+            assert!(row.chars().count() <= 50, "row overflows: {row:?}");
+        }
     }
 
     /// Degenerate frames (a sliver of a terminal mid-drag) must render, not panic.
@@ -11983,7 +12282,18 @@ mod tests {
         });
         let mut terminal = Terminal::new(TestBackend::new(36, 24)).unwrap();
         terminal.draw(|frame| super::draw(frame, &mut app)).unwrap();
-        let other_row = app.ask_queue.front().unwrap().row_hitboxes[2].0;
+        // Hitboxes are per screen row and an option may be several rows tall,
+        // so find the first row belonging to the "Other" item rather than the
+        // third entry in the list.
+        let other_row = app
+            .ask_queue
+            .front()
+            .unwrap()
+            .row_hitboxes
+            .iter()
+            .find(|(_, index)| *index == 2)
+            .expect("no hitbox for the custom row")
+            .0;
 
         assert!(
             handle_ask_mouse(
