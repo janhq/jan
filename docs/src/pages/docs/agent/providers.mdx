@@ -54,6 +54,24 @@ bug - the second includes providers inherited from Jan Desktop, which aren't sto
 Inside the console, `/config` shows the same thing read-only, and `/model` switches model on the
 spot.
 
+## From the console
+
+`/settings` > `providers` manages the same `~/.jan/config.toml` entries interactively:
+
+- <kbd>a</kbd> opens an add form (`name`, `base url`, `api key`, space-separated `models`)
+- <kbd>Enter</kbd> edits the highlighted provider, prefilled - except the API key, which shows
+  `(unchanged)` and is kept as stored unless you type into the field. Typing replaces the key;
+  blanking the field out clears it (for an endpoint that dropped auth)
+- <kbd>d</kbd> pressed twice deletes the highlighted provider
+
+The name is read-only while editing, so an entry can never be orphaned. Inside a form, arrow keys
+move between fields and <kbd>k</kbd>/<kbd>j</kbd> type as ordinary characters (API keys contain
+them). The base URL must be `https://`, or `http://` for a localhost endpoint, so a key is never
+sent over a plaintext remote connection.
+
+A provider saved with no models is queried for its `GET /models` the next time you open `/model`,
+and the discovered ids are persisted - so a bare provider becomes selectable immediately.
+
 ## Tokamak
 
 Signing in avoids managing a key yourself:

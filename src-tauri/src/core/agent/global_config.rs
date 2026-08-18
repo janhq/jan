@@ -65,7 +65,9 @@ struct GlobalProviderEntry {
 }
 
 /// Fields to update on a provider entry via [`set_provider`]. `None` leaves the
-/// existing value untouched (merge semantics); `Some` overwrites it.
+/// existing value untouched (merge semantics); `Some` overwrites it. An
+/// explicit `Some("")` for the API key removes it (e.g. a local endpoint that
+/// dropped auth).
 #[derive(Debug, Default, Clone)]
 pub(crate) struct ProviderUpdate {
     pub api_key: Option<String>,
@@ -212,7 +214,8 @@ pub(crate) fn set_provider(name: &str, update: ProviderUpdate) -> Result<PathBuf
     let mut config = load_raw()?;
     let entry = config.providers.entry(name.to_string()).or_default();
     if let Some(api_key) = update.api_key {
-        entry.api_key = Some(api_key);
+        // An explicit empty key clears the stored one; `None` leaves it as is.
+        entry.api_key = (!api_key.is_empty()).then_some(api_key);
     }
     if let Some(base_url) = update.base_url {
         entry.base_url = Some(base_url);
@@ -416,6 +419,35 @@ models = ["gpt-4o"]
             assert_eq!(openai.base_url.as_deref(), Some("https://a"));
             assert_eq!(openai.models, vec!["gpt-4o".to_string()]);
             assert_eq!(configs.get("anthropic").unwrap().api_key.as_deref(), Some("sk-ant"));
+        });
+    }
+
+    /// `Some("")` for the api key clears the stored one (a local endpoint
+    /// that dropped auth), while `None` still merges (key kept).
+    #[test]
+    fn set_provider_empty_key_clears_none_keeps() {
+        with_temp_home(|_| {
+            set_provider(
+                "local",
+                ProviderUpdate {
+                    api_key: Some("sk-1".into()),
+                    base_url: Some("http://127.0.0.1:1234/v1".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            set_provider("local", ProviderUpdate::default()).unwrap();
+            assert_eq!(
+                load_global_config().unwrap().get("local").unwrap().api_key.as_deref(),
+                Some("sk-1"),
+                "None merges: key kept"
+            );
+            set_provider("local", ProviderUpdate { api_key: Some(String::new()), ..Default::default() }).unwrap();
+            assert_eq!(
+                load_global_config().unwrap().get("local").unwrap().api_key,
+                None,
+                "explicit empty key clears"
+            );
         });
     }
 

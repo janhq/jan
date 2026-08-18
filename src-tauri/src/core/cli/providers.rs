@@ -265,9 +265,20 @@ pub async fn fetch_missing_models(
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?;
+    // Probe providers concurrently so a batch of dead upstreams cannot stall
+    // the `/model` picker for the sum of their timeouts; the slowest provider
+    // bounds the wait.
+    let results = futures::future::join_all(to_fetch.into_iter().map(|(name, base_url, keys)| {
+        let client = &client;
+        async move {
+            let models = fetch_models(client, &base_url, &keys).await;
+            (name, base_url, models)
+        }
+    }))
+    .await;
     let mut populated = false;
-    for (name, base_url, keys) in to_fetch {
-        let models = match fetch_models(&client, &base_url, &keys).await {
+    for (name, _, result) in results {
+        let models = match result {
             Ok(m) => m,
             Err(e) => {
                 log::warn!("could not list models for provider '{name}': {e}");
@@ -975,6 +986,59 @@ mod tests {
             assert!(populated, "a keyless endpoint is queried unauthenticated");
             let configs = load_global_config().unwrap();
             assert_eq!(configs.get("local").unwrap().models, vec!["local-model".to_string()]);
+        });
+    }
+
+    /// Probes must run concurrently, not sequentially: each stub here only
+    /// responds after BOTH providers have connected, so a sequential
+    /// implementation (probe one to completion before starting the next)
+    /// deadlocks into its 15s timeout and populates only one provider.
+    #[test]
+    fn fetch_missing_models_probes_concurrently() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+            let stub = |models: &str| {
+                let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                let addr = listener.local_addr().unwrap();
+                let body = serde_json::json!({"data": [{"id": models}]}).to_string();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let Ok((mut stream, _)) = listener.accept() else { return };
+                    let mut buf = [0u8; 4096];
+                    let _ = std::io::Read::read(&mut stream, &mut buf);
+                    barrier.wait();
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = std::io::Write::write_all(&mut stream, resp.as_bytes());
+                });
+                addr
+            };
+            let addr_a = stub("model-a");
+            let addr_b = stub("model-b");
+            for (name, addr) in [("prov-a", addr_a), ("prov-b", addr_b)] {
+                crate::core::agent::global_config::set_provider(
+                    name,
+                    crate::core::agent::global_config::ProviderUpdate {
+                        api_key: Some("k".into()),
+                        base_url: Some(format!("http://{addr}/v1")),
+                        models: Some(vec![]),
+                        api_type: None,
+                    },
+                )
+                .unwrap();
+            }
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let populated = rt
+                .block_on(fetch_missing_models(None, &mut std::collections::HashSet::new()))
+                .expect("fetch");
+            assert!(populated);
+            let configs = load_global_config().unwrap();
+            assert_eq!(configs.get("prov-a").unwrap().models, vec!["model-a".to_string()]);
+            assert_eq!(configs.get("prov-b").unwrap().models, vec!["model-b".to_string()]);
         });
     }
 

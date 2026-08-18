@@ -7178,6 +7178,12 @@ struct ProviderPrompt {
     name: String,
     base_url: String,
     api_key: String,
+    /// Whether the user edited the api-key field this session. While editing a
+    /// provider the stored key is never loaded into the prompt (it must not be
+    /// echoable), so an untouched field means "keep the stored key" and a
+    /// touched one replaces it on save -- including with nothing, which clears
+    /// it (e.g. a local endpoint that dropped auth).
+    key_touched: bool,
     /// Whitespace-separated model ids (replaces the existing list on save).
     models: String,
     error: Option<String>,
@@ -7245,6 +7251,7 @@ impl ProviderPrompt {
             name: entry.provider.clone(),
             base_url: entry.base_url.clone().unwrap_or_default(),
             api_key: String::new(),
+            key_touched: false,
             models: entry.models.join(" "),
             error: None,
         }
@@ -7257,6 +7264,7 @@ impl ProviderPrompt {
             name: String::new(),
             base_url: String::new(),
             api_key: String::new(),
+            key_touched: false,
             models: String::new(),
             error: None,
         }
@@ -7274,14 +7282,22 @@ impl ProviderPrompt {
         match self.field {
             ProviderField::Name => self.name.push_str(text),
             ProviderField::BaseUrl => self.base_url.push_str(text),
-            ProviderField::ApiKey => self.api_key.push_str(text),
+            ProviderField::ApiKey => {
+                self.api_key.push_str(text);
+                self.key_touched = true;
+            }
             ProviderField::Models => self.models.push_str(text),
         }
     }
 
-    /// Masked API key for rendering, so a typed/pasted key never reaches the
-    /// screen or scrollback.
+    /// API key field for rendering: the stored key is never loaded into the
+    /// prompt, so an untouched field while editing says `(unchanged)`; anything
+    /// typed/pasted renders masked so a key never reaches the screen or
+    /// scrollback.
     fn masked_key(&self) -> String {
+        if self.editing.is_some() && !self.key_touched {
+            return "(unchanged)".to_string();
+        }
         super::secret_input::mask(self.api_key.chars().count())
     }
 
@@ -7311,7 +7327,9 @@ impl ProviderPrompt {
     /// passthrough) unless an explicit type is chosen elsewhere. Returns an
     /// error keeping the prompt open on invalid input. The name is read-only
     /// while editing, so `save` always writes under the original key and never
-    /// orphans the prior entry or loses its API key.
+    /// orphans the prior entry. An untouched api-key field keeps the stored
+    /// key; a touched one replaces it -- with nothing, if emptied, which clears
+    /// the key (see `key_touched`).
     fn save(&self) -> Result<(), String> {
         let name = self.name.trim();
         if name.is_empty() {
@@ -7321,7 +7339,7 @@ impl ProviderPrompt {
             return Err(err);
         }
         let base_url = self.base_url.trim().to_string();
-        let api_key = (!self.api_key.trim().is_empty())
+        let api_key = (self.key_touched || self.editing.is_none())
             .then(|| self.api_key.trim().to_string());
         let models: Vec<String> = self
             .models
@@ -7698,6 +7716,7 @@ fn handle_provider_prompt_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                 }
                 ProviderField::ApiKey => {
                     prompt.api_key.pop();
+                    prompt.key_touched = true;
                 }
                 ProviderField::Models => {
                     prompt.models.pop();
@@ -7708,7 +7727,10 @@ fn handle_provider_prompt_key(app: &mut App, key: KeyEvent, ctrl: bool) {
             ProviderField::Name if prompt.editing.is_some() => {}
             ProviderField::Name => prompt.name.push(ch),
             ProviderField::BaseUrl => prompt.base_url.push(ch),
-            ProviderField::ApiKey => prompt.api_key.push(ch),
+            ProviderField::ApiKey => {
+                prompt.api_key.push(ch);
+                prompt.key_touched = true;
+            }
             ProviderField::Models => prompt.models.push(ch),
         },
         _ => {}
@@ -9881,10 +9903,12 @@ fn draw_provider_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &Pro
     if let Some(error) = &prompt.error {
         lines.push(Line::styled(error.clone(), Style::new().red()));
     }
-    lines.push(Line::styled(
-        "↑/↓ move · Enter save · Esc cancel (models space-separated)".to_string(),
-        dim,
-    ));
+    let hint = if prompt.editing.is_some() {
+        "↑/↓ move · Enter save · Esc cancel (api key: type to replace, blank out to clear)"
+    } else {
+        "↑/↓ move · Enter save · Esc cancel (models space-separated)"
+    };
+    lines.push(Line::styled(hint.to_string(), dim));
 
     f.render_widget(Clear, area);
     let inner = block.inner(area);
@@ -14004,6 +14028,117 @@ mod tests {
         assert_eq!(prompt.api_key, "sk-ant-k3y-j");
     }
 
+    /// Editing a provider: an untouched api-key field keeps the stored key on
+    /// save, so a user who opens a provider and saves without touching the key
+    /// must never silently lose or replace it.
+    #[test]
+    fn provider_edit_untouched_key_keeps_stored_key() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "p",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("sk-old".into()),
+                    base_url: Some("https://api.example/v1".into()),
+                    models: Some(vec!["m1".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+            let entry = crate::core::agent::global_config::load_global_config()
+                .unwrap()
+                .remove("p")
+                .unwrap();
+            let mut app = test_app();
+            app.provider_prompt = Some(super::ProviderPrompt::from_entry(&entry));
+
+            // Add a model so the save `models` value changes, proving the save
+            // ran; the key field is never touched.
+            app.provider_prompt.as_mut().unwrap().models = "m1 m2".to_string();
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Enter), false);
+
+            assert!(app.provider_prompt.is_none(), "edit saved");
+            let cfg = crate::core::agent::global_config::load_global_config()
+                .unwrap()
+                .get("p")
+                .cloned()
+                .unwrap();
+            assert_eq!(cfg.api_key.as_deref(), Some("sk-old"), "stored key kept");
+        });
+    }
+
+    /// Editing a provider: typing in the api-key field must replace the stored
+    /// key on save, and emptying it must clear the stored key (a local
+    /// endpoint that dropped auth).
+    #[test]
+    fn provider_edit_touched_key_replaces_or_clears() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let fresh = || {
+                crate::core::agent::global_config::set_provider(
+                    "p",
+                    crate::core::agent::global_config::ProviderUpdate {
+                        api_key: Some("sk-old".into()),
+                        base_url: Some("https://api.example/v1".into()),
+                        models: Some(vec!["m1".into()]),
+                        api_type: None,
+                    },
+                )
+                .unwrap();
+                let entry = crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .remove("p")
+                    .unwrap();
+                Some(super::ProviderPrompt::from_entry(&entry))
+            };
+
+            let stored_key = || {
+                crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .get("p")
+                    .and_then(|c| c.api_key.clone())
+            };
+
+            let mut app = test_app();
+            app.provider_prompt = fresh();
+            // Type a new key: it replaces the stored one on save.
+            app.provider_prompt.as_mut().unwrap().field = ProviderField::ApiKey;
+            for ch in "sk-new-key".chars() {
+                super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Enter), false);
+            assert!(app.provider_prompt.is_none());
+            assert_eq!(stored_key().as_deref(), Some("sk-new-key"), "typed key replaces");
+
+            // Empty the key field: the stored key is cleared.
+            app.provider_prompt = fresh();
+            app.provider_prompt.as_mut().unwrap().field = ProviderField::ApiKey;
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Backspace), false);
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Enter), false);
+            assert!(app.provider_prompt.is_none());
+            assert_eq!(stored_key(), None, "emptied key clears the stored one");
+        });
+    }
+
+    /// The masked key placeholder must not pretend a stored key is present: an
+    /// untouched edit shows `(unchanged)`, whereas typing a replacement shows
+    /// mask characters.
+    #[test]
+    fn provider_edit_masked_key_renders_unchanged_until_touched() {
+        let mut p = super::ProviderPrompt {
+            editing: Some("p".into()),
+            field: ProviderField::BaseUrl,
+            name: "p".into(),
+            base_url: String::new(),
+            api_key: String::new(),
+            key_touched: false,
+            models: String::new(),
+            error: None,
+        };
+        assert_eq!(p.masked_key(), "(unchanged)", "untouched edit shows unchanged");
+        p.key_touched = true;
+        p.api_key = "sk-abc".to_string();
+        assert_eq!(p.masked_key(), "******", "touched key masks its length");
+    }
+
     /// A bracketed paste while the provider wizard is open must land in the
     /// active field, not the chat composer (where a pasted API key would echo).
     #[test]
@@ -14317,6 +14452,7 @@ mod tests {
             name: "p".into(),
             base_url: String::new(),
             api_key: String::new(),
+            key_touched: false,
             models: String::new(),
             error: None,
         };
