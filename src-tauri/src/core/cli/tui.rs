@@ -4162,6 +4162,19 @@ const TOOL_ROW_MAX_LINES: usize = 8;
 const DIFF_ADD_BG: Color = Color::Rgb(22, 52, 32);
 const DIFF_DEL_BG: Color = Color::Rgb(66, 26, 30);
 
+/// Selection style shared by every arrow-navigable list (ask, permission, slash
+/// hints, path hints, pickers). Palette-only on purpose: `reversed()` swaps in
+/// the terminal's default foreground as a background, which lands as an opaque
+/// white block matching nothing else on screen. Bold survives `Style::patch`
+/// even where a row's spans set their own colors, so it marks the row
+/// everywhere; the cyan reaches `SELECT_MARK` and any unstyled label, and both
+/// follow the terminal's own theme.
+fn select_style() -> Style {
+    Style::new().cyan().bold()
+}
+
+const SELECT_MARK: &str = "\u{25b6} ";
+
 /// Render focused-diff text as a boxed panel: a light rule frames the change,
 /// `+` rows on a green background and `-` rows on a red one across the whole row
 /// (so the change reads as a band), `@@` headers dim-cyan. Every row keeps its
@@ -10066,8 +10079,8 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
     f.render_widget(Paragraph::new(question), rows[0]);
 
     let list = List::new(items.into_iter().map(ListItem::new).collect::<Vec<_>>())
-        .highlight_style(Style::new().reversed().bold())
-        .highlight_symbol("\u{25b6} ");
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(ask.selected));
     f.render_stateful_widget(list, rows[1], &mut state);
@@ -10500,8 +10513,8 @@ fn draw_slash_hints(
     f.render_widget(Clear, area);
     let list = List::new(items)
         .block(block)
-        .highlight_style(Style::new().reversed())
-        .highlight_symbol("▶ ");
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(selected.min(matches.len().saturating_sub(1))));
     f.render_stateful_widget(list, area, &mut state);
@@ -10546,8 +10559,8 @@ fn draw_path_hints(
     f.render_widget(Clear, area);
     let list = List::new(items)
         .block(block)
-        .highlight_style(Style::new().reversed())
-        .highlight_symbol("▶ ");
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(selected.min(entries.len().saturating_sub(1))));
     f.render_stateful_widget(list, area, &mut state);
@@ -10591,8 +10604,8 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
         .map(|(_, label)| ListItem::new(Line::raw(label)))
         .collect();
     let list = List::new(items)
-        .highlight_style(Style::new().reversed().bold())
-        .highlight_symbol("▶ ");
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(pending.selected));
     f.render_stateful_widget(list, rows[2], &mut state);
@@ -10628,8 +10641,8 @@ fn draw_picker(
         .collect();
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(picker.title()))
-        .highlight_style(Style::new().reversed())
-        .highlight_symbol("▶ ");
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(picker.selected));
 
