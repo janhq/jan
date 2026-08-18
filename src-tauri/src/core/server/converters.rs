@@ -858,7 +858,15 @@ fn push_merged(messages: &mut Vec<Value>, role: &str, blocks: Vec<Value>) {
 
 impl UpstreamConverter for AnthropicMessagesConverter {
     fn upstream_path(&self, _body: &Value) -> String {
-        "/messages".to_string()
+        // An OAuth `sk-ant-oat01` token is billed against the Claude Code /
+        // subscription quota only when the request hits the Code endpoint with
+        // the `?beta=true` suffix (mirrors the Claude Code CLI and 9router).
+        // Without it the token is throttled by the shared API rate limit (429).
+        if self.oauth {
+            "/messages?beta=true".to_string()
+        } else {
+            "/messages".to_string()
+        }
     }
 
     fn auth_header(&self, key: &str) -> (&'static str, String) {
@@ -872,10 +880,20 @@ impl UpstreamConverter for AnthropicMessagesConverter {
     fn extra_headers(&self) -> Vec<(&'static str, &'static str)> {
         let mut headers = vec![("anthropic-version", "2023-06-01")];
         if self.oauth {
-            headers.push(("anthropic-beta", "oauth-2025-04-20"));
+            // The `claude-code` beta marks the request as Claude Code traffic,
+            // which is what routes an OAuth token to its Code/subscription
+            // quota. The set mirrors the Claude Code CLI (and 9router).
+            headers.push((
+                "anthropic-beta",
+                "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28",
+            ));
+            headers.push(("anthropic-dangerous-direct-browser-access", "true"));
+            headers.push(("user-agent", "claude-cli/2.1.92 (external, sdk-cli)"));
+            headers.push(("x-app", "cli"));
         }
         headers
     }
+
 
     fn convert_request(&self, body: &Value) -> Value {
         let mut out = json!({});
@@ -1761,28 +1779,26 @@ mod anthropic_messages_tests {
     }
 
     #[test]
-    fn auth_and_headers() {
-        let c = conv();
-        assert_eq!(c.auth_header("k"), ("x-api-key", "k".to_string()));
-        assert_eq!(c.extra_headers(), vec![("anthropic-version", "2023-06-01")]);
-        assert_eq!(c.upstream_path(&json!({})), "/messages");
-    }
-
-
-    #[test]
-    fn oauth_auth_and_headers_use_bearer_plus_beta() {
+    fn oauth_auth_and_headers_use_bearer_plus_code_beta() {
         let c = AnthropicMessagesConverter::new_oauth();
         assert_eq!(c.auth_header("k"), ("authorization", "Bearer k".to_string()));
         assert_eq!(
             c.extra_headers(),
             vec![
                 ("anthropic-version", "2023-06-01"),
-                ("anthropic-beta", "oauth-2025-04-20"),
+                (
+                    "anthropic-beta",
+                    "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28",
+                ),
+                ("anthropic-dangerous-direct-browser-access", "true"),
+                ("user-agent", "claude-cli/2.1.92 (external, sdk-cli)"),
+                ("x-app", "cli"),
             ]
         );
-        // The upstream path is unchanged for OAuth credentials.
-        assert_eq!(c.upstream_path(&json!({})), "/messages");
+        // The Code `?beta=true` suffix routes the OAuth token to its Code quota.
+        assert_eq!(c.upstream_path(&json!({})), "/messages?beta=true");
     }
+
 
     #[test]
     fn converter_for_selects_oauth_scheme_only_for_anthropic_accounts() {

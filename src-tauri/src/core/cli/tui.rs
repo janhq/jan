@@ -9806,6 +9806,7 @@ fn finish_account_login(app: &mut App, result: Result<String, String>) {
             app.account_login = None;
             app.account_login_submit = None;
             app.note(&login_success_message(&provider));
+            warn_on_claude_login(app, &provider);
             adopt_account_login_model(app, &provider);
         }
         Err(error) => {
@@ -9829,6 +9830,22 @@ fn finish_account_login(app: &mut App, result: Result<String, String>) {
 fn login_success_message(provider: &str) -> String {
     format!("signed in to {provider}. Use /model to select a model.")
 }
+/// Warn after a Claude account sign-in that Jan reaches Anthropic directly
+/// with the user's OAuth token. Since Jan is a third-party client (not the
+/// official Claude Code CLI), usage proceeds against Anthropic's Claude Code
+/// Terms of Service at the user's own risk; there is no guarantee that
+/// Anthropic permits third-party access to the same quota.
+fn warn_on_claude_login(app: &mut App, provider: &str) {
+    if provider == "anthropic" {
+        app.system(
+            Level::Warn,
+            "Claude sign-in: Jan is a third-party client. Using the Claude Code \
+             quota through Jan may not be sanctioned by Anthropic; proceed at \
+             your own risk and review Anthropic's Terms of Service.",
+        );
+    }
+}
+
 
 fn account_login_error_message(provider: &str) -> String {
     format!("{provider} sign-in failed: could not complete browser sign-in")
@@ -16116,6 +16133,43 @@ mod tests {
         assert!(!screen.contains("model.write"), "{screen}");
         assert!(!screen.contains("claude-3"), "{screen}");
         assert!(!screen.contains("invalid_grant"), "{screen}");
+    }
+
+    #[test]
+    fn claude_account_login_warns_about_third_party_use() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "anthropic",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: None,
+                    clear_api_key: true,
+                    base_url: Some("https://api.anthropic.com/v1".into()),
+                    models: Some(vec!["claude-sonnet-5".into()]),
+                    api_type: Some("anthropic".into()),
+                },
+            )
+            .unwrap();
+            let mut app = test_app();
+            super::open_account_login(&mut app, "anthropic");
+            super::finish_account_login(&mut app, Ok("anthropic".to_string()));
+            let text = transcript_text(&app);
+            assert!(
+                text.contains("signed in to anthropic. Use /model to select a model."),
+                "{text}"
+            );
+            assert!(
+                text.contains("third-party client"),
+                "Claude success must warn about third-party use: {text}"
+            );
+            assert!(
+                text.contains("Terms of Service"),
+                "Claude warning must mention the ToS: {text}"
+            );
+            assert!(
+                text.contains("own risk"),
+                "Claude warning must flag user risk: {text}"
+            );
+        });
     }
 
     #[test]
