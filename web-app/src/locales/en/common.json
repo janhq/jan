@@ -649,6 +649,7 @@
   "backgroundTasks": "Background tasks",
   "noBackgroundTasks": "No background tasks yet.",
   "running": "Running",
+  "queued": "Queued",
   "finished": "Finished",
   "viewTranscript": "View transcript",
   "cancelSubagent": "Cancel",
