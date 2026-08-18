@@ -1494,9 +1494,9 @@ const THINKING_WORDS: [&str; 6] =
     ["thinking", "reasoning", "pondering", "reflecting", "deliberating", "musing"];
 
 /// Spinner frames per placeholder-word change, so the action word turns over
-/// at a readable pace (10 frames x 80ms ~= 0.8s) rather than on the braille
-/// spinner's every sub-frame.
-const WORD_ROTATE_FRAMES: usize = 10;
+/// at a relaxed pace (60 frames x 80ms ~= 4.8s) rather than shifting under
+/// the eye alongside the braille spinner.
+const WORD_ROTATE_FRAMES: usize = 60;
 
 /// Orange used for the "thinking" action word, matching the markdown bold
 /// accent so reasoning reads consistently across the TUI.
