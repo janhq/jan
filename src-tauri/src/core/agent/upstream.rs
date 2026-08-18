@@ -4,10 +4,12 @@
 //! `core/server/proxy.rs` (no behavior change) so both the server path and
 //! `core/agent/loop.rs` consume one implementation.
 
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+
 
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -229,6 +231,12 @@ fn mcp_call_result_to_string(result: &CallToolResult) -> String {
     }
 }
 
+/// True when the provider carries a credential (an API key or key chain),
+/// so a model id offered by several providers can prefer the signed-in one.
+fn credentialed(config: &ProviderConfig) -> bool {
+    config.api_key.is_some() || !config.api_keys.is_empty()
+}
+
 /// Resolve `model_id` to an upstream URL + key chain. The desktop build also
 /// resolves local engines (MLX session, llama-server router); the `cli` build is
 /// remote-only, so a model with no provider entry is unresolvable.
@@ -243,19 +251,28 @@ pub(crate) async fn resolve_upstream_for_model(
     let pc = provider_configs.lock().await;
     let offers = |config: &ProviderConfig| config.models.iter().any(|m| m == model_id);
 
-    // The same model id can be listed by several providers -- typically a local
-    // engine descriptor (no base_url) plus a Jan desktop API server exposing the
-    // same model over HTTP. `HashMap` iteration order is randomized, so pick the
-    // usable one deterministically instead of whichever hashes first. Only the
-    // CLI needs this: the desktop resolves base_url-less providers through its
-    // in-process engine branches below.
+    // The same model id can be listed by several providers, e.g. a cloud
+    // provider and an OpenAI-compatible gateway that both carry e.g.
+    // `gpt-4o`. `HashMap` iteration order is randomized, so pick determin-
+    // istically rather than whichever hashes first. When several reachable
+    // HTTP providers offer the model, prefer a credentialed one over a
+    // keyless twin: the keyless entry (typically the user's own catalog
+    // entry that was never signed in) would only fail later with a 401 even
+    // though a signed-in provider offering the same model would have worked.
+    // Sort key is `(has_credential DESC, name ASC)` so equally-credentialed
+    // entries still resolve to a stable, alphabetical name.
     #[cfg(feature = "cli")]
     let first_match = pc
         .iter()
         .filter(|(_, config)| {
             config.base_url.as_deref().is_some_and(|u| !u.is_empty()) && offers(config)
         })
-        .min_by_key(|(name, _)| name.to_string())
+        .min_by_key(|(name, config)| {
+            (
+                Reverse(credentialed(config)),
+                name.to_string(),
+            )
+        })
         .or_else(|| pc.iter().find(|(_, config)| offers(config)));
     #[cfg(not(feature = "cli"))]
     let first_match = pc.iter().find(|(_, config)| offers(config));
@@ -962,6 +979,47 @@ mod tests {
         .await
         .expect("the API server provider is reachable");
         assert_eq!(url, "http://127.0.0.1:1337/v1/chat/completions");
+    }
+
+    /// When two reachable HTTP providers offer the same model id - one
+    /// credentialed, one keyless - resolution must pick the credentialed one.
+    /// Alphabetical order alone would route e.g. `gpt-5.6-luna` (carried by
+    /// both `openai` and a signed-in `opencode`) to the keyless `openai` entry
+    /// and fail with a 401 on the first request.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn shared_model_id_prefers_the_credentialed_provider() {
+        let mut configs = HashMap::new();
+        // Alphabetically first, but keyless - the old code would pick this.
+        configs.insert(
+            "openai".to_string(),
+            ProviderConfig {
+                provider: "openai".into(),
+                base_url: Some("https://api.openai.com/v1".into()),
+                models: vec!["gpt-5.6-luna".into()],
+                ..Default::default()
+            },
+        );
+        // Signed in, so it carries a key.
+        configs.insert(
+            "opencode".to_string(),
+            ProviderConfig {
+                provider: "opencode".into(),
+                base_url: Some("https://opencode.ai/zen/v1".into()),
+                api_key: Some("sk-opencode".into()),
+                models: vec!["gpt-5.6-luna".into()],
+                ..Default::default()
+            },
+        );
+
+        let (url, keys) = resolve_upstream_for_model(
+            "gpt-5.6-luna",
+            Arc::new(Mutex::new(configs)),
+        )
+        .await
+        .expect("the credentialed provider is selected");
+        assert_eq!(url, "https://opencode.ai/zen/v1/chat/completions");
+        assert_eq!(keys, vec!["sk-opencode"]);
     }
 
     #[test]
