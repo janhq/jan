@@ -1132,6 +1132,14 @@ struct App {
     /// In-progress assistant text for the current turn, flushed on the next
     /// step/tool/terminal event.
     assistant_buf: String,
+    /// Reasoning streamed natively via `StreamEvent::Reasoning` since the last
+    /// flush, each segment anchored to the `assistant_buf` offset it arrived at.
+    /// Kept apart from `assistant_buf` so it is never wrapped into the wire
+    /// history: it is display-only, folded like `<think>` blocks. Anchoring
+    /// (rather than one flat buffer) is what keeps a turn that interleaves
+    /// reasoning with prose in emission order, and what lets `reasoning_open`
+    /// tell "still reasoning" from "prose has started".
+    reasoning_segs: Vec<ReasoningSeg>,
     /// The current run of consecutive collapsible tool calls, rendered as one
     /// transcript row that updates in real time and finalizes to a short summary.
     /// edit/write are excluded (they render their own diff panel).
@@ -1513,6 +1521,7 @@ impl App {
             display_log: Vec::new(),
             journal_writer: None,
             assistant_buf: String::new(),
+            reasoning_segs: Vec::new(),
             tool_group: None,
             grouped_ids: std::collections::HashSet::new(),
             groups: Vec::new(),
@@ -1653,6 +1662,7 @@ impl App {
         self.expanded.clear();
         self.reveal = None;
         self.assistant_buf.clear();
+        self.reasoning_segs.clear();
         self.message_queue.clear();
         self.pending_queue.clear();
         self.ask_queue.clear();
@@ -1752,7 +1762,10 @@ impl App {
     }
 
     fn flush_assistant(&mut self) {
-        let text = self.assistant_buf.trim_end().to_string();
+        let segs = std::mem::take(&mut self.reasoning_segs);
+        let text = fold_native_reasoning(&self.assistant_buf, &segs)
+            .trim_end()
+            .to_string();
         self.assistant_buf.clear();
         // The buffered stream is committed: any open reasoning window closes
         // (its elapsed time was stashed when the block itself closed, so this
@@ -1765,9 +1778,9 @@ impl App {
         }
         // Model prose ends the current run of tool calls.
         self.finalize_tool_group();
-        // Journaled with its `<think>` markers intact: this is the only place the
-        // reasoning exists (it is kept out of `history` on purpose), and the
-        // replay folds it exactly as the live turn did.
+        // Native reasoning is already folded into `text` as wrapped blocks at the
+        // offsets it streamed at. Display-logged here (out of `history` on
+        // purpose) so the replay folds it like the live turn did.
         self.display_log.push(DisplayEntry::Assistant {
             text: text.clone(),
         });
@@ -2028,7 +2041,27 @@ impl App {
     /// stretch of a run that puts nothing on screen, so the header badge is the
     /// only place progress can show.
     fn is_thinking(&self) -> bool {
-        self.status != Status::Idle && !self.show_reasoning && thinking_open(&self.assistant_buf)
+        self.status != Status::Idle && !self.show_reasoning && self.reasoning_open()
+    }
+
+    /// True while the model is mid-reasoning: either a `<think>` block is live
+    /// in the answer buffer (inline-tag providers) or the newest native segment
+    /// is still at the tail, i.e. no content token has arrived since
+    /// (`reasoning_content` providers). The tail check is what closes the window
+    /// when prose starts, since native segments live on until the next flush.
+    fn reasoning_open(&self) -> bool {
+        thinking_open(&self.assistant_buf)
+            || self
+                .reasoning_segs
+                .last()
+                .is_some_and(|seg| seg.at == self.assistant_buf.len())
+    }
+
+    /// The live assistant text with native reasoning folded in as wrapped blocks,
+    /// exactly as `flush_assistant` will commit it. Lets the shared renderer
+    /// treat native and inline-tag reasoning identically while streaming.
+    fn live_assistant_text(&self) -> String {
+        fold_native_reasoning(&self.assistant_buf, &self.reasoning_segs)
     }
 
     /// Header status while a turn is running with reasoning folding on:
@@ -2037,7 +2070,7 @@ impl App {
     /// plain `[working]`) once the model is working again. `None` when no
     /// reasoning has happened recently this turn.
     fn reasoning_status(&self) -> Option<(String, Style)> {
-        if thinking_open(&self.assistant_buf) {
+        if self.reasoning_open() {
             Some(("thinking".to_string(), Style::new().yellow().bold()))
         } else {
             // The summary is transient: it lasts only `THOUGHT_FOR_TTL` after the
@@ -3068,10 +3101,13 @@ impl App {
             StreamEvent::Token { text } => {
                 self.assistant_buf.push_str(&text);
                 // Track the live thinking state so the header can fold reasoning
-                // to `[thinking]` / `[thought for Ns]`. Start the timer when a
-                //  block opens; close it (stashing the duration) once the block
-                // closes or the tool group proceeds.
-                let open = thinking_open(&self.assistant_buf);
+                // to `[thinking]` / `[thought for Ns]`. Start the timer when
+                // reasoning is open; close it (stashing the duration) once the
+                // block ends. `reasoning_open` covers both inline ` think>` tags
+                // and native reasoning_buf, so a content token after reasoning
+                // closes the window (and prose arriving with no reasoning leaves
+                // it closed).
+                let open = self.reasoning_open();
                 if open && self.thinking_since.is_none() {
                     self.thinking_since = Some(Instant::now());
                 } else if !open {
@@ -3086,6 +3122,23 @@ impl App {
                 // into its own row.
                 if self.tool_group.is_some() && has_answer_text(&self.assistant_buf) {
                     self.finalize_tool_group();
+                }
+            }
+            StreamEvent::Reasoning { text } => {
+                // Native reasoning stays out of the answer buffer entirely; it is
+                // folded into the display log on the next flush. Deltas that
+                // arrive with no prose in between extend the open segment;
+                // reasoning after prose starts a new one, so the timeline keeps
+                // emission order instead of hoisting every thought to the top.
+                if !text.is_empty() {
+                    let at = self.assistant_buf.len();
+                    match self.reasoning_segs.last_mut() {
+                        Some(seg) if seg.at == at => seg.text.push_str(&text),
+                        _ => self.reasoning_segs.push(ReasoningSeg { at, text }),
+                    }
+                    if self.thinking_since.is_none() {
+                        self.thinking_since = Some(Instant::now());
+                    }
                 }
             }
             StreamEvent::Step { index, max } => {
@@ -4743,6 +4796,49 @@ fn split_reasoning(text: &str) -> Vec<(bool, String)> {
         out.push((in_think, seg.to_string()));
     }
     out
+}
+
+/// One stretch of natively streamed reasoning, anchored to the byte offset in
+/// `App::assistant_buf` it arrived at, so it can be folded back into the answer
+/// text in emission order.
+#[derive(Debug, Clone, PartialEq)]
+struct ReasoningSeg {
+    at: usize,
+    text: String,
+}
+
+/// Splice native reasoning segments into `prose` as `<think>` blocks at the
+/// offsets they streamed at, yielding the one string form both the live renderer
+/// and the display journal use. Offsets come from `prose.len()` at emission time,
+/// so they are always char boundaries and always ascending.
+fn fold_native_reasoning(prose: &str, segs: &[ReasoningSeg]) -> String {
+    if segs.is_empty() {
+        return prose.to_string();
+    }
+    let extra: usize = segs.iter().map(|s| s.text.len() + 16).sum();
+    let mut out = String::with_capacity(prose.len() + extra);
+    let mut last = 0;
+    for seg in segs {
+        let at = seg.at.min(prose.len());
+        out.push_str(&prose[last..at]);
+        if !seg.text.trim().is_empty() {
+            out.push_str("<think>");
+            out.push_str(escape_think_tags(seg.text.trim_end()).trim_end());
+            out.push_str("</think>");
+        }
+        last = at;
+    }
+    out.push_str(&prose[last..]);
+    out
+}
+
+/// Neutralize `<think>`-family tags inside reasoning text before it is wrapped in
+/// one. A model reasoning *about* thinking tags would otherwise close the block
+/// early and have the rest of its thought rendered and journaled as answer prose.
+fn escape_think_tags(text: &str) -> std::borrow::Cow<'_, str> {
+    think_re().replace_all(text, |m: &regex::Captures| {
+        format!("&lt;{}", &m[0][1..])
+    })
 }
 
 /// True if `text` ends inside an unclosed ` think>` block (an opening tag whose
@@ -8856,6 +8952,7 @@ fn rebuild_transcript(app: &mut App) {
     app.expanded.clear();
     app.reveal = None;
     app.assistant_buf.clear();
+    app.reasoning_segs.clear();
     app.last_kind = Kind::None;
     if !app.display_log.is_empty() {
         let logged = std::mem::take(&mut app.display_log);
@@ -8920,6 +9017,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     app.expanded.clear();
     app.reveal = None;
     app.assistant_buf.clear();
+    app.reasoning_segs.clear();
     app.turn = (0, 0);
     app.tokens = 0;
     app.scrollback = 0;
@@ -9375,16 +9473,19 @@ fn draw(f: &mut Frame, app: &mut App) {
     // Streaming prose and the awaiting throbbers have no transcript index; they
     // are rebuilt every frame and ride along as one trailing segment.
     let mut tail: Vec<Line<'static>> = Vec::new();
-    if !app.assistant_buf.is_empty() {
-        let live = live_assistant_lines(&app.assistant_buf, width, !app.show_reasoning);
+    if !app.assistant_buf.is_empty() || !app.reasoning_segs.is_empty() {
+        // Native reasoning is folded into a wrapped block beside the live text
+        // so the shared renderer dims/folds it exactly like inline-tag providers.
+        let live_text = app.live_assistant_text();
+        let live = live_assistant_lines(&live_text, width, !app.show_reasoning);
         if !live.is_empty() {
             // Mirror flush_assistant's `gap(Kind::Prose)` so the separator above
-            // streaming prose is present live, not only once it's finalized.
+            // streaming prose is present live, not only once it is finalized.
             if !trailing_blank(&tail, &app.transcript, width) {
                 tail.push(Line::raw(""));
             }
             // Live tail: same renderer as finalized messages, so an open
-            // (unterminated) <think> block dims and grows during streaming.
+            // (unterminated) wrapped reasoning block dims and grows during streaming.
             tail.extend(live);
         }
     }
@@ -10932,7 +11033,7 @@ fn input_box(app: &App) -> Paragraph<'static> {
             // synonyms in orange while a reasoning block streams -- so the row
             // reads alive without shifting under the eye.
             let step = app.spinner_frame / WORD_ROTATE_FRAMES;
-            let (word, style) = if thinking_open(&app.assistant_buf) {
+            let (word, style) = if app.reasoning_open() {
                 (
                     THINKING_WORDS[step % THINKING_WORDS.len()],
                     Style::new().fg(THINKING_ORANGE).italic(),
@@ -17337,6 +17438,139 @@ mod tests {
             .find(|r| r.contains("Queued"))
             .expect("queued row present");
         assert!(row.contains(SPINNER[5]), "expected frame 5 glyph: {row:?}");
+    }
+
+    /// Native reasoning events (a dedicated `reasoning_content` field) drive the
+    /// same orange thinking placeholder as inline `<`> tags, are folded into the
+    /// transcript like a wrapped block on flush, and never enter the wire answer.
+    #[test]
+    fn native_reasoning_drives_thinking_placeholder_and_folds_on_flush() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning {
+            text: "ponder the plan".into(),
+        });
+        // Orange thinking synonyms while reasoning streams.
+        let row = render_rows(&mut app, 80, 12)
+            .into_iter()
+            .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+            .expect("running placeholder present");
+        assert!(
+            THINKING_WORDS.iter().any(|w| row.contains(w)),
+            "expected a thinking synonym while reasoning: {row:?}"
+        );
+        // The answer arrives: reasoning stays folded into a summary row.
+        app.apply(StreamEvent::Token {
+            text: "Here is the answer".into(),
+        });
+        app.on_done("stop".into(), None);
+        assert_eq!(app.reasoning_blocks.len(), 1, "reasoning folded into one block");
+        // The wire history carries the answer without the reasoning.
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(wire.contains("Here is the answer"), "answer missing: {wire}");
+        assert!(!wire.contains("ponder the plan"), "reasoning leaked into history: {wire}");
+    }
+
+    /// The `[thinking]` badge and the orange placeholder must close when the
+    /// answer starts streaming: native segments live until the next flush, so
+    /// only the "newest segment is still at the tail" check can tell the two
+    /// apart. Without it the badge shimmered through the whole answer and
+    /// `[thought for Ns]` never appeared for a `reasoning_content` provider.
+    #[test]
+    fn native_reasoning_badge_closes_once_prose_starts() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning { text: "ponder".into() });
+        assert_eq!(
+            app.reasoning_status().map(|(w, _)| w),
+            Some("thinking".to_string())
+        );
+        assert!(app.is_thinking(), "reasoning is live");
+        app.apply(StreamEvent::Token { text: "Answer".into() });
+        assert!(!app.is_thinking(), "prose has started");
+        assert_eq!(
+            app.reasoning_status().map(|(w, _)| w),
+            Some("thought for 0s".to_string()),
+            "the closed block reports its duration"
+        );
+    }
+
+    fn detail_text(block: &super::ReasoningBlock) -> String {
+        block
+            .detail
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|sp| sp.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// Reasoning that mentions a `</think>` tag must not close the block it is
+    /// wrapped in and spill the rest of the thought into the answer.
+    #[test]
+    fn native_reasoning_mentioning_a_close_tag_stays_reasoning() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning {
+            text: "the </think> tag is tricky".into(),
+        });
+        app.on_done("stop".into(), None);
+        let rows = render_rows(&mut app, 80, 30).join("\n");
+        assert!(
+            !rows.contains("tag is tricky"),
+            "reasoning rendered as answer prose: {rows}"
+        );
+        assert_eq!(app.reasoning_blocks.len(), 1, "one folded reasoning block");
+        assert!(
+            detail_text(&app.reasoning_blocks[0]).contains("&lt;/think>"),
+            "the tag is neutralized, not dropped: {}",
+            detail_text(&app.reasoning_blocks[0])
+        );
+    }
+
+    /// Interleaved reasoning keeps emission order: each stretch folds where it
+    /// streamed instead of every thought being hoisted above all the prose.
+    #[test]
+    fn interleaved_native_reasoning_keeps_emission_order() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning { text: "first thought".into() });
+        app.apply(StreamEvent::Token { text: "Part one.".into() });
+        app.apply(StreamEvent::Reasoning { text: "second thought".into() });
+        app.apply(StreamEvent::Token { text: " Part two.".into() });
+        app.on_done("stop".into(), None);
+        assert_eq!(app.reasoning_blocks.len(), 2, "two separate stretches");
+        let DisplayEntry::Assistant { text } = app
+            .display_log
+            .iter()
+            .rev()
+            .find(|e| matches!(e, DisplayEntry::Assistant { .. }))
+            .expect("assistant entry journaled")
+        else {
+            unreachable!()
+        };
+        assert_eq!(
+            text,
+            "<think>first thought</think>Part one.<think>second thought</think> Part two."
+        );
+        // The wire answer carries neither thought.
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(wire.contains("Part one. Part two."), "answer missing: {wire}");
+        assert!(!wire.contains("thought"), "reasoning leaked into history: {wire}");
     }
 
     #[test]

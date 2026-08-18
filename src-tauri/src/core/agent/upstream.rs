@@ -640,10 +640,6 @@ struct SseAccumulator {
     tool_calls: Vec<ToolCallAccum>,
     finish_reason: Option<String>,
     usage: Option<serde_json::Value>,
-    /// A `<think>` boundary was streamed for `reasoning_content` and not yet
-    /// closed. Reasoning is display-only (dimmed in the TUI) and deliberately
-    /// kept out of `content` so it is never resent to the model as history.
-    reasoning_open: bool,
     /// An error object delivered inside the stream (`data: {"error": {...}}`).
     /// OpenAI-compatible upstreams can fail mid-stream after a `200 OK`; without
     /// capturing it the run would end as a silent "no answer" instead of
@@ -652,15 +648,6 @@ struct SseAccumulator {
 }
 
 impl SseAccumulator {
-    fn close_reasoning(&mut self, events: &mpsc::UnboundedSender<StreamEvent>) {
-        if self.reasoning_open {
-            self.reasoning_open = false;
-            let _ = events.send(StreamEvent::Token {
-                text: "</think>".to_string(),
-            });
-        }
-    }
-
     /// Parse one raw SSE line (`data: {...}`); non-`data:`/blank lines are ignored.
     fn ingest_line(&mut self, line: &str, events: &mpsc::UnboundedSender<StreamEvent>) {
         if let Some(rest) = line.trim_end_matches('\r').strip_prefix("data:") {
@@ -710,22 +697,20 @@ impl SseAccumulator {
 
         if let Some(fr) = choice.get("finish_reason").and_then(|v| v.as_str()) {
             self.finish_reason = Some(fr.to_string());
-            self.close_reasoning(events);
         }
 
         let Some(delta) = choice.get("delta") else {
             return;
         };
 
+        // Native reasoning: providers exposing a dedicated `reasoning_content`
+        // field stream it as `Reasoning` events, never as content tokens, so
+        // consumers get the boundary for free instead of re-parsing synthetic
+        // `<think>` tags. Providers that inline tags in `content` still flow
+        // through `Token`; consumers keep the tag-stripping fallback for them.
         if let Some(text) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
             if !text.is_empty() {
-                if !self.reasoning_open {
-                    self.reasoning_open = true;
-                    let _ = events.send(StreamEvent::Token {
-                        text: "<think>".to_string(),
-                    });
-                }
-                let _ = events.send(StreamEvent::Token {
+                let _ = events.send(StreamEvent::Reasoning {
                     text: text.to_string(),
                 });
             }
@@ -733,7 +718,6 @@ impl SseAccumulator {
 
         if let Some(text) = delta.get("content").and_then(|v| v.as_str()) {
             if !text.is_empty() {
-                self.close_reasoning(events);
                 self.content.push_str(text);
                 let _ = events.send(StreamEvent::Token {
                     text: text.to_string(),
@@ -1170,7 +1154,7 @@ mod tests {
     }
 
     #[test]
-    fn reasoning_content_streams_as_think_wrapped_tokens_but_stays_out_of_content() {
+    fn reasoning_content_streams_as_native_reasoning_events_and_stays_out_of_content() {
         let (tx, mut rx) = sink();
         let mut acc = SseAccumulator::default();
         acc.ingest(
@@ -1196,15 +1180,23 @@ mod tests {
         assert_eq!(completion["choices"][0]["message"]["content"], "answer");
 
         drop(tx);
+        let mut reasoning = Vec::new();
         let mut tokens = Vec::new();
-        while let Ok(StreamEvent::Token { text }) = rx.try_recv() {
-            tokens.push(text);
+        while let Ok(ev) = rx.try_recv() {
+            match ev {
+                StreamEvent::Reasoning { text } => reasoning.push(text),
+                StreamEvent::Token { text } => tokens.push(text),
+                _ => {}
+            }
         }
-        assert_eq!(tokens, vec!["<think>", "let me ", "think", "</think>", "answer"]);
+        // Native events: no synthetic <think> wrapper tokens on the content
+        // stream, so a consumer never has to re-parse tags it did not receive.
+        assert_eq!(reasoning, vec!["let me ", "think"]);
+        assert_eq!(tokens, vec!["answer"]);
     }
 
     #[test]
-    fn reasoning_only_completion_closes_the_open_think_block() {
+    fn reasoning_only_completion_emits_reasoning_and_no_tokens() {
         let (tx, mut rx) = sink();
         let mut acc = SseAccumulator::default();
         acc.ingest(
@@ -1220,11 +1212,41 @@ mod tests {
         assert!(completion["choices"][0]["message"]["content"].is_null());
 
         drop(tx);
+        let mut reasoning = Vec::new();
         let mut tokens = Vec::new();
-        while let Ok(StreamEvent::Token { text }) = rx.try_recv() {
-            tokens.push(text);
+        while let Ok(ev) = rx.try_recv() {
+            match ev {
+                StreamEvent::Reasoning { text } => reasoning.push(text),
+                StreamEvent::Token { text } => tokens.push(text),
+                _ => {}
+            }
         }
-        assert_eq!(tokens, vec!["<think>", "hmm", "</think>"]);
+        assert_eq!(reasoning, vec!["hmm"]);
+        assert!(tokens.is_empty(), "no content tokens for a reasoning-only turn: {tokens:?}");
+    }
+
+    /// Providers that inline `<think>` tags in `content` (no reasoning_content
+    /// field) keep streaming through Token untouched: the tag-stripping
+    /// fallback lives in the consumers.
+    #[test]
+    fn inline_think_tags_in_content_pass_through_as_tokens() {
+        let (tx, mut rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "content": "<think>hmm</think>answer" } }] })
+                .to_string(),
+            &tx,
+        );
+        drop(tx);
+        let mut tokens = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            match ev {
+                StreamEvent::Token { text } => tokens.push(text),
+                StreamEvent::Reasoning { .. } => panic!("no native reasoning here"),
+                _ => {}
+            }
+        }
+        assert_eq!(tokens, vec!["<think>hmm</think>answer"]);
     }
 
     #[test]

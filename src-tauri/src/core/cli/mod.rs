@@ -1258,6 +1258,12 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
             print!("{text}");
             let _ = std::io::stdout().flush();
         }
+        // Reasoning is progress, not answer: dimmed on stderr so piping stdout
+        // yields only the real completion.
+        StreamEvent::Reasoning { text } => {
+            eprint!("\x1b[2m{text}\x1b[0m");
+            let _ = std::io::stderr().flush();
+        }
         StreamEvent::Step { index, max } => match max {
             0 => eprintln!("\n\x1b[2m[turn {index}]\x1b[0m"),
             m => eprintln!("\n\x1b[2m[turn {index}/{m}]\x1b[0m"),
