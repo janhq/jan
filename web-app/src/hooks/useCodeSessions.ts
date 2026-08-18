@@ -15,6 +15,10 @@ export type CodeTurn = {
   callId?: string
   name?: string
   args?: unknown
+  // While `tool_call_started`..`ToolCall` streams, `argsLive` accumulates the
+  // raw JSON argument text so the tool card shows a live preview. Cleared/superseded
+  // when the parsed `tool_call` `args` lands.
+  argsLive?: string
   result?: string
   isError?: boolean
   diff?: string
@@ -42,9 +46,11 @@ export type CodeMessage = {
 export type SubagentRun = {
   runId: string
   name: string
-  status: 'running' | 'done'
+  status: 'queued' | 'running' | 'done'
   startedAt: number
   endedAt?: number
+  // 1-based FIFO queue position when `status === 'queued'`; cleared on start.
+  waiting?: number
   // The subagent's own trace (wrapped token/tool events). The final answer is
   // NOT here — it's captured into `finalOutput` from the parent's
   // await_subagent result.

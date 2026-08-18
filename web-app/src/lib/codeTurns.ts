@@ -70,10 +70,18 @@ export function codeTurnsToUIMessages(
     // tool turn -> a `tool-<name>` part on the current assistant message.
     const name = turn.name ?? 'tool'
     const running = turn.status === 'running'
+    // While `tool_call_started`..`ToolCall` streams raw JSON arguments, surface
+    // the accumulated `argsLive` text as the input placeholder so the card
+    // shows the arguments arriving live. Cleared once the parsed `args` land.
+    const liveInput = running
+      ? (turn.argsLive !== undefined && turn.argsLive !== ''
+          ? turn.argsLive
+          : turn.args)
+      : turn.args
     const part: any = {
       type: `tool-${name}`,
       toolCallId: turn.callId ?? `code-tool-${i}`,
-      input: turn.args,
+      input: liveInput,
       state: running
         ? 'input-available'
         : turn.isError

@@ -727,10 +727,28 @@ function CodePage() {
           finishModelLoad(sid)
           run.appendToken(sid, ev.text)
           break
-        case 'tool_call':
+        case 'tool_call_started':
           finishModelLoad(sid)
-          run.pushToolTurn(sid, makeToolCallTurn(ev))
+          run.announceToolCall(sid, ev.id, ev.name)
           break
+        case 'tool_call_args_delta':
+          finishModelLoad(sid)
+          run.appendToolArgs(sid, ev.id, ev.delta)
+          break
+        case 'tool_call': {
+          finishModelLoad(sid)
+          // A `tool_call_started` may already have opened this row; the final
+          // call supersedes it (parsed args replace the live JSON buffer).
+          const existing = (useCodeRun.getState().liveTurns[sid] ?? []).some(
+            (tn) => tn.role === 'tool' && tn.callId === ev.id
+          )
+          if (existing) {
+            run.updateToolTurn(sid, ev.id, { args: ev.args, argsLive: undefined })
+          } else {
+            run.pushToolTurn(sid, makeToolCallTurn(ev))
+          }
+          break
+        }
         case 'tool_result': {
           // If this call was an await_subagent, its run_id is already sitting on
           // the tool_call turn's own args — no separate map needed to carry it
@@ -758,6 +776,15 @@ function CodePage() {
         case 'permission_request':
           addPerm(ev)
           break
+        case 'subagent_queued':
+          run.queueSubagent(sid, ev.run_id, ev.name, ev.waiting)
+          break
+        case 'subagent_start':
+          run.startSubagent(sid, ev.run_id, ev.name)
+          break
+        case 'turn_usage':
+          run.setUsage(sid, ev.usage)
+          break
         case 'error':
           if (ev.code !== 'cancelled') {
             runError = ev.message
@@ -778,9 +805,6 @@ function CodePage() {
           break
         case 'ask_request':
           run.addPendingAsk(sid, ev.request_id, ev.request)
-          break
-        case 'subagent_start':
-          run.startSubagent(sid, ev.run_id, ev.name)
           break
         case 'subagent_end':
           run.endSubagent(sid, ev.run_id, ev.usage)

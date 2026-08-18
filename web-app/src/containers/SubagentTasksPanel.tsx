@@ -193,6 +193,7 @@ export function SubagentTasksPanel({
     ? subagents.find((s) => s.runId === selectedRunId) ?? null
     : null
   const runningRuns = subagents.filter((s) => s.status === 'running')
+  const queuedRuns = subagents.filter((s) => s.status === 'queued')
   const finishedRuns = subagents.filter((s) => s.status === 'done')
 
   return (
@@ -221,7 +222,7 @@ export function SubagentTasksPanel({
               {t('common:noBackgroundTasks')}
             </p>
           ) : (
-            <div className="flex flex-col gap-4">
+        <>
               {runningRuns.length > 0 && (
                 <Section label={t('common:running')} count={runningRuns.length}>
                   {runningRuns.map((run) => (
@@ -229,6 +230,19 @@ export function SubagentTasksPanel({
                       key={run.runId}
                       run={run}
                       needsInput={awaitingInputRunIds.has(run.runId)}
+                      onSelect={() => setSelectedRunId(run.runId)}
+                      onCancel={() => onCancel(run.runId)}
+                    />
+                  ))}
+                </Section>
+              )}
+              {queuedRuns.length > 0 && (
+                <Section label={t('common:queued')} count={queuedRuns.length}>
+                  {queuedRuns.map((run) => (
+                    <TaskRow
+                      key={run.runId}
+                      run={run}
+                      needsInput={false}
                       onSelect={() => setSelectedRunId(run.runId)}
                       onCancel={() => onCancel(run.runId)}
                     />
@@ -251,7 +265,7 @@ export function SubagentTasksPanel({
                   ))}
                 </Section>
               )}
-            </div>
+            </>
           )}
         </div>
       )}

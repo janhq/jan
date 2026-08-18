@@ -35,6 +35,8 @@ export type AskAnswer = {
 export type StreamEvent =
   | { type: 'token'; text: string }
   | { type: 'step'; index: number; max: number }
+  | { type: 'tool_call_started'; id: string; name: string }
+  | { type: 'tool_call_args_delta'; id: string; delta: string }
   | { type: 'tool_call'; id: string; name: string; args: unknown }
   | { type: 'tool_result'; id: string; content: string; is_error: boolean; diff?: string }
   | { type: 'done'; stop_reason: string; usage: Usage | null }
@@ -54,8 +56,10 @@ export type StreamEvent =
       prompt_kind: string
       offers_always: boolean
     }
+  | { type: 'subagent_queued'; run_id: string; name: string; waiting: number }
   | { type: 'subagent_start'; run_id: string; name: string }
   | { type: 'subagent_end'; run_id: string; name: string; usage: Usage | null }
+  | { type: 'turn_usage'; usage: Usage }
   | { type: 'subagent'; run_id: string; name: string; event: StreamEvent }
 
 // Append a streamed token to the last assistant turn, or start a new one.
@@ -104,6 +108,19 @@ function applyInnerToTurns(turns: CodeTurn[], inner: StreamEvent): CodeTurn[] {
   switch (inner.type) {
     case 'token':
       return appendAssistantToken(turns, inner.text)
+    case 'tool_call_started': {
+      if (turns.some((tn) => tn.role === 'tool' && tn.callId === inner.id)) return turns
+      return [
+        ...turns,
+        { role: 'tool', content: '', callId: inner.id, name: inner.name, args: null, argsLive: '', status: 'running' },
+      ]
+    }
+    case 'tool_call_args_delta': {
+      const idx = turns.findIndex((tn) => tn.role === 'tool' && tn.callId === inner.id)
+      if (idx === -1) return turns
+      const prev = turns[idx].argsLive ?? ''
+      return [...turns.slice(0, idx), { ...turns[idx], argsLive: prev + inner.delta }, ...turns.slice(idx + 1)]
+    }
     case 'tool_call':
       return [...turns, makeToolCallTurn(inner)]
     case 'tool_result':
@@ -174,7 +191,14 @@ type CodeRunState = {
   appendToken: (sid: string, text: string) => void
   pushToolTurn: (sid: string, turn: CodeTurn) => void
   updateToolTurn: (sid: string, callId: string, patch: Partial<CodeTurn>) => void
+  // `tool_call_started`: open a live tool row before any args exist, so the
+  // card shows a spot the user can watch fill as the arguments stream.
+  announceToolCall: (sid: string, id: string, name: string) => void
+  // `tool_call_args_delta`: append raw JSON argument text to the running row.
+  appendToolArgs: (sid: string, id: string, delta: string) => void
   startSubagent: (sid: string, runId: string, name: string) => void
+  // `subagent_queued`: mark a child as waiting for a concurrency slot.
+  queueSubagent: (sid: string, runId: string, name: string, waiting: number) => void
   endSubagent: (sid: string, runId: string, usage?: Usage | null) => void
   routeIntoSubagent: (sid: string, runId: string, inner: StreamEvent) => void
   attachSubagentOutput: (sid: string, runId: string, content: string) => void
@@ -249,10 +273,56 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
       return next === turns ? {} : { liveTurns: { ...s.liveTurns, [sid]: next } }
     }),
 
+  announceToolCall: (sid, id, name) =>
+    set((s) => {
+      const turns = s.liveTurns[sid] ?? []
+      if (turns.some((tn) => tn.role === 'tool' && tn.callId === id)) return {}
+      return {
+        liveTurns: {
+          ...s.liveTurns,
+          [sid]: [
+            ...turns,
+            { role: 'tool', content: '', callId: id, name, args: null, argsLive: '', status: 'running' },
+          ],
+        },
+      }
+    }),
+
+  appendToolArgs: (sid, id, delta) =>
+    set((s) => {
+      const turns = s.liveTurns[sid] ?? []
+      const idx = turns.findIndex((tn) => tn.role === 'tool' && tn.callId === id)
+      if (idx === -1) return {}
+      const prev = turns[idx].argsLive ?? ''
+      return {
+        liveTurns: {
+          ...s.liveTurns,
+          [sid]: [...turns.slice(0, idx), { ...turns[idx], argsLive: prev + delta }, ...turns.slice(idx + 1)],
+        },
+      }
+    }),
+
   startSubagent: (sid, runId, name) =>
     set((s) => {
       const runs = s.subagents[sid] ?? []
-      if (runs.some((r) => r.runId === runId)) return {}
+      // Promote a queued child the moment its slot frees; otherwise create it.
+      const idx = runs.findIndex((r) => r.runId === runId)
+      if (idx !== -1) {
+        const existing = runs[idx]
+        if (existing.status === 'queued') {
+          return {
+            subagents: {
+              ...s.subagents,
+              [sid]: [
+                ...runs.slice(0, idx),
+                { ...existing, status: 'running' as const, waiting: undefined, startedAt: Date.now() },
+                ...runs.slice(idx + 1),
+              ],
+            },
+          }
+        }
+        return {}
+      }
       return {
         subagents: {
           ...s.subagents,
@@ -264,12 +334,28 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
       }
     }),
 
+  queueSubagent: (sid, runId, name, waiting) =>
+    set((s) => {
+      const runs = s.subagents[sid] ?? []
+      if (runs.some((r) => r.runId === runId)) return {}
+      return {
+        subagents: {
+          ...s.subagents,
+          [sid]: [
+            ...runs,
+            { runId, name, status: 'queued', waiting, startedAt: Date.now(), turns: [] },
+          ],
+        },
+      }
+    }),
+
+
   endSubagent: (sid, runId, usage) =>
     set((s) => ({
       subagents: {
         ...s.subagents,
         [sid]: (s.subagents[sid] ?? []).map((r) =>
-          r.runId === runId && r.status === 'running'
+          r.runId === runId && r.status !== 'done'
             ? {
                 ...r,
                 status: 'done' as const,
@@ -379,7 +465,7 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
         : tn
     )
     const subs = (get().subagents[sid] ?? []).map((r) =>
-      r.status === 'running' ? { ...r, status: 'done' as const, endedAt: Date.now() } : r
+      r.status !== 'done' ? { ...r, status: 'done' as const, endedAt: Date.now() } : r
     )
     set((s) => ({
       liveTurns: { ...s.liveTurns, [sid]: turns },
