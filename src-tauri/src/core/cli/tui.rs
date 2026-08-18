@@ -9699,7 +9699,15 @@ fn open_login_picker(app: &mut App) {
 }
 
 fn open_login_picker_at(app: &mut App, selected_provider: Option<&str>) {
-    let items = crate::core::cli::auth::provider_catalog()
+    let mut providers = crate::core::cli::auth::provider_catalog();
+    // Pin Tokamak to the top (the default provider), then list the rest in
+    // name order so the picker is stable and predictable.
+    providers.sort_by(|a, b| match (a.id == "tokamak", b.id == "tokamak") {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.cmp(&b.name),
+    });
+    let items = providers
         .into_iter()
         .map(|provider| {
             let status =
@@ -15719,16 +15727,26 @@ mod tests {
             assert_eq!(picker.kind, PickerKind::LoginProvider);
 
             let catalog = crate::core::cli::auth::provider_catalog();
+            // Expected picker order: Tokamak pinned to the top (the default
+            // provider), then the remaining providers in name order:
+            // Claude, Codex, DeepSeek, OpenCode. (catalog keeps its own order.)
+            let ordered = |catalog: &Vec<crate::core::cli::auth::ProviderDefinition>| {
+                let mut providers = catalog.clone();
+                providers.sort_by(|a, b| match (a.id == "tokamak", b.id == "tokamak") {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => a.name.cmp(&b.name),
+                });
+                providers
+            };
+            let ordered = ordered(&catalog);
             assert_eq!(
                 picker
                     .items
                     .iter()
                     .map(|item| item.value.as_str())
                     .collect::<Vec<_>>(),
-                catalog
-                    .iter()
-                    .map(|provider| provider.id)
-                    .collect::<Vec<_>>()
+                ordered.iter().map(|provider| provider.id).collect::<Vec<_>>()
             );
             assert_eq!(
                 picker
@@ -15736,7 +15754,7 @@ mod tests {
                     .iter()
                     .map(|item| item.label.as_str())
                     .collect::<Vec<_>>(),
-                catalog
+                ordered
                     .iter()
                     .map(|provider| format!("{} ({})", provider.name, provider.id))
                     .collect::<Vec<_>>()
@@ -15747,7 +15765,7 @@ mod tests {
                     .iter()
                     .map(|item| item.hint.as_deref())
                     .collect::<Vec<_>>(),
-                catalog
+                ordered
                     .iter()
                     .map(|provider| {
                         if provider.id == "deepseek" {
@@ -15758,6 +15776,8 @@ mod tests {
                     })
                     .collect::<Vec<_>>()
             );
+            // Tokamak is the first row.
+            assert_eq!(picker.items.first().map(|i| i.value.as_str()), Some("tokamak"));
             assert!(picker
                 .items
                 .iter()
