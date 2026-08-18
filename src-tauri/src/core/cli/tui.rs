@@ -877,28 +877,7 @@ impl Row {
                 label,
                 label_style,
                 reserve,
-            } => {
-                let max = width.saturating_sub(*reserve).max(1) as usize;
-                let tag_w = tag.chars().count() + 1;
-                let mut rows = wrap_text(label, *label_style, max);
-                if rows.len() > TOOL_ROW_MAX_LINES {
-                    rows.truncate(TOOL_ROW_MAX_LINES);
-                    if let Some(last) = rows.last_mut() {
-                        last.push(Span::styled(" …", *label_style));
-                    }
-                }
-                gutter_lines(
-                    rows,
-                    vec![
-                        Span::styled("│ ", Style::new().dark_gray()),
-                        Span::styled(format!("{tag} "), *tag_style),
-                    ],
-                    vec![
-                        Span::styled("│ ", Style::new().dark_gray()),
-                        Span::raw(" ".repeat(tag_w)),
-                    ],
-                )
-            }
+            } => tool_row_lines(tag, *tag_style, label, *label_style, *reserve, width, None),
             RowKind::Result {
                 tag,
                 tag_style,
@@ -1573,16 +1552,22 @@ struct SubagentBlock {
 }
 
 impl SubagentBlock {
+    /// The child's call list, revealed by Ctrl-O. Wrapped, not elided, for the
+    /// same reason as `group_detail_lines`: this is the surface the folded
+    /// summary row sends the user to, so it is the one that has to be complete.
     fn detail_lines(&self, width: u16) -> Vec<Line<'static>> {
         let max = width.saturating_sub(8).max(1) as usize;
         self.calls
             .iter()
-            .map(|label| {
-                Line::from(vec![
-                    Span::styled("│   ", Style::new().dark_gray()),
-                    Span::styled("▸ ", Style::new().magenta()),
-                    Span::styled(truncate(label, max), Style::new().dim()),
-                ])
+            .flat_map(|label| {
+                gutter_lines(
+                    wrap_text(label, Style::new().dim(), max),
+                    vec![
+                        Span::styled("│   ", Style::new().dark_gray()),
+                        Span::styled("▸ ", Style::new().magenta()),
+                    ],
+                    vec![Span::styled("│     ", Style::new().dark_gray())],
+                )
             })
             .collect()
     }
@@ -2832,18 +2817,7 @@ impl App {
         let args = args.trim();
         self.history
             .push(serde_json::json!({ "role": "user", "content": msg }));
-        let mut spans = vec![Span::styled("› ", Style::new().light_magenta().bold())];
-        spans.push(Span::styled(
-            format!("[skill:{name}]"),
-            Style::new().cyan().bold(),
-        ));
-        if !args.is_empty() {
-            spans.push(Span::raw(format!(" {args}")));
-        } else if !description.is_empty() {
-            spans.push(Span::raw(format!(" - {description}")));
-        }
-        self.gap(Kind::User);
-        self.push(Line::from(spans));
+        self.push_invocation_row(&format!("[skill:{name}]"), args, &description);
         self.begin_turn();
         // A fresh user turn is new context: same reminder reset as submit_user.
         self.last_todo_reminder = None;
@@ -2871,18 +2845,7 @@ impl App {
         let args = args.trim();
         self.history
             .push(serde_json::json!({ "role": "user", "content": msg }));
-        let mut spans = vec![Span::styled("› ", Style::new().light_magenta().bold())];
-        spans.push(Span::styled(
-            format!("[command:{name}]"),
-            Style::new().cyan().bold(),
-        ));
-        if !args.is_empty() {
-            spans.push(Span::raw(format!(" {args}")));
-        } else if !description.is_empty() {
-            spans.push(Span::raw(format!(" - {description}")));
-        }
-        self.gap(Kind::User);
-        self.push(Line::from(spans));
+        self.push_invocation_row(&format!("[command:{name}]"), args, &description);
         self.begin_turn();
         // A fresh user turn is new context: same reminder reset as submit_user.
         self.last_todo_reminder = None;
@@ -3016,10 +2979,32 @@ impl App {
     /// the label only, never the template body (see `super::invocation_label`).
     fn push_invocation_label(&mut self, label: String) {
         self.gap(Kind::User);
-        self.push(Line::from(vec![
-            Span::styled("› ", Style::new().light_magenta().bold()),
-            Span::styled(label, Style::new().cyan().bold()),
-        ]));
+        self.push_row(RowKind::System {
+            glyph: "›",
+            cont: " ",
+            gutter: Style::new().light_magenta().bold(),
+            body: vec![Span::styled(label, Style::new().cyan().bold())],
+        });
+    }
+
+    /// The `› [skill:foo] <args>` row a slash invocation commits. A `System`
+    /// row for the same reason as `push_user_line`: `args` is user text and can
+    /// arrive pasted and multi-line, which a single `Line` renders as blank
+    /// cells in one run-on row.
+    fn push_invocation_row(&mut self, label: &str, args: &str, description: &str) {
+        let mut body = vec![Span::styled(label.to_string(), Style::new().cyan().bold())];
+        if !args.is_empty() {
+            body.push(Span::raw(format!(" {args}")));
+        } else if !description.is_empty() {
+            body.push(Span::raw(format!(" - {description}")));
+        }
+        self.gap(Kind::User);
+        self.push_row(RowKind::System {
+            glyph: "›",
+            cont: " ",
+            gutter: Style::new().light_magenta().bold(),
+            body,
+        });
     }
 
     /// Stage the OS clipboard's image for the next message, noting the result.
@@ -4132,12 +4117,14 @@ const DIFF_MAX_ROWS: usize = 1000;
 /// long diff has to collapse rather than crowd out the options.
 const DIFF_PREVIEW_MAX_ROWS: usize = 20;
 
-/// Max chars shown for a bash/shell/exec command label in the transcript.
-const COMMAND_LABEL_MAX: usize = 80;
-
 /// Cells a `tool_row` spends on its gutter and tag, subtracted from the draw
 /// width before the label is wrapped.
 const TOOL_ROW_RESERVE: u16 = 6;
+
+/// Columns held back for the live row's elapsed badge. Fixed rather than
+/// measured so the body's wrap points never move as the counter ticks; wide
+/// enough for the four digits a single tool call will not outlive.
+const ELAPSED_RESERVE: usize = 8;
 
 /// Rows one tool label may occupy before it elides. A label is wrapped rather
 /// than cut so a long command stays readable, but a heredoc body would
@@ -4366,7 +4353,7 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             if q.is_empty() {
                 "Searching the web".to_string()
             } else {
-                format!("Searching the web: {}", truncate(q, COMMAND_LABEL_MAX))
+                format!("Searching the web: {q}")
             }
         }
         "web_fetch" => {
@@ -4374,7 +4361,7 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             if u.is_empty() {
                 "Fetching a page".to_string()
             } else {
-                format!("Fetching: {}", truncate(u, COMMAND_LABEL_MAX))
+                format!("Fetching: {u}")
             }
         }
         "ask" => "Asking a question".to_string(),
@@ -4410,7 +4397,7 @@ fn todo_op_verb(args: &serde_json::Value, past: bool) -> &'static str {
 /// item count for `append`, or "todos" as a generic fallback.
 fn todo_target_label(args: &serde_json::Value) -> String {
     if let Some(task) = args.get("task").and_then(|v| v.as_str()) {
-        return format!("task: {}", truncate(task, COMMAND_LABEL_MAX));
+        return format!("task: {task}");
     }
     if let Some(phase) = args.get("phase").and_then(|v| v.as_str()) {
         if let Some(items) = args.get("items").and_then(|v| v.as_array()) {
@@ -4493,7 +4480,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
             if q.is_empty() {
                 "Searched the web".to_string()
             } else {
-                format!("Searched the web: {}", truncate(q, COMMAND_LABEL_MAX))
+                format!("Searched the web: {q}")
             }
         }
         "web_fetch" => {
@@ -4501,7 +4488,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
             if u.is_empty() {
                 "Fetched a page".to_string()
             } else {
-                format!("Fetched: {}", truncate(u, COMMAND_LABEL_MAX))
+                format!("Fetched: {u}")
             }
         }
         "ask" => "Asked a question".to_string(),
@@ -4738,6 +4725,53 @@ fn starting_call_lines(call: &mut StartingCall, frame: &str) -> Vec<Line<'static
     out
 }
 
+/// A tool row laid out at `width`: `tag` in the gutter, `label` wrapped
+/// beneath it with continuations aligned under the label rather than under the
+/// tag, bounded by `TOOL_ROW_MAX_LINES`. Shared by the committed `RowKind::Tool`
+/// and the live group row so the running command and the finished one wrap
+/// identically -- the row must not re-flow at the moment it resolves.
+///
+/// `suffix` rides the end of the last row (the live row's elapsed badge). The
+/// wrap reserves `ELAPSED_RESERVE` for it up front instead of measuring it, so a
+/// counter ticking past 9s or 99s cannot re-flow the command above it.
+fn tool_row_lines(
+    tag: &str,
+    tag_style: Style,
+    label: &str,
+    label_style: Style,
+    reserve: u16,
+    width: u16,
+    suffix: Option<(String, Style)>,
+) -> Vec<Line<'static>> {
+    let held = if suffix.is_some() { ELAPSED_RESERVE } else { 0 };
+    let max = (width.saturating_sub(reserve) as usize)
+        .saturating_sub(held)
+        .max(1);
+    let mut rows = wrap_text(label, label_style, max);
+    if rows.len() > TOOL_ROW_MAX_LINES {
+        rows.truncate(TOOL_ROW_MAX_LINES);
+        if let Some(last) = rows.last_mut() {
+            last.push(Span::styled(" …", label_style));
+        }
+    }
+    if let Some((text, style)) = suffix {
+        rows.last_mut()
+            .expect("wrap_text yields at least one row")
+            .push(Span::styled(format!(" {text}"), style));
+    }
+    gutter_lines(
+        rows,
+        vec![
+            Span::styled("│ ", Style::new().dark_gray()),
+            Span::styled(format!("{tag} "), tag_style),
+        ],
+        vec![
+            Span::styled("│ ", Style::new().dark_gray()),
+            Span::raw(" ".repeat(tag.chars().count() + 1)),
+        ],
+    )
+}
+
 fn tool_row(tag: &str, tag_style: Style, text: &str, text_style: Style) -> Line<'static> {
     Line::from(vec![
         Span::styled("│ ", Style::new().dark_gray()),
@@ -4823,17 +4857,29 @@ fn group_summary(nouns: &[(&str, bool)]) -> String {
     group_clauses(nouns, "Read", "ran")
 }
 
-/// Live row for the still-open tool group: a braille throbber in place of the
-/// static `▸` tag, plus elapsed time, so the user can see it's actively
-/// working and how long it's taken. Rebuilt fresh every draw (not stored in
-/// `transcript`) since the group's row there is only overwritten on the next
-/// tool call, not every tick.
-fn running_group_row(group: &ToolGroup, spinner_frame: usize, width: u16) -> Line<'static> {
+/// Live rows for the still-open tool group: a braille throbber in place of the
+/// static `▸` tag, the running call's label, and elapsed time, so the user can
+/// see it's actively working and how long it's taken. Rebuilt fresh every draw
+/// (not stored in `transcript`) since the group's row there is only overwritten
+/// on the next tool call, not every tick.
+///
+/// The label wraps exactly as the committed row will, so a long command is
+/// readable *while* it runs -- which is when the user most wants to check what
+/// they approved -- and the row does not re-lay itself out the instant the call
+/// resolves. The elapsed badge is dark rather than dim cyan: at the tail of a
+/// wrapped command it has to read as chrome, not as another argument.
+fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
     let frame = SPINNER[spinner_frame % SPINNER.len()];
     let elapsed = group.started.elapsed().as_secs();
-    let text = format!("{} ({elapsed}s)", single_line(&group.activity()));
-    let max = (width as usize).saturating_sub(6).max(1);
-    tool_row(frame, Style::new().cyan(), &truncate(&text, max), Style::new().cyan().dim())
+    tool_row_lines(
+        frame,
+        Style::new().cyan(),
+        &group.activity(),
+        Style::new().cyan().dim(),
+        TOOL_ROW_RESERVE,
+        width,
+        Some((format!("({elapsed}s)"), Style::new().dark_gray())),
+    )
 }
 
 /// Bucket `nouns` into read-style and run-style clauses (first-seen order,
@@ -9637,7 +9683,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         {
             Some(g) => Segment::eager(
                 Some(i),
-                vec![running_group_row(g, app.spinner_frame, width)],
+                running_group_rows(g, app.spinner_frame, width),
                 width,
             ),
             None => Segment {
@@ -9837,7 +9883,9 @@ fn draw(f: &mut Frame, app: &mut App) {
     // `/login` is modal and user-initiated (only reachable while idle), so it
     // outranks the queues below: nothing else may take keystrokes meant for a key.
     if let Some(prompt) = &app.login {
-        let height = (LOGIN_PROMPT_ROWS + u16::from(prompt.error.is_some())).min(chunks[1].height);
+        let height = (login_prompt_lines(prompt, chunks[2].width.saturating_sub(2)).len() as u16
+            + 2)
+        .min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -9847,7 +9895,11 @@ fn draw(f: &mut Frame, app: &mut App) {
         };
         draw_login(f, rect, prompt);
     } else if let Some(prompt) = &app.settings_prompt {
-        let height = (5 + u16::from(prompt.error.is_some())).min(chunks[1].height);
+        let toml_path = app.agent_dir.join("agent.toml");
+        let height = (settings_prompt_lines(prompt, &toml_path, chunks[2].width.saturating_sub(2))
+            .len() as u16
+            + 2)
+        .min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -9855,11 +9907,10 @@ fn draw(f: &mut Frame, app: &mut App) {
             width: chunks[2].width,
             height,
         };
-        let toml_path = app.agent_dir.join("agent.toml");
         draw_settings_prompt(f, rect, prompt, &toml_path);
     } else if let Some(prompt) = &app.mcp_prompt {
-        let height = prompt.visible_fields().len() as u16 + 3;
-        let height = height.min(chunks[1].height);
+        let height = (mcp_prompt_lines(prompt, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
+            .min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -10034,31 +10085,32 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
     f.render_widget(Paragraph::new(help), rows[2]);
 }
 
-/// Rows the `/login` box needs: two borders, the URL, the field, and the help
-/// line. An error adds one more (see the `draw` call site).
-const LOGIN_PROMPT_ROWS: u16 = 5;
-
 /// The `/login` prompt: the API-keys URL, a masked key field, and a help line.
 /// The key is never rendered, so a shared screen or scrollback capture cannot
 /// leak it.
-fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) {
-    use ratatui::widgets::Clear;
-
+/// The `/login` box's contents at `width`. Separate from `draw_login` so the
+/// call site can size the box from the rows it will actually need: the error
+/// carries an arbitrary-length upstream message, and it is the one line in
+/// there the user has to be able to read.
+fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
     let dim = Style::new().dark_gray();
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
-        .title(Span::styled(
-            " tokamak sign-in ",
-            Style::new().on_cyan().black().bold(),
-        ));
-
-    let mut lines = vec![Line::from(vec![
-        Span::styled("get a key at ", dim),
-        Span::styled(super::tokamak::API_KEYS_URL, Style::new().cyan()),
-    ])];
+    let max = width.max(1) as usize;
+    let mut lines: Vec<Line<'static>> = wrap_spans_hard(
+        vec![
+            Span::styled("get a key at ", dim),
+            Span::styled(super::tokamak::API_KEYS_URL, Style::new().cyan()),
+        ],
+        max,
+    )
+    .into_iter()
+    .map(Line::from)
+    .collect();
     if let Some(error) = &prompt.error {
-        lines.push(Line::styled(error.clone(), Style::new().red()));
+        lines.extend(
+            wrap_text(error, Style::new().red(), max)
+                .into_iter()
+                .map(Line::from),
+        );
     }
     if prompt.verifying {
         lines.push(Line::styled(
@@ -10067,21 +10119,57 @@ fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) 
         ));
         lines.push(Line::styled("Esc cancel".to_string(), dim));
     } else {
-        lines.push(Line::from(vec![
-            Span::styled("API key: ", Style::new().bold()),
-            Span::raw(prompt.masked()),
-            Span::styled("█", Style::new().cyan()),
-        ]));
+        lines.extend(field_lines(
+            vec![Span::styled("API key: ", Style::new().bold())],
+            &prompt.masked(),
+            Style::new(),
+            max,
+        ));
         lines.push(Line::styled(
             "paste the key · Enter verify · Esc cancel".to_string(),
             dim,
         ));
     }
+    lines
+}
+
+/// One edited field: `lead` (a label) then the value wrapped beneath it,
+/// continuations aligned under the value rather than under the label, with the
+/// cursor block on the last row. Shared by the `/login`, `/settings` and MCP
+/// prompts -- a value long enough to leave the box is exactly the one the user
+/// needs to see, since they are still typing it.
+fn field_lines(
+    lead: Vec<Span<'static>>,
+    value: &str,
+    value_style: Style,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let lead_w: usize = lead.iter().map(|s| s.content.chars().count()).sum();
+    let mut rows = wrap_text(value, value_style, width.saturating_sub(lead_w + 1).max(1));
+    rows.last_mut()
+        .expect("wrap_text yields at least one row")
+        .push(Span::styled("█", Style::new().cyan()));
+    gutter_lines(rows, lead, vec![Span::raw(" ".repeat(lead_w))])
+}
+
+fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) {
+    use ratatui::widgets::Clear;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            " tokamak sign-in ",
+            Style::new().on_cyan().black().bold(),
+        ));
 
     f.render_widget(Clear, area);
     let inner = block.inner(area);
     f.render_widget(block, area);
-    f.render_widget(Paragraph::new(lines), inner);
+    f.render_widget(
+        Paragraph::new(login_prompt_lines(prompt, inner.width)),
+        inner,
+    );
 }
 
 /// Docked `/settings` edit prompt, styled like the `/login` dock: description,
@@ -10095,59 +10183,82 @@ fn draw_settings_prompt(
 ) {
     use ratatui::widgets::Clear;
 
-    let dim = Style::new().dark_gray();
-    let def = prompt.def();
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::new().cyan())
         .title(Span::styled(
-            format!(" agent settings: {} ", def.key),
+            format!(" agent settings: {} ", prompt.def().key),
             Style::new().on_cyan().black().bold(),
         ));
 
-    let mut lines = vec![Line::from(vec![
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(
+        Paragraph::new(settings_prompt_lines(prompt, toml_path, inner.width)),
+        inner,
+    );
+}
+
+/// The `/settings` box's contents at `width`, sized by the call site the same
+/// way as `login_prompt_lines`. The description, the current value and the
+/// enum `valid:` list are all long enough to leave a narrow box.
+fn settings_prompt_lines(
+    prompt: &SettingsPrompt,
+    toml_path: &std::path::Path,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let def = prompt.def();
+    let max = width.max(1) as usize;
+    let wrapped = |spans: Vec<Span<'static>>| {
+        wrap_spans_hard(spans, max)
+            .into_iter()
+            .map(Line::from)
+            .collect::<Vec<_>>()
+    };
+
+    let mut lines = wrapped(vec![
         Span::styled(def.desc, dim),
         Span::styled("   current: ", dim),
         Span::styled(
             current_agent_value(toml_path, def.key).unwrap_or_else(|| "unset".to_string()),
             Style::new().cyan(),
         ),
-    ])];
-    lines.push(Line::styled(
-        match def.kind {
-            AgentSettingKind::Int { default, min } => {
-                let d = default
-                    .map(|d| d.to_string())
-                    .unwrap_or_else(|| "unset".to_string());
-                format!("default: {d} · valid: >= {min}")
-            }
-            AgentSettingKind::Text { default } => format!("default: {default}"),
-            AgentSettingKind::Enum { options, default } => {
-                format!("default: {default} · valid: {}", options.join(" | "))
-            }
-            AgentSettingKind::Bool { default } => {
-                format!("default: {default} · valid: true | false")
-            }
-        },
-        dim,
-    ));
+    ]);
+    let meta = match def.kind {
+        AgentSettingKind::Int { default, min } => {
+            let d = default
+                .map(|d| d.to_string())
+                .unwrap_or_else(|| "unset".to_string());
+            format!("default: {d} · valid: >= {min}")
+        }
+        AgentSettingKind::Text { default } => format!("default: {default}"),
+        AgentSettingKind::Enum { options, default } => {
+            format!("default: {default} · valid: {}", options.join(" | "))
+        }
+        AgentSettingKind::Bool { default } => {
+            format!("default: {default} · valid: true | false")
+        }
+    };
+    lines.extend(wrapped(vec![Span::styled(meta, dim)]));
     if let Some(error) = &prompt.error {
-        lines.push(Line::styled(error.clone(), Style::new().red()));
+        lines.extend(wrapped(vec![Span::styled(
+            error.clone(),
+            Style::new().red(),
+        )]));
     }
-    lines.push(Line::from(vec![
-        Span::styled("value: ", Style::new().bold()),
-        Span::raw(prompt.input.clone()),
-        Span::styled("█", Style::new().cyan()),
-    ]));
+    lines.extend(field_lines(
+        vec![Span::styled("value: ", Style::new().bold())],
+        &prompt.input,
+        Style::new(),
+        max,
+    ));
     lines.push(Line::styled(
         "Enter save · Esc cancel · clear field to unset (default applies)".to_string(),
         dim,
     ));
-
-    f.render_widget(Clear, area);
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-    f.render_widget(Paragraph::new(lines), inner);
+    lines
 }
 
 /// Dock the MCP add/edit wizard above the input: one row per visible field,
@@ -10155,7 +10266,6 @@ fn draw_settings_prompt(
 fn draw_mcp_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &McpPrompt) {
     use ratatui::widgets::Clear;
 
-    let dim = Style::new().dark_gray();
     let title = if prompt.editing.is_some() {
         " mcp server: edit "
     } else {
@@ -10166,52 +10276,77 @@ fn draw_mcp_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &McpPromp
         .border_style(Style::new().cyan())
         .title(Span::styled(title, Style::new().on_cyan().black().bold()));
 
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(mcp_prompt_lines(prompt, inner.width)), inner);
+}
+
+/// The MCP wizard's contents at `width`, sized by the call site the same way as
+/// `login_prompt_lines`. These fields are being *typed*: a command line, an
+/// args string or an env/headers blob easily outruns the box, and clipping the
+/// field you are editing leaves no way to see what you entered.
+fn mcp_prompt_lines(prompt: &McpPrompt, width: u16) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let max = width.max(1) as usize;
     let mut lines = Vec::new();
     for field in prompt.visible_fields() {
         let selected = field == prompt.field;
         let (label, value, toggle) = match field {
             McpField::Name => ("name", prompt.name.as_str(), None),
-            McpField::Transport => ("type", prompt.transport.as_str(), Some(prompt.transport.as_str())),
+            McpField::Transport => (
+                "type",
+                prompt.transport.as_str(),
+                Some(prompt.transport.as_str()),
+            ),
             McpField::Command => ("command", prompt.command.as_str(), None),
             McpField::Args => ("args", prompt.args.as_str(), None),
             McpField::Env => ("env", prompt.env.as_str(), None),
             McpField::Url => ("url", prompt.url.as_str(), None),
             McpField::Headers => ("headers", prompt.headers.as_str(), None),
-            McpField::Active => {
-                ("active", if prompt.active { "yes" } else { "no" }, Some(if prompt.active { "yes" } else { "no" }))
-            }
+            McpField::Active => (
+                "active",
+                if prompt.active { "yes" } else { "no" },
+                Some(if prompt.active { "yes" } else { "no" }),
+            ),
         };
         let marker = if selected { "› " } else { "  " };
-        let style = if selected {
-            Style::new().bold()
-        } else {
-            dim
-        };
-        let mut spans = vec![
-            Span::styled(format!("{marker}{label}: "), style),
-        ];
-        if let Some(toggle) = toggle {
-            spans.push(Span::styled(toggle.to_string(), if selected { Style::new().cyan() } else { dim }));
-        } else {
-            spans.push(Span::styled(value.to_string(), style));
-            if selected {
-                spans.push(Span::styled("█", Style::new().cyan()));
+        let style = if selected { Style::new().bold() } else { dim };
+        let lead = vec![Span::styled(format!("{marker}{label}: "), style)];
+        match toggle {
+            // A toggle row is a fixed word, never typed into: no cursor, and
+            // nothing long enough to wrap.
+            Some(toggle) => {
+                let mut spans = lead;
+                spans.push(Span::styled(
+                    toggle.to_string(),
+                    if selected { Style::new().cyan() } else { dim },
+                ));
+                lines.push(Line::from(spans));
+            }
+            None if selected => lines.extend(field_lines(lead, value, style, max)),
+            None => {
+                let lead_w: usize = lead.iter().map(|s| s.content.chars().count()).sum();
+                lines.extend(gutter_lines(
+                    wrap_text(value, style, max.saturating_sub(lead_w).max(1)),
+                    lead,
+                    vec![Span::raw(" ".repeat(lead_w))],
+                ));
             }
         }
-        lines.push(Line::from(spans));
     }
     if let Some(error) = &prompt.error {
-        lines.push(Line::styled(error.clone(), Style::new().red()));
+        lines.extend(
+            wrap_text(error, Style::new().red(), max)
+                .into_iter()
+                .map(Line::from),
+        );
     }
     lines.push(Line::styled(
         "↑/↓ move · Enter save · Space toggle · Esc cancel".to_string(),
         dim,
     ));
-
-    f.render_widget(Clear, area);
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-    f.render_widget(Paragraph::new(lines), inner);
+    lines
 }
 
 /// Dock the provider add/edit wizard above the input: one row per field, the
@@ -11400,7 +11535,7 @@ mod tests {
         ProviderField,
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
         run_command, starting_call_lines, unescape_partial_json_string,
-        running_group_row, split_reasoning, strip_system_xml_tags, subagent_activity,
+        running_group_rows, split_reasoning, strip_system_xml_tags, subagent_activity,
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
         transcript_top_padding, rewind_to,
@@ -11970,7 +12105,8 @@ mod tests {
         app.push_user_line("first line\nsecond line", &[]);
         let rows = render_rows(&mut app, 60, 12);
         assert!(
-            rows.iter().any(|r| r.trim_end().ends_with("\u{203a} first line")),
+            rows.iter()
+                .any(|r| r.trim_end().ends_with("\u{203a} first line")),
             "first line not on its own row: {rows:?}"
         );
         assert!(
@@ -12040,6 +12176,135 @@ mod tests {
             assert!(row.chars().count() <= 50, "row overflows: {row:?}");
         }
     }
+
+    /// The Ctrl-O expansion of a finished subagent wraps its call list, like
+    /// the tool-group expansion it sits beside -- it is the surface the folded
+    /// summary row sends the user to, so it has to be complete.
+    #[test]
+    fn expanded_subagent_detail_wraps_instead_of_eliding() {
+        let mut app = test_app();
+        let long = "Executing: cargo test --no-default-features --features cli -- cli::tui::tests";
+        app.push_subagent_summary("reviewer", vec![long.to_string()], true);
+        let block = app.subagent_blocks.last().expect("no subagent block");
+        let lines = block.detail_lines(50);
+        assert!(lines.len() > 1, "detail was not wrapped: {lines:?}");
+        let text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(!text.contains('\u{2026}'), "detail elided: {text:?}");
+        for word in ["--no-default-features", "cli::tui::tests"] {
+            assert!(text.contains(word), "dropped {word:?}: {text:?}");
+        }
+        for line in &lines {
+            let w: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
+            assert!(w <= 50, "row overflows: {w}");
+        }
+    }
+
+    /// Web and todo labels are stored whole like the bash one: the row wraps
+    /// them at the draw width, so a long URL is not cut at a fixed 80 on a
+    /// terminal with room for it.
+    #[test]
+    fn web_and_todo_labels_are_not_capped_at_a_fixed_width() {
+        let url = format!("https://example.com/{}", "segment/".repeat(20));
+        assert_eq!(
+            tool_activity("web_fetch", &json!({ "url": url.clone() })),
+            format!("Fetching: {url}")
+        );
+        assert_eq!(
+            tool_finished("web_fetch", &json!({ "url": url.clone() })),
+            format!("Fetched: {url}")
+        );
+        let query = "rust async runtime ".repeat(12);
+        assert_eq!(
+            tool_activity("web_search", &json!({ "query": query.clone() })),
+            format!("Searching the web: {query}")
+        );
+        let task = "refactor the transport layer ".repeat(6);
+        assert_eq!(
+            tool_activity("todo", &json!({ "op": "start", "task": task.clone() })),
+            format!("Starting task: {task}")
+        );
+    }
+
+    /// A slash invocation's args are user text and can arrive pasted and
+    /// multi-line, so its row breaks on newlines like `push_user_line`.
+    #[test]
+    fn invocation_row_keeps_its_line_breaks() {
+        let mut app = test_app();
+        app.push_invocation_label("[skill:deploy] first line\nsecond line".to_string());
+        let rows = render_rows(&mut app, 60, 12);
+        assert!(
+            rows.iter()
+                .any(|r| r.trim_end().ends_with("\u{203a} [skill:deploy] first line")),
+            "first line not on its own row: {rows:?}"
+        );
+        assert!(
+            rows.iter().any(|r| r.trim_end().ends_with("  second line")),
+            "second line not on its own row: {rows:?}"
+        );
+    }
+
+    /// The docked prompts size themselves from the rows they will need, so an
+    /// arbitrary-length upstream error is readable rather than clipped to the
+    /// one row a fixed height budgeted for it.
+    #[test]
+    fn login_prompt_grows_to_fit_a_long_error() {
+        let mut app = test_app();
+        let error = "verification failed: the upstream returned 502 Bad Gateway \
+                     from https://api.tokamak.sh/v1/models after three attempts";
+        app.login = Some(super::LoginPrompt {
+            input: String::new(),
+            error: Some(error.to_string()),
+            verifying: false,
+        });
+        let rows = render_rows(&mut app, 56, 24);
+        let joined = rows.join(" ");
+        // Single tokens: the assertion must not straddle a wrap point.
+        for word in ["502", "api.tokamak.sh/v1/models", "attempts"] {
+            assert!(
+                joined.contains(word),
+                "error clipped ({word}):\n{}",
+                rows.join("\n")
+            );
+        }
+    }
+
+    /// An MCP field is being typed into: a long command line wraps inside the
+    /// box instead of running off its right edge with no way to see the rest.
+    #[test]
+    fn mcp_prompt_wraps_the_field_being_edited() {
+        let mut app = test_app();
+        let command = "npx -y @modelcontextprotocol/server-filesystem /home/user/projects/jan";
+        app.mcp_prompt = Some(super::McpPrompt {
+            editing: None,
+            field: super::McpField::Command,
+            name: "files".to_string(),
+            transport: "stdio".to_string(),
+            command: command.to_string(),
+            args: String::new(),
+            env: String::new(),
+            url: String::new(),
+            headers: String::new(),
+            active: true,
+            error: None,
+        });
+        let rows = render_rows(&mut app, 52, 26);
+        let joined = rows.join(" ");
+        for word in ["@modelcontextprotocol/server-", "/home/user/projects/jan"] {
+            assert!(
+                joined.contains(word),
+                "field clipped ({word}):\n{}",
+                rows.join("\n")
+            );
+        }
+        for row in &rows {
+            assert!(row.chars().count() <= 52, "row overflows: {row:?}");
+        }
+    }
+
 
     /// Degenerate frames (a sliver of a terminal mid-drag) must render, not panic.
     #[test]
@@ -12776,7 +13041,7 @@ mod tests {
         );
         // Kept whole: the row clamps to the draw width, so a long command fills
         // the terminal instead of being cut at a fixed 80.
-        let long = format!("echo {}", "x".repeat(2 * COMMAND_LABEL_MAX));
+        let long = format!("echo {}", "x".repeat(200));
         assert_eq!(
             tool_activity("bash", &json!({ "command": long })),
             format!("Executing: {long}")
@@ -12800,7 +13065,7 @@ mod tests {
         );
         // Whole command on the finished row too, for the same reason as
         // `tool_activity`: the row clamps to the draw width.
-        let long = format!("echo {}", "x".repeat(2 * COMMAND_LABEL_MAX));
+        let long = format!("echo {}", "x".repeat(200));
         assert_eq!(
             tool_finished("bash", &json!({ "command": long })),
             format!("Ran: {long}")
@@ -12881,6 +13146,10 @@ mod tests {
 
     fn line_text(line: &ratatui::text::Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    fn lines_text(lines: &[ratatui::text::Line]) -> String {
+        lines.iter().map(line_text).collect::<Vec<_>>().join("\n")
     }
 
     /// Text of a streaming write preview's tail, dropping the highlight styles.
@@ -16063,8 +16332,7 @@ mod tests {
             args: json!({ "pattern": "foo" }),
         });
         let group = app.tool_group.as_ref().expect("group open");
-        let row = running_group_row(group, 2, 80);
-        let text = line_text(&row);
+        let text = lines_text(&running_group_rows(group, 2, 80));
         assert!(text.contains(SPINNER[2]), "{text}");
         assert!(text.contains("(0s)") || text.contains("(1s)"), "{text}");
     }
@@ -16081,7 +16349,7 @@ mod tests {
             args: json!({ "command": cmd }),
         });
         let group = app.tool_group.as_ref().expect("group open");
-        let text = line_text(&running_group_row(group, 0, 200));
+        let text = lines_text(&running_group_rows(group, 0, 200));
         assert!(text.contains(&format!("Executing: {cmd}")), "{text}");
         assert!(!text.contains("running 1 command"), "{text}");
     }
@@ -16100,9 +16368,78 @@ mod tests {
             });
         }
         let group = app.tool_group.as_ref().expect("group open");
-        let text = line_text(&running_group_row(group, 0, 200));
+        let text = lines_text(&running_group_rows(group, 0, 200));
         assert!(text.contains("Executing: cargo clippy"), "{text}");
         assert!(!text.contains("Running 2 commands"), "{text}");
+    }
+
+    /// The live row wraps its command like the committed one, keeping its line
+    /// breaks, so a long command is readable while it runs -- which is when the
+    /// user most wants to check what they approved.
+    #[test]
+    fn running_row_wraps_a_long_multiline_command() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cd /tmp\nmake -j8 all install DESTDIR=/opt/somewhere/deep" }),
+        });
+        let group = app.tool_group.as_ref().expect("group open");
+        let rows = running_group_rows(group, 0, 40);
+        assert!(rows.len() > 2, "long command was not wrapped: {rows:?}");
+        for row in &rows {
+            assert!(
+                line_text(row).chars().count() <= 40,
+                "row overflows: {:?}",
+                line_text(row)
+            );
+        }
+        let text = lines_text(&rows).replace(['\u{2502}', '\n'], " ");
+        // Not the long `DESTDIR=` token: at 40 columns it is wider than the
+        // body and hard-breaks, which is the correct fallback, not a drop.
+        for word in ["cd /tmp", "make -j8", "all install"] {
+            assert!(text.contains(word), "dropped {word:?}: {text}");
+        }
+        assert!(
+            line_text(rows.first().expect("no rows")).contains("cd /tmp"),
+            "the first command line did not lead the row"
+        );
+    }
+
+    /// The elapsed badge trails the last row and its width is reserved up
+    /// front, so a counter ticking past 9s or 99s cannot re-flow the command
+    /// above it -- a live row that re-wraps every second is unreadable.
+    #[test]
+    fn running_row_elapsed_badge_does_not_reflow_the_command() {
+        let mut app = test_app();
+        let cmd = "grep -rn needle src/ --include=*.rs --exclude-dir=target";
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": cmd }),
+        });
+        let group = app.tool_group.as_mut().expect("group open");
+        // The body's wrap points must be the same at 0s and at four digits.
+        let strip = |rows: &[ratatui::text::Line]| {
+            rows.iter()
+                .map(|r| {
+                    let t = line_text(r);
+                    t.split(" (").next().unwrap_or_default().to_string()
+                })
+                .collect::<Vec<_>>()
+        };
+        let fresh = strip(&running_group_rows(group, 0, 44));
+        group.started = Instant::now() - Duration::from_secs(4321);
+        let old = running_group_rows(group, 0, 44);
+        assert_eq!(strip(&old), fresh, "the counter re-flowed the command");
+        assert!(
+            line_text(old.last().expect("no rows")).contains("(4321s)"),
+            "badge is not on the last row: {:?}",
+            lines_text(&old)
+        );
+        for row in &old {
+            assert!(line_text(row).chars().count() <= 44, "row overflows");
+        }
     }
 
     #[test]
