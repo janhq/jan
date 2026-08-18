@@ -412,13 +412,13 @@ impl Picker {
     fn action_hint(&self) -> &'static str {
         match self.kind {
             PickerKind::ResumeThread => " ↑/↓ select   Enter resume   Esc cancel",
-            PickerKind::LoginProvider => " ↑/↓ select   Enter sign in   Esc cancel",
+            PickerKind::LoginProvider => " ↑/↓ select   Enter sign in   x sign out   Esc cancel",
             PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   a add   e edit   d delete   Esc close",
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
             PickerKind::AgentSettings => " ↑/↓ select   Enter edit   x unset   Esc close",
-            PickerKind::ProviderSettings => " ↑/↓ select   Enter edit   a add   dd delete   Esc close",
+            PickerKind::ProviderSettings => " ↑/↓ select   Enter edit   a add   dd delete   x logout   Esc close",
             PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
         }
     }
@@ -5798,6 +5798,7 @@ async fn await_account_usage(
     }
 }
 
+
 /// How often the dock's branch indicator re-reads `HEAD`, so a checkout made
 /// outside the TUI (another terminal, an editor) shows up without needing a
 /// restart. Cheap (`rev-parse --abbrev-ref HEAD`) but still shells out, so this
@@ -7226,6 +7227,17 @@ async fn handle_key(
                     app.note(&format!("press d again to delete provider '{name}'"));
                 }
             }
+            // `/settings > providers`: `x` signs out the selected provider.
+            // Distinct from `d` delete: logout clears the stored credential
+            // (and its OAuth token) but keeps the provider entry and its
+            // model list, so a re-login is one Enter away.
+            KeyCode::Char('x') if picker.kind == PickerKind::ProviderSettings => {
+                let name = picker.items[picker.selected].value.clone();
+                if name.is_empty() {
+                    return;
+                }
+                sign_out_provider(app, &name);
+            }
             // `/todo` editor: d/Enter = done, x = abandon (drop), r = remove.
             // Each mutates the canonical list and rebuilds the overlay in place;
             // opening/closing the view itself never mutates state.
@@ -7278,6 +7290,29 @@ async fn handle_key(
                         }
                     }
                     Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
+                }
+            }
+            // `/login`: `x` signs out the selected provider without leaving
+            // the picker, so it doubles as a sign-out list. Only meaningful
+            // for a provider that is currently signed in.
+            KeyCode::Char('x') if picker.kind == PickerKind::LoginProvider => {
+                let name = picker.items[picker.selected].value.clone();
+                if !crate::core::cli::providers::provider_is_signed_in(
+                    Some(&app.project_root),
+                    &name,
+                ) {
+                    app.note(&format!("{name} is not signed in"));
+                    return;
+                }
+                sign_out_provider(app, &name);
+                // Refresh the status labels so the row flips to
+                // "not signed in" without reopening the picker.
+                if let Some(p) = app.picker.as_mut() {
+                    for item in &mut p.items {
+                        if item.value == name {
+                            item.hint = Some("not signed in".to_string());
+                        }
+                    }
                 }
             }
             KeyCode::Enter => {
@@ -8540,6 +8575,9 @@ struct ProviderPrompt {
     field: ProviderField,
     name: String,
     base_url: String,
+    /// Wire API type: `None` = OpenAI-compatible chat/completions default,
+    /// `Some("anthropic")` = Anthropic messages API.
+    api_type: Option<String>,
     api_key: String,
     /// Whether the user edited the api-key field this session. While editing a
     /// provider the stored key is never loaded into the prompt (it must not be
@@ -8557,24 +8595,25 @@ struct ProviderPrompt {
 enum ProviderField {
     Name,
     BaseUrl,
+    ApiType,
     ApiKey,
     Models,
 }
-
 impl ProviderPrompt {
-    const FIELD_ORDER: [ProviderField; 4] = [
+    const FIELD_ORDER: [ProviderField; 5] = [
         ProviderField::Name,
         ProviderField::BaseUrl,
+        ProviderField::ApiType,
         ProviderField::ApiKey,
         ProviderField::Models,
     ];
-
     fn next_field(&mut self) {
         if self.editing.is_some() {
             // Name is read-only while editing; cycle through the editable
-            // fields only (BaseUrl -> ApiKey -> Models -> BaseUrl).
+            // fields only (BaseUrl -> ApiType -> ApiKey -> Models -> BaseUrl).
             self.field = match self.field {
-                ProviderField::BaseUrl => ProviderField::ApiKey,
+                ProviderField::BaseUrl => ProviderField::ApiType,
+                ProviderField::ApiType => ProviderField::ApiKey,
                 ProviderField::ApiKey => ProviderField::Models,
                 _ => ProviderField::BaseUrl,
             };
@@ -8590,9 +8629,10 @@ impl ProviderPrompt {
     fn prev_field(&mut self) {
         if self.editing.is_some() {
             // Name is read-only while editing; cycle backwards through the
-            // editable fields only (BaseUrl <- ApiKey <- Models <- BaseUrl).
+            // editable fields only (BaseUrl <- ApiType <- ApiKey <- Models).
             self.field = match self.field {
-                ProviderField::ApiKey => ProviderField::BaseUrl,
+                ProviderField::ApiType => ProviderField::BaseUrl,
+                ProviderField::ApiKey => ProviderField::ApiType,
                 ProviderField::Models => ProviderField::ApiKey,
                 _ => ProviderField::Models,
             };
@@ -8613,6 +8653,7 @@ impl ProviderPrompt {
             field: ProviderField::BaseUrl,
             name: entry.provider.clone(),
             base_url: entry.base_url.clone().unwrap_or_default(),
+            api_type: entry.api_type.clone(),
             api_key: String::new(),
             key_touched: false,
             models: entry.models.join(" "),
@@ -8626,6 +8667,7 @@ impl ProviderPrompt {
             field: ProviderField::Name,
             name: String::new(),
             base_url: String::new(),
+            api_type: None,
             api_key: String::new(),
             key_touched: false,
             models: String::new(),
@@ -8650,8 +8692,11 @@ impl ProviderPrompt {
                 self.key_touched = true;
             }
             ProviderField::Models => self.models.push_str(text),
+            // ApiType is a toggle, not free text; a paste has nothing to add.
+            ProviderField::ApiType => {}
         }
     }
+
 
     /// API key field for rendering: the stored key is never loaded into the
     /// prompt, so an untouched field while editing says `(unchanged)`; anything
@@ -8684,6 +8729,22 @@ impl ProviderPrompt {
                 .to_string(),
         )
     }
+    /// `None` renders as the OpenAI-compatible default; `Some("anthropic")`
+    /// selects the Anthropic messages API.
+    fn toggle_api_type(&mut self) {
+        self.api_type = match self.api_type.as_deref() {
+            Some("anthropic") => None,
+            _ => Some("anthropic".to_string()),
+        };
+    }
+
+    /// Human label for the active api-type selection.
+    fn api_type_label(&self) -> String {
+        match self.api_type.as_deref() {
+            Some("anthropic") => "anthropic-compatible".to_string(),
+            _ => "openai-compatible".to_string(),
+        }
+    }
 
     /// Persist the provider to `~/.jan/config.toml` via the headless config
     /// path the CLI shares. `api_type` stays default (OpenAI-compatible
@@ -8709,7 +8770,14 @@ impl ProviderPrompt {
             .split_whitespace()
             .map(str::to_string)
             .collect();
-        super::cli_agent_config_set(name, api_key, Some(base_url), Some(models), None).map(|_| ())
+        super::cli_agent_config_set(
+            name,
+            api_key,
+            Some(base_url),
+            Some(models),
+            self.api_type.clone(),
+        )
+        .map(|_| ())
     }
 }
 
@@ -9048,6 +9116,10 @@ fn handle_provider_prompt_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         KeyCode::Up => prompt.prev_field(),
         KeyCode::Down => prompt.next_field(),
         KeyCode::Tab => prompt.next_field(),
+        // Left/Right toggle the wire API type while that field is selected.
+        KeyCode::Left | KeyCode::Right if prompt.field == ProviderField::ApiType => {
+            prompt.toggle_api_type();
+        }
         KeyCode::Enter => {
             // Take the prompt out so `save` can borrow `app` freely for notes
             // and put it back on error.
@@ -9078,6 +9150,7 @@ fn handle_provider_prompt_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                 ProviderField::BaseUrl => {
                     prompt.base_url.pop();
                 }
+                ProviderField::ApiType => {}
                 ProviderField::ApiKey => {
                     prompt.api_key.pop();
                     prompt.key_touched = true;
@@ -9091,6 +9164,7 @@ fn handle_provider_prompt_key(app: &mut App, key: KeyEvent, ctrl: bool) {
             ProviderField::Name if prompt.editing.is_some() => {}
             ProviderField::Name => prompt.name.push(ch),
             ProviderField::BaseUrl => prompt.base_url.push(ch),
+            ProviderField::ApiType => {}
             ProviderField::ApiKey => {
                 prompt.api_key.push(ch);
                 prompt.key_touched = true;
@@ -9100,8 +9174,6 @@ fn handle_provider_prompt_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         _ => {}
     }
 }
-
-/// `/plan` dispatcher: bare enters read-only plan mode, `/plan exit` leaves
 /// it, and `/plan <text>` enters plan mode (if not already in it) and
 /// immediately submits `<text>` as the first message to investigate — same
 /// convenience as seeding the bare TUI with a task. Only settable while idle
@@ -9831,6 +9903,17 @@ fn logout_command(app: &mut App, provider: &str) {
             app.note(&format!("signed out of {provider}"));
         }
         Err(error) => app.note(&format!("could not sign out: {error:?}")),
+    }
+}
+/// Sign out of a provider from the pickers: clear the stored credential (API
+/// key or OAuth token) but keep the provider entry and its model list in
+/// `~/.jan/config.toml`, so a re-login is one Enter away. Distinct from
+/// [`logout_command`] (which also removes the config entry) and from the
+/// provider-settings `d` delete.
+fn sign_out_provider(app: &mut App, provider: &str) {
+    match crate::core::cli::auth::CredentialStore::delete(provider) {
+        Ok(()) => app.note(&format!("signed out of {provider} (provider config kept)")),
+        Err(error) => app.note(&format!("could not sign out: {error}")),
     }
 }
 
@@ -11640,6 +11723,7 @@ fn draw_provider_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &Pro
         let (label, value): (&str, String) = match field {
             ProviderField::Name => ("name", prompt.name.clone()),
             ProviderField::BaseUrl => ("base url", prompt.base_url.clone()),
+            ProviderField::ApiType => ("api type", prompt.api_type_label()),
             ProviderField::ApiKey => ("api key", prompt.masked_key()),
             ProviderField::Models => ("models", prompt.models.clone()),
         };
@@ -11666,7 +11750,7 @@ fn draw_provider_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &Pro
     let hint = if prompt.editing.is_some() {
         "↑/↓ move · Enter save · Esc cancel (api key: type to replace, blank out to clear)"
     } else {
-        "↑/↓ move · Enter save · Esc cancel (models space-separated)"
+        "↑/↓ move · Enter save · Esc cancel (on api type: Left/Right toggles openai/anthropic)"
     };
     lines.push(Line::styled(hint.to_string(), dim));
 
@@ -17239,7 +17323,11 @@ mod tests {
         p.next_field();
         assert_eq!(p.field, ProviderField::BaseUrl);
         p.next_field();
+        assert_eq!(p.field, ProviderField::ApiType);
+        p.next_field();
         assert_eq!(p.field, ProviderField::ApiKey);
+        p.prev_field();
+        assert_eq!(p.field, ProviderField::ApiType);
         p.prev_field();
         assert_eq!(p.field, ProviderField::BaseUrl);
         p.field = ProviderField::Models;
@@ -17282,6 +17370,77 @@ mod tests {
     }
 
     #[test]
+    fn provider_prompt_saves_anthropic_api_type() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut p = super::ProviderPrompt::new();
+            p.name = "myanthropic".to_string();
+            p.base_url = "https://api.my-anthropic.example/v1".to_string();
+            p.api_key = "sk-test-123".to_string();
+            p.toggle_api_type();
+            assert_eq!(p.api_type_label(), "anthropic-compatible");
+            assert!(p.save().is_ok());
+
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            let cfg = configs.get("myanthropic").expect("anthropic provider written");
+            assert_eq!(cfg.api_type.as_deref(), Some("anthropic"));
+        });
+    }
+
+    #[test]
+    fn provider_prompt_api_type_toggle_cycles_openai_anthropic() {
+        let mut p = super::ProviderPrompt::new();
+        assert_eq!(p.api_type_label(), "openai-compatible");
+        p.toggle_api_type();
+        assert_eq!(p.api_type_label(), "anthropic-compatible");
+        p.toggle_api_type();
+        assert_eq!(p.api_type_label(), "openai-compatible");
+    }
+
+    #[test]
+    fn provider_prompt_left_right_toggles_api_type_field() {
+        let mut app = test_app();
+        let mut p = super::ProviderPrompt::new();
+        p.field = ProviderField::ApiType;
+        app.provider_prompt = Some(p);
+        super::handle_provider_prompt_key(&mut app, key(KeyCode::Right), false);
+        assert_eq!(
+            app.provider_prompt.as_ref().unwrap().api_type_label(),
+            "anthropic-compatible",
+            "Right on the api type field selects anthropic"
+        );
+    }
+
+    #[test]
+    fn provider_prompt_keeps_existing_anthropic_type_when_editing() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            use crate::core::agent::global_config::{set_provider, ProviderUpdate};
+            set_provider(
+                "p",
+                ProviderUpdate {
+                    api_key: Some("sk-1".into()),
+                    clear_api_key: false,
+                    base_url: Some("https://example.com/v1".into()),
+                    models: Some(vec!["claude-sonnet-5".into()]),
+                    api_type: Some("anthropic".into()),
+                },
+            )
+            .unwrap();
+            let entry = crate::core::agent::global_config::load_global_config()
+                .unwrap()
+                .get("p")
+                .unwrap()
+                .clone();
+            let prompt = super::ProviderPrompt::from_entry(&entry);
+            assert_eq!(prompt.api_type.as_deref(), Some("anthropic"));
+            assert_eq!(
+                prompt.api_type_label(),
+                "anthropic-compatible",
+                "editing an anthropic provider keeps its wire type"
+            );
+        });
+    }
+
+    #[test]
     fn provider_prompt_save_and_cancel_via_keys() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let mut app = test_app();
@@ -17295,7 +17454,8 @@ mod tests {
             for ch in "https://my.example/v1".chars() {
                 super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
             }
-            // Advance past the API-key field to models.
+            // Advance past the api-type and API-key fields to models.
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
             super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
             super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
             for ch in "model-a".chars() {
@@ -17330,6 +17490,7 @@ mod tests {
         for ch in "kitty-jet".chars() {
             super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
         }
+        super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
         super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
         super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
         assert_eq!(app.provider_prompt.as_ref().unwrap().field, ProviderField::ApiKey);
@@ -17445,6 +17606,7 @@ mod tests {
             field: ProviderField::BaseUrl,
             name: "p".into(),
             base_url: String::new(),
+            api_type: None,
             api_key: String::new(),
             key_touched: false,
             models: String::new(),
@@ -17472,6 +17634,7 @@ mod tests {
         );
 
         // Advance to the API key field and paste a key shaped like a real one.
+        super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
         super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
         super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
         assert_eq!(app.provider_prompt.as_ref().unwrap().field, ProviderField::ApiKey);
@@ -17706,6 +17869,92 @@ mod tests {
             assert!(app.provider_prompt.is_none(), "Enter on the watermark opens no wizard");
         });
     }
+    /// `x` on the provider-settings picker signs out (clears the credential)
+    /// but keeps the provider entry and its config, distinct from `d` delete.
+    #[test]
+    fn provider_settings_x_logout_clears_credential_and_keeps_config() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            use crate::core::cli::auth::{Credential, CredentialStore};
+            crate::core::agent::global_config::set_provider(
+                "myprovider",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("https://my.example/v1".into()),
+                    clear_api_key: false,
+                    models: Some(vec!["m1".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+            CredentialStore::store("myprovider", &Credential::ApiKey("k".into()))
+                .expect("seed a stored credential");
+
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
+            });
+
+            // The provider entry (and its models) survive; the credential is gone.
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            assert!(configs.contains_key("myprovider"), "config kept after logout");
+            assert_eq!(configs.get("myprovider").unwrap().models, vec!["m1"]);
+            assert!(
+                CredentialStore::load("myprovider").unwrap().is_none(),
+                "credential cleared on logout"
+            );
+            assert!(transcript_text(&app).contains("signed out of myprovider"));
+            assert!(app.picker.is_some(), "logout keeps the picker open");
+        });
+    }
+
+    /// `x` on the `/login` picker signs out a signed-in provider and flips its
+    /// row hint to "not signed in" without closing the picker.
+    #[test]
+    fn login_picker_x_signs_out_signed_in_provider() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            use crate::core::cli::auth::{Credential, CredentialStore};
+            // A catalog provider (tokamak) that we can sign out of.
+            CredentialStore::store("tokamak", &Credential::ApiKey("k".into()))
+                .expect("seed a stored credential");
+            crate::core::agent::global_config::set_provider(
+                "tokamak",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("https://api.tokamak.sh/v1".into()),
+                    clear_api_key: false,
+                    models: Some(vec!["tokamak-1-preview".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let mut app = test_app();
+            super::open_login_picker(&mut app);
+            // Tokamak is pinned to the top of the login picker.
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
+            });
+
+            assert!(
+                crate::core::cli::auth::CredentialStore::load("tokamak")
+                    .unwrap()
+                    .is_none(),
+                "x on the login picker signs out"
+            );
+            assert!(app.picker.is_some(), "login picker stays open after sign-out");
+            let picker = app.picker.as_ref().unwrap();
+            assert_eq!(picker.items[0].value, "tokamak");
+            assert_eq!(
+                picker.items[0].hint.as_deref(),
+                Some("not signed in"),
+                "row hint flips to not signed in"
+            );
+            assert!(transcript_text(&app).contains("signed out of tokamak"));
+        });
+    }
 
     /// Editing a provider must keep its name read-only so the save writes back
     /// under the original key: renaming would orphan the old entry and lose the
@@ -17772,21 +18021,24 @@ mod tests {
             field: ProviderField::BaseUrl,
             name: "p".into(),
             base_url: String::new(),
+            api_type: Some("anthropic".into()),
             api_key: String::new(),
             key_touched: false,
             models: String::new(),
             error: None,
         };
         p.next_field();
+        assert_eq!(p.field, ProviderField::ApiType);
+        p.next_field();
         assert_eq!(p.field, ProviderField::ApiKey);
         p.next_field();
         assert_eq!(p.field, ProviderField::Models);
-        p.next_field();
+        p.prev_field();
+        assert_eq!(p.field, ProviderField::ApiKey);
+        p.prev_field();
+        assert_eq!(p.field, ProviderField::ApiType);
+        p.prev_field();
         assert_eq!(p.field, ProviderField::BaseUrl);
-        p.prev_field();
-        assert_eq!(p.field, ProviderField::Models);
-        p.prev_field();
-        assert_eq!(p.field, ProviderField::ApiKey);
     }
 
     /// The base URL is validated before the bearer key is ever sent: only
