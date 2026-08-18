@@ -6780,11 +6780,9 @@ async fn handle_key(
         KeyCode::Home => {
             app.cursor = 0;
         }
-        // Shift+Tab cycles reasoning effort (low -> medium -> high -> low),
-        // matching Claude Code's effort toggle. Plain Tab stays a no-op in
-        // normal input mode (slash-command and path-hint popups intercept it
-        // before reaching this arm).
-        KeyCode::Tab if key.modifiers.contains(KeyModifiers::SHIFT) => {
+        // Shift+Tab (crossterm sends it as BackTab, not Tab+SHIFT) cycles
+        // reasoning effort low -> medium -> high -> low, matching Claude Code.
+        KeyCode::BackTab => {
             app.cycle_reasoning_effort();
         }
         KeyCode::End => {
