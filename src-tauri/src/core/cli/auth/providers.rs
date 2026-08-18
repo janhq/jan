@@ -44,7 +44,7 @@ impl LoginService {
         raw_key: &str,
     ) -> Result<LoginResult, LoginError> {
         let key = Self::sanitize_key(raw_key).map_err(LoginError::InvalidKey)?;
-        let models = discover_models(definition, &key).await?;
+        let models = discover_models(definition, &key, false).await?;
         persist(definition, &key, &models)
     }
 
@@ -61,12 +61,10 @@ impl LoginService {
     }
 }
 
-/// Ask the provider which models this credential can reach. An empty list is a
-/// valid answer (the account has no models yet); the caller decides whether
-/// that is usable.
 pub(crate) async fn discover_models(
     definition: &ProviderDefinition,
     credential: &str,
+    oauth: bool,
 ) -> Result<Vec<String>, LoginError> {
     let client = reqwest::Client::builder()
         .timeout(VERIFY_TIMEOUT)
@@ -78,13 +76,20 @@ pub(crate) async fn discover_models(
     );
     let mut request = client.get(&url);
     request = match definition.transport {
+        // An API-key credential identifies itself with `x-api-key`; an OAuth
+        // access token must go as `Authorization: Bearer` (with the oauth beta
+        // header), or Anthropic rejects the discovery with 401.
+        Transport::Anthropic if oauth => request
+            .header("Authorization", format!("Bearer {credential}"))
+            .header("anthropic-beta", "oauth-2025-04-20")
+            .header("anthropic-version", "2023-06-01")
+            .header("Accept", "application/json"),
         Transport::Anthropic => request
             .header("x-api-key", credential)
             .header("anthropic-version", "2023-06-01")
             .header("Accept", "application/json"),
         Transport::OpenAi => request.header("Authorization", format!("Bearer {credential}")),
     };
-
     let response = request.send().await.map_err(|e| {
         LoginError::Unavailable(format!(
             "could not reach {}: {e}",

@@ -62,18 +62,25 @@ pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
         AccountProvider::Claude => (
             "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
             "https://claude.ai/oauth/authorize",
-            "https://api.anthropic.com/v1/oauth/token",
+            "https://platform.claude.com/v1/oauth/token",
             "http://localhost:54545/callback",
             "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload",
         ),
     };
-    // Verifier and state sizes mirror the reference CLI implementations these
-    // providers were built against (96-byte verifier, 16-byte hex state) --
-    // both providers' authorization servers were only ever exercised against
-    // those exact shapes, and off-spec sizes have been observed to trip
-    // `Invalid request format` at the authorize endpoint.
+    // PKCE generates a single random verifier; the `state` CSRF nonce is
+    // usually a second random value. Anthropic's `claude.ai/oauth/authorize`
+    // endpoint empirically rejects a random `state` with "Invalid request
+    // format" -- it accepts only `state == code_verifier`, which is what the
+    // Claude Code CLI, pi, and motosan-ai-oauth all send. OpenAI's Codex
+    // endpoint accepts an independent random state, so only Claude reuses the
+    // verifier as its state.
     let verifier = random_url_safe(96);
-    let state = random_hex(16);
+    let codex_state = random_hex(16);
+    let state = if provider == AccountProvider::Claude {
+        verifier.clone()
+    } else {
+        codex_state
+    };
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let mut url = url::Url::parse(authorization_endpoint).map_err(|e| e.to_string())?;
     {
@@ -143,6 +150,30 @@ fn random_hex(bytes: usize) -> String {
     let mut value = vec![0; bytes];
     rand::thread_rng().fill_bytes(&mut value);
     hex::encode(value)
+}
+
+/// Extract the ChatGPT account id a Codex OAuth token was issued to. OpenAI's
+/// Codex login returns an account-scoped token whose JWT claims carry the
+/// ChatGPT account under `https://api.openai.com/auth` -> `chatgpt_account_id`;
+/// both pi and opencode use this claim (never a `/v1/models` call) to identify
+/// and validate the account. Returns the account id, or an error when the token
+/// is not a decodable JWT carrying the claim.
+fn codex_chatgpt_account_id(token: &str) -> Result<String, String> {
+    let mut segments = token.split('.');
+    let _header = segments.next();
+    let payload = segments.next().ok_or_else(|| "token is not a JWT".to_string())?;
+    let decoded = URL_SAFE_NO_PAD
+        .decode(payload)
+        .map_err(|_| "token payload is not base64url".to_string())?;
+    let claims: serde_json::Value = serde_json::from_slice(&decoded)
+        .map_err(|_| "token payload is not JSON".to_string())?;
+    claims
+        .get("https://api.openai.com/auth")
+        .and_then(|auth| auth.get("chatgpt_account_id"))
+        .and_then(|id| id.as_str())
+        .map(str::to_string)
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| "token carries no chatgpt_account_id claim".to_string())
 }
 
 pub fn parse_callback(raw: &str, expected_state: &str) -> Result<String, String> {
@@ -371,9 +402,9 @@ pub async fn exchange(login: &AccountLogin, code: &str) -> Result<OAuthToken, St
 }
 
 /// Client id and token endpoint for the refresh grant. Kept in sync with
-/// `begin()` -- Claude's `platform.claude.com` console endpoint only grants
-/// `org:create_api_key`, not `user:inference`, so refreshing against it would
-/// silently downgrade an inference-capable session.
+/// `begin()` so a refresh always hits the same endpoint the user consented
+/// to. Both providers' OAuth servers are served from the platform host, not
+/// the inference API host (`api.anthropic.com` has no `/v1/oauth/token`).
 fn refresh_endpoint(provider: AccountProvider) -> (&'static str, &'static str) {
     match provider {
         AccountProvider::Codex => (
@@ -382,7 +413,7 @@ fn refresh_endpoint(provider: AccountProvider) -> (&'static str, &'static str) {
         ),
         AccountProvider::Claude => (
             "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
-            "https://api.anthropic.com/v1/oauth/token",
+            "https://platform.claude.com/v1/oauth/token",
         ),
     }
 }
@@ -562,16 +593,47 @@ async fn complete_code_login(
         }
         definition
     };
-    let models =
-        crate::core::cli::auth::providers::discover_models(&definition, &token.access_token)
-            .await
-            .map_err(|error| {
-                debug_log(&format!(
-                    "model discovery: {} rejected the token: {error:?}",
-                    definition.id
-                ));
-                "could not discover account models".to_string()
-            })?;
+    // Codex and Claude account tokens authenticate against different surfaces.
+    // A Claude account token is valid against `/v1/models` (Anthropic accepts
+    // it with the OAuth beta header). A Codex account token is a ChatGPT
+    // account token that `api.openai.com/v1/models` rejects (401) because that
+    // endpoint only accepts an API key - so discovery is skipped for Codex and
+    // the account is instead verified from the JWT `chatgpt_account_id` claim,
+    // exactly as opencode and pi do. Codex is served through the Responses API.
+    let (models, api_type) = if provider == AccountProvider::Codex {
+        match codex_chatgpt_account_id(&token.access_token) {
+            Ok(account_id) => {
+                debug_log(&format!("codex: verified chatgpt_account_id {account_id}"));
+                (
+                    vec!["gpt-5-chat-latest".to_string()],
+                    Some("openai-responses".to_string()),
+                )
+            }
+            Err(error) => {
+                debug_log(&format!("codex: account validation failed: {error}"));
+                return Err("could not verify the Codex account".to_string());
+            }
+        }
+    } else {
+        let models =
+            crate::core::cli::auth::providers::discover_models(&definition, &token.access_token, true)
+                .await
+                .map_err(|error| {
+                    debug_log(&format!(
+                        "model discovery: {} rejected the token: {error:?}",
+                        definition.id
+                    ));
+                    "could not discover account models".to_string()
+                })?;
+        (
+            models,
+            matches!(
+                definition.transport,
+                crate::core::cli::auth::Transport::Anthropic
+            )
+            .then_some("anthropic".to_string()),
+        )
+    };
     store(provider, &token)?;
     if let Err(error) = crate::core::agent::global_config::set_provider(
         definition.id,
@@ -580,11 +642,7 @@ async fn complete_code_login(
             clear_api_key: true,
             base_url: Some(definition.default_base_url),
             models: Some(models),
-            api_type: matches!(
-                definition.transport,
-                crate::core::cli::auth::Transport::Anthropic
-            )
-            .then_some("anthropic".to_string()),
+            api_type,
         },
     ) {
         let _ = CredentialStore::delete(provider.credential_provider());
@@ -683,6 +741,46 @@ mod tests {
         });
         endpoint
     }
+    /// Build a signed-shape Codex OAuth access token (a JWT) carrying the
+    /// `https://api.openai.com/auth` -> `chatgpt_account_id` claim that jan
+    /// uses to verify a Codex account. The signature is a dummy; `codex_chatgpt_account_id`
+    /// decodes only the payload segment.
+    fn codex_jwt(account_id: &str) -> String {
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256"}"#);
+        let payload = serde_json::json!({
+            "https://api.openai.com/auth": { "chatgpt_account_id": account_id },
+            "sub": account_id,
+        });
+        let payload = URL_SAFE_NO_PAD.encode(payload.to_string());
+        format!("{header}.{payload}.signature")
+    }
+
+    /// Build a fake OpenAI token exchange response whose access token is a
+    /// Codex JWT. Used by the live accounts tests to exercise the Codex
+    /// verify-then-persist path.
+    fn codex_token_server(account_id: &str) -> String {
+        let jwt = codex_jwt(account_id);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/token", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request).unwrap();
+            let body = format!(
+                r#"{{"access_token":"{}","refresh_token":"refresh","expires_in":3600,"token_type":"Bearer","scope":"profile offline_access"}}"#,
+                jwt
+            );
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+        endpoint
+    }
 
     fn complete_account_for_test(models_base_url: String) -> Result<AccountProvider, String> {
         std::thread::spawn(move || {
@@ -690,7 +788,7 @@ mod tests {
                 let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                 let address = listener.local_addr().unwrap();
                 let mut login = begin(AccountProvider::Codex).unwrap();
-                login.token_endpoint = token_server();
+                login.token_endpoint = codex_token_server("account-321");
                 login.model_base_url = Some(models_base_url);
                 let callback = format!(
                     "GET /auth/callback?code=authorization-code&state={} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n",
@@ -711,6 +809,37 @@ mod tests {
         .expect("account completion thread must not panic")
     }
 
+
+    /// A Claude-specific completion helper. Claude OAuth keeps the real
+    /// `/v1/models` discovery path, so these tests exercise discovery failure
+    /// semantics against a plain account token (Claude's token is not a JWT).
+    fn complete_claude_account_for_test(
+        models_base_url: String,
+    ) -> Result<AccountProvider, String> {
+        std::thread::spawn(move || {
+            tokio::runtime::Runtime::new().unwrap().block_on(async move {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let address = listener.local_addr().unwrap();
+                let mut login = begin(AccountProvider::Claude).unwrap();
+                login.model_base_url = Some(models_base_url);
+                let callback = format!(
+                    "GET /callback?code=authorization-code&state={} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n",
+                    login.state
+                );
+                let client = tokio::spawn(async move {
+                    let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+                    tokio::io::AsyncWriteExt::write_all(&mut stream, callback.as_bytes())
+                        .await
+                        .unwrap();
+                });
+                let result = complete_callback_login(listener, login).await;
+                client.await.unwrap();
+                result
+            })
+        })
+        .join()
+        .expect("claude account completion thread must not panic")
+    }
     fn complete_account_manually_for_test(
         models_base_url: String,
     ) -> Result<AccountProvider, String> {
@@ -718,7 +847,7 @@ mod tests {
             tokio::runtime::Runtime::new().unwrap().block_on(async move {
                 let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                 let mut login = begin(AccountProvider::Codex).unwrap();
-                login.token_endpoint = token_server();
+                login.token_endpoint = codex_token_server("account-321");
                 login.model_base_url = Some(models_base_url);
                 let manual_input = format!("authorization-code#{}", login.state);
                 let (manual, receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -799,7 +928,7 @@ mod tests {
         assert_eq!(login.client_id, "9d1c250a-e61b-44d9-88ed-5944d1962f5e");
         assert_eq!(
             login.token_endpoint,
-            "https://api.anthropic.com/v1/oauth/token"
+            "https://platform.claude.com/v1/oauth/token"
         );
     }
 
@@ -815,10 +944,16 @@ mod tests {
                 .1,
             "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
         );
-        assert_eq!(login.state.len(), 32, "state must be 32-char hex");
+        // Anthropic accepts only `state == code_verifier`, so Claude's state
+        // must equal its verifier (not be an independent random value).
+        assert_eq!(login.state, login.verifier, "Claude state must equal verifier");
         assert!(
-            login.state.bytes().all(|b| b.is_ascii_hexdigit()),
-            "state must be lowercase hex"
+            url.query_pairs()
+                .find(|(key, _)| key == "state")
+                .unwrap()
+                .1
+                == login.verifier,
+            "authorize URL state must be the verifier"
         );
     }
 
@@ -1057,30 +1192,23 @@ mod tests {
     }
 
     #[test]
-    fn account_model_discovery_persists_models_and_token() {
+    fn codex_login_persists_token_and_responses_config() {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
-            let body = r#"{"data":[{"id":"gpt-4o-mini"},{"id":"gpt-4o"},{"id":"gpt-4o"}]}"#;
-            let (models_base_url, request) = account_models_server("200 OK", body);
+            // Codex does not call /v1/models - it verifies the account via the
+            // JWT chatgpt_account_id claim and configures the Responses API.
+            let (models_base_url, request) = account_models_server("200 OK", "{}");
 
             assert_eq!(
                 complete_account_for_test(models_base_url.clone()).unwrap(),
                 AccountProvider::Codex
             );
 
-            let models_request = request.recv().unwrap();
-            assert!(
-                models_request.starts_with("GET /v1/models HTTP/1.1"),
-                "{models_request}"
-            );
-            assert!(
-                models_request.contains("authorization: Bearer exchanged-account-token")
-                    || models_request.contains("Authorization: Bearer exchanged-account-token"),
-                "{models_request}"
-            );
+            // No /v1/models discovery should have happened.
+            assert!(request.try_recv().is_err(), "Codex must not call /v1/models");
 
             let token = OAuthToken {
-                access_token: "exchanged-account-token".into(),
+                access_token: codex_jwt("account-321").into(),
                 refresh_token: Some("refresh".into()),
                 expires_at: CredentialStore::load("openai")
                     .unwrap()
@@ -1099,34 +1227,27 @@ mod tests {
             assert!(cfg.api_key.is_none());
             assert!(cfg.api_keys.is_empty());
             assert_eq!(cfg.base_url.as_deref(), Some(models_base_url.as_str()));
-            assert_eq!(
-                cfg.models,
-                vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()]
-            );
+            assert_eq!(cfg.models, vec!["gpt-5-chat-latest".to_string()]);
+            assert_eq!(cfg.api_type.as_deref(), Some("openai-responses"));
         });
     }
 
     #[test]
-    fn manual_account_completion_persists_models_and_token() {
+    fn manual_codex_login_persists_token_and_responses_config() {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
-            let body = r#"{"data":[{"id":"gpt-4o-mini"},{"id":"gpt-4o"},{"id":"gpt-4o"}]}"#;
-            let (models_base_url, request) = account_models_server("200 OK", body);
+            let (models_base_url, request) = account_models_server("200 OK", "{}");
 
             assert_eq!(
                 complete_account_manually_for_test(models_base_url.clone()).unwrap(),
                 AccountProvider::Codex
             );
 
-            let models_request = request.recv().unwrap();
-            assert!(models_request.starts_with("GET /v1/models HTTP/1.1"));
-            assert!(
-                models_request.contains("authorization: Bearer exchanged-account-token")
-                    || models_request.contains("Authorization: Bearer exchanged-account-token")
-            );
+            // No /v1/models discovery should have happened for a Codex account.
+            assert!(request.try_recv().is_err(), "Codex must not call /v1/models");
 
             let token = OAuthToken {
-                access_token: "exchanged-account-token".into(),
+                access_token: codex_jwt("account-321").into(),
                 refresh_token: Some("refresh".into()),
                 expires_at: CredentialStore::load("openai")
                     .unwrap()
@@ -1145,10 +1266,8 @@ mod tests {
             assert!(cfg.api_key.is_none());
             assert!(cfg.api_keys.is_empty());
             assert_eq!(cfg.base_url.as_deref(), Some(models_base_url.as_str()));
-            assert_eq!(
-                cfg.models,
-                vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()]
-            );
+            assert_eq!(cfg.models, vec!["gpt-5-chat-latest".to_string()]);
+            assert_eq!(cfg.api_type.as_deref(), Some("openai-responses"));
         });
     }
 
@@ -1157,12 +1276,17 @@ mod tests {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
             let (models_base_url, _request) = account_models_server("401 Unauthorized", "{}");
-            let error = complete_account_for_test(models_base_url).unwrap_err();
+            let error = complete_claude_account_for_test(models_base_url).unwrap_err();
 
             assert!(!error.contains("exchanged-account-token"), "{error}");
             assert!(!error.contains("authorization-code"), "{error}");
-            assert!(CredentialStore::load("openai").unwrap().is_none());
-            assert!(load_global_config().unwrap().get("openai").is_none());
+            assert!(CredentialStore::load(AccountProvider::Claude.credential_provider())
+                .unwrap()
+                .is_none());
+            assert!(load_global_config()
+                .unwrap()
+                .get("anthropic")
+                .is_none());
         });
     }
 
@@ -1172,13 +1296,18 @@ mod tests {
         with_temp_home(|_| {
             let (models_base_url, _request) =
                 account_models_server("200 OK", "not-json-without-secret");
-            let error = complete_account_for_test(models_base_url).unwrap_err();
+            let error = complete_claude_account_for_test(models_base_url).unwrap_err();
 
             assert!(!error.contains("not-json-without-secret"), "{error}");
             assert!(!error.contains("exchanged-account-token"), "{error}");
             assert!(!error.contains("authorization-code"), "{error}");
-            assert!(CredentialStore::load("openai").unwrap().is_none());
-            assert!(load_global_config().unwrap().get("openai").is_none());
+            assert!(CredentialStore::load(AccountProvider::Claude.credential_provider())
+                .unwrap()
+                .is_none());
+            assert!(load_global_config()
+                .unwrap()
+                .get("anthropic")
+                .is_none());
         });
     }
 
@@ -1186,12 +1315,17 @@ mod tests {
     fn account_model_discovery_unavailable_server_leaves_no_account_state() {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
-            let error = complete_account_for_test(unavailable_base_url()).unwrap_err();
+            let error = complete_claude_account_for_test(unavailable_base_url()).unwrap_err();
 
             assert!(!error.contains("exchanged-account-token"), "{error}");
             assert!(!error.contains("authorization-code"), "{error}");
-            assert!(CredentialStore::load("openai").unwrap().is_none());
-            assert!(load_global_config().unwrap().get("openai").is_none());
+            assert!(CredentialStore::load(AccountProvider::Claude.credential_provider())
+                .unwrap()
+                .is_none());
+            assert!(load_global_config()
+                .unwrap()
+                .get("anthropic")
+                .is_none());
         });
     }
 
