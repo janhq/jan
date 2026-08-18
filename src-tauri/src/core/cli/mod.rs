@@ -304,7 +304,7 @@ pub fn cli_set_project_model(agent_dir: &std::path::Path, model: &str) -> Result
 
 /// Stands in for a tool result that never reached disk, so the call it answers
 /// stays valid. Says what happened rather than inventing an outcome.
-const MISSING_TOOL_RESULT: &str =
+pub(crate) const MISSING_TOOL_RESULT: &str =
     "(result not saved: the session ended before this call's output was recorded)";
 
 /// Rebuild the wire conversation from persisted `thread.message` records: the

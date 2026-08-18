@@ -3693,6 +3693,7 @@ impl App {
         // preceding tool calls stay in the transcript, and record the partial
         // answer in history so the next turn and a later /resume both see it.
         self.abort_tool_rows();
+        self.append_cancelled_turn_tools();
         let answer = answer_without_reasoning(&self.take_answer());
         if !answer.is_empty() {
             self.history
@@ -3714,6 +3715,69 @@ impl App {
         // Auto-dequeue the next queued message, if any
         self.dequeue_next();
         self.persist();
+    }
+
+    /// Fold this cancelled turn's completed tool calls and their results into
+    /// `history` (wire form), so the model on the next prompt sees the tools it
+    /// ran and what they returned instead of only the streamed prose. Without
+    /// this, `self.history` only ever carries tool exchanges when the backend
+    /// publishes a `MessagesUpdated` at a natural stop -- a run killed mid-way
+    /// by a cancel loses them from the model's view (they still render from the
+    /// display journal). Calls still in flight at the cancel are paired with a
+    /// placeholder result so the exchange stays protocol-valid.
+    fn append_cancelled_turn_tools(&mut self) {
+        let start = self
+            .display_log
+            .iter()
+            .rposition(|e| matches!(e, DisplayEntry::User { .. }))
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        let mut calls: Vec<(String, String, serde_json::Value)> = Vec::new();
+        let mut results: Vec<(String, String)> = Vec::new();
+        for entry in self.display_log.iter().skip(start) {
+            match entry {
+                DisplayEntry::ToolCall { id, name, args } => {
+                    calls.push((id.clone(), name.clone(), args.clone()));
+                }
+                DisplayEntry::ToolResult { id, content, .. } => {
+                    results.push((id.clone(), content.clone()));
+                }
+                _ => {}
+            }
+        }
+        if calls.is_empty() {
+            return;
+        }
+        let tool_calls: serde_json::Value = calls
+            .iter()
+            .map(|(id, name, args)| {
+                serde_json::json!({
+                    "id": id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": args.to_string(),
+                    }
+                })
+            })
+            .collect();
+        self.history.push(serde_json::json!({
+            "role": "assistant",
+            "content": serde_json::Value::Null,
+            "tool_calls": tool_calls,
+        }));
+        for (id, _, _) in &calls {
+            let content = results
+                .iter()
+                .find(|(rid, _)| rid == id)
+                .map(|(_, c)| c.clone())
+                .unwrap_or_else(|| super::MISSING_TOOL_RESULT.to_string());
+            self.history.push(serde_json::json!({
+                "role": "tool",
+                "tool_call_id": id,
+                "content": content,
+            }));
+        }
     }
 }
 
@@ -15148,6 +15212,70 @@ mod tests {
                 .unwrap_or_default()
                 .contains("Here is what I found so far"),
             "partial answer not in history: {last}"
+        );
+    }
+
+    #[test]
+    fn cancel_preserves_completed_tool_calls_and_results_in_history() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "grep -n foo src/" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "match on line 3\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        // The run is cancelled before the model emits any answer prose, so
+        // nothing is streamed to be committed as assistant text.
+        app.cancel_run();
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            wire.contains("\"tool_calls\"") && wire.contains("c1"),
+            "tool call missing from wire history on cancel: {wire}"
+        );
+        assert!(
+            wire.contains("\"tool_call_id\":\"c1\"") && wire.contains("match on line 3"),
+            "tool result missing from wire history on cancel: {wire}"
+        );
+    }
+
+    #[test]
+    fn cancel_surfaces_interrupted_calls_paired_with_a_placeholder_result() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 300" }),
+        });
+        // No ToolResult arrives: the call was still in flight at cancel. It
+        // must still reach the wire history, paired with a placeholder result
+        // so the upstream sees a valid (call, result) exchange, not a dangling
+        // call that OpenAI-compatible endpoints reject.
+        app.cancel_run();
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            wire.contains("\"tool_calls\"") && wire.contains("c1"),
+            "interrupted call missing from wire history: {wire}"
+        );
+        assert!(
+            wire.contains("\"tool_call_id\":\"c1\""),
+            "interrupted call must be paired with a result for a valid exchange: {wire}"
         );
     }
 
