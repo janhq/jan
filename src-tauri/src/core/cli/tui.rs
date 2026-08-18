@@ -16335,6 +16335,7 @@ mod tests {
                 "tokamak",
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("tk".into()),
+                    clear_api_key: false,
                     base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
                     models: Some(vec!["tokamak-1-preview".into()]),
                     api_type: None,
