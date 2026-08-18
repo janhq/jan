@@ -340,6 +340,10 @@ struct Picker {
     kind: PickerKind,
     items: Vec<PickerItem>,
     selected: usize,
+    /// Index of the provider row a first `d` armed for deletion, so a second
+    /// `d` on the same row confirms it. `None` = nothing armed. Resets on
+    /// navigation so an unrelated keypress can never delete by accident.
+    armed_delete: Option<usize>,
 }
 
 impl Picker {
@@ -366,7 +370,7 @@ impl Picker {
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
             PickerKind::AgentSettings => " ↑/↓ select   Enter edit   x unset   Esc close",
-            PickerKind::ProviderSettings => " ↑/↓ select   Enter edit   a add   d delete   Esc close",
+            PickerKind::ProviderSettings => " ↑/↓ select   Enter edit   a add   dd delete   Esc close",
             PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
         }
     }
@@ -1214,6 +1218,11 @@ struct App {
     mcp_prompt: Option<McpPrompt>,
     /// Active OpenAI-compatible provider wizard (docked); owns the keyboard.
     provider_prompt: Option<ProviderPrompt>,
+    /// Providers already probed for a missing model list this session
+    /// (success or failure). A dead/unreachable upstream must not be re-contacted
+    /// on every bare `/model` -- that would freeze the render loop for the whole
+    /// request timeout -- so only unprobed providers are fetched once.
+    probed_models: std::collections::HashSet<String>,
     /// Key handed off to the loop to verify off the render loop. Taken once.
     login_submit: Option<String>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
@@ -1518,6 +1527,7 @@ impl App {
             settings_prompt: None,
             mcp_prompt: None,
             provider_prompt: None,
+            probed_models: std::collections::HashSet::new(),
             login_submit: None,
             update_requested: false,
             update_installing: false,
@@ -5826,9 +5836,11 @@ async fn handle_key(
     if let Some(picker) = app.picker.as_mut() {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
+                picker.armed_delete = None;
                 picker.selected = picker.selected.saturating_sub(1);
             }
             KeyCode::Down | KeyCode::Char('j') => {
+                picker.armed_delete = None;
                 picker.selected = (picker.selected + 1).min(picker.items.len() - 1);
             }
             KeyCode::Enter if picker.kind == PickerKind::ToggleMcp => {
@@ -5839,8 +5851,8 @@ async fn handle_key(
                 toggle_mcp_server(app, mcp_servers, name, enable);
             }
             // `/mcp` picker: `a` opens the add wizard, `e` opens the edit
-            // wizard prefilled from the selected row, `d` removes it after a
-            // confirmation keystroke. All act through the shared config layer.
+            // wizard prefilled from the selected row, `d` removes the selected
+            // server. All act through the shared config layer.
             KeyCode::Char('a') if picker.kind == PickerKind::ToggleMcp => {
                 app.picker = None;
                 app.mcp_prompt = Some(McpPrompt {
@@ -5878,19 +5890,38 @@ async fn handle_key(
                 }
             }
             // `/settings > providers` picker: `a` opens the add wizard, `d`
-            // deletes the selected provider after a confirmation keystroke. All
-            // writes go through the shared headless `~/.jan/config.toml` path.
+            // deletes the selected provider only after a confirmation `d` on
+            // the same row (an API key is unrecoverable). The leading
+            // watermark row (an empty list) is inert. All writes go through
+            // the shared headless `~/.jan/config.toml` path.
             KeyCode::Char('a') if picker.kind == PickerKind::ProviderSettings => {
                 app.picker = None;
                 app.provider_prompt = Some(ProviderPrompt::new());
             }
             KeyCode::Char('d') if picker.kind == PickerKind::ProviderSettings => {
-                let name = picker.items[picker.selected].value.clone();
-                app.picker = None;
-                if crate::core::agent::global_config::remove_provider(&name).unwrap_or(false) {
-                    app.note(&format!("removed provider '{name}'"));
+                let Some(item) = picker.items.get(picker.selected) else {
+                    return;
+                };
+                let name = item.value.clone();
+                if name.is_empty() {
+                    // The watermark row: nothing to delete.
+                    return;
+                }
+                let sel = picker.selected;
+                if picker.armed_delete == Some(sel) {
+                    // Second `d` on the same row confirms the delete.
+                    app.picker = None;
+                    if crate::core::agent::global_config::remove_provider(&name)
+                        .unwrap_or(false)
+                    {
+                        app.note(&format!("removed provider '{name}'"));
+                    } else {
+                        app.note(&format!("provider '{name}' was not configured"));
+                    }
                 } else {
-                    app.note(&format!("provider '{name}' was not configured"));
+                    // First `d` arms; a second `d` on this row confirms.
+                    picker.armed_delete = Some(sel);
+                    app.note(&format!("press d again to delete provider '{name}'"));
                 }
             }
             // `/todo` editor: d/Enter = done, x = abandon (drop), r = remove.
@@ -7170,25 +7201,47 @@ impl ProviderPrompt {
     ];
 
     fn next_field(&mut self) {
-        let pos = Self::FIELD_ORDER
-            .iter()
-            .position(|f| *f == self.field)
-            .unwrap_or(0);
-        self.field = Self::FIELD_ORDER[(pos + 1) % Self::FIELD_ORDER.len()];
+        if self.editing.is_some() {
+            // Name is read-only while editing; cycle through the editable
+            // fields only (BaseUrl -> ApiKey -> Models -> BaseUrl).
+            self.field = match self.field {
+                ProviderField::BaseUrl => ProviderField::ApiKey,
+                ProviderField::ApiKey => ProviderField::Models,
+                _ => ProviderField::BaseUrl,
+            };
+        } else {
+            let pos = Self::FIELD_ORDER
+                .iter()
+                .position(|f| *f == self.field)
+                .unwrap_or(0);
+            self.field = Self::FIELD_ORDER[(pos + 1) % Self::FIELD_ORDER.len()];
+        }
     }
 
     fn prev_field(&mut self) {
-        let pos = Self::FIELD_ORDER
-            .iter()
-            .position(|f| *f == self.field)
-            .unwrap_or(0);
-        self.field = Self::FIELD_ORDER[(pos + Self::FIELD_ORDER.len() - 1) % Self::FIELD_ORDER.len()];
+        if self.editing.is_some() {
+            // Name is read-only while editing; cycle backwards through the
+            // editable fields only (BaseUrl <- ApiKey <- Models <- BaseUrl).
+            self.field = match self.field {
+                ProviderField::ApiKey => ProviderField::BaseUrl,
+                ProviderField::Models => ProviderField::ApiKey,
+                _ => ProviderField::Models,
+            };
+        } else {
+            let pos = Self::FIELD_ORDER
+                .iter()
+                .position(|f| *f == self.field)
+                .unwrap_or(0);
+            self.field = Self::FIELD_ORDER[
+                (pos + Self::FIELD_ORDER.len() - 1) % Self::FIELD_ORDER.len()
+            ];
+        }
     }
 
     fn from_entry(entry: &crate::core::state::ProviderConfig) -> Self {
         Self {
             editing: Some(entry.provider.clone()),
-            field: ProviderField::Name,
+            field: ProviderField::BaseUrl,
             name: entry.provider.clone(),
             base_url: entry.base_url.clone().unwrap_or_default(),
             api_key: String::new(),
@@ -7210,9 +7263,14 @@ impl ProviderPrompt {
     }
 
     /// Apply a bracketed paste to the active field, dropping the whitespace
-    /// terminals add around a paste.
+    /// terminals add around a paste. The name field is read-only while editing
+    /// (renaming would orphan the config entry), so a paste lands in the
+    /// editable fields only.
     fn paste(&mut self, text: &str) {
         let text = super::secret_input::pasted(text);
+        if self.editing.is_some() && self.field == ProviderField::Name {
+            return;
+        }
         match self.field {
             ProviderField::Name => self.name.push_str(text),
             ProviderField::BaseUrl => self.base_url.push_str(text),
@@ -7228,21 +7286,32 @@ impl ProviderPrompt {
     }
 
     /// An error explaining why a base URL is not a usable http(s) upstream.
+    /// Only `https` (or `http` for a loopback host) is accepted, so a bearer
+    /// key is never sent over a plaintext remote connection.
     fn validate_base_url(&self) -> Option<String> {
+        use super::providers::is_loopback_url;
         let url = self.base_url.trim();
         if url.is_empty() {
             return Some("base URL is required".to_string());
         }
-        if !url.starts_with("http://") && !url.starts_with("https://") {
-            return Some("base URL must start with http:// or https://".to_string());
+        if url.starts_with("https://") {
+            return None;
         }
-        None
+        if url.starts_with("http://") && is_loopback_url(url) {
+            return None;
+        }
+        Some(
+            "base URL must be https:// (or http:// for a localhost/loopback host)"
+                .to_string(),
+        )
     }
 
     /// Persist the provider to `~/.jan/config.toml` via the headless config
     /// path the CLI shares. `api_type` stays default (OpenAI-compatible
     /// passthrough) unless an explicit type is chosen elsewhere. Returns an
-    /// error keeping the prompt open on invalid input.
+    /// error keeping the prompt open on invalid input. The name is read-only
+    /// while editing, so `save` always writes under the original key and never
+    /// orphans the prior entry or loses its API key.
     fn save(&self) -> Result<(), String> {
         let name = self.name.trim();
         if name.is_empty() {
@@ -7361,12 +7430,14 @@ fn open_settings_screen(app: &mut App) {
         kind: PickerKind::AgentSettings,
         items: build_agent_settings_items(&toml_path),
         selected: 0,
+        armed_delete: None,
     });
 }
 
 /// Open the `/settings > providers` screen: a picker row per provider in
 /// `~/.jan/config.toml` (the standalone-agent credential store), with `a` to
-/// add, `a`/`d` to edit/delete, and Enter to edit the selected row.
+/// add, Enter to edit the selected row, and `d` pressed twice to delete it
+/// (the first `d` arms, the second confirms; see the picker key handler).
 fn open_provider_settings(app: &mut App) {
     let providers = match crate::core::agent::global_config::load_global_config() {
         Ok(c) => c,
@@ -7402,6 +7473,7 @@ fn open_provider_settings(app: &mut App) {
         kind: PickerKind::ProviderSettings,
         items,
         selected: 0,
+        armed_delete: None,
     });
 }
 
@@ -7613,21 +7685,27 @@ fn handle_provider_prompt_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                 }
             }
         }
-        KeyCode::Backspace => match prompt.field {
-            ProviderField::Name => {
-                prompt.name.pop();
+        KeyCode::Backspace => {
+            if prompt.editing.is_some() && prompt.field == ProviderField::Name {
+                return;
             }
-            ProviderField::BaseUrl => {
-                prompt.base_url.pop();
+            match prompt.field {
+                ProviderField::Name => {
+                    prompt.name.pop();
+                }
+                ProviderField::BaseUrl => {
+                    prompt.base_url.pop();
+                }
+                ProviderField::ApiKey => {
+                    prompt.api_key.pop();
+                }
+                ProviderField::Models => {
+                    prompt.models.pop();
+                }
             }
-            ProviderField::ApiKey => {
-                prompt.api_key.pop();
-            }
-            ProviderField::Models => {
-                prompt.models.pop();
-            }
-        },
+        }
         KeyCode::Char(ch) if !ctrl => match prompt.field {
+            ProviderField::Name if prompt.editing.is_some() => {}
             ProviderField::Name => prompt.name.push(ch),
             ProviderField::BaseUrl => prompt.base_url.push(ch),
             ProviderField::ApiKey => prompt.api_key.push(ch),
@@ -7784,6 +7862,7 @@ fn open_todo_picker(app: &mut App) {
         kind: PickerKind::Todo,
         items: build_todo_items(&app.todos),
         selected: 0,
+        armed_delete: None,
     });
 }
 
@@ -8134,6 +8213,7 @@ fn open_thread_picker(app: &mut App) {
                     kind: PickerKind::ResumeThread,
                     items,
                     selected: 0,
+                    armed_delete: None,
                 });
             }
         }
@@ -8148,7 +8228,12 @@ fn open_thread_picker(app: &mut App) {
 /// persisted, so a bare provider becomes selectable immediately.
 async fn open_model_picker(app: &mut App) {
     let project_root = app.project_root.clone();
-    match super::providers::fetch_missing_models(Some(&project_root)).await {
+    match super::providers::fetch_missing_models(
+        Some(&project_root),
+        &mut app.probed_models,
+    )
+    .await
+    {
         Ok(true) => {
             // The discovered ids now live on disk; refresh the session's
             // in-memory provider snapshot so a picked model resolves on the
@@ -8179,6 +8264,7 @@ async fn open_model_picker(app: &mut App) {
         kind: PickerKind::SelectModel,
         items,
         selected,
+        armed_delete: None,
     });
 }
 
@@ -8203,6 +8289,7 @@ fn open_mcp_picker(app: &mut App) {
         kind: PickerKind::ToggleMcp,
         items,
         selected: 0,
+        armed_delete: None,
     });
 }
 
@@ -8331,6 +8418,7 @@ fn open_config_screen(app: &mut App) {
         kind: PickerKind::ViewConfig,
         items,
         selected: 0,
+        armed_delete: None,
     });
 }
 
@@ -8472,6 +8560,7 @@ fn open_rewind_picker(app: &mut App) {
         kind: PickerKind::RewindMessage,
         items,
         selected,
+        armed_delete: None,
     });
 }
 
@@ -8497,6 +8586,7 @@ fn open_rewind_scope(app: &mut App, user_index: usize) {
         kind: PickerKind::RewindScope,
         items,
         selected: 0,
+        armed_delete: None,
     });
 }
 
@@ -9763,7 +9853,8 @@ fn draw_provider_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &Pro
 
     let mut lines = Vec::new();
     for field in ProviderPrompt::FIELD_ORDER {
-        let selected = field == prompt.field;
+        let read_only = prompt.editing.is_some() && field == ProviderField::Name;
+        let selected = field == prompt.field && !read_only;
         let (label, value): (&str, String) = match field {
             ProviderField::Name => ("name", prompt.name.clone()),
             ProviderField::BaseUrl => ("base url", prompt.base_url.clone()),
@@ -9773,6 +9864,10 @@ fn draw_provider_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &Pro
         let marker = if selected { "› " } else { "  " };
         let style = if selected {
             Style::new().bold()
+        } else if read_only {
+            // A renamed provider would orphan its config entry and lose the
+            // API key, so the name is fixed while editing.
+            Style::new().dark_gray()
         } else {
             dim
         };
@@ -13825,7 +13920,7 @@ mod tests {
             p.base_url = "not-a-url".to_string();
             assert!(p.save().is_err(), "scheme required");
             p.base_url = "https://my-provider.example/v1".to_string();
-            assert!(p.save().is_ok(), "valid openai provider saved");
+            assert!(p.save().is_ok(), "valid https provider saved");
         });
     }
 
@@ -14022,6 +14117,237 @@ mod tests {
         });
     }
 
+    /// Deleting a provider is unrecoverable (the API key is lost), so a single
+    /// `d` must only arm a confirmation and a second `d` on the same row must be
+    /// required to actually remove it. Navigating away disarms.
+    #[test]
+    fn provider_delete_requires_two_d_presses() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "myprovider",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("https://my.example/v1".into()),
+                    models: Some(vec![]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            assert!(
+                crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .contains_key("myprovider")
+            );
+
+            // First `d` arms but must not delete.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            assert!(
+                crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .contains_key("myprovider"),
+                "first d must only arm, not delete"
+            );
+            assert!(
+                transcript_text(&app).contains("press d again to delete provider 'myprovider'"),
+                "note tells the user to confirm: {}",
+                transcript_text(&app)
+            );
+
+            // Second `d` on the same row confirms and removes it.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            assert!(
+                !crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .contains_key("myprovider"),
+                "second d confirms the delete"
+            );
+            assert!(app.picker.is_none(), "picker closes after delete");
+            assert!(transcript_text(&app).contains("removed provider 'myprovider'"));
+        });
+    }
+
+    /// Navigating away must disarm a pending delete so an unrelated keystroke
+    /// can never confirm an arm from a different row.
+    #[test]
+    fn provider_delete_arms_reset_on_navigation() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            for p in ["a", "b"] {
+                crate::core::agent::global_config::set_provider(
+                    p,
+                    crate::core::agent::global_config::ProviderUpdate {
+                        api_key: Some("k".into()),
+                        base_url: Some("https://my.example/v1".into()),
+                        models: Some(vec![]),
+                        api_type: None,
+                    },
+                )
+                .unwrap();
+            }
+
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let p = app.picker.as_ref().expect("picker");
+            assert_eq!(p.items.len(), 2);
+            let idx_a = p.items.iter().position(|i| i.value == "a").unwrap();
+            let idx_b = p.items.iter().position(|i| i.value == "b").unwrap();
+            app.picker.as_mut().unwrap().selected = idx_a;
+            let rt = tokio::runtime::Runtime::new().unwrap();
+
+            // Arm on `a`.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            assert!(app.picker.as_ref().unwrap().armed_delete == Some(idx_a));
+
+            // Move down to `b` (disarms), then press `d`: this must arm `b`,
+            // not delete `a`.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            assert!(configs.contains_key("a"), "a must still exist, only armed on b");
+            assert!(configs.contains_key("b"));
+            assert!(app.picker.as_ref().unwrap().armed_delete == Some(idx_b));
+        });
+    }
+
+    /// The watermark row (no providers configured) must be inert: `d` on it
+    /// must not arm/delete an empty-named entry, and Enter must not open a
+    /// wizard for it.
+    #[test]
+    fn provider_picker_empty_watermark_is_inert() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let picker = app.picker.as_ref().expect("picker opened");
+            assert_eq!(picker.items.len(), 1);
+            assert!(picker.items[0].value.is_empty(), "watermark row has no value");
+            let rt = tokio::runtime::Runtime::new().unwrap();
+
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            assert!(
+                app.picker.as_ref().unwrap().armed_delete.is_none(),
+                "no arm on watermark"
+            );
+            assert!(
+                !crate::core::agent::global_config::load_global_config().unwrap().contains_key(""),
+                "d on the watermark must not delete an empty-named entry"
+            );
+
+            rt.block_on(async {
+                press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+            });
+            assert!(app.provider_prompt.is_none(), "Enter on the watermark opens no wizard");
+        });
+    }
+
+    /// Editing a provider must keep its name read-only so the save writes back
+    /// under the original key: renaming would orphan the old entry and lose the
+    /// API key. The existing key and models must be preserved on save.
+    #[test]
+    fn provider_edit_preserves_name_key_and_models() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "myprovider",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("sk-secret".into()),
+                    base_url: Some("https://my.example/v1".into()),
+                    models: Some(vec!["m1".into(), "m2".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            // Enter opens the edit wizard prefilled from the row.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+            });
+            let prompt = app.provider_prompt.as_ref().expect("edit wizard opened");
+            assert_eq!(prompt.name, "myprovider");
+            assert!(prompt.editing.is_some());
+
+            // The name field is read-only while editing; typing must not change it.
+            assert_eq!(prompt.field, ProviderField::BaseUrl, "edit starts on base url");
+            app.provider_prompt.as_mut().unwrap().field = ProviderField::Name;
+            for ch in "RENAMED".chars() {
+                super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            assert_eq!(
+                app.provider_prompt.as_ref().unwrap().name,
+                "myprovider",
+                "name is read-only while editing"
+            );
+
+            // Back to an editable field; change base_url and save.
+            app.provider_prompt.as_mut().unwrap().field = ProviderField::BaseUrl;
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Backspace), false);
+            rt.block_on(async {
+                press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+            });
+
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            assert_eq!(configs.len(), 1, "no orphaned entry");
+            let cfg = configs.get("myprovider").expect("still under original key");
+            assert_eq!(cfg.api_key.as_deref(), Some("sk-secret"), "key preserved");
+            assert_eq!(cfg.models, vec!["m1", "m2"], "models preserved");
+        });
+    }
+
+    /// Editing navigation skips the read-only name field: from BaseUrl it
+    /// cycles BaseUrl -> ApiKey -> Models -> BaseUrl.
+    #[test]
+    fn provider_edit_navigation_skips_name() {
+        let mut p = super::ProviderPrompt {
+            editing: Some("p".into()),
+            field: ProviderField::BaseUrl,
+            name: "p".into(),
+            base_url: String::new(),
+            api_key: String::new(),
+            models: String::new(),
+            error: None,
+        };
+        p.next_field();
+        assert_eq!(p.field, ProviderField::ApiKey);
+        p.next_field();
+        assert_eq!(p.field, ProviderField::Models);
+        p.next_field();
+        assert_eq!(p.field, ProviderField::BaseUrl);
+        p.prev_field();
+        assert_eq!(p.field, ProviderField::Models);
+        p.prev_field();
+        assert_eq!(p.field, ProviderField::ApiKey);
+    }
+
+    /// The base URL is validated before the bearer key is ever sent: only
+    /// https (or http to a loopback host) is accepted.
+    #[test]
+    fn provider_prompt_rejects_plaintext_remote_base_url() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut p = super::ProviderPrompt::new();
+            p.name = "p".to_string();
+            p.base_url = "http://remote.example/v1".to_string();
+            assert!(p.save().is_err(), "plaintext remote rejected");
+            p.base_url = "http://127.0.0.1:8080/v1".to_string();
+            assert!(p.save().is_ok(), "loopback http allowed");
+            p.base_url = "https://remote.example/v1".to_string();
+            assert!(p.save().is_ok(), "https allowed");
+        });
+    }
+
     /// A provider added through the wizard with no model list would otherwise
     /// vanish from `/model`, since the picker only offers explicitly configured
     /// ids. Opening the picker must fetch that provider's `GET /models` and
@@ -14071,6 +14397,40 @@ mod tests {
                 "discovered model must be offered: {:?}",
                 picker.items.iter().map(|i| &i.label).collect::<Vec<_>>()
             );
+        });
+    }
+
+    /// A reachable-looking but dead provider (empty model list, unreachable
+    /// endpoint) must not break or block the `/model` picker: the fetch is
+    /// skipped with a note, and the picker still opens with what is reachable.
+    #[test]
+    fn model_picker_survives_unreachable_provider() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            // A dead endpoint fills the empty-model-list probe slot and fails
+            // fast on 127.0.0.1:9 (nothing listens there).
+            crate::core::agent::global_config::set_provider(
+                "dead",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("http://127.0.0.1:9/v1".into()),
+                    models: Some(vec![]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let mut app = test_app();
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(super::run_command(&mut app, "model"));
+
+            // The picker opened (no reachable pairs => the note path fires,
+            // but there is no panic, no hang, and the provider stays put).
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            assert!(configs.contains_key("dead"), "provider not removed by a failed probe");
+
+            // Opening once more must not re-contact the dead endpoint: the
+            // session short-circuit means the second open is near-instant.
+            rt.block_on(super::run_command(&mut app, "model"));
         });
     }
 

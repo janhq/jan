@@ -142,7 +142,7 @@ fn is_usable(config: &ProviderConfig) -> bool {
 
 /// Whether a base URL points at this machine, where an API key is usually not
 /// required. Host-only match (no DNS): anything else is treated as remote.
-fn is_loopback_url(url: &str) -> bool {
+pub(crate) fn is_loopback_url(url: &str) -> bool {
     let authority = url
         .split_once("://")
         .map(|(_, rest)| rest)
@@ -223,8 +223,12 @@ pub fn list_provider_models(project_root: Option<&std::path::Path>) -> Vec<(Stri
 /// when a provider already names models (the user's explicit choice wins), and
 /// only providers present in the global store are touched -- writing a
 /// models-only entry for a Desktop-inherited provider would shadow it.
+/// `already_probed` records which `(provider, base_url)` pairs were queried,
+/// so each is touched at most once per session: a dead upstream is not
+/// re-contacted on every picker open.
 pub async fn fetch_missing_models(
     project_root: Option<&std::path::Path>,
+    already_probed: &mut std::collections::HashSet<String>,
 ) -> Result<bool, String> {
     let global = load_global_config()?;
     let configs = load_provider_configs(project_root, &ProviderOverrides::default().with_env())?;
@@ -239,6 +243,18 @@ pub async fn fetch_missing_models(
                 c.base_url.clone().unwrap_or_default(),
                 c.bearer_key_chain(),
             )
+        })
+        // Probe each provider at most once per session. A provider that still
+        // has an empty list after a probe was unreachable or offered nothing;
+        // re-probing it on every bare `/model` would freeze the render loop
+        // for the full request timeout each time.
+        .filter(|(name, base_url, _)| {
+            let tag = format!("{name}|{base_url}");
+            if already_probed.contains(&tag) {
+                return false;
+            }
+            already_probed.insert(tag);
+            true
         })
         .collect();
     if to_fetch.is_empty() {
@@ -278,12 +294,21 @@ pub async fn fetch_missing_models(
 /// Query an OpenAI-compatible `GET {base_url}/models` with Bearer auth (trying
 /// each key in the chain on 401/403, matching upstream resolution) and return
 /// the parsed, sorted, deduped ids from the response body. A provider with no
-/// key (a keyless local endpoint) is queried unauthenticated.
+/// key (a keyless local endpoint) is queried unauthenticated. A remote
+/// plaintext-`http` base URL is rejected up front so a bearer key is never
+/// sent over a cleartext connection (loopback `http` is allowed).
 async fn fetch_models(
     client: &reqwest::Client,
     base_url: &str,
     keys: &[String],
 ) -> Result<Vec<String>, String> {
+    if !(base_url.starts_with("https://")
+        || (base_url.starts_with("http://") && is_loopback_url(base_url)))
+    {
+        return Err(format!(
+            "base URL must be https:// (or http:// for localhost): {base_url}"
+        ));
+    }
     let url = format!("{}/models", base_url.trim_end_matches('/'));
     let mut last_err = format!("GET {url} failed");
     let attempts: Vec<Option<&String>> = if keys.is_empty() {
@@ -891,7 +916,7 @@ mod tests {
             .unwrap();
 
             let rt = tokio::runtime::Runtime::new().unwrap();
-            let populated = rt.block_on(fetch_missing_models(None)).expect("fetch");
+            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
             assert!(populated);
 
             let configs = load_global_config().unwrap();
@@ -920,7 +945,7 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
             // Nothing to fetch: the provider already names its models, so the
             // dead endpoint above must never be contacted.
-            let populated = rt.block_on(fetch_missing_models(None)).expect("fetch");
+            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
             assert!(!populated);
             let configs = load_global_config().unwrap();
             assert_eq!(configs.get("chosen").unwrap().models, vec!["my-model".to_string()]);
@@ -946,10 +971,43 @@ mod tests {
             .unwrap();
 
             let rt = tokio::runtime::Runtime::new().unwrap();
-            let populated = rt.block_on(fetch_missing_models(None)).expect("fetch");
+            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
             assert!(populated, "a keyless endpoint is queried unauthenticated");
             let configs = load_global_config().unwrap();
             assert_eq!(configs.get("local").unwrap().models, vec!["local-model".to_string()]);
+        });
+    }
+
+    #[test]
+    fn fetch_missing_models_short_circuits_already_probed() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            // A dead endpoint: if it were contacted, the 15s timeout would hang.
+            crate::core::agent::global_config::set_provider(
+                "dead",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("http://127.0.0.1:9/v1".into()), // refuses instantly
+                    models: Some(vec![]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let mut probed = std::collections::HashSet::new();
+            // First probe hits the dead endpoint (fast refusal) and warns.
+            let populated = rt
+                .block_on(fetch_missing_models(None, &mut probed))
+                .expect("fetch");
+            assert!(!populated);
+            assert_eq!(probed.len(), 1, "dead provider is recorded as probed");
+
+            // A second fetch must not re-contact the dead endpoint at all
+            // (the probed set short-circuits it), and must not error.
+            let again = rt
+                .block_on(fetch_missing_models(None, &mut probed))
+                .expect("second fetch");
+            assert!(!again, "already-probed provider is not re-fetched");
         });
     }
 }
