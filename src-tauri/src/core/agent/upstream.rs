@@ -571,6 +571,34 @@ pub(crate) fn is_context_overflow_error(err: &str) -> bool {
     err.contains(CONTEXT_OVERFLOW_MARKER)
 }
 
+/// True when the upstream rejected the request *because* an assistant turn
+/// carries `reasoning_content`. The field is a DeepSeek extension that some
+/// providers require to be resent (llama.cpp `preserve_thinking`) while strict
+/// OpenAI-compatible endpoints (Groq, vLLM's pydantic validation) reject the
+/// whole request rather than ignoring the unknown key. Recognizing it lets the
+/// caller drop the field and retry instead of failing the turn, so
+/// `send_reasoning` does not have to be configured per provider by hand.
+/// Requires both the field name and a rejection phrase: a body that merely
+/// echoes the request must not be read as a rejection of it.
+pub(crate) fn is_reasoning_field_error(err: &str) -> bool {
+    let e = err.to_lowercase();
+    e.contains("reasoning_content")
+        && [
+            "unsupported",
+            "unrecognized",
+            "unknown",
+            "not permitted",
+            "not allowed",
+            "unexpected",
+            "additional",
+            "extra input",
+            "extra field",
+            "invalid",
+        ]
+        .iter()
+        .any(|phrase| e.contains(phrase))
+}
+
 /// Every message in an error's `source()` chain, outermost cause first.
 /// `reqwest::Error` prints only its own layer -- `error sending request for url
 /// (...)` -- so the reason the request never left (DNS failure, refused
@@ -1505,6 +1533,27 @@ mod tests {
         let err = format!("[{CONTEXT_OVERFLOW_MARKER}] Upstream returned HTTP 400: ...");
         assert!(is_context_overflow_error(&err));
         assert!(!is_context_overflow_error("Upstream returned HTTP 500: boom"));
+    }
+
+    /// The shapes strict endpoints actually return, plus the two ways a false
+    /// positive would arise: an error that names the field without rejecting it,
+    /// and a rejection of some other field.
+    #[test]
+    fn detects_a_rejected_reasoning_content_field() {
+        for body in [
+            "Upstream returned HTTP 400: {\"error\":{\"message\":\"'messages.1' : for 'role':'assistant' the following must be satisfied[('messages.1.reasoning_content' : property 'reasoning_content' is unsupported)]\"}}",
+            "Upstream returned HTTP 400: Unrecognized request argument supplied: reasoning_content",
+            "Upstream returned HTTP 400: body.messages.1.reasoning_content: Extra inputs are not permitted",
+            "Upstream returned HTTP 400: Invalid value for 'reasoning_content'",
+        ] {
+            assert!(is_reasoning_field_error(body), "missed: {body}");
+        }
+        assert!(!is_reasoning_field_error(
+            "Upstream returned HTTP 500: reasoning_content was truncated"
+        ));
+        assert!(!is_reasoning_field_error(
+            "Upstream returned HTTP 400: property 'audio' is unsupported"
+        ));
     }
 
     #[test]
