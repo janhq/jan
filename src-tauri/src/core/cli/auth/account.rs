@@ -501,11 +501,170 @@ pub async fn refresh(provider: AccountProvider, token: &OAuthToken) -> Result<OA
     })
 }
 
+/// Test convenience: the Claude Code subscription access token from its stored
+/// JSON secret. [`claude_code_oauth`] feeds it the raw keychain payload.
+/// Returns `None` when the shape is absent or unparsable.
+#[cfg(test)]
+fn parse_claude_code_secret(raw: &str) -> Option<String> {
+    claude_code_oauth(raw).map(|oauth| oauth.access_token)
+}
+
+/// Parse the full `claudeAiOauth` block Claude Code stores in its keychain
+/// JSON into a Jan [`OAuthToken`] (access + refresh + expiry). Pure and
+/// unit-testable. Returns `None` when the block is absent or unparsable.
+fn claude_code_oauth(raw: &str) -> Option<OAuthToken> {
+    // Claude Code stores a JSON object with a `claudeAiOauth` block carrying
+    // accessToken/refreshToken/expiresAt. `expiresAt` is in epoch milliseconds;
+    // Jan's OAuthToken expires_at is in seconds.
+    let parsed: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let oauth = parsed.get("claudeAiOauth")?;
+    let access = oauth.get("accessToken")?.as_str()?;
+    if access.is_empty() {
+        return None;
+    }
+    let expires_at = oauth
+        .get("expiresAt")
+        .and_then(|value| value.as_i64())
+        .map(|millis| millis / 1000);
+    Some(OAuthToken {
+        access_token: access.to_string(),
+        refresh_token: oauth
+            .get("refreshToken")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        expires_at,
+        token_type: "Bearer".to_string(),
+        scopes: Vec::new(),
+    })
+}
+
+/// The clean generic macOS keychain descriptor type returned by the keyring
+/// crate for a `Claude Code-credentials` entry.
+fn claude_code_keychain_entry() -> Option<keyring::Entry> {
+    // The account name is the macOS login user, which the OS keychain keys the
+    // entry under. Claude Code names its service with the stable literal
+    // "Claude Code-credentials" (a second, machine-hashed service has the
+    // "Claude Code-credentials-<uuid>" shape and is not the live one).
+    let user = std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .ok()?;
+    keyring::Entry::new("Claude Code-credentials", &user).ok()
+}
+
+#[cfg(test)]
+static CLAUDE_ALIAS_ENABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(test)]
+fn claude_alias_enabled() -> bool {
+    CLAUDE_ALIAS_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[cfg(not(test))]
+fn claude_alias_enabled() -> bool {
+    true
+}
+
+/// Test-only: flip whether the Claude Code alias is consulted in production
+/// code paths from unit tests. Off by default so tests never touch the
+/// developer's keychain or a real omp install; on in production.
+#[cfg(test)]
+pub(crate) fn set_claude_alias(enabled: bool) {
+    CLAUDE_ALIAS_ENABLED.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+/// Resolve a working access token from Claude Code's keychain entry, refreshing
+/// it and writing the rotated token back into the same keychain entry (the
+/// single source of truth omp also reads) when it has expired. This keeps Jan
+/// usable unattended with the enterprise workspace's OAuth login without a
+/// browser re-consent, and omp re-reads its own keychain each launch so it
+/// stays current.
+async fn claude_code_access_token() -> Option<String> {
+    if !claude_alias_enabled() {
+        return None;
+    }
+    let entry = claude_code_keychain_entry()?;
+    let raw = entry.get_password().ok()?;
+    let oauth = claude_code_oauth(&raw)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs() as i64;
+    if oauth.expires_at.is_some_and(|expires_at| expires_at <= now + 300) {
+        match refresh(AccountProvider::Claude, &oauth).await {
+            Ok(fresh) => {
+                // Write the rotated token back into omp's keychain entry so the
+                // shared credential stays fresh even if Jan is the only client
+                // running. On writeback failure we still return the refreshed
+                // token so Jan keeps working for this session.
+                if write_claude_code_keychain(&entry, &raw, &fresh).is_err() {
+                    debug_log("claude alias: refreshed but could not write back to the Claude Code keychain");
+                }
+                return Some(fresh.access_token);
+            }
+            Err(error) => {
+                debug_log(&format!(
+                    "claude alias: could not refresh Claude Code token: {error}"
+                ));
+                return None;
+            }
+        }
+    }
+    Some(oauth.access_token)
+}
+
+/// Refresh-rotate the `claudeAiOauth` block inside a Claude Code keychain JSON
+/// document in place, preserving all other top-level fields (e.g. `mcpOAuth`,
+/// `claudeOauth`), so omp's entry is updated rather than replaced. Pure and
+/// unit-testable; [`write_claude_code_keychain`] persists the result.
+fn rotate_claude_code_secret(raw: &str, fresh: &OAuthToken) -> Result<String, String> {
+    let mut doc: serde_json::Value =
+        serde_json::from_str(raw).map_err(|_| "unparsable Claude Code secret".to_string())?;
+    let oauth = doc
+        .get_mut("claudeAiOauth")
+        .ok_or_else(|| "no claudeAiOauth block in Claude Code secret".to_string())?;
+    oauth["accessToken"] = serde_json::Value::String(fresh.access_token.clone());
+    if let Some(refresh_token) = &fresh.refresh_token {
+        oauth["refreshToken"] = serde_json::Value::String(refresh_token.clone());
+    }
+    if let Some(expires_at_secs) = fresh.expires_at {
+        // Claude Code stores expiresAt in epoch milliseconds.
+        oauth["expiresAt"] =
+            serde_json::Value::Number((expires_at_secs.saturating_mul(1000)).into());
+    }
+    Ok(doc.to_string())
+}
+
+/// Refresh-rotate the `claudeAiOauth` block inside a Claude Code keychain JSON
+/// document in place, preserving all other top-level fields (e.g. `mcpOAuth`,
+/// `claudeOauth`), so omp's entry is updated rather than replaced.
+fn write_claude_code_keychain(
+    entry: &keyring::Entry,
+    raw: &str,
+    fresh: &OAuthToken,
+) -> Result<(), String> {
+    let updated = rotate_claude_code_secret(raw, fresh)?;
+    entry
+        .set_password(&updated)
+        .map_err(|error| format!("could not update the Claude Code keychain: {error}"))
+}
+
+/// Resolve a working access token for `provider`, preferring Jan's own stored
+/// credential. For the Claude provider, when Jan has no account credential of
+/// its own, this falls back to Claude Code's keychain token (see
+/// [`claude_code_access_token`]) so the enterprise subscription quota is the
+/// same one omp uses.
 pub async fn access_token(provider: &str) -> Result<Option<String>, String> {
     let Some(provider_kind) = AccountProvider::from_credential_provider(provider) else {
         return Ok(None);
     };
-    let Some(Credential::OAuthToken(token)) = CredentialStore::load(provider)? else {
+    let stored = CredentialStore::load(provider)?;
+    let Some(Credential::OAuthToken(token)) = stored else {
+        // No Jan-owned credential: alias Claude Code's token (Claude only).
+        if provider_kind == AccountProvider::Claude {
+            if let Some(access) = claude_code_access_token().await {
+                return Ok(Some(access));
+            }
+        }
         return Ok(None);
     };
     let now = std::time::SystemTime::now()
@@ -535,8 +694,13 @@ pub fn store(provider: AccountProvider, token: &OAuthToken) -> Result<(), String
 // surfacing later as mysterious rate-limit errors. Best-effort: never fails
 // a login; on any error it returns the given `fallback` message.
 pub async fn claude_plan_summary(fallback: &str) -> String {
-    let Ok(Some(Credential::OAuthToken(token))) =
-        CredentialStore::load(AccountProvider::Claude.credential_provider())
+    // Resolve through access_token so the probe sees the same token the
+    // request path uses: Jan's own credential when present, otherwise the
+    // read-only Claude Code alias (see claude_code_access_token).
+    let Some(token) = access_token(AccountProvider::Claude.credential_provider())
+        .await
+        .ok()
+        .flatten()
     else {
         return fallback.to_string();
     };
@@ -561,7 +725,7 @@ pub async fn claude_plan_summary(fallback: &str) -> String {
         });
         let probe = client
             .post("https://api.anthropic.com/v1/messages")
-            .header("Authorization", format!("Bearer {}", token.access_token))
+            .header("Authorization", format!("Bearer {token}"))
             .header("anthropic-beta", "oauth-2025-04-20,claude-code-20250219")
             .header("anthropic-version", "2023-06-01")
             .json(&body)
@@ -582,7 +746,7 @@ fn claude_plan_message(heavy_ok: bool) -> String {
     if heavy_ok {
         "Claude account resolved with heavy-model access (enterprise/premium quota in effect). Models check out: claude-sonnet-5 and claude-haiku-4-5 both respond.".to_string()
     } else {
-        "Claude account resolved to a plan without heavy-model access (likely the free personal plan): claude-sonnet-5 is rate-limited (429) while claude-haiku-4-5 works. If this account belongs to an enterprise team, re-authorize with the enterprise workspace active on claude.ai.".to_string()
+        "Claude account resolves to a plan without heavy-model access (likely the free personal plan): claude-sonnet-5 is rate-limited (429) while claude-haiku-4-5 works. This is a quota/entitlement boundary, not a sign-in problem, so reusing Claude Code's saved login (sign out with x on the picker) inherits whatever quota that workspace carries - heavy-model access only improves if your Claude Code workspace has a premium allowance.".to_string()
     }
 }
 
@@ -742,7 +906,15 @@ mod tests {
     use crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK;
     use std::io::{Read, Write};
     use std::net::TcpListener;
-    use std::sync::{mpsc, MutexGuard};
+    use std::sync::{mpsc, Mutex, MutexGuard};
+
+    /// Serializes the two tests that mutate the process-global Claude alias
+    /// latch, which cargo runs in parallel threads.
+    static ALIAS_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn alias_test_lock() -> MutexGuard<'static, ()> {
+        ALIAS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     struct TempSecrets {
         _guard: MutexGuard<'static, ()>,
@@ -1534,15 +1706,112 @@ mod tests {
         assert!(text.contains("claude-sonnet-5"), "{text}");
         assert!(text.contains("429"), "{text}");
         assert!(text.contains("claude-haiku-4-5"), "{text}");
+        // The guidance must be honest that 429 is a quota boundary, not a
+        // sign-in problem, so it never promises a sign-out unlocks heavy models.
+        assert!(text.contains("quota"), "{text}");
+        assert!(!text.contains("it will reuse Claude Code's existing login, which carries the workspace you approved there"), "{text}");
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn claude_plan_summary_falls_back_when_no_credential() {
+        let _alias = alias_test_lock();
+        set_claude_alias(false);
         let _temp = TempSecrets::new();
-        // No Claude credential is stored in the fresh temp home, so the
-        // function must produce the fallback line rather than panic/fail.
+        // No Claude credential is stored in the fresh temp home, and the alias
+        // is pinned off, so the function must produce the fallback line.
         let summary = claude_plan_summary("fallback-line").await;
         assert_eq!(summary, "fallback-line");
+    }
+    #[test]
+    fn claude_code_secret_extracts_the_access_token() {
+        let secret = r#"{"mcpOAuth":{},"claudeAiOauth":{"accessToken":"sk-ant-oat01-abc","refreshToken":"sk-ant-ort01-def","expiresAt":1786970599091,"scopes":["user:inference"]}}"#;
+        assert_eq!(
+            parse_claude_code_secret(secret).as_deref(),
+            Some("sk-ant-oat01-abc")
+        );
+        // A missing/empty access token must not come through as Some("").
+        assert_eq!(parse_claude_code_secret(r#"{"claudeAiOauth":{"accessToken":""}}"#), None);
+        assert_eq!(
+            parse_claude_code_secret(r#"{"claudeAiOauth":{"refreshToken":"sk-ant-ort01-x"}}"#),
+            None
+        );
+        assert_eq!(parse_claude_code_secret("not json"), None);
+    }
+    #[test]
+    fn claude_code_oauth_converts_expiry_to_seconds_and_carries_refresh() {
+        // expiresAt is stored in epoch milliseconds; OAuthToken.expires_at is
+        // in seconds. 1786970599091 ms -> 1786970599 s.
+        let oauth = claude_code_oauth(
+            r#"{"claudeAiOauth":{"accessToken":"sk-ant-oat01-abc","refreshToken":"sk-ant-ort01-def","expiresAt":1786970599091}}"#,
+        )
+        .expect("parseable");
+        assert_eq!(oauth.access_token, "sk-ant-oat01-abc");
+        assert_eq!(oauth.refresh_token.as_deref(), Some("sk-ant-ort01-def"));
+        assert_eq!(oauth.expires_at, Some(1786970599));
+    }
+
+    #[test]
+    fn rotate_claude_code_secret_preserves_unrelated_fields_and_rotates_ms() {
+        let fresh = OAuthToken {
+            access_token: "sk-ant-oat01-new".to_string(),
+            refresh_token: Some("sk-ant-ort01-new".to_string()),
+            expires_at: Some(1_800_000_000),
+            token_type: "Bearer".to_string(),
+            scopes: vec!["user:inference".to_string()],
+        };
+        let updated = rotate_claude_code_secret(
+            r#"{"mcpOAuth":{"some":"kept"},"claudeAiOauth":{"accessToken":"old","refreshToken":"oldrt","expiresAt":1000},"claudeOauth":{"x":1}}"#,
+            &fresh,
+        )
+        .expect("rotates");
+        let doc: serde_json::Value = serde_json::from_str(&updated).unwrap();
+        // Unrelated top-level blocks are preserved.
+        assert_eq!(doc["mcpOAuth"]["some"], "kept");
+        assert_eq!(doc["claudeOauth"]["x"], 1);
+        // The oauth block is rotated; expiresAt written back in milliseconds.
+        assert_eq!(doc["claudeAiOauth"]["accessToken"], "sk-ant-oat01-new");
+        assert_eq!(doc["claudeAiOauth"]["refreshToken"], "sk-ant-ort01-new");
+        assert_eq!(doc["claudeAiOauth"]["expiresAt"], 1_800_000_000_000_i64);
+    }
+
+    #[test]
+    fn rotate_claude_code_secret_rejects_missing_oauth_block() {
+        assert!(rotate_claude_code_secret(
+            r#"{"mcpOAuth":{}}"#,
+            &OAuthToken {
+                access_token: "x".to_string(),
+                refresh_token: None,
+                expires_at: None,
+                token_type: "Bearer".to_string(),
+                scopes: Vec::new(),
+            }
+        )
+        .is_err());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn claude_alias_is_off_by_default_in_tests() {
+        let _guard = alias_test_lock();
+        set_claude_alias(false);
+        assert!(!claude_alias_enabled());
+        assert_eq!(claude_code_access_token().await, None);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn claude_alias_toggle_controls_the_lookup_gate() {
+        let _guard = alias_test_lock();
+        set_claude_alias(false);
+        // Off: the keychain is never touched, so this is deterministic None
+        // even on a machine with Claude Code / omp installed.
+        assert_eq!(claude_code_access_token().await, None);
+        set_claude_alias(true);
+        assert!(claude_alias_enabled());
+        // On: it may surface a real token (on a machine with omp signed in) or
+        // None (sandboxed/CI); either is a valid gate result, so only assert
+        // the gate flips without panicking.
+        let _ = claude_code_access_token().await;
+        set_claude_alias(false);
+        assert!(!claude_alias_enabled());
     }
 
     #[test]
