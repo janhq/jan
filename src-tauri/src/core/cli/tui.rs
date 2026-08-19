@@ -41,7 +41,7 @@ use markdown::{
 };
 
 use super::brand;
-use super::journal::{self, DisplayEntry};
+use super::journal::{self, DisplayEntry, ReasoningSeg};
 use super::mcp::McpServerEntry;
 use super::{sort_threads_recent, AgentSession, ResumeTarget, SessionLimits};
 use serde_json::Value;
@@ -1909,36 +1909,42 @@ impl App {
 
     fn flush_assistant(&mut self) {
         let segs = std::mem::take(&mut self.reasoning_segs);
-        let text = fold_native_reasoning(&self.assistant_buf, &segs)
-            .trim_end()
-            .to_string();
+        let prose = self.assistant_buf.trim_end().to_string();
         self.assistant_buf.clear();
         // The buffered stream is committed: any open reasoning window closes
         // (its elapsed time was stashed when the block itself closed, so this
         // only matters for a flush that happens mid-block, e.g. a tool call).
         self.thinking_since = None;
         // No-op (and, crucially, don't finalize the tool group) on an empty or
-        // whitespace-only buffer, so silent consecutive tool calls keep folding.
-        if !assistant_has_content(&text) {
+        // whitespace-only turn, so silent consecutive tool calls keep folding.
+        if !assistant_has_content(&prose, &segs) {
             return;
         }
         // Model prose ends the current run of tool calls.
         self.finalize_tool_group();
-        // Native reasoning is already folded into `text` as wrapped blocks at the
-        // offsets it streamed at. Display-logged here (out of `history` on
-        // purpose) so the replay folds it like the live turn did.
+        // Display-logged here (out of `history` on purpose) so the replay folds
+        // reasoning like the live turn did. Prose and reasoning are journaled
+        // apart, exactly as they arrived.
         self.display_log.push(DisplayEntry::Assistant {
-            text: text.clone(),
+            text: prose.clone(),
+            reasoning: segs.clone(),
         });
-        self.push_assistant_blocks(&text);
+        self.push_assistant_blocks(&prose, &segs);
     }
 
     /// Commit assistant `text` to the transcript in emission order: answer prose
     /// through markdown, each `<think>` block folded to a one-line summary row
     /// whose full dimmed detail is retained for expansion.
-    fn push_assistant_blocks(&mut self, text: &str) {
-        let text = strip_system_xml_tags(text);
-        for (reasoning, seg) in split_reasoning(&text) {
+    fn push_assistant_blocks(&mut self, prose: &str, segs: &[ReasoningSeg]) {
+        for (reasoning, seg) in assistant_runs(prose, segs) {
+            // Only answer prose can carry an injected `<system>` block; stripping
+            // per run rather than over the whole turn keeps the reasoning
+            // offsets meaningful.
+            let seg = if reasoning {
+                seg
+            } else {
+                strip_system_xml_tags(&seg).to_string()
+            };
             if seg.trim().is_empty() {
                 continue;
             }
@@ -2201,13 +2207,6 @@ impl App {
                 .reasoning_segs
                 .last()
                 .is_some_and(|seg| seg.at == self.assistant_buf.len())
-    }
-
-    /// The live assistant text with native reasoning folded in as wrapped blocks,
-    /// exactly as `flush_assistant` will commit it. Lets the shared renderer
-    /// treat native and inline-tag reasoning identically while streaming.
-    fn live_assistant_text(&self) -> String {
-        fold_native_reasoning(&self.assistant_buf, &self.reasoning_segs)
     }
 
     /// Header status while a turn is running with reasoning folding on:
@@ -3676,7 +3675,7 @@ impl App {
 
     /// The concatenated natively-streamed reasoning text for the current turn.
     /// Used to resend the final answer's reasoning on the wire. Inline
-    /// ` thinking` blocks (which arrive through `Token` and live in the buffer)
+    /// `<think>` blocks (which arrive through `Token` and live in the buffer)
     /// are handled separately by `answer_without_reasoning` and the loop path;
     /// this covers the `reasoning_content` delta case, which never touches the
     /// buffer.
@@ -5036,8 +5035,9 @@ fn has_answer_text(buf: &str) -> bool {
 }
 
 /// `text` with its reasoning removed, for the copy that goes into `history`.
-/// Reasoning is display-only and must never be resent to the model (see
-/// `SseAccumulator`); the display journal is what keeps it for a resume.
+/// Reasoning never belongs in `content`; it rides along on the message's
+/// `reasoning_content` instead (see `on_done`), and the display journal is what
+/// keeps it for a resume.
 pub(crate) fn answer_without_reasoning(text: &str) -> String {
     split_reasoning(text)
         .into_iter()
@@ -5124,10 +5124,61 @@ fn think_re() -> &'static regex::Regex {
     RE.get_or_init(|| regex::Regex::new(r"</?[a-zA-Z:]*think>").unwrap())
 }
 
+/// Whether inline `<think>` tags in model content are parsed as reasoning.
+/// Process-wide rather than a session field because the split runs on every
+/// rendered row, from free functions a `Row` reaches with no session in hand.
+/// Seeded once from `~/.jan/config.toml` by `set_think_tags_parsed`; `true`
+/// until then, which is also the default.
+static PARSE_THINK_TAGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+#[cfg(test)]
+thread_local! {
+    /// Per-test override. A test flips its own thread's answer instead of the
+    /// shared static, so a gate-off test cannot race the rest of the suite.
+    static PARSE_THINK_TAGS_OVERRIDE: std::cell::Cell<Option<bool>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Apply the `think_tags` setting for the process. Called once per session from
+/// `prepare_agent_session`, the chokepoint every agent surface goes through.
+pub(crate) fn set_think_tags_parsed(enabled: bool) {
+    PARSE_THINK_TAGS.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn think_tags_parsed() -> bool {
+    #[cfg(test)]
+    {
+        if let Some(over) = PARSE_THINK_TAGS_OVERRIDE.with(|c| c.get()) {
+            return over;
+        }
+    }
+    PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Run `f` with `<think>` parsing off on this thread only.
+#[cfg(test)]
+fn without_think_tags<T>(f: impl FnOnce() -> T) -> T {
+    PARSE_THINK_TAGS_OVERRIDE.with(|c| c.set(Some(false)));
+    let out = f();
+    PARSE_THINK_TAGS_OVERRIDE.with(|c| c.set(None));
+    out
+}
+
 /// Split assistant text into `(is_reasoning, segment)` runs by `<think>` /
 /// `<mm:think>` tags (tags themselves dropped). An unterminated open tag makes
 /// the trailing text reasoning, which keeps live streaming clean.
+///
+/// With `think_tags = false` in `~/.jan/config.toml` the tags carry no meaning:
+/// the whole text is one answer run, so it renders verbatim and stays in the
+/// answer that goes back as history.
 fn split_reasoning(text: &str) -> Vec<(bool, String)> {
+    if !think_tags_parsed() {
+        return if text.is_empty() {
+            Vec::new()
+        } else {
+            vec![(false, text.to_string())]
+        };
+    }
     let mut out = Vec::new();
     let mut in_think = false;
     let mut last = 0;
@@ -5146,53 +5197,44 @@ fn split_reasoning(text: &str) -> Vec<(bool, String)> {
     out
 }
 
-/// One stretch of natively streamed reasoning, anchored to the byte offset in
-/// `App::assistant_buf` it arrived at, so it can be folded back into the answer
-/// text in emission order.
-#[derive(Debug, Clone, PartialEq)]
-struct ReasoningSeg {
-    at: usize,
-    text: String,
-}
-
-/// Splice native reasoning segments into `prose` as `<think>` blocks at the
-/// offsets they streamed at, yielding the one string form both the live renderer
-/// and the display journal use. Offsets come from `prose.len()` at emission time,
-/// so they are always char boundaries and always ascending.
-fn fold_native_reasoning(prose: &str, segs: &[ReasoningSeg]) -> String {
+/// Interleave a turn's answer prose with its natively streamed reasoning
+/// segments into `(is_reasoning, run)` in emission order -- the one form every
+/// consumer (live tail, committed rows, replay) reads.
+///
+/// The two sources stay apart end to end: native reasoning arrives structurally
+/// and is placed by its offset, never encoded into the prose, while an
+/// inline-tag provider's `<think>` markers are found by `split_reasoning` inside
+/// the prose runs alone. So a model writing about `<think>` tags cannot close a
+/// native block, and the `think_tags` gate governs only the inline case.
+///
+/// Offsets come from `prose.len()` at emission time, so they are always char
+/// boundaries and always ascending.
+fn assistant_runs(prose: &str, segs: &[ReasoningSeg]) -> Vec<(bool, String)> {
     if segs.is_empty() {
-        return prose.to_string();
+        return split_reasoning(prose);
     }
-    let extra: usize = segs.iter().map(|s| s.text.len() + 16).sum();
-    let mut out = String::with_capacity(prose.len() + extra);
+    let mut out = Vec::new();
     let mut last = 0;
     for seg in segs {
-        let at = seg.at.min(prose.len());
-        out.push_str(&prose[last..at]);
-        if !seg.text.trim().is_empty() {
-            out.push_str("<think>");
-            out.push_str(escape_think_tags(seg.text.trim_end()).trim_end());
-            out.push_str("</think>");
+        let at = seg.at.min(prose.len()).max(last);
+        out.extend(split_reasoning(&prose[last..at]));
+        let text = seg.text.trim_end();
+        if !text.is_empty() {
+            out.push((true, text.to_string()));
         }
         last = at;
     }
-    out.push_str(&prose[last..]);
+    out.extend(split_reasoning(&prose[last..]));
     out
-}
-
-/// Neutralize `<think>`-family tags inside reasoning text before it is wrapped in
-/// one. A model reasoning *about* thinking tags would otherwise close the block
-/// early and have the rest of its thought rendered and journaled as answer prose.
-fn escape_think_tags(text: &str) -> std::borrow::Cow<'_, str> {
-    think_re().replace_all(text, |m: &regex::Captures| {
-        format!("&lt;{}", &m[0][1..])
-    })
 }
 
 /// True if `text` ends inside an unclosed ` think>` block (an opening tag whose
 /// matching close has not yet streamed). Used to show `[thinking]` while
 /// reasoning streams. Re-uses the same tag matcher as `split_reasoning`.
 fn thinking_open(text: &str) -> bool {
+    if !think_tags_parsed() {
+        return false;
+    }
     let mut open = false;
     for m in think_re().find_iter(text) {
         open = !m.as_str().starts_with("</");
@@ -5200,9 +5242,9 @@ fn thinking_open(text: &str) -> bool {
     open
 }
 
-/// True if `text` has any non-whitespace content in any reasoning/answer run.
-fn assistant_has_content(text: &str) -> bool {
-    split_reasoning(text)
+/// True if the turn has any non-whitespace content in any reasoning/answer run.
+fn assistant_has_content(prose: &str, segs: &[ReasoningSeg]) -> bool {
+    assistant_runs(prose, segs)
         .iter()
         .any(|(_, seg)| !seg.trim().is_empty())
 }
@@ -9258,8 +9300,9 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
             // the blocks directly leaves the group open, so every later call
             // folds back into one row that is never committed -- the whole turn's
             // tool calls then render as nothing at all.
-            DisplayEntry::Assistant { text } => {
+            DisplayEntry::Assistant { text, reasoning } => {
                 app.assistant_buf = text.clone();
+                app.reasoning_segs = reasoning.clone();
                 app.flush_assistant();
             }
             DisplayEntry::ToolCall { id, name, args } => app.apply(StreamEvent::ToolCall {
@@ -9336,7 +9379,7 @@ fn rebuild_transcript(app: &mut App) {
         } else if role == "assistant" {
             let text = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
             if !text.is_empty() {
-                app.push_assistant_blocks(text);
+                app.push_assistant_blocks(text, &[]);
             }
         }
     }
@@ -9835,10 +9878,14 @@ fn draw(f: &mut Frame, app: &mut App) {
     // are rebuilt every frame and ride along as one trailing segment.
     let mut tail: Vec<Line<'static>> = Vec::new();
     if !app.assistant_buf.is_empty() || !app.reasoning_segs.is_empty() {
-        // Native reasoning is folded into a wrapped block beside the live text
-        // so the shared renderer dims/folds it exactly like inline-tag providers.
-        let live_text = app.live_assistant_text();
-        let live = live_assistant_lines(&live_text, width, !app.show_reasoning);
+        // Native reasoning is placed beside the live prose by its offset, so the
+        // shared renderer dims/folds it exactly like inline-tag providers.
+        let live = live_assistant_lines(
+            &app.assistant_buf,
+            &app.reasoning_segs,
+            width,
+            !app.show_reasoning,
+        );
         if !live.is_empty() {
             // Mirror flush_assistant's `gap(Kind::Prose)` so the separator above
             // streaming prose is present live, not only once it is finalized.
@@ -11639,6 +11686,8 @@ mod tests {
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
         run_command, starting_call_lines, unescape_partial_json_string,
         running_group_rows, split_reasoning, strip_system_xml_tags, subagent_activity,
+        answer_without_reasoning, assistant_runs, replay_display_log, thinking_open,
+        without_think_tags, ReasoningSeg,
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
         transcript_top_padding, rewind_to,
@@ -11990,6 +12039,7 @@ mod tests {
         app.push_assistant_blocks(
             "| column one heading | column two heading |\n|---|---|\n\
              | a reasonably long value here | another reasonably long value |",
+            &[],
         );
         let wide = render_rows(&mut app, 100, 20);
         let narrow = render_rows(&mut app, 46, 20);
@@ -12414,7 +12464,7 @@ mod tests {
     fn tiny_frames_render_without_panicking() {
         let mut app = test_app();
         app.push_user_line("hello", &[]);
-        app.push_assistant_blocks("| a | b |\n|---|---|\n| 1 | 2 |\n\n```rs\nlet x = 1;\n```");
+        app.push_assistant_blocks("| a | b |\n|---|---|\n| 1 | 2 |\n\n```rs\nlet x = 1;\n```", &[]);
         app.apply(StreamEvent::ToolResult {
             id: "x".into(),
             content: "done".into(),
@@ -12786,6 +12836,156 @@ mod tests {
     fn split_reasoning_handles_namespaced_and_unterminated_tags() {
         let segs = split_reasoning("<mm:think>reasoning tail");
         assert_eq!(segs, vec![(true, "reasoning tail".to_string())]);
+    }
+
+    /// With `think_tags = false` the tags carry no meaning: one answer run, so
+    /// the text renders verbatim instead of folding into a reasoning block.
+    #[test]
+    fn think_tags_gate_off_makes_the_whole_text_answer_prose() {
+        let text = "before<think>hidden</think>after";
+        let segs = without_think_tags(|| split_reasoning(text));
+        assert_eq!(segs, vec![(false, text.to_string())]);
+    }
+
+    /// The tags stay in the answer that goes back as history: not parsing them
+    /// means there is no reasoning to strip.
+    #[test]
+    fn think_tags_gate_off_keeps_the_tags_in_the_wire_answer() {
+        let text = "<think>hidden</think>answer";
+        assert_eq!(
+            without_think_tags(|| answer_without_reasoning(text)),
+            text,
+            "nothing is reasoning with the gate off"
+        );
+        assert_eq!(
+            answer_without_reasoning(text),
+            "answer",
+            "the default still strips it"
+        );
+    }
+
+    /// An unterminated tag no longer opens a thinking window, so the header
+    /// badge and the folded live tail stay off.
+    #[test]
+    fn think_tags_gate_off_never_reports_an_open_block() {
+        assert!(thinking_open("<think>still going"));
+        assert!(!without_think_tags(|| thinking_open("<think>still going")));
+    }
+
+    /// A journal written before reasoning was stored apart has its markers
+    /// inside `text` and no `reasoning` field. It must still replay as a folded
+    /// block: the markers go down the inline path, which is exactly what they
+    /// were before the split.
+    #[test]
+    fn a_pre_split_journal_entry_still_replays_its_reasoning() {
+        let raw = r#"{"kind":"assistant","text":"<think>old thought</think>Answer."}"#;
+        let entry: DisplayEntry = serde_json::from_str(raw).expect("legacy entry parses");
+        assert_eq!(
+            entry,
+            DisplayEntry::Assistant {
+                text: "<think>old thought</think>Answer.".into(),
+                reasoning: Vec::new(),
+            }
+        );
+        let mut app = test_app();
+        replay_display_log(&mut app, vec![entry]);
+        assert_eq!(
+            app.reasoning_blocks.len(),
+            1,
+            "legacy markers must still fold into a reasoning block"
+        );
+    }
+
+    /// A turn journaled with reasoning apart replays to the same rows, without
+    /// any marker round-trip.
+    #[test]
+    fn a_split_journal_entry_replays_prose_and_reasoning_apart() {
+        let entry = DisplayEntry::Assistant {
+            text: "Answer.".into(),
+            reasoning: vec![ReasoningSeg { at: 0, text: "a thought".into() }],
+        };
+        let round_tripped: DisplayEntry =
+            serde_json::from_str(&serde_json::to_string(&entry).unwrap()).unwrap();
+        assert_eq!(round_tripped, entry);
+        let mut app = test_app();
+        replay_display_log(&mut app, vec![entry]);
+        assert_eq!(app.reasoning_blocks.len(), 1);
+    }
+
+    /// The gate governs inline tags only. Native reasoning is carried
+    /// structurally, so it keeps rendering as its own run either way.
+    #[test]
+    fn think_tags_gate_does_not_touch_native_reasoning() {
+        let segs = vec![ReasoningSeg {
+            at: 0,
+            text: "a thought".into(),
+        }];
+        let expected = vec![
+            (true, "a thought".to_string()),
+            (false, "answer".to_string()),
+        ];
+        assert_eq!(assistant_runs("answer", &segs), expected);
+        assert_eq!(
+            without_think_tags(|| assistant_runs("answer", &segs)),
+            expected,
+            "native reasoning is not encoded as tags, so the gate cannot hide it"
+        );
+    }
+
+    /// Native segments are placed at the offset they streamed at, so a turn that
+    /// reasons, answers, then reasons again keeps emission order.
+    #[test]
+    fn assistant_runs_interleaves_native_reasoning_by_offset() {
+        let segs = vec![
+            ReasoningSeg { at: 0, text: "first".into() },
+            ReasoningSeg { at: 6, text: "second".into() },
+        ];
+        assert_eq!(
+            assistant_runs("prose tail", &segs),
+            vec![
+                (true, "first".to_string()),
+                (false, "prose ".to_string()),
+                (true, "second".to_string()),
+                (false, "tail".to_string()),
+            ]
+        );
+    }
+
+    /// A model writing *about* think tags cannot close a native reasoning
+    /// segment: the two sources never share a string, so no escaping is needed.
+    #[test]
+    fn a_think_tag_inside_native_reasoning_stays_in_that_run() {
+        let segs = vec![ReasoningSeg {
+            at: 0,
+            text: "the </think> tag closes a block".into(),
+        }];
+        assert_eq!(
+            assistant_runs("answer", &segs),
+            vec![
+                (true, "the </think> tag closes a block".to_string()),
+                (false, "answer".to_string()),
+            ]
+        );
+    }
+
+    /// The gate reaches the App: a turn whose content carries tags commits them
+    /// as ordinary prose, with no reasoning block folded out of the transcript.
+    #[test]
+    fn think_tags_gate_off_commits_tagged_content_as_one_answer() {
+        without_think_tags(|| {
+            let mut app = test_app();
+            app.submit_user("go".into());
+            app.apply(StreamEvent::Token {
+                text: "<think>ponder</think>Answer.".into(),
+            });
+            app.on_done("stop".into(), None);
+            assert!(
+                app.reasoning_blocks.is_empty(),
+                "nothing may fold with the gate off"
+            );
+            let last = app.history.last().expect("assistant turn in history");
+            assert_eq!(last["content"], "<think>ponder</think>Answer.");
+        });
     }
 
     #[test]
@@ -16877,7 +17077,7 @@ mod tests {
         // its header row can scroll out of view. A click on any of its detail
         // rows -- not just the header -- must still collapse it.
         let mut app = test_app();
-        app.push_assistant_blocks("<think>line one\nline two\nline three</think>answer");
+        app.push_assistant_blocks("<think>line one\nline two\nline three</think>answer", &[]);
         assert_eq!(app.reasoning_blocks.len(), 1);
         let idx = app.reasoning_blocks[0].idx;
 
@@ -18435,9 +18635,11 @@ mod tests {
             "reasoning rendered as answer prose: {rows}"
         );
         assert_eq!(app.reasoning_blocks.len(), 1, "one folded reasoning block");
+        // Kept verbatim: reasoning never shares a string with the prose, so
+        // there is no block for the tag to close and nothing to neutralize.
         assert!(
-            detail_text(&app.reasoning_blocks[0]).contains("&lt;/think>"),
-            "the tag is neutralized, not dropped: {}",
+            detail_text(&app.reasoning_blocks[0]).contains("</think>"),
+            "the tag is preserved as written: {}",
             detail_text(&app.reasoning_blocks[0])
         );
     }
@@ -18454,7 +18656,9 @@ mod tests {
         app.apply(StreamEvent::Token { text: " Part two.".into() });
         app.on_done("stop".into(), None);
         assert_eq!(app.reasoning_blocks.len(), 2, "two separate stretches");
-        let DisplayEntry::Assistant { text } = app
+        // Journaled apart: prose verbatim, each stretch at the offset it
+        // streamed at, so a replay rebuilds the order without parsing markers.
+        let DisplayEntry::Assistant { text, reasoning } = app
             .display_log
             .iter()
             .rev()
@@ -18463,9 +18667,13 @@ mod tests {
         else {
             unreachable!()
         };
+        assert_eq!(text, "Part one. Part two.");
         assert_eq!(
-            text,
-            "<think>first thought</think>Part one.<think>second thought</think> Part two."
+            reasoning,
+            &vec![
+                ReasoningSeg { at: 0, text: "first thought".into() },
+                ReasoningSeg { at: 9, text: "second thought".into() },
+            ]
         );
         // The wire answer is prose only; both thoughts ride along on
         // `reasoning_content`, concatenated in emission order.

@@ -4,11 +4,17 @@
 
 use ratatui::prelude::*;
 
-/// Render assistant text to styled lines: reasoning dimmed, answer prose passed
-/// through markdown formatting. `width` bounds table wrapping.
-pub(super) fn format_assistant_lines(text: &str, width: u16) -> Vec<Line<'static>> {
+/// Render a turn to styled lines: reasoning dimmed, answer prose passed through
+/// markdown formatting. Native reasoning arrives as `segs` and is placed by its
+/// offset; inline `<think>` markers are found inside the prose. `width` bounds
+/// table wrapping.
+pub(super) fn format_assistant_lines(
+    prose: &str,
+    segs: &[super::ReasoningSeg],
+    width: u16,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    for (reasoning, seg) in super::split_reasoning(text) {
+    for (reasoning, seg) in super::assistant_runs(prose, segs) {
         if reasoning {
             lines.extend(reasoning_detail_lines(&seg));
         } else {
@@ -24,12 +30,17 @@ pub(super) fn format_assistant_lines(text: &str, width: u16) -> Vec<Line<'static
 /// `[thinking]` header state; once the tag closes (or prose begins) the rest
 /// renders as usual. When folding is off this is identical to
 /// `format_assistant_lines`, so the existing live-tail tests hold.
-pub(super) fn live_assistant_lines(text: &str, width: u16, fold_reasoning: bool) -> Vec<Line<'static>> {
+pub(super) fn live_assistant_lines(
+    prose: &str,
+    segs: &[super::ReasoningSeg],
+    width: u16,
+    fold_reasoning: bool,
+) -> Vec<Line<'static>> {
     if !fold_reasoning {
-        return format_assistant_lines(text, width);
+        return format_assistant_lines(prose, segs, width);
     }
     let mut lines = Vec::new();
-    for (reasoning, seg) in super::split_reasoning(text) {
+    for (reasoning, seg) in super::assistant_runs(prose, segs) {
         if reasoning {
             // Folded: the streaming content is hidden; nothing to show. (Once it
             // commits, `push_assistant_blocks` emits the summary row instead.)

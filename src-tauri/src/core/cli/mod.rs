@@ -905,6 +905,10 @@ fn prepare_agent_session(
         None
     };
 
+    // `think_tags` is user-wide and read from free rendering functions, so it is
+    // applied to the process here, the one path every agent surface takes.
+    tui::set_think_tags_parsed(crate::core::agent::global_config::think_tags_enabled());
+
     let permission_requests: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
     let max_parallel_subagents = cfg
         .agent
