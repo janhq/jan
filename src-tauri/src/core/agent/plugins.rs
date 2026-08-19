@@ -17,6 +17,7 @@
 //! plugins: `[{ "name", "description", "repo", "ref"? }]`. `install <name>`
 //! resolves through it; `install <git-url>` skips it entirely.
 
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -32,9 +33,17 @@ use crate::core::agent::skills;
 const SHELL_METACHARS: &[char] = &[
     ';', '&', '|', '`', '$', '(', ')', '{', '}', '<', '>', '\\', '\n', '\r', '\t',
 ];
-
 const USER_AGENT: &str = "jan-agent-plugin-manager";
-
+// How a bare collection URL that holds several plugins is resolved after the
+// clone. A collection has no payload at the root, so we enumerate the plugins
+// inside it and either ask the user which one to install (interactive CLI) or
+// fail with an actionable listing (TUI/desktop, where stdin is owned by the
+// render loop and cannot be read mid-install).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CollectionChoice {
+    ListError,
+    Prompt,
+}
 /// An installed plugin, from its directory plus optional manifest.
 #[derive(Debug, serde::Serialize, Clone)]
 pub struct InstalledPlugin {
@@ -274,6 +283,47 @@ fn find_plugin_dirs(root: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// Present the plugin choices of a collection to the user on stdout and return
+/// the index of the chosen relative path, reading the answer from `input`. The
+/// caller has already cloned the collection, so this only asks which plugin to
+/// install. Entering a blank line cancels.
+fn prompt_plugin_choice(url: &str, paths: &[String], input: &mut dyn io::BufRead) -> Result<usize, String> {
+    let mut stdout = io::stdout().lock();
+    writeln!(stdout, "'{url}' is a plugin collection ({n} plugins):", n = paths.len())
+        .map_err(|e| format!("ERROR: {e}"))?;
+    for (i, p) in paths.iter().enumerate() {
+        writeln!(stdout, "  {}. {p}", i + 1).map_err(|e| format!("ERROR: {e}"))?;
+    }
+    writeln!(stdout, "Which plugin do you want to install? (1-{}) [enter to cancel]:", paths.len())
+        .map_err(|e| format!("ERROR: {e}"))?;
+    let _ = stdout.flush();
+
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match input.read_line(&mut line) {
+            Ok(0) => return Err("ERROR: no plugin selected - install aborted".into()),
+            Ok(_) => {}
+            Err(e) => return Err(format!("ERROR: reading plugin choice: {e}")),
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return Err("ERROR: no plugin selected - install aborted".into());
+        }
+        match trimmed.parse::<usize>() {
+            Ok(n) if (1..=paths.len()).contains(&n) => return Ok(n - 1),
+            _ => {
+                writeln!(
+                    stdout,
+                    "'{trimmed}' is not a valid choice; enter a number 1-{} [enter to cancel]:",
+                    paths.len()
+                )
+                .map_err(|e| format!("ERROR: {e}"))?;
+                let _ = stdout.flush();
+            }
+        }
+    }
+}
 /// Split a `#ref` suffix off a git URL (`https://host/repo#main`).
 fn split_ref(url: &str) -> (&str, Option<&str>) {
     match url.split_once('#') {
@@ -313,6 +363,7 @@ fn install_git(
     root: &Path,
     url: &str,
     r#ref: Option<&str>,
+    collection: CollectionChoice,
 ) -> Result<InstalledPlugin, String> {
     let source = parse_git_source(url)?;
     let plugins = skills::plugins_dir(root);
@@ -371,11 +422,35 @@ fn install_git(
                     .filter_map(|rel| Some(rel.to_string_lossy().into_owned()))
                     .collect();
                 paths.sort();
-                let _ = std::fs::remove_dir_all(&tmp);
-                return Err(format!(
-                    "ERROR: '{url}' is a plugin collection ({n} plugins: {}) - install one directly, e.g. /plugin install {url}/tree/<ref>/<relative/path>",
-                    paths.join(", ")
-                ));
+                match collection {
+                    CollectionChoice::ListError => {
+                        let _ = std::fs::remove_dir_all(&tmp);
+                        return Err(format!(
+                            "ERROR: '{url}' is a plugin collection ({n} plugins: {}) - install one directly, e.g. /plugin install {url}/tree/<ref>/<relative/path>",
+                            paths.join(", ")
+                        ));
+                    }
+                    CollectionChoice::Prompt => {
+                        let idx = prompt_plugin_choice(url, &paths, &mut io::stdin().lock())?;
+                        let picked = candidates.iter().find(|p| {
+                            p.strip_prefix(&payload)
+                                .map(|rel| rel.to_string_lossy().into_owned() == paths[idx])
+                                .unwrap_or(false)
+                        });
+                        match picked {
+                            Some(dir) => {
+                                payload_name =
+                                    dir.file_name().map(|n| n.to_string_lossy().into_owned());
+                                payload = dir.clone();
+                                payload_narrowed = true;
+                            }
+                            // The picked relative path did not resolve; fall
+                            // through so the "nothing to install" error fires
+                            // with the temp dir cleaned up below.
+                            None => {}
+                        }
+                    }
+                }
             }
         }
     }
@@ -471,7 +546,29 @@ async fn fetch_index(url: &str) -> Result<Vec<MarketEntry>, String> {
 
 /// Install a plugin. `spec` is either a git source (URL, `git@host:path`,
 /// `github:owner/repo`, with an optional `#ref`) or a marketplace name.
+///
+/// Non-interactive: a multi-plugin collection fails with a listing error.
 pub(crate) async fn install(root: &Path, spec: &str) -> Result<InstalledPlugin, String> {
+    install_with(root, spec, CollectionChoice::ListError).await
+}
+
+/// Install like [`install`], but a multi-plugin collection prompts the user to
+/// pick a plugin instead of failing (the interactive CLI path).
+pub(crate) async fn install_interactive(
+    root: &Path,
+    spec: &str,
+) -> Result<InstalledPlugin, String> {
+    install_with(root, spec, CollectionChoice::Prompt).await
+}
+
+/// Core install. Resolves git URLs on a blocking thread and marketplace names
+/// through the index, then runs the git clone/filesystem work off the async
+/// runtime (the TUI render loop must keep repainting during a large clone).
+async fn install_with(
+    root: &Path,
+    spec: &str,
+    collection: CollectionChoice,
+) -> Result<InstalledPlugin, String> {
     let spec = spec.trim();
     validate_spec(spec)?;
     if looks_like_git(spec) {
@@ -481,7 +578,7 @@ pub(crate) async fn install(root: &Path, spec: &str) -> Result<InstalledPlugin, 
         // render loop for seconds).
         let root = root.to_path_buf();
         let spec = spec.to_string();
-        return tokio::task::spawn_blocking(move || install_git(&root, &spec, None))
+        return tokio::task::spawn_blocking(move || install_git(&root, &spec, None, collection))
             .await
             .map_err(|e| format!("ERROR: install task failed: {e}"))?;
     }
@@ -497,7 +594,7 @@ pub(crate) async fn install(root: &Path, spec: &str) -> Result<InstalledPlugin, 
     let root = root.to_path_buf();
     let repo = entry.repo.clone();
     let r#ref = entry.r#ref.clone();
-    tokio::task::spawn_blocking(move || install_git(&root, &repo, r#ref.as_deref()))
+    tokio::task::spawn_blocking(move || install_git(&root, &repo, r#ref.as_deref(), collection))
         .await
         .map_err(|e| format!("ERROR: install task failed: {e}"))?
 }
@@ -975,5 +1072,36 @@ mod tests {
         assert!(skills::plugins_dir(&root).join("only").is_dir());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(repo);
+    }
+
+    #[test]
+    fn prompt_choice_parses_and_cancels() {
+        let paths = ["plugins/alpha".into(), "plugins/beta".into(), "external_plugins/gamma".into()];
+        // Valid pick -> 0-based index.
+        let mut input = std::io::BufReader::new(&b"2\n"[..]);
+        assert_eq!(
+            prompt_plugin_choice("http://x", &paths, &mut input).unwrap(),
+            1
+        );
+        // Inner whitespace is trimmed.
+        let mut input = std::io::BufReader::new(&b"  3  \n"[..]);
+        assert_eq!(
+            prompt_plugin_choice("http://x", &paths, &mut input).unwrap(),
+            2
+        );
+        // Invalid then valid: retries.
+        let mut input = std::io::BufReader::new(&b"9\n1\n"[..]);
+        assert_eq!(
+            prompt_plugin_choice("http://x", &paths, &mut input).unwrap(),
+            0
+        );
+        // Blank line cancels.
+        let mut input = std::io::BufReader::new(&b"\n"[..]);
+        let err = prompt_plugin_choice("http://x", &paths, &mut input).unwrap_err();
+        assert!(err.contains("aborted"), "{err}");
+        // EOF cancels.
+        let mut input = std::io::BufReader::new(&b""[..]);
+        let err = prompt_plugin_choice("http://x", &paths, &mut input).unwrap_err();
+        assert!(err.contains("aborted"), "{err}");
     }
 }
