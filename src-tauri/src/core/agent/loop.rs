@@ -1825,6 +1825,11 @@ async fn run_turn_cycle(
     const MID_RUN_NUDGE_MAX_PER_CYCLE: u32 = 2;
     let mut mutations_since_todo_touch: u32 = 0;
     let mut mid_run_nudge_count: u32 = 0;
+    // One-shot: the model returned no tool calls and no answer text (empty or
+    // reasoning-only completion). Ask it once to state its result or continue,
+    // then accept whatever comes next. Bounded to a single retry so a model
+    // that repeatedly returns empty cannot spin forever.
+    let mut empty_retried = false;
     // One-shot: asked the model to close out its todos before handing back.
     let mut closeout_nudged = false;
 
@@ -1931,6 +1936,21 @@ async fn run_turn_cycle(
                 .unwrap_or_default()
                 .to_string();
             let awaiting_user = final_text.trim_end().ends_with('?');
+            if !empty_retried && final_text.trim().is_empty() {
+                empty_retried = true;
+                conversation_messages.push(serde_json::json!({
+                    "role": "assistant",
+                    "content": final_text,
+                }));
+                conversation_messages.push(serde_json::json!({
+                    "role": "user",
+                    "content":
+                        "You produced no answer. State your result as plain text now, or, if the \
+                         task is unfinished, keep working and call the tools you need.",
+                }));
+                turn += 1;
+                continue;
+            }
             if !closeout_nudged
                 && run_mode == crate::core::agent::plan::RunMode::Normal
                 && !awaiting_user
@@ -2501,6 +2521,63 @@ mod tests {
         assert_eq!(content[1]["type"], "image_url");
         assert_eq!(content[1]["image_url"]["url"], "data:image/png;base64,QUJD");
         assert_eq!(content[1]["image_url"]["detail"], "auto");
+    }
+
+    /// An empty or reasoning-only completion must not be accepted as a
+    /// successful turn: the loop asks the model once to produce an answer, and
+    /// terminates without spinning when the retry is also empty.
+    #[tokio::test]
+    async fn empty_completion_retries_once_then_terminates() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let empty = json!({ "choices": [{ "message": { "content": serde_json::Value::Null }, "finish_reason": "stop" }] });
+        let model = MockModel::new(vec![empty.clone(), empty]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let convo = vec![json!({ "role": "user", "content": "hi" })];
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        // Exactly two model invocations: the original empty completion plus the
+        // single retry. A non-empty handback terminates without looping.
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(
+            requests.len(),
+            2,
+            "expected one retry pass for empty content"
+        );
+        let last_request = requests.last().unwrap();
+        let messages = last_request["messages"].as_array().unwrap();
+        let user_msgs: Vec<&serde_json::Value> =
+            messages.iter().filter(|m| m["role"] == "user").collect();
+        assert!(
+            user_msgs.last().unwrap()["content"]
+                .as_str()
+                .unwrap()
+                .contains("no answer"),
+            "the retry must carry the corrective user prompt"
+        );
+        // The guarded retry never ran any tool.
+        assert!(tool.calls.lock().unwrap().is_empty());
+        // The returned completion is the second empty response, unchanged.
+        assert_eq!(
+            result["choices"][0]["message"]["content"],
+            serde_json::Value::Null
+        );
     }
 
     #[tokio::test]
