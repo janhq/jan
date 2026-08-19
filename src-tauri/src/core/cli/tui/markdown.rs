@@ -6,8 +6,13 @@ use ratatui::prelude::*;
 
 /// Render assistant text to styled lines: reasoning dimmed, answer prose passed
 /// through markdown formatting. `width` bounds table wrapping.
-pub(super) fn format_assistant_lines(text: &str, width: u16) -> Vec<Line<'static>> {
+pub(super) fn format_assistant_lines(text: &str, width: u16, native: bool) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
+    // Native Tokamak never annotates reasoning with inline tags, so a ` thinking`
+    // tag is literal content: skip the split and format the whole text as prose.
+    if native {
+        return format_markdown_lines(text, width);
+    }
     for (reasoning, seg) in super::split_reasoning(text) {
         if reasoning {
             lines.extend(reasoning_detail_lines(&seg));
@@ -24,9 +29,14 @@ pub(super) fn format_assistant_lines(text: &str, width: u16) -> Vec<Line<'static
 /// `[thinking]` header state; once the tag closes (or prose begins) the rest
 /// renders as usual. When folding is off this is identical to
 /// `format_assistant_lines`, so the existing live-tail tests hold.
-pub(super) fn live_assistant_lines(text: &str, width: u16, fold_reasoning: bool) -> Vec<Line<'static>> {
-    if !fold_reasoning {
-        return format_assistant_lines(text, width);
+pub(super) fn live_assistant_lines(
+    text: &str,
+    width: u16,
+    fold_reasoning: bool,
+    native: bool,
+) -> Vec<Line<'static>> {
+    if !fold_reasoning || native {
+        return format_assistant_lines(text, width, native);
     }
     let mut lines = Vec::new();
     for (reasoning, seg) in super::split_reasoning(text) {

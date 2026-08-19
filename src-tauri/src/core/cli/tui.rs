@@ -1018,6 +1018,15 @@ fn model_supports_reasoning_effort(model: &str) -> bool {
         || model.starts_with("o4")
 }
 
+/// True when `model` is served by the native Tokamak provider. Tokamak keeps
+/// reasoning out-of-band (a separate channel on the wire) instead of embedding
+/// ` thinking` markers in the answer text, so the TUI must not re-parse the
+/// model's raw output for reasoning. Disable that tag-based parsing here and
+/// let the answer render as-is.
+pub(crate) fn is_native_tokamak(model: &str) -> bool {
+    model.rsplit('/').next().unwrap_or(model).starts_with("tokamak-")
+}
+
 struct App {
     model: String,
     /// Fast model for the `smol` role, used by `/goal` evaluation. Defaults to
@@ -1687,7 +1696,7 @@ impl App {
         self.thinking_since = None;
         // No-op (and, crucially, don't finalize the tool group) on an empty or
         // whitespace-only buffer, so silent consecutive tool calls keep folding.
-        if !assistant_has_content(&text) {
+        if !assistant_has_content(&self.model, &text) {
             return;
         }
         // Model prose ends the current run of tool calls.
@@ -1706,7 +1715,16 @@ impl App {
     /// whose full dimmed detail is retained for expansion.
     fn push_assistant_blocks(&mut self, text: &str) {
         let text = strip_system_xml_tags(text);
-        for (reasoning, seg) in split_reasoning(&text) {
+        // Native Tokamak carries reasoning out-of-band, so a ` thinking` tag in the
+        // answer text is literal content, not a marker: feed the text through as
+        // one plain segment instead of splitting it. Separating reasoning is the
+        // chat template's job, not the TUI's.
+        let segments = if is_native_tokamak(&self.model) {
+            vec![(false, text)]
+        } else {
+            split_reasoning(&text)
+        };
+        for (reasoning, seg) in segments {
             if seg.trim().is_empty() {
                 continue;
             }
@@ -1943,7 +1961,12 @@ impl App {
     /// stretch of a run that puts nothing on screen, so the header badge is the
     /// only place progress can show.
     fn is_thinking(&self) -> bool {
-        self.status != Status::Idle && !self.show_reasoning && thinking_open(&self.assistant_buf)
+        // Native Tokamak never streams reasoning as inline tags, so there is no
+        // `[thinking]` stretch to signal.
+        self.status != Status::Idle
+            && !self.show_reasoning
+            && !is_native_tokamak(&self.model)
+            && thinking_open(&self.assistant_buf)
     }
 
     /// Header status while a turn is running with reasoning folding on:
@@ -1952,7 +1975,7 @@ impl App {
     /// plain `[working]`) once the model is working again. `None` when no
     /// reasoning has happened recently this turn.
     fn reasoning_status(&self) -> Option<(String, Style)> {
-        if thinking_open(&self.assistant_buf) {
+        if !is_native_tokamak(&self.model) && thinking_open(&self.assistant_buf) {
             Some(("thinking".to_string(), Style::new().cyan().bold()))
         } else {
             // The summary is transient: it lasts only `THOUGHT_FOR_TTL` after the
@@ -2691,8 +2714,9 @@ impl App {
                 // Track the live thinking state so the header can fold reasoning
                 // to `[thinking]` / `[thought for Ns]`. Start the timer when a
                 //  block opens; close it (stashing the duration) once the block
-                // closes or the tool group proceeds.
-                let open = thinking_open(&self.assistant_buf);
+                // Native Tokamak keeps reasoning out-of-band, so ` thinking` tags
+                // are literal content: never time the header's fold state on them.
+                let open = !is_native_tokamak(&self.model) && thinking_open(&self.assistant_buf);
                 if open && self.thinking_since.is_none() {
                     self.thinking_since = Some(Instant::now());
                 } else if !open {
@@ -2705,7 +2729,7 @@ impl App {
                 // it lands above the streaming response. Reasoning tokens must
                 // not trigger this, or every call by a reasoning model splits
                 // into its own row.
-                if self.tool_group.is_some() && has_answer_text(&self.assistant_buf) {
+                if self.tool_group.is_some() && has_answer_text(&self.model, &self.assistant_buf) {
                     self.finalize_tool_group();
                 }
             }
@@ -2714,7 +2738,7 @@ impl App {
                 // has produced answer prose; a turn that only reasoned or only
                 // called tools keeps the group open so the next turn's calls
                 // keep folding into one summary row instead of a row per turn.
-                if has_answer_text(&self.assistant_buf) {
+                if has_answer_text(&self.model, &self.assistant_buf) {
                     self.flush_assistant();
                 }
                 self.starting.clear();
@@ -3093,7 +3117,7 @@ impl App {
         // `SubagentEnd`.
         self.close_live_subagents();
         let answer = self.take_answer();
-        let wire = answer_without_reasoning(&answer);
+        let wire = answer_without_reasoning(&self.model, &answer);
         if !wire.is_empty() {
             self.history
                 .push(serde_json::json!({ "role": "assistant", "content": wire }));
@@ -3136,7 +3160,7 @@ impl App {
         // truncated/filtered finish, or a "stop" that yielded no answer (an
         // empty/malformed upstream completion defaults to stop_reason=stop).
         let normal = matches!(stop_reason.as_str(), "stop" | "end_turn" | "stop_sequence");
-        let no_answer = !has_answer_text(&answer);
+        let no_answer = !has_answer_text(&self.model, &answer);
         if !normal || no_answer {
             let msg = if no_answer {
                 format!("finished with no answer (stop_reason={stop_reason})")
@@ -3331,7 +3355,8 @@ impl App {
         // preceding tool calls stay in the transcript, and record the partial
         // answer in history so the next turn and a later /resume both see it.
         self.abort_tool_rows();
-        let answer = answer_without_reasoning(&self.take_answer());
+        let raw = self.take_answer();
+        let answer = answer_without_reasoning(&self.model, &raw);
         if !answer.is_empty() {
             self.history
                 .push(serde_json::json!({ "role": "assistant", "content": answer }));
@@ -4189,7 +4214,12 @@ fn pluralize(noun: &str, n: usize) -> String {
 /// decide when a tool group closes: reasoning streamed between tool calls must
 /// not end the run (a reasoning model thinks before every call), only real
 /// answer text does.
-fn has_answer_text(buf: &str) -> bool {
+fn has_answer_text(model: &str, buf: &str) -> bool {
+    if is_native_tokamak(model) {
+        // Reasoning is out-of-band, so every token is answer prose: any content
+        // closes the tool group, same as non-reasoning models.
+        return !buf.trim().is_empty();
+    }
     split_reasoning(buf)
         .iter()
         .any(|(reasoning, seg)| !reasoning && !seg.trim().is_empty())
@@ -4198,7 +4228,12 @@ fn has_answer_text(buf: &str) -> bool {
 /// `text` with its reasoning removed, for the copy that goes into `history`.
 /// Reasoning is display-only and must never be resent to the model (see
 /// `SseAccumulator`); the display journal is what keeps it for a resume.
-pub(crate) fn answer_without_reasoning(text: &str) -> String {
+pub(crate) fn answer_without_reasoning(model: &str, text: &str) -> String {
+    if is_native_tokamak(model) {
+        // Reasoning is out-of-band: there is no ` thinking` tag to strip, and a
+        // literal one in the text is real content. Keep it verbatim.
+        return text.trim().to_string();
+    }
     split_reasoning(text)
         .into_iter()
         .filter_map(|(reasoning, seg)| (!reasoning).then_some(seg))
@@ -4318,7 +4353,10 @@ fn thinking_open(text: &str) -> bool {
 }
 
 /// True if `text` has any non-whitespace content in any reasoning/answer run.
-fn assistant_has_content(text: &str) -> bool {
+fn assistant_has_content(model: &str, text: &str) -> bool {
+    if is_native_tokamak(model) {
+        return !text.trim().is_empty();
+    }
     split_reasoning(text)
         .iter()
         .any(|(_, seg)| !seg.trim().is_empty())
@@ -7721,7 +7759,12 @@ fn draw(f: &mut Frame, app: &mut App) {
         }
     }
     if !app.assistant_buf.is_empty() {
-        let tail = live_assistant_lines(&app.assistant_buf, width, !app.show_reasoning);
+        let tail = live_assistant_lines(
+            &app.assistant_buf,
+            width,
+            !app.show_reasoning,
+            is_native_tokamak(&app.model),
+        );
         if !tail.is_empty() {
             // Mirror flush_assistant's `gap(Kind::Prose)` so the separator above
             // streaming prose is present live, not only once it's finalized.
@@ -7733,7 +7776,7 @@ fn draw(f: &mut Frame, app: &mut App) {
                 lines.push(Line::raw(""));
             }
             // Live tail: same renderer as finalized messages, so an open
-            // (unterminated) <think> block dims and grows during streaming.
+            // (unterminated)  thinking block dims and grows during streaming.
             lines.extend(tail);
         }
     }
@@ -9286,6 +9329,7 @@ mod tests {
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
         run_command, starting_call_lines, unescape_partial_json_string,
         running_group_row, split_reasoning, strip_system_xml_tags, subagent_activity,
+        answer_without_reasoning, assistant_has_content, has_answer_text,
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
         transcript_top_padding, rewind_to,
@@ -10141,6 +10185,85 @@ mod tests {
     fn split_reasoning_handles_namespaced_and_unterminated_tags() {
         let segs = split_reasoning("<mm:think>reasoning tail");
         assert_eq!(segs, vec![(true, "reasoning tail".to_string())]);
+    }
+
+    #[test]
+    fn answer_without_reasoning_keeps_literal_tags_for_native_tokamak() {
+        let (o, c) = ('<', '>');
+        let text = format!("answer with {o}think{c}literal reasoning response{o}/think{c} tag");
+        // Non-native strips the tag; native keeps it verbatim.
+        assert_eq!(
+            answer_without_reasoning("gpt-5", &text),
+            "answer with  tag"
+        );
+        assert_eq!(
+            answer_without_reasoning("tokamak-1-preview", &text),
+            text.trim()
+        );
+    }
+
+    #[test]
+    fn has_answer_text_treats_native_tags_as_content() {
+        let (o, c) = ('<', '>');
+        // For a reasoning (non-native) model, a lone think block is not answer
+        // text, so it must not close a tool group.
+        let thinking_only = format!("{o}think{c}reasoning{o}/think{c}");
+        assert!(!has_answer_text("gpt-5", &thinking_only));
+        // Native Tokamak streams reasoning out-of-band: the tag is literal
+        // content, so even a tag-only buffer counts as answer prose.
+        assert!(has_answer_text("tokamak-1-preview", &thinking_only));
+        assert!(!has_answer_text("tokamak-1-preview", "   "));
+    }
+    #[test]
+    fn assistant_has_content_treats_native_tags_as_content() {
+        let (o, c) = ('<', '>');
+        let thinking_only = format!("{o}think{c}reasoning{o}/think{c}");
+        // Both paths count any non-whitespace content, including a literal
+        // think tag; the native branch just routes through the trimmed check.
+        assert!(assistant_has_content("gpt-5", &thinking_only));
+        assert!(assistant_has_content("tokamak-1-preview", &thinking_only));
+        assert!(!assistant_has_content("tokamak-1-preview", " "));
+    }
+    #[test]
+    fn token_stream_does_not_time_thinking_for_native_tokamak() {
+        let mut app = test_app();
+        app.model = "tokamak-1-preview".into();
+        let (o, c) = ('<', '>');
+        // An unterminated think tag is the state that would open a fold timer
+        // for a reasoning model; native must ignore it as literal content.
+        app.apply(StreamEvent::Token {
+            text: format!("{o}think{c}not reasoning"),
+        });
+        assert!(app.thinking_since.is_none(), "native tags must not set thinking_since");
+    }
+
+    #[test]
+    fn token_stream_times_thinking_for_reasoning_models() {
+        let mut app = test_app();
+        app.model = "gpt-5".into();
+        let (o, c) = ('<', '>');
+        app.apply(StreamEvent::Token {
+            text: format!("{o}think{c}reasoning"),
+        });
+        assert!(app.thinking_since.is_some(), "reasoning model opens a think window");
+    }
+
+    #[test]
+    fn push_assistant_blocks_renders_native_tag_as_prose() {
+        let (o, c) = ('<', '>');
+        let tagged = format!("{o}think{c}reasoning{o}/think{c}answer");
+        let mut native = test_app();
+        native.model = "tokamak-1-preview".into();
+        native.push_assistant_blocks(&tagged);
+        // The literal tag is content: nothing is folded into a reasoning block,
+        // and the whole buffer renders as one markdown prose row.
+        assert!(native.reasoning_blocks.is_empty(), "native tag must not fold");
+        assert!(!native.transcript.is_empty(), "tag must render as prose");
+
+        let mut reasoning = test_app();
+        reasoning.model = "gpt-5".into();
+        reasoning.push_assistant_blocks(&tagged);
+        assert_eq!(reasoning.reasoning_blocks.len(), 1, "non-native tag folds to a block");
     }
 
     #[test]

@@ -93,7 +93,10 @@ impl RunReport {
         RunResult {
             kind: "result",
             is_error,
-            result: super::tui::answer_without_reasoning(final_text.unwrap_or(&self.partial)),
+            result: super::tui::answer_without_reasoning(
+                model,
+                final_text.unwrap_or(&self.partial),
+            ),
             stop_reason: if is_error {
                 "error".to_string()
             } else {
