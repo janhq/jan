@@ -372,6 +372,9 @@ enum PickerKind {
     /// `/todo` editor: browse the phased list and mutate the selected task
     /// (done/drop/rm) through the same canonical `TodoList` the model uses.
     Todo,
+    /// `/plugin install <collection>`: choose which plugins inside a collection
+    /// repo to install. Space toggles a row, Enter installs everything checked.
+    PluginSelect,
 }
 
 /// Interactive list overlay (`/resume` threads, `/model` models, `/mcp`
@@ -398,6 +401,7 @@ impl Picker {
             PickerKind::AgentSettings => " agent settings ",
             PickerKind::ProviderSettings => " providers ",
             PickerKind::Todo => " todo ",
+            PickerKind::PluginSelect => " install plugins ",
         }
     }
 
@@ -412,6 +416,9 @@ impl Picker {
             PickerKind::AgentSettings => " ↑/↓ select   Enter edit   x unset   Esc close",
             PickerKind::ProviderSettings => " ↑/↓ select   Enter edit   a add   dd delete   Esc close",
             PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
+            PickerKind::PluginSelect => {
+                " ↑/↓ select   Space toggle   Enter install   Esc cancel"
+            }
         }
     }
 }
@@ -1369,13 +1376,19 @@ struct App {
     login_submit: Option<String>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
     update_requested: bool,
-    /// Compaction handed off to the loop, which spawns the summarizing model
-    /// call off the render loop. Taken once.
     /// `/plugin install` handed off to the loop, which runs the git clone off
     /// the render loop and notes the result when it lands. Taken once.
     plugin_install_request: Option<String>,
+    /// A collection picker's chosen plugins handed off to the loop: the source
+    /// URL plus the payload-root-relative paths to install. Taken once.
+    plugin_select_request: Option<(String, Vec<String>)>,
+    /// Source URL behind the open `PluginSelect` picker, so Enter knows which
+    /// collection the checked rows came from. Cleared when the picker resolves.
+    plugin_collection_url: Option<String>,
     /// A plugin install is in flight: a second request is refused.
     plugin_installing: bool,
+    /// Compaction handed off to the loop, which spawns the summarizing model
+    /// call off the render loop. Taken once.
     compact_request: Option<CompactKind>,
     /// A compaction is in flight: the header and the input box show a throbber,
     /// a second request is refused, and no run starts until it lands (its result
@@ -1736,6 +1749,8 @@ impl App {
             login_submit: None,
             update_requested: false,
             plugin_install_request: None,
+            plugin_select_request: None,
+            plugin_collection_url: None,
             plugin_installing: false,
             update_installing: false,
             compact_request: None,
@@ -5639,9 +5654,9 @@ fn finish_update_install(app: &mut App, result: Result<super::updater::UpdateOut
 /// Same cancel-safe borrow as `await_mcp`.
 async fn await_plugin_install(
     task: &mut Option<
-        tokio::task::JoinHandle<Result<crate::core::agent::plugins::InstalledPlugin, String>>,
+        tokio::task::JoinHandle<Result<crate::core::agent::plugins::GitInstall, String>>,
     >,
-) -> Result<crate::core::agent::plugins::InstalledPlugin, String> {
+) -> Result<crate::core::agent::plugins::GitInstall, String> {
     let joined = match task.as_mut() {
         Some(h) => h.await,
         None => return pending().await,
@@ -5654,16 +5669,51 @@ async fn await_plugin_install(
 }
 
 /// Report a plugin install. Clears the in-flight flag so the next request is
-/// accepted.
+/// accepted. A collection source installed nothing yet: it opens the picker so
+/// the user chooses which plugins to install, and the flag stays set until that
+/// second step lands (or the picker is cancelled).
 fn finish_plugin_install(
     app: &mut App,
-    result: Result<crate::core::agent::plugins::InstalledPlugin, String>,
+    url: Option<String>,
+    result: Result<crate::core::agent::plugins::GitInstall, String>,
 ) {
+    use crate::core::agent::plugins::GitInstall;
     app.plugin_installing = false;
     match result {
-        Ok(p) => {
+        Ok(GitInstall::Installed(plugins)) => {
             app.refresh_slash_catalog();
-            app.note(&format!("installed plugin '{}' ({} skills)", p.name, p.skills));
+            if plugins.is_empty() {
+                app.note("nothing installed");
+            }
+            for p in plugins {
+                app.note(&format!("installed plugin '{}' ({} skills)", p.name, p.skills));
+            }
+        }
+        Ok(GitInstall::Collection(candidates)) => {
+            let Some(url) = url else {
+                app.note("ERROR: lost the collection source URL");
+                return;
+            };
+            app.note(&format!(
+                "{} is a collection of {} plugins - pick which to install",
+                url,
+                candidates.len()
+            ));
+            app.picker = Some(Picker {
+                kind: PickerKind::PluginSelect,
+                items: candidates
+                    .into_iter()
+                    .map(|c| PickerItem {
+                        value: c.path.clone(),
+                        label: c.path,
+                        hint: c.installed.then(|| "installed".to_string()),
+                        checkbox: Some(false),
+                    })
+                    .collect(),
+                selected: 0,
+                armed_delete: None,
+            });
+            app.plugin_collection_url = Some(url);
         }
         Err(e) => app.note(&e),
     }
@@ -5947,10 +5997,13 @@ async fn chat_loop<B: Backend>(
         tokio::task::JoinHandle<Result<super::updater::UpdateOutcome, String>>,
     > = None;
     // `/plugin install` clones a git repo, so it runs off the render loop via
-    // `install`'s internal `spawn_blocking`; one at a time.
+    // the installer's internal `spawn_blocking`; one at a time. A collection
+    // source resolves in two steps (list -> picker -> install the chosen set),
+    // and `plugin_install_url` remembers the source across them.
     let mut plugin_install_task: Option<
-        tokio::task::JoinHandle<Result<crate::core::agent::plugins::InstalledPlugin, String>>,
+        tokio::task::JoinHandle<Result<crate::core::agent::plugins::GitInstall, String>>,
     > = None;
+    let mut plugin_install_url: Option<String> = None;
 
     // Compaction is a summarizing model call, so it runs off the render loop
     // too; `compact_base` is the history length it was computed from.
@@ -6015,14 +6068,27 @@ async fn chat_loop<B: Backend>(
             }
         }
         // `/plugin install` was typed: clone off-loop (the network-bound git
-        // work runs inside `install`'s `spawn_blocking`), and refuse a second
-        // while one is in flight.
+        // work runs inside the installer's `spawn_blocking`), and refuse a
+        // second while one is in flight. `list_collection` installs a plain
+        // source outright and only *lists* an ambiguous collection, which
+        // `finish_plugin_install` turns into the picker.
         if plugin_install_task.is_none() {
             if let Some(spec) = app.plugin_install_request.take() {
                 app.plugin_installing = true;
                 let root = app.project_root.clone();
+                plugin_install_url = Some(spec.clone());
                 plugin_install_task = Some(tokio::spawn(async move {
-                    crate::core::agent::plugins::install(&root, &spec).await
+                    crate::core::agent::plugins::list_collection(&root, &spec).await
+                }));
+            } else if let Some((spec, paths)) = app.plugin_select_request.take() {
+                // Second step: the picker's chosen subset of a collection.
+                app.plugin_installing = true;
+                let root = app.project_root.clone();
+                plugin_install_url = Some(spec.clone());
+                plugin_install_task = Some(tokio::spawn(async move {
+                    crate::core::agent::plugins::install_selected(&root, &spec, paths)
+                        .await
+                        .map(crate::core::agent::plugins::GitInstall::Installed)
                 }));
             }
         }
@@ -6157,7 +6223,7 @@ async fn chat_loop<B: Backend>(
                 finish_update_install(app, install);
             }
             plugin_res = await_plugin_install(&mut plugin_install_task) => {
-                finish_plugin_install(app, plugin_res);
+                finish_plugin_install(app, plugin_install_url.take(), plugin_res);
             }
             compacted = await_compaction(&mut compact_task) => {
                 finish_compaction(app, compacted, compact_base);
@@ -6833,6 +6899,28 @@ async fn handle_key(
                     Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
                 }
             }
+            // Collection picker: Space toggles the selected plugin, Enter hands
+            // the checked set to the loop (see `plugin_select_request`). Rows
+            // already installed stay selectable; the install skips them.
+            KeyCode::Char(' ') if picker.kind == PickerKind::PluginSelect => {
+                let item = &mut picker.items[picker.selected];
+                item.checkbox = Some(!item.checkbox.unwrap_or(false));
+            }
+            KeyCode::Enter if picker.kind == PickerKind::PluginSelect => {
+                let paths: Vec<String> = picker
+                    .items
+                    .iter()
+                    .filter(|i| i.checkbox.unwrap_or(false))
+                    .map(|i| i.value.clone())
+                    .collect();
+                app.picker = None;
+                if paths.is_empty() {
+                    app.note("no plugin selected - install aborted");
+                } else if let Some(url) = app.plugin_collection_url.take() {
+                    app.note(&format!("installing {} plugin(s)...", paths.len()));
+                    app.plugin_select_request = Some((url, paths));
+                }
+            }
             KeyCode::Enter => {
                 let kind = picker.kind;
                 let value = picker.items[picker.selected].value.clone();
@@ -6877,6 +6965,8 @@ async fn handle_key(
                     }
                     // Todo Enter is handled by the guarded action arm above.
                     PickerKind::Todo => {}
+                    // PluginSelect Enter is handled by the guarded arm above.
+                    PickerKind::PluginSelect => {}
                 }
             }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
