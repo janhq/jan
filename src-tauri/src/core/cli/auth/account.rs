@@ -551,6 +551,24 @@ fn claude_code_keychain_entry() -> Option<keyring::Entry> {
     keyring::Entry::new("Claude Code-credentials", &user).ok()
 }
 
+/// The `subscriptionType` Claude Code stamps on a resolved account (e.g.
+/// `team`, `pro`, `enterprise`, `free`). Authoritative for which plan the token
+/// actually resolved to, so a team/enterprise account whose heavy-model quota is
+/// momentarily exhausted is not misreported as a free personal plan. Best-effort:
+/// returns `None` when the keychain entry is absent or the field is missing.
+fn claude_code_subscription_type() -> Option<String> {
+    claude_code_keychain_entry()?
+        .get_password()
+        .ok()
+        .and_then(|raw| {
+            let doc: serde_json::Value = serde_json::from_str(&raw).ok()?;
+            doc.get("claudeAiOauth")?
+                .get("subscriptionType")?
+                .as_str()
+                .map(str::to_string)
+        })
+}
+
 #[cfg(test)]
 static CLAUDE_ALIAS_ENABLED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -696,7 +714,7 @@ pub fn store(provider: AccountProvider, token: &OAuthToken) -> Result<(), String
 pub async fn claude_plan_summary(fallback: &str) -> String {
     // Resolve through access_token so the probe sees the same token the
     // request path uses: Jan's own credential when present, otherwise the
-    // read-only Claude Code alias (see claude_code_access_token).
+    // Claude Code alias (see claude_code_access_token).
     let Some(token) = access_token(AccountProvider::Claude.credential_provider())
         .await
         .ok()
@@ -711,11 +729,12 @@ pub async fn claude_plan_summary(fallback: &str) -> String {
         Ok(client) => client,
         Err(_) => return fallback.to_string(),
     };
-    // Overall utilization is not the discriminator; model-family entitlement is.
-    // Probe one heavy model (sonnet) and one lightweight model (haiku) with a
-    // single-token request. If only the lightweight model answers, the token is
-    // on a plan without heavy-model access (typically the free personal plan),
-    // even though the account may belong to an enterprise team.
+    // Distinguish a model-family entitlement boundary from a transient quota
+    // window. Probe one heavy model (sonnet) and one lightweight model (haiku).
+    // When only haiku answers, the heavy answer may be a genuine entitlement
+    // boundary OR a momentarily exhausted 5-hour quota window; the account's
+    // stamped `subscriptionType` disambiguates the two (a paid tier that 429s is
+    // quota exhaustion, not a free plan).
     let mut heavy_ok = false;
     for model in ["claude-haiku-4-5", "claude-sonnet-5"] {
         let body = serde_json::json!({
@@ -737,18 +756,39 @@ pub async fn claude_plan_summary(fallback: &str) -> String {
             }
         }
     }
-    claude_plan_message(heavy_ok)
+    let tier = claude_code_subscription_type();
+    claude_plan_message(heavy_ok, tier.as_deref())
 }
 
-/// Human-readable verdict on which Claude entitlement a token resolved to,
-/// derived purely from whether the heavy-model probe (sonnet) succeeded.
-fn claude_plan_message(heavy_ok: bool) -> String {
+/// True when a stamped `subscriptionType` is a paid/enterprise plan whose heavy
+/// models carry quota, as opposed to the free personal plan.
+fn is_paid_claude_tier(tier: Option<&str>) -> bool {
+    matches!(
+        tier,
+        Some("team")
+            | Some("pro")
+            | Some("enterprise")
+            | Some("max")
+            | Some("premium")
+    )
+}
+
+/// Human-readable verdict on which Claude entitlement a token resolved to.
+/// `heavy_ok` is whether the heavy-model probe (sonnet) succeeded; `tier` is
+/// the `subscriptionType` stamped by Claude Code, when reachable.
+fn claude_plan_message(heavy_ok: bool, tier: Option<&str>) -> String {
     if heavy_ok {
         "Claude account resolved with heavy-model access (enterprise/premium quota in effect). Models check out: claude-sonnet-5 and claude-haiku-4-5 both respond.".to_string()
+    } else if is_paid_claude_tier(tier) {
+        format!(
+            "Claude account resolves to a {} account, not a free plan: heavy models are momentarily rate-limited (429) while claude-haiku-4-5 works. This is a transient 5-hour quota window, not a plan or sign-in problem - retry shortly or use a lightweight model to continue.",
+            tier.unwrap_or("paid")
+        )
     } else {
         "Claude account resolves to a plan without heavy-model access (likely the free personal plan): claude-sonnet-5 is rate-limited (429) while claude-haiku-4-5 works. This is a quota/entitlement boundary, not a sign-in problem, so reusing Claude Code's saved login (sign out with x on the picker) inherits whatever quota that workspace carries - heavy-model access only improves if your Claude Code workspace has a premium allowance.".to_string()
     }
 }
+
 
 pub async fn complete_browser_login(login: AccountLogin) -> Result<AccountProvider, String> {
     let listener = bind_callback(&login).await?;
@@ -1692,16 +1732,34 @@ mod tests {
         assert!(!fields.contains_key("access_token"));
     }
 
+
     #[test]
     fn claude_plan_message_heavy_access_names_premium() {
-        let text = claude_plan_message(true);
+        let text = claude_plan_message(true, None);
         assert!(text.contains("heavy-model access"), "{text}");
         assert!(text.contains("enterprise/premium"), "{text}");
     }
 
     #[test]
+    fn claude_plan_message_paid_tier_is_not_reported_as_free() {
+        // A team/enterprise account whose heavy-model quota is momentarily
+        // exhausted must be reported as a paid tier with a transient 429, never
+        // as a "free personal plan".
+        let text = claude_plan_message(false, Some("team"));
+        assert!(text.contains("team account"), "{text}");
+        assert!(text.contains("not a free plan"), "{text}");
+        assert!(text.contains("429"), "{text}");
+        assert!(!text.contains("free personal plan"), "{text}");
+        let pro = claude_plan_message(false, Some("pro"));
+        assert!(pro.contains("pro account"), "{pro}");
+        // An unknown / missing tier falls back to the free-plan framing.
+        let unknown = claude_plan_message(false, None);
+        assert!(unknown.contains("free personal plan"), "{unknown}");
+    }
+
+    #[test]
     fn claude_plan_message_personal_plan_names_the_discriminator() {
-        let text = claude_plan_message(false);
+        let text = claude_plan_message(false, None);
         assert!(text.contains("free personal plan"), "{text}");
         assert!(text.contains("claude-sonnet-5"), "{text}");
         assert!(text.contains("429"), "{text}");
