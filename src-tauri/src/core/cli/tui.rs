@@ -1206,6 +1206,14 @@ struct App {
     /// so the diff in its `ToolResult` (which carries no path) can be
     /// syntax-highlighted for the right language. Removed as results arrive.
     diff_paths: HashMap<String, String>,
+    /// Command of each in-flight `bash` call, keyed by call id, kept only until
+    /// its result lands -- which is where a job id would appear.
+    bash_commands: HashMap<String, String>,
+    /// Commands the `bash` tool backgrounded, keyed by the `job_id` it handed
+    /// out. The later call that collects a job carries only that id, and blocks
+    /// until the command finishes, so without this its row -- live for as long
+    /// as the command runs -- has nothing to name.
+    bash_jobs: HashMap<String, String>,
     /// Base snapshot (working-tree state before the first turn) for the active
     /// thread. `Some` once snapshotting is armed; `None` = no workspace restore.
     base_snapshot: Option<String>,
@@ -1664,6 +1672,8 @@ impl App {
             project_root,
             turn_touched: Vec::new(),
             diff_paths: HashMap::new(),
+            bash_commands: HashMap::new(),
+            bash_jobs: HashMap::new(),
             base_snapshot: None,
             checkpoints: Vec::new(),
             snap_queue: std::collections::VecDeque::new(),
@@ -2118,6 +2128,43 @@ impl App {
             self.push_subagent_summary(&panel.name, panel.calls, false);
         }
         self.awaiting.clear();
+    }
+
+    /// Pair a `bash` call with the backgrounded command it is about.
+    ///
+    /// Both directions run off the same maps: a call carrying a `command` is
+    /// remembered against its call id until its result lands (which is where a
+    /// `job_id` would appear), and a call carrying only a `job_id` gets that
+    /// command filled back in, so every row labelling the call names the work
+    /// rather than an opaque id. Labels are built from the returned value; the
+    /// journal keeps the arguments as they arrived, so a replay rebuilds the
+    /// pairing from the same events in the same order.
+    fn track_bash_job(
+        &mut self,
+        id: &str,
+        name: &str,
+        mut args: serde_json::Value,
+    ) -> serde_json::Value {
+        if !matches!(name, "bash" | "shell" | "exec") {
+            return args;
+        }
+        let cmd = args
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if !cmd.is_empty() {
+            self.bash_commands.insert(id.to_string(), cmd);
+            return args;
+        }
+        let remembered = bash_job_id(&args)
+            .and_then(|job| self.bash_jobs.get(job))
+            .cloned();
+        if let (Some(cmd), Some(obj)) = (remembered, args.as_object_mut()) {
+            obj.insert("command".to_string(), serde_json::Value::String(cmd));
+        }
+        args
     }
 
     /// Rewrite a standalone tool row to its resolved form once its result lands:
@@ -3378,6 +3425,7 @@ impl App {
                     self.awaiting.push((id, run_id.to_string(), sub));
                     return;
                 }
+                let args = self.track_bash_job(&id, &name, args);
                 // Untruncated: every row that shows these clamps to the width it
                 // is drawn at, so they survive a resize either way.
                 let label = tool_activity(&name, &args);
@@ -3423,6 +3471,14 @@ impl App {
                     is_error,
                     diff: diff.clone(),
                 });
+                // Before the grouped-call early return: a backgrounded command
+                // is reported by its result, and the call that later collects it
+                // needs the pairing whichever way this row renders.
+                if let Some(cmd) = self.bash_commands.remove(&id) {
+                    if let Some(job) = backgrounded_job_id(&content) {
+                        self.bash_jobs.insert(job.to_string(), cmd);
+                    }
+                }
                 let resolved = self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
                 // reminder fired; let a later stop remind again if work is still
@@ -4448,6 +4504,28 @@ fn collapse_command(cmd: &str) -> String {
         .to_string()
 }
 
+/// The `job_id` of a `bash` poll: a call that collects an already-backgrounded
+/// command instead of starting a new one. Blank is treated as absent.
+fn bash_job_id(args: &serde_json::Value) -> Option<&str> {
+    args.get("job_id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+/// The job id in a `bash` result reporting that its command was backgrounded.
+/// Matched on the `job_id=` marker the tool prints and stopping at the first
+/// character that cannot be part of an id, so the instruction text repeating
+/// the id parses to the same value.
+fn backgrounded_job_id(content: &str) -> Option<&str> {
+    let at = content.find("job_id=")? + "job_id=".len();
+    let rest = &content[at..];
+    let end = rest
+        .find(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+        .unwrap_or(rest.len());
+    Some(&rest[..end]).filter(|id| !id.is_empty())
+}
+
 fn tool_activity(name: &str, args: &serde_json::Value) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
     let base = |p: &str| {
@@ -4460,12 +4538,13 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
     match name {
         "bash" | "shell" | "exec" => {
             let cmd = s("command");
-            if cmd.trim().is_empty() {
-                "Executing command".to_string()
-            } else {
-                // Untruncated: the row wraps at the draw width, so the command
-                // fills the terminal rather than eliding at a fixed 80.
-                format!("Executing: {}", collapse_command(cmd))
+            // Untruncated: the row wraps at the draw width, so the command
+            // fills the terminal rather than eliding at a fixed 80.
+            match (bash_job_id(args), cmd.trim()) {
+                (Some(job), "") => format!("Waiting for background job {job}"),
+                (Some(_), cmd) => format!("Waiting for: {}", collapse_command(cmd)),
+                (None, "") => "Executing command".to_string(),
+                (None, cmd) => format!("Executing: {}", collapse_command(cmd)),
             }
         }
         "grep" | "search" => "Searching".to_string(),
@@ -4557,12 +4636,13 @@ fn subagent_activity(name: &str, args: &serde_json::Value) -> String {
     match name {
         "bash" | "shell" | "exec" => {
             let cmd = s("command");
-            if cmd.trim().is_empty() {
-                "command".to_string()
-            } else {
-                // The live panel gives each call exactly one row, so this one
-                // stays flattened where the transcript's label keeps its breaks.
-                format!("$ {}", single_line(cmd))
+            // The live panel gives each call exactly one row, so this one stays
+            // flattened where the transcript's label keeps its breaks.
+            match (bash_job_id(args), cmd.trim()) {
+                (Some(job), "") => format!("awaiting job {job}"),
+                (Some(_), cmd) => format!("awaiting $ {}", single_line(cmd)),
+                (None, "") => "command".to_string(),
+                (None, cmd) => format!("$ {}", single_line(cmd)),
             }
         }
         "grep" | "search" => format!("grep {}", s("pattern")),
@@ -4589,10 +4669,11 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
     match name {
         "bash" | "shell" | "exec" => {
             let cmd = s("command");
-            if cmd.trim().is_empty() {
-                "Ran command".to_string()
-            } else {
-                format!("Ran: {}", collapse_command(cmd))
+            match (bash_job_id(args), cmd.trim()) {
+                (Some(job), "") => format!("Collected background job {job}"),
+                (Some(_), cmd) => format!("Collected: {}", collapse_command(cmd)),
+                (None, "") => "Ran command".to_string(),
+                (None, cmd) => format!("Ran: {}", collapse_command(cmd)),
             }
         }
         "grep" | "search" => "Searched".to_string(),
@@ -11909,7 +11990,8 @@ mod tests {
         McpPrompt, McpField, pairs_to_str,
         ProviderField,
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
-        drain_stream_events, run_command, starting_call_lines, unescape_partial_json_string,
+        backgrounded_job_id, drain_stream_events, run_command, starting_call_lines,
+        unescape_partial_json_string,
         running_group_rows, split_reasoning, strip_system_xml_tags, subagent_activity,
         answer_without_reasoning, assistant_runs, replay_display_log, thinking_open,
         without_think_tags, ReasoningSeg,
@@ -13597,6 +13679,101 @@ mod tests {
                 ("command", false),
             ]),
             "Read 1 directory, 1 file; ran 1 search, 1 command"
+        );
+    }
+
+    /// A `bash` call carrying only a `job_id` is a poll of an already
+    /// backgrounded command: it blocks until that command finishes, so its row
+    /// can stay live for minutes. "Executing command" said nothing at all
+    /// about what was running.
+    #[test]
+    fn a_backgrounded_bash_poll_names_the_job_it_waits_on() {
+        assert_eq!(
+            tool_activity("bash", &json!({ "job_id": "bash-3" })),
+            "Waiting for background job bash-3"
+        );
+        assert_eq!(
+            tool_finished("bash", &json!({ "job_id": "bash-3" })),
+            "Collected background job bash-3"
+        );
+        assert_eq!(
+            subagent_activity("bash", &json!({ "job_id": "bash-3" })),
+            "awaiting job bash-3"
+        );
+        // The command, once the run remembers which one the job is:
+        let args = json!({ "job_id": "bash-3", "command": "cargo build --release" });
+        assert_eq!(
+            tool_activity("bash", &args),
+            "Waiting for: cargo build --release"
+        );
+        assert_eq!(
+            tool_finished("bash", &args),
+            "Collected: cargo build --release"
+        );
+        assert_eq!(
+            subagent_activity("bash", &args),
+            "awaiting $ cargo build --release"
+        );
+        // A blank job id is no job id: an ordinary call is unaffected.
+        assert_eq!(
+            tool_activity("bash", &json!({ "command": "ls", "job_id": "  " })),
+            "Executing: ls"
+        );
+    }
+
+    /// The job id is read back out of the result that handed it out, so the
+    /// marker the tool prints is what this has to match.
+    #[test]
+    fn a_backgrounding_notice_yields_its_job_id() {
+        let notice = "Command exceeded 30s and is continuing in the background \
+             (job_id=bash-7). Call bash again with {\"job_id\": \"bash-7\"} (no \
+             command) to wait for and collect its output once it finishes.";
+        assert_eq!(backgrounded_job_id(notice), Some("bash-7"));
+        // Not every bash result carries one.
+        assert_eq!(backgrounded_job_id("hello\n[exit 0]"), None);
+        assert_eq!(
+            backgrounded_job_id("ERROR: unknown or already-collected job_id 'nope'"),
+            None
+        );
+    }
+
+    /// End to end: the command a job was started with reaches the poll's row.
+    #[tokio::test]
+    async fn a_polled_job_row_names_the_command_it_was_started_with() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cargo build --release", "timeout": 1 }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "Command exceeded 1s and is continuing in the background \
+                      (job_id=bash-1). Call bash again with {\"job_id\": \"bash-1\"}."
+                .into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "bash".into(),
+            args: json!({ "job_id": "bash-1" }),
+        });
+
+        let text: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .chain(std::iter::once(
+                app.tool_group
+                    .as_ref()
+                    .map(|g| g.calls.iter().map(|c| c.activity.clone()).collect())
+                    .unwrap_or_default(),
+            ))
+            .collect();
+        assert!(
+            text.contains("Waiting for: cargo build --release"),
+            "the poll row does not name its command: {text}"
         );
     }
 
