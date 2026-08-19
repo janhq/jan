@@ -763,6 +763,10 @@ pub(crate) struct AgentSession {
     pub limits: SessionLimits,
     /// Whether the TUI expands `<think>` reasoning blocks (default false).
     pub show_reasoning: bool,
+    /// Whether the TUI streams reasoning into the live tail while it folds
+    /// (`stream_reasoning` in `~/.jan/config.toml`, default true). Independent
+    /// of `show_reasoning`, which unfolds it for good.
+    pub stream_reasoning: bool,
     /// Whether to resend a prior assistant turn's reasoning to the model
     /// (default true). False drops `reasoning_content` from outgoing assistant
     /// messages; the display journal still keeps reasoning for a resume.
@@ -939,6 +943,7 @@ fn prepare_agent_session(
             max_session_tokens: cfg.budget.max_tokens.unwrap_or(DEFAULT_MAX_SESSION_TOKENS),
         },
         show_reasoning: cfg.agent.show_reasoning.unwrap_or(false),
+        stream_reasoning: crate::core::agent::global_config::stream_reasoning_enabled(),
         send_reasoning: cfg.agent.send_reasoning.unwrap_or(true),
         mcp_servers,
         mcp_task,

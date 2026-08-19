@@ -26,6 +26,9 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # content as reasoning; they render and
 #                                     # are resent as ordinary prose. On by
 #                                     # default
+# stream_reasoning = false            # stop streaming reasoning into the TUI
+#                                     # live tail while it folds; only the
+#                                     # [thinking] badge shows it. On by default
 #
 # [providers.my-provider]
 # api_key = "sk-..."
@@ -57,6 +60,11 @@ struct GlobalConfigToml {
     /// mechanism and is unaffected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     think_tags: Option<bool>,
+    /// Stream reasoning into the TUI live tail while it is still folded. `None`
+    /// = the default, on. Unrelated to `[agent].show_reasoning`, which unfolds
+    /// reasoning for good.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stream_reasoning: Option<bool>,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
 }
@@ -189,6 +197,19 @@ pub(crate) fn think_tags_enabled() -> bool {
     load_raw()
         .ok()
         .and_then(|config| config.think_tags)
+        .unwrap_or(true)
+}
+
+/// Whether the TUI streams reasoning into its live tail while folding is on
+/// (`stream_reasoning` in `~/.jan/config.toml`), defaulting to on. `false` keeps
+/// a folded block off screen entirely, leaving the header badge to stand for it.
+///
+/// A display preference must never block startup, so an unreadable or malformed
+/// config yields the default rather than an error.
+pub(crate) fn stream_reasoning_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.stream_reasoning)
         .unwrap_or(true)
 }
 
@@ -366,6 +387,26 @@ mod tests {
 
             std::fs::write(&path, "not valid toml [[[").unwrap();
             assert!(think_tags_enabled(), "an unreadable config keeps the default");
+        });
+    }
+
+    #[test]
+    fn stream_reasoning_default_on_and_read_from_the_toml_key() {
+        with_temp_home(|_| {
+            assert!(stream_reasoning_enabled(), "missing file -> streaming on");
+            let path = ensure_global_config().expect("ensure");
+            assert!(stream_reasoning_enabled(), "scaffolded file -> streaming on");
+
+            std::fs::write(&path, "stream_reasoning = false\n").unwrap();
+            assert!(!stream_reasoning_enabled());
+            std::fs::write(&path, "stream_reasoning = true\n").unwrap();
+            assert!(stream_reasoning_enabled());
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert!(
+                stream_reasoning_enabled(),
+                "an unreadable config keeps the default"
+            );
         });
     }
 

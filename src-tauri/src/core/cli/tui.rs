@@ -1268,6 +1268,12 @@ struct App {
     /// from `[agent].show_reasoning` in agent.toml (false). Ctrl-O toggles every
     /// existing block between its summary row and full detail for the session.
     show_reasoning: bool,
+    /// Whether reasoning streams into the live tail while folding is on.
+    /// Defaults from `stream_reasoning` in `~/.jan/config.toml` (true). The open
+    /// block shows its last `LIVE_REASONING_TAIL_LINES` lines and still folds to
+    /// a summary row when the turn commits; false shows nothing but the header
+    /// badge, as before. Orthogonal to `show_reasoning`, which unfolds for good.
+    stream_reasoning: bool,
     /// Whether a prior assistant turn's reasoning is resent to the model.
     /// Defaults from `[agent].send_reasoning` in agent.toml (true). False keeps
     /// long chains of thought out of the request (and satisfies upstreams that
@@ -1673,6 +1679,7 @@ impl App {
             reasoning_blocks: Vec::new(),
             show_reasoning,
             // Overwritten from the session config right after construction.
+            stream_reasoning: true,
             send_reasoning: true,
             expanded: std::collections::HashSet::new(),
             reveal: None,
@@ -2189,11 +2196,15 @@ impl App {
             .is_some_and(|closed| closed.elapsed() >= TODO_HIDE_AFTER)
     }
 
-    /// True while a reasoning block is streaming with folding on: the one
-    /// stretch of a run that puts nothing on screen, so the header badge is the
-    /// only place progress can show.
+    /// True while a reasoning block is streaming and nothing of it is on screen:
+    /// the one stretch of a run with no visible motion, which is what the
+    /// header's shimmering `[thinking]` badge stands in for. With
+    /// `stream_reasoning` on the tail itself is moving, so the badge stays flat.
     fn is_thinking(&self) -> bool {
-        self.status != Status::Idle && !self.show_reasoning && self.reasoning_open()
+        self.status != Status::Idle
+            && !self.show_reasoning
+            && !self.stream_reasoning
+            && self.reasoning_open()
     }
 
     /// True while the model is mid-reasoning: either a `<think>` block is live
@@ -5466,6 +5477,7 @@ pub async fn run(
         smol_model,
         limits,
         show_reasoning,
+        stream_reasoning,
         send_reasoning,
         mcp_servers,
         mcp_task,
@@ -5516,6 +5528,7 @@ pub async fn run(
         repo_root,
     );
     app.smol_model = smol_model;
+    app.stream_reasoning = stream_reasoning;
     app.send_reasoning = send_reasoning;
     app.args = Some(args.clone());
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
@@ -9885,6 +9898,7 @@ fn draw(f: &mut Frame, app: &mut App) {
             &app.reasoning_segs,
             width,
             !app.show_reasoning,
+            app.stream_reasoning,
         );
         if !live.is_empty() {
             // Mirror flush_assistant's `gap(Kind::Prose)` so the separator above
@@ -13021,37 +13035,80 @@ mod tests {
     }
 
     #[test]
-    fn live_tail_hides_open_think_block_and_shows_it_when_revealed() {
-        use ratatui::{backend::TestBackend, Terminal};
+    fn live_tail_streams_open_reasoning_and_the_gate_hides_it() {
         let mut app = test_app();
         app.assistant_buf = "<think>pondering the answer".to_string();
 
-        let render = |app: &mut App| {
-            let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
-            terminal.draw(|f| super::draw(f, app)).unwrap();
-            let buf = terminal.backend().buffer().clone();
-            (0..buf.area.height)
-                .map(|y| {
-                    (0..buf.area.width)
-                        .map(|x| buf[(x, y)].symbol())
-                        .collect::<String>()
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-
-        // Reasoning folding is the default: an open  block is hidden from
-        // the live tail (the header shows [thinking] instead).
-        let hidden = render(&mut app);
+        // Streaming is the default: a folded, still-open block shows its tail so
+        // the user can watch the thought form.
+        let streamed = render_rows(&mut app, 60, 30).join("\n");
         assert!(
-            !hidden.contains("pondering"),
-            "open reasoning must be hidden by default"
+            streamed.contains("pondering"),
+            "open reasoning streams by default: {streamed}"
         );
 
-        // With show_reasoning on, the streaming reasoning renders dimmed as before.
+        // With the gate off only the header's [thinking] badge stands for it.
+        app.stream_reasoning = false;
+        let hidden = render_rows(&mut app, 60, 30).join("\n");
+        assert!(
+            !hidden.contains("pondering"),
+            "stream_reasoning = false hides the open block"
+        );
+
+        // With show_reasoning on, folding is off entirely and it renders whole.
         app.show_reasoning = true;
-        let shown = render(&mut app);
+        let shown = render_rows(&mut app, 60, 30).join("\n");
         assert!(shown.contains("pondering"), "revealed live tail must contain it");
+    }
+
+    /// A long chain of thought must not push the answer, or the conversation
+    /// above it, off the screen: the live tail keeps only the last few lines.
+    #[test]
+    fn live_tail_bounds_streaming_reasoning_to_its_last_lines() {
+        let body: String = (1..=20).map(|n| format!("step {n}\n")).collect();
+        let lines = super::live_assistant_lines(
+            &format!("<think>{body}"),
+            &[],
+            60,
+            true,
+            true,
+        );
+        let text: Vec<String> = lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect();
+        assert_eq!(text.len(), 6, "capped at the tail: {text:?}");
+        assert!(text[0].contains("step 15"), "starts at the tail: {text:?}");
+        assert!(text[5].contains("step 20"), "ends at the newest: {text:?}");
+    }
+
+    /// A block that already closed mid-turn folds to the very summary row the
+    /// commit will emit, so finalizing the turn does not move the transcript.
+    #[test]
+    fn live_tail_folds_a_closed_reasoning_run_to_its_summary_row() {
+        let lines = super::live_assistant_lines(
+            "<think>weighed it\ntwice</think>Here is the answer.",
+            &[],
+            60,
+            true,
+            true,
+        );
+        let text: Vec<String> = lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect();
+        assert!(
+            text.iter().any(|l| l.contains("reasoning (2 lines)")),
+            "closed run folds to a summary: {text:?}"
+        );
+        assert!(
+            !text.iter().any(|l| l.contains("weighed it")),
+            "closed run is not shown in full: {text:?}"
+        );
+        assert!(
+            text.iter().any(|l| l.contains("Here is the answer.")),
+            "prose still renders: {text:?}"
+        );
     }
 
     #[test]
@@ -18595,9 +18652,9 @@ mod tests {
             app.reasoning_status().map(|(w, _)| w),
             Some("thinking".to_string())
         );
-        assert!(app.is_thinking(), "reasoning is live");
+        assert!(app.reasoning_open(), "reasoning is live");
         app.apply(StreamEvent::Token { text: "Answer".into() });
-        assert!(!app.is_thinking(), "prose has started");
+        assert!(!app.reasoning_open(), "prose has started");
         assert_eq!(
             app.reasoning_status().map(|(w, _)| w),
             Some("thought for 0s".to_string()),
@@ -19787,8 +19844,11 @@ mod tests {
     /// The animation is scoped to the state that needs it: a folded, streaming
     /// reasoning block. Everything else keeps its flat badge.
     #[test]
-    fn only_folded_live_reasoning_animates_the_badge() {
+    fn only_invisible_live_reasoning_animates_the_badge() {
         let mut app = test_app();
+        // Streaming reasoning puts the thought on screen, so the badge has
+        // nothing to stand in for; the shimmer is for the hidden case.
+        app.stream_reasoning = false;
         assert!(!app.is_thinking(), "idle");
         app.submit_user("hi".into());
         assert!(!app.is_thinking(), "running, but nothing thinking yet");
@@ -19805,12 +19865,15 @@ mod tests {
         });
         assert!(!app.is_thinking(), "the block closed");
 
-        // With reasoning shown inline the transcript itself is moving, so the
-        // badge stays flat.
-        app.show_reasoning = true;
+        // With reasoning on screen -- streamed into the live tail, or unfolded
+        // outright -- the transcript itself is moving, so the badge stays flat.
+        app.stream_reasoning = true;
         app.apply(StreamEvent::Token {
             text: "<think>more".into(),
         });
+        assert!(!app.is_thinking(), "streamed reasoning needs no badge motion");
+        app.stream_reasoning = false;
+        app.show_reasoning = true;
         assert!(!app.is_thinking(), "unfolded reasoning needs no badge motion");
     }
 

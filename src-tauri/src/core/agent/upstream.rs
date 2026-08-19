@@ -514,10 +514,15 @@ pub(crate) async fn call_openai_chat_completions(
             .body(body.to_string())
             .send()
             .await
-            .map_err(|e| format!("Upstream request failed: {e}"))?;
+            .map_err(|e| format!("Upstream request failed: {}", describe_request_error(&e)))?;
 
         let status = resp.status();
-        let text = resp.text().await.map_err(|e| e.to_string())?;
+        let text = resp.text().await.map_err(|e| {
+            format!(
+                "Reading the upstream response failed ({upstream_url}): {}",
+                describe_request_error(&e)
+            )
+        })?;
 
         if status.is_success() {
             return serde_json::from_str::<serde_json::Value>(&text)
@@ -569,6 +574,84 @@ pub(crate) fn is_context_overflow_error(err: &str) -> bool {
     err.contains(CONTEXT_OVERFLOW_MARKER)
 }
 
+/// Every message in an error's `source()` chain, outermost cause first.
+/// `reqwest::Error` prints only its own layer -- `error sending request for url
+/// (...)` -- so the reason the request never left (DNS failure, refused
+/// connection, TLS mismatch, dropped socket) is one or more sources down and is
+/// otherwise lost to the user. Consecutive duplicates are collapsed: hyper and
+/// its io error often stringify identically.
+fn error_source_chain(err: &dyn std::error::Error) -> Vec<String> {
+    let mut chain = Vec::new();
+    let mut cur = err.source();
+    while let Some(e) = cur {
+        let msg = e.to_string();
+        if !msg.trim().is_empty() && chain.last() != Some(&msg) {
+            chain.push(msg);
+        }
+        cur = e.source();
+    }
+    chain
+}
+
+/// Names the proxy environment variables in force, without their values (they
+/// routinely carry credentials). A proxy set in the environment is a common
+/// reason a request fails for Jan and for nothing else, and it is invisible in
+/// the error itself.
+fn proxy_env_hint() -> Option<String> {
+    const VARS: &[&str] = &[
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+        "NO_PROXY",
+        "no_proxy",
+    ];
+    let set: Vec<&str> = VARS
+        .iter()
+        .copied()
+        .filter(|name| {
+            std::env::var_os(name).is_some_and(|v| !v.to_string_lossy().trim().is_empty())
+        })
+        .collect();
+    (!set.is_empty()).then(|| format!("proxy env set: {}", set.join(", ")))
+}
+
+/// A failed HTTP request described well enough to act on: what stage failed, the
+/// `reqwest` message, its whole cause chain, and -- for a connect or timeout
+/// failure, where the environment is usually the culprit -- which proxy
+/// variables are set.
+pub(crate) fn describe_request_error(err: &reqwest::Error) -> String {
+    let stage = if err.is_timeout() {
+        "timed out"
+    } else if err.is_connect() {
+        "could not connect"
+    } else if err.is_redirect() {
+        "too many redirects"
+    } else if err.is_body() || err.is_decode() {
+        "response body failed"
+    } else if err.is_builder() {
+        "request could not be built"
+    } else {
+        "send failed"
+    };
+    let mut msg = format!("{stage}: {err}");
+    let chain = error_source_chain(err);
+    if !chain.is_empty() {
+        msg.push_str(&format!(" (caused by: {})", chain.join(" <- ")));
+    }
+    if let Some(status) = err.status() {
+        msg.push_str(&format!(" [HTTP {status}]"));
+    }
+    if err.is_connect() || err.is_timeout() {
+        if let Some(hint) = proxy_env_hint() {
+            msg.push_str(&format!(" [{hint}]"));
+        }
+    }
+    msg
+}
+
 pub(crate) async fn stream_openai_chat_completions(
     client: &Client,
     upstream_url: &str,
@@ -607,7 +690,7 @@ pub(crate) async fn stream_openai_chat_completions(
             .body(req_body.to_string())
             .send()
             .await
-            .map_err(|e| format!("Upstream request failed: {e}"))?;
+            .map_err(|e| format!("Upstream request failed: {}", describe_request_error(&e)))?;
 
         let status = resp.status();
         if status.is_success() {
@@ -901,12 +984,22 @@ async fn consume_openai_sse(
     resp: reqwest::Response,
     events: &mpsc::UnboundedSender<StreamEvent>,
 ) -> Result<serde_json::Value, String> {
+    let url = resp.url().to_string();
     let mut stream = resp.bytes_stream();
     let mut buf = String::new();
     let mut acc = SseAccumulator::default();
+    let mut bytes = 0usize;
 
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Upstream stream error: {e}"))?;
+        // A stream that dies mid-response is the hardest case to tell apart from
+        // an empty answer, so the byte count so far goes in the message.
+        let chunk = chunk.map_err(|e| {
+            format!(
+                "Upstream stream error ({url}) after {bytes} bytes: {}",
+                describe_request_error(&e)
+            )
+        })?;
+        bytes += chunk.len();
         buf.push_str(&String::from_utf8_lossy(&chunk));
         drain_complete_lines(&mut buf, &mut acc, events);
     }
@@ -934,6 +1027,86 @@ mod tests {
         mpsc::UnboundedReceiver<StreamEvent>,
     ) {
         mpsc::unbounded_channel()
+    }
+
+    /// `reqwest` prints only its own layer, so the cause chain is where the
+    /// actual failure lives -- the whole point of `describe_request_error`.
+    #[test]
+    fn error_source_chain_lists_every_cause_and_collapses_repeats() {
+        #[derive(Debug)]
+        struct Err2(&'static str, Option<Box<Err2>>);
+        impl std::fmt::Display for Err2 {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.0)
+            }
+        }
+        impl std::error::Error for Err2 {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                self.1.as_ref().map(|e| e.as_ref() as &(dyn std::error::Error + 'static))
+            }
+        }
+
+        // The outermost message is printed by the caller, so the chain starts at
+        // its first source; the repeated innermost layer collapses.
+        let inner = Err2("connection refused", None);
+        let middle = Err2("connection refused", Some(Box::new(inner)));
+        let connect = Err2("tcp connect error", Some(Box::new(middle)));
+        let outer = Err2("error sending request", Some(Box::new(connect)));
+        assert_eq!(
+            error_source_chain(&outer),
+            vec![
+                "tcp connect error".to_string(),
+                "connection refused".to_string()
+            ],
+            "sources only, consecutive duplicates collapsed"
+        );
+        assert!(
+            error_source_chain(&Err2("alone", None)).is_empty(),
+            "no sources -> nothing to add"
+        );
+    }
+
+    /// The reported error must name the stage and carry the OS-level reason, not
+    /// just the URL. Port 1 on loopback refuses without touching the network.
+    #[tokio::test]
+    async fn describe_request_error_names_the_stage_and_the_os_cause() {
+        let err = Client::new()
+            .post("http://127.0.0.1:1/v1/chat/completions")
+            .body("{}")
+            .send()
+            .await
+            .expect_err("loopback port 1 refuses");
+        let msg = describe_request_error(&err);
+        assert!(msg.starts_with("could not connect: "), "stage named: {msg}");
+        assert!(msg.contains("caused by: "), "cause chain present: {msg}");
+        assert!(
+            msg.to_lowercase().contains("refused") || msg.to_lowercase().contains("connect"),
+            "the OS reason survives: {msg}"
+        );
+    }
+
+    /// A proxy in the environment breaks Jan and nothing else, and never shows up
+    /// in the error. Names only: the values carry credentials.
+    #[test]
+    fn proxy_env_hint_names_set_variables_without_their_values() {
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev = std::env::var_os("HTTPS_PROXY");
+        std::env::remove_var("HTTPS_PROXY");
+        let before = proxy_env_hint();
+
+        std::env::set_var("HTTPS_PROXY", "http://user:secret@proxy.internal:8080");
+        let hint = proxy_env_hint().expect("a set proxy is reported");
+        assert!(hint.contains("HTTPS_PROXY"), "names the variable: {hint}");
+        assert!(!hint.contains("secret"), "never prints the value: {hint}");
+
+        std::env::set_var("HTTPS_PROXY", "   ");
+        assert_eq!(proxy_env_hint(), before, "a blank value is not a proxy");
+
+        match prev {
+            Some(v) => std::env::set_var("HTTPS_PROXY", v),
+            None => std::env::remove_var("HTTPS_PROXY"),
+        }
     }
 
     /// A model served both by a Jan desktop API server (reachable over HTTP) and

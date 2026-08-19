@@ -24,26 +24,47 @@ pub(super) fn format_assistant_lines(
     lines
 }
 
+/// Lines of an open reasoning block kept in the live tail: enough to see the
+/// thought moving without letting a long chain of thought push the answer, and
+/// the conversation above it, off the screen.
+const LIVE_REASONING_TAIL_LINES: usize = 6;
+
 /// Live tail rendering for the in-progress assistant buffer. With reasoning
-/// folding on (`fold_reasoning`), an open (unterminated) think block is hidden
-/// entirely so the user sees only the answer prose stream, matching the
-/// `[thinking]` header state; once the tag closes (or prose begins) the rest
-/// renders as usual. When folding is off this is identical to
-/// `format_assistant_lines`, so the existing live-tail tests hold.
+/// folding on (`fold_reasoning`) the block is bounded rather than shown whole:
+/// the open (unterminated) one keeps its last [`LIVE_REASONING_TAIL_LINES`]
+/// lines when `stream_reasoning` is on, and a block that already closed shows
+/// the same summary row `push_assistant_blocks` will commit for it, so nothing
+/// jumps as the turn finalizes. With `stream_reasoning` off the open block is
+/// hidden entirely and only the `[thinking]` header stands for it. When folding
+/// is off this is identical to `format_assistant_lines`, so the existing
+/// live-tail tests hold.
 pub(super) fn live_assistant_lines(
     prose: &str,
     segs: &[super::ReasoningSeg],
     width: u16,
     fold_reasoning: bool,
+    stream_reasoning: bool,
 ) -> Vec<Line<'static>> {
     if !fold_reasoning {
         return format_assistant_lines(prose, segs, width);
     }
+    let runs = super::assistant_runs(prose, segs);
+    let last = runs.len().saturating_sub(1);
     let mut lines = Vec::new();
-    for (reasoning, seg) in super::assistant_runs(prose, segs) {
+    for (i, (reasoning, seg)) in runs.into_iter().enumerate() {
         if reasoning {
-            // Folded: the streaming content is hidden; nothing to show. (Once it
-            // commits, `push_assistant_blocks` emits the summary row instead.)
+            // Only the trailing run can still be open; anything a later run
+            // follows has ended and folds to its summary row.
+            let body: Vec<&str> = seg.lines().filter(|l| !l.trim().is_empty()).collect();
+            if body.is_empty() {
+                continue;
+            }
+            if i < last {
+                lines.push(reasoning_summary_row(body.len()));
+            } else if stream_reasoning {
+                let tail = &body[body.len().saturating_sub(LIVE_REASONING_TAIL_LINES)..];
+                lines.extend(reasoning_detail_lines(&tail.join("\n")));
+            }
             continue;
         }
         if !seg.trim().is_empty() {
@@ -1398,6 +1419,4 @@ mod tests {
             .collect();
         assert_eq!(joined, long);
     }
-
 }
-
