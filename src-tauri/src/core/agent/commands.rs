@@ -57,7 +57,7 @@ fn build_orchestration_args<R: Runtime>(
         Arc::new(Mutex::new(HashMap::new()));
 
     OrchestrationArgs {
-        client: reqwest::Client::new(),
+        client: crate::core::agent::upstream::agent_http_client(),
         provider_configs: state.provider_configs.clone(),
         llama_state: llama_state_arc,
         mlx_sessions,

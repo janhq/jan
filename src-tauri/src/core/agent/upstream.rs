@@ -510,11 +510,7 @@ pub(crate) async fn call_openai_chat_completions(
             req = req.header("Authorization", format!("Bearer {key}"));
         }
 
-        let resp = req
-            .body(body.to_string())
-            .send()
-            .await
-            .map_err(|e| format!("Upstream request failed: {}", describe_request_error(&e)))?;
+        let resp = send_with_one_retry(req.body(body.to_string())).await?;
 
         let status = resp.status();
         let text = resp.text().await.map_err(|e| {
@@ -591,6 +587,95 @@ fn error_source_chain(err: &dyn std::error::Error) -> Vec<String> {
         cur = e.source();
     }
     chain
+}
+
+/// True when a failed send can be retried safely: the connection died before any
+/// response arrived, so nothing has been streamed to the caller and no side
+/// effect on the upstream is implied. Covers a refused/failed connect and the
+/// stale-keep-alive family -- hyper reports a pooled connection the peer had
+/// already closed as `connection closed before message completed`, or as an
+/// `ECONNRESET`/`EPIPE` io error if the RST lands while the request is going
+/// out. A timeout is deliberately excluded: retrying one doubles the wait.
+fn is_retryable_send_error(err: &reqwest::Error) -> bool {
+    if err.is_timeout() || err.is_body() || err.is_decode() || err.is_builder() {
+        return false;
+    }
+    err.is_connect() || chain_indicates_dropped_connection(&error_source_chain(err))
+}
+
+/// Whether an error's cause chain names a connection the peer dropped. Matched
+/// on text because the io error is several opaque layers down (hyper's
+/// `SendRequest` -> `connection error` -> `std::io::Error`) and its `ErrorKind`
+/// is not exposed through `reqwest`.
+fn chain_indicates_dropped_connection(chain: &[String]) -> bool {
+    const MARKERS: &[&str] = &[
+        "connection closed before message completed",
+        "connection reset by peer",
+        "broken pipe",
+        "connection aborted",
+        "unexpected eof",
+    ];
+    chain
+        .iter()
+        .any(|msg| {
+            let msg = msg.to_lowercase();
+            MARKERS.iter().any(|m| msg.contains(m))
+        })
+}
+
+/// How long to wait before the one retry of a dropped connection. Long enough
+/// for a load balancer that just recycled a backend to finish, short enough that
+/// the user does not read it as a hang.
+const SEND_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// Send a request, retrying it once when the connection dropped before any
+/// response arrived. This is the failure a long turn invites: while tools run
+/// locally no bytes flow, an idle keep-alive connection is reclaimed by the peer
+/// or its load balancer, and the next turn's request is written into a socket
+/// that is already gone. Retrying is safe precisely because nothing was received
+/// -- see [`is_retryable_send_error`].
+async fn send_with_one_retry(req: reqwest::RequestBuilder) -> Result<reqwest::Response, String> {
+    // `try_clone` returns `None` only for a streaming body; every caller here
+    // sends a `String`, so the retry path is always available in practice.
+    let retry = req.try_clone();
+    let first = match req.send().await {
+        Ok(resp) => return Ok(resp),
+        Err(e) => e,
+    };
+    let Some(retry) = retry.filter(|_| is_retryable_send_error(&first)) else {
+        return Err(format!(
+            "Upstream request failed: {}",
+            describe_request_error(&first)
+        ));
+    };
+    log::warn!(
+        "upstream: {} -- retrying once",
+        describe_request_error(&first)
+    );
+    tokio::time::sleep(SEND_RETRY_DELAY).await;
+    retry.send().await.map_err(|e| {
+        format!(
+            "Upstream request failed after one retry: {} (first attempt: {})",
+            describe_request_error(&e),
+            describe_request_error(&first)
+        )
+    })
+}
+
+/// The HTTP client every agent turn goes through. `Client::new()`'s defaults are
+/// wrong for this traffic in one specific way: connections idle for up to 90s
+/// stay in the pool, but a turn spends far longer than that running tools, and
+/// the peer (or its load balancer) closes an idle connection well before then.
+/// Reusing one is the `Connection reset by peer` a long session eventually hits,
+/// so the pool is kept shorter-lived than any plausible upstream idle timeout.
+/// No overall request timeout: a streamed answer legitimately runs for minutes.
+pub(crate) fn agent_http_client() -> Client {
+    Client::builder()
+        .pool_idle_timeout(std::time::Duration::from_secs(15))
+        .tcp_keepalive(std::time::Duration::from_secs(30))
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_else(|_| Client::new())
 }
 
 /// Names the proxy environment variables in force, without their values (they
@@ -686,11 +771,7 @@ pub(crate) async fn stream_openai_chat_completions(
             req = req.header("Authorization", format!("Bearer {key}"));
         }
 
-        let resp = req
-            .body(req_body.to_string())
-            .send()
-            .await
-            .map_err(|e| format!("Upstream request failed: {}", describe_request_error(&e)))?;
+        let resp = send_with_one_retry(req.body(req_body.to_string())).await?;
 
         let status = resp.status();
         if status.is_success() {
@@ -1083,6 +1164,113 @@ mod tests {
             msg.to_lowercase().contains("refused") || msg.to_lowercase().contains("connect"),
             "the OS reason survives: {msg}"
         );
+    }
+
+    #[test]
+    fn dropped_connection_is_recognised_from_the_cause_chain() {
+        assert!(chain_indicates_dropped_connection(&[
+            "client error (SendRequest)".to_string(),
+            "connection error".to_string(),
+            "Connection reset by peer (os error 104)".to_string(),
+        ]));
+        assert!(chain_indicates_dropped_connection(&[
+            "connection closed before message completed".to_string()
+        ]));
+        assert!(
+            !chain_indicates_dropped_connection(&[
+                "dns error".to_string(),
+                "failed to lookup address information".to_string()
+            ]),
+            "a name that does not resolve is not a dropped connection"
+        );
+        assert!(!chain_indicates_dropped_connection(&[]));
+    }
+
+    /// A refused connect never reached the peer, so retrying it is safe; a
+    /// timeout is excluded on purpose (retrying one doubles the wait).
+    #[tokio::test]
+    async fn a_refused_connect_is_retryable_but_a_timeout_is_not() {
+        let refused = Client::new()
+            .post("http://127.0.0.1:1/v1/chat/completions")
+            .body("{}")
+            .send()
+            .await
+            .expect_err("loopback port 1 refuses");
+        assert!(is_retryable_send_error(&refused), "{refused}");
+
+        // 10.255.255.1 is a reserved address that black-holes rather than
+        // refusing, so the connect attempt hits the timeout instead.
+        let timed_out = Client::builder()
+            .connect_timeout(std::time::Duration::from_millis(50))
+            .build()
+            .expect("client")
+            .post("http://10.255.255.1:81/v1/chat/completions")
+            .body("{}")
+            .send()
+            .await
+            .expect_err("black-holed address times out");
+        if timed_out.is_timeout() {
+            assert!(!is_retryable_send_error(&timed_out), "{timed_out}");
+        }
+    }
+
+    /// The failure a long turn invites: the peer reclaims a keep-alive
+    /// connection while tools run, and the next request is written into a socket
+    /// that is already gone. One retry must carry the turn through, transparently
+    /// -- the caller sees a normal completion, not an error.
+    #[tokio::test]
+    async fn a_dropped_first_connection_is_retried_and_the_turn_succeeds() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = tokio::spawn(async move {
+            // First connection: read the request, then hang up without a byte of
+            // response -- exactly what a reclaimed pooled connection looks like.
+            let (mut first, _) = listener.accept().await.expect("first accept");
+            let mut scratch = [0u8; 1024];
+            let _ = first.read(&mut scratch).await;
+            drop(first);
+
+            // Second connection: a normal one-token SSE answer.
+            let (mut second, _) = listener.accept().await.expect("second accept");
+            let _ = second.read(&mut scratch).await;
+            let sse = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n\
+                       data: [DONE]\n\n";
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{sse}",
+                sse.len()
+            );
+            let _ = second.write_all(resp.as_bytes()).await;
+            let _ = second.flush().await;
+        });
+
+        let (tx, mut rx) = sink();
+        let url = format!("http://{addr}/v1/chat/completions");
+        let completion = stream_openai_chat_completions(
+            &Client::new(),
+            &url,
+            &[],
+            &json!({ "model": "m", "messages": [] }),
+            &tx,
+        )
+        .await
+        .expect("the retry carries the turn");
+
+        assert_eq!(
+            completion["choices"][0]["message"]["content"], "hi",
+            "answer from the second connection: {completion}"
+        );
+        let mut tokens = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            if let StreamEvent::Token { text } = ev {
+                tokens.push(text);
+            }
+        }
+        assert_eq!(tokens, vec!["hi".to_string()], "streamed once, not twice");
+        server.await.expect("server task");
     }
 
     /// A proxy in the environment breaks Jan and nothing else, and never shows up

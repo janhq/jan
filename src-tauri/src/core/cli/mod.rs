@@ -681,7 +681,7 @@ fn build_cli_orchestration_args(
     sandbox: Option<bool>,
 ) -> OrchestrationArgs {
     OrchestrationArgs {
-        client: reqwest::Client::new(),
+        client: crate::core::agent::upstream::agent_http_client(),
         provider_configs: Arc::new(Mutex::new(provider_configs)),
         mcp_servers,
         mcp_settings: Arc::new(Mutex::new(mcp_settings)),

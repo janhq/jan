@@ -14382,7 +14382,7 @@ mod tests {
             let provider_configs: std::collections::HashMap<String, crate::core::state::ProviderConfig> =
                 std::collections::HashMap::new();
             let args = std::sync::Arc::new(super::OrchestrationArgs {
-                client: reqwest::Client::new(),
+                client: crate::core::agent::upstream::agent_http_client(),
                 provider_configs: std::sync::Arc::new(tokio::sync::Mutex::new(
                     provider_configs,
                 )),
