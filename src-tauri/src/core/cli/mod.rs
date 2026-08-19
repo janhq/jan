@@ -763,6 +763,10 @@ pub(crate) struct AgentSession {
     pub limits: SessionLimits,
     /// Whether the TUI expands `<think>` reasoning blocks (default false).
     pub show_reasoning: bool,
+    /// Whether to resend a prior assistant turn's reasoning to the model
+    /// (default true). False drops `reasoning_content` from outgoing assistant
+    /// messages; the display journal still keeps reasoning for a resume.
+    pub send_reasoning: bool,
     /// Shared MCP connection map (same Arc held by `args`), so the TUI can
     /// connect/disconnect servers live via `/mcp` and later turns pick them up.
     pub mcp_servers: crate::core::state::SharedMcpServers,
@@ -785,6 +789,9 @@ impl AgentSession {
         if let Some(max) = self.limits.max_tokens {
             body["max_tokens"] = serde_json::json!(max);
         }
+        // Reasoning resend policy: the request-level flag the loop reads to
+        // decide whether prior assistant `reasoning_content` goes back out.
+        body["send_reasoning"] = serde_json::json!(self.send_reasoning);
         body
     }
 }
@@ -928,6 +935,7 @@ fn prepare_agent_session(
             max_session_tokens: cfg.budget.max_tokens.unwrap_or(DEFAULT_MAX_SESSION_TOKENS),
         },
         show_reasoning: cfg.agent.show_reasoning.unwrap_or(false),
+        send_reasoning: cfg.agent.send_reasoning.unwrap_or(true),
         mcp_servers,
         mcp_task,
     })

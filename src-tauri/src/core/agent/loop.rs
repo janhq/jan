@@ -1594,6 +1594,32 @@ async fn orchestrate_inner(
 /// overflowing request fails loudly instead of looping forever.
 const MAX_COMPACTION_ATTEMPTS: usize = 4;
 
+/// Deep-copy `messages` with `reasoning_content` removed from every assistant
+/// turn. The request builder applies this when the caller opts out of resending
+/// reasoning ([agent].send_reasoning=false). Mirror of the desktop app's
+/// `stripAssistantReasoningInBody`; kept in one place so every surface (TUI,
+/// headless, subagents) strips consistently. Only assistant messages carry the
+/// field, but the filter is defensive and targets just that role.
+fn strip_assistant_reasoning(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    messages
+        .iter()
+        .map(|m| {
+            if m.get("role").and_then(|r| r.as_str()) != Some("assistant") {
+                return m.clone();
+            }
+            let Some(obj) = m.as_object() else {
+                return m.clone();
+            };
+            if !obj.contains_key("reasoning_content") {
+                return m.clone();
+            }
+            let mut out = obj.clone();
+            out.remove("reasoning_content");
+            serde_json::Value::Object(out)
+        })
+        .collect()
+}
+
 /// Build one OpenAI chat-completion request from the current conversation.
 fn build_completion_request(
     model_id: &str,
@@ -1602,11 +1628,22 @@ fn build_completion_request(
     json_body: &serde_json::Value,
     forced_tool_choice: Option<&str>,
 ) -> serde_json::Value {
+    // `[agent].send_reasoning` is forwarded per-request; default true (resend
+    // reasoning). False opts out of resending prior reason on every turn.
+    let send_reasoning = json_body
+        .get("send_reasoning")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let messages = if send_reasoning {
+        conversation_messages.to_vec()
+    } else {
+        strip_assistant_reasoning(conversation_messages)
+    };
     let mut completion_map = serde_json::Map::new();
     completion_map.insert("model".to_string(), serde_json::json!(model_id));
     completion_map.insert(
         "messages".to_string(),
-        serde_json::Value::Array(conversation_messages.to_vec()),
+        serde_json::Value::Array(messages),
     );
     let tool_choice = forced_tool_choice
         .filter(|name| {
@@ -1936,11 +1973,22 @@ async fn run_turn_cycle(
                 .get("content")
                 .cloned()
                 .unwrap_or(serde_json::Value::Null);
-            conversation_messages.push(serde_json::json!({
+            let mut msg = serde_json::json!({
                 "role": "assistant",
                 "content": assistant_content,
                 "tool_calls": tool_calls.clone()
-            }));
+            });
+            // Carry this turn's reasoning back onto the resumed conversation so
+            // a follow-up request (and the final `MessagesUpdated`) can resend
+            // it. Kept out of `content`, matching the upstream shape.
+            if let Some(r) = choice_message
+                .get("reasoning_content")
+                .and_then(|v| v.as_str())
+                .filter(|r| !r.is_empty())
+            {
+                msg["reasoning_content"] = serde_json::json!(r);
+            }
+            conversation_messages.push(msg);
         } else {
             conversation_messages.push(serde_json::json!({
                 "role": "assistant",
@@ -2338,6 +2386,77 @@ mod tests {
             requests[1]["tool_choice"], "auto",
             "later turns must not keep forcing the same tool"
         );
+    }
+
+    /// Reasoning is resent by default: providers exposing it natively expect it
+    /// back, and llama.cpp templates with `preserve_thinking` re-emit prior
+    /// reasoning from this field (dropping it shrinks earlier turns and forces
+    /// the KV-cache prefix to be reprocessed).
+    #[test]
+    fn assistant_reasoning_is_resent_by_default() {
+        let messages = vec![json!({
+            "role": "assistant",
+            "content": "the answer",
+            "reasoning_content": "the thinking"
+        })];
+        let request = build_completion_request("m", &messages, &[], &json!({}), None);
+        assert_eq!(
+            request["messages"][0]["reasoning_content"], "the thinking",
+            "reasoning must be resent unless the user opts out: {request}"
+        );
+    }
+
+    /// `send_reasoning = false` drops the field from every assistant turn,
+    /// for a strict upstream that rejects it (Groq's validator) or to keep long
+    /// chains of thought out of the context budget.
+    #[test]
+    fn send_reasoning_false_strips_it_from_assistant_turns() {
+        let messages = vec![
+            json!({ "role": "user", "content": "q" }),
+            json!({
+                "role": "assistant",
+                "content": "the answer",
+                "reasoning_content": "the thinking"
+            }),
+        ];
+        let request = build_completion_request(
+            "m",
+            &messages,
+            &[],
+            &json!({ "send_reasoning": false }),
+            None,
+        );
+        assert!(
+            request["messages"][1].get("reasoning_content").is_none(),
+            "opted out, so reasoning must not reach the upstream: {request}"
+        );
+        // The rest of the turn is untouched.
+        assert_eq!(request["messages"][1]["content"], "the answer");
+        assert_eq!(request["messages"][0]["content"], "q");
+    }
+
+    /// Stripping keeps a tool-call turn's `tool_calls` intact: dropping those
+    /// alongside the reasoning would leave a dangling `role: "tool"` reply that
+    /// OpenAI-compatible upstreams reject outright.
+    #[test]
+    fn stripping_reasoning_preserves_tool_calls() {
+        let messages = vec![json!({
+            "role": "assistant",
+            "content": null,
+            "reasoning_content": "need to grep",
+            "tool_calls": [{ "id": "c1", "type": "function",
+                "function": { "name": "bash", "arguments": "{}" } }]
+        })];
+        let request = build_completion_request(
+            "m",
+            &messages,
+            &[],
+            &json!({ "send_reasoning": false }),
+            None,
+        );
+        let msg = &request["messages"][0];
+        assert!(msg.get("reasoning_content").is_none());
+        assert_eq!(msg["tool_calls"][0]["id"], "c1");
     }
 
     #[test]

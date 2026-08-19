@@ -105,6 +105,19 @@ pub(crate) fn parse_openai_messages(
         let mut obj = serde_json::Map::new();
         obj.insert("role".to_string(), serde_json::json!(role));
         obj.insert("content".to_string(), content);
+        // Preserve a resent assistant turn's reasoning alongside its content and
+        // tool calls. Some providers require prior reasoning to be resubmitted
+        // to keep a (local llama.cpp `preserve_thinking`) chat template honest:
+        // dropping it would shrink earlier assistant turns and force reprocessing
+        // of the KV-cache prefix. Only assistant messages carry it; user/tool/
+        // system passes are untouched by construction.
+        if role == "assistant" {
+            if let Some(r) = msg.get("reasoning_content").and_then(|v| v.as_str()) {
+                if !r.is_empty() {
+                    obj.insert("reasoning_content".to_string(), serde_json::json!(r));
+                }
+            }
+        }
         if has_tool_calls {
             obj.insert("tool_calls".to_string(), msg["tool_calls"].clone());
         }
@@ -637,6 +650,11 @@ struct ToolCallAccum {
 #[derive(Default)]
 struct SseAccumulator {
     content: String,
+    /// Natively streamed reasoning (`reasoning_content` deltas), accumulated so
+    /// the reconstructed completion carries it back on the assistant message.
+    /// Kept apart from `content`: reasoning is never part of the answer prose,
+    /// but a caller resending assistant turns may forward it to the model.
+    reasoning: String,
     tool_calls: Vec<ToolCallAccum>,
     finish_reason: Option<String>,
     usage: Option<serde_json::Value>,
@@ -710,6 +728,7 @@ impl SseAccumulator {
         // through `Token`; consumers keep the tag-stripping fallback for them.
         if let Some(text) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
             if !text.is_empty() {
+                self.reasoning.push_str(text);
                 let _ = events.send(StreamEvent::Reasoning {
                     text: text.to_string(),
                 });
@@ -814,6 +833,13 @@ impl SseAccumulator {
                 serde_json::json!(self.content)
             },
         );
+        // Reasoning stays out of `content` but is carried on the message so a
+        // caller that resends assistant turns to the model can forward it (and
+        // so a turn that only reasoned still surfaces its reasoning). Empty is
+        // omitted so non-reasoning providers produce an unchanged shape.
+        if !self.reasoning.is_empty() {
+            message.insert("reasoning_content".to_string(), serde_json::json!(self.reasoning));
+        }
         if !tool_calls.is_empty() {
             message.insert(
                 "tool_calls".to_string(),
@@ -1174,10 +1200,14 @@ mod tests {
             &tx,
         );
 
-        // Reasoning must not leak into the reconstructed message sent back to the
-        // model as history; only the answer prose is persisted.
+        // Reasoning stays out of the answer prose, but is preserved on the
+        // reconstructed message so a caller can resend it as history.
         let completion = acc.into_completion();
         assert_eq!(completion["choices"][0]["message"]["content"], "answer");
+        assert_eq!(
+            completion["choices"][0]["message"]["reasoning_content"],
+            "let me think"
+        );
 
         drop(tx);
         let mut reasoning = Vec::new();
@@ -1223,6 +1253,85 @@ mod tests {
         }
         assert_eq!(reasoning, vec!["hmm"]);
         assert!(tokens.is_empty(), "no content tokens for a reasoning-only turn: {tokens:?}");
+    }
+
+    /// A completion with no `reasoning_content` deltas must keep exactly the
+    /// shape it always had: the field is omitted, not emitted empty, so a
+    /// provider that rejects unknown assistant keys is unaffected.
+    #[test]
+    fn a_turn_without_reasoning_omits_the_field_entirely() {
+        let (tx, _rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "content": "answer" } }] }).to_string(),
+            &tx,
+        );
+        let completion = acc.into_completion();
+        let message = &completion["choices"][0]["message"];
+        assert_eq!(message["content"], "answer");
+        assert!(
+            message.get("reasoning_content").is_none(),
+            "no reasoning streamed, so the key must be absent: {message}"
+        );
+    }
+
+    /// A tool-call turn's reasoning is preserved too: the model reasons about
+    /// which tool to call, and that reasoning has to survive onto the assistant
+    /// turn the loop resends with its `tool_calls`.
+    #[test]
+    fn reasoning_is_preserved_on_a_tool_call_turn() {
+        let (tx, _rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "reasoning_content": "need to grep" } }] })
+                .to_string(),
+            &tx,
+        );
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "tool_calls": [{
+                "index": 0,
+                "id": "c1",
+                "function": { "name": "bash", "arguments": "{}" }
+            }] } }] })
+            .to_string(),
+            &tx,
+        );
+        let completion = acc.into_completion();
+        let message = &completion["choices"][0]["message"];
+        assert_eq!(message["reasoning_content"], "need to grep");
+        assert_eq!(message["tool_calls"][0]["id"], "c1");
+    }
+
+    /// A resent assistant turn keeps its `reasoning_content` through the message
+    /// normalizer. Local llama.cpp templates with `preserve_thinking` re-emit
+    /// prior reasoning from this field; dropping it would shrink earlier turns
+    /// and force the KV-cache prefix to be reprocessed.
+    #[test]
+    fn parse_messages_preserves_assistant_reasoning_content() {
+        let messages = json!([{
+            "role": "assistant",
+            "content": "the answer",
+            "reasoning_content": "the thinking"
+        }]);
+        let out = parse_openai_messages(&messages).unwrap();
+        assert_eq!(out[0]["content"], "the answer");
+        assert_eq!(out[0]["reasoning_content"], "the thinking");
+    }
+
+    /// Only assistant turns carry reasoning back. A stray field on another role
+    /// is not part of the protocol, so it is dropped rather than forwarded.
+    #[test]
+    fn parse_messages_drops_reasoning_on_non_assistant_roles() {
+        let messages = json!([
+            { "role": "user", "content": "q", "reasoning_content": "nope" },
+            { "role": "assistant", "content": "a" },
+        ]);
+        let out = parse_openai_messages(&messages).unwrap();
+        assert!(out[0].get("reasoning_content").is_none());
+        assert!(
+            out[1].get("reasoning_content").is_none(),
+            "an assistant turn with no reasoning stays unchanged"
+        );
     }
 
     /// Providers that inline `<think>` tags in `content` (no reasoning_content

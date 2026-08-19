@@ -1268,6 +1268,12 @@ struct App {
     /// from `[agent].show_reasoning` in agent.toml (false). Ctrl-O toggles every
     /// existing block between its summary row and full detail for the session.
     show_reasoning: bool,
+    /// Whether a prior assistant turn's reasoning is resent to the model.
+    /// Defaults from `[agent].send_reasoning` in agent.toml (true). False keeps
+    /// long chains of thought out of the request (and satisfies upstreams that
+    /// reject the key); the display journal keeps reasoning for a resume either
+    /// way.
+    send_reasoning: bool,
     /// Transcript row indices of collapsed regions (tool groups or reasoning
     /// blocks) the user has expanded to full detail.
     expanded: std::collections::HashSet<usize>,
@@ -1666,6 +1672,8 @@ impl App {
             pending_rows: Vec::new(),
             reasoning_blocks: Vec::new(),
             show_reasoning,
+            // Overwritten from the session config right after construction.
+            send_reasoning: true,
             expanded: std::collections::HashSet::new(),
             reveal: None,
             input: String::new(),
@@ -3070,6 +3078,11 @@ impl App {
         if self.goal.as_ref().is_some_and(|g| g.is_active()) {
             body["goal_mode"] = serde_json::json!(true);
         }
+        // Reasoning resend policy: forwarded only when the user opted out, so a
+        // default session sends an unchanged body (the loop defaults to true).
+        if !self.send_reasoning {
+            body["send_reasoning"] = serde_json::json!(false);
+        }
         body
     }
 
@@ -3661,6 +3674,18 @@ impl App {
         answer
     }
 
+    /// The concatenated natively-streamed reasoning text for the current turn.
+    /// Used to resend the final answer's reasoning on the wire. Inline
+    /// ` thinking` blocks (which arrive through `Token` and live in the buffer)
+    /// are handled separately by `answer_without_reasoning` and the loop path;
+    /// this covers the `reasoning_content` delta case, which never touches the
+    /// buffer.
+    fn native_reasoning_text(&self) -> String {
+        self.reasoning_segs
+            .iter()
+            .map(|s| s.text.clone())
+            .collect::<String>()
+    }
     fn on_done(&mut self, stop_reason: String, usage: Option<Usage>) {
         self.finalize_tool_group();
         // Done is terminal: nothing more arrives on this stream, so a call that
@@ -3670,11 +3695,23 @@ impl App {
         // arrive on its stream. Any panel still open here never got its own
         // `SubagentEnd`.
         self.close_live_subagents();
+        // Capture the turn's reasoning before `take_answer` flushes it: native
+        // reasoning lives in `reasoning_segs` until the flush, and inline
+        // ` thinking` blocks are folded into the buffer. Preserved so the
+        // final assistant turn can be resent with its reasoning (see below).
+        let reasoning = self.native_reasoning_text();
         let answer = self.take_answer();
         let wire = answer_without_reasoning(&answer);
         if !wire.is_empty() {
-            self.history
-                .push(serde_json::json!({ "role": "assistant", "content": wire }));
+            let mut msg = serde_json::json!({ "role": "assistant", "content": wire });
+            // Resend the final answer's reasoning on the wire turn, mirroring
+            // how tool-call turns are threaded in the loop. Kept out of
+            // `content`; only added when the upstream actually streamed it, so
+            // non-reasoning providers send an unchanged shape.
+            if !reasoning.is_empty() {
+                msg["reasoning_content"] = serde_json::json!(reasoning);
+            }
+            self.history.push(msg);
         }
         // A closing receipt for the turn: when, how much context went up, how
         // much came back, how long it took, how fast. Cheap to skim, and the
@@ -3823,6 +3860,16 @@ impl App {
     /// `finish_compaction` when an overflow recovery is abandoned, so the two
     /// paths cannot drift.
     fn halt_turn(&mut self) {
+        // A run that died on an error rather than Esc is still an abnormal exit:
+        // it may well have run tools whose side effects exist on disk, but a
+        // mid-turn `MessagesUpdated` was never published (the stream errored
+        // before a natural stop), so those calls are absent from `history`.
+        // Fold them in exactly as a hard cancel does, so a later prompt or
+        // /resume sees the tools it ran and what they returned. The overflow-
+        // retry path deliberately avoids this (see `on_error`): that turn
+        // re-runs, so folding now would resend completed calls into the retried
+        // request before the model asks for them again.
+        self.append_cancelled_turn_tools();
         // An errored turn halts the goal loop; the user decides how to recover.
         self.goal_eval_pending = false;
         if let Some(goal) = self.goal.as_ref() {
@@ -3910,10 +3957,16 @@ impl App {
         // answer in history so the next turn and a later /resume both see it.
         self.abort_tool_rows();
         self.append_cancelled_turn_tools();
+        // Captured before the flush clears it, like `on_done`, so a cancelled
+        // turn's partial answer keeps the reasoning that produced it.
+        let reasoning = self.native_reasoning_text();
         let answer = answer_without_reasoning(&self.take_answer());
         if !answer.is_empty() {
-            self.history
-                .push(serde_json::json!({ "role": "assistant", "content": answer }));
+            let mut msg = serde_json::json!({ "role": "assistant", "content": answer });
+            if !reasoning.is_empty() {
+                msg["reasoning_content"] = serde_json::json!(reasoning);
+            }
+            self.history.push(msg);
         }
         self.status = Status::Idle;
         self.run_started = None;
@@ -5371,6 +5424,7 @@ pub async fn run(
         smol_model,
         limits,
         show_reasoning,
+        send_reasoning,
         mcp_servers,
         mcp_task,
     } = session;
@@ -5420,6 +5474,7 @@ pub async fn run(
         repo_root,
     );
     app.smol_model = smol_model;
+    app.send_reasoning = send_reasoning;
     app.args = Some(args.clone());
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
     // shows immediately; a resumed thread overrides this via restore_run_mode.
@@ -5801,6 +5856,11 @@ async fn chat_loop<B: Backend>(
                     if app.status == Status::Running {
                         app.flush_assistant();
                         app.abort_tool_rows();
+                        // The task was killed without a natural stop, so the
+                        // mid-turn `MessagesUpdated` that would have folded the
+                        // completed tool calls never fired -- fold them here,
+                        // exactly as the cancel/error paths do.
+                        app.append_cancelled_turn_tools();
                         app.status = Status::Idle;
                         app.run_started = None;
                     }
@@ -7409,6 +7469,12 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         label: "show_reasoning",
         desc: "expand  reasoning in the transcript (Ctrl-O still toggles)",
         kind: AgentSettingKind::Bool { default: false },
+    },
+    AgentSettingDef {
+        key: "send_reasoning",
+        label: "send_reasoning",
+        desc: "resend prior reasoning to the model (false drops it from requests)",
+        kind: AgentSettingKind::Bool { default: true },
     },
 ];
 
@@ -16003,6 +16069,101 @@ mod tests {
     }
 
     #[test]
+    fn on_error_preserves_completed_tool_calls_and_results_in_history() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "grep -n foo src/" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "match on line 3\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        // The run dies on an upstream error before the model emits any answer
+        // prose. The backend never publishes a mid-turn `MessagesUpdated`, so
+        // the completed call must be folded into history by the error path
+        // (the same guarantee the Esc-cancel path already provides).
+        app.on_error("upstream".into(), "connection reset".into());
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            wire.contains("\"tool_calls\"") && wire.contains("c1"),
+            "tool call missing from wire history on error: {wire}"
+        );
+        assert!(
+            wire.contains("\"tool_call_id\":\"c1\"") && wire.contains("match on line 3"),
+            "tool result missing from wire history on error: {wire}"
+        );
+    }
+
+    #[test]
+    fn on_error_pairs_in_flight_calls_with_a_placeholder_result() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 300" }),
+        });
+        // The call was still in flight when the stream errored; no ToolResult
+        // ever arrives. It must still reach the wire, paired with a placeholder
+        // result so the exchange is protocol-valid for a later prompt.
+        app.on_error("upstream".into(), "connection reset".into());
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            wire.contains("\"tool_calls\"") && wire.contains("c1"),
+            "interrupted call missing from wire history on error: {wire}"
+        );
+        assert!(
+            wire.contains("\"tool_call_id\":\"c1\""),
+            "interrupted call must be paired with a result: {wire}"
+        );
+    }
+
+    #[test]
+    fn on_error_does_not_double_fold_when_flush_assistant_committed_prose() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "ls" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        // Some prose streamed before the error, so `on_error`'s flush_assistant
+        // commits it. The completed call must still be folded - and folded only
+        // once regardless of the prose that preceded the error.
+        app.apply(StreamEvent::Token {
+            text: "I found it".into(),
+        });
+        app.on_error("upstream".into(), "connection reset".into());
+        let assistant_tool_turns = app
+            .history
+            .iter()
+            .filter(|m| m.get("tool_calls").is_some())
+            .count();
+        assert_eq!(assistant_tool_turns, 1, "tool call folded exactly once");
+    }
+
+    #[test]
     fn cancel_surfaces_interrupted_calls_paired_with_a_placeholder_result() {
         let mut app = test_app();
         app.submit_user("do a thing".into());
@@ -18149,15 +18310,75 @@ mod tests {
         });
         app.on_done("stop".into(), None);
         assert_eq!(app.reasoning_blocks.len(), 1, "reasoning folded into one block");
-        // The wire history carries the answer without the reasoning.
-        let wire = app
-            .history
-            .iter()
-            .map(serde_json::Value::to_string)
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(wire.contains("Here is the answer"), "answer missing: {wire}");
-        assert!(!wire.contains("ponder the plan"), "reasoning leaked into history: {wire}");
+        // The wire history carries the answer, with the reasoning preserved on
+        // the message's `reasoning_content` rather than inlined into `content`.
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "Here is the answer");
+        assert_eq!(
+            last["reasoning_content"], "ponder the plan",
+            "reasoning must be preserved for resend: {last}"
+        );
+        assert!(
+            !last["content"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("ponder the plan"),
+            "reasoning must not be inlined into the answer content: {last}"
+        );
+    }
+
+    /// The resend policy reaches the wire: a default session sends an unchanged
+    /// body (the loop defaults to resending), and opting out forwards the flag.
+    #[test]
+    fn send_reasoning_opt_out_is_forwarded_in_the_request_body() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        assert!(
+            app.body().get("send_reasoning").is_none(),
+            "the default session must send an unchanged body"
+        );
+        app.send_reasoning = false;
+        assert_eq!(
+            app.body()["send_reasoning"],
+            serde_json::json!(false),
+            "opting out must reach the loop"
+        );
+    }
+
+    /// A cancelled turn keeps the reasoning that produced its partial answer,
+    /// so the next prompt resumes with the same context the model had.
+    #[test]
+    fn cancel_preserves_native_reasoning_on_the_partial_answer() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning {
+            text: "half a thought".into(),
+        });
+        app.apply(StreamEvent::Token {
+            text: "Partial answer".into(),
+        });
+        app.cancel_run();
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "Partial answer");
+        assert_eq!(last["reasoning_content"], "half a thought");
+    }
+
+    /// A turn with no native reasoning must not grow a `reasoning_content` key:
+    /// providers that reject unknown assistant fields see an unchanged shape.
+    #[test]
+    fn a_turn_without_reasoning_adds_no_reasoning_key_to_history() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Token {
+            text: "Just an answer".into(),
+        });
+        app.on_done("stop".into(), None);
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "Just an answer");
+        assert!(
+            last.get("reasoning_content").is_none(),
+            "no reasoning streamed, so the key must be absent: {last}"
+        );
     }
 
     /// The `[thinking]` badge and the orange placeholder must close when the
@@ -18246,15 +18467,14 @@ mod tests {
             text,
             "<think>first thought</think>Part one.<think>second thought</think> Part two."
         );
-        // The wire answer carries neither thought.
-        let wire = app
-            .history
-            .iter()
-            .map(serde_json::Value::to_string)
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(wire.contains("Part one. Part two."), "answer missing: {wire}");
-        assert!(!wire.contains("thought"), "reasoning leaked into history: {wire}");
+        // The wire answer is prose only; both thoughts ride along on
+        // `reasoning_content`, concatenated in emission order.
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "Part one. Part two.");
+        assert_eq!(
+            last["reasoning_content"], "first thoughtsecond thought",
+            "both stretches must be preserved for resend: {last}"
+        );
     }
 
     #[test]
