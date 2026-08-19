@@ -13375,6 +13375,32 @@ mod tests {
         assert!(text[5].contains("step 20"), "ends at the newest: {text:?}");
     }
 
+    /// The tail is bounded in *rendered* rows, not source lines. Reasoning
+    /// usually arrives as one long paragraph, so a newline-counted cap let a
+    /// single line wrap into an unpredictable number of screen rows and the
+    /// block's height jittered between frames as that line grew.
+    #[test]
+    fn live_tail_height_is_stable_as_one_long_line_grows() {
+        let width = 40u16;
+        let words: Vec<String> = (1..=120).map(|n| format!("word{n}")).collect();
+        let mut seen = 0u16;
+        for n in (1..=words.len()).step_by(3) {
+            let body = words[..n].join(" ");
+            let lines =
+                super::live_assistant_lines(&format!("<think>{body}"), &[], width, true, true);
+            let rows = lines.len() as u16;
+            assert_eq!(
+                rows,
+                super::wrapped_height(lines.clone(), width),
+                "a pre-wrapped tail must not re-wrap ({n} words)"
+            );
+            assert!(rows <= 6, "tail grew to {rows} rows ({n} words)");
+            assert!(rows >= seen, "tail shrank from {seen} to {rows} rows ({n} words)");
+            seen = rows;
+        }
+        assert_eq!(seen, 6, "tail never filled to its cap");
+    }
+
     /// A block that already closed mid-turn folds to the very summary row the
     /// commit will emit, so finalizing the turn does not move the transcript.
     #[test]
