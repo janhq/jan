@@ -609,16 +609,16 @@ pub fn cli_plugin_list(project: &str) -> Vec<crate::core::agent::plugins::Instal
     crate::core::agent::plugins::installed(&resolve_project_root(project))
 }
 
-/// Install a git or marketplace plugin for a project.
+/// Install git or marketplace plugin(s) for a project.
 ///
 /// This is the interactive CLI path: a multi-plugin collection prompts the user
-/// to choose which plugin to install (it has an owning terminal, unlike the
+/// to choose which plugins to install (it has an owning terminal, unlike the
 /// TUI render loop which reads stdin itself and so uses the non-interactive
-/// listing-error behavior).
+/// listing-error behavior). Returns every plugin actually installed.
 pub async fn cli_plugin_install(
     project: &str,
     spec: &str,
-) -> Result<crate::core::agent::plugins::InstalledPlugin, String> {
+) -> Result<Vec<crate::core::agent::plugins::InstalledPlugin>, String> {
     crate::core::agent::plugins::install_interactive(&resolve_project_root(project), spec).await
 }
 

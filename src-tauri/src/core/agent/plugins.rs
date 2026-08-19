@@ -283,19 +283,32 @@ fn find_plugin_dirs(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// Present the plugin choices of a collection to the user on stdout and return
-/// the index of the chosen relative path, reading the answer from `input`. The
-/// caller has already cloned the collection, so this only asks which plugin to
-/// install. Entering a blank line cancels.
-fn prompt_plugin_choice(url: &str, paths: &[String], input: &mut dyn io::BufRead) -> Result<usize, String> {
+/// Present the plugin choices of a collection on stdout and collect the
+/// 0-based indices the user wants to install, reading from `input`. The caller
+/// has already cloned the collection, so this only asks which to install.
+///
+/// Accepts a comma/space-separated list of numbers, the keyword `all` (every
+/// plugin), or a blank line to cancel. Already-installed plugins are marked
+/// `[installed]` and skipped, never errored.
+fn prompt_multi_choice(
+    url: &str,
+    paths: &[String],
+    already: &[bool],
+    input: &mut dyn io::BufRead,
+) -> Result<Vec<usize>, String> {
     let mut stdout = io::stdout().lock();
     writeln!(stdout, "'{url}' is a plugin collection ({n} plugins):", n = paths.len())
         .map_err(|e| format!("ERROR: {e}"))?;
-    for (i, p) in paths.iter().enumerate() {
-        writeln!(stdout, "  {}. {p}", i + 1).map_err(|e| format!("ERROR: {e}"))?;
+    let width = paths.len().to_string().len();
+    for (i, (path, inst)) in paths.iter().zip(already).enumerate() {
+        let mark = if *inst { "  [installed]" } else { "" };
+        writeln!(stdout, "  {:>width$}. {path}{mark}", i + 1).map_err(|e| format!("ERROR: {e}"))?;
     }
-    writeln!(stdout, "Which plugin do you want to install? (1-{}) [enter to cancel]:", paths.len())
-        .map_err(|e| format!("ERROR: {e}"))?;
+    writeln!(
+        stdout,
+        "Install which? numbers (e.g. 1 3 5) or 'all' [enter to cancel]:"
+    )
+    .map_err(|e| format!("ERROR: {e}"))?;
     let _ = stdout.flush();
 
     let mut line = String::new();
@@ -310,18 +323,37 @@ fn prompt_plugin_choice(url: &str, paths: &[String], input: &mut dyn io::BufRead
         if trimmed.is_empty() {
             return Err("ERROR: no plugin selected - install aborted".into());
         }
-        match trimmed.parse::<usize>() {
-            Ok(n) if (1..=paths.len()).contains(&n) => return Ok(n - 1),
-            _ => {
-                writeln!(
-                    stdout,
-                    "'{trimmed}' is not a valid choice; enter a number 1-{} [enter to cancel]:",
-                    paths.len()
-                )
-                .map_err(|e| format!("ERROR: {e}"))?;
-                let _ = stdout.flush();
+        if trimmed.eq_ignore_ascii_case("all") {
+            return Ok((0..paths.len()).collect());
+        }
+        let mut picked: Vec<usize> = Vec::new();
+        let mut ok = true;
+        for tok in trimmed.split(|c: char| c == ',' || c.is_whitespace()) {
+            if tok.is_empty() {
+                continue;
+            }
+            match tok.parse::<usize>() {
+                Ok(n) if (1..=paths.len()).contains(&n) => {
+                    let idx = n - 1;
+                    if !picked.contains(&idx) {
+                        picked.push(idx);
+                    }
+                }
+                _ => {
+                    ok = false;
+                    break;
+                }
             }
         }
+        if ok && !picked.is_empty() {
+            return Ok(picked);
+        }
+        writeln!(
+            stdout,
+            "'{trimmed}' is not a valid choice; enter numbers like '1 3 5' or 'all' [enter to cancel]:"
+        )
+        .map_err(|e| format!("ERROR: {e}"))?;
+        let _ = stdout.flush();
     }
 }
 /// Split a `#ref` suffix off a git URL (`https://host/repo#main`).
@@ -356,15 +388,21 @@ fn git(args: &[&str]) -> Result<String, String> {
     }
 }
 
-/// Clone a plugin source into a temporary dir, validate it, and move it into
-/// place under its final name. A failed clone or an empty repo leaves nothing
-/// behind (the temp dir is removed).
+/// Clone a plugin source into a temporary dir, discover which plugin(s) inside
+/// it to install, and move each selected payload into place under its final
+/// name. A failed clone or an empty repo leaves nothing behind (the temp dir is
+/// removed).
+///
+/// `install_git` returns one installed plugin for a normal source or a single-
+/// plugin collection, and several for a multi-plugin collection when the user
+/// asked for more than one (interactive CLI). Already-installed plugins are
+/// skipped, not reported as errors.
 fn install_git(
     root: &Path,
     url: &str,
     r#ref: Option<&str>,
     collection: CollectionChoice,
-) -> Result<InstalledPlugin, String> {
+) -> Result<Vec<InstalledPlugin>, String> {
     let source = parse_git_source(url)?;
     let plugins = skills::plugins_dir(root);
     std::fs::create_dir_all(&plugins).map_err(|e| format!("ERROR: {e}"))?;
@@ -382,12 +420,12 @@ fn install_git(
         return Err(e);
     }
 
-    let mut payload = source
+    let payload_root = source
         .subdir
         .as_deref()
         .map(|subdir| tmp.join(subdir))
         .unwrap_or_else(|| tmp.clone());
-    if !payload.is_dir() {
+    if !payload_root.is_dir() {
         let _ = std::fs::remove_dir_all(&tmp);
         return Err(format!(
             "ERROR: plugin subdirectory does not exist: '{}'",
@@ -395,114 +433,167 @@ fn install_git(
         ));
     }
 
-    // A collection repo (e.g. anthropics/claude-plugins-official) has no plugin
-    // payload at the root; plugins can be nested any number of dirs deep (there
-    // `plugins/` and `external_plugins/` are only wrapper dirs). If there is
-    // exactly one such plugin, install it; if several, point at the collection
-    // so the user can install a specific one. This keeps a bare collection URL
-    // from failing with a confusing "nothing to install".
-    let mut payload_narrowed = source.subdir.is_some();
-    let mut payload_name: Option<String> = None;
-    if !plugin_has_content(&payload) {
-        let candidates = find_plugin_dirs(&payload);
-        match candidates.len() {
-            0 => {}
-            1 => {
-                payload_name =
-                    candidates[0]
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned());
-                payload = candidates[0].clone();
-                payload_narrowed = true;
+    // Decide which payload directory(ies) to install, as
+    // (dir, fallback name, is a subdir of the clone) triples.
+    let mut targets: Vec<(PathBuf, Option<String>, bool)> = Vec::new();
+    if plugin_has_content(&payload_root) {
+        // A single plugin: either the repo root or an explicit `#tree` subdir.
+        let fallback = source
+            .subdir
+            .as_deref()
+            .and_then(|subdir| subdir.rsplit('/').next())
+            .map(str::to_string)
+            .or_else(|| repo_dir_name(&source.url).map(str::to_string));
+        targets.push((payload_root.clone(), fallback, source.subdir.is_some()));
+    } else {
+        // A collection repo (e.g. anthropics/claude-plugins-official) has no
+        // payload at its root; plugins can be nested any number of dirs deep
+        // (`plugins/` and `external_plugins/` are only wrapper dirs).
+        let mut candidates = find_plugin_dirs(&payload_root);
+        candidates.sort_by_key(|p| {
+            p.strip_prefix(&payload_root)
+                .map(|rel| rel.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        });
+        let rels: Vec<String> = candidates
+            .iter()
+            .map(|p| {
+                p.strip_prefix(&payload_root)
+                    .map(|rel| rel.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            })
+            .collect();
+        let picked: Vec<usize> = match candidates.len() {
+            0 => {
+                let _ = std::fs::remove_dir_all(&tmp);
+                return Err(format!(
+                    "ERROR: '{url}' has no plugin manifest, skills/, commands/, agents/, or SKILL.md - nothing to install"
+                ));
             }
-            n => {
-                let mut paths: Vec<String> = candidates
-                    .iter()
-                    .filter_map(|p| p.strip_prefix(&payload).ok())
-                    .filter_map(|rel| Some(rel.to_string_lossy().into_owned()))
-                    .collect();
-                paths.sort();
-                match collection {
-                    CollectionChoice::ListError => {
-                        let _ = std::fs::remove_dir_all(&tmp);
-                        return Err(format!(
-                            "ERROR: '{url}' is a plugin collection ({n} plugins: {}) - install one directly, e.g. /plugin install {url}/tree/<ref>/<relative/path>",
-                            paths.join(", ")
-                        ));
-                    }
-                    CollectionChoice::Prompt => {
-                        let idx = prompt_plugin_choice(url, &paths, &mut io::stdin().lock())?;
-                        let picked = candidates.iter().find(|p| {
-                            p.strip_prefix(&payload)
-                                .map(|rel| rel.to_string_lossy().into_owned() == paths[idx])
+            // Exactly one plugin in the collection: no ambiguity, install it.
+            1 => vec![0],
+            n => match collection {
+                CollectionChoice::ListError => {
+                    let _ = std::fs::remove_dir_all(&tmp);
+                    return Err(format!(
+                        "ERROR: '{url}' is a plugin collection ({n} plugins: {}) - install one directly, e.g. {url}/tree/<ref>/<relative/path>",
+                        rels.join(", ")
+                    ));
+                }
+                CollectionChoice::Prompt => {
+                    // Mark plugins already installed so the user can see why a
+                    // pick will be skipped.
+                    let already: Vec<bool> = candidates
+                        .iter()
+                        .map(|p| {
+                            p.file_name()
+                                .and_then(|n| n.to_str())
+                                .map(|n| plugins.join(n).exists())
                                 .unwrap_or(false)
-                        });
-                        match picked {
-                            Some(dir) => {
-                                payload_name =
-                                    dir.file_name().map(|n| n.to_string_lossy().into_owned());
-                                payload = dir.clone();
-                                payload_narrowed = true;
-                            }
-                            // The picked relative path did not resolve; fall
-                            // through so the "nothing to install" error fires
-                            // with the temp dir cleaned up below.
-                            None => {}
+                        })
+                        .collect();
+                    match prompt_multi_choice(url, &rels, &already, &mut io::stdin().lock()) {
+                        Ok(picked) => picked,
+                        Err(e) => {
+                            let _ = std::fs::remove_dir_all(&tmp);
+                            return Err(e);
                         }
                     }
                 }
+            },
+        };
+        for idx in picked {
+            let dir = candidates[idx].clone();
+            let fallback = dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(str::to_string);
+            targets.push((dir, fallback, true));
+        }
+    }
+
+    // Installing one plugin reports an already-installed collision as an error
+    // (the caller asked for that exact plugin); a batch skips it and installs
+    // the rest.
+    let single = targets.len() == 1;
+    let mut installs: Vec<InstalledPlugin> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+    for (dir, fallback, narrowed) in targets {
+        let outcome = install_payload_dir(
+            root,
+            &plugins,
+            &tmp,
+            &dir,
+            narrowed,
+            fallback.as_deref(),
+            &source.url,
+        );
+        match outcome {
+            Ok(PayloadOutcome::Installed(plugin)) => installs.push(plugin),
+            Ok(PayloadOutcome::AlreadyInstalled(stem)) => {
+                if single {
+                    let _ = std::fs::remove_dir_all(&tmp);
+                    return Err(format!("ERROR: plugin '{stem}' is already installed"));
+                }
+                skipped.push(stem);
+            }
+            Err(e) => {
+                let _ = std::fs::remove_dir_all(&tmp);
+                return Err(e);
             }
         }
     }
-    let manifest = read_manifest(&payload);
-    let fallback_name = payload_name
-        .or_else(|| {
-            source
-                .subdir
-                .as_deref()
-                .and_then(|subdir| subdir.rsplit('/').next())
-                .map(str::to_string)
-        })
-        .or_else(|| repo_dir_name(&source.url).map(str::to_string));
+    let _ = std::fs::remove_dir_all(&tmp);
+    if installs.is_empty() {
+        return Err(format!(
+            "ERROR: nothing installed - already installed: {}",
+            skipped.join(", ")
+        ));
+    }
+    Ok(installs)
+}
+
+/// What happened to one candidate payload during an install.
+enum PayloadOutcome {
+    Installed(InstalledPlugin),
+    /// A plugin of this name is already installed. A single-plugin install
+    /// reports this as an error; a batch install skips it.
+    AlreadyInstalled(String),
+}
+
+/// Move one plugin payload directory into `plugins/<stem>` and report it.
+///
+/// `payload_narrowed` says whether `payload` is a subdirectory of the clone
+/// (rename the subdirectory) or the clone root itself (rename `tmp`).
+/// `fallback_name` names the plugin when the manifest does not.
+///
+/// The shared clone `tmp` is NOT removed here so a batch can install several
+/// payloads out of one clone; the caller removes it once at the end.
+fn install_payload_dir(
+    root: &Path,
+    plugins: &Path,
+    tmp: &Path,
+    payload: &Path,
+    payload_narrowed: bool,
+    fallback_name: Option<&str>,
+    source_url: &str,
+) -> Result<PayloadOutcome, String> {
+    let manifest = read_manifest(payload);
     let name = match (manifest.name.as_deref(), fallback_name) {
         (Some(name), _) if !name.is_empty() => name.to_string(),
         (_, Some(dir)) => dir.to_string(),
-        _ => {
-            let _ = std::fs::remove_dir_all(&tmp);
-            return Err(format!("ERROR: cannot determine plugin name from '{url}'"));
-        }
+        _ => return Err(format!("ERROR: cannot determine plugin name from '{source_url}'")),
     };
     let stem = match skills::safe_stem(&name) {
         Ok(stem) if stem == name => stem,
-        _ => {
-            let _ = std::fs::remove_dir_all(&tmp);
-            return Err(format!("ERROR: invalid plugin name '{name}'"));
-        }
+        _ => return Err(format!("ERROR: invalid plugin name '{name}'")),
     };
-
-    if !plugin_has_content(&payload) {
-        let _ = std::fs::remove_dir_all(&tmp);
-        return Err(format!(
-            "ERROR: '{url}' has no plugin manifest, skills/, commands/, agents/, or SKILL.md - nothing to install"
-        ));
-    }
     let target = plugins.join(&stem);
     if target.exists() {
-        let _ = std::fs::remove_dir_all(&tmp);
-        return Err(format!("ERROR: plugin '{stem}' is already installed"));
+        return Ok(PayloadOutcome::AlreadyInstalled(stem));
     }
-    if payload_narrowed {
-        std::fs::rename(&payload, &target).map_err(|e| {
-            let _ = std::fs::remove_dir_all(&tmp);
-            format!("ERROR: {e}")
-        })?;
-        let _ = std::fs::remove_dir_all(&tmp);
-    } else {
-        std::fs::rename(&tmp, &target).map_err(|e| {
-            let _ = std::fs::remove_dir_all(&tmp);
-            format!("ERROR: {e}")
-        })?;
-    }
+    let move_from = if payload_narrowed { payload } else { tmp };
+    std::fs::rename(move_from, &target).map_err(|e| format!("ERROR: {e}"))?;
 
     // Recompute counts after the move (discovery reads from `root`).
     let skills_count = skills::discover_plugins(root)
@@ -514,15 +605,15 @@ fn install_git(
         .filter(|e| e.plugin == stem)
         .count();
     let agents_count = crate::core::agent::subagent::count_plugin_agents(root, &stem);
-    Ok(InstalledPlugin {
+    Ok(PayloadOutcome::Installed(InstalledPlugin {
         name: stem,
         description: manifest.description.unwrap_or_default(),
         version: manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
-        repo: manifest.repo.unwrap_or(source.url),
+        repo: manifest.repo.unwrap_or_else(|| source_url.to_string()),
         skills: skills_count,
         commands: commands_count,
         agents: agents_count,
-    })
+    }))
 }
 
 /// Fetch and parse the marketplace index. The marketplace URL lives in
@@ -547,17 +638,23 @@ async fn fetch_index(url: &str) -> Result<Vec<MarketEntry>, String> {
 /// Install a plugin. `spec` is either a git source (URL, `git@host:path`,
 /// `github:owner/repo`, with an optional `#ref`) or a marketplace name.
 ///
-/// Non-interactive: a multi-plugin collection fails with a listing error.
+/// Non-interactive: a multi-plugin collection fails with a listing error, so
+/// this always resolves to exactly one plugin.
 pub(crate) async fn install(root: &Path, spec: &str) -> Result<InstalledPlugin, String> {
-    install_with(root, spec, CollectionChoice::ListError).await
+    install_with(root, spec, CollectionChoice::ListError)
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "ERROR: no plugins installed".to_string())
 }
 
 /// Install like [`install`], but a multi-plugin collection prompts the user to
-/// pick a plugin instead of failing (the interactive CLI path).
+/// pick which plugins to install (the interactive CLI path), so this can return
+/// several. Already-installed picks are skipped.
 pub(crate) async fn install_interactive(
     root: &Path,
     spec: &str,
-) -> Result<InstalledPlugin, String> {
+) -> Result<Vec<InstalledPlugin>, String> {
     install_with(root, spec, CollectionChoice::Prompt).await
 }
 
@@ -568,7 +665,7 @@ async fn install_with(
     root: &Path,
     spec: &str,
     collection: CollectionChoice,
-) -> Result<InstalledPlugin, String> {
+) -> Result<Vec<InstalledPlugin>, String> {
     let spec = spec.trim();
     validate_spec(spec)?;
     if looks_like_git(spec) {
@@ -1075,33 +1172,120 @@ mod tests {
     }
 
     #[test]
-    fn prompt_choice_parses_and_cancels() {
-        let paths = ["plugins/alpha".into(), "plugins/beta".into(), "external_plugins/gamma".into()];
-        // Valid pick -> 0-based index.
+    fn prompt_multi_choice_parses_selections_and_cancels() {
+        let paths: [String; 3] = [
+            "plugins/alpha".into(),
+            "plugins/beta".into(),
+            "external_plugins/gamma".into(),
+        ];
+        let none = [false, false, false];
+        // Single pick -> one 0-based index.
         let mut input = std::io::BufReader::new(&b"2\n"[..]);
         assert_eq!(
-            prompt_plugin_choice("http://x", &paths, &mut input).unwrap(),
-            1
+            prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap(),
+            vec![1]
         );
-        // Inner whitespace is trimmed.
+        // Surrounding whitespace is trimmed.
         let mut input = std::io::BufReader::new(&b"  3  \n"[..]);
         assert_eq!(
-            prompt_plugin_choice("http://x", &paths, &mut input).unwrap(),
-            2
+            prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap(),
+            vec![2]
         );
-        // Invalid then valid: retries.
+        // Comma and space separated lists, in the order given, deduped.
+        let mut input = std::io::BufReader::new(&b"3,1 1\n"[..]);
+        assert_eq!(
+            prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap(),
+            vec![2, 0]
+        );
+        // `all` selects everything, case insensitively.
+        let mut input = std::io::BufReader::new(&b"ALL\n"[..]);
+        assert_eq!(
+            prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap(),
+            vec![0, 1, 2]
+        );
+        // Out-of-range, then a valid answer: re-prompts rather than failing.
         let mut input = std::io::BufReader::new(&b"9\n1\n"[..]);
         assert_eq!(
-            prompt_plugin_choice("http://x", &paths, &mut input).unwrap(),
-            0
+            prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap(),
+            vec![0]
+        );
+        // A non-numeric token invalidates the whole line, then retries.
+        let mut input = std::io::BufReader::new(&b"1,nope\n2\n"[..]);
+        assert_eq!(
+            prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap(),
+            vec![1]
+        );
+        // Already-installed entries stay selectable; the caller skips them.
+        let mut input = std::io::BufReader::new(&b"1\n"[..]);
+        assert_eq!(
+            prompt_multi_choice("http://x", &paths, &[true, false, false], &mut input).unwrap(),
+            vec![0]
         );
         // Blank line cancels.
         let mut input = std::io::BufReader::new(&b"\n"[..]);
-        let err = prompt_plugin_choice("http://x", &paths, &mut input).unwrap_err();
+        let err = prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap_err();
         assert!(err.contains("aborted"), "{err}");
         // EOF cancels.
         let mut input = std::io::BufReader::new(&b""[..]);
-        let err = prompt_plugin_choice("http://x", &paths, &mut input).unwrap_err();
+        let err = prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap_err();
         assert!(err.contains("aborted"), "{err}");
+    }
+
+    /// Installing several payloads out of one clone: each lands under its own
+    /// name, and a payload whose name is already taken reports
+    /// `AlreadyInstalled` instead of failing, so a batch can skip it.
+    #[test]
+    fn batch_install_lands_each_payload_and_reports_already_installed() {
+        let root = unique_root("batchskip");
+        let _ = std::fs::remove_dir_all(&root);
+        let plugins = skills::plugins_dir(&root);
+        std::fs::create_dir_all(&plugins).unwrap();
+        let tmp = plugins.join(".installing-batchskip");
+
+        // Stage two plugin payloads inside one shared clone dir.
+        let stage = |name: &str| {
+            let dir = tmp.join(name);
+            std::fs::create_dir_all(dir.join("skills").join("prepare")).unwrap();
+            std::fs::write(
+                dir.join("skills").join("prepare").join("SKILL.md"),
+                format!("---\ndescription: {name}\n---\n\n# {name}\n\nBody.\n"),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.join("plugin.toml"),
+                format!("name = \"{name}\"\ndescription = \"{name}\"\n"),
+            )
+            .unwrap();
+            dir
+        };
+        let alpha = stage("alpha");
+        let beta = stage("beta");
+
+        // Both install out of the same clone: the shared tmp must survive the
+        // first move for the second to succeed.
+        for (dir, name) in [(&alpha, "alpha"), (&beta, "beta")] {
+            let outcome =
+                install_payload_dir(&root, &plugins, &tmp, dir, true, Some(name), "http://x")
+                    .unwrap();
+            match outcome {
+                PayloadOutcome::Installed(p) => {
+                    assert_eq!(p.name, name);
+                    assert_eq!(p.skills, 1, "{name} skills");
+                }
+                PayloadOutcome::AlreadyInstalled(s) => panic!("unexpected skip of {s}"),
+            }
+            assert!(plugins.join(name).join("plugin.toml").is_file());
+        }
+
+        // A second payload claiming an installed name is skipped, not an error.
+        let again = stage("alpha");
+        match install_payload_dir(&root, &plugins, &tmp, &again, true, Some("alpha"), "http://x")
+            .unwrap()
+        {
+            PayloadOutcome::AlreadyInstalled(stem) => assert_eq!(stem, "alpha"),
+            PayloadOutcome::Installed(p) => panic!("reinstalled {}", p.name),
+        }
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
