@@ -62,8 +62,7 @@ pub(super) fn live_assistant_lines(
             if i < last {
                 lines.push(reasoning_summary_row(body.len()));
             } else if stream_reasoning {
-                let tail = &body[body.len().saturating_sub(LIVE_REASONING_TAIL_LINES)..];
-                lines.extend(reasoning_detail_lines(&tail.join("\n")));
+                lines.extend(live_reasoning_tail(&body, width));
             }
             continue;
         }
@@ -74,16 +73,46 @@ pub(super) fn live_assistant_lines(
     lines
 }
 
+/// Columns the reasoning gutter takes. Subtracted from the width before the
+/// live tail wraps, so a pre-wrapped row still fits and the terminal re-wraps
+/// nothing.
+const REASONING_GUTTER_COLS: usize = 2;
+
+fn reasoning_row(body: Vec<Span<'static>>) -> Line<'static> {
+    let mut spans = vec![Span::styled("┊ ", Style::new().dark_gray())];
+    spans.extend(body);
+    Line::from(spans)
+}
+
+fn reasoning_body_span(text: String) -> Span<'static> {
+    Span::styled(text, Style::new().dim().italic())
+}
+
 /// A reasoning block's full dimmed lines (`┊ ` gutter, dim italic body).
 pub(super) fn reasoning_detail_lines(seg: &str) -> Vec<Line<'static>> {
     seg.lines()
         .filter(|l| !l.trim().is_empty())
-        .map(|l| {
-            Line::from(vec![
-                Span::styled("┊ ", Style::new().dark_gray()),
-                Span::styled(l.to_string(), Style::new().dim().italic()),
-            ])
-        })
+        .map(|l| reasoning_row(vec![reasoning_body_span(l.to_string())]))
+        .collect()
+}
+
+/// The open block's tail, bounded to [`LIVE_REASONING_TAIL_LINES`] *rendered*
+/// rows rather than source lines. Reasoning usually arrives as one long
+/// paragraph, so a source-line cap bounded nothing on screen: the block's
+/// height moved with however far the newest line had wrapped, jittering by a
+/// row or two as it grew. Wrapping here also gives every continuation its own
+/// gutter instead of letting it start under the margin.
+fn live_reasoning_tail(body: &[&str], width: u16) -> Vec<Line<'static>> {
+    let max = (width as usize)
+        .saturating_sub(REASONING_GUTTER_COLS)
+        .max(1);
+    let rows: Vec<Vec<Span<'static>>> = body
+        .iter()
+        .flat_map(|l| wrap_spans_at_words(vec![reasoning_body_span(l.to_string())], max))
+        .collect();
+    rows[rows.len().saturating_sub(LIVE_REASONING_TAIL_LINES)..]
+        .iter()
+        .map(|spans| reasoning_row(spans.clone()))
         .collect()
 }
 
@@ -94,10 +123,7 @@ pub(super) fn reasoning_summary_row(n: usize) -> Line<'static> {
     } else {
         format!("reasoning ({n} lines)")
     };
-    Line::from(vec![
-        Span::styled("┊ ", Style::new().dark_gray()),
-        Span::styled(label, Style::new().dim().italic()),
-    ])
+    reasoning_row(vec![reasoning_body_span(label)])
 }
 
 /// Render answer prose to styled lines. Every block -- prose, code fences,
