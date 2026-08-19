@@ -240,6 +240,39 @@ fn plugin_has_content(root: &Path) -> bool {
         || root.join("SKILL.md").is_file()
         || root.join(".mcp.json").is_file()
 }
+/// Walk `root` (recursively, skipping hidden dirs) and collect every directory
+/// that is itself a plugin payload. A collection repo can nest plugins at any
+/// depth (e.g. `plugins/` and `external_plugins/` are only wrapper dirs),
+/// so a bare collection URL can't rely on a one-level scan.
+fn find_plugin_dirs(root: &Path) -> Vec<PathBuf> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        let rd = match std::fs::read_dir(dir) {
+            Ok(rd) => rd,
+            Err(_) => return,
+        };
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with('.')
+            {
+                continue;
+            }
+            if plugin_has_content(&path) {
+                out.push(path);
+            } else {
+                walk(&path, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, &mut out);
+    out
+}
 
 /// Split a `#ref` suffix off a git URL (`https://host/repo#main`).
 fn split_ref(url: &str) -> (&str, Option<&str>) {
@@ -312,21 +345,15 @@ fn install_git(
     }
 
     // A collection repo (e.g. anthropics/claude-plugins-official) has no plugin
-    // payload at the root; each direct child is its own plugin. If there is
-    // exactly one such child, install it; if several, point at the collection
+    // payload at the root; plugins can be nested any number of dirs deep (there
+    // `plugins/` and `external_plugins/` are only wrapper dirs). If there is
+    // exactly one such plugin, install it; if several, point at the collection
     // so the user can install a specific one. This keeps a bare collection URL
     // from failing with a confusing "nothing to install".
     let mut payload_narrowed = source.subdir.is_some();
     let mut payload_name: Option<String> = None;
     if !plugin_has_content(&payload) {
-        let mut candidates: Vec<PathBuf> = Vec::new();
-        if let Ok(rd) = std::fs::read_dir(&payload) {
-            candidates = rd
-                .flatten()
-                .map(|e| e.path())
-                .filter(|p| p.is_dir() && plugin_has_content(p))
-                .collect();
-        }
+        let candidates = find_plugin_dirs(&payload);
         match candidates.len() {
             0 => {}
             1 => {
@@ -334,19 +361,20 @@ fn install_git(
                     candidates[0]
                         .file_name()
                         .map(|n| n.to_string_lossy().into_owned());
-                payload = candidates.remove(0);
+                payload = candidates[0].clone();
                 payload_narrowed = true;
             }
             n => {
-                let mut names: Vec<String> = candidates
+                let mut paths: Vec<String> = candidates
                     .iter()
-                    .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+                    .filter_map(|p| p.strip_prefix(&payload).ok())
+                    .filter_map(|rel| Some(rel.to_string_lossy().into_owned()))
                     .collect();
-                names.sort();
+                paths.sort();
                 let _ = std::fs::remove_dir_all(&tmp);
                 return Err(format!(
-                    "ERROR: '{url}' is a plugin collection ({n} plugins: {}) - install one directly, e.g. /plugin install {url}#tree/<ref>/<name>",
-                    names.join(", ")
+                    "ERROR: '{url}' is a plugin collection ({n} plugins: {}) - install one directly, e.g. /plugin install {url}/tree/<ref>/<relative/path>",
+                    paths.join(", ")
                 ));
             }
         }
@@ -847,6 +875,98 @@ mod tests {
         .unwrap();
 
         let root = unique_root("singleton1");
+        let p = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap();
+        assert_eq!(p.name, "only");
+        assert_eq!(p.skills, 1);
+        assert!(skills::plugins_dir(&root).join("only").is_dir());
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// A collection with plugins nested under wrapper dirs (like claude-plugins-
+    /// official's `plugins/` + `external_plugins/`) still reports an actionable
+    /// list of relative paths and installs nothing by default.
+    #[tokio::test]
+    async fn install_nested_collection_lists_plugin_choices() {
+        let repo = std::env::temp_dir().join(format!(
+            "jan_nested_collection_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&repo);
+        for name in ["alpha", "beta"] {
+            let d = repo.join("plugins").join(name).join("skills").join("prepare");
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join("SKILL.md"), format!("---\ndescription: {name}\n---\n\n# {name}\n\nBody.\n"))
+                .unwrap();
+            std::fs::write(
+                repo.join("plugins").join(name).join("plugin.toml"),
+                format!("name = \"{name}\"\ndescription = \"{name}\"\n"),
+            )
+            .unwrap();
+        }
+        let d = repo
+            .join("external_plugins")
+            .join("gamma")
+            .join(".claude-plugin");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("plugin.json"), "{\"name\":\"gamma\"}").unwrap();
+        git(&["init", repo.to_str().unwrap()]).unwrap();
+        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        git(&[
+            "-C",
+            repo.to_str().unwrap(),
+            "commit",
+            "-m",
+            "nested collection",
+        ])
+        .unwrap();
+
+        let root = unique_root("nestedcollection1");
+        let err = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap_err();
+        assert!(err.contains("plugins/alpha") && err.contains("plugins/beta"), "{err}");
+        assert!(err.contains("external_plugins/gamma"), "{err}");
+        assert!(err.contains("plugin collection"), "{err}");
+        assert!(
+            err.contains("/tree/<ref>/<relative/path>"),
+            "error should show the path-form tree syntax: {err}"
+        );
+        assert_eq!(
+            std::fs::read_dir(skills::plugins_dir(&root))
+                .unwrap()
+                .count(),
+            0,
+            "nothing should be installed for an ambiguous nested collection"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// A nested collection with a single plugin auto-installs it.
+    #[tokio::test]
+    async fn install_nested_collection_with_single_plugin_installs_it() {
+        let repo = std::env::temp_dir().join(format!(
+            "jan_nested_singleton_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&repo);
+        let d = repo.join("plugins").join("only").join("skills").join("prepare");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("SKILL.md"), "---\ndescription: only\n---\n\n# only\n\nBody.\n")
+            .unwrap();
+        std::fs::write(
+            repo.join("plugins").join("only").join("plugin.toml"),
+            "name = \"only\"\ndescription = \"only\"\n",
+        )
+        .unwrap();
+        git(&["init", repo.to_str().unwrap()]).unwrap();
+        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        git(&["-C", repo.to_str().unwrap(), "commit", "-m", "nested singleton"]).unwrap();
+
+        let root = unique_root("nestedsingleton1");
         let p = install(&root, &format!("file://{}", repo.display()))
             .await
             .unwrap();
