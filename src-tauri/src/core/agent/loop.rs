@@ -197,6 +197,10 @@ struct SubagentContext {
     parent_args: OrchestrationArgs,
     model_id: String,
     max_session_tokens: Option<u64>,
+    /// The parent's `send_reasoning`, forwarded to every child body: a child
+    /// resends the reasoning of its own tool-call turns, so an opt-out that
+    /// stopped at the parent would still break a strict provider.
+    send_reasoning: bool,
     /// Background children of this run, aborted when the run ends.
     bg: std::sync::Arc<crate::core::agent::subagent::BackgroundSubagents>,
 }
@@ -431,8 +435,11 @@ impl CompositeToolInvoker {
                     &ctx.bg,
                     &ctx.parent_args,
                     req,
-                    &ctx.model_id,
-                    ctx.max_session_tokens,
+                    &crate::core::agent::subagent::ParentRun {
+                        model: ctx.model_id.clone(),
+                        budget_remaining: ctx.max_session_tokens,
+                        send_reasoning: ctx.send_reasoning,
+                    },
                     &self.events,
                 ) {
                     Ok(run_id) => format!(
@@ -1504,6 +1511,7 @@ async fn orchestrate_inner(
             parent_args: args.clone(),
             model_id: model_id.clone(),
             max_session_tokens,
+            send_reasoning: body_send_reasoning(json_body),
             bg: bg.clone(),
         });
         // Resolved once above, where the system prompt also needed it.
@@ -1630,10 +1638,7 @@ fn build_completion_request(
 ) -> serde_json::Value {
     // `[agent].send_reasoning` is forwarded per-request; default true (resend
     // reasoning). False opts out of resending prior reason on every turn.
-    let send_reasoning = json_body
-        .get("send_reasoning")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+    let send_reasoning = body_send_reasoning(json_body);
     let messages = if send_reasoning {
         conversation_messages.to_vec()
     } else {
@@ -1748,6 +1753,26 @@ fn body_turn_cap(json_body: &serde_json::Value) -> usize {
         .unwrap_or(0) as usize
 }
 
+/// Whether any assistant turn in `messages` carries `reasoning_content`, i.e.
+/// whether [`strip_assistant_reasoning`] would change anything. Guards the
+/// rejection retry below, which would otherwise resend an identical request.
+fn carries_assistant_reasoning(messages: &[serde_json::Value]) -> bool {
+    messages.iter().any(|m| {
+        m.get("role").and_then(|r| r.as_str()) == Some("assistant")
+            && m.get("reasoning_content").is_some()
+    })
+}
+
+/// `[agent].send_reasoning` for a request body; default true (resend prior
+/// reasoning). Read in one place so the request builder and the subagent body
+/// (which forwards the parent's answer to its children) cannot disagree.
+pub(crate) fn body_send_reasoning(json_body: &serde_json::Value) -> bool {
+    json_body
+        .get("send_reasoning")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true)
+}
+
 /// Token-spend ceiling for a request body, the real bound on run length.
 /// `0` is the explicit "no ceiling" encoding, matching `max_turns`.
 fn body_session_budget(json_body: &serde_json::Value) -> Option<u64> {
@@ -1845,6 +1870,27 @@ async fn run_turn_cycle(
                         });
                         keep_recent = (keep_recent / 2).max(2);
                         attempts += 1;
+                    }
+                    // This provider rejects `reasoning_content` outright rather
+                    // than ignoring it, so the opt-out `[agent].send_reasoning`
+                    // exists for is discovered here instead of having to be
+                    // configured by hand. Dropping it from the conversation is
+                    // enough on its own: a provider that rejects the field never
+                    // streams one either, so no later turn re-adds it. Published
+                    // so the client's persisted history loses it too, the way the
+                    // compacted history above is published.
+                    Err(e)
+                        if crate::core::agent::upstream::is_reasoning_field_error(&e)
+                            && body_send_reasoning(json_body)
+                            && carries_assistant_reasoning(&conversation_messages) =>
+                    {
+                        log::info!(
+                            "agent: upstream rejected reasoning_content, retrying without it"
+                        );
+                        conversation_messages = strip_assistant_reasoning(&conversation_messages);
+                        let _ = events.send(StreamEvent::MessagesUpdated {
+                            messages: conversation_messages.clone(),
+                        });
                     }
                     Err(e) => return Err(e),
                 }
@@ -2935,6 +2981,82 @@ mod tests {
 
         assert_eq!(result["choices"][0]["message"]["content"], "final");
         assert!(tool.calls.lock().unwrap().is_empty());
+    }
+
+    /// A strict endpoint rejects the DeepSeek `reasoning_content` extension
+    /// instead of ignoring it. The turn must recover by dropping the field and
+    /// retrying, and hand the stripped conversation to the client so its
+    /// persisted history stops carrying it.
+    #[tokio::test]
+    async fn turn_cycle_strips_reasoning_and_retries_when_the_upstream_rejects_it() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = ResultQueueModel {
+            results: StdMutex::new(
+                vec![
+                    Err("Upstream returned HTTP 400: property 'reasoning_content' is unsupported"
+                        .to_string()),
+                    Ok(json!({ "choices": [{ "message": { "content": "final" }, "finish_reason": "stop" }] })),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        };
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let convo = vec![
+            json!({ "role": "user", "content": "hi" }),
+            json!({ "role": "assistant", "content": "hey", "reasoning_content": "thinking" }),
+            json!({ "role": "user", "content": "again" }),
+        ];
+
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
+            .await
+            .unwrap();
+
+        assert_eq!(result["choices"][0]["message"]["content"], "final");
+        let published: Vec<serde_json::Value> = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|ev| match ev {
+                StreamEvent::MessagesUpdated { messages } => Some(messages),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert!(
+            !published.is_empty()
+                && published
+                    .iter()
+                    .all(|m| m.get("reasoning_content").is_none()),
+            "published history must have lost reasoning_content: {published:?}"
+        );
+    }
+
+    /// The retry is one-shot by construction: once stripped, nothing carries the
+    /// field, so a provider that keeps rejecting fails the turn instead of
+    /// resending the same request forever.
+    #[tokio::test]
+    async fn a_persistent_reasoning_rejection_fails_the_turn() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let reject =
+            || Err("Upstream returned HTTP 400: 'reasoning_content' is unsupported".to_string());
+        let model = ResultQueueModel {
+            results: StdMutex::new(vec![reject(), reject(), reject()].into_iter().collect()),
+        };
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let convo = vec![
+            json!({ "role": "user", "content": "hi" }),
+            json!({ "role": "assistant", "content": "hey", "reasoning_content": "thinking" }),
+        ];
+
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
+            .await;
+
+        assert!(result.is_err(), "a persistent rejection must fail the turn");
+        assert_eq!(
+            model.results.lock().unwrap().len(),
+            1,
+            "exactly one retry after the strip"
+        );
     }
 
     /// A run that never recovers from overflow still has to hand its compacted

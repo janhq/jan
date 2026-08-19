@@ -4011,11 +4011,25 @@ impl App {
             .rposition(|e| matches!(e, DisplayEntry::User { .. }))
             .map(|i| i + 1)
             .unwrap_or(0);
+        // `display_log` is not cleared by a cancel and the fold is reached from
+        // several terminal paths, so a call can already be in `history`: the
+        // backend publishes a mid-turn `MessagesUpdated` on a compaction retry
+        // and on the budget soft-stop, and a cancel is routinely followed by a
+        // late `Error` or stream close from the aborted task. Folding it twice
+        // puts the exchange on the wire twice, which invites a double execution
+        // and wastes context, so ids already folded are skipped.
+        let folded: std::collections::HashSet<&str> = self
+            .history
+            .iter()
+            .filter_map(|m| m.get("tool_calls").and_then(|v| v.as_array()))
+            .flatten()
+            .filter_map(|tc| tc.get("id").and_then(|v| v.as_str()))
+            .collect();
         let mut calls: Vec<(String, String, serde_json::Value)> = Vec::new();
         let mut results: Vec<(String, String)> = Vec::new();
         for entry in self.display_log.iter().skip(start) {
             match entry {
-                DisplayEntry::ToolCall { id, name, args } => {
+                DisplayEntry::ToolCall { id, name, args } if !folded.contains(id.as_str()) => {
                     calls.push((id.clone(), name.clone(), args.clone()));
                 }
                 DisplayEntry::ToolResult { id, content, .. } => {
@@ -4045,6 +4059,10 @@ impl App {
             "content": serde_json::Value::Null,
             "tool_calls": tool_calls,
         }));
+        // Results are paired to the ids of the `tool_calls` array and emitted in
+        // its order, not in the order they finished: the loop dispatches calls
+        // concurrently, so an out-of-order or partial completion would otherwise
+        // hand a strict endpoint results it cannot match to the calls above.
         for (id, _, _) in &calls {
             let content = results
                 .iter()
@@ -16447,6 +16465,145 @@ mod tests {
         assert!(
             wire.contains("\"tool_call_id\":\"c1\""),
             "interrupted call must be paired with a result for a valid exchange: {wire}"
+        );
+    }
+
+    /// Helper: the wire messages carrying `tool_calls`, and the `role: "tool"`
+    /// messages, for the assertions below.
+    fn tool_turns(app: &App) -> (Vec<&serde_json::Value>, Vec<&serde_json::Value>) {
+        (
+            app.history
+                .iter()
+                .filter(|m| m.get("tool_calls").is_some())
+                .collect(),
+            app.history
+                .iter()
+                .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("tool"))
+                .collect(),
+        )
+    }
+
+    /// The backend publishes a mid-turn `MessagesUpdated` on a compaction retry
+    /// and on the budget soft-stop, so the turn's exchange can already be in
+    /// `history` when the cancel folds it. Folding it again would put the same
+    /// call and result on the wire twice.
+    #[test]
+    fn cancel_after_a_mid_turn_messages_updated_folds_each_call_once() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "ls" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::MessagesUpdated {
+            messages: vec![
+                json!({ "role": "user", "content": "do a thing" }),
+                json!({
+                    "role": "assistant",
+                    "content": serde_json::Value::Null,
+                    "tool_calls": [{
+                        "id": "c1",
+                        "type": "function",
+                        "function": { "name": "bash", "arguments": "{\"command\":\"ls\"}" }
+                    }],
+                }),
+                json!({ "role": "tool", "tool_call_id": "c1", "content": "ok" }),
+            ],
+        });
+        app.cancel_run();
+        let (calls, results) = tool_turns(&app);
+        assert_eq!(calls.len(), 1, "call folded twice: {:?}", app.history);
+        assert_eq!(results.len(), 1, "result folded twice: {:?}", app.history);
+    }
+
+    /// A cancel is routinely followed by a late `Error` or stream close from the
+    /// task it aborted, and `display_log` is not cleared by the cancel, so the
+    /// fold must be idempotent across both.
+    #[test]
+    fn cancel_then_a_late_error_folds_each_call_once() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "ls" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.cancel_run();
+        app.on_error("upstream".into(), "connection reset".into());
+        let (calls, results) = tool_turns(&app);
+        assert_eq!(calls.len(), 1, "call folded twice: {:?}", app.history);
+        assert_eq!(results.len(), 1, "result folded twice: {:?}", app.history);
+    }
+
+    /// The loop emits every `ToolCall` in the model's order and then dispatches
+    /// them concurrently, so results arrive in completion order. The folded
+    /// exchange must pair each result to its call by id and keep the
+    /// `tool_calls` order, the invariant strict endpoints enforce.
+    #[test]
+    fn cancelled_turn_pairs_out_of_order_results_to_their_calls() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        for (id, command) in [("c1", "sleep 5"), ("c2", "ls"), ("c3", "pwd")] {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: "bash".into(),
+                args: json!({ "command": command }),
+            });
+        }
+        // c3 and c2 finish first; c1 is still in flight at the cancel.
+        for id in ["c3", "c2"] {
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: format!("out of {id}"),
+                is_error: false,
+                diff: None,
+            });
+        }
+        app.cancel_run();
+        let (calls, results) = tool_turns(&app);
+        assert_eq!(
+            calls.len(),
+            1,
+            "one assistant tool-call turn: {:?}",
+            app.history
+        );
+        let ids: Vec<&str> = calls[0]["tool_calls"]
+            .as_array()
+            .expect("tool_calls array")
+            .iter()
+            .map(|tc| tc["id"].as_str().expect("id"))
+            .collect();
+        assert_eq!(ids, ["c1", "c2", "c3"], "tool_calls kept in model order");
+        let paired: Vec<(&str, &str)> = results
+            .iter()
+            .map(|m| {
+                (
+                    m["tool_call_id"].as_str().expect("tool_call_id"),
+                    m["content"].as_str().expect("content"),
+                )
+            })
+            .collect();
+        assert_eq!(
+            paired,
+            [
+                ("c1", super::super::MISSING_TOOL_RESULT),
+                ("c2", "out of c2"),
+                ("c3", "out of c3"),
+            ],
+            "results follow the tool_calls order, paired by id"
         );
     }
 
