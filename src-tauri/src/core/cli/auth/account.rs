@@ -741,6 +741,12 @@ pub async fn claude_plan_summary(fallback: &str) -> String {
             "model": model,
             "max_tokens": 1,
             "messages": [{"role": "user", "content": "hi"}],
+            // Anthropic gates heavy-model quota (sonnet) behind this billing
+            // marker on the /v1/messages system block for an OAuth token;
+            // without it sonnet 429s regardless of the account's real plan
+            // (see AnthropicMessagesConverter). Probe with it so the report
+            // matches the plan Jan's request path actually resolves.
+            "system": [{"type": "text", "text": "x-anthropic-billing-header: cc_version=2.1.92; cc_entrypoint=sdk-cli;"}],
         });
         let probe = client
             .post("https://api.anthropic.com/v1/messages")

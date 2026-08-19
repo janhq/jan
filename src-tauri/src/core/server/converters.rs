@@ -913,6 +913,17 @@ impl UpstreamConverter for AnthropicMessagesConverter {
         }
 
         let mut system: Vec<String> = Vec::new();
+        if self.oauth {
+            // Anthropic gates heavy-model quota (sonnet/opus) behind this
+            // billing marker on the /v1/messages body when the request is an
+            // OAuth account token. The Claude Code CLI injects it as the first
+            // system block on every request; without it an OAuth token is
+            // throttled to the lightweight models (429 on sonnet) regardless
+            // of the account's real plan. Mirrors the CLI's
+            // `cc_version`/`cc_entrypoint` pair so Jan's subscription is billed
+            // against the same quota the user's `claude` CLI uses.
+            system.push("x-anthropic-billing-header: cc_version=2.1.92; cc_entrypoint=sdk-cli;".to_string());
+        }
         let mut messages: Vec<Value> = Vec::new();
         if let Some(msgs) = body.get("messages").and_then(|m| m.as_array()) {
             for msg in msgs {
@@ -1836,6 +1847,34 @@ mod anthropic_messages_tests {
             out["messages"],
             json!([{"role": "user", "content": [{"type": "text", "text": "hi"}]}])
         );
+    }
+
+    #[test]
+    fn oauth_request_prepends_billing_header_to_system() {
+        // The Claude Code CLI injects an `x-anthropic-billing-header` system
+        // block on every /v1/messages request; without it Anthropic gates an
+        // OAuth account token to lightweight models (429 on sonnet) regardless
+        // of the account's real plan. The oauth converter must mirror that or
+        // heavy models fail under the Claude Code alias.
+        let body = json!({
+            "model": "claude-sonnet-5",
+            "messages": [
+                {"role": "system", "content": "be brief"},
+                {"role": "user", "content": "hi"}
+            ]
+        });
+        let plain = conv().convert_request(&body);
+        assert_eq!(plain["system"], json!("be brief"));
+
+        let oauth_body = AnthropicMessagesConverter::new_oauth().convert_request(&body);
+        let sys = oauth_body["system"].as_str().unwrap();
+        assert!(
+            sys.starts_with("x-anthropic-billing-header: cc_version="),
+            "oauth request must inject the billing header first: {sys}"
+        );
+        assert!(sys.contains("cc_entrypoint=sdk-cli;"));
+        // The real system prompt is still carried after the billing marker.
+        assert!(sys.contains("be brief"));
     }
 
     #[test]
