@@ -41,7 +41,7 @@ use markdown::{
 };
 
 use super::brand;
-use super::journal::{self, DisplayEntry};
+use super::journal::{self, DisplayEntry, ReasoningSeg};
 use super::mcp::McpServerEntry;
 use super::{sort_threads_recent, AgentSession, ResumeTarget, SessionLimits};
 use serde_json::Value;
@@ -277,6 +277,46 @@ impl Pending {
             CommandScan::Bases(_) => "Allow always (this thread)".to_string(),
             CommandScan::Opaque => "Allow this exact command (this thread)".to_string(),
         }
+    }
+
+    /// The prompt's header rows -- who is asking, for what capability, and on
+    /// which command or path -- laid out at `inner`. A command keeps its own
+    /// newlines and wraps, so a heredoc is approved on what it actually says
+    /// rather than on its first 60 columns.
+    fn detail_lines(&self, inner: u16) -> Vec<Line<'static>> {
+        let dim = Style::new().dark_gray();
+        let max = inner.max(1) as usize;
+        let mut out = Vec::new();
+        if let Some(name) = &self.subagent {
+            out.push(Line::from(vec![
+                Span::styled("subagent ", dim),
+                Span::styled(name.clone(), Style::new().magenta().bold()),
+                Span::styled(" is asking:", dim),
+            ]));
+        }
+        out.extend(
+            wrap_spans_hard(
+                vec![
+                    Span::styled(self.tool_name.clone(), Style::new().cyan().bold()),
+                    Span::styled(" wants ", dim),
+                    Span::styled(self.capability.clone(), Style::new().yellow().bold()),
+                ],
+                max,
+            )
+            .into_iter()
+            .map(Line::from),
+        );
+        let (lead, body) = match (&self.command, &self.path) {
+            (Some(command), _) => ("$ ", command.clone()),
+            (None, Some(path)) => ("on ", path.clone()),
+            (None, None) => return out,
+        };
+        out.extend(gutter_lines(
+            wrap_text(&body, Style::new().white(), max.saturating_sub(2).max(1)),
+            vec![Span::styled(lead, dim)],
+            vec![Span::raw("  ")],
+        ));
+        out
     }
 
     /// Boxed diff preview for the prompt, sized to `inner` width; empty when the
@@ -819,19 +859,17 @@ impl Row {
             } => {
                 let lead = glyph.chars().count() + 1;
                 let max = width.saturating_sub(lead as u16).max(8) as usize;
-                markdown::wrap_spans_at_words(body.clone(), max)
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, spans)| {
-                        let mark = if i == 0 { *glyph } else { *cont };
-                        let mut row = vec![Span::styled(
-                            format!("{mark:<width$}", width = lead),
-                            *gutter,
-                        )];
-                        row.extend(spans);
-                        Line::from(row)
-                    })
-                    .collect()
+                gutter_lines(
+                    wrap_spans_hard(body.clone(), max),
+                    vec![Span::styled(
+                        format!("{glyph:<width$}", width = lead),
+                        *gutter,
+                    )],
+                    vec![Span::styled(
+                        format!("{cont:<width$}", width = lead),
+                        *gutter,
+                    )],
+                )
             }
             RowKind::Tool {
                 tag,
@@ -839,15 +877,7 @@ impl Row {
                 label,
                 label_style,
                 reserve,
-            } => {
-                let max = width.saturating_sub(*reserve).max(1) as usize;
-                vec![tool_row(
-                    tag,
-                    *tag_style,
-                    &truncate(label, max),
-                    *label_style,
-                )]
-            }
+            } => tool_row_lines(tag, *tag_style, label, *label_style, *reserve, width, None),
             RowKind::Result {
                 tag,
                 tag_style,
@@ -968,6 +998,84 @@ impl PendingAsk {
     }
     fn row_count(&self) -> usize {
         self.question().options.len() + 1 + usize::from(self.question().multi)
+    }
+
+    /// Cells the `List` leaves an item after `highlight_symbol`.
+    const HIGHLIGHT_W: u16 = 2;
+
+    /// The question, wrapped to `width`.
+    fn question_lines(&self, width: u16) -> Vec<Line<'static>> {
+        wrap_text(
+            &self.question().question,
+            Style::new().bold(),
+            width.max(1) as usize,
+        )
+        .into_iter()
+        .map(Line::from)
+        .collect()
+    }
+
+    /// One entry per selectable row, each already laid out at `width`. Both the
+    /// box height and `draw_ask` build from this, so a wrapped label cannot put
+    /// the mouse hitboxes out of step with what is on screen.
+    fn option_lines(&self, width: u16) -> Vec<Vec<Line<'static>>> {
+        let question = self.question();
+        let answer = &self.answers[self.question_index];
+        let dim = Style::new().dark_gray();
+        let mark_w = if question.multi { 4 } else { 2 };
+        let body = width.saturating_sub(Self::HIGHLIGHT_W + mark_w).max(1) as usize;
+        let indent = || vec![Span::raw(" ".repeat(mark_w as usize))];
+        let mark = |selected: bool| {
+            let glyph = match (question.multi, selected) {
+                (true, true) => "[x] ",
+                (true, false) => "[ ] ",
+                (false, true) => "● ",
+                (false, false) => "○ ",
+            };
+            vec![Span::styled(glyph, Style::new().cyan())]
+        };
+
+        let mut out: Vec<Vec<Line<'static>>> = Vec::with_capacity(self.row_count());
+        for (index, option) in question.options.iter().enumerate() {
+            let mut head = vec![Span::raw(option.label.clone())];
+            if question.recommended == Some(index) {
+                head.push(Span::styled("  recommended", Style::new().green().dim()));
+            }
+            let selected = answer.selected.iter().any(|label| label == &option.label);
+            let mut lines = gutter_lines(wrap_spans_hard(head, body), mark(selected), indent());
+            // The description gets its own rows rather than trailing the label:
+            // inline, one long description pushes the next option's label off
+            // the bottom of a box that has to fit above the input.
+            if let Some(description) = &option.description {
+                lines.extend(gutter_lines(
+                    wrap_text(description, dim, body),
+                    indent(),
+                    indent(),
+                ));
+            }
+            out.push(lines);
+        }
+        out.push(gutter_lines(
+            wrap_text("Other (type your own)", Style::new(), body),
+            mark(answer.custom_input.is_some()),
+            indent(),
+        ));
+        if question.multi {
+            out.push(vec![Line::styled(
+                "Submit answers",
+                Style::new().green().bold(),
+            )]);
+        }
+        out
+    }
+
+    /// Rows the whole box needs at `width`: borders, question, every option and
+    /// the help line.
+    fn box_height(&self, width: u16) -> u16 {
+        let inner = width.saturating_sub(2);
+        let options: usize = self.option_lines(inner).iter().map(|item| item.len()).sum();
+        let question = self.question_lines(inner).len();
+        (question + options + 3).min(u16::MAX as usize) as u16
     }
 
     fn move_selection(&mut self, delta: isize) {
@@ -1132,6 +1240,14 @@ struct App {
     /// In-progress assistant text for the current turn, flushed on the next
     /// step/tool/terminal event.
     assistant_buf: String,
+    /// Reasoning streamed natively via `StreamEvent::Reasoning` since the last
+    /// flush, each segment anchored to the `assistant_buf` offset it arrived at.
+    /// Kept apart from `assistant_buf` so it is never wrapped into the wire
+    /// history: it is display-only, folded like `<think>` blocks. Anchoring
+    /// (rather than one flat buffer) is what keeps a turn that interleaves
+    /// reasoning with prose in emission order, and what lets `reasoning_open`
+    /// tell "still reasoning" from "prose has started".
+    reasoning_segs: Vec<ReasoningSeg>,
     /// The current run of consecutive collapsible tool calls, rendered as one
     /// transcript row that updates in real time and finalizes to a short summary.
     /// edit/write are excluded (they render their own diff panel).
@@ -1152,6 +1268,18 @@ struct App {
     /// from `[agent].show_reasoning` in agent.toml (false). Ctrl-O toggles every
     /// existing block between its summary row and full detail for the session.
     show_reasoning: bool,
+    /// Whether reasoning streams into the live tail while folding is on.
+    /// Defaults from `stream_reasoning` in `~/.jan/config.toml` (true). The open
+    /// block shows its last `LIVE_REASONING_TAIL_LINES` lines and still folds to
+    /// a summary row when the turn commits; false shows nothing but the header
+    /// badge, as before. Orthogonal to `show_reasoning`, which unfolds for good.
+    stream_reasoning: bool,
+    /// Whether a prior assistant turn's reasoning is resent to the model.
+    /// Defaults from `[agent].send_reasoning` in agent.toml (true). False keeps
+    /// long chains of thought out of the request (and satisfies upstreams that
+    /// reject the key); the display journal keeps reasoning for a resume either
+    /// way.
+    send_reasoning: bool,
     /// Transcript row indices of collapsed regions (tool groups or reasoning
     /// blocks) the user has expanded to full detail.
     expanded: std::collections::HashSet<usize>,
@@ -1366,6 +1494,50 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 /// Milliseconds per spinner frame, decoupled from the 50ms render tick.
 const SPINNER_ADVANCE_MS: u64 = 80;
 
+/// Rotating action words for the running input placeholder, replacing a static
+/// "working…" so a long turn does not read as a hung UI.
+const WORKING_WORDS: [&str; 12] = [
+    "working",
+    "computing",
+    "processing",
+    "analyzing",
+    "crunching",
+    "grinding",
+    "executing",
+    "running",
+    "handling",
+    "compiling",
+    "operating",
+    "fetching",
+];
+
+/// Rotating action words shown while the model is reasoning (a ` think>` block
+/// is streaming), coloured orange. Mirrors the working list so the two states
+/// read as the same kind of progress, just distinct in wording and colour.
+const THINKING_WORDS: [&str; 12] = [
+    "thinking",
+    "reasoning",
+    "pondering",
+    "reflecting",
+    "deliberating",
+    "musing",
+    "ruminating",
+    "meditating",
+    "contemplating",
+    "weighing",
+    "cogitating",
+    "calculating",
+];
+
+/// Spinner frames per placeholder-word change, so the action word turns over
+/// at a relaxed pace (60 frames x 80ms ~= 4.8s) rather than shifting under
+/// the eye alongside the braille spinner.
+const WORD_ROTATE_FRAMES: usize = 60;
+
+/// Orange used for the "thinking" action word, matching the markdown bold
+/// accent so reasoning reads consistently across the TUI.
+const THINKING_ORANGE: Color = Color::Rgb(255, 165, 0);
+
 /// How long the `[thought for Ns]` header summary lingers after a reasoning
 /// block closes before it falls back to the plain `[working]` status. The
 /// summary is only a transient cue that a block finished; it should not pin the
@@ -1416,16 +1588,22 @@ struct SubagentBlock {
 }
 
 impl SubagentBlock {
+    /// The child's call list, revealed by Ctrl-O. Wrapped, not elided, for the
+    /// same reason as `group_detail_lines`: this is the surface the folded
+    /// summary row sends the user to, so it is the one that has to be complete.
     fn detail_lines(&self, width: u16) -> Vec<Line<'static>> {
         let max = width.saturating_sub(8).max(1) as usize;
         self.calls
             .iter()
-            .map(|label| {
-                Line::from(vec![
-                    Span::styled("│   ", Style::new().dark_gray()),
-                    Span::styled("▸ ", Style::new().magenta()),
-                    Span::styled(truncate(label, max), Style::new().dim()),
-                ])
+            .flat_map(|label| {
+                gutter_lines(
+                    wrap_text(label, Style::new().dim(), max),
+                    vec![
+                        Span::styled("│   ", Style::new().dark_gray()),
+                        Span::styled("▸ ", Style::new().magenta()),
+                    ],
+                    vec![Span::styled("│     ", Style::new().dark_gray())],
+                )
             })
             .collect()
     }
@@ -1493,12 +1671,16 @@ impl App {
             display_log: Vec::new(),
             journal_writer: None,
             assistant_buf: String::new(),
+            reasoning_segs: Vec::new(),
             tool_group: None,
             grouped_ids: std::collections::HashSet::new(),
             groups: Vec::new(),
             pending_rows: Vec::new(),
             reasoning_blocks: Vec::new(),
             show_reasoning,
+            // Overwritten from the session config right after construction.
+            stream_reasoning: true,
+            send_reasoning: true,
             expanded: std::collections::HashSet::new(),
             reveal: None,
             input: String::new(),
@@ -1633,6 +1815,7 @@ impl App {
         self.expanded.clear();
         self.reveal = None;
         self.assistant_buf.clear();
+        self.reasoning_segs.clear();
         self.message_queue.clear();
         self.pending_queue.clear();
         self.ask_queue.clear();
@@ -1732,34 +1915,43 @@ impl App {
     }
 
     fn flush_assistant(&mut self) {
-        let text = self.assistant_buf.trim_end().to_string();
+        let segs = std::mem::take(&mut self.reasoning_segs);
+        let prose = self.assistant_buf.trim_end().to_string();
         self.assistant_buf.clear();
         // The buffered stream is committed: any open reasoning window closes
         // (its elapsed time was stashed when the block itself closed, so this
         // only matters for a flush that happens mid-block, e.g. a tool call).
         self.thinking_since = None;
         // No-op (and, crucially, don't finalize the tool group) on an empty or
-        // whitespace-only buffer, so silent consecutive tool calls keep folding.
-        if !assistant_has_content(&text) {
+        // whitespace-only turn, so silent consecutive tool calls keep folding.
+        if !assistant_has_content(&prose, &segs) {
             return;
         }
         // Model prose ends the current run of tool calls.
         self.finalize_tool_group();
-        // Journaled with its `<think>` markers intact: this is the only place the
-        // reasoning exists (it is kept out of `history` on purpose), and the
-        // replay folds it exactly as the live turn did.
+        // Display-logged here (out of `history` on purpose) so the replay folds
+        // reasoning like the live turn did. Prose and reasoning are journaled
+        // apart, exactly as they arrived.
         self.display_log.push(DisplayEntry::Assistant {
-            text: text.clone(),
+            text: prose.clone(),
+            reasoning: segs.clone(),
         });
-        self.push_assistant_blocks(&text);
+        self.push_assistant_blocks(&prose, &segs);
     }
 
     /// Commit assistant `text` to the transcript in emission order: answer prose
     /// through markdown, each `<think>` block folded to a one-line summary row
     /// whose full dimmed detail is retained for expansion.
-    fn push_assistant_blocks(&mut self, text: &str) {
-        let text = strip_system_xml_tags(text);
-        for (reasoning, seg) in split_reasoning(&text) {
+    fn push_assistant_blocks(&mut self, prose: &str, segs: &[ReasoningSeg]) {
+        for (reasoning, seg) in assistant_runs(prose, segs) {
+            // Only answer prose can carry an injected `<system>` block; stripping
+            // per run rather than over the whole turn keeps the reasoning
+            // offsets meaningful.
+            let seg = if reasoning {
+                seg
+            } else {
+                strip_system_xml_tags(&seg).to_string()
+            };
             if seg.trim().is_empty() {
                 continue;
             }
@@ -2004,11 +2196,28 @@ impl App {
             .is_some_and(|closed| closed.elapsed() >= TODO_HIDE_AFTER)
     }
 
-    /// True while a reasoning block is streaming with folding on: the one
-    /// stretch of a run that puts nothing on screen, so the header badge is the
-    /// only place progress can show.
+    /// True while a reasoning block is streaming and nothing of it is on screen:
+    /// the one stretch of a run with no visible motion, which is what the
+    /// header's shimmering `[thinking]` badge stands in for. With
+    /// `stream_reasoning` on the tail itself is moving, so the badge stays flat.
     fn is_thinking(&self) -> bool {
-        self.status != Status::Idle && !self.show_reasoning && thinking_open(&self.assistant_buf)
+        self.status != Status::Idle
+            && !self.show_reasoning
+            && !self.stream_reasoning
+            && self.reasoning_open()
+    }
+
+    /// True while the model is mid-reasoning: either a `<think>` block is live
+    /// in the answer buffer (inline-tag providers) or the newest native segment
+    /// is still at the tail, i.e. no content token has arrived since
+    /// (`reasoning_content` providers). The tail check is what closes the window
+    /// when prose starts, since native segments live on until the next flush.
+    fn reasoning_open(&self) -> bool {
+        thinking_open(&self.assistant_buf)
+            || self
+                .reasoning_segs
+                .last()
+                .is_some_and(|seg| seg.at == self.assistant_buf.len())
     }
 
     /// Header status while a turn is running with reasoning folding on:
@@ -2017,7 +2226,7 @@ impl App {
     /// plain `[working]`) once the model is working again. `None` when no
     /// reasoning has happened recently this turn.
     fn reasoning_status(&self) -> Option<(String, Style)> {
-        if thinking_open(&self.assistant_buf) {
+        if self.reasoning_open() {
             Some(("thinking".to_string(), Style::new().yellow().bold()))
         } else {
             // The summary is transient: it lasts only `THOUGHT_FOR_TTL` after the
@@ -2650,18 +2859,7 @@ impl App {
         let args = args.trim();
         self.history
             .push(serde_json::json!({ "role": "user", "content": msg }));
-        let mut spans = vec![Span::styled("› ", Style::new().light_magenta().bold())];
-        spans.push(Span::styled(
-            format!("[skill:{name}]"),
-            Style::new().cyan().bold(),
-        ));
-        if !args.is_empty() {
-            spans.push(Span::raw(format!(" {args}")));
-        } else if !description.is_empty() {
-            spans.push(Span::raw(format!(" - {description}")));
-        }
-        self.gap(Kind::User);
-        self.push(Line::from(spans));
+        self.push_invocation_row(&format!("[skill:{name}]"), args, &description);
         self.begin_turn();
         // A fresh user turn is new context: same reminder reset as submit_user.
         self.last_todo_reminder = None;
@@ -2689,18 +2887,7 @@ impl App {
         let args = args.trim();
         self.history
             .push(serde_json::json!({ "role": "user", "content": msg }));
-        let mut spans = vec![Span::styled("› ", Style::new().light_magenta().bold())];
-        spans.push(Span::styled(
-            format!("[command:{name}]"),
-            Style::new().cyan().bold(),
-        ));
-        if !args.is_empty() {
-            spans.push(Span::raw(format!(" {args}")));
-        } else if !description.is_empty() {
-            spans.push(Span::raw(format!(" - {description}")));
-        }
-        self.gap(Kind::User);
-        self.push(Line::from(spans));
+        self.push_invocation_row(&format!("[command:{name}]"), args, &description);
         self.begin_turn();
         // A fresh user turn is new context: same reminder reset as submit_user.
         self.last_todo_reminder = None;
@@ -2808,10 +2995,15 @@ impl App {
     /// attached image ending in an `[IMAGE]` label (basename when known).
     fn push_user_line(&mut self, text: &str, images: &[String]) {
         self.gap(Kind::User);
-        self.push(Line::from(vec![
-            Span::styled("› ", Style::new().light_magenta().bold()),
-            Span::styled(text.to_string(), Style::new().bold()),
-        ]));
+        // A `System` row rather than a `Line`: a pasted or shift-entered message
+        // carries its own newlines, and a single `Line` renders those as blank
+        // cells in one run-on row.
+        self.push_row(RowKind::System {
+            glyph: "›",
+            cont: " ",
+            gutter: Style::new().light_magenta().bold(),
+            body: vec![Span::styled(text.to_string(), Style::new().bold())],
+        });
         for name in images {
             let label = if name.is_empty() {
                 "[IMAGE]".to_string()
@@ -2829,10 +3021,32 @@ impl App {
     /// the label only, never the template body (see `super::invocation_label`).
     fn push_invocation_label(&mut self, label: String) {
         self.gap(Kind::User);
-        self.push(Line::from(vec![
-            Span::styled("› ", Style::new().light_magenta().bold()),
-            Span::styled(label, Style::new().cyan().bold()),
-        ]));
+        self.push_row(RowKind::System {
+            glyph: "›",
+            cont: " ",
+            gutter: Style::new().light_magenta().bold(),
+            body: vec![Span::styled(label, Style::new().cyan().bold())],
+        });
+    }
+
+    /// The `› [skill:foo] <args>` row a slash invocation commits. A `System`
+    /// row for the same reason as `push_user_line`: `args` is user text and can
+    /// arrive pasted and multi-line, which a single `Line` renders as blank
+    /// cells in one run-on row.
+    fn push_invocation_row(&mut self, label: &str, args: &str, description: &str) {
+        let mut body = vec![Span::styled(label.to_string(), Style::new().cyan().bold())];
+        if !args.is_empty() {
+            body.push(Span::raw(format!(" {args}")));
+        } else if !description.is_empty() {
+            body.push(Span::raw(format!(" - {description}")));
+        }
+        self.gap(Kind::User);
+        self.push_row(RowKind::System {
+            glyph: "›",
+            cont: " ",
+            gutter: Style::new().light_magenta().bold(),
+            body,
+        });
     }
 
     /// Stage the OS clipboard's image for the next message, noting the result.
@@ -2873,6 +3087,11 @@ impl App {
         // runs, so an achieved or cleared goal reverts to an unchanged body.
         if self.goal.as_ref().is_some_and(|g| g.is_active()) {
             body["goal_mode"] = serde_json::json!(true);
+        }
+        // Reasoning resend policy: forwarded only when the user opted out, so a
+        // default session sends an unchanged body (the loop defaults to true).
+        if !self.send_reasoning {
+            body["send_reasoning"] = serde_json::json!(false);
         }
         body
     }
@@ -3048,10 +3267,13 @@ impl App {
             StreamEvent::Token { text } => {
                 self.assistant_buf.push_str(&text);
                 // Track the live thinking state so the header can fold reasoning
-                // to `[thinking]` / `[thought for Ns]`. Start the timer when a
-                //  block opens; close it (stashing the duration) once the block
-                // closes or the tool group proceeds.
-                let open = thinking_open(&self.assistant_buf);
+                // to `[thinking]` / `[thought for Ns]`. Start the timer when
+                // reasoning is open; close it (stashing the duration) once the
+                // block ends. `reasoning_open` covers both inline ` think>` tags
+                // and native reasoning_buf, so a content token after reasoning
+                // closes the window (and prose arriving with no reasoning leaves
+                // it closed).
+                let open = self.reasoning_open();
                 if open && self.thinking_since.is_none() {
                     self.thinking_since = Some(Instant::now());
                 } else if !open {
@@ -3066,6 +3288,23 @@ impl App {
                 // into its own row.
                 if self.tool_group.is_some() && has_answer_text(&self.assistant_buf) {
                     self.finalize_tool_group();
+                }
+            }
+            StreamEvent::Reasoning { text } => {
+                // Native reasoning stays out of the answer buffer entirely; it is
+                // folded into the display log on the next flush. Deltas that
+                // arrive with no prose in between extend the open segment;
+                // reasoning after prose starts a new one, so the timeline keeps
+                // emission order instead of hoisting every thought to the top.
+                if !text.is_empty() {
+                    let at = self.assistant_buf.len();
+                    match self.reasoning_segs.last_mut() {
+                        Some(seg) if seg.at == at => seg.text.push_str(&text),
+                        _ => self.reasoning_segs.push(ReasoningSeg { at, text }),
+                    }
+                    if self.thinking_since.is_none() {
+                        self.thinking_since = Some(Instant::now());
+                    }
                 }
             }
             StreamEvent::Step { index, max } => {
@@ -3445,6 +3684,18 @@ impl App {
         answer
     }
 
+    /// The concatenated natively-streamed reasoning text for the current turn.
+    /// Used to resend the final answer's reasoning on the wire. Inline
+    /// `<think>` blocks (which arrive through `Token` and live in the buffer)
+    /// are handled separately by `answer_without_reasoning` and the loop path;
+    /// this covers the `reasoning_content` delta case, which never touches the
+    /// buffer.
+    fn native_reasoning_text(&self) -> String {
+        self.reasoning_segs
+            .iter()
+            .map(|s| s.text.clone())
+            .collect::<String>()
+    }
     fn on_done(&mut self, stop_reason: String, usage: Option<Usage>) {
         self.finalize_tool_group();
         // Done is terminal: nothing more arrives on this stream, so a call that
@@ -3454,11 +3705,23 @@ impl App {
         // arrive on its stream. Any panel still open here never got its own
         // `SubagentEnd`.
         self.close_live_subagents();
+        // Capture the turn's reasoning before `take_answer` flushes it: native
+        // reasoning lives in `reasoning_segs` until the flush, and inline
+        // ` thinking` blocks are folded into the buffer. Preserved so the
+        // final assistant turn can be resent with its reasoning (see below).
+        let reasoning = self.native_reasoning_text();
         let answer = self.take_answer();
         let wire = answer_without_reasoning(&answer);
         if !wire.is_empty() {
-            self.history
-                .push(serde_json::json!({ "role": "assistant", "content": wire }));
+            let mut msg = serde_json::json!({ "role": "assistant", "content": wire });
+            // Resend the final answer's reasoning on the wire turn, mirroring
+            // how tool-call turns are threaded in the loop. Kept out of
+            // `content`; only added when the upstream actually streamed it, so
+            // non-reasoning providers send an unchanged shape.
+            if !reasoning.is_empty() {
+                msg["reasoning_content"] = serde_json::json!(reasoning);
+            }
+            self.history.push(msg);
         }
         // A closing receipt for the turn: when, how much context went up, how
         // much came back, how long it took, how fast. Cheap to skim, and the
@@ -3607,6 +3870,16 @@ impl App {
     /// `finish_compaction` when an overflow recovery is abandoned, so the two
     /// paths cannot drift.
     fn halt_turn(&mut self) {
+        // A run that died on an error rather than Esc is still an abnormal exit:
+        // it may well have run tools whose side effects exist on disk, but a
+        // mid-turn `MessagesUpdated` was never published (the stream errored
+        // before a natural stop), so those calls are absent from `history`.
+        // Fold them in exactly as a hard cancel does, so a later prompt or
+        // /resume sees the tools it ran and what they returned. The overflow-
+        // retry path deliberately avoids this (see `on_error`): that turn
+        // re-runs, so folding now would resend completed calls into the retried
+        // request before the model asks for them again.
+        self.append_cancelled_turn_tools();
         // An errored turn halts the goal loop; the user decides how to recover.
         self.goal_eval_pending = false;
         if let Some(goal) = self.goal.as_ref() {
@@ -3693,10 +3966,17 @@ impl App {
         // preceding tool calls stay in the transcript, and record the partial
         // answer in history so the next turn and a later /resume both see it.
         self.abort_tool_rows();
+        self.append_cancelled_turn_tools();
+        // Captured before the flush clears it, like `on_done`, so a cancelled
+        // turn's partial answer keeps the reasoning that produced it.
+        let reasoning = self.native_reasoning_text();
         let answer = answer_without_reasoning(&self.take_answer());
         if !answer.is_empty() {
-            self.history
-                .push(serde_json::json!({ "role": "assistant", "content": answer }));
+            let mut msg = serde_json::json!({ "role": "assistant", "content": answer });
+            if !reasoning.is_empty() {
+                msg["reasoning_content"] = serde_json::json!(reasoning);
+            }
+            self.history.push(msg);
         }
         self.status = Status::Idle;
         self.run_started = None;
@@ -3715,6 +3995,69 @@ impl App {
         self.dequeue_next();
         self.persist();
     }
+
+    /// Fold this cancelled turn's completed tool calls and their results into
+    /// `history` (wire form), so the model on the next prompt sees the tools it
+    /// ran and what they returned instead of only the streamed prose. Without
+    /// this, `self.history` only ever carries tool exchanges when the backend
+    /// publishes a `MessagesUpdated` at a natural stop -- a run killed mid-way
+    /// by a cancel loses them from the model's view (they still render from the
+    /// display journal). Calls still in flight at the cancel are paired with a
+    /// placeholder result so the exchange stays protocol-valid.
+    fn append_cancelled_turn_tools(&mut self) {
+        let start = self
+            .display_log
+            .iter()
+            .rposition(|e| matches!(e, DisplayEntry::User { .. }))
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        let mut calls: Vec<(String, String, serde_json::Value)> = Vec::new();
+        let mut results: Vec<(String, String)> = Vec::new();
+        for entry in self.display_log.iter().skip(start) {
+            match entry {
+                DisplayEntry::ToolCall { id, name, args } => {
+                    calls.push((id.clone(), name.clone(), args.clone()));
+                }
+                DisplayEntry::ToolResult { id, content, .. } => {
+                    results.push((id.clone(), content.clone()));
+                }
+                _ => {}
+            }
+        }
+        if calls.is_empty() {
+            return;
+        }
+        let tool_calls: serde_json::Value = calls
+            .iter()
+            .map(|(id, name, args)| {
+                serde_json::json!({
+                    "id": id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": args.to_string(),
+                    }
+                })
+            })
+            .collect();
+        self.history.push(serde_json::json!({
+            "role": "assistant",
+            "content": serde_json::Value::Null,
+            "tool_calls": tool_calls,
+        }));
+        for (id, _, _) in &calls {
+            let content = results
+                .iter()
+                .find(|(rid, _)| rid == id)
+                .map(|(_, c)| c.clone())
+                .unwrap_or_else(|| super::MISSING_TOOL_RESULT.to_string());
+            self.history.push(serde_json::json!({
+                "role": "tool",
+                "tool_call_id": id,
+                "content": content,
+            }));
+        }
+    }
 }
 
 /// Truncate to `max` chars with a trailing ellipsis (char-safe).
@@ -3724,6 +4067,65 @@ fn truncate(s: &str, max: usize) -> String {
     }
     let head: String = s.chars().take(max.saturating_sub(1).max(1)).collect();
     format!("{head}…")
+}
+
+/// `s` on one line: every newline (and the whitespace around it) becomes a
+/// single space. For the surfaces whose height is fixed at one row -- the live
+/// group row, the subagent panel -- where an embedded `\n` would either be
+/// swallowed by ratatui or silently change the row's height.
+fn single_line(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Word-wrap `spans` to `max`, breaking hard at their embedded newlines first.
+/// `wrap_spans_at_words` treats `\n` as an ordinary character, so a multi-line
+/// command or user message laid out through it alone renders as one run-on line
+/// with blank cells where the breaks were.
+fn wrap_spans_hard(spans: Vec<Span<'static>>, max: usize) -> Vec<Vec<Span<'static>>> {
+    let mut segments: Vec<Vec<Span<'static>>> = vec![Vec::new()];
+    for span in spans {
+        let style = span.style;
+        let mut parts = span.content.split('\n').peekable();
+        while let Some(part) = parts.next() {
+            let part = part.strip_suffix('\r').unwrap_or(part);
+            if !part.is_empty() {
+                segments
+                    .last_mut()
+                    .expect("seeded with one segment")
+                    .push(Span::styled(part.to_string(), style));
+            }
+            if parts.peek().is_some() {
+                segments.push(Vec::new());
+            }
+        }
+    }
+    segments
+        .into_iter()
+        .flat_map(|segment| markdown::wrap_spans_at_words(segment, max))
+        .collect()
+}
+
+/// `text` laid out at `max` in one style. The single-span case of
+/// `wrap_spans_hard`.
+fn wrap_text(text: &str, style: Style, max: usize) -> Vec<Vec<Span<'static>>> {
+    wrap_spans_hard(vec![Span::styled(text.to_string(), style)], max)
+}
+
+/// Prefix each wrapped row with its gutter: `lead` on the first, `cont` on the
+/// rest, so the body keeps one left edge no matter how many rows it took.
+fn gutter_lines(
+    rows: Vec<Vec<Span<'static>>>,
+    lead: Vec<Span<'static>>,
+    cont: Vec<Span<'static>>,
+) -> Vec<Line<'static>> {
+    rows.into_iter()
+        .enumerate()
+        .map(|(i, spans)| {
+            let mut row = if i == 0 { lead.clone() } else { cont.clone() };
+            row.extend(spans);
+            Line::from(row)
+        })
+        .collect()
 }
 
 /// Per-message envelope (role, delimiters) in the estimate below, the usual
@@ -3802,18 +4204,39 @@ const DIFF_MAX_ROWS: usize = 1000;
 /// long diff has to collapse rather than crowd out the options.
 const DIFF_PREVIEW_MAX_ROWS: usize = 20;
 
-/// Max chars shown for a bash/shell/exec command label in the transcript.
-const COMMAND_LABEL_MAX: usize = 80;
-
 /// Cells a `tool_row` spends on its gutter and tag, subtracted from the draw
-/// width to bound the label so the row never wraps.
+/// width before the label is wrapped.
 const TOOL_ROW_RESERVE: u16 = 6;
+
+/// Columns held back for the live row's elapsed badge. Fixed rather than
+/// measured so the body's wrap points never move as the counter ticks; wide
+/// enough for the four digits a single tool call will not outlive.
+const ELAPSED_RESERVE: usize = 8;
+
+/// Rows one tool label may occupy before it elides. A label is wrapped rather
+/// than cut so a long command stays readable, but a heredoc body would
+/// otherwise push the conversation off screen; the full text is still under
+/// Ctrl-O.
+const TOOL_ROW_MAX_LINES: usize = 8;
 
 /// Diff row backgrounds. Dark and desaturated on purpose: the syntax-highlighted
 /// foreground is drawn on top of them, so the tint has to read as added/removed
 /// at a glance without swallowing the code.
 const DIFF_ADD_BG: Color = Color::Rgb(22, 52, 32);
 const DIFF_DEL_BG: Color = Color::Rgb(66, 26, 30);
+
+/// Selection style shared by every arrow-navigable list (ask, permission, slash
+/// hints, path hints, pickers). Palette-only on purpose: `reversed()` swaps in
+/// the terminal's default foreground as a background, which lands as an opaque
+/// white block matching nothing else on screen. Bold survives `Style::patch`
+/// even where a row's spans set their own colors, so it marks the row
+/// everywhere; the cyan reaches `SELECT_MARK` and any unstyled label, and both
+/// follow the terminal's own theme.
+fn select_style() -> Style {
+    Style::new().cyan().bold()
+}
+
+const SELECT_MARK: &str = "\u{25b6} ";
 
 /// Render focused-diff text as a boxed panel: a light rule frames the change,
 /// `+` rows on a green background and `-` rows on a red one across the whole row
@@ -3982,6 +4405,19 @@ fn subagent_name_from_run_id(run_id: &str) -> &str {
     }
 }
 
+/// A command as the transcript shows it: each line's internal whitespace
+/// collapsed, but the line structure kept, so a heredoc or a script written one
+/// step per line reads the way it was authored. `RowKind::Tool` breaks on those
+/// newlines and wraps whatever is still too wide.
+fn collapse_command(cmd: &str) -> String {
+    cmd.lines()
+        .map(single_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim_matches('\n')
+        .to_string()
+}
+
 fn tool_activity(name: &str, args: &serde_json::Value) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
     let base = |p: &str| {
@@ -3997,10 +4433,9 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             if cmd.trim().is_empty() {
                 "Executing command".to_string()
             } else {
-                // Untruncated: the row clamps to the draw width, so the command
+                // Untruncated: the row wraps at the draw width, so the command
                 // fills the terminal rather than eliding at a fixed 80.
-                let collapsed = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-                format!("Executing: {collapsed}")
+                format!("Executing: {}", collapse_command(cmd))
             }
         }
         "grep" | "search" => "Searching".to_string(),
@@ -4018,7 +4453,7 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             if q.is_empty() {
                 "Searching the web".to_string()
             } else {
-                format!("Searching the web: {}", truncate(q, COMMAND_LABEL_MAX))
+                format!("Searching the web: {q}")
             }
         }
         "web_fetch" => {
@@ -4026,7 +4461,7 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             if u.is_empty() {
                 "Fetching a page".to_string()
             } else {
-                format!("Fetching: {}", truncate(u, COMMAND_LABEL_MAX))
+                format!("Fetching: {u}")
             }
         }
         "ask" => "Asking a question".to_string(),
@@ -4062,7 +4497,7 @@ fn todo_op_verb(args: &serde_json::Value, past: bool) -> &'static str {
 /// item count for `append`, or "todos" as a generic fallback.
 fn todo_target_label(args: &serde_json::Value) -> String {
     if let Some(task) = args.get("task").and_then(|v| v.as_str()) {
-        return format!("task: {}", truncate(task, COMMAND_LABEL_MAX));
+        return format!("task: {task}");
     }
     if let Some(phase) = args.get("phase").and_then(|v| v.as_str()) {
         if let Some(items) = args.get("items").and_then(|v| v.as_array()) {
@@ -4095,7 +4530,9 @@ fn subagent_activity(name: &str, args: &serde_json::Value) -> String {
             if cmd.trim().is_empty() {
                 "command".to_string()
             } else {
-                format!("$ {}", cmd.split_whitespace().collect::<Vec<_>>().join(" "))
+                // The live panel gives each call exactly one row, so this one
+                // stays flattened where the transcript's label keeps its breaks.
+                format!("$ {}", single_line(cmd))
             }
         }
         "grep" | "search" => format!("grep {}", s("pattern")),
@@ -4125,8 +4562,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
             if cmd.trim().is_empty() {
                 "Ran command".to_string()
             } else {
-                let collapsed = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-                format!("Ran: {collapsed}")
+                format!("Ran: {}", collapse_command(cmd))
             }
         }
         "grep" | "search" => "Searched".to_string(),
@@ -4144,7 +4580,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
             if q.is_empty() {
                 "Searched the web".to_string()
             } else {
-                format!("Searched the web: {}", truncate(q, COMMAND_LABEL_MAX))
+                format!("Searched the web: {q}")
             }
         }
         "web_fetch" => {
@@ -4152,7 +4588,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
             if u.is_empty() {
                 "Fetched a page".to_string()
             } else {
-                format!("Fetched: {}", truncate(u, COMMAND_LABEL_MAX))
+                format!("Fetched: {u}")
             }
         }
         "ask" => "Asked a question".to_string(),
@@ -4389,6 +4825,53 @@ fn starting_call_lines(call: &mut StartingCall, frame: &str) -> Vec<Line<'static
     out
 }
 
+/// A tool row laid out at `width`: `tag` in the gutter, `label` wrapped
+/// beneath it with continuations aligned under the label rather than under the
+/// tag, bounded by `TOOL_ROW_MAX_LINES`. Shared by the committed `RowKind::Tool`
+/// and the live group row so the running command and the finished one wrap
+/// identically -- the row must not re-flow at the moment it resolves.
+///
+/// `suffix` rides the end of the last row (the live row's elapsed badge). The
+/// wrap reserves `ELAPSED_RESERVE` for it up front instead of measuring it, so a
+/// counter ticking past 9s or 99s cannot re-flow the command above it.
+fn tool_row_lines(
+    tag: &str,
+    tag_style: Style,
+    label: &str,
+    label_style: Style,
+    reserve: u16,
+    width: u16,
+    suffix: Option<(String, Style)>,
+) -> Vec<Line<'static>> {
+    let held = if suffix.is_some() { ELAPSED_RESERVE } else { 0 };
+    let max = (width.saturating_sub(reserve) as usize)
+        .saturating_sub(held)
+        .max(1);
+    let mut rows = wrap_text(label, label_style, max);
+    if rows.len() > TOOL_ROW_MAX_LINES {
+        rows.truncate(TOOL_ROW_MAX_LINES);
+        if let Some(last) = rows.last_mut() {
+            last.push(Span::styled(" …", label_style));
+        }
+    }
+    if let Some((text, style)) = suffix {
+        rows.last_mut()
+            .expect("wrap_text yields at least one row")
+            .push(Span::styled(format!(" {text}"), style));
+    }
+    gutter_lines(
+        rows,
+        vec![
+            Span::styled("│ ", Style::new().dark_gray()),
+            Span::styled(format!("{tag} "), tag_style),
+        ],
+        vec![
+            Span::styled("│ ", Style::new().dark_gray()),
+            Span::raw(" ".repeat(tag.chars().count() + 1)),
+        ],
+    )
+}
+
 fn tool_row(tag: &str, tag_style: Style, text: &str, text_style: Style) -> Line<'static> {
     Line::from(vec![
         Span::styled("│ ", Style::new().dark_gray()),
@@ -4413,11 +4896,14 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
     };
     for call in &group.calls {
         if show_headers {
-            out.push(Line::from(vec![
-                Span::styled("│   ", Style::new().dark_gray()),
-                Span::styled("▸ ", Style::new().cyan()),
-                Span::styled(truncate(&call.done, max), Style::new().dim()),
-            ]));
+            out.extend(gutter_lines(
+                wrap_text(&call.done, Style::new().dim(), max),
+                vec![
+                    Span::styled("│   ", Style::new().dark_gray()),
+                    Span::styled("▸ ", Style::new().cyan()),
+                ],
+                vec![Span::styled("│     ", Style::new().dark_gray())],
+            ));
         }
         if let Some(content) = &call.content {
             let (tag, tag_style) = if call.is_error {
@@ -4425,22 +4911,19 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
             } else {
                 ("✓", Style::new().green())
             };
-            // Expanded view shows the full output verbatim (one row per line,
-            // width-clamped): the tag rides the first line, the rest indent to
-            // align under it. Empty content still gets a bare tag row.
-            let mut content_lines = content.lines();
-            let first = content_lines.next().unwrap_or("");
-            out.push(Line::from(vec![
-                Span::styled(tag_gutter, Style::new().dark_gray()),
-                Span::styled(format!("{tag} "), tag_style),
-                Span::styled(truncate(first, max), Style::new().dim()),
-            ]));
-            for line in content_lines {
-                out.push(Line::from(vec![
-                    Span::styled(cont_gutter, Style::new().dark_gray()),
-                    Span::styled(truncate(line, max), Style::new().dim()),
-                ]));
-            }
+            // Expanded view shows the full output verbatim: the tag rides the
+            // first line, the rest indent to align under it, and a line wider
+            // than the terminal wraps rather than eliding -- this is the surface
+            // the transcript's one-line summary sends the user to. Empty content
+            // still gets a bare tag row.
+            out.extend(gutter_lines(
+                wrap_text(content, Style::new().dim(), max),
+                vec![
+                    Span::styled(tag_gutter, Style::new().dark_gray()),
+                    Span::styled(format!("{tag} "), tag_style),
+                ],
+                vec![Span::styled(cont_gutter, Style::new().dark_gray())],
+            ));
             if let Some(diff) = &call.diff {
                 for line in diff_lines(diff, width as usize, DIFF_MAX_ROWS, cont_gutter, None) {
                     out.push(line);
@@ -4474,17 +4957,29 @@ fn group_summary(nouns: &[(&str, bool)]) -> String {
     group_clauses(nouns, "Read", "ran")
 }
 
-/// Live row for the still-open tool group: a braille throbber in place of the
-/// static `▸` tag, plus elapsed time, so the user can see it's actively
-/// working and how long it's taken. Rebuilt fresh every draw (not stored in
-/// `transcript`) since the group's row there is only overwritten on the next
-/// tool call, not every tick.
-fn running_group_row(group: &ToolGroup, spinner_frame: usize, width: u16) -> Line<'static> {
+/// Live rows for the still-open tool group: a braille throbber in place of the
+/// static `▸` tag, the running call's label, and elapsed time, so the user can
+/// see it's actively working and how long it's taken. Rebuilt fresh every draw
+/// (not stored in `transcript`) since the group's row there is only overwritten
+/// on the next tool call, not every tick.
+///
+/// The label wraps exactly as the committed row will, so a long command is
+/// readable *while* it runs -- which is when the user most wants to check what
+/// they approved -- and the row does not re-lay itself out the instant the call
+/// resolves. The elapsed badge is dark rather than dim cyan: at the tail of a
+/// wrapped command it has to read as chrome, not as another argument.
+fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
     let frame = SPINNER[spinner_frame % SPINNER.len()];
     let elapsed = group.started.elapsed().as_secs();
-    let text = format!("{} ({elapsed}s)", group.activity());
-    let max = (width as usize).saturating_sub(6).max(1);
-    tool_row(frame, Style::new().cyan(), &truncate(&text, max), Style::new().cyan().dim())
+    tool_row_lines(
+        frame,
+        Style::new().cyan(),
+        &group.activity(),
+        Style::new().cyan().dim(),
+        TOOL_ROW_RESERVE,
+        width,
+        Some((format!("({elapsed}s)"), Style::new().dark_gray())),
+    )
 }
 
 /// Bucket `nouns` into read-style and run-style clauses (first-seen order,
@@ -4551,8 +5046,9 @@ fn has_answer_text(buf: &str) -> bool {
 }
 
 /// `text` with its reasoning removed, for the copy that goes into `history`.
-/// Reasoning is display-only and must never be resent to the model (see
-/// `SseAccumulator`); the display journal is what keeps it for a resume.
+/// Reasoning never belongs in `content`; it rides along on the message's
+/// `reasoning_content` instead (see `on_done`), and the display journal is what
+/// keeps it for a resume.
 pub(crate) fn answer_without_reasoning(text: &str) -> String {
     split_reasoning(text)
         .into_iter()
@@ -4639,10 +5135,61 @@ fn think_re() -> &'static regex::Regex {
     RE.get_or_init(|| regex::Regex::new(r"</?[a-zA-Z:]*think>").unwrap())
 }
 
+/// Whether inline `<think>` tags in model content are parsed as reasoning.
+/// Process-wide rather than a session field because the split runs on every
+/// rendered row, from free functions a `Row` reaches with no session in hand.
+/// Seeded once from `~/.jan/config.toml` by `set_think_tags_parsed`; `true`
+/// until then, which is also the default.
+static PARSE_THINK_TAGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+#[cfg(test)]
+thread_local! {
+    /// Per-test override. A test flips its own thread's answer instead of the
+    /// shared static, so a gate-off test cannot race the rest of the suite.
+    static PARSE_THINK_TAGS_OVERRIDE: std::cell::Cell<Option<bool>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Apply the `think_tags` setting for the process. Called once per session from
+/// `prepare_agent_session`, the chokepoint every agent surface goes through.
+pub(crate) fn set_think_tags_parsed(enabled: bool) {
+    PARSE_THINK_TAGS.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn think_tags_parsed() -> bool {
+    #[cfg(test)]
+    {
+        if let Some(over) = PARSE_THINK_TAGS_OVERRIDE.with(|c| c.get()) {
+            return over;
+        }
+    }
+    PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Run `f` with `<think>` parsing off on this thread only.
+#[cfg(test)]
+fn without_think_tags<T>(f: impl FnOnce() -> T) -> T {
+    PARSE_THINK_TAGS_OVERRIDE.with(|c| c.set(Some(false)));
+    let out = f();
+    PARSE_THINK_TAGS_OVERRIDE.with(|c| c.set(None));
+    out
+}
+
 /// Split assistant text into `(is_reasoning, segment)` runs by `<think>` /
 /// `<mm:think>` tags (tags themselves dropped). An unterminated open tag makes
 /// the trailing text reasoning, which keeps live streaming clean.
+///
+/// With `think_tags = false` in `~/.jan/config.toml` the tags carry no meaning:
+/// the whole text is one answer run, so it renders verbatim and stays in the
+/// answer that goes back as history.
 fn split_reasoning(text: &str) -> Vec<(bool, String)> {
+    if !think_tags_parsed() {
+        return if text.is_empty() {
+            Vec::new()
+        } else {
+            vec![(false, text.to_string())]
+        };
+    }
     let mut out = Vec::new();
     let mut in_think = false;
     let mut last = 0;
@@ -4661,10 +5208,44 @@ fn split_reasoning(text: &str) -> Vec<(bool, String)> {
     out
 }
 
+/// Interleave a turn's answer prose with its natively streamed reasoning
+/// segments into `(is_reasoning, run)` in emission order -- the one form every
+/// consumer (live tail, committed rows, replay) reads.
+///
+/// The two sources stay apart end to end: native reasoning arrives structurally
+/// and is placed by its offset, never encoded into the prose, while an
+/// inline-tag provider's `<think>` markers are found by `split_reasoning` inside
+/// the prose runs alone. So a model writing about `<think>` tags cannot close a
+/// native block, and the `think_tags` gate governs only the inline case.
+///
+/// Offsets come from `prose.len()` at emission time, so they are always char
+/// boundaries and always ascending.
+fn assistant_runs(prose: &str, segs: &[ReasoningSeg]) -> Vec<(bool, String)> {
+    if segs.is_empty() {
+        return split_reasoning(prose);
+    }
+    let mut out = Vec::new();
+    let mut last = 0;
+    for seg in segs {
+        let at = seg.at.min(prose.len()).max(last);
+        out.extend(split_reasoning(&prose[last..at]));
+        let text = seg.text.trim_end();
+        if !text.is_empty() {
+            out.push((true, text.to_string()));
+        }
+        last = at;
+    }
+    out.extend(split_reasoning(&prose[last..]));
+    out
+}
+
 /// True if `text` ends inside an unclosed ` think>` block (an opening tag whose
 /// matching close has not yet streamed). Used to show `[thinking]` while
 /// reasoning streams. Re-uses the same tag matcher as `split_reasoning`.
 fn thinking_open(text: &str) -> bool {
+    if !think_tags_parsed() {
+        return false;
+    }
     let mut open = false;
     for m in think_re().find_iter(text) {
         open = !m.as_str().starts_with("</");
@@ -4672,9 +5253,9 @@ fn thinking_open(text: &str) -> bool {
     open
 }
 
-/// True if `text` has any non-whitespace content in any reasoning/answer run.
-fn assistant_has_content(text: &str) -> bool {
-    split_reasoning(text)
+/// True if the turn has any non-whitespace content in any reasoning/answer run.
+fn assistant_has_content(prose: &str, segs: &[ReasoningSeg]) -> bool {
+    assistant_runs(prose, segs)
         .iter()
         .any(|(_, seg)| !seg.trim().is_empty())
 }
@@ -4896,6 +5477,8 @@ pub async fn run(
         smol_model,
         limits,
         show_reasoning,
+        stream_reasoning,
+        send_reasoning,
         mcp_servers,
         mcp_task,
     } = session;
@@ -4945,6 +5528,8 @@ pub async fn run(
         repo_root,
     );
     app.smol_model = smol_model;
+    app.stream_reasoning = stream_reasoning;
+    app.send_reasoning = send_reasoning;
     app.args = Some(args.clone());
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
     // shows immediately; a resumed thread overrides this via restore_run_mode.
@@ -5326,6 +5911,11 @@ async fn chat_loop<B: Backend>(
                     if app.status == Status::Running {
                         app.flush_assistant();
                         app.abort_tool_rows();
+                        // The task was killed without a natural stop, so the
+                        // mid-turn `MessagesUpdated` that would have folded the
+                        // completed tool calls never fired -- fold them here,
+                        // exactly as the cancel/error paths do.
+                        app.append_cancelled_turn_tools();
                         app.status = Status::Idle;
                         app.run_started = None;
                     }
@@ -6934,6 +7524,12 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         label: "show_reasoning",
         desc: "expand  reasoning in the transcript (Ctrl-O still toggles)",
         kind: AgentSettingKind::Bool { default: false },
+    },
+    AgentSettingDef {
+        key: "send_reasoning",
+        label: "send_reasoning",
+        desc: "resend prior reasoning to the model (false drops it from requests)",
+        kind: AgentSettingKind::Bool { default: true },
     },
 ];
 
@@ -8717,8 +9313,9 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
             // the blocks directly leaves the group open, so every later call
             // folds back into one row that is never committed -- the whole turn's
             // tool calls then render as nothing at all.
-            DisplayEntry::Assistant { text } => {
+            DisplayEntry::Assistant { text, reasoning } => {
                 app.assistant_buf = text.clone();
+                app.reasoning_segs = reasoning.clone();
                 app.flush_assistant();
             }
             DisplayEntry::ToolCall { id, name, args } => app.apply(StreamEvent::ToolCall {
@@ -8772,6 +9369,7 @@ fn rebuild_transcript(app: &mut App) {
     app.expanded.clear();
     app.reveal = None;
     app.assistant_buf.clear();
+    app.reasoning_segs.clear();
     app.last_kind = Kind::None;
     if !app.display_log.is_empty() {
         let logged = std::mem::take(&mut app.display_log);
@@ -8794,7 +9392,7 @@ fn rebuild_transcript(app: &mut App) {
         } else if role == "assistant" {
             let text = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
             if !text.is_empty() {
-                app.push_assistant_blocks(text);
+                app.push_assistant_blocks(text, &[]);
             }
         }
     }
@@ -8836,6 +9434,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     app.expanded.clear();
     app.reveal = None;
     app.assistant_buf.clear();
+    app.reasoning_segs.clear();
     app.turn = (0, 0);
     app.tokens = 0;
     app.scrollback = 0;
@@ -9243,7 +9842,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         {
             Some(g) => Segment::eager(
                 Some(i),
-                vec![running_group_row(g, app.spinner_frame, width)],
+                running_group_rows(g, app.spinner_frame, width),
                 width,
             ),
             None => Segment {
@@ -9291,16 +9890,24 @@ fn draw(f: &mut Frame, app: &mut App) {
     // Streaming prose and the awaiting throbbers have no transcript index; they
     // are rebuilt every frame and ride along as one trailing segment.
     let mut tail: Vec<Line<'static>> = Vec::new();
-    if !app.assistant_buf.is_empty() {
-        let live = live_assistant_lines(&app.assistant_buf, width, !app.show_reasoning);
+    if !app.assistant_buf.is_empty() || !app.reasoning_segs.is_empty() {
+        // Native reasoning is placed beside the live prose by its offset, so the
+        // shared renderer dims/folds it exactly like inline-tag providers.
+        let live = live_assistant_lines(
+            &app.assistant_buf,
+            &app.reasoning_segs,
+            width,
+            !app.show_reasoning,
+            app.stream_reasoning,
+        );
         if !live.is_empty() {
             // Mirror flush_assistant's `gap(Kind::Prose)` so the separator above
-            // streaming prose is present live, not only once it's finalized.
+            // streaming prose is present live, not only once it is finalized.
             if !trailing_blank(&tail, &app.transcript, width) {
                 tail.push(Line::raw(""));
             }
             // Live tail: same renderer as finalized messages, so an open
-            // (unterminated) <think> block dims and grows during streaming.
+            // (unterminated) wrapped reasoning block dims and grows during streaming.
             tail.extend(live);
         }
     }
@@ -9440,7 +10047,9 @@ fn draw(f: &mut Frame, app: &mut App) {
     // `/login` is modal and user-initiated (only reachable while idle), so it
     // outranks the queues below: nothing else may take keystrokes meant for a key.
     if let Some(prompt) = &app.login {
-        let height = (LOGIN_PROMPT_ROWS + u16::from(prompt.error.is_some())).min(chunks[1].height);
+        let height = (login_prompt_lines(prompt, chunks[2].width.saturating_sub(2)).len() as u16
+            + 2)
+        .min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -9450,7 +10059,11 @@ fn draw(f: &mut Frame, app: &mut App) {
         };
         draw_login(f, rect, prompt);
     } else if let Some(prompt) = &app.settings_prompt {
-        let height = (5 + u16::from(prompt.error.is_some())).min(chunks[1].height);
+        let toml_path = app.agent_dir.join("agent.toml");
+        let height = (settings_prompt_lines(prompt, &toml_path, chunks[2].width.saturating_sub(2))
+            .len() as u16
+            + 2)
+        .min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -9458,11 +10071,10 @@ fn draw(f: &mut Frame, app: &mut App) {
             width: chunks[2].width,
             height,
         };
-        let toml_path = app.agent_dir.join("agent.toml");
         draw_settings_prompt(f, rect, prompt, &toml_path);
     } else if let Some(prompt) = &app.mcp_prompt {
-        let height = prompt.visible_fields().len() as u16 + 3;
-        let height = height.min(chunks[1].height);
+        let height = (mcp_prompt_lines(prompt, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
+            .min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -9484,7 +10096,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     } else if !app.ask_queue.is_empty() {
         let queue_len = app.ask_queue.len();
         let ask = app.ask_queue.front_mut().expect("checked non-empty above");
-        let height = (ask.row_count() as u16 + 4).min(chunks[1].height);
+        let height = ask.box_height(chunks[2].width).min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -9494,10 +10106,9 @@ fn draw(f: &mut Frame, app: &mut App) {
         };
         draw_ask(f, rect, ask, queue_len);
     } else if let Some(pending) = app.pending() {
-        let detail_rows = 1
-            + u16::from(pending.path.is_some() || pending.command.is_some())
-            + u16::from(pending.subagent.is_some());
-        let diff_rows = pending.diff_preview(chunks[2].width.saturating_sub(2)).len() as u16;
+        let inner_w = chunks[2].width.saturating_sub(2);
+        let detail_rows = pending.detail_lines(inner_w).len() as u16;
+        let diff_rows = pending.diff_preview(inner_w).len() as u16;
         let height =
             (pending.options().len() as u16 + detail_rows + diff_rows + 2).min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
@@ -9561,12 +10172,10 @@ fn draw(f: &mut Frame, app: &mut App) {
 fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
-    let question = ask.question().clone();
-    let answer = ask.answers[ask.question_index].clone();
     let dim = Style::new().dark_gray();
     let title = if queue_len > 1 {
         format!(
-            " question {}/{} · request 1/{queue_len} ",
+            " question {}/{} \u{b7} request 1/{queue_len} ",
             ask.question_index + 1,
             ask.request.questions.len()
         )
@@ -9582,93 +10191,57 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
         .border_style(Style::new().cyan())
         .title(Span::styled(title, Style::new().on_cyan().black().bold()));
     let inner = block.inner(area);
+    let question = ask.question_lines(inner.width);
+    let items = ask.option_lines(inner.width);
+    let heights: Vec<u16> = items.iter().map(|item| item.len() as u16).collect();
     let rows = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Min(ask.row_count() as u16),
+        Constraint::Length(question.len() as u16),
+        Constraint::Min(1),
         Constraint::Length(1),
     ])
     .split(inner);
 
-    let mut items = Vec::with_capacity(ask.row_count());
-    for (index, option) in question.options.iter().enumerate() {
-        let selected = answer.selected.iter().any(|label| label == &option.label);
-        let mark = if question.multi {
-            if selected {
-                "[x] "
-            } else {
-                "[ ] "
-            }
-        } else if selected {
-            "● "
-        } else {
-            "○ "
-        };
-        let mut spans = vec![
-            Span::styled(mark, Style::new().cyan()),
-            Span::raw(option.label.clone()),
-        ];
-        if question.recommended == Some(index) {
-            spans.push(Span::styled("  recommended", Style::new().green().dim()));
-        }
-        if let Some(description) = &option.description {
-            spans.push(Span::styled(format!("  {description}"), dim));
-        }
-        items.push(ListItem::new(Line::from(spans)));
-    }
-    let custom_mark = if question.multi {
-        if answer.custom_input.is_some() {
-            "[x] "
-        } else {
-            "[ ] "
-        }
-    } else if answer.custom_input.is_some() {
-        "● "
-    } else {
-        "○ "
-    };
-    items.push(ListItem::new(Line::from(vec![
-        Span::styled(custom_mark, Style::new().cyan()),
-        Span::raw("Other (type your own)"),
-    ])));
-    if question.multi {
-        items.push(ListItem::new(Line::styled(
-            "Submit answers",
-            Style::new().green().bold(),
-        )));
-    }
-
-    ask.rect = area;
-    ask.row_hitboxes = (0..items.len())
-        .filter_map(|index| {
-            let y = rows[1].y.saturating_add(index as u16);
-            (y < rows[1].y.saturating_add(rows[1].height)).then_some((y, index))
-        })
-        .collect();
-
     f.render_widget(Clear, area);
     f.render_widget(block, area);
-    f.render_widget(
-        Paragraph::new(Line::styled(question.question, Style::new().bold())),
-        rows[0],
-    );
-    let list = List::new(items)
-        .highlight_style(Style::new().reversed().bold())
-        .highlight_symbol("▶ ");
+    f.render_widget(Paragraph::new(question), rows[0]);
+
+    let list = List::new(items.into_iter().map(ListItem::new).collect::<Vec<_>>())
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(ask.selected));
     f.render_stateful_widget(list, rows[1], &mut state);
+
+    // Hitboxes come from the same heights the list just laid out, offset by the
+    // scroll the list chose to keep the selection visible -- an item may be
+    // several rows tall, and a box clamped to the space above the input may not
+    // show every item at all.
+    ask.rect = area;
+    ask.row_hitboxes.clear();
+    let mut y = rows[1].y;
+    let bottom = rows[1].y.saturating_add(rows[1].height);
+    for (index, height) in heights.iter().enumerate().skip(state.offset()) {
+        for _ in 0..*height {
+            if y >= bottom {
+                break;
+            }
+            ask.row_hitboxes.push((y, index));
+            y = y.saturating_add(1);
+        }
+    }
+
     let help = if ask.editing_custom {
         Line::from(vec![
             Span::styled("Other: ", Style::new().cyan()),
             Span::raw(ask.custom_input.clone()),
-            Span::styled("█", Style::new().cyan()),
+            Span::styled("\u{2588}", Style::new().cyan()),
         ])
     } else {
         Line::styled(
-            if question.multi {
-                "↑↓ move · Space toggle · Enter choose · ←→ question · Esc cancel"
+            if ask.question().multi {
+                "\u{2191}\u{2193} move \u{b7} Space toggle \u{b7} Enter choose \u{b7} \u{2190}\u{2192} question \u{b7} Esc cancel"
             } else {
-                "↑↓ move · Enter choose · ←→ question · Esc cancel"
+                "\u{2191}\u{2193} move \u{b7} Enter choose \u{b7} \u{2190}\u{2192} question \u{b7} Esc cancel"
             },
             dim,
         )
@@ -9676,31 +10249,32 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
     f.render_widget(Paragraph::new(help), rows[2]);
 }
 
-/// Rows the `/login` box needs: two borders, the URL, the field, and the help
-/// line. An error adds one more (see the `draw` call site).
-const LOGIN_PROMPT_ROWS: u16 = 5;
-
 /// The `/login` prompt: the API-keys URL, a masked key field, and a help line.
 /// The key is never rendered, so a shared screen or scrollback capture cannot
 /// leak it.
-fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) {
-    use ratatui::widgets::Clear;
-
+/// The `/login` box's contents at `width`. Separate from `draw_login` so the
+/// call site can size the box from the rows it will actually need: the error
+/// carries an arbitrary-length upstream message, and it is the one line in
+/// there the user has to be able to read.
+fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
     let dim = Style::new().dark_gray();
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
-        .title(Span::styled(
-            " tokamak sign-in ",
-            Style::new().on_cyan().black().bold(),
-        ));
-
-    let mut lines = vec![Line::from(vec![
-        Span::styled("get a key at ", dim),
-        Span::styled(super::tokamak::API_KEYS_URL, Style::new().cyan()),
-    ])];
+    let max = width.max(1) as usize;
+    let mut lines: Vec<Line<'static>> = wrap_spans_hard(
+        vec![
+            Span::styled("get a key at ", dim),
+            Span::styled(super::tokamak::API_KEYS_URL, Style::new().cyan()),
+        ],
+        max,
+    )
+    .into_iter()
+    .map(Line::from)
+    .collect();
     if let Some(error) = &prompt.error {
-        lines.push(Line::styled(error.clone(), Style::new().red()));
+        lines.extend(
+            wrap_text(error, Style::new().red(), max)
+                .into_iter()
+                .map(Line::from),
+        );
     }
     if prompt.verifying {
         lines.push(Line::styled(
@@ -9709,21 +10283,57 @@ fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) 
         ));
         lines.push(Line::styled("Esc cancel".to_string(), dim));
     } else {
-        lines.push(Line::from(vec![
-            Span::styled("API key: ", Style::new().bold()),
-            Span::raw(prompt.masked()),
-            Span::styled("█", Style::new().cyan()),
-        ]));
+        lines.extend(field_lines(
+            vec![Span::styled("API key: ", Style::new().bold())],
+            &prompt.masked(),
+            Style::new(),
+            max,
+        ));
         lines.push(Line::styled(
             "paste the key · Enter verify · Esc cancel".to_string(),
             dim,
         ));
     }
+    lines
+}
+
+/// One edited field: `lead` (a label) then the value wrapped beneath it,
+/// continuations aligned under the value rather than under the label, with the
+/// cursor block on the last row. Shared by the `/login`, `/settings` and MCP
+/// prompts -- a value long enough to leave the box is exactly the one the user
+/// needs to see, since they are still typing it.
+fn field_lines(
+    lead: Vec<Span<'static>>,
+    value: &str,
+    value_style: Style,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let lead_w: usize = lead.iter().map(|s| s.content.chars().count()).sum();
+    let mut rows = wrap_text(value, value_style, width.saturating_sub(lead_w + 1).max(1));
+    rows.last_mut()
+        .expect("wrap_text yields at least one row")
+        .push(Span::styled("█", Style::new().cyan()));
+    gutter_lines(rows, lead, vec![Span::raw(" ".repeat(lead_w))])
+}
+
+fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) {
+    use ratatui::widgets::Clear;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            " tokamak sign-in ",
+            Style::new().on_cyan().black().bold(),
+        ));
 
     f.render_widget(Clear, area);
     let inner = block.inner(area);
     f.render_widget(block, area);
-    f.render_widget(Paragraph::new(lines), inner);
+    f.render_widget(
+        Paragraph::new(login_prompt_lines(prompt, inner.width)),
+        inner,
+    );
 }
 
 /// Docked `/settings` edit prompt, styled like the `/login` dock: description,
@@ -9737,59 +10347,82 @@ fn draw_settings_prompt(
 ) {
     use ratatui::widgets::Clear;
 
-    let dim = Style::new().dark_gray();
-    let def = prompt.def();
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::new().cyan())
         .title(Span::styled(
-            format!(" agent settings: {} ", def.key),
+            format!(" agent settings: {} ", prompt.def().key),
             Style::new().on_cyan().black().bold(),
         ));
 
-    let mut lines = vec![Line::from(vec![
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(
+        Paragraph::new(settings_prompt_lines(prompt, toml_path, inner.width)),
+        inner,
+    );
+}
+
+/// The `/settings` box's contents at `width`, sized by the call site the same
+/// way as `login_prompt_lines`. The description, the current value and the
+/// enum `valid:` list are all long enough to leave a narrow box.
+fn settings_prompt_lines(
+    prompt: &SettingsPrompt,
+    toml_path: &std::path::Path,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let def = prompt.def();
+    let max = width.max(1) as usize;
+    let wrapped = |spans: Vec<Span<'static>>| {
+        wrap_spans_hard(spans, max)
+            .into_iter()
+            .map(Line::from)
+            .collect::<Vec<_>>()
+    };
+
+    let mut lines = wrapped(vec![
         Span::styled(def.desc, dim),
         Span::styled("   current: ", dim),
         Span::styled(
             current_agent_value(toml_path, def.key).unwrap_or_else(|| "unset".to_string()),
             Style::new().cyan(),
         ),
-    ])];
-    lines.push(Line::styled(
-        match def.kind {
-            AgentSettingKind::Int { default, min } => {
-                let d = default
-                    .map(|d| d.to_string())
-                    .unwrap_or_else(|| "unset".to_string());
-                format!("default: {d} · valid: >= {min}")
-            }
-            AgentSettingKind::Text { default } => format!("default: {default}"),
-            AgentSettingKind::Enum { options, default } => {
-                format!("default: {default} · valid: {}", options.join(" | "))
-            }
-            AgentSettingKind::Bool { default } => {
-                format!("default: {default} · valid: true | false")
-            }
-        },
-        dim,
-    ));
+    ]);
+    let meta = match def.kind {
+        AgentSettingKind::Int { default, min } => {
+            let d = default
+                .map(|d| d.to_string())
+                .unwrap_or_else(|| "unset".to_string());
+            format!("default: {d} · valid: >= {min}")
+        }
+        AgentSettingKind::Text { default } => format!("default: {default}"),
+        AgentSettingKind::Enum { options, default } => {
+            format!("default: {default} · valid: {}", options.join(" | "))
+        }
+        AgentSettingKind::Bool { default } => {
+            format!("default: {default} · valid: true | false")
+        }
+    };
+    lines.extend(wrapped(vec![Span::styled(meta, dim)]));
     if let Some(error) = &prompt.error {
-        lines.push(Line::styled(error.clone(), Style::new().red()));
+        lines.extend(wrapped(vec![Span::styled(
+            error.clone(),
+            Style::new().red(),
+        )]));
     }
-    lines.push(Line::from(vec![
-        Span::styled("value: ", Style::new().bold()),
-        Span::raw(prompt.input.clone()),
-        Span::styled("█", Style::new().cyan()),
-    ]));
+    lines.extend(field_lines(
+        vec![Span::styled("value: ", Style::new().bold())],
+        &prompt.input,
+        Style::new(),
+        max,
+    ));
     lines.push(Line::styled(
         "Enter save · Esc cancel · clear field to unset (default applies)".to_string(),
         dim,
     ));
-
-    f.render_widget(Clear, area);
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-    f.render_widget(Paragraph::new(lines), inner);
+    lines
 }
 
 /// Dock the MCP add/edit wizard above the input: one row per visible field,
@@ -9797,7 +10430,6 @@ fn draw_settings_prompt(
 fn draw_mcp_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &McpPrompt) {
     use ratatui::widgets::Clear;
 
-    let dim = Style::new().dark_gray();
     let title = if prompt.editing.is_some() {
         " mcp server: edit "
     } else {
@@ -9808,52 +10440,77 @@ fn draw_mcp_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &McpPromp
         .border_style(Style::new().cyan())
         .title(Span::styled(title, Style::new().on_cyan().black().bold()));
 
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(mcp_prompt_lines(prompt, inner.width)), inner);
+}
+
+/// The MCP wizard's contents at `width`, sized by the call site the same way as
+/// `login_prompt_lines`. These fields are being *typed*: a command line, an
+/// args string or an env/headers blob easily outruns the box, and clipping the
+/// field you are editing leaves no way to see what you entered.
+fn mcp_prompt_lines(prompt: &McpPrompt, width: u16) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let max = width.max(1) as usize;
     let mut lines = Vec::new();
     for field in prompt.visible_fields() {
         let selected = field == prompt.field;
         let (label, value, toggle) = match field {
             McpField::Name => ("name", prompt.name.as_str(), None),
-            McpField::Transport => ("type", prompt.transport.as_str(), Some(prompt.transport.as_str())),
+            McpField::Transport => (
+                "type",
+                prompt.transport.as_str(),
+                Some(prompt.transport.as_str()),
+            ),
             McpField::Command => ("command", prompt.command.as_str(), None),
             McpField::Args => ("args", prompt.args.as_str(), None),
             McpField::Env => ("env", prompt.env.as_str(), None),
             McpField::Url => ("url", prompt.url.as_str(), None),
             McpField::Headers => ("headers", prompt.headers.as_str(), None),
-            McpField::Active => {
-                ("active", if prompt.active { "yes" } else { "no" }, Some(if prompt.active { "yes" } else { "no" }))
-            }
+            McpField::Active => (
+                "active",
+                if prompt.active { "yes" } else { "no" },
+                Some(if prompt.active { "yes" } else { "no" }),
+            ),
         };
         let marker = if selected { "› " } else { "  " };
-        let style = if selected {
-            Style::new().bold()
-        } else {
-            dim
-        };
-        let mut spans = vec![
-            Span::styled(format!("{marker}{label}: "), style),
-        ];
-        if let Some(toggle) = toggle {
-            spans.push(Span::styled(toggle.to_string(), if selected { Style::new().cyan() } else { dim }));
-        } else {
-            spans.push(Span::styled(value.to_string(), style));
-            if selected {
-                spans.push(Span::styled("█", Style::new().cyan()));
+        let style = if selected { Style::new().bold() } else { dim };
+        let lead = vec![Span::styled(format!("{marker}{label}: "), style)];
+        match toggle {
+            // A toggle row is a fixed word, never typed into: no cursor, and
+            // nothing long enough to wrap.
+            Some(toggle) => {
+                let mut spans = lead;
+                spans.push(Span::styled(
+                    toggle.to_string(),
+                    if selected { Style::new().cyan() } else { dim },
+                ));
+                lines.push(Line::from(spans));
+            }
+            None if selected => lines.extend(field_lines(lead, value, style, max)),
+            None => {
+                let lead_w: usize = lead.iter().map(|s| s.content.chars().count()).sum();
+                lines.extend(gutter_lines(
+                    wrap_text(value, style, max.saturating_sub(lead_w).max(1)),
+                    lead,
+                    vec![Span::raw(" ".repeat(lead_w))],
+                ));
             }
         }
-        lines.push(Line::from(spans));
     }
     if let Some(error) = &prompt.error {
-        lines.push(Line::styled(error.clone(), Style::new().red()));
+        lines.extend(
+            wrap_text(error, Style::new().red(), max)
+                .into_iter()
+                .map(Line::from),
+        );
     }
     lines.push(Line::styled(
         "↑/↓ move · Enter save · Space toggle · Esc cancel".to_string(),
         dim,
     ));
-
-    f.render_widget(Clear, area);
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-    f.render_widget(Paragraph::new(lines), inner);
+    lines
 }
 
 /// Dock the provider add/edit wizard above the input: one row per field, the
@@ -9983,8 +10640,8 @@ fn draw_slash_hints(
     f.render_widget(Clear, area);
     let list = List::new(items)
         .block(block)
-        .highlight_style(Style::new().reversed())
-        .highlight_symbol("▶ ");
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(selected.min(matches.len().saturating_sub(1))));
     f.render_stateful_widget(list, area, &mut state);
@@ -10029,8 +10686,8 @@ fn draw_path_hints(
     f.render_widget(Clear, area);
     let list = List::new(items)
         .block(block)
-        .highlight_style(Style::new().reversed())
-        .highlight_symbol("▶ ");
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(selected.min(entries.len().saturating_sub(1))));
     f.render_stateful_widget(list, area, &mut state);
@@ -10041,32 +10698,6 @@ fn draw_path_hints(
 /// highlighted choice; `y`/`a`/`n` still work as shortcuts).
 fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending, queue_len: usize) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
-
-    let dim = Style::new().dark_gray();
-    let mut detail = Vec::new();
-    if let Some(name) = &pending.subagent {
-        detail.push(Line::from(vec![
-            Span::styled("subagent ", dim),
-            Span::styled(name.clone(), Style::new().magenta().bold()),
-            Span::styled(" is asking:", dim),
-        ]));
-    }
-    detail.push(Line::from(vec![
-        Span::styled(pending.tool_name.clone(), Style::new().cyan().bold()),
-        Span::styled(" wants ", dim),
-        Span::styled(pending.capability.clone(), Style::new().yellow().bold()),
-    ]));
-    if let Some(command) = &pending.command {
-        detail.push(Line::from(vec![
-            Span::styled("$ ", dim),
-            Span::styled(command.clone(), Style::new().white()),
-        ]));
-    } else if let Some(path) = &pending.path {
-        detail.push(Line::from(vec![
-            Span::styled("on ", dim),
-            Span::styled(path.clone(), Style::new().white()),
-        ]));
-    }
 
     let title = if queue_len > 1 {
         format!(" permission required (1 of {queue_len}) ")
@@ -10081,6 +10712,7 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
     f.render_widget(Clear, area);
     f.render_widget(block, area);
 
+    let detail = pending.detail_lines(inner.width);
     let diff = pending.diff_preview(inner.width);
     let rows = Layout::vertical([
         Constraint::Length(detail.len() as u16),
@@ -10088,7 +10720,7 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
         Constraint::Length(pending.options().len() as u16),
     ])
     .split(inner);
-    f.render_widget(Paragraph::new(detail).wrap(Wrap { trim: false }), rows[0]);
+    f.render_widget(Paragraph::new(detail), rows[0]);
     if !diff.is_empty() {
         f.render_widget(Paragraph::new(diff), rows[1]);
     }
@@ -10099,8 +10731,8 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
         .map(|(_, label)| ListItem::new(Line::raw(label)))
         .collect();
     let list = List::new(items)
-        .highlight_style(Style::new().reversed().bold())
-        .highlight_symbol("▶ ");
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(pending.selected));
     f.render_stateful_widget(list, rows[2], &mut state);
@@ -10136,8 +10768,8 @@ fn draw_picker(
         .collect();
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(picker.title()))
-        .highlight_style(Style::new().reversed())
-        .highlight_symbol("▶ ");
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(picker.selected));
 
@@ -10843,12 +11475,27 @@ fn input_box(app: &App) -> Paragraph<'static> {
     } else if app.status == Status::Running && app.input.is_empty() {
         // Show queue status when running with empty input
         if app.message_queue.is_empty() {
-            // The spinner carries the motion; the rest of the row is static so
-            // the text stays readable rather than shifting under the eye.
+            // The spinner carries the fast motion; the action word turns over
+            // on a slower cadence, cycling "working" synonyms -- or "thinking"
+            // synonyms in orange while a reasoning block streams -- so the row
+            // reads alive without shifting under the eye.
+            let step = app.spinner_frame / WORD_ROTATE_FRAMES;
+            let (word, style) = if app.reasoning_open() {
+                (
+                    THINKING_WORDS[step % THINKING_WORDS.len()],
+                    Style::new().fg(THINKING_ORANGE).italic(),
+                )
+            } else {
+                (
+                    WORKING_WORDS[step % WORKING_WORDS.len()],
+                    Style::new().dim().italic(),
+                )
+            };
             Paragraph::new(Line::from(vec![
                 Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
+                Span::styled(format!("{word}…"), style),
                 Span::styled(
-                    "working… (Esc to cancel, type to queue next message)",
+                    " (Esc to cancel, type to queue next message)",
                     Style::new().dim().italic(),
                 ),
             ]))
@@ -11052,16 +11699,19 @@ mod tests {
         ProviderField,
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
         run_command, starting_call_lines, unescape_partial_json_string,
-        running_group_row, split_reasoning, strip_system_xml_tags, subagent_activity,
+        running_group_rows, split_reasoning, strip_system_xml_tags, subagent_activity,
+        answer_without_reasoning, assistant_runs, replay_display_log, thinking_open,
+        without_think_tags, ReasoningSeg,
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
         transcript_top_padding, rewind_to,
         row_width, user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind,
         ResumeTarget, RowKind,
         SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
-        COMMAND_LABEL_MAX, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
+        DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
         KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER, PROVIDERS_SETTINGS_ROW,
-        SPINNER_ADVANCE_MS, alt_scroll_restore, alt_scroll_save_off,
+        SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
+        alt_scroll_restore, alt_scroll_save_off,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -11403,6 +12053,7 @@ mod tests {
         app.push_assistant_blocks(
             "| column one heading | column two heading |\n|---|---|\n\
              | a reasonably long value here | another reasonably long value |",
+            &[],
         );
         let wide = render_rows(&mut app, 100, 20);
         let narrow = render_rows(&mut app, 46, 20);
@@ -11505,10 +12156,11 @@ mod tests {
         );
     }
 
-    /// A tool row's label is stored untruncated and clamped at draw time, so it
-    /// grows back when the terminal widens rather than staying elided.
+    /// A tool row's label is stored untruncated and laid out at draw time: it
+    /// wraps onto as many rows as the width needs, and re-packs onto fewer when
+    /// the terminal widens.
     #[test]
-    fn tool_row_labels_retruncate_on_resize() {
+    fn tool_row_labels_rewrap_on_resize() {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
             id: "t1".into(),
@@ -11524,29 +12176,309 @@ mod tests {
         // Close the group so its row reads as the finished command, not the
         // live "running 1 command" throbber.
         app.finalize_tool_group();
-        let label = |rows: &[String]| {
-            rows.iter()
-                .find(|r| r.contains("Ran: echo"))
-                .expect("no tool row")
-                .trim_end()
-                .to_string()
+        // The label's rows, stripped of gutter and tag and joined back into the
+        // text they display.
+        let label = |rows: &[String], width: usize| {
+            let start = rows
+                .iter()
+                .position(|r| r.contains("Ran: echo"))
+                .expect("no tool row");
+            let body: Vec<String> = rows[start..]
+                .iter()
+                .take_while(|r| r.starts_with('│') && r.trim_end() != "│")
+                .map(|r| {
+                    assert!(
+                        r.trim_end().chars().count() <= width,
+                        "row overflows: {r:?}"
+                    );
+                    r.trim_end().trim_start_matches(['│', ' ', '✓']).to_string()
+                })
+                .collect();
+            (body.len(), body.join(" "))
         };
-        let narrow = label(&render_rows(&mut app, 40, 12));
-        let wide = label(&render_rows(&mut app, 100, 12));
-        assert!(narrow.contains('…'), "narrow row was not elided: {narrow:?}");
-        assert!(narrow.chars().count() <= 40, "narrow row overflows: {narrow:?}");
+        let (narrow_rows, narrow) = label(&render_rows(&mut app, 40, 12), 40);
+        let (wide_rows, wide) = label(&render_rows(&mut app, 100, 12), 100);
+        let full = "Ran: echo the quick brown fox jumps over the lazy dog";
+        assert_eq!(narrow, full, "narrow layout dropped text");
+        assert_eq!(wide, full, "wide layout dropped text");
         assert!(
-            wide.chars().count() > narrow.chars().count(),
-            "row did not grow back: {wide:?}"
+            narrow_rows > wide_rows,
+            "label did not re-pack when widened: {narrow_rows} vs {wide_rows}"
         );
     }
+
+    /// A multi-line command keeps its breaks in the transcript row: the label
+    /// is not flattened onto one line, and the row is not one wide `Line` whose
+    /// newlines ratatui swallows.
+    #[test]
+    fn multiline_command_label_keeps_its_line_breaks() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({"command": "cd /tmp\ncargo build\ncargo test"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.finalize_tool_group();
+        let rows = render_rows(&mut app, 80, 16);
+        let has = |needle: &str| rows.iter().any(|r| r.trim_end().ends_with(needle));
+        assert!(has("Ran: cd /tmp"), "first command line missing: {rows:?}");
+        assert!(has("cargo build"), "second command line missing: {rows:?}");
+        assert!(has("cargo test"), "third command line missing: {rows:?}");
+    }
+
+    /// A tool label wraps, but a pathological one (a pasted heredoc body) is
+    /// bounded so it cannot push the conversation off screen.
+    #[test]
+    fn tool_label_wrapping_is_bounded() {
+        let mut app = test_app();
+        let command = (0..40)
+            .map(|i| format!("echo line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": command }),
+        });
+        app.finalize_tool_group();
+        let rendered = app.transcript.last().expect("no row").lines(80);
+        assert_eq!(
+            rendered.len(),
+            super::TOOL_ROW_MAX_LINES,
+            "label was not bounded"
+        );
+        let last: String = rendered[super::TOOL_ROW_MAX_LINES - 1]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            last.ends_with('\u{2026}'),
+            "elision was not marked: {last:?}"
+        );
+    }
+
+    /// A newline in a user message is a line break in the transcript, not a
+    /// blank cell in one run-on row.
+    #[test]
+    fn user_message_keeps_its_line_breaks() {
+        let mut app = test_app();
+        app.push_user_line("first line\nsecond line", &[]);
+        let rows = render_rows(&mut app, 60, 12);
+        assert!(
+            rows.iter()
+                .any(|r| r.trim_end().ends_with("\u{203a} first line")),
+            "first line not on its own row: {rows:?}"
+        );
+        assert!(
+            rows.iter().any(|r| r.trim_end().ends_with("  second line")),
+            "second line not on its own row: {rows:?}"
+        );
+    }
+
+    /// The expanded (Ctrl-O) view is where the full output lives, so a line
+    /// wider than the terminal wraps there instead of eliding.
+    #[test]
+    fn expanded_group_detail_wraps_instead_of_eliding() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({"command": "cat notes"}),
+        });
+        let long = "alpha bravo charlie delta echo foxtrot golf hotel india juliett kilo lima";
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: long.into(),
+            is_error: false,
+            diff: None,
+        });
+        app.finalize_tool_group();
+        let group = app.groups.last().expect("no group");
+        let text: String = super::group_detail_lines(group, 40)
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect::<String>();
+        assert!(!text.contains('\u{2026}'), "detail elided: {text:?}");
+        for word in long.split(' ') {
+            assert!(text.contains(word), "detail dropped {word:?}: {text:?}");
+        }
+    }
+
+    /// A long option label and its description wrap inside the ask box, and the
+    /// box grows to hold them rather than clipping.
+    #[test]
+    fn ask_options_wrap_and_size_the_box() {
+        let mut app = test_app();
+        let request = crate::core::agent::interaction::AskRequest::parse(&json!({
+            "questions": [{
+                "id": "scope",
+                "question": "Which of these two rather long scopes should the agent take on next?",
+                "options": [
+                    {"label": "A thoroughly long option label that cannot fit one row",
+                     "description": "and a description that is longer still, needing rows of its own"},
+                    {"label": "Short"}
+                ],
+                "multi": false
+            }]
+        }))
+        .expect("valid ask request");
+        app.apply(StreamEvent::AskRequest {
+            request_id: "r1".into(),
+            request,
+        });
+        let rows = render_rows(&mut app, 50, 30);
+        let joined = rows.join("\n");
+        for word in ["thoroughly", "fit one row", "longer still", "Short"] {
+            assert!(joined.contains(word), "ask box clipped {word:?}:\n{joined}");
+        }
+        for row in &rows {
+            assert!(row.chars().count() <= 50, "row overflows: {row:?}");
+        }
+    }
+
+    /// The Ctrl-O expansion of a finished subagent wraps its call list, like
+    /// the tool-group expansion it sits beside -- it is the surface the folded
+    /// summary row sends the user to, so it has to be complete.
+    #[test]
+    fn expanded_subagent_detail_wraps_instead_of_eliding() {
+        let mut app = test_app();
+        let long = "Executing: cargo test --no-default-features --features cli -- cli::tui::tests";
+        app.push_subagent_summary("reviewer", vec![long.to_string()], true);
+        let block = app.subagent_blocks.last().expect("no subagent block");
+        let lines = block.detail_lines(50);
+        assert!(lines.len() > 1, "detail was not wrapped: {lines:?}");
+        let text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(!text.contains('\u{2026}'), "detail elided: {text:?}");
+        for word in ["--no-default-features", "cli::tui::tests"] {
+            assert!(text.contains(word), "dropped {word:?}: {text:?}");
+        }
+        for line in &lines {
+            let w: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
+            assert!(w <= 50, "row overflows: {w}");
+        }
+    }
+
+    /// Web and todo labels are stored whole like the bash one: the row wraps
+    /// them at the draw width, so a long URL is not cut at a fixed 80 on a
+    /// terminal with room for it.
+    #[test]
+    fn web_and_todo_labels_are_not_capped_at_a_fixed_width() {
+        let url = format!("https://example.com/{}", "segment/".repeat(20));
+        assert_eq!(
+            tool_activity("web_fetch", &json!({ "url": url.clone() })),
+            format!("Fetching: {url}")
+        );
+        assert_eq!(
+            tool_finished("web_fetch", &json!({ "url": url.clone() })),
+            format!("Fetched: {url}")
+        );
+        let query = "rust async runtime ".repeat(12);
+        assert_eq!(
+            tool_activity("web_search", &json!({ "query": query.clone() })),
+            format!("Searching the web: {query}")
+        );
+        let task = "refactor the transport layer ".repeat(6);
+        assert_eq!(
+            tool_activity("todo", &json!({ "op": "start", "task": task.clone() })),
+            format!("Starting task: {task}")
+        );
+    }
+
+    /// A slash invocation's args are user text and can arrive pasted and
+    /// multi-line, so its row breaks on newlines like `push_user_line`.
+    #[test]
+    fn invocation_row_keeps_its_line_breaks() {
+        let mut app = test_app();
+        app.push_invocation_label("[skill:deploy] first line\nsecond line".to_string());
+        let rows = render_rows(&mut app, 60, 12);
+        assert!(
+            rows.iter()
+                .any(|r| r.trim_end().ends_with("\u{203a} [skill:deploy] first line")),
+            "first line not on its own row: {rows:?}"
+        );
+        assert!(
+            rows.iter().any(|r| r.trim_end().ends_with("  second line")),
+            "second line not on its own row: {rows:?}"
+        );
+    }
+
+    /// The docked prompts size themselves from the rows they will need, so an
+    /// arbitrary-length upstream error is readable rather than clipped to the
+    /// one row a fixed height budgeted for it.
+    #[test]
+    fn login_prompt_grows_to_fit_a_long_error() {
+        let mut app = test_app();
+        let error = "verification failed: the upstream returned 502 Bad Gateway \
+                     from https://api.tokamak.sh/v1/models after three attempts";
+        app.login = Some(super::LoginPrompt {
+            input: String::new(),
+            error: Some(error.to_string()),
+            verifying: false,
+        });
+        let rows = render_rows(&mut app, 56, 24);
+        let joined = rows.join(" ");
+        // Single tokens: the assertion must not straddle a wrap point.
+        for word in ["502", "api.tokamak.sh/v1/models", "attempts"] {
+            assert!(
+                joined.contains(word),
+                "error clipped ({word}):\n{}",
+                rows.join("\n")
+            );
+        }
+    }
+
+    /// An MCP field is being typed into: a long command line wraps inside the
+    /// box instead of running off its right edge with no way to see the rest.
+    #[test]
+    fn mcp_prompt_wraps_the_field_being_edited() {
+        let mut app = test_app();
+        let command = "npx -y @modelcontextprotocol/server-filesystem /home/user/projects/jan";
+        app.mcp_prompt = Some(super::McpPrompt {
+            editing: None,
+            field: super::McpField::Command,
+            name: "files".to_string(),
+            transport: "stdio".to_string(),
+            command: command.to_string(),
+            args: String::new(),
+            env: String::new(),
+            url: String::new(),
+            headers: String::new(),
+            active: true,
+            error: None,
+        });
+        let rows = render_rows(&mut app, 52, 26);
+        let joined = rows.join(" ");
+        for word in ["@modelcontextprotocol/server-", "/home/user/projects/jan"] {
+            assert!(
+                joined.contains(word),
+                "field clipped ({word}):\n{}",
+                rows.join("\n")
+            );
+        }
+        for row in &rows {
+            assert!(row.chars().count() <= 52, "row overflows: {row:?}");
+        }
+    }
+
 
     /// Degenerate frames (a sliver of a terminal mid-drag) must render, not panic.
     #[test]
     fn tiny_frames_render_without_panicking() {
         let mut app = test_app();
         app.push_user_line("hello", &[]);
-        app.push_assistant_blocks("| a | b |\n|---|---|\n| 1 | 2 |\n\n```rs\nlet x = 1;\n```");
+        app.push_assistant_blocks("| a | b |\n|---|---|\n| 1 | 2 |\n\n```rs\nlet x = 1;\n```", &[]);
         app.apply(StreamEvent::ToolResult {
             id: "x".into(),
             content: "done".into(),
@@ -11782,7 +12714,18 @@ mod tests {
         });
         let mut terminal = Terminal::new(TestBackend::new(36, 24)).unwrap();
         terminal.draw(|frame| super::draw(frame, &mut app)).unwrap();
-        let other_row = app.ask_queue.front().unwrap().row_hitboxes[2].0;
+        // Hitboxes are per screen row and an option may be several rows tall,
+        // so find the first row belonging to the "Other" item rather than the
+        // third entry in the list.
+        let other_row = app
+            .ask_queue
+            .front()
+            .unwrap()
+            .row_hitboxes
+            .iter()
+            .find(|(_, index)| *index == 2)
+            .expect("no hitbox for the custom row")
+            .0;
 
         assert!(
             handle_ask_mouse(
@@ -11909,6 +12852,156 @@ mod tests {
         assert_eq!(segs, vec![(true, "reasoning tail".to_string())]);
     }
 
+    /// With `think_tags = false` the tags carry no meaning: one answer run, so
+    /// the text renders verbatim instead of folding into a reasoning block.
+    #[test]
+    fn think_tags_gate_off_makes_the_whole_text_answer_prose() {
+        let text = "before<think>hidden</think>after";
+        let segs = without_think_tags(|| split_reasoning(text));
+        assert_eq!(segs, vec![(false, text.to_string())]);
+    }
+
+    /// The tags stay in the answer that goes back as history: not parsing them
+    /// means there is no reasoning to strip.
+    #[test]
+    fn think_tags_gate_off_keeps_the_tags_in_the_wire_answer() {
+        let text = "<think>hidden</think>answer";
+        assert_eq!(
+            without_think_tags(|| answer_without_reasoning(text)),
+            text,
+            "nothing is reasoning with the gate off"
+        );
+        assert_eq!(
+            answer_without_reasoning(text),
+            "answer",
+            "the default still strips it"
+        );
+    }
+
+    /// An unterminated tag no longer opens a thinking window, so the header
+    /// badge and the folded live tail stay off.
+    #[test]
+    fn think_tags_gate_off_never_reports_an_open_block() {
+        assert!(thinking_open("<think>still going"));
+        assert!(!without_think_tags(|| thinking_open("<think>still going")));
+    }
+
+    /// A journal written before reasoning was stored apart has its markers
+    /// inside `text` and no `reasoning` field. It must still replay as a folded
+    /// block: the markers go down the inline path, which is exactly what they
+    /// were before the split.
+    #[test]
+    fn a_pre_split_journal_entry_still_replays_its_reasoning() {
+        let raw = r#"{"kind":"assistant","text":"<think>old thought</think>Answer."}"#;
+        let entry: DisplayEntry = serde_json::from_str(raw).expect("legacy entry parses");
+        assert_eq!(
+            entry,
+            DisplayEntry::Assistant {
+                text: "<think>old thought</think>Answer.".into(),
+                reasoning: Vec::new(),
+            }
+        );
+        let mut app = test_app();
+        replay_display_log(&mut app, vec![entry]);
+        assert_eq!(
+            app.reasoning_blocks.len(),
+            1,
+            "legacy markers must still fold into a reasoning block"
+        );
+    }
+
+    /// A turn journaled with reasoning apart replays to the same rows, without
+    /// any marker round-trip.
+    #[test]
+    fn a_split_journal_entry_replays_prose_and_reasoning_apart() {
+        let entry = DisplayEntry::Assistant {
+            text: "Answer.".into(),
+            reasoning: vec![ReasoningSeg { at: 0, text: "a thought".into() }],
+        };
+        let round_tripped: DisplayEntry =
+            serde_json::from_str(&serde_json::to_string(&entry).unwrap()).unwrap();
+        assert_eq!(round_tripped, entry);
+        let mut app = test_app();
+        replay_display_log(&mut app, vec![entry]);
+        assert_eq!(app.reasoning_blocks.len(), 1);
+    }
+
+    /// The gate governs inline tags only. Native reasoning is carried
+    /// structurally, so it keeps rendering as its own run either way.
+    #[test]
+    fn think_tags_gate_does_not_touch_native_reasoning() {
+        let segs = vec![ReasoningSeg {
+            at: 0,
+            text: "a thought".into(),
+        }];
+        let expected = vec![
+            (true, "a thought".to_string()),
+            (false, "answer".to_string()),
+        ];
+        assert_eq!(assistant_runs("answer", &segs), expected);
+        assert_eq!(
+            without_think_tags(|| assistant_runs("answer", &segs)),
+            expected,
+            "native reasoning is not encoded as tags, so the gate cannot hide it"
+        );
+    }
+
+    /// Native segments are placed at the offset they streamed at, so a turn that
+    /// reasons, answers, then reasons again keeps emission order.
+    #[test]
+    fn assistant_runs_interleaves_native_reasoning_by_offset() {
+        let segs = vec![
+            ReasoningSeg { at: 0, text: "first".into() },
+            ReasoningSeg { at: 6, text: "second".into() },
+        ];
+        assert_eq!(
+            assistant_runs("prose tail", &segs),
+            vec![
+                (true, "first".to_string()),
+                (false, "prose ".to_string()),
+                (true, "second".to_string()),
+                (false, "tail".to_string()),
+            ]
+        );
+    }
+
+    /// A model writing *about* think tags cannot close a native reasoning
+    /// segment: the two sources never share a string, so no escaping is needed.
+    #[test]
+    fn a_think_tag_inside_native_reasoning_stays_in_that_run() {
+        let segs = vec![ReasoningSeg {
+            at: 0,
+            text: "the </think> tag closes a block".into(),
+        }];
+        assert_eq!(
+            assistant_runs("answer", &segs),
+            vec![
+                (true, "the </think> tag closes a block".to_string()),
+                (false, "answer".to_string()),
+            ]
+        );
+    }
+
+    /// The gate reaches the App: a turn whose content carries tags commits them
+    /// as ordinary prose, with no reasoning block folded out of the transcript.
+    #[test]
+    fn think_tags_gate_off_commits_tagged_content_as_one_answer() {
+        without_think_tags(|| {
+            let mut app = test_app();
+            app.submit_user("go".into());
+            app.apply(StreamEvent::Token {
+                text: "<think>ponder</think>Answer.".into(),
+            });
+            app.on_done("stop".into(), None);
+            assert!(
+                app.reasoning_blocks.is_empty(),
+                "nothing may fold with the gate off"
+            );
+            let last = app.history.last().expect("assistant turn in history");
+            assert_eq!(last["content"], "<think>ponder</think>Answer.");
+        });
+    }
+
     #[test]
     fn strip_system_xml_tags_removes_system_blocks() {
         assert_eq!(
@@ -11942,37 +13035,80 @@ mod tests {
     }
 
     #[test]
-    fn live_tail_hides_open_think_block_and_shows_it_when_revealed() {
-        use ratatui::{backend::TestBackend, Terminal};
+    fn live_tail_streams_open_reasoning_and_the_gate_hides_it() {
         let mut app = test_app();
         app.assistant_buf = "<think>pondering the answer".to_string();
 
-        let render = |app: &mut App| {
-            let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
-            terminal.draw(|f| super::draw(f, app)).unwrap();
-            let buf = terminal.backend().buffer().clone();
-            (0..buf.area.height)
-                .map(|y| {
-                    (0..buf.area.width)
-                        .map(|x| buf[(x, y)].symbol())
-                        .collect::<String>()
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-
-        // Reasoning folding is the default: an open  block is hidden from
-        // the live tail (the header shows [thinking] instead).
-        let hidden = render(&mut app);
+        // Streaming is the default: a folded, still-open block shows its tail so
+        // the user can watch the thought form.
+        let streamed = render_rows(&mut app, 60, 30).join("\n");
         assert!(
-            !hidden.contains("pondering"),
-            "open reasoning must be hidden by default"
+            streamed.contains("pondering"),
+            "open reasoning streams by default: {streamed}"
         );
 
-        // With show_reasoning on, the streaming reasoning renders dimmed as before.
+        // With the gate off only the header's [thinking] badge stands for it.
+        app.stream_reasoning = false;
+        let hidden = render_rows(&mut app, 60, 30).join("\n");
+        assert!(
+            !hidden.contains("pondering"),
+            "stream_reasoning = false hides the open block"
+        );
+
+        // With show_reasoning on, folding is off entirely and it renders whole.
         app.show_reasoning = true;
-        let shown = render(&mut app);
+        let shown = render_rows(&mut app, 60, 30).join("\n");
         assert!(shown.contains("pondering"), "revealed live tail must contain it");
+    }
+
+    /// A long chain of thought must not push the answer, or the conversation
+    /// above it, off the screen: the live tail keeps only the last few lines.
+    #[test]
+    fn live_tail_bounds_streaming_reasoning_to_its_last_lines() {
+        let body: String = (1..=20).map(|n| format!("step {n}\n")).collect();
+        let lines = super::live_assistant_lines(
+            &format!("<think>{body}"),
+            &[],
+            60,
+            true,
+            true,
+        );
+        let text: Vec<String> = lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect();
+        assert_eq!(text.len(), 6, "capped at the tail: {text:?}");
+        assert!(text[0].contains("step 15"), "starts at the tail: {text:?}");
+        assert!(text[5].contains("step 20"), "ends at the newest: {text:?}");
+    }
+
+    /// A block that already closed mid-turn folds to the very summary row the
+    /// commit will emit, so finalizing the turn does not move the transcript.
+    #[test]
+    fn live_tail_folds_a_closed_reasoning_run_to_its_summary_row() {
+        let lines = super::live_assistant_lines(
+            "<think>weighed it\ntwice</think>Here is the answer.",
+            &[],
+            60,
+            true,
+            true,
+        );
+        let text: Vec<String> = lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect();
+        assert!(
+            text.iter().any(|l| l.contains("reasoning (2 lines)")),
+            "closed run folds to a summary: {text:?}"
+        );
+        assert!(
+            !text.iter().any(|l| l.contains("weighed it")),
+            "closed run is not shown in full: {text:?}"
+        );
+        assert!(
+            text.iter().any(|l| l.contains("Here is the answer.")),
+            "prose still renders: {text:?}"
+        );
     }
 
     #[test]
@@ -12265,7 +13401,7 @@ mod tests {
         );
         // Kept whole: the row clamps to the draw width, so a long command fills
         // the terminal instead of being cut at a fixed 80.
-        let long = format!("echo {}", "x".repeat(2 * COMMAND_LABEL_MAX));
+        let long = format!("echo {}", "x".repeat(200));
         assert_eq!(
             tool_activity("bash", &json!({ "command": long })),
             format!("Executing: {long}")
@@ -12289,7 +13425,7 @@ mod tests {
         );
         // Whole command on the finished row too, for the same reason as
         // `tool_activity`: the row clamps to the draw width.
-        let long = format!("echo {}", "x".repeat(2 * COMMAND_LABEL_MAX));
+        let long = format!("echo {}", "x".repeat(200));
         assert_eq!(
             tool_finished("bash", &json!({ "command": long })),
             format!("Ran: {long}")
@@ -12370,6 +13506,10 @@ mod tests {
 
     fn line_text(line: &ratatui::text::Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    fn lines_text(lines: &[ratatui::text::Line]) -> String {
+        lines.iter().map(line_text).collect::<Vec<_>>().join("\n")
     }
 
     /// Text of a streaming write preview's tail, dropping the highlight styles.
@@ -13242,7 +14382,7 @@ mod tests {
             let provider_configs: std::collections::HashMap<String, crate::core::state::ProviderConfig> =
                 std::collections::HashMap::new();
             let args = std::sync::Arc::new(super::OrchestrationArgs {
-                client: reqwest::Client::new(),
+                client: crate::core::agent::upstream::agent_http_client(),
                 provider_configs: std::sync::Arc::new(tokio::sync::Mutex::new(
                     provider_configs,
                 )),
@@ -15152,6 +16292,165 @@ mod tests {
     }
 
     #[test]
+    fn cancel_preserves_completed_tool_calls_and_results_in_history() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "grep -n foo src/" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "match on line 3\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        // The run is cancelled before the model emits any answer prose, so
+        // nothing is streamed to be committed as assistant text.
+        app.cancel_run();
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            wire.contains("\"tool_calls\"") && wire.contains("c1"),
+            "tool call missing from wire history on cancel: {wire}"
+        );
+        assert!(
+            wire.contains("\"tool_call_id\":\"c1\"") && wire.contains("match on line 3"),
+            "tool result missing from wire history on cancel: {wire}"
+        );
+    }
+
+    #[test]
+    fn on_error_preserves_completed_tool_calls_and_results_in_history() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "grep -n foo src/" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "match on line 3\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        // The run dies on an upstream error before the model emits any answer
+        // prose. The backend never publishes a mid-turn `MessagesUpdated`, so
+        // the completed call must be folded into history by the error path
+        // (the same guarantee the Esc-cancel path already provides).
+        app.on_error("upstream".into(), "connection reset".into());
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            wire.contains("\"tool_calls\"") && wire.contains("c1"),
+            "tool call missing from wire history on error: {wire}"
+        );
+        assert!(
+            wire.contains("\"tool_call_id\":\"c1\"") && wire.contains("match on line 3"),
+            "tool result missing from wire history on error: {wire}"
+        );
+    }
+
+    #[test]
+    fn on_error_pairs_in_flight_calls_with_a_placeholder_result() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 300" }),
+        });
+        // The call was still in flight when the stream errored; no ToolResult
+        // ever arrives. It must still reach the wire, paired with a placeholder
+        // result so the exchange is protocol-valid for a later prompt.
+        app.on_error("upstream".into(), "connection reset".into());
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            wire.contains("\"tool_calls\"") && wire.contains("c1"),
+            "interrupted call missing from wire history on error: {wire}"
+        );
+        assert!(
+            wire.contains("\"tool_call_id\":\"c1\""),
+            "interrupted call must be paired with a result: {wire}"
+        );
+    }
+
+    #[test]
+    fn on_error_does_not_double_fold_when_flush_assistant_committed_prose() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "ls" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        // Some prose streamed before the error, so `on_error`'s flush_assistant
+        // commits it. The completed call must still be folded - and folded only
+        // once regardless of the prose that preceded the error.
+        app.apply(StreamEvent::Token {
+            text: "I found it".into(),
+        });
+        app.on_error("upstream".into(), "connection reset".into());
+        let assistant_tool_turns = app
+            .history
+            .iter()
+            .filter(|m| m.get("tool_calls").is_some())
+            .count();
+        assert_eq!(assistant_tool_turns, 1, "tool call folded exactly once");
+    }
+
+    #[test]
+    fn cancel_surfaces_interrupted_calls_paired_with_a_placeholder_result() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 300" }),
+        });
+        // No ToolResult arrives: the call was still in flight at cancel. It
+        // must still reach the wire history, paired with a placeholder result
+        // so the upstream sees a valid (call, result) exchange, not a dangling
+        // call that OpenAI-compatible endpoints reject.
+        app.cancel_run();
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            wire.contains("\"tool_calls\"") && wire.contains("c1"),
+            "interrupted call missing from wire history: {wire}"
+        );
+        assert!(
+            wire.contains("\"tool_call_id\":\"c1\""),
+            "interrupted call must be paired with a result for a valid exchange: {wire}"
+        );
+    }
+
+    #[test]
     fn single_collapsible_tool_folds_to_one_row() {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
@@ -15488,8 +16787,7 @@ mod tests {
             args: json!({ "pattern": "foo" }),
         });
         let group = app.tool_group.as_ref().expect("group open");
-        let row = running_group_row(group, 2, 80);
-        let text = line_text(&row);
+        let text = lines_text(&running_group_rows(group, 2, 80));
         assert!(text.contains(SPINNER[2]), "{text}");
         assert!(text.contains("(0s)") || text.contains("(1s)"), "{text}");
     }
@@ -15506,7 +16804,7 @@ mod tests {
             args: json!({ "command": cmd }),
         });
         let group = app.tool_group.as_ref().expect("group open");
-        let text = line_text(&running_group_row(group, 0, 200));
+        let text = lines_text(&running_group_rows(group, 0, 200));
         assert!(text.contains(&format!("Executing: {cmd}")), "{text}");
         assert!(!text.contains("running 1 command"), "{text}");
     }
@@ -15525,9 +16823,78 @@ mod tests {
             });
         }
         let group = app.tool_group.as_ref().expect("group open");
-        let text = line_text(&running_group_row(group, 0, 200));
+        let text = lines_text(&running_group_rows(group, 0, 200));
         assert!(text.contains("Executing: cargo clippy"), "{text}");
         assert!(!text.contains("Running 2 commands"), "{text}");
+    }
+
+    /// The live row wraps its command like the committed one, keeping its line
+    /// breaks, so a long command is readable while it runs -- which is when the
+    /// user most wants to check what they approved.
+    #[test]
+    fn running_row_wraps_a_long_multiline_command() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cd /tmp\nmake -j8 all install DESTDIR=/opt/somewhere/deep" }),
+        });
+        let group = app.tool_group.as_ref().expect("group open");
+        let rows = running_group_rows(group, 0, 40);
+        assert!(rows.len() > 2, "long command was not wrapped: {rows:?}");
+        for row in &rows {
+            assert!(
+                line_text(row).chars().count() <= 40,
+                "row overflows: {:?}",
+                line_text(row)
+            );
+        }
+        let text = lines_text(&rows).replace(['\u{2502}', '\n'], " ");
+        // Not the long `DESTDIR=` token: at 40 columns it is wider than the
+        // body and hard-breaks, which is the correct fallback, not a drop.
+        for word in ["cd /tmp", "make -j8", "all install"] {
+            assert!(text.contains(word), "dropped {word:?}: {text}");
+        }
+        assert!(
+            line_text(rows.first().expect("no rows")).contains("cd /tmp"),
+            "the first command line did not lead the row"
+        );
+    }
+
+    /// The elapsed badge trails the last row and its width is reserved up
+    /// front, so a counter ticking past 9s or 99s cannot re-flow the command
+    /// above it -- a live row that re-wraps every second is unreadable.
+    #[test]
+    fn running_row_elapsed_badge_does_not_reflow_the_command() {
+        let mut app = test_app();
+        let cmd = "grep -rn needle src/ --include=*.rs --exclude-dir=target";
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": cmd }),
+        });
+        let group = app.tool_group.as_mut().expect("group open");
+        // The body's wrap points must be the same at 0s and at four digits.
+        let strip = |rows: &[ratatui::text::Line]| {
+            rows.iter()
+                .map(|r| {
+                    let t = line_text(r);
+                    t.split(" (").next().unwrap_or_default().to_string()
+                })
+                .collect::<Vec<_>>()
+        };
+        let fresh = strip(&running_group_rows(group, 0, 44));
+        group.started = Instant::now() - Duration::from_secs(4321);
+        let old = running_group_rows(group, 0, 44);
+        assert_eq!(strip(&old), fresh, "the counter re-flowed the command");
+        assert!(
+            line_text(old.last().expect("no rows")).contains("(4321s)"),
+            "badge is not on the last row: {:?}",
+            lines_text(&old)
+        );
+        for row in &old {
+            assert!(line_text(row).chars().count() <= 44, "row overflows");
+        }
     }
 
     #[test]
@@ -15767,7 +17134,7 @@ mod tests {
         // its header row can scroll out of view. A click on any of its detail
         // rows -- not just the header -- must still collapse it.
         let mut app = test_app();
-        app.push_assistant_blocks("<think>line one\nline two\nline three</think>answer");
+        app.push_assistant_blocks("<think>line one\nline two\nline three</think>answer", &[]);
         assert_eq!(app.reasoning_blocks.len(), 1);
         let idx = app.reasoning_blocks[0].idx;
 
@@ -17056,7 +18423,8 @@ mod tests {
 
     /// The running placeholder is the row a user stares at during a long turn.
     /// A static "working…" reads as a hung UI, so it animates on the same
-    /// cadence as every other throbber.
+    /// cadence as every other throbber: the spinner glyph rotates, and the
+    /// action word cycles through synonyms of "working".
     #[test]
     fn working_placeholder_animates() {
         let mut app = test_app();
@@ -17066,7 +18434,7 @@ mod tests {
         let frame_of = |app: &mut App| {
             render_rows(app, 80, 12)
                 .into_iter()
-                .find(|r| r.contains("working…"))
+                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
                 .expect("running placeholder present")
         };
 
@@ -17074,13 +18442,90 @@ mod tests {
         let first = frame_of(&mut app);
         assert!(first.contains(SPINNER[0]), "expected frame 0 glyph: {first:?}");
 
+        // While a plain turn is running (no reasoning), the row shows a
+        // rotating synonym of "working".
+        assert!(
+            WORKING_WORDS.iter().any(|w| first.contains(w)),
+            "expected a working synonym in: {first:?}"
+        );
+
         app.spinner_frame = 3;
         let later = frame_of(&mut app);
         assert!(later.contains(SPINNER[3]), "expected frame 3 glyph: {later:?}");
         assert_ne!(first, later, "row must change as the frame advances");
 
-        // The wording itself does not move, only the glyph.
         assert!(later.contains("(Esc to cancel, type to queue next message)"), "{later:?}");
+    }
+
+    /// When the model is reasoning (a ` think>` block is streaming), the input
+    /// placeholder cycles through synonyms of "thinking".
+    #[test]
+    fn thinking_placeholder_uses_thinking_synonyms() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Token {
+            text: "<think>ponder the plan".into(),
+        });
+        let row = render_rows(&mut app, 80, 12)
+            .into_iter()
+            .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+            .expect("running placeholder present");
+        assert!(
+            THINKING_WORDS.iter().any(|w| row.contains(w)),
+            "expected a thinking synonym in: {row:?}"
+        );
+        assert!(
+            !WORKING_WORDS.iter().any(|w| row.contains(w)),
+            "no working synonym while reasoning: {row:?}"
+        );
+    }
+
+    /// Thinking synonyms are coloured orange so the active reasoning state
+    /// stands out from the quiet working rows.
+    #[test]
+    fn thinking_synonym_is_orange() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Token {
+            text: "<think>ponder the plan".into(),
+        });
+        let mut terminal = Terminal::new(TestBackend::new(80, 12)).unwrap();
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        // Locate the placeholder row, then assert the action word's cells are
+        // orange (the trailing hint stays dim, so only the word carries it).
+        let orange = (0..buf.area.height).any(|y| {
+            let row: String = (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect();
+            if !THINKING_WORDS.iter().any(|w| row.contains(w)) {
+                return false;
+            }
+            (0..buf.area.width)
+                .any(|x| buf[(x, y)].style().fg == Some(super::THINKING_ORANGE))
+        });
+        assert!(orange, "thinking synonym not orange");
+    }
+
+    /// The working word rotates to a different synonym as the frame advances.
+    #[test]
+    fn working_synonym_rotates_across_frames() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        let mut word_at = |frame: usize| {
+            app.spinner_frame = frame;
+            let row = render_rows(&mut app, 80, 12)
+                .into_iter()
+                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                .expect("running placeholder present");
+            WORKING_WORDS
+                .iter()
+                .find(|w| row.contains(*w))
+                .map(|w| w.to_string())
+                .expect("working synonym present")
+        };
+        let a = word_at(0);
+        let b = word_at(super::WORD_ROTATE_FRAMES);
+        assert_ne!(a, b, "working word must rotate as frames advance: {a}");
     }
 
     /// A queued-message row is still a running row, so it animates too.
@@ -17095,6 +18540,206 @@ mod tests {
             .find(|r| r.contains("Queued"))
             .expect("queued row present");
         assert!(row.contains(SPINNER[5]), "expected frame 5 glyph: {row:?}");
+    }
+
+    /// Native reasoning events (a dedicated `reasoning_content` field) drive the
+    /// same orange thinking placeholder as inline `<`> tags, are folded into the
+    /// transcript like a wrapped block on flush, and never enter the wire answer.
+    #[test]
+    fn native_reasoning_drives_thinking_placeholder_and_folds_on_flush() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning {
+            text: "ponder the plan".into(),
+        });
+        // Orange thinking synonyms while reasoning streams.
+        let row = render_rows(&mut app, 80, 12)
+            .into_iter()
+            .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+            .expect("running placeholder present");
+        assert!(
+            THINKING_WORDS.iter().any(|w| row.contains(w)),
+            "expected a thinking synonym while reasoning: {row:?}"
+        );
+        // The answer arrives: reasoning stays folded into a summary row.
+        app.apply(StreamEvent::Token {
+            text: "Here is the answer".into(),
+        });
+        app.on_done("stop".into(), None);
+        assert_eq!(app.reasoning_blocks.len(), 1, "reasoning folded into one block");
+        // The wire history carries the answer, with the reasoning preserved on
+        // the message's `reasoning_content` rather than inlined into `content`.
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "Here is the answer");
+        assert_eq!(
+            last["reasoning_content"], "ponder the plan",
+            "reasoning must be preserved for resend: {last}"
+        );
+        assert!(
+            !last["content"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("ponder the plan"),
+            "reasoning must not be inlined into the answer content: {last}"
+        );
+    }
+
+    /// The resend policy reaches the wire: a default session sends an unchanged
+    /// body (the loop defaults to resending), and opting out forwards the flag.
+    #[test]
+    fn send_reasoning_opt_out_is_forwarded_in_the_request_body() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        assert!(
+            app.body().get("send_reasoning").is_none(),
+            "the default session must send an unchanged body"
+        );
+        app.send_reasoning = false;
+        assert_eq!(
+            app.body()["send_reasoning"],
+            serde_json::json!(false),
+            "opting out must reach the loop"
+        );
+    }
+
+    /// A cancelled turn keeps the reasoning that produced its partial answer,
+    /// so the next prompt resumes with the same context the model had.
+    #[test]
+    fn cancel_preserves_native_reasoning_on_the_partial_answer() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning {
+            text: "half a thought".into(),
+        });
+        app.apply(StreamEvent::Token {
+            text: "Partial answer".into(),
+        });
+        app.cancel_run();
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "Partial answer");
+        assert_eq!(last["reasoning_content"], "half a thought");
+    }
+
+    /// A turn with no native reasoning must not grow a `reasoning_content` key:
+    /// providers that reject unknown assistant fields see an unchanged shape.
+    #[test]
+    fn a_turn_without_reasoning_adds_no_reasoning_key_to_history() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Token {
+            text: "Just an answer".into(),
+        });
+        app.on_done("stop".into(), None);
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "Just an answer");
+        assert!(
+            last.get("reasoning_content").is_none(),
+            "no reasoning streamed, so the key must be absent: {last}"
+        );
+    }
+
+    /// The `[thinking]` badge and the orange placeholder must close when the
+    /// answer starts streaming: native segments live until the next flush, so
+    /// only the "newest segment is still at the tail" check can tell the two
+    /// apart. Without it the badge shimmered through the whole answer and
+    /// `[thought for Ns]` never appeared for a `reasoning_content` provider.
+    #[test]
+    fn native_reasoning_badge_closes_once_prose_starts() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning { text: "ponder".into() });
+        assert_eq!(
+            app.reasoning_status().map(|(w, _)| w),
+            Some("thinking".to_string())
+        );
+        assert!(app.reasoning_open(), "reasoning is live");
+        app.apply(StreamEvent::Token { text: "Answer".into() });
+        assert!(!app.reasoning_open(), "prose has started");
+        assert_eq!(
+            app.reasoning_status().map(|(w, _)| w),
+            Some("thought for 0s".to_string()),
+            "the closed block reports its duration"
+        );
+    }
+
+    fn detail_text(block: &super::ReasoningBlock) -> String {
+        block
+            .detail
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|sp| sp.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// Reasoning that mentions a `</think>` tag must not close the block it is
+    /// wrapped in and spill the rest of the thought into the answer.
+    #[test]
+    fn native_reasoning_mentioning_a_close_tag_stays_reasoning() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning {
+            text: "the </think> tag is tricky".into(),
+        });
+        app.on_done("stop".into(), None);
+        let rows = render_rows(&mut app, 80, 30).join("\n");
+        assert!(
+            !rows.contains("tag is tricky"),
+            "reasoning rendered as answer prose: {rows}"
+        );
+        assert_eq!(app.reasoning_blocks.len(), 1, "one folded reasoning block");
+        // Kept verbatim: reasoning never shares a string with the prose, so
+        // there is no block for the tag to close and nothing to neutralize.
+        assert!(
+            detail_text(&app.reasoning_blocks[0]).contains("</think>"),
+            "the tag is preserved as written: {}",
+            detail_text(&app.reasoning_blocks[0])
+        );
+    }
+
+    /// Interleaved reasoning keeps emission order: each stretch folds where it
+    /// streamed instead of every thought being hoisted above all the prose.
+    #[test]
+    fn interleaved_native_reasoning_keeps_emission_order() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning { text: "first thought".into() });
+        app.apply(StreamEvent::Token { text: "Part one.".into() });
+        app.apply(StreamEvent::Reasoning { text: "second thought".into() });
+        app.apply(StreamEvent::Token { text: " Part two.".into() });
+        app.on_done("stop".into(), None);
+        assert_eq!(app.reasoning_blocks.len(), 2, "two separate stretches");
+        // Journaled apart: prose verbatim, each stretch at the offset it
+        // streamed at, so a replay rebuilds the order without parsing markers.
+        let DisplayEntry::Assistant { text, reasoning } = app
+            .display_log
+            .iter()
+            .rev()
+            .find(|e| matches!(e, DisplayEntry::Assistant { .. }))
+            .expect("assistant entry journaled")
+        else {
+            unreachable!()
+        };
+        assert_eq!(text, "Part one. Part two.");
+        assert_eq!(
+            reasoning,
+            &vec![
+                ReasoningSeg { at: 0, text: "first thought".into() },
+                ReasoningSeg { at: 9, text: "second thought".into() },
+            ]
+        );
+        // The wire answer is prose only; both thoughts ride along on
+        // `reasoning_content`, concatenated in emission order.
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "Part one. Part two.");
+        assert_eq!(
+            last["reasoning_content"], "first thoughtsecond thought",
+            "both stretches must be preserved for resend: {last}"
+        );
     }
 
     #[test]
@@ -18199,8 +19844,11 @@ mod tests {
     /// The animation is scoped to the state that needs it: a folded, streaming
     /// reasoning block. Everything else keeps its flat badge.
     #[test]
-    fn only_folded_live_reasoning_animates_the_badge() {
+    fn only_invisible_live_reasoning_animates_the_badge() {
         let mut app = test_app();
+        // Streaming reasoning puts the thought on screen, so the badge has
+        // nothing to stand in for; the shimmer is for the hidden case.
+        app.stream_reasoning = false;
         assert!(!app.is_thinking(), "idle");
         app.submit_user("hi".into());
         assert!(!app.is_thinking(), "running, but nothing thinking yet");
@@ -18217,12 +19865,15 @@ mod tests {
         });
         assert!(!app.is_thinking(), "the block closed");
 
-        // With reasoning shown inline the transcript itself is moving, so the
-        // badge stays flat.
-        app.show_reasoning = true;
+        // With reasoning on screen -- streamed into the live tail, or unfolded
+        // outright -- the transcript itself is moving, so the badge stays flat.
+        app.stream_reasoning = true;
         app.apply(StreamEvent::Token {
             text: "<think>more".into(),
         });
+        assert!(!app.is_thinking(), "streamed reasoning needs no badge motion");
+        app.stream_reasoning = false;
+        app.show_reasoning = true;
         assert!(!app.is_thinking(), "unfolded reasoning needs no badge motion");
     }
 

@@ -9,6 +9,13 @@
 pub enum StreamEvent {
     /// A streamed content delta from the model.
     Token { text: String },
+    /// A streamed reasoning delta, carried natively when the upstream exposes
+    /// it as a dedicated field (`reasoning_content`). Display-only: reasoning
+    /// never joins the assistant `content` that is resent as history, and it
+    /// must never leak into piped stdout. Providers that instead inline
+    /// `<think>` tags in `content` stream those through [`Token`]; consumers
+    /// fall back to stripping the tags manually.
+    Reasoning { text: String },
     /// A new orchestration turn began (`index` is 1-based; `max` is the turn
     /// cap, `0` when the run is unbounded, which is the normal case).
     Step { index: u32, max: u32 },
@@ -234,6 +241,12 @@ mod tests {
     fn token_serializes_with_snake_case_tag() {
         let v = serde_json::to_value(StreamEvent::Token { text: "hi".into() }).unwrap();
         assert_eq!(v, json!({ "type": "token", "text": "hi" }));
+    }
+
+    #[test]
+    fn reasoning_serializes_with_snake_case_tag() {
+        let v = serde_json::to_value(StreamEvent::Reasoning { text: "hmm".into() }).unwrap();
+        assert_eq!(v, json!({ "type": "reasoning", "text": "hmm" }));
     }
 
     #[test]

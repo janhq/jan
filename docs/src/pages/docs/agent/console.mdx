@@ -60,6 +60,28 @@ in, so you can see what's being produced before it lands. <kbd>Esc</kbd> cancels
 Type while it's working and your message queues rather than being dropped - see
 [Sessions](/docs/agent/sessions#queueing).
 
+## Reasoning
+
+While a model works it may emit a chain of thought before it lands on an answer. By default the
+console folds that reasoning into a summary row instead of dumping it into the transcript. The
+header shows where it is: `[thinking]` while a reasoning block streams, then `[thought for Ns]`
+once it closes. With folding on, an open block also streams its last few lines into the live tail,
+so you can watch the thought form without pushing the answer off the screen.
+
+<kbd>Ctrl</kbd>+<kbd>O</kbd> expands every folded reasoning block, or click a row to expand just
+that one.
+
+Two knobs in `agent.toml` and two in `~/.jan/config.toml` tune this:
+
+| Key | Where | Default | What it does |
+| --- | --- | --- | --- |
+| `[agent].show_reasoning` | `agent.toml` | `false` | Unfold every reasoning block in the transcript by default. Still folds when off; <kbd>Ctrl</kbd>+<kbd>O</kbd> or a click expands a block either way |
+| `[agent].send_reasoning` | `agent.toml` | `true` | Resend a prior turn's reasoning to the model with the conversation. Turn off for an upstream that rejects the field (Groq), or to keep chains of thought out of the context budget |
+| `think_tags` | `~/.jan/config.toml` | `true` | Treat `<thinking>` tags in model content as reasoning (folded and resendable). Off renders them as ordinary prose |
+| `stream_reasoning` | `~/.jan/config.toml` | `true` | Stream an open reasoning block's last lines into the live tail. Off shows only the `[thinking]` badge |
+
+See [Project config](/docs/agent/project-config) for the `agent.toml` keys.
+
 ## Approving work
 
 Writes and shell commands are auto-approved. Start the console with `jan --safe` and they stop to

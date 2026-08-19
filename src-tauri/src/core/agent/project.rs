@@ -110,6 +110,16 @@ pub(crate) struct AgentSection {
     /// this flips the default for every block in the session.
     #[serde(default)]
     pub show_reasoning: Option<bool>,
+    /// Resend a prior assistant turn's `reasoning_content` to the model with the
+    /// rest of the conversation. Default true: providers that expose reasoning
+    /// natively generally expect it back, and local llama.cpp templates with
+    /// `preserve_thinking` re-emit prior reasoning from this field (dropping it
+    /// shrinks earlier turns and forces the KV-cache prefix to be reprocessed).
+    /// Set false for a strict upstream that rejects the key on assistant turns
+    /// (Groq's validator is the known case), or to keep long chains of thought
+    /// out of the context budget.
+    #[serde(default)]
+    pub send_reasoning: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -150,6 +160,7 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
 # show_reasoning = false  # expand  reasoning in the transcript (Ctrl-O still toggles)
+# send_reasoning = true  # resend prior reasoning to the model; false drops it from the request
 
 # Project-local provider override. Wins over ~/.jan/config.toml and any
 # provider inherited from Jan Desktop's settings.json. Most projects don't
@@ -584,6 +595,28 @@ mod tests {
         set_agent_key(&path, "show_reasoning", None).expect("unset");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.show_reasoning, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `send_reasoning` is unset in the template, which the callers read as the
+    /// resend-by-default policy; an explicit false round-trips so a strict
+    /// upstream can be opted out of it.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn send_reasoning_parses_and_round_trips() {
+        let root = unique_root("send_reasoning");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.send_reasoning, None, "template leaves it unset");
+
+        let path = agent_toml_path(&root);
+        set_agent_key(&path, "send_reasoning", Some(toml_edit::value(false)))
+            .expect("write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.send_reasoning, Some(false));
+        set_agent_key(&path, "send_reasoning", None).expect("unset");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.send_reasoning, None);
         let _ = std::fs::remove_dir_all(&root);
     }
 

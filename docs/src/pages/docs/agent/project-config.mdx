@@ -62,6 +62,8 @@ Point at a different file with `instructions_file` if you already keep conventio
 # compaction_reserve_tokens = 16384
 # max_tokens = 4096
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
+# show_reasoning = false  # unfold thinking blocks in the transcript (Ctrl-O still toggles)
+# send_reasoning = true   # resend prior reasoning to the model; false drops it from the request
 instructions_file = "AGENT.md"
 
 # [provider]
@@ -97,6 +99,8 @@ inject = "always"
 | `compaction_reserve_tokens` | `16384` | Headroom kept free before [compaction](/docs/agent/context) |
 | `max_tokens` | unset | Cap on tokens generated per response. Omitted from the request when unset |
 | `max_parallel_subagents` | `10` | Subagents that may run at once (min 1); extra dispatches queue FIFO |
+| `show_reasoning` | `false` | Unfold model reasoning (`<thinking>`) blocks in the transcript instead of folding them to a summary row. <kbd>Ctrl</kbd>+<kbd>O</kbd> still toggles a folded block |
+| `send_reasoning` | `true` | Resend a prior turn's reasoning to the model with the conversation. Set `false` for an upstream that rejects the field (e.g. Groq), or to keep chains of thought out of the context budget |
 | `instructions_file` | `AGENT.md` | Markdown injected into the system prompt |
 
 ### `[provider]`
