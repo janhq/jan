@@ -1371,6 +1371,11 @@ struct App {
     update_requested: bool,
     /// Compaction handed off to the loop, which spawns the summarizing model
     /// call off the render loop. Taken once.
+    /// `/plugin install` handed off to the loop, which runs the git clone off
+    /// the render loop and notes the result when it lands. Taken once.
+    plugin_install_request: Option<String>,
+    /// A plugin install is in flight: a second request is refused.
+    plugin_installing: bool,
     compact_request: Option<CompactKind>,
     /// A compaction is in flight: the header and the input box show a throbber,
     /// a second request is refused, and no run starts until it lands (its result
@@ -1730,6 +1735,8 @@ impl App {
             probed_models: std::collections::HashSet::new(),
             login_submit: None,
             update_requested: false,
+            plugin_install_request: None,
+            plugin_installing: false,
             update_installing: false,
             compact_request: None,
             compacting: None,
@@ -5628,6 +5635,40 @@ fn finish_update_install(app: &mut App, result: Result<super::updater::UpdateOut
     }
 }
 
+/// Await an in-flight `/plugin install`, parking forever when none is running.
+/// Same cancel-safe borrow as `await_mcp`.
+async fn await_plugin_install(
+    task: &mut Option<
+        tokio::task::JoinHandle<Result<crate::core::agent::plugins::InstalledPlugin, String>>,
+    >,
+) -> Result<crate::core::agent::plugins::InstalledPlugin, String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    match joined {
+        Ok(inner) => inner,
+        Err(e) => Err(format!("plugin install task failed: {e}")),
+    }
+}
+
+/// Report a plugin install. Clears the in-flight flag so the next request is
+/// accepted.
+fn finish_plugin_install(
+    app: &mut App,
+    result: Result<crate::core::agent::plugins::InstalledPlugin, String>,
+) {
+    app.plugin_installing = false;
+    match result {
+        Ok(p) => {
+            app.refresh_slash_catalog();
+            app.note(&format!("installed plugin '{}' ({} skills)", p.name, p.skills));
+        }
+        Err(e) => app.note(&e),
+    }
+}
+
 pub async fn run(
     session: AgentSession,
     agent_dir: std::path::PathBuf,
@@ -5905,6 +5946,11 @@ async fn chat_loop<B: Backend>(
     let mut update_install_task: Option<
         tokio::task::JoinHandle<Result<super::updater::UpdateOutcome, String>>,
     > = None;
+    // `/plugin install` clones a git repo, so it runs off the render loop via
+    // `install`'s internal `spawn_blocking`; one at a time.
+    let mut plugin_install_task: Option<
+        tokio::task::JoinHandle<Result<crate::core::agent::plugins::InstalledPlugin, String>>,
+    > = None;
 
     // Compaction is a summarizing model call, so it runs off the render loop
     // too; `compact_base` is the history length it was computed from.
@@ -5966,6 +6012,18 @@ async fn chat_loop<B: Backend>(
                 app.update_installing = true;
                 app.detail = "installing update...".to_string();
                 update_install_task = Some(tokio::spawn(super::updater::self_update(false)));
+            }
+        }
+        // `/plugin install` was typed: clone off-loop (the network-bound git
+        // work runs inside `install`'s `spawn_blocking`), and refuse a second
+        // while one is in flight.
+        if plugin_install_task.is_none() {
+            if let Some(spec) = app.plugin_install_request.take() {
+                app.plugin_installing = true;
+                let root = app.project_root.clone();
+                plugin_install_task = Some(tokio::spawn(async move {
+                    crate::core::agent::plugins::install(&root, &spec).await
+                }));
             }
         }
 
@@ -6097,6 +6155,9 @@ async fn chat_loop<B: Backend>(
             }
             install = await_update_install(&mut update_install_task) => {
                 finish_update_install(app, install);
+            }
+            plugin_res = await_plugin_install(&mut plugin_install_task) => {
+                finish_plugin_install(app, plugin_res);
             }
             compacted = await_compaction(&mut compact_task) => {
                 finish_compaction(app, compacted, compact_base);
@@ -8958,16 +9019,16 @@ async fn plugin_command(app: &mut App, arg: &str) {
                 app.note("usage: /plugin install <git-url[#ref]> | <marketplace-name>");
                 return;
             }
-            match crate::core::agent::plugins::install(&root, &rest).await {
-                Ok(p) => {
-                    app.refresh_slash_catalog();
-                    app.note(&format!(
-                        "installed plugin '{}' ({} skills)",
-                        p.name, p.skills
-                    ));
-                }
-                Err(e) => app.note(&e),
+            // The clone is network-bound, so the install runs off the render
+            // loop (see the loop's `plugin_install_request` handling); if we
+            // awaited it inline, the TUI would freeze for the whole clone.
+            // Refuse a second request while one is in flight.
+            if app.plugin_installing {
+                app.note("a plugin install is already in progress");
+                return;
             }
+            app.plugin_install_request = Some(rest);
+            app.note("installing plugin...");
         }
         "remove" => {
             if rest.is_empty() {
@@ -21640,16 +21701,37 @@ mod tests {
         assert!(st.success());
 
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
-        run_command(
-            &mut app,
-            &format!("plugin install file://{}", repo.display()),
-        )
-        .await;
+
+        // `/plugin install` no longer awaits the clone inline (that would freeze
+        // the TUI); it hands the spec to the loop, which runs the install off
+        // the render loop. Drive the handoff: the request is recorded, a second
+        // is refused while one is in flight, and the loop clears it on pick-up.
+        run_command(&mut app, &format!("plugin install file://{}", repo.display())).await;
         assert!(
-            transcript_text(&app).contains("installed plugin 'release-tools' (1 skills)"),
-            "install note: {}",
+            app.plugin_install_request.is_some(),
+            "install spec should be handed to the loop"
+        );
+        assert!(transcript_text(&app).contains("installing plugin..."), "{}", transcript_text(&app));
+        app.plugin_installing = true;
+        run_command(&mut app, "plugin install file://nowhere").await;
+        assert!(
+            transcript_text(&app).contains("already in progress"),
+            "a second /plugin install must be refused: {}",
             transcript_text(&app)
         );
+        app.plugin_installing = false;
+        app.plugin_install_request.take();
+
+        // Actually install so the list/dispatch/remove checks below have a
+        // plugin present (the install itself is covered by plugins::tests).
+        let p = crate::core::agent::plugins::install(
+            &root,
+            &format!("file://{}", repo.display()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(p.name, "release-tools");
+        app.refresh_slash_catalog();
 
         std::fs::create_dir_all(
             crate::core::agent::skills::plugins_dir(&root).join(".installing-stale"),

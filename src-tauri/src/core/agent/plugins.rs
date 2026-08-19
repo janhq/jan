@@ -17,7 +17,7 @@
 //! plugins: `[{ "name", "description", "repo", "ref"? }]`. `install <name>`
 //! resolves through it; `install <git-url>` skips it entirely.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde::Deserialize;
@@ -276,7 +276,7 @@ fn git(args: &[&str]) -> Result<String, String> {
 /// Clone a plugin source into a temporary dir, validate it, and move it into
 /// place under its final name. A failed clone or an empty repo leaves nothing
 /// behind (the temp dir is removed).
-async fn install_git(
+fn install_git(
     root: &Path,
     url: &str,
     r#ref: Option<&str>,
@@ -298,7 +298,7 @@ async fn install_git(
         return Err(e);
     }
 
-    let payload = source
+    let mut payload = source
         .subdir
         .as_deref()
         .map(|subdir| tmp.join(subdir))
@@ -310,12 +310,57 @@ async fn install_git(
             source.subdir.as_deref().unwrap_or("")
         ));
     }
+
+    // A collection repo (e.g. anthropics/claude-plugins-official) has no plugin
+    // payload at the root; each direct child is its own plugin. If there is
+    // exactly one such child, install it; if several, point at the collection
+    // so the user can install a specific one. This keeps a bare collection URL
+    // from failing with a confusing "nothing to install".
+    let mut payload_narrowed = source.subdir.is_some();
+    let mut payload_name: Option<String> = None;
+    if !plugin_has_content(&payload) {
+        let mut candidates: Vec<PathBuf> = Vec::new();
+        if let Ok(rd) = std::fs::read_dir(&payload) {
+            candidates = rd
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_dir() && plugin_has_content(p))
+                .collect();
+        }
+        match candidates.len() {
+            0 => {}
+            1 => {
+                payload_name =
+                    candidates[0]
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned());
+                payload = candidates.remove(0);
+                payload_narrowed = true;
+            }
+            n => {
+                let mut names: Vec<String> = candidates
+                    .iter()
+                    .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+                    .collect();
+                names.sort();
+                let _ = std::fs::remove_dir_all(&tmp);
+                return Err(format!(
+                    "ERROR: '{url}' is a plugin collection ({n} plugins: {}) - install one directly, e.g. /plugin install {url}#tree/<ref>/<name>",
+                    names.join(", ")
+                ));
+            }
+        }
+    }
     let manifest = read_manifest(&payload);
-    let fallback_name = source
-        .subdir
-        .as_deref()
-        .and_then(|subdir| subdir.rsplit('/').next())
-        .or_else(|| repo_dir_name(&source.url));
+    let fallback_name = payload_name
+        .or_else(|| {
+            source
+                .subdir
+                .as_deref()
+                .and_then(|subdir| subdir.rsplit('/').next())
+                .map(str::to_string)
+        })
+        .or_else(|| repo_dir_name(&source.url).map(str::to_string));
     let name = match (manifest.name.as_deref(), fallback_name) {
         (Some(name), _) if !name.is_empty() => name.to_string(),
         (_, Some(dir)) => dir.to_string(),
@@ -343,7 +388,7 @@ async fn install_git(
         let _ = std::fs::remove_dir_all(&tmp);
         return Err(format!("ERROR: plugin '{stem}' is already installed"));
     }
-    if source.subdir.is_some() {
+    if payload_narrowed {
         std::fs::rename(&payload, &target).map_err(|e| {
             let _ = std::fs::remove_dir_all(&tmp);
             format!("ERROR: {e}")
@@ -402,7 +447,15 @@ pub(crate) async fn install(root: &Path, spec: &str) -> Result<InstalledPlugin, 
     let spec = spec.trim();
     validate_spec(spec)?;
     if looks_like_git(spec) {
-        return install_git(root, spec, None).await;
+        // `install_git` shells out to `git clone`, which is network-bound and
+        // blocks its thread for the whole clone. Run it on a blocking thread so
+        // the TUI keeps repainting (a large plugin repo otherwise freezes the
+        // render loop for seconds).
+        let root = root.to_path_buf();
+        let spec = spec.to_string();
+        return tokio::task::spawn_blocking(move || install_git(&root, &spec, None))
+            .await
+            .map_err(|e| format!("ERROR: install task failed: {e}"))?;
     }
     let marketplace = plugins_section(root)
         .marketplace
@@ -412,7 +465,13 @@ pub(crate) async fn install(root: &Path, spec: &str) -> Result<InstalledPlugin, 
         .into_iter()
         .find(|e| e.name == spec)
         .ok_or_else(|| format!("ERROR: plugin '{spec}' not found on the marketplace"))?;
-    install_git(root, &entry.repo, entry.r#ref.as_deref()).await
+    // Marketplace installs clone a git repo too: same blocking-work treatment.
+    let root = root.to_path_buf();
+    let repo = entry.repo.clone();
+    let r#ref = entry.r#ref.clone();
+    tokio::task::spawn_blocking(move || install_git(&root, &repo, r#ref.as_deref()))
+        .await
+        .map_err(|e| format!("ERROR: install task failed: {e}"))?
 }
 
 /// Remove an installed plugin by directory name.
@@ -706,5 +765,95 @@ mod tests {
         let err = install(&root, "nope").await.unwrap_err();
         assert!(err.contains("not found on the marketplace"), "{err}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A plugin *collection* repo: no payload at the root, each direct child
+    /// is its own plugin. Multiple children -> an actionable error naming them.
+    #[tokio::test]
+    async fn install_collection_lists_plugin_choices() {
+        let repo = std::env::temp_dir().join(format!(
+            "jan_plugin_collection_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&repo);
+        for name in ["alpha", "beta"] {
+            let d = repo.join(name).join("skills").join("prepare");
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(
+                d.join("SKILL.md"),
+                format!("---\ndescription: {name}\n---\n\n# {name}\n\nBody.\n"),
+            )
+            .unwrap();
+            std::fs::write(
+                repo.join(name).join("plugin.toml"),
+                format!("name = \"{name}\"\ndescription = \"{name}\"\n"),
+            )
+            .unwrap();
+        }
+        git(&["init", repo.to_str().unwrap()]).unwrap();
+        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        git(&[
+            "-C",
+            repo.to_str().unwrap(),
+            "commit",
+            "-m",
+            "collection",
+        ])
+        .unwrap();
+
+        let root = unique_root("collection1");
+        let err = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap_err();
+        assert!(err.contains("alpha") && err.contains("beta"), "{err}");
+        assert!(err.contains("plugin collection"), "{err}");
+        assert_eq!(
+            std::fs::read_dir(skills::plugins_dir(&root))
+                .unwrap()
+                .count(),
+            0,
+            "nothing should be installed for an ambiguous collection"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// A collection with a single plugin child auto-installs that one.
+    #[tokio::test]
+    async fn install_collection_with_single_plugin_installs_it() {
+        let repo = std::env::temp_dir().join(format!(
+            "jan_plugin_singleton_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&repo);
+        let d = repo.join("only").join("skills").join("prepare");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("SKILL.md"), "---\ndescription: only\n---\n\n# only\n\nBody.\n")
+            .unwrap();
+        std::fs::write(
+            repo.join("only").join("plugin.toml"),
+            "name = \"only\"\ndescription = \"only\"\n",
+        )
+        .unwrap();
+        git(&["init", repo.to_str().unwrap()]).unwrap();
+        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        git(&[
+            "-C",
+            repo.to_str().unwrap(),
+            "commit",
+            "-m",
+            "singleton",
+        ])
+        .unwrap();
+
+        let root = unique_root("singleton1");
+        let p = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap();
+        assert_eq!(p.name, "only");
+        assert_eq!(p.skills, 1);
+        assert!(skills::plugins_dir(&root).join("only").is_dir());
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(repo);
     }
 }
