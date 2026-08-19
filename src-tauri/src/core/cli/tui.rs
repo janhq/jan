@@ -1280,6 +1280,12 @@ struct App {
     /// reject the key); the display journal keeps reasoning for a resume either
     /// way.
     send_reasoning: bool,
+    /// Normalized reasoning effort level sent with each model request.
+    /// Valid values: `"low"`, `"medium"`, `"high"`. Defaults to `"medium"`.
+    reasoning_effort: String,
+    /// The most recently selected non-low effort level, used by the Alt+T
+    /// toggle to switch between `"low"` and this value.
+    last_non_low_effort: String,
     /// Transcript row indices of collapsed regions (tool groups or reasoning
     /// blocks) the user has expanded to full detail.
     expanded: std::collections::HashSet<usize>,
@@ -1681,6 +1687,8 @@ impl App {
             // Overwritten from the session config right after construction.
             stream_reasoning: true,
             send_reasoning: true,
+            reasoning_effort: "medium".into(),
+            last_non_low_effort: "medium".into(),
             expanded: std::collections::HashSet::new(),
             reveal: None,
             input: String::new(),
@@ -3093,6 +3101,10 @@ impl App {
         if !self.send_reasoning {
             body["send_reasoning"] = serde_json::json!(false);
         }
+        // Reasoning effort: forwarded to the upstream via
+        // `copy_optional_chat_params` so compatible providers (OpenAI, Gemini)
+        // adjust their reasoning depth. Incompatible providers ignore it.
+        body["reasoning_effort"] = serde_json::json!(self.reasoning_effort);
         body
     }
 
@@ -6730,6 +6742,12 @@ async fn handle_key(
         KeyCode::Char('o') if ctrl => {
             app.toggle_regions();
         }
+        // Alt+T toggles reasoning effort between "low" and the last non-low
+        // level (default medium). A quick way to quiet or deepen a model run
+        // without typing the full `/effort` command.
+        KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::ALT) => {
+            app.toggle_reasoning_effort();
+        }
         // Ctrl-V stages an image from the OS clipboard (terminal paste is
         // text-only, so we read the clipboard directly) for the next message.
         KeyCode::Char('v') if ctrl => {
@@ -6761,6 +6779,11 @@ async fn handle_key(
         }
         KeyCode::Home => {
             app.cursor = 0;
+        }
+        // Shift+Tab (crossterm sends it as BackTab, not Tab+SHIFT) cycles
+        // reasoning effort low -> medium -> high -> low, matching Claude Code.
+        KeyCode::BackTab => {
+            app.cycle_reasoning_effort();
         }
         KeyCode::End => {
             app.cursor = app.input.len();
@@ -7081,6 +7104,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Switch model (bare: pick interactively)",
     },
     SlashCommand {
+        name: "/effort",
+        hint: "[low|medium|high]",
+        description: "Set reasoning effort (bare: show current; low: faster, high: deeper thinking)",
+    },
+    SlashCommand {
         name: "/mcp",
         hint: "",
         description: "List, add, edit, remove, or toggle MCP servers",
@@ -7135,6 +7163,8 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("PgUp/PgDn", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
+    ("Shift+Tab", "Cycle reasoning effort (low/medium/high)"),
+    ("Alt+T", "Toggle reasoning effort (low / last)"),
     ("Drag", "Select text, copied on release (Alt+drag for a block)"),
     ("Ctrl-D", "Quit"),
 ];
@@ -7222,6 +7252,7 @@ async fn run_command(app: &mut App, line: &str) {
         "goal" => goal_command(app, arg),
         "init" => init_command(app),
         "plan" => plan_command(app, arg),
+        "effort" => effort_command(app, arg),
         "todo" => todo_command(app, arg).await,
         "cancel" => cancel_command(app, arg),
         "quit" | "exit" => app.should_quit = true,
@@ -8373,6 +8404,68 @@ fn plan_command(app: &mut App, arg: &str) {
     }
     if !arg.is_empty() {
         app.submit_user(arg.to_string());
+    }
+}
+
+const EFFORT_LEVELS: &[&str] = &["low", "medium", "high"];
+
+/// `/effort` -- report or change the reasoning effort level for subsequent model
+/// requests. Without arguments, shows the current level. With a level argument,
+/// validates and applies it.
+fn effort_command(app: &mut App, arg: &str) {
+    let arg = arg.trim();
+    if arg.is_empty() {
+        app.note(&format!(
+            "reasoning effort: {} (use /effort low|medium|high)",
+            app.reasoning_effort
+        ));
+        return;
+    }
+    let level = arg.to_ascii_lowercase();
+    if !EFFORT_LEVELS.contains(&level.as_str()) {
+        app.note(&format!(
+            "unknown effort level '{arg}' -- supported: low, medium, high"
+        ));
+        return;
+    }
+    app.reasoning_effort = level.clone();
+    if level != "low" {
+        app.last_non_low_effort = level.clone();
+    }
+    app.note(&format!("reasoning effort set to {level}"));
+}
+
+impl App {
+    /// Cycle reasoning effort between `"low"` and the most recent non-low level.
+    /// `Alt+T` in the TUI toggles between a quiet and a deep run without typing
+    /// `/effort`; the last non-low selection is remembered so toggling back off
+    /// low restores the user's preferred depth.
+    fn toggle_reasoning_effort(&mut self) {
+        if self.reasoning_effort == "low" {
+            self.reasoning_effort = self.last_non_low_effort.clone();
+        } else {
+            self.last_non_low_effort = self.reasoning_effort.clone();
+            self.reasoning_effort = "low".into();
+        }
+        self.note(&format!("reasoning effort: {}", self.reasoning_effort));
+    }
+
+    /// Advance through the effort levels (low -> medium -> high -> low),
+    /// Claude Code-style. `Shift+Tab` calls this; it always updates
+    /// `last_non_low_effort` so a subsequent `Alt+T` low/non-low toggle stays
+    /// coherent.
+    fn cycle_reasoning_effort(&mut self) {
+        let next = match self.reasoning_effort.as_str() {
+            "low" => "medium",
+            "medium" => "high",
+            "high" => "low",
+            _ => "medium",
+        };
+        self.reasoning_effort = next.to_string();
+        if next != "low" {
+            self.last_non_low_effort = next.to_string();
+        }
+        self.note(&format!("reasoning effort: {}", self.reasoning_effort));
     }
 }
 
@@ -11090,6 +11183,13 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
     } else {
         Span::styled(format!(" {}  ", app.model), Style::new().bold())
     }];
+    // Reasoning-effort badge: `effort high` after the model, so the configured
+    // reasoning depth is visible at a glance. Reported low/medium/high exactly
+    // as set, so the display always matches what is sent upstream.
+    spans.push(Span::styled(
+        format!("  effort {}", app.reasoning_effort),
+        Style::new().yellow(),
+    ));
     // Wall-clock (local) segment, mirroring the reference status line's leading
     // HH:MM. Shown only while a run is active: a clock that ticks once per
     // minute repaints the screen only on the minute, which clears the terminal's
@@ -19295,6 +19395,68 @@ mod tests {
         assert!(text.contains("no active goal"), "missing note: {text}");
     }
 
+    #[tokio::test]
+    async fn effort_command_reports_current_level() {
+        let mut app = test_app();
+        run_command(&mut app, "effort").await;
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("medium"), "default level not reported: {text}");
+    }
+
+    #[tokio::test]
+    async fn effort_command_sets_valid_level() {
+        let mut app = test_app();
+        run_command(&mut app, "effort high").await;
+        assert_eq!(app.reasoning_effort, "high");
+        assert_eq!(app.last_non_low_effort, "high");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("set to high"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn effort_command_rejects_unknown_level() {
+        let mut app = test_app();
+        run_command(&mut app, "effort turbo").await;
+        assert_eq!(app.reasoning_effort, "medium", "invalid level must not apply");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("unknown effort level"), "missing note: {text}");
+    }
+
+    #[test]
+    fn alt_t_toggles_between_low_and_last_non_low() {
+        let mut app = test_app();
+        app.reasoning_effort = "medium".into();
+        app.toggle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "low");
+        assert_eq!(app.last_non_low_effort, "medium");
+        app.toggle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "medium", "toggle back restores last non-low");
+    }
+
+    #[test]
+    fn alt_t_remembers_the_latest_non_low_selection() {
+        let mut app = test_app();
+        app.reasoning_effort = "high".into();
+        app.last_non_low_effort = "high".into();
+        app.toggle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "low");
+        app.toggle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "high", "restores the latest non-low, not a hardcoded default");
+    }
+
+    #[test]
+    fn shift_tab_cycles_effort_through_all_levels() {
+        let mut app = test_app();
+        app.reasoning_effort = "low".into();
+        app.cycle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "medium");
+        app.cycle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "high");
+        app.cycle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "low", "cycles back to low");
+        assert_eq!(app.last_non_low_effort, "high", "tracks the most recent non-low");
+    }
+
     #[test]
     fn on_done_counts_turn_and_queues_eval_under_active_goal() {
         let mut app = test_app();
@@ -21392,6 +21554,23 @@ mod tests {
     }
 
     #[test]
+    fn header_shows_the_reasoning_effort_badge() {
+        let mut app = test_app();
+        app.reasoning_effort = "high".into();
+        let text: String = header_spans(&app)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect::<String>();
+        assert!(text.contains("effort high"), "effort badge missing: {text}");
+        app.reasoning_effort = "low".into();
+        let text: String = header_spans(&app)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect::<String>();
+        assert!(text.contains("effort low"), "badge must track the level: {text}");
+    }
+
+    #[test]
     fn subagent_share_is_suppressed_when_the_window_is_untrusted() {
         let mut app = test_app();
         app.subagents.push(SubagentPanel {
@@ -21432,6 +21611,16 @@ mod tests {
         app.max_tokens = Some(4096);
         let body = app.body();
         assert_eq!(body.get("max_tokens").and_then(|v| v.as_u64()), Some(4096));
+    }
+
+    /// The reasoning-effort level is always forwarded so compatible providers
+    /// (OpenAI, Gemini, Tokamak) can scale reasoning depth per request.
+    #[test]
+    fn body_includes_reasoning_effort() {
+        let mut app = test_app();
+        assert_eq!(app.body().get("reasoning_effort").and_then(|v| v.as_str()), Some("medium"));
+        app.reasoning_effort = "high".into();
+        assert_eq!(app.body().get("reasoning_effort").and_then(|v| v.as_str()), Some("high"));
     }
 
     /// The session token budget is the only cap: it is always forwarded, and no
