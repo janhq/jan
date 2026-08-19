@@ -4695,12 +4695,57 @@ impl StartingCall {
         tail.reverse();
         let total = body.bytes().filter(|&b| b == b'\n').count() + 1;
         self.preview.skipped = total - tail.len();
-        // Highlighted here rather than in the row builder so the cost tracks
-        // arriving bytes, not the frame rate: this window is a fresh cache key
-        // on every delta, and highlighting 12 lines costs ~4.6ms.
+        // The last line is the one still being written; the rest are finished.
+        let open = tail.len().saturating_sub(1);
+        let clamped: Vec<(String, bool)> = tail
+            .iter()
+            .enumerate()
+            .map(|(i, line)| clamp_preview_line(line, i == open))
+            .collect();
+        let window: Vec<&str> = clamped.iter().map(|(text, _)| text.as_str()).collect();
+        // Highlighted here rather than in the row builder so it happens once
+        // per derivation rather than once per frame; highlighting 12 lines
+        // costs ~4.6ms, and this window is a fresh cache key every time the
+        // body grows.
         let lang = self.preview.path.clone().unwrap_or_default();
-        self.preview.tail = Some(highlight::block(&tail, &lang));
+        let mut rows = highlight::block(&window, &lang);
+        for (i, (row, (_, truncated))) in rows.iter_mut().zip(&clamped).enumerate() {
+            if !truncated {
+                continue;
+            }
+            let marker = Span::styled("\u{2026}", Style::new().dark_gray());
+            if i == open {
+                row.insert(0, marker);
+            } else {
+                row.push(marker);
+            }
+        }
+        self.preview.tail = Some(rows);
     }
+}
+
+/// Clamp one preview line to `STREAM_MAX_LINE_CHARS`, reporting whether
+/// anything was dropped.
+///
+/// `open` marks the line still being written, which keeps its tail: that is
+/// where new bytes land, so it is the end that shows the write progressing. A
+/// finished line keeps its head, where it reads from.
+fn clamp_preview_line(line: &str, open: bool) -> (String, bool) {
+    // A line can only exceed the char budget if it exceeds it in bytes.
+    if line.len() <= STREAM_MAX_LINE_CHARS {
+        return (line.to_string(), false);
+    }
+    let count = line.chars().count();
+    if count <= STREAM_MAX_LINE_CHARS {
+        return (line.to_string(), false);
+    }
+    let at = |n: usize| line.char_indices().nth(n).map_or(line.len(), |(i, _)| i);
+    let kept = if open {
+        &line[at(count - STREAM_MAX_LINE_CHARS)..]
+    } else {
+        &line[..at(STREAM_MAX_LINE_CHARS)]
+    };
+    (kept.to_string(), true)
 }
 
 impl StartingCall {
@@ -4722,6 +4767,13 @@ const STREAM_TAIL_LINES: usize = 12;
 /// Minimum width of the line-number gutter, so a short preview doesn't jitter
 /// sideways as the count crosses 10 / 100.
 const STREAM_GUTTER_MIN: usize = 3;
+/// Longest preview line handed to the highlighter. Minified content (a bundle,
+/// a JSON blob) is one line that grows for the whole write, and both costs it
+/// drives are linear in its length: syntect re-highlights the line on every
+/// delta, and the wrapped row count grows with it until the preview owns the
+/// viewport. Wide enough to fill any real terminal row, so nothing a user could
+/// have read is dropped.
+const STREAM_MAX_LINE_CHARS: usize = 300;
 
 /// Pull one *string-valued* field out of a JSON object that is still streaming
 /// and therefore almost certainly truncated mid-value.
@@ -4796,12 +4848,15 @@ fn unescape_partial_json_string(raw: &str) -> String {
 /// `content` field opens -- falls back to a one-line throbber, which is all
 /// there is to say about a call whose arguments haven't arrived.
 ///
-/// Derivation is cached on the call (see `refresh_preview`), so the cost
-/// tracks how fast bytes arrive rather than the frame rate: ~0.15ms per frame
-/// at 400KB of arguments, against ~2ms without the cache. A rescan is still
-/// linear in the whole buffer, so a multi-megabyte write would make each
-/// *delta* expensive -- if that shows up, unescape only from the last
-/// `STREAM_TAIL_LINES` newline escapes instead of the whole body.
+/// Derivation is cached on the call (see `refresh_preview`) and re-runs only
+/// when the argument buffer has grown, so it costs at most one rescan per
+/// frame -- and, because `drain_stream_events` collapses a burst of deltas into
+/// one frame, far fewer than one per delta. A rescan is still linear in the
+/// whole buffer (~1.4ms at 314KB), so a multi-megabyte write would make each
+/// *frame* expensive: if that shows up, unescape only from the last
+/// `STREAM_TAIL_LINES` newline escapes instead of the whole body. Line length
+/// is already bounded by `STREAM_MAX_LINE_CHARS`, without which minified
+/// content cost 650ms per delta at 53KB and grew from there.
 fn starting_call_lines(call: &mut StartingCall, frame: &str) -> Vec<Line<'static>> {
     call.refresh_preview();
     let Some(tail) = call.preview.tail.as_ref() else {
@@ -5648,6 +5703,84 @@ pub async fn run(
     res
 }
 
+/// Apply one event from the active run's stream, clearing `current` on a
+/// terminal one. `None` is a stream that closed without a terminal event (an
+/// aborted task).
+async fn apply_stream_event(
+    app: &mut App,
+    ev: Option<StreamEvent>,
+    current: &mut Option<CurrentRun>,
+) {
+    match ev {
+        Some(StreamEvent::Done { stop_reason, usage }) => {
+            app.on_done(stop_reason, usage);
+            *current = None;
+            // Auto-compact when approaching the context limit. Handed to
+            // the loop like `/compact` so the summarizing call runs off
+            // the render loop.
+            if app.should_auto_compact() && app.compacting.is_none() {
+                app.compact_request = Some(CompactKind::Auto);
+            }
+        }
+        Some(StreamEvent::Error { code, message }) => {
+            app.on_error(code, message);
+            *current = None;
+        }
+        // Each model roundtrip is one turn toward the finished-todo
+        // aging grace period. A single run can span many tool-call
+        // turns, so aging must count turns, not runs -- otherwise a
+        // finished plan lingers through the rest of a long run.
+        Some(ev @ StreamEvent::Step { .. }) => {
+            app.apply(ev);
+            age_closed_todos(app).await;
+        }
+        Some(other) => app.apply(other),
+        None => {
+            // Stream closed without a terminal event (aborted task).
+            // Keep any partial prose/tool calls already streamed.
+            app.pending_queue.clear();
+            if app.status == Status::Running {
+                app.flush_assistant();
+                app.abort_tool_rows();
+                // The task was killed without a natural stop, so the
+                // mid-turn `MessagesUpdated` that would have folded the
+                // completed tool calls never fired -- fold them here,
+                // exactly as the cancel/error paths do.
+                app.append_cancelled_turn_tools();
+                app.status = Status::Idle;
+                app.run_started = None;
+            }
+            // Auto-dequeue the next queued message
+            app.dequeue_next();
+            *current = None;
+        }
+    }
+}
+
+/// How many events one drain pass applies before handing control back to the
+/// render loop, so a run that emits faster than the loop can drain still
+/// yields to the keyboard poll.
+const EVENT_DRAIN_MAX: usize = 512;
+
+/// Apply every event already sitting in the run's channel, then return how many
+/// landed. A file-sized `write` streams its arguments in thousands of deltas
+/// (measured: 7000 for a 314KB file), and the loop draws once per iteration, so
+/// handling one event per pass means thousands of full repaints for a preview
+/// that only ever shows its last few lines. Draining first collapses a burst
+/// into a single frame. Stops early on a terminal event, which clears `current`
+/// -- nothing queued behind it belongs to a finished run.
+async fn drain_stream_events(app: &mut App, current: &mut Option<CurrentRun>) -> usize {
+    let mut applied = 0;
+    while applied < EVENT_DRAIN_MAX {
+        let Some(ev) = current.as_mut().and_then(|c| c.rx.try_recv().ok()) else {
+            break;
+        };
+        apply_stream_event(app, Some(ev), current).await;
+        applied += 1;
+    }
+    applied
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn chat_loop<B: Backend>(
     terminal: &mut Terminal<B>,
@@ -5910,50 +6043,10 @@ async fn chat_loop<B: Backend>(
                     (None, _) => {}
                 }
             }
-            ev = next_event(&mut current) => match ev {
-                Some(StreamEvent::Done { stop_reason, usage }) => {
-                    app.on_done(stop_reason, usage);
-                    current = None;
-                    // Auto-compact when approaching the context limit. Handed to
-                    // the loop like `/compact` so the summarizing call runs off
-                    // the render loop.
-                    if app.should_auto_compact() && app.compacting.is_none() {
-                        app.compact_request = Some(CompactKind::Auto);
-                    }
-                }
-                Some(StreamEvent::Error { code, message }) => {
-                    app.on_error(code, message);
-                    current = None;
-                }
-                // Each model roundtrip is one turn toward the finished-todo
-                // aging grace period. A single run can span many tool-call
-                // turns, so aging must count turns, not runs -- otherwise a
-                // finished plan lingers through the rest of a long run.
-                Some(ev @ StreamEvent::Step { .. }) => {
-                    app.apply(ev);
-                    age_closed_todos(app).await;
-                }
-                Some(other) => app.apply(other),
-                None => {
-                    // Stream closed without a terminal event (aborted task).
-                    // Keep any partial prose/tool calls already streamed.
-                    app.pending_queue.clear();
-                    if app.status == Status::Running {
-                        app.flush_assistant();
-                        app.abort_tool_rows();
-                        // The task was killed without a natural stop, so the
-                        // mid-turn `MessagesUpdated` that would have folded the
-                        // completed tool calls never fired -- fold them here,
-                        // exactly as the cancel/error paths do.
-                        app.append_cancelled_turn_tools();
-                        app.status = Status::Idle;
-                        app.run_started = None;
-                    }
-                    // Auto-dequeue the next queued message
-                    app.dequeue_next();
-                    current = None;
-                }
-            },
+            ev = next_event(&mut current) => {
+                apply_stream_event(app, ev, &mut current).await;
+                drain_stream_events(app, &mut current).await;
+            }
         }
     }
 
@@ -11816,7 +11909,7 @@ mod tests {
         McpPrompt, McpField, pairs_to_str,
         ProviderField,
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
-        run_command, starting_call_lines, unescape_partial_json_string,
+        drain_stream_events, run_command, starting_call_lines, unescape_partial_json_string,
         running_group_rows, split_reasoning, strip_system_xml_tags, subagent_activity,
         answer_without_reasoning, assistant_runs, replay_display_log, thinking_open,
         without_think_tags, ReasoningSeg,
@@ -19256,6 +19349,135 @@ mod tests {
         let text: Vec<String> = starting_call_lines(&mut call, "⠋").iter().map(line_text).collect();
         assert_eq!(text.len(), 1);
         assert!(text[0].contains("Preparing bash"), "got {text:?}");
+    }
+
+    /// A `write` of minified or single-line content (a bundle, a JSON blob)
+    /// grows one preview line without bound. Unclamped that line is
+    /// re-highlighted in full on every argument delta -- syntect is linear in
+    /// line length -- and its wrapped row count floods the viewport the
+    /// preview lives in. Both are bounded by clamping the line itself.
+    #[test]
+    fn an_enormous_single_preview_line_is_clamped() {
+        let mut call = super::StartingCall::new("c1".into(), "write".into());
+        let body = "x".repeat(20_000);
+        call.args = format!(r#"{{"path":"bundle.js","content":"{body}"#);
+        let text: Vec<String> = starting_call_lines(&mut call, "\u{280b}")
+            .iter()
+            .map(line_text)
+            .collect();
+
+        let body_row = text
+            .iter()
+            .find(|l| l.contains("xxx"))
+            .unwrap_or_else(|| panic!("no body row in {text:?}"));
+        let xs = body_row.chars().filter(|&c| c == 'x').count();
+        assert!(
+            xs <= super::STREAM_MAX_LINE_CHARS,
+            "preview line kept {xs} chars of a 20000-char line"
+        );
+        assert!(
+            body_row.contains('\u{2026}'),
+            "clamped line is not marked as truncated: {body_row:?}"
+        );
+    }
+
+    /// Which end survives the clamp differs by line: a finished line reads
+    /// from its start, while the last one is still open and is where new bytes
+    /// land, so watching its tail is what shows the write progressing.
+    #[test]
+    fn a_clamped_line_keeps_its_head_unless_it_is_the_open_one() {
+        let mut call = super::StartingCall::new("c1".into(), "write".into());
+        let filler = "-".repeat(super::STREAM_MAX_LINE_CHARS * 2);
+        call.args = format!(
+            r#"{{"path":"a.txt","content":"HEAD1{filler}TAIL1\nHEAD2{filler}TAIL2"#
+        );
+        let text: Vec<String> = starting_call_lines(&mut call, "\u{280b}")
+            .iter()
+            .map(line_text)
+            .collect();
+        let joined = text.join("\n");
+
+        assert!(joined.contains("HEAD1"), "finished line lost its head: {joined}");
+        assert!(!joined.contains("TAIL1"), "finished line kept its tail: {joined}");
+        assert!(joined.contains("TAIL2"), "open line lost its tail: {joined}");
+        assert!(!joined.contains("HEAD2"), "open line kept its head: {joined}");
+    }
+
+    /// A file-sized `write` streams its arguments in thousands of deltas. One
+    /// repaint each is thousands of full frames for a preview that only ever
+    /// shows its last few lines, so a burst already sitting in the channel is
+    /// drained into a single frame.
+    #[tokio::test]
+    async fn a_burst_of_stream_events_is_drained_into_one_frame() {
+        let mut app = test_app();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut current = Some(CurrentRun {
+            rx,
+            handle: tokio::spawn(async {}),
+        });
+
+        tx.send(StreamEvent::ToolCallStarted {
+            id: "c1".into(),
+            name: "write".into(),
+        })
+        .expect("send");
+        for _ in 0..64 {
+            tx.send(StreamEvent::ToolCallArgsDelta {
+                id: "c1".into(),
+                delta: "ab".into(),
+            })
+            .expect("send");
+        }
+
+        let drained = drain_stream_events(&mut app, &mut current).await;
+        assert_eq!(drained, 65, "the whole burst must land in one pass");
+        assert_eq!(app.starting[0].args.len(), 128);
+        assert!(current.is_some(), "an unfinished run must stay live");
+
+        // Nothing left: draining an empty channel is a no-op, not a stall.
+        assert_eq!(drain_stream_events(&mut app, &mut current).await, 0);
+    }
+
+    /// The drain must not starve input handling: a run that emits faster than
+    /// the loop can drain still has to yield back to the keyboard poll.
+    #[tokio::test]
+    async fn the_drain_is_bounded() {
+        let mut app = test_app();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut current = Some(CurrentRun {
+            rx,
+            handle: tokio::spawn(async {}),
+        });
+        for _ in 0..(super::EVENT_DRAIN_MAX + 50) {
+            tx.send(StreamEvent::Token { text: "x".into() }).expect("send");
+        }
+        assert_eq!(
+            drain_stream_events(&mut app, &mut current).await,
+            super::EVENT_DRAIN_MAX
+        );
+    }
+
+    /// A terminal event inside a burst ends the run there and stops the drain,
+    /// so nothing queued behind it is applied to a finished run.
+    #[tokio::test]
+    async fn the_drain_stops_at_a_terminal_event() {
+        let mut app = test_app();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut current = Some(CurrentRun {
+            rx,
+            handle: tokio::spawn(async {}),
+        });
+        tx.send(StreamEvent::Token { text: "hi".into() }).expect("send");
+        tx.send(StreamEvent::Done {
+            stop_reason: "stop".into(),
+            usage: None,
+        })
+        .expect("send");
+        tx.send(StreamEvent::Token { text: "late".into() }).expect("send");
+
+        let drained = drain_stream_events(&mut app, &mut current).await;
+        assert_eq!(drained, 2, "drain must stop on the terminal event");
+        assert!(current.is_none(), "the run was not cleared");
     }
 
     /// A path-carrying tool that isn't `write` must be named as itself.
