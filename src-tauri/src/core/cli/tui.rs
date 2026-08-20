@@ -662,10 +662,11 @@ fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
     let indent = " ".repeat(BANNER_INDENT as usize);
     let mut out: Vec<Line<'static>> = Vec::new();
 
-    // A clipped wordmark reads as breakage, so a narrow terminal gets the name
-    // as text instead.
-    if width >= brand::LOGO_WIDTH + BANNER_INDENT * 2 {
-        for art in brand::LOGO {
+    // A clipped logo reads as breakage, so a narrow terminal gets the name
+    // as text instead. The lockup (hand beside the wordmark) is the widest
+    // splash element, so it sets the threshold that gates the whole block.
+    if width >= brand::LOCKUP_WIDTH + BANNER_INDENT * 2 {
+        for art in brand::lockup() {
             out.push(Line::styled(format!("{indent}{art}"), accent));
         }
         out.push(Line::raw(""));
@@ -1217,6 +1218,10 @@ struct App {
     /// Orchestration handle for out-of-run model calls (the `/compact` command).
     /// `None` in unit tests, set by `run` for the live session.
     args: Option<Arc<OrchestrationArgs>>,
+    /// The approval-mode phrasing used by the splash (e.g. "--safe: writes, ...").
+    /// Captured once at startup so `/clear`, `/new` and `/resume` re-print the
+    /// same branding without re-deriving it.
+    approval_phrasing: String,
     /// Context window limit for the current model (default 128K).
     context_window: u64,
     /// Tokens to reserve for the model's response (compaction triggers at limit - reserve).
@@ -1710,6 +1715,7 @@ impl App {
             goal_eval_pending: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             args: None,
+            approval_phrasing: String::new(),
             context_window: limits.context_window,
             reserve_tokens: limits.reserve_tokens,
             max_tokens: limits.max_tokens,
@@ -1920,8 +1926,8 @@ impl App {
             .map(|(_, lines)| lines)
     }
 
-    /// Open the session with the splash: the wordmark, this session's project
-    /// and approval mode, and where to go next.
+    /// Open the session with the splash: the hand-wave logo and wordmark, this
+    /// session's project and approval mode, and where to go next.
     fn push_banner(&mut self, tools: &str, awaiting_first_message: bool) {
         let banner = Banner {
             version: super::updater::build_version(),
@@ -1937,8 +1943,17 @@ impl App {
         self.last_kind = Kind::None;
     }
 
+    /// Push the splash using the startup approval phrasing, to re-brand the
+    /// screen after a slash command opens a fresh view (`/clear`, `/new`,
+    /// `/resume`). `awaiting_first_message` starts false once a thread is
+    /// loaded or a task is seeded.
+    fn push_session_banner(&mut self, awaiting_first_message: bool) {
+        let phrasing = self.approval_phrasing.clone();
+        self.push_banner(&phrasing, awaiting_first_message);
+    }
+
     /// Append a line the *app* is saying, in its own gutter column. Every other
-    /// transcript class owns one (`› ` user, `│ ` tool, `┊ ` reasoning), so
+    /// transcript class owns one (`> ` user, `│ ` tool, `┊ ` reasoning), so
     /// without it a note is indistinguishable from model prose. `glyph` names the
     /// category and `level` carries severity.
     fn system_marked(&mut self, glyph: &'static str, level: Level, text: &str) {
@@ -3199,7 +3214,7 @@ impl App {
         // carries its own newlines, and a single `Line` renders those as blank
         // cells in one run-on row.
         self.push_row(RowKind::System {
-            glyph: "›",
+            glyph: ">",
             cont: " ",
             gutter: Style::new().light_magenta().bold(),
             body: vec![Span::styled(text.to_string(), Style::new().bold())],
@@ -3222,14 +3237,14 @@ impl App {
     fn push_invocation_label(&mut self, label: String) {
         self.gap(Kind::User);
         self.push_row(RowKind::System {
-            glyph: "›",
+            glyph: ">",
             cont: " ",
             gutter: Style::new().light_magenta().bold(),
             body: vec![Span::styled(label, Style::new().cyan().bold())],
         });
     }
 
-    /// The `› [skill:foo] <args>` row a slash invocation commits. A `System`
+    /// The `> [skill:foo] <args>` row a slash invocation commits. A `System`
     /// row for the same reason as `push_user_line`: `args` is user text and can
     /// arrive pasted and multi-line, which a single `Line` renders as blank
     /// cells in one run-on row.
@@ -3242,7 +3257,7 @@ impl App {
         }
         self.gap(Kind::User);
         self.push_row(RowKind::System {
-            glyph: "›",
+            glyph: ">",
             cont: " ",
             gutter: Style::new().light_magenta().bold(),
             body,
@@ -5929,15 +5944,13 @@ pub async fn run(
     let sandboxed = args
         .sandbox
         .unwrap_or_else(|| crate::core::agent::r#loop::effective_sandbox(&app.project_root));
-    app.push_banner(
-        match (args.auto_approve, sandboxed) {
-            (true, true) => "auto-approved inside the OS sandbox (start with --safe to be asked first)",
-            (true, false) => "auto-approved and unsandboxed: commands run with your own access (--safe to be asked first, --sandbox to confine)",
-            (false, true) => "--safe: writes, shell commands and MCP tool calls need approval",
-            (false, false) => "--safe: approval needed, but unsandboxed - what you approve runs with your own access (--sandbox to confine)",
-        },
-        !seeded,
-    );
+    app.approval_phrasing = match (args.auto_approve, sandboxed) {
+        (true, true) => "auto-approved inside the OS sandbox (start with --safe to be asked first)".to_string(),
+        (true, false) => "auto-approved and unsandboxed: commands run with your own access (--safe to be asked first, --sandbox to confine)".to_string(),
+        (false, true) => "--safe: writes, shell commands and MCP tool calls need approval".to_string(),
+        (false, false) => "--safe: approval needed, but unsandboxed - what you approve runs with your own access (--sandbox to confine)".to_string(),
+    };
+    app.push_session_banner(!seeded);
     if app.model.is_empty() {
         app.note("not signed in — run /login to sign in to Tokamak, or `jan config set` to configure a provider manually");
     }
@@ -7822,11 +7835,13 @@ async fn run_command(app: &mut App, line: &str) {
         "clear" => {
             app.reset_session();
             clear_todos(app).await;
+            app.push_session_banner(true);
             app.note("conversation cleared");
         }
         "new" => {
             app.reset_session();
             clear_todos(app).await;
+            app.push_session_banner(true);
             app.note("started a new session");
         }
         "compact" => compact_command(app),
@@ -10150,6 +10165,8 @@ fn rebuild_transcript(app: &mut App) {
 }
 
 async fn resume_thread(app: &mut App, id_arg: &str) {
+    // Re-brand the fresh view before the saved conversation is replayed.
+    app.push_session_banner(false);
     apply_resume(app, &ResumeTarget::Id(id_arg.to_string())).await;
 }
 
@@ -12155,13 +12172,13 @@ fn input_box_height(app: &App, width: u16) -> u16 {
     content + 1
 }
 
-/// Visible input as styled lines: `› ` on the first line, 2-space hang on
+/// Visible input as styled lines: `👋 ` on the first line, 2-space hang on
 /// continuations, and a solid block cursor at the byte offset `cursor` (the
 /// character under the cursor is drawn in reverse video; at end of line a
 /// reversed space forms the block). Wrapping is left to the Paragraph so long
 /// single lines fold within the box width.
 fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
-    let arrow = Span::styled("› ", Style::new().cyan().bold());
+    let arrow = Span::styled("👋 ", Style::new().cyan().bold());
     let segments: Vec<&str> = input.split('\n').collect();
     let last = segments.len() - 1;
     // Locate the segment + in-segment byte offset holding the caret.
@@ -12270,7 +12287,7 @@ fn input_box(app: &App) -> Paragraph<'static> {
             .block(block)
         }
     } else if app.input.is_empty() {
-        // Same `› ` arrow as the typing view, then a fixed (non-blinking)
+        // Same `👋 ` prompt as the typing view, then a fixed (non-blinking)
         // block cursor in front of the placeholder.
         let placeholder = if app.status == Status::Running {
             "Type to queue next message"
@@ -12278,7 +12295,7 @@ fn input_box(app: &App) -> Paragraph<'static> {
             "Type here to chat with agent"
         };
         let cursor_spans: Vec<Span<'static>> = vec![
-            Span::styled("› ", Style::new().cyan().bold()),
+            Span::styled("👋 ", Style::new().cyan().bold()),
             Span::styled(" ", Style::new().add_modifier(Modifier::REVERSED)),
             Span::raw(" "),
             Span::styled(placeholder, Style::new().dim().italic()),
@@ -13033,7 +13050,7 @@ mod tests {
         let rows = render_rows(&mut app, 60, 12);
         assert!(
             rows.iter()
-                .any(|r| r.trim_end().ends_with("\u{203a} first line")),
+                .any(|r| r.trim_end().ends_with("> first line")),
             "first line not on its own row: {rows:?}"
         );
         assert!(
@@ -13165,7 +13182,7 @@ mod tests {
         let rows = render_rows(&mut app, 60, 12);
         assert!(
             rows.iter()
-                .any(|r| r.trim_end().ends_with("\u{203a} [skill:deploy] first line")),
+                .any(|r| r.trim_end().ends_with("> [skill:deploy] first line")),
             "first line not on its own row: {rows:?}"
         );
         assert!(
@@ -16984,14 +17001,14 @@ mod tests {
     fn input_lines_single_line_has_arrow_and_cursor() {
         let lines = input_content_lines("hello", 5);
         assert_eq!(lines.len(), 1);
-        assert_eq!(caret_text(&lines[0]), "› hello▏");
+        assert_eq!(caret_text(&lines[0]), "👋 hello▏");
     }
 
     #[test]
     fn input_lines_multiline_hangs_and_cursor_on_last() {
         let lines = input_content_lines("one\ntwo\nthree", "one\ntwo\nthree".len());
         assert_eq!(lines.len(), 3);
-        assert_eq!(line_text(&lines[0]), "› one");
+        assert_eq!(line_text(&lines[0]), "👋 one");
         assert_eq!(line_text(&lines[1]), "  two");
         assert_eq!(caret_text(&lines[2]), "  three▏");
     }
@@ -17000,7 +17017,7 @@ mod tests {
     fn input_lines_trailing_newline_gives_empty_cursor_row() {
         let lines = input_content_lines("hi\n", 3);
         assert_eq!(lines.len(), 2);
-        assert_eq!(line_text(&lines[0]), "› hi");
+        assert_eq!(line_text(&lines[0]), "👋 hi");
         assert_eq!(caret_text(&lines[1]), "  ▏");
     }
 
@@ -17009,14 +17026,14 @@ mod tests {
         // Caret sits between "he" and "llo" on a single line.
         let lines = input_content_lines("hello", 2);
         assert_eq!(lines.len(), 1);
-        assert_eq!(caret_text(&lines[0]), "› he▏llo");
+        assert_eq!(caret_text(&lines[0]), "👋 he▏llo");
     }
 
     #[test]
     fn input_lines_caret_on_earlier_line_only() {
         // Cursor inside the first segment: caret there, none on later lines.
         let lines = input_content_lines("one\ntwo", 1);
-        assert_eq!(caret_text(&lines[0]), "› o▏ne");
+        assert_eq!(caret_text(&lines[0]), "👋 o▏ne");
         assert_eq!(line_text(&lines[1]), "  two");
     }
 
@@ -20932,9 +20949,9 @@ mod tests {
         let injected = last_history_content(&app);
         assert!(injected.contains("unfinished todos"), "got: {injected}");
         assert!(injected.contains("t1") && injected.contains("t2"));
-        // The reminder is hidden: no user-authored `› ` row in the transcript.
+        // The reminder is hidden: no user-authored `> ` row in the transcript.
         let rows: String = app.transcript.iter().map(row_text).collect();
-        assert!(!rows.contains("› "), "reminder must not render as a user row");
+        assert!(!rows.contains("> "), "reminder must not render as a user row");
     }
 
     #[test]
@@ -21741,6 +21758,30 @@ mod tests {
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(!text.contains("old content"), "transcript not reset: {text}");
         assert!(text.contains("started a new session"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn clear_re_prints_the_branded_splash() {
+        let mut app = test_app();
+        app.approval_phrasing = "--safe: approval needed".to_string();
+        app.push(Line::raw("old content"));
+
+        run_command(&mut app, "clear").await;
+
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(
+            !text.contains("old content"),
+            "transcript not reset: {text}"
+        );
+        assert!(
+            text.contains(brand::HAND[0].trim()),
+            "hand logo missing after /clear: {text}"
+        );
+        assert!(
+            text.contains("--safe: approval needed"),
+            "approval phrasing missing after /clear: {text}"
+        );
+        assert!(text.contains("type a message to start"), "{text}");
     }
 
     #[test]
@@ -23050,6 +23091,40 @@ mod tests {
         );
     }
 
+    /// The mark and the name are one lockup, so they share rows instead of
+    /// stacking: the wordmark's first row also carries part of the hand.
+    #[test]
+    fn banner_opens_with_the_hand_logo_beside_the_wordmark() {
+        let mut app = test_app();
+        app.push_banner("--safe", true);
+
+        let text = banner_text(&app, 90);
+        let joined = text.join("\n");
+        let row = text
+            .iter()
+            .find(|l| l.contains(brand::LOGO[0].trim()))
+            .unwrap_or_else(|| panic!("wordmark missing:\n{joined}"));
+        let hand_row = brand::HAND
+            .iter()
+            .find(|h| row.contains(h.trim()))
+            .unwrap_or_else(|| panic!("the wordmark's row carries no hand: {row}"));
+        assert!(
+            row.find(hand_row.trim()).unwrap() < row.find(brand::LOGO[0].trim()).unwrap(),
+            "the hand should sit left of the wordmark: {row}"
+        );
+        assert!(joined.contains('█'), "{joined}");
+    }
+
+    #[test]
+    fn a_24_column_terminal_drops_the_hand_logo_too() {
+        let mut app = test_app();
+        app.push_banner("--safe", true);
+        let narrow = banner_text(&app, 24);
+        let joined = narrow.join("\n");
+        assert!(!joined.contains('█'), "{joined}");
+        assert!(joined.contains("jan"), "{joined}");
+    }
+
     /// `/init` is the first thing a new project wants and is invisible unless
     /// promoted, so the splash lists it beside `/help`.
     #[test]
@@ -23163,7 +23238,7 @@ mod tests {
         assert_eq!(last_row(&app)[0].0, "\u{2022} ", "system note");
 
         app.push_user_line("do it", &[]);
-        assert_eq!(last_row(&app)[0].0, "\u{203a} ", "user message");
+        assert_eq!(last_row(&app)[0].0, "> ", "user message");
 
         app.apply(StreamEvent::ToolCall {
             id: "t1".into(),
@@ -23185,7 +23260,7 @@ mod tests {
         app.flush_assistant();
         let prose = last_row(&app);
         assert!(
-            !prose[0].0.starts_with('\u{2022}') && !prose[0].0.starts_with('\u{203a}'),
+            !prose[0].0.starts_with('\u{2022}') && !prose[0].0.starts_with('>'),
             "prose took a gutter: {prose:?}"
         );
     }
