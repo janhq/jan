@@ -1526,6 +1526,46 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 /// Milliseconds per spinner frame, decoupled from the 50ms render tick.
 const SPINNER_ADVANCE_MS: u64 = 80;
 
+const HAND: &str = "👋";
+
+fn hand_sweep_position(char_count: usize, frame: usize) -> usize {
+    let cycle = char_count.saturating_mul(2).max(1);
+    let step = frame % cycle;
+    if step <= char_count {
+        step
+    } else {
+        cycle - step
+    }
+}
+
+fn hand_sweep_line(word: &'static str, frame: usize, text_style: Style) -> Line<'static> {
+    let message = format!("{word}...");
+    let char_count = message.chars().count();
+    let position = hand_sweep_position(char_count, frame);
+    let start = message
+        .char_indices()
+        .nth(position)
+        .map_or(message.len(), |(byte, _)| byte);
+    let end = if position == char_count {
+        start
+    } else {
+        message
+            .char_indices()
+            .nth(position + 1)
+            .map_or(message.len(), |(byte, _)| byte)
+    };
+
+    let mut spans = Vec::with_capacity(3);
+    if start > 0 {
+        spans.push(Span::styled(message[..start].to_string(), text_style));
+    }
+    spans.push(Span::styled(HAND, Style::new().cyan()));
+    if end < message.len() {
+        spans.push(Span::styled(message[end..].to_string(), text_style));
+    }
+    Line::from(spans)
+}
+
 /// Rotating action words for the running input placeholder, replacing a static
 /// "working…" so a long turn does not read as a hung UI.
 const WORKING_WORDS: [&str; 12] = [
@@ -12164,6 +12204,7 @@ mod tests {
         unescape_partial_json_string,
         running_group_rows, split_reasoning, strip_system_xml_tags, subagent_activity,
         answer_without_reasoning, assistant_runs, replay_display_log, thinking_open,
+        hand_sweep_line, hand_sweep_position, HAND,
         without_think_tags, ReasoningSeg,
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
@@ -12496,6 +12537,27 @@ mod tests {
         app.advance_spinner(t0 + Duration::from_millis(500));
         assert_eq!(app.spinner_frame, (500 / SPINNER_ADVANCE_MS) as usize);
         assert_eq!(app.spinner_frame, 6);
+    }
+
+    #[test]
+    fn hand_sweep_moves_forward_and_back_across_the_message() {
+        let text = |frame| line_text(&hand_sweep_line("build", frame, Style::default()));
+
+        assert_eq!(text(0), "👋uild...");
+        assert_eq!(text(3), "bui👋d...");
+        assert_eq!(text(8), "build...👋");
+        assert_eq!(text(9), "build..👋");
+        assert_eq!(text(16), "👋uild...");
+    }
+
+    #[test]
+    fn hand_sweep_uses_character_boundaries() {
+        let message = "éx...";
+        assert_eq!(hand_sweep_position(message.chars().count(), 1), 1);
+        assert_eq!(
+            line_text(&hand_sweep_line("éx", 1, Style::default())),
+            "é👋..."
+        );
     }
 
     #[test]
