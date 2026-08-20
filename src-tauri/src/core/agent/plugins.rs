@@ -304,7 +304,16 @@ fn find_plugin_dirs(root: &Path) -> Vec<PathBuf> {
         };
         for entry in rd.flatten() {
             let path = entry.path();
-            if !path.is_dir() {
+            // Skip hidden entries and symlinks. `entry.file_type()` reports the
+            // link itself (not the target, unlike `path.is_dir()` which follows
+            // it), so symlinked dirs are never descended into -- a hostile or
+            // malformed collection can't use a link back to an ancestor to
+            // recurse forever.
+            let is_dir = match entry.file_type() {
+                Ok(ft) => ft.is_dir() && !ft.is_symlink(),
+                Err(_) => false,
+            };
+            if !is_dir {
                 continue;
             }
             if entry
@@ -1517,6 +1526,56 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// `find_plugin_dirs` must skip symlinked entries rather than follow them.
+    /// If it naively followed symlinks, a malicious/malformed non-plugin dir
+    /// that symlinks back to an ancestor would recurse forever and overflow the
+    /// stack. Here that link points into a cycle and must terminate, returning
+    /// only the real plugin dirs.
+    #[test]
+    fn find_plugin_dirs_skips_symlinks_and_survives_a_link_cycle() {
+        let root = unique_root("symlink");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("plugins").join("a")).unwrap();
+        std::fs::create_dir_all(root.join("plugins").join("b")).unwrap();
+        // Real plugin payloads at two levels.
+        std::fs::write(root.join("plugins").join("a").join("plugin.toml"), "name=\"a\"").unwrap();
+        std::fs::create_dir_all(root.join("plugins").join("b").join("skills").join("s")).unwrap();
+        std::fs::write(
+            root.join("plugins").join("b").join("skills").join("s").join("SKILL.md"),
+            "# s\n",
+        )
+        .unwrap();
+
+        // A real plugin dir that lives OUTSIDE the scanned tree, reachable only
+        // through a symlink inside it: the symlinked entry must be skipped,
+        // never followed, so this real-but-symlinked plugin is not returned.
+        let outdir = unique_root("symlink-out");
+        let _ = std::fs::remove_dir_all(&outdir);
+        std::fs::create_dir_all(&outdir).unwrap();
+        std::fs::write(outdir.join("plugin.toml"), "name=\"out\"").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outdir, root.join("linked-out")).unwrap();
+
+        // A symlink cycle: a dir inside the tree pointing back at an ancestor.
+        std::fs::create_dir_all(root.join("plugins").join("loop")).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&root, root.join("plugins").join("loop").join("up")).unwrap();
+
+        let found = find_plugin_dirs(&root);
+        // Terminate, and return only the two real plugin dirs.
+        let names: Vec<String> = found
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert!(names.contains(&"a".to_string()));
+        assert!(names.contains(&"b".to_string()));
+        assert!(!names.contains(&"out".to_string()), "symlinked dir was followed: {names:?}");
+        assert_eq!(names.len(), 2, "unexpected dirs: {names:?}");
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outdir);
     }
 
     /// A picker selection that names no candidate (or names nothing at all)

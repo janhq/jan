@@ -5668,10 +5668,18 @@ async fn await_plugin_install(
     }
 }
 
+/// Hint text marking a plugin row already installed (see `finish_plugin_install`
+/// and the PluginSelect Space guard). Kept as a named constant so a label rename
+/// can't silently re-enable toggling on installed rows.
+const INSTALLED_HINT: &str = "installed";
+
 /// Report a plugin install. Clears the in-flight flag so the next request is
 /// accepted. A collection source installed nothing yet: it opens the picker so
-/// the user chooses which plugins to install, and the flag stays set until that
-/// second step lands (or the picker is cancelled).
+/// the user chooses which plugins to install. The flag is cleared here the
+/// moment the listing opens the picker, so a second `/plugin install` during
+/// that picker-open window is allowed and, if it is also a collection,
+/// replaces the open picker (only one clone is ever in flight -- the
+/// `plugin_install_task` guard holds).
 fn finish_plugin_install(
     app: &mut App,
     url: Option<String>,
@@ -5706,7 +5714,7 @@ fn finish_plugin_install(
                     .map(|c| PickerItem {
                         value: c.path.clone(),
                         label: c.path,
-                        hint: c.installed.then(|| "installed".to_string()),
+                        hint: c.installed.then(|| INSTALLED_HINT.to_string()),
                         checkbox: Some(false),
                     })
                     .collect(),
@@ -6907,7 +6915,7 @@ async fn handle_key(
             // no-op note so the confusion stays out.
             KeyCode::Char(' ') if picker.kind == PickerKind::PluginSelect => {
                 let already_installed =
-                    picker.items[picker.selected].hint.as_deref() == Some("installed");
+                    picker.items[picker.selected].hint.as_deref() == Some(INSTALLED_HINT);
                 if already_installed {
                     app.note("already installed - nothing to install");
                 } else {
