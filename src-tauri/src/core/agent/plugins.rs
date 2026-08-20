@@ -254,12 +254,15 @@ struct GitSource {
     subdir: Option<String>,
 }
 
-/// Parse a git URL and the optional GitHub `/tree/<ref>/<subdir>` payload path.
+/// Parse a git URL and the optional GitHub `/tree/<ref>/<subdir>` (or
+/// `/blob/<ref>/<subdir>`) payload path. Both the GitHub "browse" (`tree`) and
+/// "copy path" (`blob`) URL forms name a repo, a ref, and a subdirectory to
+/// install as a single plugin.
 fn parse_git_source(spec: &str) -> Result<GitSource, String> {
     let (base, suffix_ref) = split_ref(spec.trim());
     if let Some(path) = base.strip_prefix("https://github.com/") {
         let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
-        if parts.len() >= 4 && parts[2] == "tree" {
+        if parts.len() >= 4 && (parts[2] == "tree" || parts[2] == "blob") {
             let repo = format!("https://github.com/{}/{}.git", parts[0], parts[1]);
             let tree_ref = parts[3].to_string();
             let subdir = (parts.len() > 4).then(|| parts[4..].join("/"));
@@ -961,6 +964,22 @@ mod tests {
         );
         assert_eq!(source.r#ref.as_deref(), Some("main"));
         assert_eq!(source.subdir.as_deref(), Some("plugins/claude-code-setup"));
+    }
+
+    #[test]
+    fn parses_github_blob_copy_path_urls_as_repo_ref_and_subdirectory() {
+        // GitHub's "Copy path" button produces /blob/<ref>/<path>; a user
+        // pasting that should still resolve to a single installable repo dir.
+        let source = parse_git_source(
+            "https://github.com/anthropics/claude-plugins-official/blob/main/plugins/code-simplifier",
+        )
+        .unwrap();
+        assert_eq!(
+            source.url,
+            "https://github.com/anthropics/claude-plugins-official.git"
+        );
+        assert_eq!(source.r#ref.as_deref(), Some("main"));
+        assert_eq!(source.subdir.as_deref(), Some("plugins/code-simplifier"));
     }
 
     #[test]
