@@ -57,7 +57,7 @@ pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
             "https://auth.openai.com/oauth/authorize",
             "https://auth.openai.com/oauth/token",
             "http://localhost:1455/auth/callback",
-            "openid profile email offline_access api.connectors.read api.connectors.invoke",
+            "openid profile email offline_access",
         ),
         AccountProvider::Claude => (
             "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
@@ -1272,7 +1272,7 @@ mod tests {
                 .find(|(key, _)| key == "scope")
                 .unwrap()
                 .1,
-            "openid profile email offline_access api.connectors.read api.connectors.invoke"
+            "openid profile email offline_access"
         );
         assert_eq!(
             url.query_pairs()
