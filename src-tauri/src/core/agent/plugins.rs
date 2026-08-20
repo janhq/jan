@@ -33,7 +33,9 @@ use crate::core::agent::skills;
 const SHELL_METACHARS: &[char] = &[
     ';', '&', '|', '`', '$', '(', ')', '{', '}', '<', '>', '\\', '\n', '\r', '\t',
 ];
+
 const USER_AGENT: &str = "jan-agent-plugin-manager";
+
 // How a bare collection URL that holds several plugins is resolved after the
 // clone. A collection has no payload at the root, so we enumerate the plugins
 // inside it and either ask the user which one to install (interactive CLI) or
