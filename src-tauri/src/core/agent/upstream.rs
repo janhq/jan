@@ -316,12 +316,24 @@ pub(crate) async fn resolve_upstream_for_model(
                 // concern; the desktop resolves credentials through its own
                 // proxy path and falls back to the bearer key chain here.
                 #[cfg(feature = "cli")]
-                let api_keys = crate::core::cli::auth::account::access_token(
-                    &provider_cfg.provider,
-                )
-                .await?
-                .map(|token| vec![token])
-                .unwrap_or_else(|| provider_cfg.bearer_key_chain());
+                let (api_url, api_keys) = {
+                    let account_token = crate::core::cli::auth::account::access_token(
+                        &provider_cfg.provider,
+                    )
+                    .await?;
+                    let api_url = if provider_cfg.provider == "openai"
+                        && account_token.is_some()
+                        && api_url.trim_end_matches('/') == "https://api.openai.com/v1"
+                    {
+                        "https://chatgpt.com/backend-api".to_string()
+                    } else {
+                        api_url
+                    };
+                    let api_keys = account_token
+                        .map(|token| vec![token])
+                        .unwrap_or_else(|| provider_cfg.bearer_key_chain());
+                    (api_url, api_keys)
+                };
                 #[cfg(not(feature = "cli"))]
                 let api_keys = provider_cfg.bearer_key_chain();
                 let url = format!("{}{}", api_url, destination_path);
@@ -988,6 +1000,9 @@ pub(crate) async fn stream_converted_chat_completions(
         if let Some(key) = key_ref {
             let (auth_name, auth_value) = converter.auth_header(key);
             req = req.header(auth_name, auth_value);
+            for (name, value) in converter.credential_headers(key) {
+                req = req.header(name, value);
+            }
         }
         // Fixed headers the native API requires (Anthropic: anthropic-version).
         for (name, value) in converter.extra_headers() {
@@ -1016,14 +1031,15 @@ pub(crate) async fn stream_converted_chat_completions(
             return Err(last_err);
         }
 
-        // A native stream arrives as SSE (translate per event); anything else
-        // is a non-streaming native response to reshape with `convert_response`.
+        // Every converted call above requests a stream. Some native backends
+        // (notably ChatGPT Codex) omit Content-Type on a valid SSE response, so
+        // absence means SSE; an explicit non-SSE type remains the JSON fallback.
         let is_sse = resp
             .headers()
             .get(reqwest::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
             .map(|ct| ct.contains("event-stream"))
-            .unwrap_or(false);
+            .unwrap_or(true);
 
         if is_sse {
             return consume_converted_sse(resp, converter, events).await;
@@ -1628,6 +1644,66 @@ mod tests {
         assert_eq!(tokens, vec!["hi".to_string()], "streamed once, not twice");
         server.await.expect("server task");
     }
+    #[tokio::test]
+    async fn codex_oauth_request_matches_chatgpt_backend_contract() {
+        use base64::Engine as _;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            let mut bytes = vec![0u8; 16 * 1024];
+            let read = socket.read(&mut bytes).await.expect("read");
+            bytes.truncate(read);
+            let response = "event: response.completed\n\
+                data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n";
+            let wire = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{response}",
+                response.len()
+            );
+            socket.write_all(wire.as_bytes()).await.expect("response");
+            String::from_utf8(bytes).expect("request is utf-8")
+        });
+
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+            br#"{"https://api.openai.com/auth":{"chatgpt_account_id":"account-123"}}"#,
+        );
+        let token = format!("header.{payload}.signature");
+        let converter =
+            crate::core::server::converters::converter_for(Some("openai-responses"), true)
+                .expect("converter");
+        let (tx, _rx) = sink();
+        stream_converted_chat_completions(
+            &Client::new(),
+            &format!("http://{addr}/chat/completions"),
+            &[token],
+            converter.as_ref(),
+            &json!({
+                "model": "gpt-5.6-terra",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 128,
+            }),
+            &tx,
+        )
+        .await
+        .expect("request");
+
+        let request = server.await.expect("server task");
+        let lower = request.to_ascii_lowercase();
+        assert!(request.starts_with("POST /codex/responses HTTP/1.1\r\n"));
+        assert!(lower.contains("\r\nchatgpt-account-id: account-123\r\n"));
+        assert!(lower.contains("\r\nopenai-beta: responses=experimental\r\n"));
+        assert!(lower.contains("\r\noriginator: jan\r\n"));
+        let body: serde_json::Value =
+            serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert_eq!(body["store"], false);
+        assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
+        assert!(body.get("max_output_tokens").is_none());
+    }
+
 
     /// A proxy in the environment breaks Jan and nothing else, and never shows up
     /// in the error. Names only: the values carry credentials.
@@ -1766,12 +1842,13 @@ mod tests {
             },
         );
 
-        let (_, keys) = resolve_upstream_for_model(
+        let (url, keys) = resolve_upstream_for_model(
             "account-model",
             Arc::new(Mutex::new(configs)),
         )
         .await
         .unwrap();
+        assert_eq!(url, "https://chatgpt.com/backend-api/chat/completions");
         assert_eq!(keys, vec!["account-access"]);
 
         match previous {

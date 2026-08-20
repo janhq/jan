@@ -2034,6 +2034,11 @@ async fn proxy_request(
                 None => ("authorization", format!("Bearer {key}")),
             };
             outbound_req = outbound_req.header(auth_name, auth_value);
+            if let Some(conv) = &upstream_converter {
+                for (name, value) in conv.credential_headers(key) {
+                    outbound_req = outbound_req.header(name, value);
+                }
+            }
         } else {
             log::debug!("No session API key for this attempt");
         }

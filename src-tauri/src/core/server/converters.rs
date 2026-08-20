@@ -83,6 +83,7 @@ fn parse_event(raw: &str) -> Option<SseEvent> {
     Some(ev)
 }
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
@@ -109,6 +110,12 @@ pub trait UpstreamConverter: Send + Sync {
         Vec::new()
     }
 
+    /// Additional headers derived from a credential. Most providers need none;
+    /// ChatGPT account OAuth needs the account id carried inside its JWT.
+    fn credential_headers(&self, _key: &str) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
+
     /// Rewrite the inbound chat/completions body into the native request body.
     fn convert_request(&self, body: &Value) -> Value;
 
@@ -129,6 +136,9 @@ pub fn converter_for(
     oauth: bool,
 ) -> Option<Box<dyn UpstreamConverter>> {
     match api_type {
+        Some("openai-responses") if oauth => {
+            Some(Box::new(OpenAIResponsesConverter::new_oauth()))
+        }
         Some("openai-responses") => Some(Box::new(OpenAIResponsesConverter::new())),
         Some("google") => Some(Box::new(GoogleGenerateContentConverter::new())),
         Some("anthropic") if oauth => Some(Box::new(AnthropicMessagesConverter::new_oauth())),
@@ -157,12 +167,29 @@ pub struct StreamState {
 /// proxy's OpenAI-SDK clients get reasoning summaries (`reasoning_content`)
 /// without switching wire formats.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct OpenAIResponsesConverter;
+pub struct OpenAIResponsesConverter {
+    oauth: bool,
+}
 
 impl OpenAIResponsesConverter {
     pub fn new() -> Self {
-        Self
+        Self { oauth: false }
     }
+
+    pub fn new_oauth() -> Self {
+        Self { oauth: true }
+    }
+}
+
+fn chatgpt_account_id(token: &str) -> Option<String> {
+    let payload = token.split('.').nth(1)?;
+    let decoded = URL_SAFE_NO_PAD.decode(payload).ok()?;
+    let claims: Value = serde_json::from_slice(&decoded).ok()?;
+    claims
+        .get("https://api.openai.com/auth")?
+        .get("chatgpt_account_id")?
+        .as_str()
+        .map(str::to_string)
 }
 
 /// Extract plain text from a chat message `content` (string or content-part array).
@@ -180,7 +207,26 @@ fn message_text(content: &Value) -> String {
 
 impl UpstreamConverter for OpenAIResponsesConverter {
     fn upstream_path(&self, _body: &Value) -> String {
-        "/responses".to_string()
+        if self.oauth {
+            "/codex/responses".to_string()
+        } else {
+            "/responses".to_string()
+        }
+    }
+
+    fn credential_headers(&self, key: &str) -> Vec<(&'static str, String)> {
+        if !self.oauth {
+            return Vec::new();
+        }
+        let mut headers = vec![
+            ("OpenAI-Beta", "responses=experimental".to_string()),
+            ("originator", "jan".to_string()),
+            ("User-Agent", concat!("jan/", env!("CARGO_PKG_VERSION")).to_string()),
+        ];
+        if let Some(account_id) = chatgpt_account_id(key) {
+            headers.push(("chatgpt-account-id", account_id));
+        }
+        headers
     }
 
     fn convert_request(&self, body: &Value) -> Value {
@@ -270,6 +316,12 @@ impl UpstreamConverter for OpenAIResponsesConverter {
             out["tool_choice"] = tc.clone();
         }
 
+        if self.oauth {
+            out["store"] = json!(false);
+            out["include"] = json!(["reasoning.encrypted_content"]);
+            out["text"] = json!({"verbosity": "low"});
+            out.as_object_mut().unwrap().remove("max_output_tokens");
+        }
         out
     }
 
