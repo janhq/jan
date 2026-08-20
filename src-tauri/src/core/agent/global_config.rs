@@ -29,6 +29,10 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # stream_reasoning = false            # stop streaming reasoning into the TUI
 #                                     # live tail while it folds; only the
 #                                     # [thinking] badge shows it. On by default
+# terminal_hint = false               # stop the startup note that offers
+#                                     # /terminal-setup when this terminal is
+#                                     # dropping Shift+Enter or Option+Delete.
+#                                     # On by default
 #
 # [providers.my-provider]
 # api_key = "sk-..."
@@ -65,6 +69,13 @@ struct GlobalConfigToml {
     /// reasoning for good.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stream_reasoning: Option<bool>,
+    /// Offer `/terminal-setup` at startup when a config file proves this
+    /// terminal is dropping a modified key. `None` = the default, on. For the
+    /// user who has read the note and decided to keep `Option` composing
+    /// characters: nothing lands on disk in that case, so there is no other way
+    /// for the check to know it was answered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    terminal_hint: Option<bool>,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
 }
@@ -172,6 +183,18 @@ pub(crate) fn mouse_enabled() -> bool {
     load_raw()
         .ok()
         .and_then(|config| config.mouse)
+        .unwrap_or(true)
+}
+
+/// Whether the TUI may offer `/terminal-setup` at startup (`terminal_hint` in
+/// `~/.jan/config.toml`), defaulting to on. Declining the offer leaves no trace
+/// on disk -- the check reads the terminal's own config -- so this key is what
+/// turns a standing note off. A display preference must never block startup, so
+/// an unreadable config yields the default.
+pub(crate) fn terminal_hint_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.terminal_hint)
         .unwrap_or(true)
 }
 
@@ -370,6 +393,26 @@ mod tests {
 
             std::fs::write(&path, "not valid toml [[[").unwrap();
             assert!(mouse_enabled(), "an unreadable config keeps the default");
+        });
+    }
+
+    #[test]
+    fn terminal_hint_defaults_on_and_reads_the_toml_key() {
+        with_temp_home(|_| {
+            assert!(terminal_hint_enabled(), "missing file -> hint on");
+            let path = ensure_global_config().expect("ensure");
+            assert!(terminal_hint_enabled(), "scaffolded file -> hint on");
+
+            std::fs::write(&path, "terminal_hint = false\n").unwrap();
+            assert!(!terminal_hint_enabled());
+            std::fs::write(&path, "terminal_hint = true\n").unwrap();
+            assert!(terminal_hint_enabled());
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert!(
+                terminal_hint_enabled(),
+                "an unreadable config keeps the default"
+            );
         });
     }
 

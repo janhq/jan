@@ -64,6 +64,23 @@ const MOUSE_TRACK_ON: &str = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
 const ALT_SCROLL_SAVE_OFF: &str = "\x1b[?1007s\x1b[?1007l";
 const ALT_SCROLL_RESTORE: &str = "\x1b[?1007r";
 
+/// Kitty keyboard protocol, flags 1 (disambiguate escape codes) + 4 (report
+/// alternate keys). Disambiguation is what makes `Shift+Enter` reachable at
+/// all: legacy encoding has no room for a modifier on `Enter`, so the terminal
+/// sends a bare `\r` that is indistinguishable from a plain `Enter`, and the
+/// same goes for `Cmd`/`SUPER` on any key. Alternate keys ride along so a
+/// shifted printable arrives as its shifted character instead of the base key
+/// plus SHIFT, which would otherwise type lowercase on a terminal that reports
+/// shifted text as an escape code. Event types (2) are deliberately left off:
+/// they add key-release and repeat events that nothing here consumes, and
+/// `handle_key` would have to filter every one of them. A terminal without the
+/// protocol ignores both sequences, so the pair is safe to send unconditionally
+/// -- querying support first (`supports_keyboard_enhancement`) costs a blocking
+/// stdin read of up to two seconds before the first frame.
+const KITTY_KEYS_ON: &str = "\x1b[>5u";
+/// Pop what `KITTY_KEYS_ON` pushed, restoring whatever the shell had.
+const KITTY_KEYS_OFF: &str = "\x1b[<u";
+
 /// Whether to hand the wheel to the terminal's native alternate-scroll instead
 /// of asking it to report wheel events to the app. Disabling alternate scroll
 /// (`?1007l`) makes an xterm-family terminal deliver the wheel as SGR mouse
@@ -86,6 +103,18 @@ fn alt_scroll_restore() -> &'static str {
     } else {
         ALT_SCROLL_RESTORE
     }
+}
+
+/// The private modes to set on entry, in one write. Keyboard enhancement is
+/// unconditional -- it is what the editing keys are decoded from -- while mouse
+/// tracking follows the `mouse` config key.
+fn startup_modes(mouse: bool) -> String {
+    let mut modes = String::from(alt_scroll_save_off());
+    modes.push_str(KITTY_KEYS_ON);
+    if mouse {
+        modes.push_str(MOUSE_TRACK_ON);
+    }
+    modes
 }
 
 /// How long the dock advertises a finished copy.
@@ -2861,6 +2890,100 @@ impl App {
         if let Some(next) = self.input[self.cursor..].chars().next() {
             self.cursor += next.len_utf8();
         }
+    }
+
+    /// Cut `start..end` out of the buffer and leave the caret at `start`.
+    /// Every kill below funnels through here so none of them can forget the
+    /// hint refresh that an edit owes the popups.
+    fn delete_span(&mut self, start: usize, end: usize) {
+        if start >= end {
+            return;
+        }
+        self.input.replace_range(start..end, "");
+        self.cursor = start;
+        self.reset_slash_hint();
+        self.refresh_path_hints();
+    }
+
+    fn cursor_word_left(&mut self) {
+        self.cursor = prev_word_start(&self.input, self.cursor);
+    }
+
+    fn cursor_word_right(&mut self) {
+        self.cursor = next_word_end(&self.input, self.cursor);
+    }
+
+    fn cursor_line_start(&mut self) {
+        self.cursor = line_bounds(&self.input, self.cursor).0;
+    }
+
+    fn cursor_line_end(&mut self) {
+        self.cursor = line_bounds(&self.input, self.cursor).1;
+    }
+
+    /// Alt+Backspace / Ctrl+Backspace.
+    fn delete_word_left(&mut self) {
+        let start = prev_word_start(&self.input, self.cursor);
+        self.delete_span(start, self.cursor);
+    }
+
+    /// Ctrl-W, on the wider whitespace-delimited word.
+    fn delete_unix_word_left(&mut self) {
+        let start = prev_unix_word_start(&self.input, self.cursor);
+        self.delete_span(start, self.cursor);
+    }
+
+    /// Alt+D / Ctrl+Delete.
+    fn delete_word_right(&mut self) {
+        let end = next_word_end(&self.input, self.cursor);
+        self.delete_span(self.cursor, end);
+    }
+
+    /// Ctrl-U (and Cmd+Backspace).
+    fn delete_to_line_start(&mut self) {
+        let start = line_bounds(&self.input, self.cursor).0;
+        self.delete_span(start, self.cursor);
+    }
+
+    /// Ctrl-K. Already at the end of a line, it swallows the newline instead of
+    /// doing nothing, so repeated presses join the buffer up as readline does.
+    fn delete_to_line_end(&mut self) {
+        let end = line_bounds(&self.input, self.cursor).1;
+        if end == self.cursor {
+            self.delete_span(self.cursor, (self.cursor + 1).min(self.input.len()));
+        } else {
+            self.delete_span(self.cursor, end);
+        }
+    }
+
+    /// Ctrl-T: swap the chars either side of the caret and step past the pair.
+    /// At the end of the buffer there is nothing after the caret, so the last
+    /// two chars swap in place, matching readline.
+    fn transpose_chars(&mut self) {
+        let before = &self.input[..self.cursor];
+        let Some(prev) = before.chars().next_back() else {
+            return;
+        };
+        let (first, second, start, end) = match self.input[self.cursor..].chars().next() {
+            Some(next) => (
+                prev,
+                next,
+                self.cursor - prev.len_utf8(),
+                self.cursor + next.len_utf8(),
+            ),
+            None => {
+                let head = &before[..before.len() - prev.len_utf8()];
+                let Some(prev2) = head.chars().next_back() else {
+                    return;
+                };
+                (prev2, prev, head.len() - prev2.len_utf8(), self.cursor)
+            }
+        };
+        self.input
+            .replace_range(start..end, &format!("{second}{first}"));
+        self.cursor = end;
+        self.reset_slash_hint();
+        self.refresh_path_hints();
     }
 
     /// Queue a user message: record it in history and the transcript, and ask
@@ -5812,10 +5935,7 @@ pub async fn run(
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableBracketedPaste).map_err(|e| e.to_string())?;
-    let mut modes = String::from(alt_scroll_save_off());
-    if crate::core::agent::global_config::mouse_enabled() {
-        modes.push_str(MOUSE_TRACK_ON);
-    }
+    let modes = startup_modes(crate::core::agent::global_config::mouse_enabled());
     let _ = stdout.write_all(modes.as_bytes());
     let _ = stdout.flush();
     let backend = CrosstermBackend::new(stdout);
@@ -5866,6 +5986,21 @@ pub async fn run(
     if !crate::core::agent::context::has_context_file(&app.project_root) {
         app.note("no JAN.md here — run /init to study this project and write one");
     }
+    // A modified key the terminal is dropping looks like a bug in the composer,
+    // so say so once, and only where a config file proves it is unconfigured
+    // (see `terminal_setup::setup_hint`): the note disappears on its own once
+    // /terminal-setup has run.
+    if let Some(hint) = dirs::home_dir()
+        .filter(|_| crate::core::agent::global_config::terminal_hint_enabled())
+        .and_then(|home| {
+            super::terminal_setup::setup_hint(&home, cfg!(target_os = "macos"), |k| {
+                std::env::var(k).ok()
+            })
+        })
+    {
+        app.note(&hint);
+        app.system_detail_text("(terminal_hint = false in ~/.jan/config.toml silences this)");
+    }
     // A failed resume is not fatal: the note explains why and the blank session
     // the user already has stays usable.
     if let Some(target) = &resume {
@@ -5904,6 +6039,7 @@ pub async fn run(
         terminal.backend_mut(),
         DisableBracketedPaste,
         DisableMouseCapture,
+        Print(KITTY_KEYS_OFF),
         Print(alt_scroll_restore()),
         LeaveAlternateScreen,
     );
@@ -6710,6 +6846,11 @@ async fn handle_key(
     }
 
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let alt = key.modifiers.contains(KeyModifiers::ALT);
+    let sup = key.modifiers.contains(KeyModifiers::SUPER);
+    // A modified Enter is a newline, never a submit or a completion, so the
+    // hint popups below have to let it through to the editing keys.
+    let newline = key.code == KeyCode::Enter && (alt || key.modifiers.contains(KeyModifiers::SHIFT));
     let ctrl_c = ctrl && key.code == KeyCode::Char('c');
     let ctrl_d = ctrl && key.code == KeyCode::Char('d');
 
@@ -7070,7 +7211,7 @@ async fn handle_key(
                 app.slash_dismissed = true;
                 return;
             }
-            KeyCode::Enter => {
+            KeyCode::Enter if !newline => {
                 let matches = app.slash_matches();
                 let sel = app.slash_selected.min(matches.len() - 1);
                 if app.input.trim() != matches[sel].name() {
@@ -7095,7 +7236,7 @@ async fn handle_key(
                 app.path_hint_move(1);
                 return;
             }
-            KeyCode::Tab | KeyCode::Enter => {
+            KeyCode::Tab | KeyCode::Enter if !newline => {
                 app.accept_path_hint();
                 return;
             }
@@ -7131,9 +7272,11 @@ async fn handle_key(
                 }
             }
         }
-        // Alt+Enter (or Ctrl+J) inserts a newline for multi-line input; plain
-        // Enter submits.
-        KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
+        // Alt+Enter, Shift+Enter or Ctrl+J insert a newline for multi-line
+        // input; plain Enter submits. Shift+Enter only reaches us from a
+        // terminal that disambiguates it (kitty keyboard protocol / CSI-u);
+        // the other two work everywhere.
+        KeyCode::Enter if newline => {
             app.input_insert('\n');
         }
         KeyCode::Char('j') if ctrl => {
@@ -7147,7 +7290,7 @@ async fn handle_key(
         // Alt+T toggles reasoning effort between "low" and the last non-low
         // level (default medium). A quick way to quiet or deepen a model run
         // without typing the full `/effort` command.
-        KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::ALT) => {
+        KeyCode::Char('t') if alt => {
             app.toggle_reasoning_effort();
         }
         // Ctrl-V stages an image from the OS clipboard (terminal paste is
@@ -7155,6 +7298,30 @@ async fn handle_key(
         KeyCode::Char('v') if ctrl => {
             app.attach_clipboard_image();
         }
+        // Readline editing keys, so the composer behaves like the shell the
+        // user just came from. Motion and word-kills are line-wise because the
+        // buffer is multi-line.
+        KeyCode::Char('a') if ctrl => app.cursor_line_start(),
+        KeyCode::Char('e') if ctrl => app.cursor_line_end(),
+        KeyCode::Char('b') if ctrl => app.cursor_left(),
+        KeyCode::Char('f') if ctrl => app.cursor_right(),
+        KeyCode::Char('h') if ctrl => app.input_backspace(),
+        KeyCode::Char('w') if ctrl => app.delete_unix_word_left(),
+        KeyCode::Char('u') if ctrl => app.delete_to_line_start(),
+        KeyCode::Char('k') if ctrl => app.delete_to_line_end(),
+        KeyCode::Char('t') if ctrl => app.transpose_chars(),
+        // Ctrl-P/Ctrl-N are Up/Down's shell spelling; recall declines when
+        // there is nothing to recall, and unlike the arrows they never fall
+        // through to scrolling.
+        KeyCode::Char('p') if ctrl => {
+            app.recall_prev();
+        }
+        KeyCode::Char('n') if ctrl => {
+            app.recall_next();
+        }
+        KeyCode::Char('b') if alt => app.cursor_word_left(),
+        KeyCode::Char('f') if alt => app.cursor_word_right(),
+        KeyCode::Char('d') if alt => app.delete_word_right(),
         KeyCode::Enter => {
             let text = app.input.trim().to_string();
             app.input_clear();
@@ -7167,20 +7334,44 @@ async fn handle_key(
                 }
             }
         }
+        // Cmd (SUPER) is line-wise, Alt/Ctrl word-wise, bare char-wise. SUPER
+        // only arrives from a terminal with the keyboard enhancement flags on,
+        // so the macOS Cmd bindings degrade to nothing rather than misfiring.
+        KeyCode::Backspace if sup => {
+            app.delete_to_line_start();
+        }
+        KeyCode::Backspace if alt || ctrl => {
+            app.delete_word_left();
+        }
         KeyCode::Backspace => {
             app.input_backspace();
+        }
+        KeyCode::Delete if alt || ctrl => {
+            app.delete_word_right();
         }
         KeyCode::Delete => {
             app.input_delete();
         }
+        KeyCode::Left if sup => {
+            app.cursor_line_start();
+        }
+        KeyCode::Left if alt || ctrl => {
+            app.cursor_word_left();
+        }
         KeyCode::Left => {
             app.cursor_left();
+        }
+        KeyCode::Right if sup => {
+            app.cursor_line_end();
+        }
+        KeyCode::Right if alt || ctrl => {
+            app.cursor_word_right();
         }
         KeyCode::Right => {
             app.cursor_right();
         }
         KeyCode::Home => {
-            app.cursor = 0;
+            app.cursor_line_start();
         }
         // Shift+Tab (crossterm sends it as BackTab, not Tab+SHIFT) cycles
         // reasoning effort low -> medium -> high -> low, matching Claude Code.
@@ -7188,7 +7379,7 @@ async fn handle_key(
             app.cycle_reasoning_effort();
         }
         KeyCode::End => {
-            app.cursor = app.input.len();
+            app.cursor_line_end();
         }
         // Tab is a no-op in normal input mode; slash-command and path-hint
         // popups intercept it before reaching this arm.
@@ -7511,6 +7702,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Set reasoning effort (bare: show current; low: faster, high: deeper thinking)",
     },
     SlashCommand {
+        name: "/terminal-setup",
+        hint: "",
+        description: "Configure this terminal so Shift+Enter inserts a newline",
+    },
+    SlashCommand {
         name: "/mcp",
         hint: "",
         description: "List, add, edit, remove, or toggle MCP servers",
@@ -7556,9 +7752,74 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
 /// of truth for the `/help` listing and the first-run footer hint, so the two
 /// can't drift. Deliberately not rendered on every frame -- the footer is for
 /// transient state (running, prompts, pickers), not a permanent cheat sheet.
+/// A word character for the emacs-style motions (Alt+B/F/D, Alt+Backspace,
+/// Ctrl/Alt+arrows), matching readline: alphanumerics plus `_`.
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Byte offset of the emacs word boundary before `at`: skip any run of
+/// non-word chars, then the word itself, so `"foo bar"` with the caret at the
+/// end lands on `b` and `"foo   "` lands on 0.
+fn prev_word_start(s: &str, at: usize) -> usize {
+    let mut i = at;
+    let mut in_word = false;
+    while let Some(c) = s[..i].chars().next_back() {
+        if is_word_char(c) {
+            in_word = true;
+        } else if in_word {
+            break;
+        }
+        i -= c.len_utf8();
+    }
+    i
+}
+
+/// The mirror of [`prev_word_start`], scanning forward from `at`.
+fn next_word_end(s: &str, at: usize) -> usize {
+    let mut i = at;
+    let mut in_word = false;
+    while let Some(c) = s[i..].chars().next() {
+        if is_word_char(c) {
+            in_word = true;
+        } else if in_word {
+            break;
+        }
+        i += c.len_utf8();
+    }
+    i
+}
+
+/// `Ctrl-W`'s boundary: whitespace-delimited, like the shell's
+/// unix-word-rubout, so it takes a whole `src/core/cli/tui.rs` token rather
+/// than stopping at every `/`.
+fn prev_unix_word_start(s: &str, at: usize) -> usize {
+    let mut i = at;
+    for stop_on_space in [false, true] {
+        while let Some(c) = s[..i].chars().next_back() {
+            if c.is_whitespace() == stop_on_space {
+                break;
+            }
+            i -= c.len_utf8();
+        }
+    }
+    i
+}
+
+/// Byte offsets bounding the line `at` sits on, newlines excluded. The
+/// composer is multi-line (Alt/Shift+Enter), so "line" is not the whole buffer.
+fn line_bounds(s: &str, at: usize) -> (usize, usize) {
+    let start = s[..at].rfind('\n').map_or(0, |i| i + 1);
+    let end = s[at..].find('\n').map_or(s.len(), |i| at + i);
+    (start, end)
+}
+
 const KEY_BINDINGS: &[(&str, &str)] = &[
     ("Enter", "Send the message"),
-    ("Alt+Enter / Ctrl-J", "Insert a newline"),
+    ("Alt+Enter / Ctrl-J", "Insert a newline (Shift+Enter where reported)"),
+    ("Ctrl-A/E, Alt+B/F", "Start/end of line, word left/right"),
+    ("Ctrl-W, Alt+Backspace", "Delete the word before the caret"),
+    ("Ctrl-U / Ctrl-K", "Delete to the start / end of the line"),
     ("Esc / Ctrl-C", "Cancel the running turn"),
     ("Esc Esc", "Rewind to an earlier message"),
     ("↑/↓", "Recall sent messages (scrolls while the input has text)"),
@@ -7650,6 +7911,7 @@ async fn run_command(app: &mut App, line: &str) {
         "login" => open_login_prompt(app),
         "update" => update_command(app),
         "config" => open_config_screen(app),
+        "terminal-setup" => terminal_setup_command(app),
         "settings" => settings_command(app, arg),
         "goal" => goal_command(app, arg),
         "init" => init_command(app),
@@ -9490,6 +9752,40 @@ async fn reload_provider_configs(app: &mut App) {
             ));
         }
     }
+}
+
+/// `/terminal-setup`: teach the host terminal to send `Shift+Enter`. See
+/// `terminal_setup` for why a terminal-side binding is the only reliable route.
+fn terminal_setup_command(app: &mut App) {
+    use super::terminal_setup::{apply, Outcome};
+    let Some(home) = dirs::home_dir() else {
+        app.system(Level::Error, "no home directory for terminal config");
+        return;
+    };
+    app.note("terminal setup:");
+    for outcome in apply(&home, cfg!(target_os = "macos"), |k| std::env::var(k).ok()) {
+        match outcome {
+            Outcome::Works(why) => {
+                app.system_detail_text(&format!("Shift+Enter already works -- {why}"));
+            }
+            Outcome::AlreadyDone(path) => {
+                app.system_detail_text(&format!("already configured: {}", tilde_path(&path)));
+            }
+            Outcome::Wrote { path, detail } => {
+                app.system_detail_text(&format!("wrote {} -- {detail}", tilde_path(&path)));
+            }
+            Outcome::Failed { path, error } => {
+                app.system_detail_text(&format!("could not write {}: {error}", tilde_path(&path)));
+            }
+            Outcome::Manual { title, steps } => {
+                app.system_detail_text(&title);
+                for step in steps {
+                    app.system_detail_text(&format!("  - {step}"));
+                }
+            }
+        }
+    }
+    app.system_detail_text("Alt+Enter and Ctrl-J insert a newline on every terminal");
 }
 
 /// Open the `/config` screen: a read-only view of the providers configured in
@@ -12213,6 +12509,7 @@ mod tests {
         McpPrompt, McpField, pairs_to_str,
         ProviderField,
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
+        startup_modes, KITTY_KEYS_OFF, KITTY_KEYS_ON,
         backgrounded_job_id, drain_stream_events, run_command, starting_call_lines,
         unescape_partial_json_string,
         running_group_rows, split_reasoning, strip_system_xml_tags, subagent_activity,
@@ -14712,6 +15009,189 @@ mod tests {
             "no throbber may survive the cancel:\n{}",
             rows.join("\n")
         );
+    }
+
+    /// Put `text` in the composer with the caret marked by `|`.
+    fn composer(app: &mut App, text: &str) {
+        let cursor = text.find('|').expect("mark the caret with |");
+        app.input = text.replace('|', "");
+        app.cursor = cursor;
+    }
+
+    /// The composer as `text|with the caret marked`.
+    fn composed(app: &App) -> String {
+        let mut s = app.input.clone();
+        s.insert(app.cursor, '|');
+        s
+    }
+
+    #[tokio::test]
+    async fn word_deletion_covers_every_spelling() {
+        // Alt+Backspace (Option+Delete on macOS), Ctrl+Backspace and Ctrl-W all
+        // delete backwards; Alt+D and Ctrl+Delete delete forwards.
+        for mods in [KeyModifiers::ALT, KeyModifiers::CONTROL] {
+            let mut app = test_app();
+            composer(&mut app, "hello world|");
+            press(&mut app, KeyCode::Backspace, mods).await;
+            assert_eq!(composed(&app), "hello |", "Backspace with {mods:?}");
+
+            composer(&mut app, "|hello world");
+            press(&mut app, KeyCode::Delete, mods).await;
+            assert_eq!(composed(&app), "| world", "Delete with {mods:?}");
+        }
+
+        let mut app = test_app();
+        composer(&mut app, "hello world|");
+        press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "hello |");
+
+        composer(&mut app, "|hello world");
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "| world");
+    }
+
+    /// Ctrl-W takes a whole whitespace-delimited token (the shell's
+    /// unix-word-rubout) where Alt+Backspace stops at the punctuation, which is
+    /// the whole reason both exist.
+    #[tokio::test]
+    async fn ctrl_w_eats_a_path_and_alt_backspace_does_not() {
+        let mut app = test_app();
+        composer(&mut app, "open src/core/tui.rs|");
+        press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "open |");
+
+        composer(&mut app, "open src/core/tui.rs|");
+        press(&mut app, KeyCode::Backspace, KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "open src/core/tui.|");
+    }
+
+    /// Trailing whitespace goes with the word, and an empty buffer is a no-op
+    /// rather than a panic.
+    #[tokio::test]
+    async fn word_deletion_handles_the_edges() {
+        let mut app = test_app();
+        composer(&mut app, "foo   |");
+        press(&mut app, KeyCode::Backspace, KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "|");
+
+        press(&mut app, KeyCode::Backspace, KeyModifiers::ALT).await;
+        press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL).await;
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "|");
+
+        // Multi-byte chars: the caret must land on a char boundary.
+        composer(&mut app, "café über|");
+        press(&mut app, KeyCode::Backspace, KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "café |");
+    }
+
+    #[tokio::test]
+    async fn word_and_line_motion_keys_move_the_caret() {
+        let mut app = test_app();
+        for mods in [KeyModifiers::ALT, KeyModifiers::CONTROL] {
+            composer(&mut app, "hello world|");
+            press(&mut app, KeyCode::Left, mods).await;
+            assert_eq!(composed(&app), "hello |world", "Left with {mods:?}");
+            press(&mut app, KeyCode::Right, mods).await;
+            assert_eq!(composed(&app), "hello world|", "Right with {mods:?}");
+        }
+
+        composer(&mut app, "hello world|");
+        press(&mut app, KeyCode::Char('b'), KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "hello |world");
+        press(&mut app, KeyCode::Char('f'), KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "hello world|");
+
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "|hello world");
+        press(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "h|ello world");
+        press(&mut app, KeyCode::Char('b'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "|hello world");
+        press(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "hello world|");
+    }
+
+    /// Home/End/Ctrl-A/Ctrl-E and the line kills are line-wise, not
+    /// buffer-wise: the composer takes newlines via Shift/Alt+Enter.
+    #[tokio::test]
+    async fn line_keys_act_on_the_caret_line_of_a_multiline_buffer() {
+        let mut app = test_app();
+        composer(&mut app, "first\nsec|ond\nthird");
+        press(&mut app, KeyCode::Home, KeyModifiers::NONE).await;
+        assert_eq!(composed(&app), "first\n|second\nthird");
+        press(&mut app, KeyCode::End, KeyModifiers::NONE).await;
+        assert_eq!(composed(&app), "first\nsecond|\nthird");
+
+        composer(&mut app, "first\nsec|ond\nthird");
+        press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "first\nsec|\nthird");
+        // At the end of a line Ctrl-K takes the newline, joining the next up.
+        press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "first\nsec|third");
+
+        composer(&mut app, "first\nsec|ond\nthird");
+        press(&mut app, KeyCode::Char('u'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "first\n|ond\nthird");
+    }
+
+    #[tokio::test]
+    async fn shift_enter_inserts_a_newline_instead_of_submitting() {
+        let mut app = test_app();
+        composer(&mut app, "line one|");
+        press(&mut app, KeyCode::Enter, KeyModifiers::SHIFT).await;
+        assert_eq!(composed(&app), "line one\n|");
+        assert_eq!(app.status, Status::Idle, "Shift+Enter must not submit");
+    }
+
+    /// The slash and `@path` popups own Enter, but a *modified* Enter is a
+    /// newline: it must reach the composer instead of accepting a completion.
+    #[tokio::test]
+    async fn a_newline_keystroke_survives_an_open_hint_popup() {
+        for mods in [KeyModifiers::SHIFT, KeyModifiers::ALT] {
+            let mut app = test_app();
+            type_key_chars(&mut app, "/mod").await;
+            assert!(!app.slash_matches().is_empty(), "the popup must be open");
+            press(&mut app, KeyCode::Enter, mods).await;
+            assert_eq!(app.input, "/mod\n", "{mods:?} must insert a newline");
+        }
+    }
+
+    #[tokio::test]
+    async fn ctrl_h_and_ctrl_t_edit_characters() {
+        let mut app = test_app();
+        composer(&mut app, "abc|");
+        press(&mut app, KeyCode::Char('h'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "ab|");
+
+        // Ctrl-T at the end of the buffer swaps the last two chars.
+        press(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "ba|");
+
+        composer(&mut app, "a|bc");
+        press(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "ba|c");
+
+        // Nothing to swap: a no-op, not a panic.
+        composer(&mut app, "|a");
+        press(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "|a");
+    }
+
+    #[tokio::test]
+    async fn ctrl_p_and_ctrl_n_recall_history_without_scrolling() {
+        let mut app = test_app();
+        submit_line(&mut app, "first message").await;
+        submit_line(&mut app, "second message").await;
+        app.scrollback = 0;
+
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::CONTROL).await;
+        assert_eq!(app.input, "second message");
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::CONTROL).await;
+        assert_eq!(app.input, "first message");
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::CONTROL).await;
+        assert_eq!(app.input, "second message");
+        assert_eq!(app.scrollback, 0, "recall keys never scroll the transcript");
     }
 
     async fn press(app: &mut App, code: KeyCode, mods: KeyModifiers) {
@@ -18640,6 +19120,41 @@ mod tests {
             "the wheel must never arrive as arrow keys"
         );
         assert!(ALT_SCROLL_RESTORE.contains("?1007r"), "restore on exit");
+    }
+
+    /// The keyboard enhancement flags are the only reason `Shift+Enter` and the
+    /// `Cmd` bindings can be decoded at all, so they go out on every start --
+    /// but only flags 1 and 4. Flag 2 (report event types) would deliver key
+    /// releases and repeats that no handler here filters, and flag 8 (report
+    /// all keys as escape codes) would route ordinary text through CSI-u.
+    #[test]
+    fn keyboard_enhancement_asks_for_disambiguation_and_nothing_costly() {
+        let flags: u8 = KITTY_KEYS_ON
+            .trim_start_matches("\x1b[>")
+            .trim_end_matches('u')
+            .parse()
+            .expect("the push is a numeric flag set");
+        assert_eq!(flags & 1, 1, "disambiguate escape codes");
+        assert_eq!(flags & 4, 4, "report alternate keys");
+        assert_eq!(flags & 2, 0, "event types would add releases and repeats");
+        assert_eq!(flags & 8, 0, "all-keys-as-escapes would reroute plain text");
+        assert_eq!(KITTY_KEYS_OFF, "\x1b[<u", "the push must be popped on exit");
+    }
+
+    /// Keyboard enhancement is not the mouse: it goes out whether or not
+    /// tracking is on, since the composer's editing keys depend on it.
+    #[test]
+    fn startup_modes_always_push_keyboard_enhancement() {
+        for mouse in [true, false] {
+            let modes = startup_modes(mouse);
+            assert!(modes.contains(KITTY_KEYS_ON), "mouse={mouse}: {modes:?}");
+            assert_eq!(
+                modes.contains(MOUSE_TRACK_ON),
+                mouse,
+                "tracking must follow the config key alone"
+            );
+            assert!(modes.starts_with(alt_scroll_save_off()));
+        }
     }
 
     #[test]
