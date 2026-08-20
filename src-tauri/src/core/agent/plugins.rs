@@ -44,21 +44,36 @@ const USER_AGENT: &str = "jan-agent-plugin-manager";
 #[derive(Clone, PartialEq, Eq)]
 enum CollectionChoice {
     /// Fail on a multi-plugin collection, listing the choices in the error.
+    // (desktop-only) `install` is the non-CLI entry point, so this arm is
+    // dead under `--features cli` but still matched in the always-compiled
+    // `install_with`, so it is allowed rather than `cfg`'d out.
+    #[cfg_attr(feature = "cli", allow(dead_code))]
     ListError,
     /// Ask on stdin which plugins to install (the interactive CLI).
+    // (cli-only)
+    #[cfg_attr(not(feature = "cli"), allow(dead_code))]
     Prompt,
     /// Return the choices instead of installing, so a caller that owns the
     /// terminal (the TUI) can present its own picker.
+    // (cli-only)
+    #[cfg_attr(not(feature = "cli"), allow(dead_code))]
     List,
     /// Install exactly these payload-root-relative paths (a picker selection).
+    // (cli-only)
+    #[cfg_attr(not(feature = "cli"), allow(dead_code))]
     Only(Vec<String>),
 }
 
 /// One plugin discovered inside a collection repo, for a caller to choose from.
 pub(crate) struct CollectionPlugin {
+    // (cli-only) fields are read only by the CLI list/install path but the
+    // struct is constructed by the always-compiled `install_with`, so they
+    // are dead (allowed) under the desktop/test config.
     /// Path relative to the payload root, e.g. `plugins/code-review`.
+    #[cfg_attr(not(feature = "cli"), allow(dead_code))]
     pub(crate) path: String,
     /// A plugin of this name is already installed.
+    #[cfg_attr(not(feature = "cli"), allow(dead_code))]
     pub(crate) installed: bool,
 }
 
@@ -66,6 +81,10 @@ pub(crate) struct CollectionPlugin {
 /// to be a collection the caller must choose from.
 pub(crate) enum GitInstall {
     Installed(Vec<InstalledPlugin>),
+    // (cli-only) the collection listing is produced by the always-compiled
+    // `install_with` and consumed only by the CLI list/install path, so it
+    // is dead (allowed) under the desktop/test config.
+    #[cfg_attr(not(feature = "cli"), allow(dead_code))]
     Collection(Vec<CollectionPlugin>),
 }
 /// An installed plugin, from its directory plus optional manifest.
@@ -545,12 +564,38 @@ fn install_git(
                             .collect(),
                     ));
                 }
-                CollectionChoice::Only(paths) => rels
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, rel)| paths.contains(rel))
-                    .map(|(idx, _)| idx)
-                    .collect(),
+                // A picker selection: install exactly the payload-root-relative
+                // paths the caller chose. A caller that never supplied any (or
+                // supplied paths matching no candidate) is a user error -- the
+                // collection was re-scanned since the picker's listing, so that
+                // is surfaced immediately instead of falling through to the
+                // confusing "already installed: (nothing)" message below.
+                CollectionChoice::Only(paths) => {
+                    if paths.is_empty() {
+                        let _ = std::fs::remove_dir_all(&tmp);
+                        return Err(format!(
+                            "ERROR: no matching plugins in '{url}' to install: (none selected)"
+                        ));
+                    }
+                    let unmatched: Vec<&String> =
+                        paths.iter().filter(|p| !rels.contains(p)).collect();
+                    if !unmatched.is_empty() {
+                        let _ = std::fs::remove_dir_all(&tmp);
+                        return Err(format!(
+                            "ERROR: no matching plugins in '{url}' to install: {}",
+                            unmatched
+                                .into_iter()
+                                .map(|s| s.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ));
+                    }
+                    rels.iter()
+                        .enumerate()
+                        .filter(|(_, rel)| paths.contains(rel))
+                        .map(|(idx, _)| idx)
+                        .collect()
+                }
             },
         };
         for idx in picked {
@@ -690,7 +735,14 @@ async fn fetch_index(url: &str) -> Result<Vec<MarketEntry>, String> {
 /// `github:owner/repo`, with an optional `#ref`) or a marketplace name.
 ///
 /// Non-interactive: a multi-plugin collection fails with a listing error, so
-/// this always resolves to exactly one plugin.
+/// this always resolves to exactly one plugin. (The "exactly one" invariant
+/// is enforced structurally by `CollectionChoice`: `install` passes
+/// `ListError`, whose arm always returns an `Err` and never a
+/// `GitInstall::Collection`.)
+// (desktop-only) `install` is the non-CLI entry point (`commands`), so it is
+// dead under `--features cli` (only the CLI TUI unit test uses it) and allowed
+// rather than `cfg`'d out so it stays available in both configs.
+#[cfg_attr(feature = "cli", allow(dead_code))]
 pub(crate) async fn install(root: &Path, spec: &str) -> Result<InstalledPlugin, String> {
     match install_with(root, spec, CollectionChoice::ListError).await? {
         GitInstall::Installed(plugins) => plugins
@@ -704,6 +756,8 @@ pub(crate) async fn install(root: &Path, spec: &str) -> Result<InstalledPlugin, 
 /// Install like [`install`], but a multi-plugin collection prompts the user to
 /// pick which plugins to install (the interactive CLI path), so this can return
 /// several. Already-installed picks are skipped.
+// (cli-only)
+#[cfg(feature = "cli")]
 pub(crate) async fn install_interactive(
     root: &Path,
     spec: &str,
@@ -719,6 +773,8 @@ pub(crate) async fn install_interactive(
 /// `GitInstall::Installed` means `spec` was not an ambiguous collection - a
 /// single plugin (bare source, `#tree` subdir, or a collection with exactly
 /// one nested plugin) installs directly, so it's already done.
+// (cli-only)
+#[cfg(feature = "cli")]
 pub(crate) async fn list_collection(
     root: &Path,
     spec: &str,
@@ -729,6 +785,8 @@ pub(crate) async fn list_collection(
 /// Install exactly the given payload-root-relative paths from a collection
 /// (a picker selection following [`list_collection`]). Already-installed
 /// picks are skipped rather than erroring.
+// (cli-only)
+#[cfg(feature = "cli")]
 pub(crate) async fn install_selected(
     root: &Path,
     spec: &str,
@@ -1456,6 +1514,39 @@ mod tests {
         .unwrap();
         assert_eq!(installed.len(), 1);
         assert_eq!(installed[0].name, "alpha");
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// A picker selection that names no candidate (or names nothing at all)
+    /// must fail loudly instead of falling through to the confusing
+    /// "already installed: (nothing)" message, and must not leave a temp clone
+    /// behind.
+    #[tokio::test]
+    async fn install_selected_rejects_unmatchable_or_empty_paths() {
+        let repo = make_collection("selecterr1");
+        let root = unique_root("selecterr1");
+        let spec = format!("file://{}", repo.display());
+
+        // A path that matches no candidate.
+        let err = install_selected(&root, &spec, vec!["nope".to_string()])
+            .await
+            .unwrap_err();
+        assert!(err.contains("no matching plugins"), "{err}");
+        assert!(err.contains("nope"), "{err}");
+
+        // An empty selection.
+        let err = install_selected(&root, &spec, vec![]).await.unwrap_err();
+        assert!(err.contains("no matching plugins"), "{err}");
+
+        // Nothing installed and no temp clone left behind on either error.
+        let installed = std::fs::read_dir(skills::plugins_dir(&root)).unwrap();
+        let leftovers: Vec<_> = installed
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(leftovers, Vec::<String>::new(), "{leftovers:?}");
 
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(repo);

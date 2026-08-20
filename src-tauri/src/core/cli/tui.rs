@@ -6901,10 +6901,19 @@ async fn handle_key(
             }
             // Collection picker: Space toggles the selected plugin, Enter hands
             // the checked set to the loop (see `plugin_select_request`). Rows
-            // already installed stay selectable; the install skips them.
+            // already installed stay displayed but are not toggleable -- checking
+            // one and pressing Enter would make the batch install skip everything
+            // and error with "nothing installed". A Space on such a row is a
+            // no-op note so the confusion stays out.
             KeyCode::Char(' ') if picker.kind == PickerKind::PluginSelect => {
-                let item = &mut picker.items[picker.selected];
-                item.checkbox = Some(!item.checkbox.unwrap_or(false));
+                let already_installed =
+                    picker.items[picker.selected].hint.as_deref() == Some("installed");
+                if already_installed {
+                    app.note("already installed - nothing to install");
+                } else {
+                    let item = &mut picker.items[picker.selected];
+                    item.checkbox = Some(!item.checkbox.unwrap_or(false));
+                }
             }
             KeyCode::Enter if picker.kind == PickerKind::PluginSelect => {
                 let paths: Vec<String> = picker
@@ -6970,9 +6979,11 @@ async fn handle_key(
                 }
             }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
+                app.plugin_collection_url = None;
                 app.picker = None;
             }
             _ if ctrl_c => {
+                app.plugin_collection_url = None;
                 app.picker = None;
             }
             _ => {}
@@ -12150,7 +12161,7 @@ mod tests {
         tool_activity, tool_finished,
         transcript_top_padding, rewind_to,
         row_width, user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind,
-        ResumeTarget, RowKind,
+        ResumeTarget, RowKind, finish_plugin_install,
         SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
         DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
         KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER, PROVIDERS_SETTINGS_ROW,
@@ -21871,6 +21882,80 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// Drive `PickerKind::PluginSelect` end to end: open it via a collection
+    /// listing, toggle a row with Space (an already-installed row is a no-op),
+    /// cancel clears the stashed source URL, and a fresh open + Enter hands
+    /// the checked paths to the loop via `plugin_select_request`.
+    #[tokio::test]
+    async fn plugin_select_picker_toggles_cancels_and_submits_checked_paths() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+
+        // Open the picker exactly as the loop does after `finish_plugin_install`
+        // sees a collection listing: one installable row and one already-
+        // installed row.
+        let candidates = vec![
+            crate::core::agent::plugins::CollectionPlugin {
+                path: "alpha".to_string(),
+                installed: false,
+            },
+            crate::core::agent::plugins::CollectionPlugin {
+                path: "beta".to_string(),
+                installed: true,
+            },
+        ];
+        finish_plugin_install(
+            &mut app,
+            Some("file:///tmp/collection".to_string()),
+            Ok(crate::core::agent::plugins::GitInstall::Collection(candidates)),
+        );
+        let picker = app.picker.as_ref().expect("collection listing opens the picker");
+        assert_eq!(picker.kind, PickerKind::PluginSelect);
+        assert_eq!(picker.items.len(), 2);
+
+        // An already-installed row is not toggleable: Space is a no-op note.
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().unwrap().items[1].checkbox, Some(false));
+        assert!(
+            transcript_text(&app).contains("already installed - nothing to install"),
+            "no-op Space note missing: {}",
+            transcript_text(&app)
+        );
+
+        // Toggle the installable row.
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().unwrap().items[0].checkbox, Some(true));
+
+        // Cancelling clears the stashed collection URL so no stale source
+        // lingers for a later Enter on a different picker.
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.picker.is_none());
+        assert!(app.plugin_collection_url.is_none());
+
+        // Re-open and submit: Enter hands the checked paths to the loop.
+        finish_plugin_install(
+            &mut app,
+            Some("file:///tmp/collection".to_string()),
+            Ok(crate::core::agent::plugins::GitInstall::Collection(vec![
+                crate::core::agent::plugins::CollectionPlugin {
+                    path: "alpha".to_string(),
+                    installed: false,
+                },
+            ])),
+        );
+        assert!(app.plugin_collection_url.is_some());
+        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        let (url, paths) = app.plugin_select_request.expect("Enter submits the pick").clone();
+        assert_eq!(url, "file:///tmp/collection");
+        assert_eq!(paths, vec!["alpha".to_string()]);
+        assert!(app.picker.is_none());
+        assert!(app.plugin_collection_url.is_none(), "URL consumed on submit");
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
