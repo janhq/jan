@@ -1738,13 +1738,13 @@ pub(crate) async fn compact_history(
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
     };
-    Ok(crate::core::agent::compaction::compact_conversation(
+    crate::core::agent::compaction::compact_conversation(
         messages,
         model_id,
         &model,
         keep_recent,
     )
-    .await)
+    .await
 }
 
 /// Run one stateless `/goal` evaluation against `smol_model_id` (the session's
@@ -1896,7 +1896,7 @@ async fn run_turn_cycle(
                             model,
                             keep_recent,
                         )
-                        .await;
+                        .await?;
                         if compacted.len() >= conversation_messages.len() {
                             return Err(e);
                         }
@@ -3172,6 +3172,70 @@ mod tests {
         assert!(
             len < original_len,
             "published history must be shorter than the overflowing one ({len} vs {original_len})"
+        );
+    }
+
+    /// When the *target-model summarizer* itself overflows, compaction must not
+    /// fabricate a fallback-note history (which could still overflow and would
+    /// silently drop the whole span). The turn exits with the summarizer error
+    /// and no `MessagesUpdated` is published for a made-up history.
+    #[tokio::test]
+    async fn turn_cycle_surfaces_summarizer_overflow_without_fabricating_history() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let overflow = || {
+            Err(format!(
+                "[{}] Upstream returned HTTP 400: prompt is too long",
+                crate::core::agent::upstream::CONTEXT_OVERFLOW_MARKER
+            ))
+        };
+        // 1) the main request overflows, 2) the summarizer it spawned overflows too.
+        let model = ResultQueueModel {
+            results: StdMutex::new(vec![overflow(), overflow()].into_iter().collect()),
+        };
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let mut convo = vec![json!({ "role": "system", "content": "sys" })];
+        for i in 0..60 {
+            let r = if i % 2 == 0 { "user" } else { "assistant" };
+            convo.push(json!({ "role": r, "content": format!("m{i}") }));
+        }
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "a summarizer context overflow must fail the turn"
+        );
+        assert!(
+            crate::core::agent::upstream::is_context_overflow_error(
+                result.as_ref().unwrap_err()
+            ),
+            "the summarizer overflow must propagate, not be rewritten"
+        );
+        drop(tx);
+        let mut published = false;
+        while let Ok(ev) = rx.try_recv() {
+            if let StreamEvent::MessagesUpdated { .. } = ev {
+                published = true;
+            }
+        }
+        assert!(
+            !published,
+            "no fabricated compacted history may be published"
         );
     }
 
