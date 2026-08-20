@@ -40,7 +40,7 @@ pub struct Login {
 /// with interior whitespace is a mis-paste (partial selection, wrapped line)
 /// that would otherwise fail as a confusing 401.
 pub fn sanitize_key(raw: &str) -> Result<String, String> {
-    super::auth::providers::LoginService::sanitize_key(raw)
+    super::auth::providers::sanitize_key(raw)
 }
 
 /// Verify `api_key` against Tokamak and return the model ids it grants access

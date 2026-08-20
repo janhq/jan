@@ -34,27 +34,6 @@ pub struct ApiKeyMetadata {
     pub open_in_browser: bool,
 }
 
-/// Grant type an issued Jan OAuth registration permits.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OAuthGrant {
-    AuthorizationCodePkce,
-    DeviceCode,
-}
-
-/// Optional catalog metadata for a Jan-owned, provider-issued OAuth
-/// registration. Account-login availability is intentionally mapped in
-/// [`account::AccountProvider`]; do not infer login UI capabilities from this
-/// placeholder metadata.
-#[derive(Debug, Clone)]
-pub struct OAuthRegistration {
-    pub client_id: &'static str,
-    pub authorization_url: &'static str,
-    pub token_url: &'static str,
-    pub scopes: &'static [&'static str],
-    pub grant: OAuthGrant,
-}
-
-/// Non-secret, typed description of one sign-in-able provider.
 #[derive(Debug, Clone)]
 pub struct ProviderDefinition {
     /// Provider id used in `~/.jan/config.toml` and in `<id>/<model>` ids.
@@ -65,9 +44,6 @@ pub struct ProviderDefinition {
     pub default_base_url: String,
     pub transport: Transport,
     pub api_key: ApiKeyMetadata,
-    /// Optional non-secret OAuth metadata. This is not an account-login
-    /// capability switch; see [`account::AccountProvider`].
-    pub oauth: Option<OAuthRegistration>,
 }
 
 
@@ -84,7 +60,6 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
                 hint: "get a key at platform.openai.com/account/api-keys",
                 open_in_browser: false,
             },
-            oauth: None,
         },
         ProviderDefinition {
             id: "anthropic",
@@ -96,7 +71,6 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
                 hint: "get a key at console.anthropic.com/settings/keys",
                 open_in_browser: false,
             },
-            oauth: None,
         },
         ProviderDefinition {
             id: "opencode",
@@ -108,7 +82,6 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
                 hint: "sign in at opencode.ai/auth to copy your OpenCode API key",
                 open_in_browser: true,
             },
-            oauth: None,
         },
         ProviderDefinition {
             id: "deepseek",
@@ -120,7 +93,6 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
                 hint: "get a key at platform.deepseek.com/api_keys",
                 open_in_browser: false,
             },
-            oauth: None,
         },
         ProviderDefinition {
             id: "tokamak",
@@ -132,7 +104,6 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
                 hint: "get a key at tokamak.sh/settings/api-keys",
                 open_in_browser: false,
             },
-            oauth: None,
         },
     ];
     catalog
@@ -178,13 +149,6 @@ pub enum LoginError {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn catalog_has_no_oauth_registration_metadata_until_issued() {
-        for provider in provider_catalog() {
-            assert!(provider.oauth.is_none(), "{} must not invent OAuth metadata", provider.id);
-        }
-    }
 
     #[test]
     fn catalog_lists_the_five_providers_in_picker_order() {

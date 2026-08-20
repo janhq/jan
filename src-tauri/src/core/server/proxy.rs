@@ -1589,15 +1589,22 @@ async fn proxy_request(
 
                             if let Some(provider_cfg) = provider_config {
                                 // A converter only applies to chat/completions; other
-                                // paths keep verbatim forwarding. The credential is
-                                // an OAuth account token when the provider is one of
-                                // Jan's account credential providers (openai/anthropic),
-                                // which selects the Anthropic OAuth auth scheme.
+                                // paths keep verbatim forwarding. The OAuth auth
+                                // scheme applies only when the provider is actually
+                                // authenticated with an OAuth account token, not
+                                // merely because openai/anthropic also support
+                                // account login (an API-key sign-in must stay on
+                                // its plain key scheme).
                                 let converter = if destination_path == "/chat/completions" {
-                                    let oauth = matches!(
-                                        provider_cfg.provider.as_str(),
-                                        "openai" | "anthropic"
-                                    );
+                                    // OAuth account login is a `cli` feature; the
+                                    // desktop has no OAuth account token here, so it
+                                    // must keep the plain API-key scheme rather than
+                                    // treat every anthropic provider as an account.
+                                    #[cfg(feature = "cli")]
+                                    let oauth = crate::core::cli::auth::account::
+                                        has_oauth_credential(&provider_cfg.provider);
+                                    #[cfg(not(feature = "cli"))]
+                                    let oauth = false;
                                     converter_for(provider_cfg.api_type.as_deref(), oauth)
                                 } else {
                                     None

@@ -16,49 +16,42 @@ use super::{Credential, CredentialStore, LoginError, LoginResult, ProviderDefini
 
 const VERIFY_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// Validates and persists provider sign-ins. Stateless: callers construct one
-/// per flow and share it across attempts.
-pub struct LoginService;
-
-impl LoginService {
-    /// Trim and reject a key before any I/O. A key with interior whitespace is
-    /// a mis-paste (partial selection, wrapped line) that would otherwise fail
-    /// as a confusing 401.
-    pub fn sanitize_key(raw: &str) -> Result<String, String> {
-        let key = raw.trim();
-        if key.is_empty() {
-            return Err("no API key entered".to_string());
-        }
-        if key.chars().any(char::is_whitespace) {
-            return Err("that key contains spaces or line breaks - copy it again".to_string());
-        }
-        Ok(key.to_string())
+/// Trim and reject a key before any I/O. A key with interior whitespace is
+/// a mis-paste (partial selection, wrapped line) that would otherwise fail
+/// as a confusing 401.
+pub fn sanitize_key(raw: &str) -> Result<String, String> {
+    let key = raw.trim();
+    if key.is_empty() {
+        return Err("no API key entered".to_string());
     }
-
-    /// Validate `raw_key` against the provider's model endpoint, then persist
-    /// the credential (secret store) and non-secret provider configuration.
-    /// Nothing is written when validation fails.
-    pub async fn login_with_api_key(
-        &self,
-        definition: &ProviderDefinition,
-        raw_key: &str,
-    ) -> Result<LoginResult, LoginError> {
-        let key = Self::sanitize_key(raw_key).map_err(LoginError::InvalidKey)?;
-        let models = discover_models(definition, &key, false).await?;
-        persist(definition, &key, &models)
+    if key.chars().any(char::is_whitespace) {
+        return Err("that key contains spaces or line breaks - copy it again".to_string());
     }
+    Ok(key.to_string())
+}
 
-    /// Remove the stored credential and the provider's non-secret
-    /// configuration entry. Missing entries are not an error.
-    pub fn logout(&self, provider: &str) -> Result<(), LoginError> {
-        CredentialStore::delete(provider).map_err(|e| {
-            LoginError::Persist(format!("could not clear the stored credential: {e}"))
-        })?;
-        remove_provider(provider).map_err(|e| {
-            LoginError::Persist(format!("could not clear the provider configuration: {e}"))
-        })?;
-        Ok(())
-    }
+/// Validate `raw_key` against the provider's model endpoint, then persist
+/// the credential (secret store) and non-secret provider configuration.
+/// Nothing is written when validation fails.
+pub async fn login_with_api_key(
+    definition: &ProviderDefinition,
+    raw_key: &str,
+) -> Result<LoginResult, LoginError> {
+    let key = sanitize_key(raw_key).map_err(LoginError::InvalidKey)?;
+    let models = discover_models(definition, &key, false).await?;
+    persist(definition, &key, &models)
+}
+
+/// Remove the stored credential and the provider's non-secret
+/// configuration entry. Missing entries are not an error.
+pub fn logout(provider: &str) -> Result<(), LoginError> {
+    CredentialStore::delete(provider).map_err(|e| {
+        LoginError::Persist(format!("could not clear the stored credential: {e}"))
+    })?;
+    remove_provider(provider).map_err(|e| {
+        LoginError::Persist(format!("could not clear the provider configuration: {e}"))
+    })?;
+    Ok(())
 }
 
 pub(crate) async fn discover_models(
@@ -423,7 +416,7 @@ mod tests {
         std::thread::spawn(move || {
             tokio::runtime::Runtime::new()
                 .unwrap()
-                .block_on(LoginService.login_with_api_key(&definition, &key))
+                .block_on(login_with_api_key(&definition, &key))
         })
         .join()
         .expect("verification thread must not panic")
@@ -431,11 +424,11 @@ mod tests {
 
     #[test]
     fn sanitize_trims_and_rejects_unusable_input() {
-        assert_eq!(LoginService::sanitize_key("  sk-abc\n").unwrap(), "sk-abc");
-        assert!(LoginService::sanitize_key("   ").is_err());
-        assert!(LoginService::sanitize_key("").is_err());
-        assert!(LoginService::sanitize_key("sk-abc def").is_err());
-        assert!(LoginService::sanitize_key("sk-abc\ndef").is_err());
+        assert_eq!(sanitize_key("  sk-abc\n").unwrap(), "sk-abc");
+        assert!(sanitize_key("   ").is_err());
+        assert!(sanitize_key("").is_err());
+        assert!(sanitize_key("sk-abc def").is_err());
+        assert!(sanitize_key("sk-abc\ndef").is_err());
     }
 
     #[test]
@@ -508,9 +501,7 @@ mod tests {
     async fn rate_limited_key_maps_to_rate_limited_error() {
         let _tmp = TempSecrets::new();
         let endpoint = mock_server("429 Too Many Requests", "{}");
-        let result = LoginService
-            .login_with_api_key(&deepseek_at(endpoint), "sk-busy")
-            .await;
+        let result = login_with_api_key(&deepseek_at(endpoint), "sk-busy").await;
         assert!(matches!(result, Err(LoginError::RateLimited)));
     }
 
@@ -519,7 +510,7 @@ mod tests {
         let _tmp = TempSecrets::new();
         // Nothing listens on this port: connection refused.
         let def = deepseek_at("http://127.0.0.1:9/v1".to_string());
-        let result = LoginService.login_with_api_key(&def, "sk-x").await;
+        let result = login_with_api_key(&def, "sk-x").await;
         assert!(matches!(result, Err(LoginError::Unavailable(_))));
     }
 
@@ -568,11 +559,11 @@ mod tests {
             assert!(CredentialStore::load("deepseek").unwrap().is_some());
             assert!(load_global_config().unwrap().contains_key("deepseek"));
 
-            LoginService.logout("deepseek").unwrap();
+            logout("deepseek").unwrap();
             assert!(CredentialStore::load("deepseek").unwrap().is_none());
             assert!(!load_global_config().unwrap().contains_key("deepseek"));
             // Logging out again is a no-op, not an error.
-            LoginService.logout("deepseek").unwrap();
+            logout("deepseek").unwrap();
         });
     }
 

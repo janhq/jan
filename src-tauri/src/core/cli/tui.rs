@@ -6291,8 +6291,7 @@ async fn chat_loop<B: Backend>(
                                 "selected provider is unavailable".to_string(),
                             )
                         })?;
-                    crate::core::cli::auth::providers::LoginService
-                        .login_with_api_key(&definition, &key)
+                    crate::core::cli::auth::providers::login_with_api_key(&definition, &key)
                         .await
                 }));
             }
@@ -6960,7 +6959,7 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     }
     match key.code {
         KeyCode::Enter => {
-            match crate::core::cli::auth::providers::LoginService::sanitize_key(&prompt.input) {
+            match crate::core::cli::auth::providers::sanitize_key(&prompt.input) {
                 Ok(key) => {
                     prompt.verifying = true;
                     prompt.error = None;
@@ -9933,7 +9932,7 @@ fn logout_command(app: &mut App, provider: &str) {
         .ok()
         .and_then(|configs| configs.get(provider).cloned())
         .is_some_and(|config| config.models.iter().any(|model| model == &app.model));
-    match crate::core::cli::auth::providers::LoginService.logout(provider) {
+    match crate::core::cli::auth::providers::logout(provider) {
         Ok(()) => {
             if owned_model {
                 app.set_model(String::new());
@@ -11547,7 +11546,11 @@ fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) 
         .borders(Borders::ALL)
         .border_style(Style::new().cyan())
         .title(Span::styled(
-            " tokamak sign-in ",
+            format!(
+                " {} sign-in ",
+                crate::core::cli::auth::provider_by_id(&prompt.provider)
+                    .map_or("provider", |definition| definition.name)
+            ),
             Style::new().on_cyan().black().bold(),
         ));
 
@@ -13894,6 +13897,7 @@ mod tests {
         let error = "verification failed: the upstream returned 502 Bad Gateway \
                      from https://api.tokamak.sh/v1/models after three attempts";
         app.login = Some(super::LoginPrompt {
+            provider: "tokamak".to_string(),
             input: String::new(),
             error: Some(error.to_string()),
             verifying: false,

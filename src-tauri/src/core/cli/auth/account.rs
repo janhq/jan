@@ -243,7 +243,7 @@ pub fn parse_manual_callback(raw: &str, expected_state: &str) -> Result<String, 
     Ok(code.to_string())
 }
 
-pub async fn accept_callback(
+async fn accept_callback(
     listener: tokio::net::TcpListener,
     login: &AccountLogin,
 ) -> Result<String, String> {
@@ -272,7 +272,7 @@ pub async fn accept_callback(
     let response = if result.is_ok() {
         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: 71\r\nConnection: close\r\n\r\n<html><body>Sign-in completed. You can close this window.</body></html>"
     } else {
-        "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: 57\r\nConnection: close\r\n\r\n<html><body>Sign-in could not be verified.</body></html>"
+        "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: 56\r\nConnection: close\r\n\r\n<html><body>Sign-in could not be verified.</body></html>"
     };
     let _ = stream.write_all(response.as_bytes()).await;
     result
@@ -289,10 +289,6 @@ pub async fn bind_callback(login: &AccountLogin) -> Result<tokio::net::TcpListen
         .map_err(|_| "could not start the local sign-in callback".to_string())
 }
 
-pub async fn wait_for_browser_callback(login: &AccountLogin) -> Result<String, String> {
-    let listener = bind_callback(login).await?;
-    accept_callback(listener, login).await
-}
 
 fn token_request_body(
     login: &AccountLogin,
@@ -335,7 +331,7 @@ fn refresh_request_body(
     .collect())
 }
 
-pub async fn exchange(login: &AccountLogin, code: &str) -> Result<OAuthToken, String> {
+async fn exchange(login: &AccountLogin, code: &str) -> Result<OAuthToken, String> {
     #[derive(serde::Deserialize)]
     struct TokenResponse {
         access_token: String,
@@ -676,13 +672,19 @@ pub async fn access_token(provider: &str) -> Result<Option<String>, String> {
         return Ok(None);
     };
     let stored = CredentialStore::load(provider)?;
-    let Some(Credential::OAuthToken(token)) = stored else {
-        // No Jan-owned credential: alias Claude Code's token (Claude only).
+    let Some(stored) = stored else {
+        // No Jan-owned credential at all: alias Claude Code's token (Claude
+        // only). A stored API key is a deliberate user choice and must not be
+        // overridden by the Claude Code keychain token.
         if provider_kind == AccountProvider::Claude {
             if let Some(access) = claude_code_access_token().await {
                 return Ok(Some(access));
             }
         }
+        return Ok(None);
+    };
+    let Credential::OAuthToken(token) = stored else {
+        // A stored API key is a deliberate choice; never substitute a token.
         return Ok(None);
     };
     let now = std::time::SystemTime::now()
@@ -696,6 +698,20 @@ pub async fn access_token(provider: &str) -> Result<Option<String>, String> {
     }
     Ok(Some(token.access_token))
 }
+/// Whether `provider` is authenticated with an OAuth account token rather
+/// than a plain API key. This is the discriminator for selecting the OAuth
+/// upstream wire scheme (Bearer + Code `?beta=true` headers): it must reflect
+/// the stored credential, not merely that the provider supports account
+/// login. `openai`/`anthropic` are also first-class API-key providers, so a
+/// provider name alone is not enough to pick the OAuth scheme (a plain
+/// `sk-ant-…` key must stay on `x-api-key` + `/messages`).
+pub fn has_oauth_credential(provider: &str) -> bool {
+    let Ok(Some(Credential::OAuthToken(_))) = CredentialStore::load(provider) else {
+        return false;
+    };
+    true
+}
+
 
 pub fn store(provider: AccountProvider, token: &OAuthToken) -> Result<(), String> {
     CredentialStore::store(
@@ -795,19 +811,6 @@ fn claude_plan_message(heavy_ok: bool, tier: Option<&str>) -> String {
     }
 }
 
-
-pub async fn complete_browser_login(login: AccountLogin) -> Result<AccountProvider, String> {
-    let listener = bind_callback(&login).await?;
-    complete_callback_login(listener, login).await
-}
-
-pub async fn complete_callback_login(
-    listener: tokio::net::TcpListener,
-    login: AccountLogin,
-) -> Result<AccountProvider, String> {
-    let code = accept_callback(listener, &login).await?;
-    complete_code_login(login, code).await
-}
 
 pub async fn complete_callback_login_with_manual(
     listener: tokio::net::TcpListener,
@@ -1100,7 +1103,8 @@ mod tests {
                         .await
                         .unwrap();
                 });
-                let result = complete_callback_login(listener, login).await;
+                let code = accept_callback(listener, &login).await?;
+                let result = complete_code_login(login, code).await;
                 client.await.unwrap();
                 result
             })
@@ -1132,7 +1136,8 @@ mod tests {
                         .await
                         .unwrap();
                 });
-                let result = complete_callback_login(listener, login).await;
+                let code = accept_callback(listener, &login).await?;
+                let result = complete_code_login(login, code).await;
                 client.await.unwrap();
                 result
             })

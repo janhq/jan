@@ -418,9 +418,15 @@ pub(crate) async fn resolve_api_type_for_model(
     drop(pc);
 
     let api_type = cfg.as_ref().and_then(|c| c.api_type.clone())?;
+    // OAuth account login is a `cli` feature; resolve the auth scheme from
+    // the stored credential so a plain API key stays on its key scheme.
+    #[cfg(feature = "cli")]
     let oauth = cfg
-        .map(|c| matches!(c.provider.as_str(), "openai" | "anthropic"))
+        .as_ref()
+        .map(|c| crate::core::cli::auth::account::has_oauth_credential(&c.provider))
         .unwrap_or(false);
+    #[cfg(not(feature = "cli"))]
+    let oauth = false;
     Some((api_type, oauth))
 }
 
