@@ -3534,7 +3534,7 @@ impl App {
         // A smaller-window target must be compacted onto before the next request:
         // run the bounded summary through the *target* model (see the chat loop,
         // which uses `app.model` for `CompactKind::Auto`).
-        if self.should_auto_compact() && self.compacting.is_none() {
+        if self.should_auto_compact() {
             self.compact_request = Some(CompactKind::Auto);
             self.detail = format!("compacting for {}", self.model);
         }
@@ -24593,6 +24593,39 @@ mod tests {
         assert!(
             !app.want_start,
             "the oversized regular request must not be auto-resubmitted"
+        );
+    }
+
+    #[test]
+    fn model_switch_during_compaction_requeues_for_a_smaller_target() {
+        let mut app = test_app();
+        app.context_window = 1_000_000;
+        app.tokens = 500_000;
+        app.history = (0..10)
+            .map(|i| serde_json::json!({ "role": "user", "content": format!("before-{i}") }))
+            .collect();
+        app.compacting = Some(CompactKind::Auto);
+
+        app.set_model("claude-sonnet-4-5".to_string());
+        assert_eq!(
+            app.compact_request,
+            Some(CompactKind::Auto),
+            "a smaller selected model queues a follow-up compaction"
+        );
+
+        finish_compaction(
+            &mut app,
+            Ok(vec![
+                serde_json::json!({ "role": "system", "content": "summary" }),
+                serde_json::json!({ "role": "user", "content": "x".repeat(2_000_000) }),
+            ]),
+            10,
+        );
+
+        assert_eq!(
+            app.compact_request,
+            Some(CompactKind::Auto),
+            "the smaller selected model must compact again before a normal request"
         );
     }
 
