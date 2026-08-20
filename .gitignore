@@ -78,5 +78,10 @@ JAN.md
 
 ## agent
 .jan
+## local working artifacts (not source)
+.pi/
+.vscode/
+docs/superpowers/
+do-not-commit-*.png
 
 .worktrees/
