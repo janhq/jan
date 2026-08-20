@@ -6363,27 +6363,35 @@ async fn chat_loop<B: Backend>(
         }
 
         if account_login_task.is_none() {
-            if let Some(login) = app.account_login_submit.take() {
+            if let Some(mut login) = app.account_login_submit.take() {
                 let (manual_rx, has_pending_manual_input) = account_login_manual_channel(app);
-                account_login_task = Some(tokio::spawn(async move {
-                    let listener = crate::core::cli::auth::account::bind_callback(&login).await?;
-                    if let Err(error) = open_browser(&login.authorization_url) {
-                        if !has_pending_manual_input {
-                            return Err(error);
+                match crate::core::cli::auth::account::bind_callback(&mut login).await {
+                    Err(error) => finish_account_login(app, Err(error)),
+                    Ok(listener) => {
+                        if let Some(prompt) = app.account_login.as_mut() {
+                            prompt.login = login.clone();
                         }
+                        account_login_task = Some(tokio::spawn(async move {
+                            if let Err(error) = open_browser(&login.authorization_url) {
+                                if !has_pending_manual_input {
+                                    return Err(error);
+                                }
+                            }
+                            let provider = tokio::time::timeout(
+                                ACCOUNT_CALLBACK_TIMEOUT,
+                                crate::core::cli::auth::account::
+                                    complete_callback_login_with_manual(
+                                        listener,
+                                        login,
+                                        manual_rx,
+                                    ),
+                            )
+                            .await
+                            .map_err(|_| "account sign-in timed out".to_string())??;
+                            Ok(provider.credential_provider().to_string())
+                        }));
                     }
-                    let provider = tokio::time::timeout(
-                        ACCOUNT_CALLBACK_TIMEOUT,
-                        crate::core::cli::auth::account::complete_callback_login_with_manual(
-                            listener,
-                            login,
-                            manual_rx,
-                        ),
-                    )
-                    .await
-                    .map_err(|_| "account sign-in timed out".to_string())??;
-                    Ok(provider.credential_provider().to_string())
-                }));
+                }
             }
         }
 
@@ -11611,7 +11619,7 @@ fn draw_account_login(
         ]),
         Line::from(vec![
             Span::styled("callback: ", dim),
-            Span::styled(safe_url_origin_path(prompt.login.redirect_uri), Style::new().cyan()),
+            Span::styled(safe_url_origin_path(&prompt.login.redirect_uri), Style::new().cyan()),
         ]),
     ];
     if let Some(error) = &prompt.error {

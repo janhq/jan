@@ -30,7 +30,7 @@ impl AccountProvider {
 #[derive(Clone)]
 pub struct AccountLogin {
     pub authorization_url: String,
-    pub redirect_uri: &'static str,
+    pub redirect_uri: String,
     pub state: String,
     pub verifier: String,
     provider: AccountProvider,
@@ -47,6 +47,24 @@ impl AccountLogin {
 
     pub fn parse_manual_input(&self, raw: &str) -> Result<String, String> {
         parse_manual_callback(raw, &self.state)
+    }
+
+    fn set_redirect_uri(&mut self, redirect_uri: String) -> Result<(), String> {
+        let mut authorization = url::Url::parse(&self.authorization_url)
+            .map_err(|_| "the authorization URL was invalid".to_string())?;
+        let query: Vec<(String, String)> = authorization
+            .query_pairs()
+            .filter(|(key, _)| key != "redirect_uri")
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect();
+        authorization
+            .query_pairs_mut()
+            .clear()
+            .extend_pairs(query)
+            .append_pair("redirect_uri", &redirect_uri);
+        self.authorization_url = authorization.into();
+        self.redirect_uri = redirect_uri;
+        Ok(())
     }
 }
 
@@ -102,7 +120,7 @@ pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
     }
     Ok(AccountLogin {
         authorization_url: url.into(),
-        redirect_uri,
+        redirect_uri: redirect_uri.to_string(),
         state,
         verifier,
         provider,
@@ -278,15 +296,30 @@ async fn accept_callback(
     result
 }
 
-pub async fn bind_callback(login: &AccountLogin) -> Result<tokio::net::TcpListener, String> {
-    let redirect = url::Url::parse(login.redirect_uri)
+pub async fn bind_callback(
+    login: &mut AccountLogin,
+) -> Result<tokio::net::TcpListener, String> {
+    let mut redirect = url::Url::parse(&login.redirect_uri)
         .map_err(|_| "the callback URL was invalid".to_string())?;
     let port = redirect
         .port_or_known_default()
         .ok_or_else(|| "the callback URL did not include a port".to_string())?;
-    tokio::net::TcpListener::bind(("127.0.0.1", port))
+    if let Ok(listener) = tokio::net::TcpListener::bind(("127.0.0.1", port)).await {
+        return Ok(listener);
+    }
+
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
         .await
-        .map_err(|_| "could not start the local sign-in callback".to_string())
+        .map_err(|_| "could not start the local sign-in callback".to_string())?;
+    let port = listener
+        .local_addr()
+        .map_err(|_| "could not read the local sign-in callback".to_string())?
+        .port();
+    redirect
+        .set_port(Some(port))
+        .map_err(|_| "the callback URL could not use the fallback port".to_string())?;
+    login.set_redirect_uri(redirect.into())?;
+    Ok(listener)
 }
 
 
@@ -1217,6 +1250,35 @@ mod tests {
         assert_eq!(login.redirect_uri, "http://localhost:54545/callback");
         assert!(!login.state.is_empty());
         assert!(!login.verifier.is_empty());
+    }
+
+    #[tokio::test]
+    async fn callback_falls_back_when_the_preferred_port_is_busy() {
+        let occupied = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let occupied_port = occupied.local_addr().unwrap().port();
+        let mut login = begin(AccountProvider::Claude).unwrap();
+        login.redirect_uri = format!("http://localhost:{occupied_port}/callback");
+
+        let listener = bind_callback(&mut login)
+            .await
+            .expect("a random callback port is used");
+        let actual_port = listener.local_addr().unwrap().port();
+        assert_ne!(actual_port, occupied_port);
+        let expected = format!("http://localhost:{actual_port}/callback");
+        assert_eq!(login.redirect_uri, expected);
+        let authorization = url::Url::parse(&login.authorization_url).unwrap();
+        assert_eq!(
+            authorization
+                .query_pairs()
+                .find(|(key, _)| key == "redirect_uri")
+                .unwrap()
+                .1,
+            expected
+        );
+        assert_eq!(
+            token_request_body(&login, "code").get("redirect_uri"),
+            Some(&expected)
+        );
     }
     #[test]
     fn claude_browser_login_uses_registered_client_id() {
