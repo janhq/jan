@@ -1526,6 +1526,46 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 /// Milliseconds per spinner frame, decoupled from the 50ms render tick.
 const SPINNER_ADVANCE_MS: u64 = 80;
 
+const HAND: &str = "👋\u{FE0F}";
+
+fn hand_sweep_position(char_count: usize, frame: usize) -> usize {
+    let cycle = char_count.saturating_mul(2).max(1);
+    let step = frame % cycle;
+    if step <= char_count {
+        step
+    } else {
+        cycle - step
+    }
+}
+
+fn hand_sweep_line(word: &'static str, frame: usize, text_style: Style) -> Line<'static> {
+    let message = format!("{word}...");
+    let char_count = message.chars().count();
+    let position = hand_sweep_position(char_count, frame);
+    let start = message
+        .char_indices()
+        .nth(position)
+        .map_or(message.len(), |(byte, _)| byte);
+    let end = if position == char_count {
+        start
+    } else {
+        message
+            .char_indices()
+            .nth(position + 1)
+            .map_or(message.len(), |(byte, _)| byte)
+    };
+
+    let mut spans = Vec::with_capacity(3);
+    if start > 0 {
+        spans.push(Span::styled(message[..start].to_string(), text_style));
+    }
+    spans.push(Span::styled(HAND, Style::new().cyan()));
+    if end < message.len() {
+        spans.push(Span::styled(message[end..].to_string(), text_style));
+    }
+    Line::from(spans)
+}
+
 /// Rotating action words for the running input placeholder, replacing a static
 /// "working…" so a long turn does not read as a hung UI.
 const WORKING_WORDS: [&str; 12] = [
@@ -10267,7 +10307,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         app.row_index.clear();
         let toml_path = app.agent_dir.join("agent.toml");
         draw_picker(f, chunks[1], picker, &toml_path);
-        f.render_widget(input_box(app), chunks[2]);
+        f.render_widget(input_box(app, chunks[2].width), chunks[2]);
         f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
         return;
     }
@@ -10496,7 +10536,10 @@ fn draw(f: &mut Frame, app: &mut App) {
     if let Some(lines) = panel_lines {
         f.render_widget(Paragraph::new(lines), panel_area);
     }
-    f.render_widget(input_box(app).scroll((input_scroll, 0)), chunks[2]);
+    f.render_widget(
+        input_box(app, chunks[2].width).scroll((input_scroll, 0)),
+        chunks[2],
+    );
     f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
 
     // `/login` is modal and user-initiated (only reachable while idle), so it
@@ -11915,7 +11958,7 @@ fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
         .collect()
 }
 
-fn input_box(app: &App) -> Paragraph<'static> {
+fn input_box(app: &App, width: u16) -> Paragraph<'static> {
     let block = Block::default();
     if let Some(kind) = app.compacting.filter(|_| app.input.is_empty()) {
         // Compaction puts nothing in the transcript while it runs, so the input
@@ -11935,33 +11978,43 @@ fn input_box(app: &App) -> Paragraph<'static> {
     } else if app.picker.is_some() {
         Paragraph::new(Line::styled("selecting…", Style::new().dim().italic())).block(block)
     } else if app.status == Status::Running && app.input.is_empty() {
-        // Show queue status when running with empty input
+        // Show queue status when running with empty input.
         if app.message_queue.is_empty() {
-            // The spinner carries the fast motion; the action word turns over
-            // on a slower cadence, cycling "working" synonyms -- or "thinking"
-            // synonyms in orange while a reasoning block streams -- so the row
-            // reads alive without shifting under the eye.
             let step = app.spinner_frame / WORD_ROTATE_FRAMES;
-            let (word, style) = if app.reasoning_open() {
-                (
-                    THINKING_WORDS[step % THINKING_WORDS.len()],
-                    Style::new().fg(THINKING_ORANGE).italic(),
-                )
-            } else {
-                (
-                    WORKING_WORDS[step % WORKING_WORDS.len()],
-                    Style::new().dim().italic(),
-                )
-            };
-            Paragraph::new(Line::from(vec![
-                Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
-                Span::styled(format!("{word}…"), style),
+            let suffix = || {
                 Span::styled(
                     " (Esc to cancel, type to queue next message)",
                     Style::new().dim().italic(),
-                ),
-            ]))
-            .block(block)
+                )
+            };
+            if app.reasoning_open() {
+                let word = THINKING_WORDS[step % THINKING_WORDS.len()];
+                let style = Style::new().fg(THINKING_ORANGE).italic();
+                Paragraph::new(Line::from(vec![
+                    Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
+                    Span::styled(format!("{word}…"), style),
+                    suffix(),
+                ]))
+                .block(block)
+            } else {
+                let word = WORKING_WORDS[step % WORKING_WORDS.len()];
+                let text_style = Style::new().dim().italic();
+                let mut spans = vec![Span::styled("› ", Style::new().cyan().bold())];
+                spans.extend(hand_sweep_line(word, app.spinner_frame, text_style).spans);
+                spans.push(suffix());
+                let animated = Line::from(spans);
+                let line = if spans_width(&animated.spans) <= width as usize {
+                    animated
+                } else {
+                    Line::from(vec![
+                        Span::styled("› ", Style::new().cyan().bold()),
+                        Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
+                        Span::styled(format!("{word}…"), text_style),
+                        suffix(),
+                    ])
+                };
+                Paragraph::new(line).block(block)
+            }
         } else {
             let n = app.message_queue.len();
             Paragraph::new(Line::from(vec![
@@ -12164,6 +12217,7 @@ mod tests {
         unescape_partial_json_string,
         running_group_rows, split_reasoning, strip_system_xml_tags, subagent_activity,
         answer_without_reasoning, assistant_runs, replay_display_log, thinking_open,
+        hand_sweep_line, hand_sweep_position, HAND,
         without_think_tags, ReasoningSeg,
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
@@ -12496,6 +12550,32 @@ mod tests {
         app.advance_spinner(t0 + Duration::from_millis(500));
         assert_eq!(app.spinner_frame, (500 / SPINNER_ADVANCE_MS) as usize);
         assert_eq!(app.spinner_frame, 6);
+    }
+
+    #[test]
+    fn hand_sweep_moves_forward_and_back_across_the_message() {
+        let text = |frame| line_text(&hand_sweep_line("build", frame, Style::default()));
+
+        assert_eq!(text(0), format!("{HAND}uild..."));
+        assert_eq!(text(3), format!("bui{HAND}d..."));
+        assert_eq!(text(8), format!("build...{HAND}"));
+        assert_eq!(text(9), format!("build..{HAND}"));
+        assert_eq!(text(16), format!("{HAND}uild..."));
+    }
+
+    #[test]
+    fn hand_uses_explicit_emoji_presentation() {
+        assert_eq!(HAND.chars().last(), Some('\u{FE0F}'));
+    }
+
+    #[test]
+    fn hand_sweep_uses_character_boundaries() {
+        let message = "éx...";
+        assert_eq!(hand_sweep_position(message.chars().count(), 1), 1);
+        assert_eq!(
+            line_text(&hand_sweep_line("éx", 1, Style::default())),
+            format!("é{HAND}...")
+        );
     }
 
     #[test]
@@ -19163,19 +19243,28 @@ mod tests {
 
         app.spinner_frame = 0;
         let first = frame_of(&mut app);
-        assert!(first.contains(SPINNER[0]), "expected frame 0 glyph: {first:?}");
-
-        // While a plain turn is running (no reasoning), the row shows a
-        // rotating synonym of "working".
+        assert!(first.contains(HAND), "expected hand frame: {first:?}");
         assert!(
-            WORKING_WORDS.iter().any(|w| first.contains(w)),
-            "expected a working synonym in: {first:?}"
+            !first.contains(SPINNER[0]),
+            "working row still has Braille spinner: {first:?}"
+        );
+
+        // The hand covers the first character at frame 0, leaving the rest of
+        // the selected working word visible.
+        assert!(first.starts_with("› "), "working row lost the prompt: {first:?}");
+        assert!(
+            first.contains("orking..."),
+            "expected the working word behind the hand: {first:?}"
         );
 
         app.spinner_frame = 3;
         let later = frame_of(&mut app);
-        assert!(later.contains(SPINNER[3]), "expected frame 3 glyph: {later:?}");
-        assert_ne!(first, later, "row must change as the frame advances");
+        assert!(later.contains(HAND), "expected later hand frame: {later:?}");
+        assert!(
+            !later.contains(SPINNER[3]),
+            "working row still has Braille spinner: {later:?}"
+        );
+        assert_ne!(first, later, "row must change as the hand advances");
 
         assert!(later.contains("(Esc to cancel, type to queue next message)"), "{later:?}");
     }
@@ -19234,21 +19323,24 @@ mod tests {
     fn working_synonym_rotates_across_frames() {
         let mut app = test_app();
         app.submit_user("go".into());
-        let mut word_at = |frame: usize| {
+        let mut row_at = |frame: usize| {
             app.spinner_frame = frame;
-            let row = render_rows(&mut app, 80, 12)
+            render_rows(&mut app, 80, 12)
                 .into_iter()
                 .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
-                .expect("running placeholder present");
-            WORKING_WORDS
-                .iter()
-                .find(|w| row.contains(*w))
-                .map(|w| w.to_string())
-                .expect("working synonym present")
+                .expect("running placeholder present")
         };
-        let a = word_at(0);
-        let b = word_at(super::WORD_ROTATE_FRAMES);
-        assert_ne!(a, b, "working word must rotate as frames advance: {a}");
+        let first = row_at(0);
+        let later = row_at(super::WORD_ROTATE_FRAMES);
+        assert!(
+            first.contains("orking..."),
+            "first working word is covered by the hand: {first}"
+        );
+        assert!(
+            later.contains("omputing..."),
+            "later working word is covered by the hand: {later}"
+        );
+        assert_ne!(first, later, "working word must rotate as frames advance");
     }
 
     /// A queued-message row is still a running row, so it animates too.
@@ -19263,6 +19355,58 @@ mod tests {
             .find(|r| r.contains("Queued"))
             .expect("queued row present");
         assert!(row.contains(SPINNER[5]), "expected frame 5 glyph: {row:?}");
+    }
+
+    #[test]
+    fn hand_spinner_stays_out_of_reasoning_queued_and_editable_rows() {
+        let mut reasoning = test_app();
+        reasoning.submit_user("go".into());
+        reasoning.apply(StreamEvent::Token {
+            text: "<think>ponder".into(),
+        });
+        let thinking = render_rows(&mut reasoning, 80, 12).join("\n");
+        assert!(!thinking.contains(HAND), "reasoning row must retain Braille spinner");
+        assert!(
+            thinking.contains(SPINNER[0]),
+            "reasoning spinner changed: {thinking}"
+        );
+
+        let mut queued = test_app();
+        queued.submit_user("go".into());
+        queued.message_queue.push_back("next".into());
+        let queued_text = render_rows(&mut queued, 80, 12).join("\n");
+        assert!(!queued_text.contains(HAND), "queued row must retain queue indicator");
+        assert!(
+            queued_text.contains(SPINNER[0]),
+            "queued spinner changed: {queued_text}"
+        );
+
+        let mut editable = test_app();
+        editable.submit_user("go".into());
+        editable.input = "draft".into();
+        let editable_text = render_rows(&mut editable, 80, 12).join("\n");
+        assert!(
+            !editable_text.contains(HAND),
+            "hand must not enter editable input"
+        );
+    }
+
+    #[test]
+    fn narrow_working_row_falls_back_to_braille_spinner() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.spinner_frame = 0;
+
+        let rendered = render_rows(&mut app, 20, 12).join("\n");
+        assert!(
+            !rendered.contains(HAND),
+            "hand row must fall back when it cannot fit"
+        );
+        assert!(
+            rendered.contains(SPINNER[0]),
+            "Braille fallback missing: {rendered}"
+        );
+        assert!(app.input.is_empty(), "status rendering changed the input buffer");
     }
 
     /// Native reasoning events (a dedicated `reasoning_content` field) drive the
