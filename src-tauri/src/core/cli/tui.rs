@@ -3115,10 +3115,11 @@ impl App {
 
     /// Inject a hidden todo reminder and continue with one more model turn. The
     /// reminder text enters the conversation (so the model sees it) but renders
-    /// as a dim system note, never a user-authored transcript row.
+    /// as a dim system note, never a user-authored transcript row -- and is
+    /// marked, so `is_user_turn` keeps it out of the rewind picker, recall and
+    /// checkpoint keys.
     fn submit_reminder(&mut self, text: String) {
-        self.history
-            .push(serde_json::json!({ "role": "user", "content": text }));
+        crate::core::agent::reminder::attach(&mut self.history, &text);
         self.note("todo reminder — unfinished work, continuing");
         self.begin_turn();
         self.want_start = true;
@@ -3384,16 +3385,15 @@ impl App {
         let user_index = self
             .history
             .iter()
-            .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+            .filter(|m| is_user_turn(m))
             .count()
             .saturating_sub(1);
         let preview = self
             .history
             .iter()
             .rev()
-            .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
-            .and_then(|m| m.get("content").and_then(|v| v.as_str()))
-            .map(truncate_preview)
+            .find(|m| is_user_turn(m))
+            .map(|m| truncate_preview(&user_content_parts(&m["content"]).0))
             .unwrap_or_default();
         self.snap_queue.push_back(SnapshotJob::Checkpoint {
             user_index,
@@ -9521,11 +9521,10 @@ fn thread_display_name(base: &std::path::Path, id: &str, title: Option<&str>) ->
         return t.to_string();
     }
     if let Ok(messages) = super::cli_list_messages_in(base, id) {
-        if let Some(last_user) = messages
-            .iter()
-            .rev()
-            .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
-        {
+        if let Some(last_user) = messages.iter().rev().find(|m| {
+            m.get("role").and_then(|v| v.as_str()) == Some("user")
+                && !crate::core::agent::reminder::is_reminder_text(&message_text(m))
+        }) {
             let collapsed = message_text(last_user)
                 .split_whitespace()
                 .collect::<Vec<_>>()
@@ -9925,11 +9924,11 @@ fn open_rewind_picker(app: &mut App) {
     let mut items = Vec::new();
     let mut ui = 0usize;
     for m in &app.history {
-        if m.get("role").and_then(|v| v.as_str()) == Some("user") {
-            let text = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        if is_user_turn(m) {
+            let text = user_content_parts(&m["content"]).0;
             items.push(PickerItem {
                 value: ui.to_string(),
-                label: truncate_preview(text),
+                label: truncate_preview(&text),
                 hint: Some(format!("#{}", ui + 1)),
                 checkbox: None,
             });
@@ -9981,7 +9980,7 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     let mut ui = 0usize;
     let mut cut = None;
     for (i, m) in app.history.iter().enumerate() {
-        if m.get("role").and_then(|v| v.as_str()) == Some("user") {
+        if is_user_turn(m) {
             if ui == target {
                 cut = Some(i);
                 break;
@@ -10053,7 +10052,7 @@ fn rebuild_recall(app: &mut App) {
     let texts: Vec<String> = app
         .history
         .iter()
-        .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+        .filter(|m| is_user_turn(m))
         .filter_map(|m| m.get("content"))
         .map(|c| user_content_parts(c).0)
         .filter(|t| !t.is_empty())
@@ -10424,9 +10423,21 @@ fn build_user_message(text: &str, images: &[PendingImage]) -> serde_json::Value 
 /// Split a user message's `content` into display text and one label per attached
 /// image. Handles plain-string content and the `image_url` content-part array;
 /// data-URL parts carry no filename, so their label is empty.
+/// True for a `user` message the user actually authored. Hidden reminders ride
+/// in on the `user` role but are not turns: a rewind target, a recall entry or a
+/// checkpoint key built from one would be a row the user never typed, and would
+/// shift every later index out of step with the display journal, which holds no
+/// reminder at all.
+fn is_user_turn(m: &serde_json::Value) -> bool {
+    m.get("role").and_then(|v| v.as_str()) == Some("user")
+        && !crate::core::agent::reminder::is_reminder_only(
+            m.get("content").unwrap_or(&serde_json::Value::Null),
+        )
+}
+
 fn user_content_parts(content: &serde_json::Value) -> (String, Vec<String>) {
     match content {
-        serde_json::Value::String(s) => (s.clone(), Vec::new()),
+        serde_json::Value::String(s) => (crate::core::agent::reminder::strip(s), Vec::new()),
         serde_json::Value::Array(parts) => {
             let mut text = String::new();
             let mut images = Vec::new();
@@ -10434,7 +10445,7 @@ fn user_content_parts(content: &serde_json::Value) -> (String, Vec<String>) {
                 match p.get("type").and_then(|v| v.as_str()) {
                     Some("text") => {
                         if let Some(t) = p.get("text").and_then(|v| v.as_str()) {
-                            text.push_str(t);
+                            text.push_str(&crate::core::agent::reminder::strip(t));
                         }
                     }
                     Some("image_url") => images.push(String::new()),
@@ -12481,7 +12492,7 @@ mod tests {
         without_think_tags, ReasoningSeg,
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
-        transcript_top_padding, rewind_to,
+        transcript_top_padding, rewind_to, open_rewind_picker, rebuild_recall,
         row_width, user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind,
         ResumeTarget, RowKind, finish_plugin_install,
         SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
@@ -14632,6 +14643,68 @@ mod tests {
             }
             other => panic!("expected a checkpoint job, got {:?}", other.is_some()),
         }
+    }
+
+    /// A hidden reminder rides in on the `user` role, so every surface that
+    /// counts user turns has to skip it: otherwise it becomes a rewind target
+    /// and a recall entry the user never typed, and shifts the indices those
+    /// share with the display journal (which holds no reminder at all).
+    #[test]
+    fn a_hidden_reminder_is_not_a_user_turn() {
+        let mut app = test_app();
+        app.thread_id = Some("t1".into());
+        app.repo_root = Some(std::path::PathBuf::from("/tmp/repo"));
+        app.base_requested = true;
+        app.submit_user("first".into());
+        app.history
+            .push(json!({ "role": "assistant", "content": "reply" }));
+        app.submit_reminder("unfinished todos remain".into());
+        assert_eq!(
+            app.history.len(),
+            3,
+            "the reminder needed its own turn here"
+        );
+        assert!(crate::core::agent::reminder::is_reminder_only(
+            &app.history[2]["content"]
+        ));
+
+        open_rewind_picker(&mut app);
+        let picker = app.picker.as_ref().expect("picker");
+        assert_eq!(picker.items.len(), 1);
+        assert_eq!(picker.items[0].label, "first");
+
+        rebuild_recall(&mut app);
+        assert_eq!(app.input_history, vec!["first"]);
+
+        app.checkpoint_turn();
+        match app.snap_queue.back() {
+            Some(SnapshotJob::Checkpoint {
+                user_index,
+                preview,
+                ..
+            }) => {
+                assert_eq!(*user_index, 0, "the reminder must not shift the key");
+                assert_eq!(preview, "first");
+            }
+            other => panic!("expected a checkpoint job, got {:?}", other.is_some()),
+        }
+    }
+
+    /// The reminder is folded into a message the model has not answered yet
+    /// where one exists, so no extra turn is invented at all.
+    #[test]
+    fn a_reminder_lands_in_flight_on_an_unanswered_turn() {
+        let mut app = test_app();
+        app.thread_id = Some("t1".into());
+        app.submit_user("first".into());
+        app.submit_reminder("unfinished todos remain".into());
+        assert_eq!(app.history.len(), 1);
+        let content = app.history[0]["content"].as_str().expect("text");
+        assert!(content.starts_with("first\n\n"), "{content}");
+        assert!(content.contains("unfinished todos remain"));
+        // Recall and rewind offer the typed text back, never the reminder.
+        rebuild_recall(&mut app);
+        assert_eq!(app.input_history, vec!["first"]);
     }
 
     #[test]

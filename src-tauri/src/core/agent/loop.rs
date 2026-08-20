@@ -1941,14 +1941,14 @@ async fn run_turn_cycle(
                         "role": "assistant",
                         "content": final_text,
                     }));
-                    conversation_messages.push(serde_json::json!({
-                        "role": "user",
-                        "content": format!(
+                    crate::core::agent::reminder::attach(
+                        &mut conversation_messages,
+                        &format!(
                             "Before you stop: these todos are still open:\n{summary}\n\nFor each \
                              one you actually completed, call `todo` with `done` now (or `drop` if \
                              you skipped it). If work genuinely remains, continue it instead."
                         ),
-                    }));
+                    );
                     turn += 1;
                     continue;
                 }
@@ -2179,14 +2179,14 @@ async fn run_turn_cycle(
                 mutations_since_todo_touch = 0;
                 mid_run_nudge_count += 1;
                 let plural = if open_count == 1 { "" } else { "s" };
-                conversation_messages.push(serde_json::json!({
-                    "role": "user",
-                    "content": format!(
+                crate::core::agent::reminder::attach(
+                    &mut conversation_messages,
+                    &format!(
                         "Reminder: {open_count} todo item{plural} still open. If you finished a \
                          task since the last todo update, mark it done now so progress stays \
                          visible; otherwise just keep working."
-                    )
-                }));
+                    ),
+                );
             }
         }
         turn += 1;
