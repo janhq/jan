@@ -7,6 +7,7 @@ pub mod brand;
 pub mod journal;
 pub mod login;
 pub mod mcp;
+mod model_capabilities;
 mod path_refs;
 pub mod run_report;
 pub mod providers;
@@ -739,9 +740,13 @@ struct PersistTarget {
 /// run of bare numbers, which would be trivial to transpose at a call site.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SessionLimits {
-    /// Context window limit in tokens for the model. Defaults to 128K if agent.toml
-    /// doesn't set it. Used to display `ctx N/K` in the header and trigger compaction.
+    /// Context window limit in tokens for the model. Resolution order is the
+    /// configured `[agent].context_window` override, then the built-in model
+    /// catalog, then a 128K fallback. Used to display `ctx N/K` in the header
+    /// and trigger compaction.
     pub context_window: u64,
+    /// Where `context_window` came from: configured override, catalog, or fallback.
+    pub context_window_source: crate::core::cli::model_capabilities::ContextWindowSource,
     /// Tokens reserved for the model's response. Defaults to 16K if unset.
     /// Compaction triggers at `context_window - reserve_tokens`.
     pub reserve_tokens: u64,
@@ -933,13 +938,19 @@ fn prepare_agent_session(
         flags.sandbox,
     );
 
+    // Resolution order: configured `[agent].context_window` override, then the
+    // built-in model catalog, then the 128K fallback.
+    let resolved_window =
+        crate::core::cli::model_capabilities::resolve_context_window(&model, cfg.agent.context_window);
+
     Ok(AgentSession {
         args,
         permission_requests,
         model,
         smol_model,
         limits: SessionLimits {
-            context_window: cfg.agent.context_window.unwrap_or(128_000),
+            context_window: resolved_window.tokens,
+            context_window_source: resolved_window.source,
             reserve_tokens: cfg.agent.compaction_reserve_tokens.unwrap_or(16_384),
             max_tokens: cfg.agent.max_tokens,
             max_session_tokens: cfg.budget.max_tokens.unwrap_or(DEFAULT_MAX_SESSION_TOKENS),
