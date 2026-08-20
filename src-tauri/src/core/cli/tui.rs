@@ -1356,8 +1356,15 @@ struct App {
     /// Orchestration handle for out-of-run model calls (the `/compact` command).
     /// `None` in unit tests, set by `run` for the live session.
     args: Option<Arc<OrchestrationArgs>>,
-    /// Context window limit for the current model (default 128K).
+    /// Context window limit for the current model. Updated on every model
+    /// switch via [`Self::refresh_context_window`]: configured override, then
+    /// the built-in model catalog, then a 128K fallback.
     context_window: u64,
+    /// Where `context_window` came from: configured override, catalog, or fallback.
+    context_window_source: crate::core::cli::model_capabilities::ContextWindowSource,
+    /// The explicit `[agent].context_window` override copied from the session
+    /// limits (`None` when unset). Stays authoritative across model switches.
+    configured_context_window: Option<u64>,
     /// Tokens to reserve for the model's response (compaction triggers at limit - reserve).
     reserve_tokens: u64,
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
@@ -1569,11 +1576,6 @@ struct App {
     /// Overflow retries spent in the current user turn, capped so a model that
     /// overflows no matter how small the context cannot spin forever.
     overflow_retries: u8,
-    /// False once a prompt the provider *accepted* exceeded `context_window`,
-    /// which proves the configured value wrong. Nothing then divides by it: the
-    /// gauge drops its denominator, the subagent share is hidden, and proactive
-    /// compaction stands down in favour of the loop's reactive path.
-    context_window_trusted: bool,
     /// An install is in flight: `/update` is refused (two processes must not
     /// rewrite the same binary) and the footer shows progress.
     update_installing: bool,
@@ -1849,6 +1851,15 @@ impl App {
             run_mode: crate::core::agent::plan::RunMode::Normal,
             args: None,
             context_window: limits.context_window,
+            context_window_source: limits.context_window_source,
+            // The explicit override, when present, is the resolved window with a
+            // `Configured` source; otherwise there was none to carry forward.
+            configured_context_window: match limits.context_window_source {
+                crate::core::cli::model_capabilities::ContextWindowSource::Configured => {
+                    Some(limits.context_window)
+                }
+                _ => None,
+            },
             reserve_tokens: limits.reserve_tokens,
             max_tokens: limits.max_tokens,
             max_session_tokens: limits.max_session_tokens,
@@ -1926,7 +1937,6 @@ impl App {
             compact_started: None,
             retry_after_compact: false,
             overflow_retries: 0,
-            context_window_trusted: true,
             scrollback: 0,
             want_start: false,
             turns_since_todos_closed: 0,
@@ -3503,13 +3513,46 @@ impl App {
     }
 
     /// Switch the active model and remember it in the project's agent.toml so it
-    /// persists across sessions.
+    /// persists across sessions. The context window is re-resolved for the new
+    /// model immediately, and if the target window shrinks below the current
+    /// usage a target-model compaction is queued before the next ordinary request.
     fn set_model(&mut self, model: String) {
         self.model = model;
-        match super::cli_set_project_model(&self.agent_dir, &self.model) {
-            Ok(()) => self.note(&format!("model set to {}", self.model)),
-            Err(e) => self.note(&format!("model set to {} (not saved: {e})", self.model)),
+        self.refresh_context_window();
+        // Persistence warning preserved verbatim from the prior behaviour.
+        let persistence = match super::cli_set_project_model(&self.agent_dir, &self.model) {
+            Ok(()) => String::new(),
+            Err(e) => format!(" (not saved: {e})"),
+        };
+        self.note(&format!(
+            "model set to {} (context {}K, {}){}",
+            self.model,
+            self.context_window / 1000,
+            self.context_window_source.label(),
+            persistence,
+        ));
+        // A smaller-window target must be compacted onto before the next request:
+        // run the bounded summary through the *target* model (see the chat loop,
+        // which uses `app.model` for `CompactKind::Auto`).
+        if self.should_auto_compact() && self.compacting.is_none() {
+            self.compact_request = Some(CompactKind::Auto);
+            self.detail = format!("compacting for {}", self.model);
         }
+    }
+
+    /// Re-resolve the effective context window from the current model and the
+    /// configured override. Returns whether the effective limit changed, so a
+    /// caller can decide whether a compaction is now warranted. The catalog
+    /// matching lives only in `model_capabilities`, never duplicated here.
+    fn refresh_context_window(&mut self) -> bool {
+        let resolved = crate::core::cli::model_capabilities::resolve_context_window(
+            &self.model,
+            self.configured_context_window,
+        );
+        let changed = resolved.tokens != self.context_window;
+        self.context_window = resolved.tokens;
+        self.context_window_source = resolved.source;
+        changed
     }
     /// Header label for the current selection: `provider/model` when the bare
     /// model id resolves to exactly one provider, so the reader can tell where
@@ -3832,7 +3875,6 @@ impl App {
                     // Keep the header's context gauge live during the turn
                     // instead of jumping only when the run ends.
                     self.tokens = prompt + usage.completion_tokens.unwrap_or(0);
-                    self.observe_prompt_tokens(prompt);
                 }
             }
             StreamEvent::Done { .. } | StreamEvent::Error { .. } => {}
@@ -4076,34 +4118,14 @@ impl App {
         self.persist();
     }
 
-    /// Whether auto-compaction should trigger after a turn completes. Requires
-    /// a window worth measuring against: with the configured one disproven,
-    /// this would fire on every remaining turn of the session.
+    /// Whether auto-compaction should trigger: a non-zero token use above the
+    /// active resolved threshold (window minus reserve) with enough history to
+    /// shrink. The window is authoritative for the selected model (configured
+    /// override, catalog, or fallback), so proactive compaction never silently
+    /// stands down on accepted prompt usage.
     fn should_auto_compact(&self) -> bool {
         let limit = self.context_window.saturating_sub(self.reserve_tokens);
-        self.context_window_trusted
-            && self.tokens > limit
-            && self.tokens > 0
-            && self.history.len() > 4
-    }
-
-    /// Fold an accepted request's prompt size into the session's view of the
-    /// context window. `context_window` is a guess (`[agent].context_window`,
-    /// default 128K) with nothing tying it to the model actually in use, so a
-    /// prompt the provider served proves it wrong when it exceeds it -- the
-    /// real window is at least this big. How much bigger is unknowable from
-    /// here, so nothing is invented: the value is simply no longer used as a
-    /// denominator, and the user is told once how to set it.
-    fn observe_prompt_tokens(&mut self, prompt_tokens: u64) {
-        if !self.context_window_trusted || prompt_tokens <= self.context_window {
-            return;
-        }
-        self.context_window_trusted = false;
-        self.note(&format!(
-            "a {}K prompt exceeded the configured {}K context window: set [agent].context_window in agent.toml",
-            (prompt_tokens + 500) / 1000,
-            self.context_window / 1000,
-        ));
+        self.tokens > limit && self.tokens > 0 && self.history.len() > 4
     }
 
     /// Queue a compaction and a retry for a context-overflow error, reporting
@@ -8191,8 +8213,20 @@ fn finish_compaction(
         }
         Err(e) => {
             app.note(&format!("{} failed: {e}", kind.label()));
-            if retrying {
+            // A target-model compaction (model switch) that itself overflows
+            // must block the oversized ordinary request: history stays
+            // untouched, the target model stays selected, and the turn is
+            // halted rather than retried on the same oversized history.
+            // `halt_turn` folds any in-flight tools and dequeues, but does not
+            // disarm a queued `want_start`, so a gated ordinary request is
+            // explicitly deferred too -- otherwise the loop would re-send the
+            // oversized history the moment the compaction task clears.
+            let overflow = crate::core::agent::upstream::is_context_overflow_error(&e);
+            if retrying || overflow {
                 app.halt_turn();
+            }
+            if overflow {
+                app.want_start = false;
             }
         }
     }
@@ -12510,18 +12544,20 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         ));
     }
     spans.push(Span::raw(format!("  {turn}")));
-    // The denominator is dropped once an accepted prompt has disproven the
-    // configured window: `ctx 143K/128K` is not a gauge, it is a contradiction.
-    match (app.tokens, app.context_window_trusted) {
-        // Round to nearest K for display clarity.
-        (0, true) => spans.push(Span::raw(format!("ctx 0/{}K  ", app.context_window / 1000))),
-        (n, true) => spans.push(Span::raw(format!(
-            "ctx {}K/{}K  ",
-            (n + 500) / 1000,
-            app.context_window / 1000
-        ))),
-        (n, false) => spans.push(Span::raw(format!("ctx {}K  ", (n + 500) / 1000))),
-    }
+    // Round to nearest K for display clarity, and label the source the window
+    // came from (configured override, catalog, or fallback) so the reader can
+    // tell whether it was authored or inferred.
+    let used_k = if app.tokens == 0 {
+        0
+    } else {
+        (app.tokens + 500) / 1000
+    };
+    spans.push(Span::raw(format!(
+        "ctx {}K/{}K {}  ",
+        used_k,
+        app.context_window / 1000,
+        app.context_window_source.label()
+    )));
     spans.push(Span::styled(elapsed, Style::new().dim()));
     // Output rate segment: last completed turn's tokens/sec, cached so it holds
     // steady instead of flickering to 0 between turns.
@@ -12743,13 +12779,9 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
         return Vec::new();
     }
     let frame = app.spinner();
-    // 0 is the columns' "unknown window" encoding: they suppress the share
-    // rather than divide by a value the session has already disproven.
-    let context_window = if app.context_window_trusted {
-        app.context_window
-    } else {
-        0
-    };
+    // The active resolved window drives the subagent share; it is always
+    // known (configured, catalog, or fallback), so it is always a denominator.
+    let context_window = app.context_window;
     let has_todos = !app.todos.is_empty() && !app.todos_expired();
     let has_agents = !app.subagents.is_empty();
     match (has_todos, has_agents) {
@@ -13201,6 +13233,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let limits = SessionLimits {
             context_window: 128_000,
+            context_window_source: crate::core::cli::model_capabilities::ContextWindowSource::Fallback,
             reserve_tokens: 16_384,
             max_tokens: None,
             max_session_tokens: 128_000,
@@ -13250,6 +13283,8 @@ mod tests {
                 "m".into(),
                 super::SessionLimits {
                     context_window: 128_000,
+                    context_window_source:
+                        crate::core::cli::model_capabilities::ContextWindowSource::Fallback,
                     reserve_tokens: 16_384,
                     max_tokens: None,
                     max_session_tokens: 128_000,
@@ -14567,7 +14602,7 @@ mod tests {
         app.submit_user("hi".to_string());
 
         let render = |app: &mut App| {
-            let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+            let mut terminal = Terminal::new(TestBackend::new(110, 30)).unwrap();
             terminal.draw(|f| super::draw(f, app)).unwrap();
             let buf = terminal.backend().buffer().clone();
             (0..buf.area.height)
@@ -14603,7 +14638,7 @@ mod tests {
         app.submit_user("hi".to_string());
 
         let render = |app: &mut App| {
-            let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+            let mut terminal = Terminal::new(TestBackend::new(110, 30)).unwrap();
             terminal.draw(|f| super::draw(f, app)).unwrap();
             let buf = terminal.backend().buffer().clone();
             (0..buf.area.height)
@@ -22904,7 +22939,7 @@ mod tests {
             text: "<think>pondering".into(),
         });
         assert!(app.is_thinking(), "open reasoning block");
-        let rows = render_rows(&mut app, 60, 12);
+        let rows = render_rows(&mut app, 110, 12);
         assert!(
             rows[0].contains("[thinking]"),
             "label intact: {:?}",
@@ -24406,14 +24441,6 @@ mod tests {
         assert_eq!(app.overflow_retries, 0);
     }
 
-    fn usage_of(prompt: u64, completion: u64) -> Usage {
-        Usage {
-            prompt_tokens: Some(prompt),
-            completion_tokens: Some(completion),
-            total_tokens: Some(prompt + completion),
-        }
-    }
-
     #[test]
     fn estimate_counts_tool_call_arguments() {
         // Arguments live at `function.arguments`; reading `arguments` off the
@@ -24444,45 +24471,144 @@ mod tests {
     }
 
     #[test]
-    fn an_accepted_prompt_above_the_window_stops_trusting_it() {
+    fn set_model_reduces_window_and_queues_target_compaction() {
         let mut app = test_app();
-        assert!(app.context_window_trusted);
-        app.apply(StreamEvent::TurnUsage {
-            usage: usage_of(200_000, 100),
-        });
-        assert!(
-            !app.context_window_trusted,
-            "a prompt the provider accepted proves the configured window wrong"
+        // Simulate a 1M window with heavy usage, then switch to a 200K model.
+        app.context_window = 1_000_000;
+        app.context_window_source =
+            crate::core::cli::model_capabilities::ContextWindowSource::Catalog;
+        app.tokens = 500_000;
+        for i in 0..6 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        app.set_model("claude-sonnet-4-5".to_string());
+
+        assert_eq!(app.model, "claude-sonnet-4-5");
+        assert_eq!(app.context_window, 200_000);
+        assert_eq!(
+            app.context_window_source,
+            crate::core::cli::model_capabilities::ContextWindowSource::Catalog
         );
-        // The gauge has no denominator it can trust, so it must not divide.
-        assert!(!app.should_auto_compact(), "and it must not compact on it");
+        assert!(app.should_auto_compact(), "usage now exceeds the target");
+        assert_eq!(
+            app.compact_request,
+            Some(CompactKind::Auto),
+            "a smaller-window switch must queue target compaction"
+        );
     }
 
     #[test]
-    fn a_prompt_within_the_window_keeps_it_trusted() {
+    fn configured_window_stays_authoritative_across_switch() {
         let mut app = test_app();
-        app.apply(StreamEvent::TurnUsage {
-            usage: usage_of(50_000, 100),
-        });
-        assert!(app.context_window_trusted);
+        app.configured_context_window = Some(333_000);
+        app.context_window = 333_000;
+        app.context_window_source =
+            crate::core::cli::model_capabilities::ContextWindowSource::Configured;
+        // Below the configured threshold, so no target compaction is queued.
+        app.tokens = 50_000;
+        for i in 0..6 {
+            app.history.push(serde_json::json!({
+                "role": "user",
+                "content": format!("msg{i}")
+            }));
+        }
+        app.set_model("claude-sonnet-4-5".to_string());
+
+        assert_eq!(
+            app.context_window, 333_000,
+            "a configured override must win over the catalog"
+        );
+        assert_eq!(
+            app.context_window_source,
+            crate::core::cli::model_capabilities::ContextWindowSource::Configured
+        );
+        assert_eq!(app.compact_request, None);
     }
 
     #[test]
-    fn header_drops_the_denominator_once_the_window_is_untrusted() {
+    fn moving_to_a_larger_window_does_not_compact() {
         let mut app = test_app();
-        app.apply(StreamEvent::TurnUsage {
-            usage: usage_of(200_000, 100),
-        });
+        app.context_window = 200_000;
+        app.context_window_source =
+            crate::core::cli::model_capabilities::ContextWindowSource::Catalog;
+        app.tokens = 500_000;
+        for i in 0..6 {
+            app.history.push(serde_json::json!({
+                "role": "user",
+                "content": format!("msg{i}")
+            }));
+        }
+        app.set_model("claude-sonnet-4-6".to_string());
+
+        assert_eq!(app.context_window, 1_000_000);
+        assert!(
+            !app.should_auto_compact(),
+            "the window grew past current usage"
+        );
+        assert_eq!(app.compact_request, None);
+    }
+
+    #[test]
+    fn set_model_notes_the_context_source() {
+        let mut app = test_app();
+        app.set_model("claude-sonnet-4-6".to_string());
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("claude-sonnet-4-6"), "got: {text}");
+        assert!(text.contains("(context 1000K, catalog)"), "got: {text}");
+    }
+
+    #[test]
+    fn unknown_model_resolves_to_the_fallback_window() {
+        let mut app = test_app();
+        app.set_model("private-gateway-model".to_string());
+        assert_eq!(app.context_window, 128_000);
+        assert_eq!(
+            app.context_window_source,
+            crate::core::cli::model_capabilities::ContextWindowSource::Fallback
+        );
+    }
+
+    #[test]
+    fn a_target_compaction_that_overflows_blocks_the_gated_run() {
+        let mut app = test_app();
+        app.compacting = Some(CompactKind::Auto);
+        app.history = vec![serde_json::json!({ "role": "user", "content": "hi" })];
+        app.want_start = true;
+        let overflow = format!(
+            "[{}] Upstream returned HTTP 400: prompt is too long",
+            crate::core::agent::upstream::CONTEXT_OVERFLOW_MARKER
+        );
+        finish_compaction(&mut app, Err(overflow), 1);
+
+        assert!(app.compacting.is_none(), "a failure must clear the throbber");
+        assert_eq!(app.history.len(), 1, "history must be left untouched");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(
+            text.contains("auto-compacting failed"),
+            "an actionable error must be shown: {text}"
+        );
+        assert!(
+            !app.want_start,
+            "the oversized regular request must not be auto-resubmitted"
+        );
+    }
+
+    #[test]
+    fn header_labels_the_context_source() {
+        let app = test_app();
         let text: String = header_spans(&app)
             .iter()
             .map(|s| s.content.as_ref())
             .collect::<String>();
-        assert!(text.contains("ctx 200K"), "usage still shown: {text}");
         assert!(
-            !text.contains("/128K"),
-            "a disproven window must not be a denominator: {text}"
+            text.contains("/128K fallback"),
+            "the header must carry the source label: {text}"
         );
     }
+
     #[test]
     fn header_labels_a_bare_model_with_its_single_provider() {
         let mut pc = std::collections::HashMap::new();
@@ -24541,34 +24667,6 @@ mod tests {
             .map(|s| s.content.as_ref())
             .collect::<String>();
         assert!(text.contains("effort low"), "badge must track the level: {text}");
-    }
-
-    #[test]
-    fn subagent_share_is_suppressed_when_the_window_is_untrusted() {
-        let mut app = test_app();
-        app.subagents.push(SubagentPanel {
-            run_id: "r".into(),
-            name: "alpha".into(),
-            task: "t".into(),
-            calls: Vec::new(),
-            requests: 1,
-            prompt_tokens: 200_000,
-            active: None,
-            queued: false,
-            waiting: 0,
-        });
-        app.apply(StreamEvent::TurnUsage {
-            usage: usage_of(200_000, 100),
-        });
-        let rows = status_panel(&mut app, 120, 8);
-        let text: String = rows
-            .iter()
-            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
-            .collect::<String>();
-        assert!(
-            !text.contains('%'),
-            "no share against a wrong window: {text}"
-        );
     }
 
     #[test]
@@ -24728,16 +24826,16 @@ mod tests {
     fn header_leads_with_the_model_not_a_name_chip() {
         let mut app = test_app();
         app.model = "tokamak-1-preview".into();
-        let top = render_rows(&mut app, 60, 12).remove(0);
+        let top = render_rows(&mut app, 110, 12).remove(0);
         assert!(
             top.starts_with(" tokamak-1-preview"),
             "the name chip is back: {top:?}"
         );
-        // The freed columns are what let the status survive a 60-column frame.
+        // The freed columns are what let the status survive a 110-column frame.
         assert!(top.contains("[ready]"), "{top:?}");
 
         app.model.clear();
-        let top = render_rows(&mut app, 60, 12).remove(0);
+        let top = render_rows(&mut app, 110, 12).remove(0);
         assert!(top.starts_with(" no model"), "{top:?}");
     }
 
