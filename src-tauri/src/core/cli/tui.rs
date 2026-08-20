@@ -456,7 +456,11 @@ struct ModelPicker {
 
 impl ModelPicker {
     fn from_pairs(mut pairs: Vec<(String, String)>, current_model: &str) -> Option<Self> {
-        pairs.sort();
+        pairs.sort_by(|a, b| match (a.0 == "tokamak", b.0 == "tokamak") {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.cmp(b),
+        });
         pairs.dedup();
         if pairs.is_empty() {
             return None;
@@ -25094,6 +25098,23 @@ mod tests {
             "the last body row must map to the last transcript row"
         );
 }
+    #[test]
+    fn model_picker_pins_tokamak_scope_and_models_first() {
+        let picker = super::ModelPicker::from_pairs(
+            vec![
+                ("anthropic".into(), "claude-sonnet".into()),
+                ("openai".into(), "gpt-5-codex".into()),
+                ("tokamak".into(), "tokamak-1-preview".into()),
+            ],
+            "tokamak-1-preview",
+        )
+        .unwrap();
+
+        assert_eq!(picker.scopes[1].label, "tokamak");
+        assert_eq!(picker.items[0].provider, "tokamak");
+        assert_eq!(picker.items[0].model, "tokamak-1-preview");
+    }
+
     #[test]
     fn model_picker_builds_all_and_provider_scopes_with_counts() {
         let picker = super::ModelPicker::from_pairs(
