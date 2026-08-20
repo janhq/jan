@@ -38,6 +38,12 @@ pub const HAND: [&str; 15] = [
 
 pub const HAND_WIDTH: u16 = 32;
 
+/// The hand-wave mark as a single glyph, for the header's leading column where
+/// the block art has no room. No VS16: the emoji is already presentation-default
+/// and the extra selector makes some terminals advance a column ratatui has not
+/// reserved, which shifts the rest of the row.
+pub const WAVE: &str = "\u{1F44B}";
+
 /// Columns between the hand mark and the wordmark in the lockup.
 const LOCKUP_GAP: u16 = 2;
 

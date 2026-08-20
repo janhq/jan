@@ -11861,14 +11861,18 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         .map(|t| format!("  {}", format_elapsed(t.elapsed().as_secs())))
         .unwrap_or_default();
     // No name chip: the splash names the app (see `Banner`), and the header's
-    // columns are better spent on state that changes. The model leads instead,
-    // bold so the row still has an anchor on the left; an unset model says so
-    // rather than opening the row with blanks.
-    let mut spans = vec![if app.model.is_empty() {
-        Span::styled(" no model  ", Style::new().red().bold())
-    } else {
-        Span::styled(format!(" {}  ", app.model), Style::new().bold())
-    }];
+    // columns are better spent on state that changes. The wave mark stands in
+    // for the name in one glyph, then the model, bold so the row still has an
+    // anchor on the left; an unset model says so rather than opening the row
+    // with blanks.
+    let mut spans = vec![
+        Span::styled(format!(" {}", brand::WAVE), Style::new().yellow()),
+        if app.model.is_empty() {
+            Span::styled(" no model", Style::new().red().bold())
+        } else {
+            Span::styled(format!(" {}", app.model), Style::new().bold())
+        },
+    ];
     // Reasoning-effort badge: `effort high` after the model, so the configured
     // reasoning depth is visible at a glance. Reported low/medium/high exactly
     // as set, so the display always matches what is sent upstream.
@@ -12183,13 +12187,13 @@ fn input_box_height(app: &App, width: u16) -> u16 {
     content + 1
 }
 
-/// Visible input as styled lines: `👋 ` on the first line, 2-space hang on
+/// Visible input as styled lines: `> ` on the first line, 2-space hang on
 /// continuations, and a solid block cursor at the byte offset `cursor` (the
 /// character under the cursor is drawn in reverse video; at end of line a
 /// reversed space forms the block). Wrapping is left to the Paragraph so long
 /// single lines fold within the box width.
 fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
-    let arrow = Span::styled("👋 ", Style::new().cyan().bold());
+    let arrow = Span::styled("> ", Style::new().cyan().bold());
     let segments: Vec<&str> = input.split('\n').collect();
     let last = segments.len() - 1;
     // Locate the segment + in-segment byte offset holding the caret.
@@ -12298,7 +12302,7 @@ fn input_box(app: &App) -> Paragraph<'static> {
             .block(block)
         }
     } else if app.input.is_empty() {
-        // Same `👋 ` prompt as the typing view, then a fixed (non-blinking)
+        // Same `> ` prompt as the typing view, then a fixed (non-blinking)
         // block cursor in front of the placeholder.
         let placeholder = if app.status == Status::Running {
             "Type to queue next message"
@@ -12306,7 +12310,7 @@ fn input_box(app: &App) -> Paragraph<'static> {
             "Type here to chat with agent"
         };
         let cursor_spans: Vec<Span<'static>> = vec![
-            Span::styled("👋 ", Style::new().cyan().bold()),
+            Span::styled("> ", Style::new().cyan().bold()),
             Span::styled(" ", Style::new().add_modifier(Modifier::REVERSED)),
             Span::raw(" "),
             Span::styled(placeholder, Style::new().dim().italic()),
@@ -17074,14 +17078,14 @@ mod tests {
     fn input_lines_single_line_has_arrow_and_cursor() {
         let lines = input_content_lines("hello", 5);
         assert_eq!(lines.len(), 1);
-        assert_eq!(caret_text(&lines[0]), "👋 hello▏");
+        assert_eq!(caret_text(&lines[0]), "> hello▏");
     }
 
     #[test]
     fn input_lines_multiline_hangs_and_cursor_on_last() {
         let lines = input_content_lines("one\ntwo\nthree", "one\ntwo\nthree".len());
         assert_eq!(lines.len(), 3);
-        assert_eq!(line_text(&lines[0]), "👋 one");
+        assert_eq!(line_text(&lines[0]), "> one");
         assert_eq!(line_text(&lines[1]), "  two");
         assert_eq!(caret_text(&lines[2]), "  three▏");
     }
@@ -17090,7 +17094,7 @@ mod tests {
     fn input_lines_trailing_newline_gives_empty_cursor_row() {
         let lines = input_content_lines("hi\n", 3);
         assert_eq!(lines.len(), 2);
-        assert_eq!(line_text(&lines[0]), "👋 hi");
+        assert_eq!(line_text(&lines[0]), "> hi");
         assert_eq!(caret_text(&lines[1]), "  ▏");
     }
 
@@ -17099,14 +17103,14 @@ mod tests {
         // Caret sits between "he" and "llo" on a single line.
         let lines = input_content_lines("hello", 2);
         assert_eq!(lines.len(), 1);
-        assert_eq!(caret_text(&lines[0]), "👋 he▏llo");
+        assert_eq!(caret_text(&lines[0]), "> he▏llo");
     }
 
     #[test]
     fn input_lines_caret_on_earlier_line_only() {
         // Cursor inside the first segment: caret there, none on later lines.
         let lines = input_content_lines("one\ntwo", 1);
-        assert_eq!(caret_text(&lines[0]), "👋 o▏ne");
+        assert_eq!(caret_text(&lines[0]), "> o▏ne");
         assert_eq!(line_text(&lines[1]), "  two");
     }
 
@@ -23255,21 +23259,30 @@ mod tests {
         }
     }
 
+    /// The wave mark is the only branding the header carries: one glyph, then
+    /// the model. A name chip would spend the columns the status needs.
     #[test]
-    fn header_leads_with_the_model_not_a_name_chip() {
+    fn header_leads_with_the_wave_then_the_model() {
         let mut app = test_app();
         app.model = "tokamak-1-preview".into();
         let top = render_rows(&mut app, 60, 12).remove(0);
+        let head = top.trim_start();
         assert!(
-            top.starts_with(" tokamak-1-preview"),
-            "the name chip is back: {top:?}"
+            head.starts_with(brand::WAVE),
+            "the wave should open the row: {top:?}"
+        );
+        assert!(
+            head[brand::WAVE.len()..]
+                .trim_start()
+                .starts_with("tokamak-1-preview"),
+            "the model should follow the wave, with no name chip between: {top:?}"
         );
         // The freed columns are what let the status survive a 60-column frame.
         assert!(top.contains("[ready]"), "{top:?}");
 
         app.model.clear();
         let top = render_rows(&mut app, 60, 12).remove(0);
-        assert!(top.starts_with(" no model"), "{top:?}");
+        assert!(top.contains("no model"), "{top:?}");
     }
 
     #[test]
