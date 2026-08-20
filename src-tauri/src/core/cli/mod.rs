@@ -11,6 +11,7 @@ pub mod run_report;
 pub mod providers;
 mod secret_input;
 pub mod telemetry;
+pub mod terminal_setup;
 pub mod tokamak;
 mod tui;
 pub mod updater;
