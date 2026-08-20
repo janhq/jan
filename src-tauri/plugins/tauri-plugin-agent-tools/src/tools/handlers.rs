@@ -643,10 +643,11 @@ async fn edit(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, con
 }
 
 async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
-    if let Some(job_id) = arg_str(args, "job_id") {
-        return await_bash_job(job_id).await;
-    }
-    let Some(command) = arg_str(args, "command") else {
+    let Some(command) = arg_str(args, "command").filter(|command| !command.trim().is_empty())
+    else {
+        if let Some(job_id) = arg_str(args, "job_id").filter(|job_id| !job_id.trim().is_empty()) {
+            return await_bash_job(job_id).await;
+        }
         return "ERROR: missing required argument 'command' (or 'job_id' to poll a backgrounded job)"
             .to_string();
     };
@@ -2391,6 +2392,22 @@ mod tests {
             out.starts_with("ERROR: unknown or already-collected"),
             "unexpected: {out}"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_command_takes_precedence_over_spurious_job_id() {
+        let root = unique_root();
+        for job_id in ["", " ", "x"] {
+            let out = execute_builtin(
+                lookup("bash").unwrap(),
+                &json!({"command": "printf hello", "job_id": job_id}),
+                &root,
+            )
+            .await;
+            assert!(out.contains("hello"), "job_id {job_id:?}: {out}");
+            assert!(out.contains("[exit 0]"), "job_id {job_id:?}: {out}");
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 
