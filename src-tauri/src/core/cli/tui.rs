@@ -1526,7 +1526,7 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 /// Milliseconds per spinner frame, decoupled from the 50ms render tick.
 const SPINNER_ADVANCE_MS: u64 = 80;
 
-const HAND: &str = "👋";
+const HAND: &str = "👋\u{FE0F}";
 
 fn hand_sweep_position(char_count: usize, frame: usize) -> usize {
     let cycle = char_count.saturating_mul(2).max(1);
@@ -11999,13 +11999,15 @@ fn input_box(app: &App, width: u16) -> Paragraph<'static> {
             } else {
                 let word = WORKING_WORDS[step % WORKING_WORDS.len()];
                 let text_style = Style::new().dim().italic();
-                let mut spans = hand_sweep_line(word, app.spinner_frame, text_style).spans;
+                let mut spans = vec![Span::styled("› ", Style::new().cyan().bold())];
+                spans.extend(hand_sweep_line(word, app.spinner_frame, text_style).spans);
                 spans.push(suffix());
                 let animated = Line::from(spans);
                 let line = if spans_width(&animated.spans) <= width as usize {
                     animated
                 } else {
                     Line::from(vec![
+                        Span::styled("› ", Style::new().cyan().bold()),
                         Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
                         Span::styled(format!("{word}…"), text_style),
                         suffix(),
@@ -12554,11 +12556,16 @@ mod tests {
     fn hand_sweep_moves_forward_and_back_across_the_message() {
         let text = |frame| line_text(&hand_sweep_line("build", frame, Style::default()));
 
-        assert_eq!(text(0), "👋uild...");
-        assert_eq!(text(3), "bui👋d...");
-        assert_eq!(text(8), "build...👋");
-        assert_eq!(text(9), "build..👋");
-        assert_eq!(text(16), "👋uild...");
+        assert_eq!(text(0), format!("{HAND}uild..."));
+        assert_eq!(text(3), format!("bui{HAND}d..."));
+        assert_eq!(text(8), format!("build...{HAND}"));
+        assert_eq!(text(9), format!("build..{HAND}"));
+        assert_eq!(text(16), format!("{HAND}uild..."));
+    }
+
+    #[test]
+    fn hand_uses_explicit_emoji_presentation() {
+        assert_eq!(HAND.chars().last(), Some('\u{FE0F}'));
     }
 
     #[test]
@@ -12567,7 +12574,7 @@ mod tests {
         assert_eq!(hand_sweep_position(message.chars().count(), 1), 1);
         assert_eq!(
             line_text(&hand_sweep_line("éx", 1, Style::default())),
-            "é👋..."
+            format!("é{HAND}...")
         );
     }
 
@@ -19242,9 +19249,9 @@ mod tests {
             "working row still has Braille spinner: {first:?}"
         );
 
-        // While a plain turn is running (no reasoning), the row shows a
         // The hand covers the first character at frame 0, leaving the rest of
         // the selected working word visible.
+        assert!(first.starts_with("› "), "working row lost the prompt: {first:?}");
         assert!(
             first.contains("orking..."),
             "expected the working word behind the hand: {first:?}"
