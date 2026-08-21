@@ -1,0 +1,86 @@
+---
+title: Run Modes
+description: Default, safe, and plan - how much freedom the agent has in a session.
+keywords: [Jan, Jan Agent, plan mode, safe mode, read-only, sandbox, run modes]
+---
+
+import { Callout } from 'nextra/components'
+
+# Run Modes
+
+A session runs in one of three modes. They differ only in how much the agent is allowed to do
+without you.
+
+| Mode | Reads | Writes and commands | Start with |
+| --- | --- | --- | --- |
+| Default | Free | Auto-approved | `jan` |
+| Safe | Free | Prompt for approval | `jan --safe` |
+| Plan | Free | Blocked | `jan --plan` |
+
+## Default
+
+The agent works without stopping to ask. That is not the same as unrestricted - file paths are still
+checked against the project root - but a shell command you never saw runs with your own access,
+because the CLI does not sandbox commands by default.
+
+Add `--sandbox` to run them under OS confinement (bubblewrap on Linux, Seatbelt on macOS,
+AppContainer on Windows), confined to the project directory; with it on, if no sandbox can be
+established the `bash` tool refuses to run at all. It can also be turned on permanently - see
+[the shell sandbox](/docs/agent/permissions#the-shell-sandbox).
+
+Some things are denied outright and no mode lifts them:
+
+- `.jan/agent/` internals, so the agent cannot rewrite its own permissions
+- anything listed in `[tools] deny` in `agent.toml`
+- every write and command while plan mode is on
+
+Auto-approval is the right default in a disposable environment and in CI, where nobody is at a
+keyboard to answer a prompt. On a machine where the project directory holds work you cannot
+recreate, start with `--safe`.
+
+## Safe mode
+
+```bash
+jan --safe
+```
+
+The agent reads freely and stops to ask before anything that changes your machine:
+
+```
+ write src/cli.rs
+   y  yes, once
+   a  yes, and don't ask again this session
+   n  no
+```
+
+`a` lasts for the session only. Details in [Tool permissions](/docs/agent/permissions).
+
+<Callout type="warning">
+Do not pass `--safe` to a headless run with no TTY on stdin, such as CI. There is no way to answer
+the prompt, so it is denied and the run stalls on its first write.
+</Callout>
+
+## Plan mode
+
+Read-only. The agent investigates and proposes, but every write and command is blocked.
+
+```bash
+jan --plan
+```
+
+```
+/plan                # switch mid-session
+/plan fix the tests  # switch in and send a first message
+/plan exit           # leave, allowing changes again
+```
+
+The header shows a `PLAN` badge while it's active, so you always know where you are.
+
+Use it to audit an unfamiliar codebase, or to agree on an approach before letting anything change.
+Todos staged during plan mode carry over when you exit, so the plan becomes the work list.
+
+## Switching
+
+Plan mode toggles at any time with `/plan` and `/plan exit`. Whether prompts are on is decided at
+launch: `--safe` cannot be turned on or off mid-session, so a session you started cautiously stays
+cautious.

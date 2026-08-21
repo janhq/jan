@@ -86,7 +86,7 @@ const Home = () => {
     <Fragment>
       {/* Hero */}
       <section className="px-3 pt-3">
-        <div className="bg-[#458edf] relative py-10 h-[760px] md:h-[900px] 2xl:h-[1080px] rounded-2xl overflow-hidden">
+        <div className="bg-[#458edf] relative py-10 h-[760px] md:h-[900px] 2xl:h-[1080px] rounded-2xl overflow-hidden max-w-[1600px] mx-auto">
           <div className="container mx-auto relative z-10">
             <div className="flex justify-center items-center mt-14 lg:mt-20 px-4">
               <a
@@ -208,7 +208,7 @@ const Home = () => {
           </div>
         </div>
 
-        <div className="hidden size-4/5 xl:size-3/5 rounded-[20px] mx-auto relative -mt-40 lg:flex animate-scale-in delay-300">
+        <div className="hidden size-4/5 xl:size-3/5 max-w-[1200px] rounded-[20px] mx-auto relative -mt-40 lg:flex animate-scale-in delay-300">
           <div className="rounded-md size-full overflow-hidden">
             <img
               src={AppJanPNG.src}
@@ -229,6 +229,41 @@ const Home = () => {
         </div>
       </section>
 
+      {/* Products */}
+      <section className="px-3 pt-20">
+        <div className="container mx-auto">
+          <h2 className="text-[24px] lg:text-[40px] font-semibold text-center mb-10 -tracking-[1.3px]">
+            An open model ecosystem
+          </h2>
+          <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+            <div className="rounded-2xl border border-black shadow-[0px_4px_0px_0px_rgba(0,0,0,1)] p-6">
+              <h3 className="text-xl font-semibold">Jan Agent</h3>
+              <p className="mt-2 text-black/60">
+                The core agent, distributed separately — run it on your own
+                VM or container.
+              </p>
+              <a href="/docs/agent" className="inline-block mt-4">
+                <Button variant="playful" size="lg">
+                  Install Jan Agent
+                </Button>
+              </a>
+            </div>
+            <div className="rounded-2xl border border-black shadow-[0px_4px_0px_0px_rgba(0,0,0,1)] p-6">
+              <h3 className="text-xl font-semibold">Tokamak</h3>
+              <p className="mt-2 text-black/60">
+                Router, fusion model, and governance/audit — the self-hosted
+                backend Jan agents connect to.
+              </p>
+              <a href="/tokamak" className="inline-block mt-4">
+                <Button variant="playful" size="lg">
+                  Explore Tokamak
+                </Button>
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Statistic and social */}
       <section className="pt-20">
         <div className="container mx-auto">
@@ -241,7 +276,7 @@ const Home = () => {
 
       {/* Social tech */}
       <section className="px-3 mt-20">
-        <div className="bg-[#C6E09E] px-4 relative py-10 h-[640px] sm:h-[800px] lg:h-[900px] 2xl:h-[1040px] rounded-2xl overflow-hidden">
+        <div className="bg-[#C6E09E] px-4 relative py-10 h-[640px] sm:h-[800px] lg:h-[900px] 2xl:h-[1040px] rounded-2xl overflow-hidden max-w-[1600px] mx-auto">
           <div className="container mx-auto relative z-10">
             <div className="md:mt-10">
               <div className="lg:w-3/5 mx-auto">
@@ -572,7 +607,7 @@ const Home = () => {
 
       {/* Call to action */}
       <section className="px-3 pt-3">
-        <div className="bg-[#458edf] relative py-10 h-[480px] lg:h-[650px] rounded-2xl overflow-hidden">
+        <div className="bg-[#458edf] relative py-10 h-[480px] lg:h-[650px] rounded-2xl overflow-hidden max-w-[1600px] mx-auto">
           <div className="w-full lg:w-3/5 mx-auto">
             <div className="container relative z-10">
               <div className="mt-10 flex flex-col lg:flex-row justify-between items-center gap-8">
