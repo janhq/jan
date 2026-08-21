@@ -359,6 +359,58 @@ pub(crate) fn remove_provider(name: &str) -> Result<bool, String> {
     Ok(true)
 }
 
+/// Read one top-level scalar from `~/.jan/config.toml` as a display string.
+/// `None` when the key is absent or the file is unreadable. Reads through
+/// `toml_edit` rather than the typed struct so the caller gets the value the
+/// user actually typed, and so a key this build does not know about still
+/// round-trips.
+#[cfg(feature = "cli")]
+pub(crate) fn global_value(key: &str) -> Option<String> {
+    let raw = std::fs::read_to_string(global_config_path().ok()?).ok()?;
+    let doc = raw.parse::<toml_edit::DocumentMut>().ok()?;
+    let item = doc.get(key)?;
+    Some(match item.as_value() {
+        Some(toml_edit::Value::String(s)) => s.value().to_string(),
+        Some(toml_edit::Value::Integer(i)) => i.value().to_string(),
+        Some(toml_edit::Value::Boolean(b)) => b.value().to_string(),
+        _ => item.to_string(),
+    })
+}
+
+/// Persist a top-level scalar into `~/.jan/config.toml`, format-preserving.
+/// `None` removes the key so its default applies again.
+///
+/// This edits the document rather than round-tripping the typed struct the way
+/// [`set_provider`] does: the scaffolded file is mostly *commented* examples,
+/// and re-serializing would throw every one of them away the first time a user
+/// toggled a display preference. Creates the file from the template when it is
+/// missing, so a first toggle lands in a documented file.
+#[cfg(feature = "cli")]
+pub(crate) fn set_global_key(key: &str, value: Option<toml_edit::Item>) -> Result<PathBuf, String> {
+    let path = ensure_global_config()?;
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let mut doc = raw
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+
+    match value {
+        // `toml_edit` renders a root table's scalars ahead of its sub-tables,
+        // so a key appended here still reads back as a document key and not as
+        // a member of the last `[providers.*]` table. The round-trip test below
+        // pins that.
+        Some(v) => doc[key] = v,
+        None => {
+            doc.remove(key);
+        }
+    }
+
+    std::fs::write(&path, doc.to_string())
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+    restrict_permissions(&path);
+    Ok(path)
+}
+
 /// Scaffold `~/.jan/config.toml` with a commented example, if it doesn't exist
 /// yet. Idempotent and clobber-safe: never overwrites an existing file.
 pub(crate) fn ensure_global_config() -> Result<PathBuf, String> {
@@ -487,6 +539,55 @@ mod tests {
 
             std::fs::write(&path, "not valid toml [[[").unwrap();
             assert_eq!(wave_glyph(), None, "an unreadable config keeps the default");
+        });
+    }
+
+    /// The `/settings` write path. Two properties matter and neither is
+    /// obvious: the commented template survives a write (the typed round-trip
+    /// `write_raw` does would throw every example line away), and a key added
+    /// to a file that already holds `[providers.*]` tables reads back as a
+    /// document key rather than as a member of the last table.
+    #[test]
+    fn set_global_key_preserves_comments_and_stays_out_of_provider_tables() {
+        with_temp_home(|_| {
+            let path = ensure_global_config().expect("ensure");
+            std::fs::write(
+                &path,
+                "# keep me\n[providers.openai]\napi_key = \"sk-x\"\n",
+            )
+            .unwrap();
+
+            set_global_key("wave", Some(toml_edit::value("🍌"))).expect("set");
+            let raw = std::fs::read_to_string(&path).unwrap();
+            assert!(raw.contains("# keep me"), "comment survives the write: {raw}");
+            assert!(raw.contains("sk-x"), "provider survives the write: {raw}");
+            assert_eq!(
+                wave_glyph().as_deref(),
+                Some("🍌"),
+                "key must parse as a document key, not a provider field: {raw}"
+            );
+            assert_eq!(global_value("wave").as_deref(), Some("🍌"));
+
+            set_global_key("wave", None).expect("unset");
+            assert_eq!(wave_glyph(), None, "None removes the key");
+            assert_eq!(global_value("wave"), None);
+            let raw = std::fs::read_to_string(&path).unwrap();
+            assert!(raw.contains("sk-x"), "unset leaves the rest alone: {raw}");
+        });
+    }
+
+    /// A first toggle on a machine with no config must land in a real file
+    /// rather than error, and that file should be the documented template.
+    #[test]
+    fn set_global_key_scaffolds_a_missing_config() {
+        with_temp_home(|home| {
+            let path = home.join(".jan").join("config.toml");
+            assert!(!path.exists(), "starting from no config");
+
+            set_global_key("wave", Some(toml_edit::value("~"))).expect("set");
+            let raw = std::fs::read_to_string(&path).unwrap();
+            assert!(raw.contains("Jan Agent global provider config"), "{raw}");
+            assert_eq!(wave_glyph().as_deref(), Some("~"));
         });
     }
 

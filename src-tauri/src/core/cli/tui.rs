@@ -392,8 +392,8 @@ enum PickerKind {
     RewindScope,
     /// Read-only view of `~/.jan/config.toml` providers (`/config`). Enter closes.
     ViewConfig,
-    /// `/settings`: browse editable `[agent]` keys from agent.toml; Enter opens
-    /// a docked edit prompt for the selected row.
+    /// `/settings`: browse editable keys from agent.toml and `~/.jan/config.toml`;
+    /// Enter opens a docked edit prompt for the selected row.
     AgentSettings,
     /// `/settings > providers`: manage `~/.jan/config.toml` providers via a
     /// docked add/edit wizard (`a`/`e`) or deletion (`d`).
@@ -5647,11 +5647,28 @@ fn think_tags_parsed() -> bool {
 
 /// The glyph swept along the working row, or `None` for the static throbber.
 /// Process-wide for the same reason as `PARSE_THINK_TAGS`: `input_box` is a free
-/// function with no session in hand. Read once on first use rather than per
-/// frame, since the row redraws every 50ms and this would otherwise be a file
-/// read on each one.
-static WAVE_GLYPH: std::sync::LazyLock<Option<String>> =
-    std::sync::LazyLock::new(crate::core::agent::global_config::wave_glyph);
+/// function with no session in hand. Resolved from the config on first use
+/// rather than per frame, since the row redraws every 50ms and this would
+/// otherwise be a file read on each one.
+///
+/// Behind a lock rather than a `LazyLock` value because `/settings` edits it
+/// live: a glyph you have to restart the console to see is not a toggle.
+static WAVE_GLYPH: std::sync::LazyLock<std::sync::RwLock<Option<String>>> =
+    std::sync::LazyLock::new(|| {
+        std::sync::RwLock::new(crate::core::agent::global_config::wave_glyph())
+    });
+
+/// Apply a new wave glyph to the process, as `/settings` does on save. An
+/// all-whitespace glyph is unset for the reason `wave_glyph` gives: an
+/// invisible traveller reads as letters going missing.
+pub(crate) fn set_wave_glyph(glyph: Option<&str>) {
+    let value = glyph
+        .map(str::to_string)
+        .filter(|g| !g.trim().is_empty());
+    if let Ok(mut slot) = WAVE_GLYPH.write() {
+        *slot = value;
+    }
+}
 
 #[cfg(test)]
 thread_local! {
@@ -5669,7 +5686,7 @@ fn wave_glyph() -> Option<String> {
             return over;
         }
     }
-    WAVE_GLYPH.clone()
+    WAVE_GLYPH.read().ok().and_then(|g| g.clone())
 }
 
 /// Run `f` with `glyph` as this thread's wave setting.
@@ -7296,24 +7313,33 @@ async fn handle_key(
                 }
             }
             // `/settings` picker: `x` restores the selected key to its default
-            // by removing it from agent.toml - same write as clearing the
-            // field in the edit dock, one keypress instead of two.
+            // by removing it from the file its scope names - same write as
+            // clearing the field in the edit dock, one keypress instead of two.
             KeyCode::Char('x') if picker.kind == PickerKind::AgentSettings => {
                 let key = picker.items[picker.selected].value.clone();
                 // (picker borrow ends here; nothing below reads it before rebuild)
                 let toml_path = app.agent_dir.join("agent.toml");
-                match crate::core::agent::project::set_agent_key(&toml_path, &key, None) {
+                let Some(def) = AGENT_SETTINGS.iter().find(|d| d.key == key) else {
+                    // The leading "providers" row has no key to unset.
+                    return;
+                };
+                match write_setting(def, &toml_path, None) {
                     Ok(()) => {
-                        app.note(&format!(
-                            "{key} unset (default applies); takes effect on the next run"
-                        ));
+                        let when = if apply_live_setting(def, "") {
+                            "in effect now"
+                        } else {
+                            "takes effect on the next run"
+                        };
+                        app.note(&format!("{key} unset (default applies); {when}"));
                         if let Some(picker) = app.picker.as_mut() {
                             picker.items = build_agent_settings_items(&toml_path);
                             picker.selected =
                                 picker.selected.min(picker.items.len().saturating_sub(1));
                         }
                     }
-                    Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
+                    Err(e) => {
+                        app.note(&format!("failed to write {}: {e}", setting_path(def, &toml_path)))
+                    }
                 }
             }
             // Collection picker: Space toggles the selected plugin, Enter hands
@@ -7375,7 +7401,7 @@ async fn handle_key(
                             AGENT_SETTINGS.iter().find(|d| d.key == value)
                         {
                             let toml_path = app.agent_dir.join("agent.toml");
-                            let current = current_agent_value(&toml_path, def.key);
+                            let current = current_setting_value(def, &toml_path);
                             app.settings_prompt =
                                 Some(SettingsPrompt::new(def, current.as_deref()));
                         }
@@ -7974,7 +8000,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/settings",
         hint: "[max_parallel_subagents N]",
-        description: "Edit [agent] settings from agent.toml (menu); takes effect next run",
+        description: "Edit agent.toml and ~/.jan settings (menu); most apply next run",
     },
     SlashCommand {
         name: "/update",
@@ -8374,14 +8400,28 @@ fn goal_command(app: &mut App, arg: &str) {
     }
 }
 
-/// One editable `[agent]` key surfaced by `/settings`. Mirrors the template's
-/// knobs; defaults match `load_agent_config`. `model` is deliberately absent:
-/// it has its own `/model` picker.
+/// One editable key surfaced by `/settings`. Mirrors the templates' knobs;
+/// defaults match `load_agent_config` for project keys and the
+/// `global_config` accessors for user-wide ones. `model` is deliberately
+/// absent: it has its own `/model` picker.
 struct AgentSettingDef {
     key: &'static str,
     label: &'static str,
     desc: &'static str,
     kind: AgentSettingKind,
+    scope: SettingScope,
+}
+
+/// Which file a `/settings` row reads and writes. Both are surfaced by the one
+/// menu because the distinction is an implementation detail to the person
+/// looking for a knob: they want the setting, not the file it lives in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SettingScope {
+    /// This project's `.jan/agent/agent.toml`, under `[agent]` unless the key
+    /// names its own section.
+    Project,
+    /// The user-wide `~/.jan/config.toml`, at the document root.
+    Global,
 }
 
 enum AgentSettingKind {
@@ -8406,18 +8446,21 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         label: "context_window",
         desc: "context limit in tokens",
         kind: AgentSettingKind::Int { default: Some(128000), min: 1 },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "compaction_reserve_tokens",
         label: "compaction_reserve_tokens",
         desc: "headroom kept free before compaction",
         kind: AgentSettingKind::Int { default: Some(16384), min: 0 },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "max_tokens",
         label: "max_tokens",
         desc: "cap on tokens generated per response (omitted when unset)",
         kind: AgentSettingKind::Int { default: None, min: 1 },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "max_parallel_subagents",
@@ -8427,6 +8470,7 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
             default: Some(10),
             min: 1,
         },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "instructions_file",
@@ -8435,12 +8479,14 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         kind: AgentSettingKind::Text {
             default: "AGENT.md",
         },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "budget.max_tokens",
         label: "budget.max_tokens",
         desc: "token-spend ceiling per run; the only cap on run length",
         kind: AgentSettingKind::Int { default: Some(128000), min: 0 },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "tools.default",
@@ -8450,6 +8496,7 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
             options: &["read-only", "deny", "allow"],
             default: "read-only",
         },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "skills.inject",
@@ -8459,18 +8506,28 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
             options: &["always", "relevance"],
             default: "always",
         },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "show_reasoning",
         label: "show_reasoning",
         desc: "expand  reasoning in the transcript (Ctrl-O still toggles)",
         kind: AgentSettingKind::Bool { default: false },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "send_reasoning",
         label: "send_reasoning",
         desc: "resend prior reasoning to the model (false drops it from requests)",
         kind: AgentSettingKind::Bool { default: true },
+        scope: SettingScope::Project,
+    },
+    AgentSettingDef {
+        key: "wave",
+        label: "wave",
+        desc: "glyph swept along the working row (any string; empty = throbber)",
+        kind: AgentSettingKind::Text { default: "" },
+        scope: SettingScope::Global,
     },
 ];
 
@@ -8905,12 +8962,64 @@ fn current_agent_value(toml_path: &std::path::Path, key: &str) -> Option<String>
     })
 }
 
+/// Current on-disk value of a `/settings` row, from whichever file its scope
+/// names. `None` when unset or the file is unreadable.
+fn current_setting_value(def: &AgentSettingDef, toml_path: &std::path::Path) -> Option<String> {
+    match def.scope {
+        SettingScope::Project => current_agent_value(toml_path, def.key),
+        SettingScope::Global => crate::core::agent::global_config::global_value(def.key),
+    }
+}
+
+/// Write a `/settings` row to whichever file its scope names. `None` removes
+/// the key so its default applies again.
+fn write_setting(
+    def: &AgentSettingDef,
+    toml_path: &std::path::Path,
+    value: Option<toml_edit::Item>,
+) -> Result<(), String> {
+    match def.scope {
+        SettingScope::Project => {
+            crate::core::agent::project::set_agent_key(toml_path, def.key, value)
+        }
+        SettingScope::Global => {
+            crate::core::agent::global_config::set_global_key(def.key, value).map(|_| ())
+        }
+    }
+}
+
+/// The file a `/settings` row writes, for the error message when a write fails.
+fn setting_path(def: &AgentSettingDef, toml_path: &std::path::Path) -> String {
+    match def.scope {
+        SettingScope::Project => toml_path.display().to_string(),
+        SettingScope::Global => crate::core::agent::global_config::global_config_path()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "~/.jan/config.toml".to_string()),
+    }
+}
+
+/// Apply a just-saved setting to the running process where that is possible,
+/// returning whether it took. Most keys are snapshotted at session start and
+/// genuinely need a restart; a purely cosmetic one like `wave` does not, and
+/// telling someone to restart to see a glyph they just picked would be a lie
+/// the code does not have to tell. `entered` is the trimmed field, empty for
+/// an unset.
+fn apply_live_setting(def: &AgentSettingDef, entered: &str) -> bool {
+    match def.key {
+        "wave" => {
+            set_wave_glyph(Some(entered));
+            true
+        }
+        _ => false,
+    }
+}
+
 /// `/settings` dispatcher: bare opens the interactive settings menu (an
-/// `AgentSettings` picker over the `[agent]` keys; Enter on a row docks an edit
-/// prompt); `max_parallel_subagents <N>` still works as a one-shot shortcut.
-/// Writes are format-preserving and take effect on the next run (the current
-/// run snapshotted its config at start). Runs only while idle, like every
-/// command.
+/// `AgentSettings` picker over every def, project-scoped or user-wide; Enter on
+/// a row docks an edit prompt); `max_parallel_subagents <N>` still works as a
+/// one-shot shortcut. Writes are format-preserving and take effect on the next
+/// run (the current run snapshotted its config at start), except the cosmetic
+/// ones `apply_live_setting` handles. Runs only while idle, like every command.
 fn settings_command(app: &mut App, arg: &str) {
     let toml_path = app.agent_dir.join("agent.toml");
     let arg = arg.trim();
@@ -8943,11 +9052,11 @@ fn settings_command(app: &mut App, arg: &str) {
     }
 }
 
-/// One picker row per `[agent]` def, plus a leading "providers" entry that
-/// opens the provider-management screen (see `open_provider_settings`). The
-/// hint carries the current on-disk value (`= 400`) or `(unset)` when the
-/// default applies. `value` is the key so the edit dock and the `x` unset
-/// shortcut can act on it.
+/// One picker row per setting def, whatever file its scope names, plus a
+/// leading "providers" entry that opens the provider-management screen (see
+/// `open_provider_settings`). The hint carries the current on-disk value
+/// (`= 400`) or `(unset)` when the default applies. `value` is the key so the
+/// edit dock and the `x` unset shortcut can act on it.
 fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
     let mut items = vec![PickerItem {
         value: PROVIDERS_SETTINGS_ROW.to_string(),
@@ -8959,7 +9068,7 @@ fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
         AGENT_SETTINGS
             .iter()
             .map(|def| {
-                let current = current_agent_value(toml_path, def.key);
+                let current = current_setting_value(def, toml_path);
                 PickerItem {
                     value: def.key.to_string(),
                     label: def.label.to_string(),
@@ -8975,7 +9084,7 @@ fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
     items
 }
 
-/// Open the `/settings` menu: a picker row per `[agent]` key, hint showing the
+/// Open the `/settings` menu: a picker row per setting key, hint showing the
 /// current value (or `unset`), Enter docking the edit prompt for that row, `x`
 /// removing the key so its default applies again.
 fn open_settings_screen(app: &mut App) {
@@ -9100,18 +9209,25 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.co
                     }
                 }
             };
-            match crate::core::agent::project::set_agent_key(&toml_path, prompt.key, value) {
+            match write_setting(prompt.def(), &toml_path, value) {
                 Ok(()) => {
-                    let what = if prompt.input.trim().is_empty() {
+                    let entered = prompt.input.trim().to_string();
+                    let what = if entered.is_empty() {
                         format!("{} unset (default applies)", prompt.key)
                     } else {
-                        format!("{} = {} written", prompt.key, prompt.input.trim())
+                        format!("{} = {entered} written", prompt.key)
                     };
-                    app.note(&format!("{what}; takes effect on the next run"));
+                    let when = if apply_live_setting(prompt.def(), &entered) {
+                        "in effect now"
+                    } else {
+                        "takes effect on the next run"
+                    };
+                    app.note(&format!("{what}; {when}"));
                     app.settings_prompt = None;
                 }
                 Err(e) => {
-                    prompt.error = Some(format!("failed to write {}: {e}", toml_path.display()));
+                    let path = setting_path(prompt.def(), &toml_path);
+                    prompt.error = Some(format!("failed to write {path}: {e}"));
                 }
             }
         }
@@ -16821,6 +16937,103 @@ mod tests {
         let doc = std::fs::read_to_string(&toml_path).unwrap();
         assert!(doc.contains("instructions_file = \"PROMPT.md\""), "{doc}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// `wave` lives in `~/.jan/config.toml`, not the project's agent.toml, so
+    /// the row has to write across scopes. It is also the one setting that
+    /// applies live: a cosmetic glyph you must restart to see is not a toggle,
+    /// and the note must not claim a restart is needed.
+    #[test]
+    fn settings_prompt_writes_a_global_scope_key_and_applies_it_live() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            let mut app = test_app();
+            std::fs::create_dir_all(&app.agent_dir).unwrap();
+            let toml_path = app.agent_dir.join("agent.toml");
+            std::fs::write(&toml_path, "[agent]\n").unwrap();
+
+            let def = AGENT_SETTINGS.iter().find(|d| d.key == "wave").unwrap();
+            app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+            super::handle_settings_key(&mut app, key(KeyCode::Char('~')), false);
+            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+
+            assert!(app.settings_prompt.is_none(), "Enter closes the dock");
+            let global = std::fs::read_to_string(home.join(".jan").join("config.toml")).unwrap();
+            assert!(global.contains("wave = \"~\""), "written globally: {global}");
+            let project = std::fs::read_to_string(&toml_path).unwrap();
+            assert!(
+                !project.contains("wave"),
+                "a global key must not land in agent.toml: {project}"
+            );
+            assert_eq!(super::wave_glyph().as_deref(), Some("~"), "applied live");
+            let note = transcript_text(&app);
+            assert!(note.contains("wave = ~ written"), "{note}");
+            assert!(note.contains("in effect now"), "no restart is needed: {note}");
+
+            // Clearing the field unsets it, live, in the same file.
+            app.settings_prompt = Some(super::SettingsPrompt::new(def, Some("~")));
+            super::handle_settings_key(&mut app, key(KeyCode::Backspace), false);
+            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+            assert_eq!(super::wave_glyph(), None, "unset applied live");
+            // Asserted through the reader, not the raw text: the scaffolded
+            // template carries a commented `# wave = ...` example line that a
+            // substring check would match forever.
+            assert_eq!(
+                crate::core::agent::global_config::global_value("wave"),
+                None,
+                "key removed from the file"
+            );
+
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+        });
+    }
+
+    /// The picker hint for a global row must read the global file, or every
+    /// user-wide key would show `(unset)` however it is configured.
+    /// Sync, with a local runtime for the one keypress: `with_temp_home` swaps
+    /// the process `HOME`, so the guard must not be held across an await.
+    #[test]
+    fn settings_picker_reads_and_unsets_a_global_scope_key() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime");
+            let mut app = test_app();
+            std::fs::create_dir_all(&app.agent_dir).unwrap();
+            std::fs::write(app.agent_dir.join("agent.toml"), "[agent]\n").unwrap();
+            std::fs::create_dir_all(home.join(".jan")).unwrap();
+            let global_path = home.join(".jan").join("config.toml");
+            std::fs::write(&global_path, "wave = \"🍌\"\n").unwrap();
+
+            super::settings_command(&mut app, "");
+            let picker = app.picker.as_ref().expect("picker opens");
+            let row = picker
+                .items
+                .iter()
+                .find(|i| i.value == "wave")
+                .expect("wave row present");
+            assert_eq!(row.hint.as_deref(), Some("= 🍌"), "hint reads ~/.jan");
+
+            let idx = picker.items.iter().position(|i| i.value == "wave").unwrap();
+            app.picker.as_mut().unwrap().selected = idx;
+            rt.block_on(press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE));
+            assert_eq!(
+                crate::core::agent::global_config::global_value("wave"),
+                None,
+                "x unsets globally"
+            );
+            let row = app
+                .picker
+                .as_ref()
+                .expect("picker stays open")
+                .items
+                .iter()
+                .find(|i| i.value == "wave")
+                .expect("wave row present");
+            assert_eq!(row.hint.as_deref(), Some("(unset)"));
+
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+        });
     }
 
     #[test]
