@@ -67,6 +67,23 @@ const MOUSE_TRACK_ON: &str = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
 const ALT_SCROLL_SAVE_OFF: &str = "\x1b[?1007s\x1b[?1007l";
 const ALT_SCROLL_RESTORE: &str = "\x1b[?1007r";
 
+/// Kitty keyboard protocol, flags 1 (disambiguate escape codes) + 4 (report
+/// alternate keys). Disambiguation is what makes `Shift+Enter` reachable at
+/// all: legacy encoding has no room for a modifier on `Enter`, so the terminal
+/// sends a bare `\r` that is indistinguishable from a plain `Enter`, and the
+/// same goes for `Cmd`/`SUPER` on any key. Alternate keys ride along so a
+/// shifted printable arrives as its shifted character instead of the base key
+/// plus SHIFT, which would otherwise type lowercase on a terminal that reports
+/// shifted text as an escape code. Event types (2) are deliberately left off:
+/// they add key-release and repeat events that nothing here consumes, and
+/// `handle_key` would have to filter every one of them. A terminal without the
+/// protocol ignores both sequences, so the pair is safe to send unconditionally
+/// -- querying support first (`supports_keyboard_enhancement`) costs a blocking
+/// stdin read of up to two seconds before the first frame.
+const KITTY_KEYS_ON: &str = "\x1b[>5u";
+/// Pop what `KITTY_KEYS_ON` pushed, restoring whatever the shell had.
+const KITTY_KEYS_OFF: &str = "\x1b[<u";
+
 /// Whether to hand the wheel to the terminal's native alternate-scroll instead
 /// of asking it to report wheel events to the app. Disabling alternate scroll
 /// (`?1007l`) makes an xterm-family terminal deliver the wheel as SGR mouse
@@ -92,6 +109,17 @@ fn alt_scroll_restore() -> &'static str {
 }
 
 const ACCOUNT_CALLBACK_TIMEOUT: Duration = Duration::from_secs(300);
+/// The private modes to set on entry, in one write. Keyboard enhancement is
+/// unconditional -- it is what the editing keys are decoded from -- while mouse
+/// tracking follows the `mouse` config key.
+fn startup_modes(mouse: bool) -> String {
+    let mut modes = String::from(alt_scroll_save_off());
+    modes.push_str(KITTY_KEYS_ON);
+    if mouse {
+        modes.push_str(MOUSE_TRACK_ON);
+    }
+    modes
+}
 /// How long the dock advertises a finished copy.
 const COPY_NOTICE: Duration = Duration::from_millis(1500);
 /// Terminals cap the OSC 52 payload they will accept; past this the sequence is
@@ -812,10 +840,11 @@ fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
     let indent = " ".repeat(BANNER_INDENT as usize);
     let mut out: Vec<Line<'static>> = Vec::new();
 
-    // A clipped wordmark reads as breakage, so a narrow terminal gets the name
-    // as text instead.
-    if width >= brand::LOGO_WIDTH + BANNER_INDENT * 2 {
-        for art in brand::LOGO {
+    // A clipped logo reads as breakage, so a narrow terminal gets the name
+    // as text instead. The lockup (hand beside the wordmark) is the widest
+    // splash element, so it sets the threshold that gates the whole block.
+    if width >= brand::LOCKUP_WIDTH + BANNER_INDENT * 2 {
+        for art in brand::lockup() {
             out.push(Line::styled(format!("{indent}{art}"), accent));
         }
         out.push(Line::raw(""));
@@ -1370,6 +1399,11 @@ struct App {
     /// Context window limit for the current model. Updated on every model
     /// switch via [`Self::refresh_context_window`]: configured override, then
     /// the built-in model catalog, then a 128K fallback.
+    /// The approval-mode phrasing used by the splash (e.g. "--safe: writes, ...").
+    /// Captured once at startup so `/clear`, `/new` and `/resume` re-print the
+    /// same branding without re-deriving it.
+    approval_phrasing: String,
+    /// Context window limit for the current model (default 128K).
     context_window: u64,
     /// Where `context_window` came from: configured override, catalog, or fallback.
     context_window_source: crate::core::cli::model_capabilities::ContextWindowSource,
@@ -1872,6 +1906,7 @@ impl App {
             goal_eval_pending: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             args: None,
+            approval_phrasing: String::new(),
             context_window: limits.context_window,
             context_window_source: limits.context_window_source,
             // The explicit override, when present, is the resolved window with a
@@ -2095,8 +2130,8 @@ impl App {
             .map(|(_, lines)| lines)
     }
 
-    /// Open the session with the splash: the wordmark, this session's project
-    /// and approval mode, and where to go next.
+    /// Open the session with the splash: the hand-wave logo and wordmark, this
+    /// session's project and approval mode, and where to go next.
     fn push_banner(&mut self, tools: &str, awaiting_first_message: bool) {
         let banner = Banner {
             version: super::updater::build_version(),
@@ -2112,8 +2147,17 @@ impl App {
         self.last_kind = Kind::None;
     }
 
+    /// Push the splash using the startup approval phrasing, to re-brand the
+    /// screen after a slash command opens a fresh view (`/clear`, `/new`,
+    /// `/resume`). `awaiting_first_message` starts false once a thread is
+    /// loaded or a task is seeded.
+    fn push_session_banner(&mut self, awaiting_first_message: bool) {
+        let phrasing = self.approval_phrasing.clone();
+        self.push_banner(&phrasing, awaiting_first_message);
+    }
+
     /// Append a line the *app* is saying, in its own gutter column. Every other
-    /// transcript class owns one (`› ` user, `│ ` tool, `┊ ` reasoning), so
+    /// transcript class owns one (`> ` user, `│ ` tool, `┊ ` reasoning), so
     /// without it a note is indistinguishable from model prose. `glyph` names the
     /// category and `level` carries severity.
     fn system_marked(&mut self, glyph: &'static str, level: Level, text: &str) {
@@ -3023,6 +3067,100 @@ impl App {
         }
     }
 
+    /// Cut `start..end` out of the buffer and leave the caret at `start`.
+    /// Every kill below funnels through here so none of them can forget the
+    /// hint refresh that an edit owes the popups.
+    fn delete_span(&mut self, start: usize, end: usize) {
+        if start >= end {
+            return;
+        }
+        self.input.replace_range(start..end, "");
+        self.cursor = start;
+        self.reset_slash_hint();
+        self.refresh_path_hints();
+    }
+
+    fn cursor_word_left(&mut self) {
+        self.cursor = prev_word_start(&self.input, self.cursor);
+    }
+
+    fn cursor_word_right(&mut self) {
+        self.cursor = next_word_end(&self.input, self.cursor);
+    }
+
+    fn cursor_line_start(&mut self) {
+        self.cursor = line_bounds(&self.input, self.cursor).0;
+    }
+
+    fn cursor_line_end(&mut self) {
+        self.cursor = line_bounds(&self.input, self.cursor).1;
+    }
+
+    /// Alt+Backspace / Ctrl+Backspace.
+    fn delete_word_left(&mut self) {
+        let start = prev_word_start(&self.input, self.cursor);
+        self.delete_span(start, self.cursor);
+    }
+
+    /// Ctrl-W, on the wider whitespace-delimited word.
+    fn delete_unix_word_left(&mut self) {
+        let start = prev_unix_word_start(&self.input, self.cursor);
+        self.delete_span(start, self.cursor);
+    }
+
+    /// Alt+D / Ctrl+Delete.
+    fn delete_word_right(&mut self) {
+        let end = next_word_end(&self.input, self.cursor);
+        self.delete_span(self.cursor, end);
+    }
+
+    /// Ctrl-U (and Cmd+Backspace).
+    fn delete_to_line_start(&mut self) {
+        let start = line_bounds(&self.input, self.cursor).0;
+        self.delete_span(start, self.cursor);
+    }
+
+    /// Ctrl-K. Already at the end of a line, it swallows the newline instead of
+    /// doing nothing, so repeated presses join the buffer up as readline does.
+    fn delete_to_line_end(&mut self) {
+        let end = line_bounds(&self.input, self.cursor).1;
+        if end == self.cursor {
+            self.delete_span(self.cursor, (self.cursor + 1).min(self.input.len()));
+        } else {
+            self.delete_span(self.cursor, end);
+        }
+    }
+
+    /// Ctrl-T: swap the chars either side of the caret and step past the pair.
+    /// At the end of the buffer there is nothing after the caret, so the last
+    /// two chars swap in place, matching readline.
+    fn transpose_chars(&mut self) {
+        let before = &self.input[..self.cursor];
+        let Some(prev) = before.chars().next_back() else {
+            return;
+        };
+        let (first, second, start, end) = match self.input[self.cursor..].chars().next() {
+            Some(next) => (
+                prev,
+                next,
+                self.cursor - prev.len_utf8(),
+                self.cursor + next.len_utf8(),
+            ),
+            None => {
+                let head = &before[..before.len() - prev.len_utf8()];
+                let Some(prev2) = head.chars().next_back() else {
+                    return;
+                };
+                (prev2, prev, head.len() - prev2.len_utf8(), self.cursor)
+            }
+        };
+        self.input
+            .replace_range(start..end, &format!("{second}{first}"));
+        self.cursor = end;
+        self.reset_slash_hint();
+        self.refresh_path_hints();
+    }
+
     /// Queue a user message: record it in history and the transcript, and ask
     /// the loop to start a run. Flips to `Running` synchronously so further keys
     /// in the same input batch can't slip through as a second submit.
@@ -3180,10 +3318,11 @@ impl App {
 
     /// Inject a hidden todo reminder and continue with one more model turn. The
     /// reminder text enters the conversation (so the model sees it) but renders
-    /// as a dim system note, never a user-authored transcript row.
+    /// as a dim system note, never a user-authored transcript row -- and is
+    /// marked, so `is_user_turn` keeps it out of the rewind picker, recall and
+    /// checkpoint keys.
     fn submit_reminder(&mut self, text: String) {
-        self.history
-            .push(serde_json::json!({ "role": "user", "content": text }));
+        crate::core::agent::reminder::attach(&mut self.history, &text);
         self.note("todo reminder — unfinished work, continuing");
         self.begin_turn();
         self.want_start = true;
@@ -3282,7 +3421,7 @@ impl App {
         // carries its own newlines, and a single `Line` renders those as blank
         // cells in one run-on row.
         self.push_row(RowKind::System {
-            glyph: "›",
+            glyph: ">",
             cont: " ",
             gutter: Style::new().light_magenta().bold(),
             body: vec![Span::styled(text.to_string(), Style::new().bold())],
@@ -3305,14 +3444,14 @@ impl App {
     fn push_invocation_label(&mut self, label: String) {
         self.gap(Kind::User);
         self.push_row(RowKind::System {
-            glyph: "›",
+            glyph: ">",
             cont: " ",
             gutter: Style::new().light_magenta().bold(),
             body: vec![Span::styled(label, Style::new().cyan().bold())],
         });
     }
 
-    /// The `› [skill:foo] <args>` row a slash invocation commits. A `System`
+    /// The `> [skill:foo] <args>` row a slash invocation commits. A `System`
     /// row for the same reason as `push_user_line`: `args` is user text and can
     /// arrive pasted and multi-line, which a single `Line` renders as blank
     /// cells in one run-on row.
@@ -3325,7 +3464,7 @@ impl App {
         }
         self.gap(Kind::User);
         self.push_row(RowKind::System {
-            glyph: "›",
+            glyph: ">",
             cont: " ",
             gutter: Style::new().light_magenta().bold(),
             body,
@@ -3453,16 +3592,15 @@ impl App {
         let user_index = self
             .history
             .iter()
-            .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+            .filter(|m| is_user_turn(m))
             .count()
             .saturating_sub(1);
         let preview = self
             .history
             .iter()
             .rev()
-            .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
-            .and_then(|m| m.get("content").and_then(|v| v.as_str()))
-            .map(truncate_preview)
+            .find(|m| is_user_turn(m))
+            .map(|m| truncate_preview(&user_content_parts(&m["content"]).0))
             .unwrap_or_default();
         self.snap_queue.push_back(SnapshotJob::Checkpoint {
             user_index,
@@ -6064,10 +6202,7 @@ pub async fn run(
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableBracketedPaste).map_err(|e| e.to_string())?;
-    let mut modes = String::from(alt_scroll_save_off());
-    if crate::core::agent::global_config::mouse_enabled() {
-        modes.push_str(MOUSE_TRACK_ON);
-    }
+    let modes = startup_modes(crate::core::agent::global_config::mouse_enabled());
     let _ = stdout.write_all(modes.as_bytes());
     let _ = stdout.flush();
     let backend = CrosstermBackend::new(stdout);
@@ -6101,15 +6236,13 @@ pub async fn run(
     let sandboxed = args
         .sandbox
         .unwrap_or_else(|| crate::core::agent::r#loop::effective_sandbox(&app.project_root));
-    app.push_banner(
-        match (args.auto_approve, sandboxed) {
-            (true, true) => "auto-approved inside the OS sandbox (start with --safe to be asked first)",
-            (true, false) => "auto-approved and unsandboxed: commands run with your own access (--safe to be asked first, --sandbox to confine)",
-            (false, true) => "--safe: writes, shell commands and MCP tool calls need approval",
-            (false, false) => "--safe: approval needed, but unsandboxed - what you approve runs with your own access (--sandbox to confine)",
-        },
-        !seeded,
-    );
+    app.approval_phrasing = match (args.auto_approve, sandboxed) {
+        (true, true) => "auto-approved inside the OS sandbox (start with --safe to be asked first)".to_string(),
+        (true, false) => "auto-approved and unsandboxed: commands run with your own access (--safe to be asked first, --sandbox to confine)".to_string(),
+        (false, true) => "--safe: writes, shell commands and MCP tool calls need approval".to_string(),
+        (false, false) => "--safe: approval needed, but unsandboxed - what you approve runs with your own access (--sandbox to confine)".to_string(),
+    };
+    app.push_session_banner(!seeded);
     if app.model.is_empty() {
         app.note("not signed in — run /login to choose a provider");
     }
@@ -6117,6 +6250,21 @@ pub async fn run(
     // no invitation, and the splash hint covers re-running /init deliberately.
     if !crate::core::agent::context::has_context_file(&app.project_root) {
         app.note("no JAN.md here — run /init to study this project and write one");
+    }
+    // A modified key the terminal is dropping looks like a bug in the composer,
+    // so say so once, and only where a config file proves it is unconfigured
+    // (see `terminal_setup::setup_hint`): the note disappears on its own once
+    // /terminal-setup has run.
+    if let Some(hint) = dirs::home_dir()
+        .filter(|_| crate::core::agent::global_config::terminal_hint_enabled())
+        .and_then(|home| {
+            super::terminal_setup::setup_hint(&home, cfg!(target_os = "macos"), |k| {
+                std::env::var(k).ok()
+            })
+        })
+    {
+        app.note(&hint);
+        app.system_detail_text("(terminal_hint = false in ~/.jan/config.toml silences this)");
     }
     // A failed resume is not fatal: the note explains why and the blank session
     // the user already has stays usable.
@@ -6156,6 +6304,7 @@ pub async fn run(
         terminal.backend_mut(),
         DisableBracketedPaste,
         DisableMouseCapture,
+        Print(KITTY_KEYS_OFF),
         Print(alt_scroll_restore()),
         LeaveAlternateScreen,
     );
@@ -7194,6 +7343,11 @@ async fn handle_key(
     }
 
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let alt = key.modifiers.contains(KeyModifiers::ALT);
+    let sup = key.modifiers.contains(KeyModifiers::SUPER);
+    // A modified Enter is a newline, never a submit or a completion, so the
+    // hint popups below have to let it through to the editing keys.
+    let newline = key.code == KeyCode::Enter && (alt || key.modifiers.contains(KeyModifiers::SHIFT));
     let ctrl_c = ctrl && key.code == KeyCode::Char('c');
     let ctrl_d = ctrl && key.code == KeyCode::Char('d');
 
@@ -7614,7 +7768,7 @@ async fn handle_key(
                 app.slash_dismissed = true;
                 return;
             }
-            KeyCode::Enter => {
+            KeyCode::Enter if !newline => {
                 let matches = app.slash_matches();
                 let sel = app.slash_selected.min(matches.len() - 1);
                 if app.input.trim() != matches[sel].name() {
@@ -7639,7 +7793,7 @@ async fn handle_key(
                 app.path_hint_move(1);
                 return;
             }
-            KeyCode::Tab | KeyCode::Enter => {
+            KeyCode::Tab | KeyCode::Enter if !newline => {
                 app.accept_path_hint();
                 return;
             }
@@ -7675,9 +7829,11 @@ async fn handle_key(
                 }
             }
         }
-        // Alt+Enter (or Ctrl+J) inserts a newline for multi-line input; plain
-        // Enter submits.
-        KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
+        // Alt+Enter, Shift+Enter or Ctrl+J insert a newline for multi-line
+        // input; plain Enter submits. Shift+Enter only reaches us from a
+        // terminal that disambiguates it (kitty keyboard protocol / CSI-u);
+        // the other two work everywhere.
+        KeyCode::Enter if newline => {
             app.input_insert('\n');
         }
         KeyCode::Char('j') if ctrl => {
@@ -7691,7 +7847,7 @@ async fn handle_key(
         // Alt+T toggles reasoning effort between "low" and the last non-low
         // level (default medium). A quick way to quiet or deepen a model run
         // without typing the full `/effort` command.
-        KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::ALT) => {
+        KeyCode::Char('t') if alt => {
             app.toggle_reasoning_effort();
         }
         // Ctrl-V stages an image from the OS clipboard (terminal paste is
@@ -7699,6 +7855,30 @@ async fn handle_key(
         KeyCode::Char('v') if ctrl => {
             app.attach_clipboard_image();
         }
+        // Readline editing keys, so the composer behaves like the shell the
+        // user just came from. Motion and word-kills are line-wise because the
+        // buffer is multi-line.
+        KeyCode::Char('a') if ctrl => app.cursor_line_start(),
+        KeyCode::Char('e') if ctrl => app.cursor_line_end(),
+        KeyCode::Char('b') if ctrl => app.cursor_left(),
+        KeyCode::Char('f') if ctrl => app.cursor_right(),
+        KeyCode::Char('h') if ctrl => app.input_backspace(),
+        KeyCode::Char('w') if ctrl => app.delete_unix_word_left(),
+        KeyCode::Char('u') if ctrl => app.delete_to_line_start(),
+        KeyCode::Char('k') if ctrl => app.delete_to_line_end(),
+        KeyCode::Char('t') if ctrl => app.transpose_chars(),
+        // Ctrl-P/Ctrl-N are Up/Down's shell spelling; recall declines when
+        // there is nothing to recall, and unlike the arrows they never fall
+        // through to scrolling.
+        KeyCode::Char('p') if ctrl => {
+            app.recall_prev();
+        }
+        KeyCode::Char('n') if ctrl => {
+            app.recall_next();
+        }
+        KeyCode::Char('b') if alt => app.cursor_word_left(),
+        KeyCode::Char('f') if alt => app.cursor_word_right(),
+        KeyCode::Char('d') if alt => app.delete_word_right(),
         KeyCode::Enter => {
             let text = app.input.trim().to_string();
             app.input_clear();
@@ -7711,20 +7891,44 @@ async fn handle_key(
                 }
             }
         }
+        // Cmd (SUPER) is line-wise, Alt/Ctrl word-wise, bare char-wise. SUPER
+        // only arrives from a terminal with the keyboard enhancement flags on,
+        // so the macOS Cmd bindings degrade to nothing rather than misfiring.
+        KeyCode::Backspace if sup => {
+            app.delete_to_line_start();
+        }
+        KeyCode::Backspace if alt || ctrl => {
+            app.delete_word_left();
+        }
         KeyCode::Backspace => {
             app.input_backspace();
+        }
+        KeyCode::Delete if alt || ctrl => {
+            app.delete_word_right();
         }
         KeyCode::Delete => {
             app.input_delete();
         }
+        KeyCode::Left if sup => {
+            app.cursor_line_start();
+        }
+        KeyCode::Left if alt || ctrl => {
+            app.cursor_word_left();
+        }
         KeyCode::Left => {
             app.cursor_left();
+        }
+        KeyCode::Right if sup => {
+            app.cursor_line_end();
+        }
+        KeyCode::Right if alt || ctrl => {
+            app.cursor_word_right();
         }
         KeyCode::Right => {
             app.cursor_right();
         }
         KeyCode::Home => {
-            app.cursor = 0;
+            app.cursor_line_start();
         }
         // Shift+Tab (crossterm sends it as BackTab, not Tab+SHIFT) cycles
         // reasoning effort low -> medium -> high -> low, matching Claude Code.
@@ -7732,7 +7936,7 @@ async fn handle_key(
             app.cycle_reasoning_effort();
         }
         KeyCode::End => {
-            app.cursor = app.input.len();
+            app.cursor_line_end();
         }
         // Tab is a no-op in normal input mode; slash-command and path-hint
         // popups intercept it before reaching this arm.
@@ -8057,6 +8261,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Set reasoning effort (bare: show current; low: faster, high: deeper thinking)",
     },
     SlashCommand {
+        name: "/terminal-setup",
+        hint: "",
+        description: "Configure this terminal so Shift+Enter inserts a newline",
+    },
+    SlashCommand {
         name: "/mcp",
         hint: "",
         description: "List, add, edit, remove, or toggle MCP servers",
@@ -8107,9 +8316,74 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
 /// of truth for the `/help` listing and the first-run footer hint, so the two
 /// can't drift. Deliberately not rendered on every frame -- the footer is for
 /// transient state (running, prompts, pickers), not a permanent cheat sheet.
+/// A word character for the emacs-style motions (Alt+B/F/D, Alt+Backspace,
+/// Ctrl/Alt+arrows), matching readline: alphanumerics plus `_`.
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Byte offset of the emacs word boundary before `at`: skip any run of
+/// non-word chars, then the word itself, so `"foo bar"` with the caret at the
+/// end lands on `b` and `"foo   "` lands on 0.
+fn prev_word_start(s: &str, at: usize) -> usize {
+    let mut i = at;
+    let mut in_word = false;
+    while let Some(c) = s[..i].chars().next_back() {
+        if is_word_char(c) {
+            in_word = true;
+        } else if in_word {
+            break;
+        }
+        i -= c.len_utf8();
+    }
+    i
+}
+
+/// The mirror of [`prev_word_start`], scanning forward from `at`.
+fn next_word_end(s: &str, at: usize) -> usize {
+    let mut i = at;
+    let mut in_word = false;
+    while let Some(c) = s[i..].chars().next() {
+        if is_word_char(c) {
+            in_word = true;
+        } else if in_word {
+            break;
+        }
+        i += c.len_utf8();
+    }
+    i
+}
+
+/// `Ctrl-W`'s boundary: whitespace-delimited, like the shell's
+/// unix-word-rubout, so it takes a whole `src/core/cli/tui.rs` token rather
+/// than stopping at every `/`.
+fn prev_unix_word_start(s: &str, at: usize) -> usize {
+    let mut i = at;
+    for stop_on_space in [false, true] {
+        while let Some(c) = s[..i].chars().next_back() {
+            if c.is_whitespace() == stop_on_space {
+                break;
+            }
+            i -= c.len_utf8();
+        }
+    }
+    i
+}
+
+/// Byte offsets bounding the line `at` sits on, newlines excluded. The
+/// composer is multi-line (Alt/Shift+Enter), so "line" is not the whole buffer.
+fn line_bounds(s: &str, at: usize) -> (usize, usize) {
+    let start = s[..at].rfind('\n').map_or(0, |i| i + 1);
+    let end = s[at..].find('\n').map_or(s.len(), |i| at + i);
+    (start, end)
+}
+
 const KEY_BINDINGS: &[(&str, &str)] = &[
     ("Enter", "Send the message"),
-    ("Alt+Enter / Ctrl-J", "Insert a newline"),
+    ("Alt+Enter / Ctrl-J", "Insert a newline (Shift+Enter where reported)"),
+    ("Ctrl-A/E, Alt+B/F", "Start/end of line, word left/right"),
+    ("Ctrl-W, Alt+Backspace", "Delete the word before the caret"),
+    ("Ctrl-U / Ctrl-K", "Delete to the start / end of the line"),
     ("Esc / Ctrl-C", "Cancel the running turn"),
     ("Esc Esc", "Rewind to an earlier message"),
     (
@@ -8155,11 +8429,13 @@ async fn run_command(app: &mut App, line: &str) {
         "clear" => {
             app.reset_session();
             clear_todos(app).await;
+            app.push_session_banner(true);
             app.note("conversation cleared");
         }
         "new" => {
             app.reset_session();
             clear_todos(app).await;
+            app.push_session_banner(true);
             app.note("started a new session");
         }
         "compact" => compact_command(app),
@@ -8205,6 +8481,7 @@ async fn run_command(app: &mut App, line: &str) {
         "logout" => logout_command(app, arg),
         "update" => update_command(app),
         "config" => open_config_screen(app),
+        "terminal-setup" => terminal_setup_command(app),
         "settings" => settings_command(app, arg),
         "goal" => goal_command(app, arg),
         "init" => init_command(app),
@@ -9900,11 +10177,10 @@ fn thread_display_name(base: &std::path::Path, id: &str, title: Option<&str>) ->
         return t.to_string();
     }
     if let Ok(messages) = super::cli_list_messages_in(base, id) {
-        if let Some(last_user) = messages
-            .iter()
-            .rev()
-            .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
-        {
+        if let Some(last_user) = messages.iter().rev().find(|m| {
+            m.get("role").and_then(|v| v.as_str()) == Some("user")
+                && !crate::core::agent::reminder::is_reminder_text(&message_text(m))
+        }) {
             let collapsed = message_text(last_user)
                 .split_whitespace()
                 .collect::<Vec<_>>()
@@ -10298,6 +10574,40 @@ async fn reload_provider_configs(app: &mut App) {
     }
 }
 
+/// `/terminal-setup`: teach the host terminal to send `Shift+Enter`. See
+/// `terminal_setup` for why a terminal-side binding is the only reliable route.
+fn terminal_setup_command(app: &mut App) {
+    use super::terminal_setup::{apply, Outcome};
+    let Some(home) = dirs::home_dir() else {
+        app.system(Level::Error, "no home directory for terminal config");
+        return;
+    };
+    app.note("terminal setup:");
+    for outcome in apply(&home, cfg!(target_os = "macos"), |k| std::env::var(k).ok()) {
+        match outcome {
+            Outcome::Works(why) => {
+                app.system_detail_text(&format!("Shift+Enter already works -- {why}"));
+            }
+            Outcome::AlreadyDone(path) => {
+                app.system_detail_text(&format!("already configured: {}", tilde_path(&path)));
+            }
+            Outcome::Wrote { path, detail } => {
+                app.system_detail_text(&format!("wrote {} -- {detail}", tilde_path(&path)));
+            }
+            Outcome::Failed { path, error } => {
+                app.system_detail_text(&format!("could not write {}: {error}", tilde_path(&path)));
+            }
+            Outcome::Manual { title, steps } => {
+                app.system_detail_text(&title);
+                for step in steps {
+                    app.system_detail_text(&format!("  - {step}"));
+                }
+            }
+        }
+    }
+    app.system_detail_text("Alt+Enter and Ctrl-J insert a newline on every terminal");
+}
+
 /// Open the `/config` screen: a read-only view of the providers configured in
 /// `~/.jan/config.toml` (the standalone-agent credential store), with API keys
 /// redacted. Editing is headless via `jan config set/unset` (shown in the
@@ -10464,11 +10774,11 @@ fn open_rewind_picker(app: &mut App) {
     let mut items = Vec::new();
     let mut ui = 0usize;
     for m in &app.history {
-        if m.get("role").and_then(|v| v.as_str()) == Some("user") {
-            let text = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        if is_user_turn(m) {
+            let text = user_content_parts(&m["content"]).0;
             items.push(PickerItem {
                 value: ui.to_string(),
-                label: truncate_preview(text),
+                label: truncate_preview(&text),
                 hint: Some(format!("#{}", ui + 1)),
                 checkbox: None,
             });
@@ -10520,7 +10830,7 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     let mut ui = 0usize;
     let mut cut = None;
     for (i, m) in app.history.iter().enumerate() {
-        if m.get("role").and_then(|v| v.as_str()) == Some("user") {
+        if is_user_turn(m) {
             if ui == target {
                 cut = Some(i);
                 break;
@@ -10595,7 +10905,7 @@ fn rebuild_recall(app: &mut App) {
     let texts: Vec<String> = app
         .history
         .iter()
-        .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+        .filter(|m| is_user_turn(m))
         .filter_map(|m| m.get("content"))
         .map(|c| user_content_parts(c).0)
         .filter(|t| !t.is_empty())
@@ -10708,6 +11018,8 @@ fn rebuild_transcript(app: &mut App) {
 }
 
 async fn resume_thread(app: &mut App, id_arg: &str) {
+    // Re-brand the fresh view before the saved conversation is replayed.
+    app.push_session_banner(false);
     apply_resume(app, &ResumeTarget::Id(id_arg.to_string())).await;
 }
 
@@ -10968,9 +11280,21 @@ fn build_user_message(text: &str, images: &[PendingImage]) -> serde_json::Value 
 /// Split a user message's `content` into display text and one label per attached
 /// image. Handles plain-string content and the `image_url` content-part array;
 /// data-URL parts carry no filename, so their label is empty.
+/// True for a `user` message the user actually authored. Hidden reminders ride
+/// in on the `user` role but are not turns: a rewind target, a recall entry or a
+/// checkpoint key built from one would be a row the user never typed, and would
+/// shift every later index out of step with the display journal, which holds no
+/// reminder at all.
+fn is_user_turn(m: &serde_json::Value) -> bool {
+    m.get("role").and_then(|v| v.as_str()) == Some("user")
+        && !crate::core::agent::reminder::is_reminder_only(
+            m.get("content").unwrap_or(&serde_json::Value::Null),
+        )
+}
+
 fn user_content_parts(content: &serde_json::Value) -> (String, Vec<String>) {
     match content {
-        serde_json::Value::String(s) => (s.clone(), Vec::new()),
+        serde_json::Value::String(s) => (crate::core::agent::reminder::strip(s), Vec::new()),
         serde_json::Value::Array(parts) => {
             let mut text = String::new();
             let mut images = Vec::new();
@@ -10978,7 +11302,7 @@ fn user_content_parts(content: &serde_json::Value) -> (String, Vec<String>) {
                 match p.get("type").and_then(|v| v.as_str()) {
                     Some("text") => {
                         if let Some(t) = p.get("text").and_then(|v| v.as_str()) {
-                            text.push_str(t);
+                            text.push_str(&crate::core::agent::reminder::strip(t));
                         }
                     }
                     Some("image_url") => images.push(String::new()),
@@ -12701,14 +13025,18 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         .map(|t| format!("  {}", format_elapsed(t.elapsed().as_secs())))
         .unwrap_or_default();
     // No name chip: the splash names the app (see `Banner`), and the header's
-    // columns are better spent on state that changes. The model leads instead,
-    // bold so the row still has an anchor on the left; an unset model says so
-    // rather than opening the row with blanks.
-    let mut spans = vec![if app.model.is_empty() {
-        Span::styled(" no model  ", Style::new().red().bold())
-    } else {
-        Span::styled(format!(" {}  ", app.header_model_label()), Style::new().bold())
-    }];
+    // columns are better spent on state that changes. The wave mark stands in
+    // for the name in one glyph, then the model, bold so the row still has an
+    // anchor on the left; an unset model says so rather than opening the row
+    // with blanks.
+    let mut spans = vec![
+        Span::styled(format!(" {}", brand::WAVE), Style::new().yellow()),
+        if app.model.is_empty() {
+            Span::styled(" no model", Style::new().red().bold())
+        } else {
+            Span::styled(format!(" {}", app.header_model_label()), Style::new().bold())
+        },
+    ];
     // Reasoning-effort badge: `effort high` after the model, so the configured
     // reasoning depth is visible at a glance. Reported low/medium/high exactly
     // as set, so the display always matches what is sent upstream.
@@ -13019,13 +13347,13 @@ fn input_box_height(app: &App, width: u16) -> u16 {
     content + 1
 }
 
-/// Visible input as styled lines: `› ` on the first line, 2-space hang on
+/// Visible input as styled lines: `> ` on the first line, 2-space hang on
 /// continuations, and a solid block cursor at the byte offset `cursor` (the
 /// character under the cursor is drawn in reverse video; at end of line a
 /// reversed space forms the block). Wrapping is left to the Paragraph so long
 /// single lines fold within the box width.
 fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
-    let arrow = Span::styled("› ", Style::new().cyan().bold());
+    let arrow = Span::styled("> ", Style::new().cyan().bold());
     let segments: Vec<&str> = input.split('\n').collect();
     let last = segments.len() - 1;
     // Locate the segment + in-segment byte offset holding the caret.
@@ -13134,7 +13462,7 @@ fn input_box(app: &App) -> Paragraph<'static> {
             .block(block)
         }
     } else if app.input.is_empty() {
-        // Same `› ` arrow as the typing view, then a fixed (non-blinking)
+        // Same `> ` prompt as the typing view, then a fixed (non-blinking)
         // block cursor in front of the placeholder.
         let placeholder = if app.status == Status::Running {
             "Type to queue next message"
@@ -13142,7 +13470,7 @@ fn input_box(app: &App) -> Paragraph<'static> {
             "Type here to chat with agent"
         };
         let cursor_spans: Vec<Span<'static>> = vec![
-            Span::styled("› ", Style::new().cyan().bold()),
+            Span::styled("> ", Style::new().cyan().bold()),
             Span::styled(" ", Style::new().add_modifier(Modifier::REVERSED)),
             Span::raw(" "),
             Span::styled(placeholder, Style::new().dim().italic()),
@@ -13326,6 +13654,7 @@ mod tests {
         McpPrompt, McpField, pairs_to_str,
         ProviderField,
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
+        startup_modes, KITTY_KEYS_OFF, KITTY_KEYS_ON,
         backgrounded_job_id, drain_stream_events, run_command, starting_call_lines,
         unescape_partial_json_string,
         running_group_rows, split_reasoning, strip_system_xml_tags, subagent_activity,
@@ -13333,7 +13662,7 @@ mod tests {
         without_think_tags, ReasoningSeg,
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
-        transcript_top_padding, rewind_to,
+        transcript_top_padding, rewind_to, open_rewind_picker, rebuild_recall,
         row_width, user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind,
         ResumeTarget, RowKind, finish_plugin_install,
         SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
@@ -13925,7 +14254,7 @@ mod tests {
         let rows = render_rows(&mut app, 60, 12);
         assert!(
             rows.iter()
-                .any(|r| r.trim_end().ends_with("\u{203a} first line")),
+                .any(|r| r.trim_end().ends_with("> first line")),
             "first line not on its own row: {rows:?}"
         );
         assert!(
@@ -14057,7 +14386,7 @@ mod tests {
         let rows = render_rows(&mut app, 60, 12);
         assert!(
             rows.iter()
-                .any(|r| r.trim_end().ends_with("\u{203a} [skill:deploy] first line")),
+                .any(|r| r.trim_end().ends_with("> [skill:deploy] first line")),
             "first line not on its own row: {rows:?}"
         );
         assert!(
@@ -15541,6 +15870,68 @@ mod tests {
         }
     }
 
+    /// A hidden reminder rides in on the `user` role, so every surface that
+    /// counts user turns has to skip it: otherwise it becomes a rewind target
+    /// and a recall entry the user never typed, and shifts the indices those
+    /// share with the display journal (which holds no reminder at all).
+    #[test]
+    fn a_hidden_reminder_is_not_a_user_turn() {
+        let mut app = test_app();
+        app.thread_id = Some("t1".into());
+        app.repo_root = Some(std::path::PathBuf::from("/tmp/repo"));
+        app.base_requested = true;
+        app.submit_user("first".into());
+        app.history
+            .push(json!({ "role": "assistant", "content": "reply" }));
+        app.submit_reminder("unfinished todos remain".into());
+        assert_eq!(
+            app.history.len(),
+            3,
+            "the reminder needed its own turn here"
+        );
+        assert!(crate::core::agent::reminder::is_reminder_only(
+            &app.history[2]["content"]
+        ));
+
+        open_rewind_picker(&mut app);
+        let picker = app.picker.as_ref().expect("picker");
+        assert_eq!(picker.items.len(), 1);
+        assert_eq!(picker.items[0].label, "first");
+
+        rebuild_recall(&mut app);
+        assert_eq!(app.input_history, vec!["first"]);
+
+        app.checkpoint_turn();
+        match app.snap_queue.back() {
+            Some(SnapshotJob::Checkpoint {
+                user_index,
+                preview,
+                ..
+            }) => {
+                assert_eq!(*user_index, 0, "the reminder must not shift the key");
+                assert_eq!(preview, "first");
+            }
+            other => panic!("expected a checkpoint job, got {:?}", other.is_some()),
+        }
+    }
+
+    /// The reminder is folded into a message the model has not answered yet
+    /// where one exists, so no extra turn is invented at all.
+    #[test]
+    fn a_reminder_lands_in_flight_on_an_unanswered_turn() {
+        let mut app = test_app();
+        app.thread_id = Some("t1".into());
+        app.submit_user("first".into());
+        app.submit_reminder("unfinished todos remain".into());
+        assert_eq!(app.history.len(), 1);
+        let content = app.history[0]["content"].as_str().expect("text");
+        assert!(content.starts_with("first\n\n"), "{content}");
+        assert!(content.contains("unfinished todos remain"));
+        // Recall and rewind offer the typed text back, never the reminder.
+        rebuild_recall(&mut app);
+        assert_eq!(app.input_history, vec!["first"]);
+    }
+
     #[test]
     fn rewind_to_fills_input_with_target_user_message() {
         let mut app = test_app();
@@ -15899,6 +16290,189 @@ mod tests {
             "no throbber may survive the cancel:\n{}",
             rows.join("\n")
         );
+    }
+
+    /// Put `text` in the composer with the caret marked by `|`.
+    fn composer(app: &mut App, text: &str) {
+        let cursor = text.find('|').expect("mark the caret with |");
+        app.input = text.replace('|', "");
+        app.cursor = cursor;
+    }
+
+    /// The composer as `text|with the caret marked`.
+    fn composed(app: &App) -> String {
+        let mut s = app.input.clone();
+        s.insert(app.cursor, '|');
+        s
+    }
+
+    #[tokio::test]
+    async fn word_deletion_covers_every_spelling() {
+        // Alt+Backspace (Option+Delete on macOS), Ctrl+Backspace and Ctrl-W all
+        // delete backwards; Alt+D and Ctrl+Delete delete forwards.
+        for mods in [KeyModifiers::ALT, KeyModifiers::CONTROL] {
+            let mut app = test_app();
+            composer(&mut app, "hello world|");
+            press(&mut app, KeyCode::Backspace, mods).await;
+            assert_eq!(composed(&app), "hello |", "Backspace with {mods:?}");
+
+            composer(&mut app, "|hello world");
+            press(&mut app, KeyCode::Delete, mods).await;
+            assert_eq!(composed(&app), "| world", "Delete with {mods:?}");
+        }
+
+        let mut app = test_app();
+        composer(&mut app, "hello world|");
+        press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "hello |");
+
+        composer(&mut app, "|hello world");
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "| world");
+    }
+
+    /// Ctrl-W takes a whole whitespace-delimited token (the shell's
+    /// unix-word-rubout) where Alt+Backspace stops at the punctuation, which is
+    /// the whole reason both exist.
+    #[tokio::test]
+    async fn ctrl_w_eats_a_path_and_alt_backspace_does_not() {
+        let mut app = test_app();
+        composer(&mut app, "open src/core/tui.rs|");
+        press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "open |");
+
+        composer(&mut app, "open src/core/tui.rs|");
+        press(&mut app, KeyCode::Backspace, KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "open src/core/tui.|");
+    }
+
+    /// Trailing whitespace goes with the word, and an empty buffer is a no-op
+    /// rather than a panic.
+    #[tokio::test]
+    async fn word_deletion_handles_the_edges() {
+        let mut app = test_app();
+        composer(&mut app, "foo   |");
+        press(&mut app, KeyCode::Backspace, KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "|");
+
+        press(&mut app, KeyCode::Backspace, KeyModifiers::ALT).await;
+        press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL).await;
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "|");
+
+        // Multi-byte chars: the caret must land on a char boundary.
+        composer(&mut app, "café über|");
+        press(&mut app, KeyCode::Backspace, KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "café |");
+    }
+
+    #[tokio::test]
+    async fn word_and_line_motion_keys_move_the_caret() {
+        let mut app = test_app();
+        for mods in [KeyModifiers::ALT, KeyModifiers::CONTROL] {
+            composer(&mut app, "hello world|");
+            press(&mut app, KeyCode::Left, mods).await;
+            assert_eq!(composed(&app), "hello |world", "Left with {mods:?}");
+            press(&mut app, KeyCode::Right, mods).await;
+            assert_eq!(composed(&app), "hello world|", "Right with {mods:?}");
+        }
+
+        composer(&mut app, "hello world|");
+        press(&mut app, KeyCode::Char('b'), KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "hello |world");
+        press(&mut app, KeyCode::Char('f'), KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "hello world|");
+
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "|hello world");
+        press(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "h|ello world");
+        press(&mut app, KeyCode::Char('b'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "|hello world");
+        press(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "hello world|");
+    }
+
+    /// Home/End/Ctrl-A/Ctrl-E and the line kills are line-wise, not
+    /// buffer-wise: the composer takes newlines via Shift/Alt+Enter.
+    #[tokio::test]
+    async fn line_keys_act_on_the_caret_line_of_a_multiline_buffer() {
+        let mut app = test_app();
+        composer(&mut app, "first\nsec|ond\nthird");
+        press(&mut app, KeyCode::Home, KeyModifiers::NONE).await;
+        assert_eq!(composed(&app), "first\n|second\nthird");
+        press(&mut app, KeyCode::End, KeyModifiers::NONE).await;
+        assert_eq!(composed(&app), "first\nsecond|\nthird");
+
+        composer(&mut app, "first\nsec|ond\nthird");
+        press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "first\nsec|\nthird");
+        // At the end of a line Ctrl-K takes the newline, joining the next up.
+        press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "first\nsec|third");
+
+        composer(&mut app, "first\nsec|ond\nthird");
+        press(&mut app, KeyCode::Char('u'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "first\n|ond\nthird");
+    }
+
+    #[tokio::test]
+    async fn shift_enter_inserts_a_newline_instead_of_submitting() {
+        let mut app = test_app();
+        composer(&mut app, "line one|");
+        press(&mut app, KeyCode::Enter, KeyModifiers::SHIFT).await;
+        assert_eq!(composed(&app), "line one\n|");
+        assert_eq!(app.status, Status::Idle, "Shift+Enter must not submit");
+    }
+
+    /// The slash and `@path` popups own Enter, but a *modified* Enter is a
+    /// newline: it must reach the composer instead of accepting a completion.
+    #[tokio::test]
+    async fn a_newline_keystroke_survives_an_open_hint_popup() {
+        for mods in [KeyModifiers::SHIFT, KeyModifiers::ALT] {
+            let mut app = test_app();
+            type_key_chars(&mut app, "/mod").await;
+            assert!(!app.slash_matches().is_empty(), "the popup must be open");
+            press(&mut app, KeyCode::Enter, mods).await;
+            assert_eq!(app.input, "/mod\n", "{mods:?} must insert a newline");
+        }
+    }
+
+    #[tokio::test]
+    async fn ctrl_h_and_ctrl_t_edit_characters() {
+        let mut app = test_app();
+        composer(&mut app, "abc|");
+        press(&mut app, KeyCode::Char('h'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "ab|");
+
+        // Ctrl-T at the end of the buffer swaps the last two chars.
+        press(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "ba|");
+
+        composer(&mut app, "a|bc");
+        press(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "ba|c");
+
+        // Nothing to swap: a no-op, not a panic.
+        composer(&mut app, "|a");
+        press(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "|a");
+    }
+
+    #[tokio::test]
+    async fn ctrl_p_and_ctrl_n_recall_history_without_scrolling() {
+        let mut app = test_app();
+        submit_line(&mut app, "first message").await;
+        submit_line(&mut app, "second message").await;
+        app.scrollback = 0;
+
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::CONTROL).await;
+        assert_eq!(app.input, "second message");
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::CONTROL).await;
+        assert_eq!(app.input, "first message");
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::CONTROL).await;
+        assert_eq!(app.input, "second message");
+        assert_eq!(app.scrollback, 0, "recall keys never scroll the transcript");
     }
 
     async fn press(app: &mut App, code: KeyCode, mods: KeyModifiers) {
@@ -18585,14 +19159,14 @@ mod tests {
     fn input_lines_single_line_has_arrow_and_cursor() {
         let lines = input_content_lines("hello", 5);
         assert_eq!(lines.len(), 1);
-        assert_eq!(caret_text(&lines[0]), "› hello▏");
+        assert_eq!(caret_text(&lines[0]), "> hello▏");
     }
 
     #[test]
     fn input_lines_multiline_hangs_and_cursor_on_last() {
         let lines = input_content_lines("one\ntwo\nthree", "one\ntwo\nthree".len());
         assert_eq!(lines.len(), 3);
-        assert_eq!(line_text(&lines[0]), "› one");
+        assert_eq!(line_text(&lines[0]), "> one");
         assert_eq!(line_text(&lines[1]), "  two");
         assert_eq!(caret_text(&lines[2]), "  three▏");
     }
@@ -18601,7 +19175,7 @@ mod tests {
     fn input_lines_trailing_newline_gives_empty_cursor_row() {
         let lines = input_content_lines("hi\n", 3);
         assert_eq!(lines.len(), 2);
-        assert_eq!(line_text(&lines[0]), "› hi");
+        assert_eq!(line_text(&lines[0]), "> hi");
         assert_eq!(caret_text(&lines[1]), "  ▏");
     }
 
@@ -18610,14 +19184,14 @@ mod tests {
         // Caret sits between "he" and "llo" on a single line.
         let lines = input_content_lines("hello", 2);
         assert_eq!(lines.len(), 1);
-        assert_eq!(caret_text(&lines[0]), "› he▏llo");
+        assert_eq!(caret_text(&lines[0]), "> he▏llo");
     }
 
     #[test]
     fn input_lines_caret_on_earlier_line_only() {
         // Cursor inside the first segment: caret there, none on later lines.
         let lines = input_content_lines("one\ntwo", 1);
-        assert_eq!(caret_text(&lines[0]), "› o▏ne");
+        assert_eq!(caret_text(&lines[0]), "> o▏ne");
         assert_eq!(line_text(&lines[1]), "  two");
     }
 
@@ -20740,6 +21314,41 @@ mod tests {
         assert!(ALT_SCROLL_RESTORE.contains("?1007r"), "restore on exit");
     }
 
+    /// The keyboard enhancement flags are the only reason `Shift+Enter` and the
+    /// `Cmd` bindings can be decoded at all, so they go out on every start --
+    /// but only flags 1 and 4. Flag 2 (report event types) would deliver key
+    /// releases and repeats that no handler here filters, and flag 8 (report
+    /// all keys as escape codes) would route ordinary text through CSI-u.
+    #[test]
+    fn keyboard_enhancement_asks_for_disambiguation_and_nothing_costly() {
+        let flags: u8 = KITTY_KEYS_ON
+            .trim_start_matches("\x1b[>")
+            .trim_end_matches('u')
+            .parse()
+            .expect("the push is a numeric flag set");
+        assert_eq!(flags & 1, 1, "disambiguate escape codes");
+        assert_eq!(flags & 4, 4, "report alternate keys");
+        assert_eq!(flags & 2, 0, "event types would add releases and repeats");
+        assert_eq!(flags & 8, 0, "all-keys-as-escapes would reroute plain text");
+        assert_eq!(KITTY_KEYS_OFF, "\x1b[<u", "the push must be popped on exit");
+    }
+
+    /// Keyboard enhancement is not the mouse: it goes out whether or not
+    /// tracking is on, since the composer's editing keys depend on it.
+    #[test]
+    fn startup_modes_always_push_keyboard_enhancement() {
+        for mouse in [true, false] {
+            let modes = startup_modes(mouse);
+            assert!(modes.contains(KITTY_KEYS_ON), "mouse={mouse}: {modes:?}");
+            assert_eq!(
+                modes.contains(MOUSE_TRACK_ON),
+                mouse,
+                "tracking must follow the config key alone"
+            );
+            assert!(modes.starts_with(alt_scroll_save_off()));
+        }
+    }
+
     #[test]
     fn alt_scroll_is_disabled_only_where_the_terminal_reports_wheel() {
         // The app keeps native alternate scroll (i.e. sends nothing) on Windows,
@@ -22722,12 +23331,9 @@ mod tests {
         let injected = last_history_content(&app);
         assert!(injected.contains("unfinished todos"), "got: {injected}");
         assert!(injected.contains("t1") && injected.contains("t2"));
-        // The reminder is hidden: no user-authored `› ` row in the transcript.
+        // The reminder is hidden: no user-authored `> ` row in the transcript.
         let rows: String = app.transcript.iter().map(row_text).collect();
-        assert!(
-            !rows.contains("› "),
-            "reminder must not render as a user row"
-        );
+        assert!(!rows.contains("> "), "reminder must not render as a user row");
     }
 
     #[test]
@@ -23620,6 +24226,30 @@ mod tests {
             text.contains("started a new session"),
             "missing note: {text}"
         );
+    }
+
+    #[tokio::test]
+    async fn clear_re_prints_the_branded_splash() {
+        let mut app = test_app();
+        app.approval_phrasing = "--safe: approval needed".to_string();
+        app.push(Line::raw("old content"));
+
+        run_command(&mut app, "clear").await;
+
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(
+            !text.contains("old content"),
+            "transcript not reset: {text}"
+        );
+        assert!(
+            text.contains(brand::HAND[0].trim()),
+            "hand logo missing after /clear: {text}"
+        );
+        assert!(
+            text.contains("--safe: approval needed"),
+            "approval phrasing missing after /clear: {text}"
+        );
+        assert!(text.contains("type a message to start"), "{text}");
     }
 
     #[test]
@@ -25079,6 +25709,40 @@ mod tests {
         );
     }
 
+    /// The mark and the name are one lockup, so they share rows instead of
+    /// stacking: the wordmark's first row also carries part of the hand.
+    #[test]
+    fn banner_opens_with_the_hand_logo_beside_the_wordmark() {
+        let mut app = test_app();
+        app.push_banner("--safe", true);
+
+        let text = banner_text(&app, 90);
+        let joined = text.join("\n");
+        let row = text
+            .iter()
+            .find(|l| l.contains(brand::LOGO[0].trim()))
+            .unwrap_or_else(|| panic!("wordmark missing:\n{joined}"));
+        let hand_row = brand::HAND
+            .iter()
+            .find(|h| row.contains(h.trim()))
+            .unwrap_or_else(|| panic!("the wordmark's row carries no hand: {row}"));
+        assert!(
+            row.find(hand_row.trim()).unwrap() < row.find(brand::LOGO[0].trim()).unwrap(),
+            "the hand should sit left of the wordmark: {row}"
+        );
+        assert!(joined.contains('█'), "{joined}");
+    }
+
+    #[test]
+    fn a_24_column_terminal_drops_the_hand_logo_too() {
+        let mut app = test_app();
+        app.push_banner("--safe", true);
+        let narrow = banner_text(&app, 24);
+        let joined = narrow.join("\n");
+        assert!(!joined.contains('█'), "{joined}");
+        assert!(joined.contains("jan"), "{joined}");
+    }
+
     /// `/init` is the first thing a new project wants and is invisible unless
     /// promoted, so the splash lists it beside `/help`.
     #[test]
@@ -25136,21 +25800,33 @@ mod tests {
         }
     }
 
+    /// The wave mark is the only branding the header carries: one glyph, then
+    /// the model. A name chip would spend the columns the status needs.
     #[test]
-    fn header_leads_with_the_model_not_a_name_chip() {
+    fn header_leads_with_the_wave_then_the_model() {
         let mut app = test_app();
         app.model = "tokamak-1-preview".into();
-        let top = render_rows(&mut app, 110, 12).remove(0);
+        let top = render_rows(&mut app, 60, 12).remove(0);
+        let head = top.trim_start();
         assert!(
-            top.starts_with(" tokamak-1-preview"),
-            "the name chip is back: {top:?}"
+            head.starts_with(brand::WAVE),
+            "the wave should open the row: {top:?}"
         );
-        // The freed columns are what let the status survive a 110-column frame.
-        assert!(top.contains("[ready]"), "{top:?}");
+        assert!(
+            head[brand::WAVE.len()..]
+                .trim_start()
+                .starts_with("tokamak-1-preview"),
+            "the model should follow the wave, with no name chip between: {top:?}"
+        );
+        // The freed columns are what let the status survive. This branch's
+        // header also carries the fallback chip, so `[ready]` needs the wider
+        // frame that dev's 60-column case has no room for.
+        let wide = render_rows(&mut app, 110, 12).remove(0);
+        assert!(wide.contains("[ready]"), "{wide:?}");
 
         app.model.clear();
-        let top = render_rows(&mut app, 110, 12).remove(0);
-        assert!(top.starts_with(" no model"), "{top:?}");
+        let top = render_rows(&mut app, 60, 12).remove(0);
+        assert!(top.contains("no model"), "{top:?}");
     }
 
     #[test]
@@ -25196,7 +25872,7 @@ mod tests {
         assert_eq!(last_row(&app)[0].0, "\u{2022} ", "system note");
 
         app.push_user_line("do it", &[]);
-        assert_eq!(last_row(&app)[0].0, "\u{203a} ", "user message");
+        assert_eq!(last_row(&app)[0].0, "> ", "user message");
 
         app.apply(StreamEvent::ToolCall {
             id: "t1".into(),
@@ -25218,7 +25894,7 @@ mod tests {
         app.flush_assistant();
         let prose = last_row(&app);
         assert!(
-            !prose[0].0.starts_with('\u{2022}') && !prose[0].0.starts_with('\u{203a}'),
+            !prose[0].0.starts_with('\u{2022}') && !prose[0].0.starts_with('>'),
             "prose took a gutter: {prose:?}"
         );
     }

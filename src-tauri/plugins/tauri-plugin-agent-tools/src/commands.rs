@@ -352,7 +352,7 @@ pub async fn execute_tool(
         .with_confined_writes(true)
         .with_mask_root(Path::new(&data_folder))
         .with_scratch_root(&scratch);
-    let (content, diff) = handlers::execute_builtin_with_diff(tool, &args, &ctx).await;
+    let (content, diff, _images) = handlers::execute_builtin_with_diff(tool, &args, &ctx).await;
     let is_error =
         content.starts_with("ERROR") || (name == "bash" && handlers::bash_result_failed(&content));
     Ok(ToolResult {

@@ -9,6 +9,7 @@ pub mod appcontainer;
 pub mod cmdscan;
 pub mod gate;
 pub mod handlers;
+pub mod image;
 pub mod jail;
 pub mod proc;
 /// Path containment for the filesystem tools. Distinct from [`jail`], which is
@@ -16,6 +17,18 @@ pub mod proc;
 pub mod sandbox;
 pub mod schema;
 pub mod web;
+
+/// A single OpenAI `image_url` content part: the `data:<mime>;base64,<bytes>`
+/// URL plus a display name. This is what the `read` tool returns for an image
+/// file, and the agent loop threads into the tool-result message so a vision
+/// model sees the image.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ImageContentPart {
+    /// `data:image/png;base64,...` URL, ready to embed in an `image_url` part.
+    pub data_url: String,
+    /// Basename shown to the model and in the transcript.
+    pub name: String,
+}
 
 /// Ambient context a tool call executes against.
 ///
