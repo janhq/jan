@@ -25,6 +25,11 @@ on:
         required: false
       DELTA_AWS_REGION:
         required: false
+      # Baked into the binary at compile time via option_env!; without it the
+      # released CLI falls back to the local-dev key and its signed requests
+      # are rejected.
+      JAN_SIGNING_KEY:
+        required: false
     outputs:
       FILE_NAME:
         value: ${{ jobs.build-linux-x64.outputs.FILE_NAME }}
@@ -79,6 +84,7 @@ jobs:
         env:
           JAN_CLI_UPDATE_CHANNEL: ${{ inputs.channel }}
           JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
+          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
         run: |
           cd src-tauri
           cargo build --no-default-features --features cli --bin jan --release
