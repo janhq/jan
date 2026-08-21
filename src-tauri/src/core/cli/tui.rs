@@ -19376,7 +19376,9 @@ mod tests {
     /// but keeps the provider entry and its config, distinct from `d` delete.
     #[test]
     fn provider_settings_x_logout_clears_credential_and_keeps_config() {
-        crate::core::agent::global_config::with_temp_home(|_| {
+        // Seeds the process-global secret store, so it has to hold the same
+        // lock (and get its own data folder) as every other credential test.
+        with_isolated_login_state(|| {
             use crate::core::cli::auth::{Credential, CredentialStore};
             crate::core::agent::global_config::set_provider(
                 "myprovider",

@@ -278,10 +278,12 @@ mod tests {
     use std::sync::MutexGuard;
 
 
+    // Field order is drop order: `_dir` must be removed and the env restored
+    // while the lock is still held, so `_guard` has to be the last field.
     struct TempDataFolder {
-        _guard: MutexGuard<'static, ()>,
         prev_data_folder: Option<String>,
         _dir: tempfile::TempDir,
+        _guard: MutexGuard<'static, ()>,
     }
 
     impl TempDataFolder {
@@ -293,9 +295,9 @@ mod tests {
             // relying on it fails the fallback tests on macOS/Windows.
             std::env::set_var("JAN_DATA_FOLDER", dir.path());
             Self {
-                _guard: guard,
                 prev_data_folder,
                 _dir: dir,
+                _guard: guard,
             }
         }
     }
