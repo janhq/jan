@@ -125,7 +125,7 @@ pub fn resolve_config_file_path() -> PathBuf {
 /// the previous value afterwards. Serialized on its own lock: the env is
 /// process-wide and Rust runs tests on threads, so two of these overlapping
 /// would each see the other's folder.
-#[cfg(test)]
+#[cfg(all(test, feature = "cli"))]
 pub(crate) fn with_temp_data_folder<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
     use std::sync::Mutex;
 

@@ -753,7 +753,7 @@ pub async fn stop_router(handle: RouterHandle) -> ServerResult<()> {
                 busy.len(),
                 busy
             );
-            force_kill_router_tree(h).await;
+            force_kill_router_tree(*h).await;
             Ok(())
         }
     }
@@ -763,7 +763,7 @@ pub async fn stop_router(handle: RouterHandle) -> ServerResult<()> {
 pub async fn try_graceful_stop_router(
     mut handle: RouterHandle,
     deadline: Duration,
-) -> Result<(), (RouterHandle, Vec<String>)> {
+) -> Result<(), (Box<RouterHandle>, Vec<String>)> {
     let start = Instant::now();
 
     let client = match reqwest::Client::builder().build() {
@@ -799,7 +799,7 @@ pub async fn try_graceful_stop_router(
             processing.len(),
             processing
         );
-        return Err((handle, processing));
+        return Err((Box::new(handle), processing));
     }
 
     if !initial.is_empty() {
@@ -838,7 +838,7 @@ pub async fn try_graceful_stop_router(
                 deadline,
                 still.len()
             );
-            return Err((handle, still));
+            return Err((Box::new(handle), still));
         }
         let remaining = deadline - elapsed;
         tokio::time::sleep(Duration::from_millis(150).min(remaining)).await;
