@@ -1,0 +1,143 @@
+---
+title: Project Config
+description: AGENT.md and agent.toml - per-project instructions, model, budget, and tool policy.
+keywords: [Jan, Jan Agent, agent.toml, AGENT.md, project config, instructions, budget]
+---
+
+import { Callout } from 'nextra/components'
+
+# Project Config
+
+Each project gets a `.jan/agent/` directory holding how the agent should behave there.
+
+```
+your-project/
+└── .jan/
+    └── agent/
+        ├── agent.toml     # model, budget, tool policy
+        ├── AGENT.md       # instructions for the agent
+        ├── threads/       # saved sessions
+        ├── skills/        # reusable procedures
+        ├── memory/        # durable facts
+        └── subagents/     # reusable subagent definitions
+```
+
+It's created on first use. To scaffold it up front without starting a session:
+
+```bash
+jan cli agent status --project .
+```
+
+<Callout type="tip">
+Commit `agent.toml`, `AGENT.md`, `skills/`, and `subagents/` so the whole team gets the same agent.
+Add `threads/` to `.gitignore` - those are personal transcripts.
+</Callout>
+
+## AGENT.md
+
+Plain markdown, injected into the system prompt on every run. The highest-leverage file here.
+
+```markdown
+# Agent Instructions
+
+This is a Rust workspace. `cargo test` must pass before you call anything done.
+
+- Source lives in `src-tauri/src/`, tests alongside the code they cover.
+- Never edit generated files under `gen/`.
+- Prefer small, focused commits with Conventional Commit messages.
+- Ask before adding a dependency.
+```
+
+Write it as rules, not prose. Things that are true every time belong here; a procedure for one kind
+of task belongs in a [skill](/docs/agent/skills).
+
+Point at a different file with `instructions_file` if you already keep conventions somewhere else.
+
+## agent.toml
+
+```toml
+[agent]
+# model = "Jan-V4"
+# context_window = 128000
+# compaction_reserve_tokens = 16384
+# max_tokens = 4096
+# max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
+# show_reasoning = false  # unfold thinking blocks in the transcript (Ctrl-O still toggles)
+# send_reasoning = true   # resend prior reasoning to the model; false drops it from the request
+instructions_file = "AGENT.md"
+
+# [provider]
+# name = "openai"
+# api_key = "sk-..."
+# base_url = "https://api.openai.com/v1"
+# models = ["gpt-4o"]
+
+# The run's only cap: new token spend across all turns (replayed context is not
+# recharged each turn). There is no turn limit. Defaults to 128000 when unset;
+# 0 disables the cap.
+[budget]
+# max_tokens = 128000
+
+[tools]
+default = "read-only"
+allow = []
+deny = []
+allow_write = []
+# sandbox = true
+
+[skills]
+enabled = []
+inject = "always"
+```
+
+### `[agent]`
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `model` | inherited | Model id. Overridden by `--model` |
+| `context_window` | `128000` | Context limit in tokens |
+| `compaction_reserve_tokens` | `16384` | Headroom kept free before [compaction](/docs/agent/context) |
+| `max_tokens` | unset | Cap on tokens generated per response. Omitted from the request when unset |
+| `max_parallel_subagents` | `10` | Subagents that may run at once (min 1); extra dispatches queue FIFO |
+| `show_reasoning` | `false` | Unfold model reasoning (`<thinking>`) blocks in the transcript instead of folding them to a summary row. <kbd>Ctrl</kbd>+<kbd>O</kbd> still toggles a folded block |
+| `send_reasoning` | `true` | Resend a prior turn's reasoning to the model with the conversation. Set `false` for an upstream that rejects the field (e.g. Groq), or to keep chains of thought out of the context budget |
+| `instructions_file` | `AGENT.md` | Markdown injected into the system prompt |
+
+### `[provider]`
+
+A project-local provider override, winning over `~/.jan/config.toml` and anything inherited from Jan
+Desktop. Most projects don't need it. See [Providers](/docs/agent/providers#per-project-override).
+
+### `[budget]`
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `max_tokens` | `128000` | Token-spend ceiling for one run (new spend across all turns). The only cap on run length - there is no turn limit. Set `0` to disable the cap. Defaults to `128000` when unset |
+
+A bound on how far one run goes, distinct from the per-request context window. It bounds the run's
+marginal token spend (replayed context is not recharged each turn).
+
+### `[tools]`
+
+See [Tool permissions](/docs/agent/permissions#project-policy). `sandbox` is how a project requires
+[shell confinement](/docs/agent/permissions#the-shell-sandbox) for everyone who checks it out; it is
+off by default on the CLI.
+
+### `[skills]`
+
+See [Skills](/docs/agent/skills#controlling-which-are-active).
+
+## Updating
+
+```bash
+jan update           # latest build on this channel
+jan update --check   # report without installing
+jan update --force   # reinstall even if current
+```
+
+Or `/update` in the console, which takes effect on restart.
+
+<Callout type="info">
+Builds compiled from source have no update channel embedded, so `jan update` reports that rather
+than doing anything. Re-run the installer with `--source` to rebuild.
+</Callout>
