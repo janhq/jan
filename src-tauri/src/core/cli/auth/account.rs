@@ -262,12 +262,12 @@ pub fn parse_manual_callback(raw: &str, expected_state: &str) -> Result<String, 
 }
 
 async fn accept_callback(
-    listener: tokio::net::TcpListener,
+    listener: &CallbackListener,
     login: &AccountLogin,
 ) -> Result<String, String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    let (mut stream, _) = listener
+    let mut stream = listener
         .accept()
         .await
         .map_err(|_| "could not receive the account callback".to_string())?;
@@ -296,21 +296,64 @@ async fn accept_callback(
     result
 }
 
-pub async fn bind_callback(
-    login: &mut AccountLogin,
-) -> Result<tokio::net::TcpListener, String> {
+/// A loopback listener for the OAuth redirect.
+///
+/// `localhost` resolves to both `::1` and `127.0.0.1`, and the browser opens a
+/// single connection to whichever the resolver returns first (IPv6 on macOS and
+/// most Linux distributions). One socket per family means the callback is
+/// caught either way, and - because a bind to a *specific* address always
+/// conflicts with another socket on that same address - it also lets us notice
+/// that a port we were about to advertise is already someone else's.
+pub struct CallbackListener {
+    primary: tokio::net::TcpListener,
+    secondary: Option<tokio::net::TcpListener>,
+}
+
+impl From<tokio::net::TcpListener> for CallbackListener {
+    fn from(primary: tokio::net::TcpListener) -> Self {
+        Self {
+            primary,
+            secondary: None,
+        }
+    }
+}
+
+impl CallbackListener {
+    pub fn local_addr(&self) -> std::io::Result<std::net::SocketAddr> {
+        self.primary.local_addr()
+    }
+
+    /// Accept the redirect from whichever loopback family the browser used.
+    async fn accept(&self) -> std::io::Result<tokio::net::TcpStream> {
+        match &self.secondary {
+            None => self.primary.accept().await.map(|(stream, _)| stream),
+            Some(secondary) => tokio::select! {
+                accepted = self.primary.accept() => accepted.map(|(stream, _)| stream),
+                accepted = secondary.accept() => accepted.map(|(stream, _)| stream),
+            },
+        }
+    }
+}
+
+/// Bind the loopback listener that receives the OAuth redirect.
+///
+/// Prefer the provider's registered port, since some providers only whitelist
+/// that exact redirect URI, and fall back to a fresh port when any loopback
+/// family of the preferred port is taken - a port that is only half ours would
+/// silently hand the callback to the process holding the other family.
+pub async fn bind_callback(login: &mut AccountLogin) -> Result<CallbackListener, String> {
     let mut redirect = url::Url::parse(&login.redirect_uri)
         .map_err(|_| "the callback URL was invalid".to_string())?;
     let port = redirect
         .port_or_known_default()
         .ok_or_else(|| "the callback URL did not include a port".to_string())?;
-    if let Ok(listener) = tokio::net::TcpListener::bind(("127.0.0.1", port)).await {
+    if let Some(listener) = bind_loopback(port).await {
         return Ok(listener);
     }
 
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+    let listener = bind_fresh_loopback()
         .await
-        .map_err(|_| "could not start the local sign-in callback".to_string())?;
+        .ok_or_else(|| "could not start the local sign-in callback".to_string())?;
     let port = listener
         .local_addr()
         .map_err(|_| "could not read the local sign-in callback".to_string())?
@@ -320,6 +363,56 @@ pub async fn bind_callback(
         .map_err(|_| "the callback URL could not use the fallback port".to_string())?;
     login.set_redirect_uri(redirect.into())?;
     Ok(listener)
+}
+
+/// Claim `port` on every loopback family, or nothing at all.
+async fn bind_loopback(port: u16) -> Option<CallbackListener> {
+    let primary = match tokio::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, port)).await {
+        Ok(primary) => primary,
+        // Occupied means the browser could reach that other process: refuse the
+        // port. Any other error means this host has no IPv6 loopback at all, so
+        // `localhost` can only resolve to IPv4 and a v4 socket is sufficient.
+        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => return None,
+        Err(_) => {
+            return tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))
+                .await
+                .ok()
+                .map(CallbackListener::from);
+        }
+    };
+    let secondary = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))
+        .await
+        .ok()?;
+    Some(CallbackListener {
+        primary,
+        secondary: Some(secondary),
+    })
+}
+
+/// Find an ephemeral port that is free on every loopback family.
+///
+/// The kernel only hands out an unused port for the family we ask about, so a
+/// port free on IPv6 can still be taken on IPv4. Retry a few times rather than
+/// advertising a half-owned port.
+async fn bind_fresh_loopback() -> Option<CallbackListener> {
+    for _ in 0..8 {
+        let probe = match tokio::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, 0)).await {
+            Ok(probe) => probe,
+            // No IPv6 loopback: an IPv4 socket is all `localhost` can reach.
+            Err(_) => {
+                return tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+                    .await
+                    .ok()
+                    .map(CallbackListener::from);
+            }
+        };
+        let candidate = probe.local_addr().ok()?.port();
+        drop(probe);
+        if let Some(listener) = bind_loopback(candidate).await {
+            return Some(listener);
+        }
+    }
+    None
 }
 
 
@@ -846,12 +939,12 @@ fn claude_plan_message(heavy_ok: bool, tier: Option<&str>) -> String {
 
 
 pub async fn complete_callback_login_with_manual(
-    listener: tokio::net::TcpListener,
+    listener: CallbackListener,
     login: AccountLogin,
     mut manual: tokio::sync::mpsc::UnboundedReceiver<String>,
 ) -> Result<AccountProvider, String> {
     let code = {
-        let callback = accept_callback(listener, &login);
+        let callback = accept_callback(&listener, &login);
         tokio::pin!(callback);
         loop {
             match manual.try_recv() {
@@ -1136,7 +1229,7 @@ mod tests {
                         .await
                         .unwrap();
                 });
-                let code = accept_callback(listener, &login).await?;
+                let code = accept_callback(&listener.into(), &login).await?;
                 let result = complete_code_login(login, code).await;
                 client.await.unwrap();
                 result
@@ -1169,7 +1262,7 @@ mod tests {
                         .await
                         .unwrap();
                 });
-                let code = accept_callback(listener, &login).await?;
+                let code = accept_callback(&listener.into(), &login).await?;
                 let result = complete_code_login(login, code).await;
                 client.await.unwrap();
                 result
@@ -1190,7 +1283,7 @@ mod tests {
                 let manual_input = format!("authorization-code#{}", login.state);
                 let (manual, receiver) = tokio::sync::mpsc::unbounded_channel();
                 manual.send(manual_input).unwrap();
-                complete_callback_login_with_manual(listener, login, receiver).await
+                complete_callback_login_with_manual(listener.into(), login, receiver).await
             })
         })
         .join()
@@ -1280,6 +1373,45 @@ mod tests {
             Some(&expected)
         );
     }
+
+    /// The user-visible bug: another process (Cursor, another Claude Code
+    /// install) holds the IPv6 loopback for the preferred port while IPv4 is
+    /// still free. `localhost` resolves IPv6-first on macOS, so the browser
+    /// delivers the callback to that other process and the sign-in hangs
+    /// forever. Binding IPv4 must not be treated as "the port is ours".
+    #[tokio::test]
+    async fn callback_avoids_a_port_whose_ipv6_loopback_is_busy() {
+        let Ok(occupied) = tokio::net::TcpListener::bind("[::1]:0").await else {
+            return; // No IPv6 loopback on this machine; nothing to prove.
+        };
+        let occupied_port = occupied.local_addr().unwrap().port();
+        let mut login = begin(AccountProvider::Claude).unwrap();
+        login
+            .set_redirect_uri(format!("http://localhost:{occupied_port}/callback"))
+            .unwrap();
+
+        let listener = bind_callback(&mut login)
+            .await
+            .expect("a usable callback port is chosen");
+
+        // The browser opens ONE connection to the first address `localhost`
+        // resolves to, so the advertised port must be ours on every loopback
+        // family - not merely on IPv4.
+        let redirect = url::Url::parse(&login.redirect_uri).unwrap();
+        let port = redirect.port().unwrap();
+        assert_eq!(listener.local_addr().unwrap().port(), port);
+        assert_ne!(
+            port, occupied_port,
+            "advertised a port whose IPv6 loopback belongs to another process"
+        );
+        assert!(
+            tokio::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, port))
+                .await
+                .is_err(),
+            "the callback listener must own the IPv6 loopback the browser will use"
+        );
+    }
+
     #[test]
     fn claude_browser_login_uses_registered_client_id() {
         let login = begin(AccountProvider::Claude).unwrap();
@@ -1552,7 +1684,7 @@ mod tests {
         });
 
         assert_eq!(
-            accept_callback(listener, &login).await.unwrap(),
+            accept_callback(&listener.into(), &login).await.unwrap(),
             "authorization-code"
         );
         client.await.unwrap();
