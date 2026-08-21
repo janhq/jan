@@ -10300,7 +10300,7 @@ fn open_login_picker_at(app: &mut App, selected_provider: Option<&str>) {
     providers.sort_by(|a, b| match (a.id == "tokamak", b.id == "tokamak") {
         (true, false) => std::cmp::Ordering::Less,
         (false, true) => std::cmp::Ordering::Greater,
-        _ => a.name.cmp(&b.name),
+        _ => a.name.cmp(b.name),
     });
     let items = providers
         .into_iter()
@@ -11983,9 +11983,6 @@ fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
     let dim = Style::new().dark_gray();
     let max = width.max(1) as usize;
     let definition = crate::core::cli::auth::provider_by_id(&prompt.provider);
-    let name = definition
-        .as_ref()
-        .map_or("provider", |provider| provider.name);
     let keys_url = definition
         .as_ref()
         .map_or("", |provider| provider.api_key.keys_url);
@@ -12985,7 +12982,7 @@ fn provider_label_for_model(
     let reachable = pc
         .iter()
         .filter(|(_, c)| is_cli_reachable(c) && offers(c))
-        .min_by_key(|(name, c)| (std::cmp::Reverse(c.api_key.is_some()), name.clone()))
+        .min_by_key(|(name, c)| (std::cmp::Reverse(c.api_key.is_some()), (*name).clone()))
         .or_else(|| pc.iter().find(|(_, c)| offers(c)));
     match reachable {
         Some((name, _)) if name != model => format!("{name}/{model}"),
@@ -13647,7 +13644,7 @@ mod tests {
         compact_tokens, finish_account_login, finish_compaction, finish_login, finish_update_install,
         image_mime_of, load_first_file_image, load_image_file, MAX_IMAGE_BYTES,
         message_text, CompactKind, MAX_OVERFLOW_RETRIES,
-        estimate_token_count, header_spans, status_panel, SubagentPanel,
+        estimate_token_count, header_spans,
         provider_label_for_model,
         note_update, open_config_screen, spawn_branch_poll, await_branch_poll,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
@@ -16681,7 +16678,7 @@ mod tests {
                 providers.sort_by(|a, b| match (a.id == "tokamak", b.id == "tokamak") {
                     (true, false) => std::cmp::Ordering::Less,
                     (false, true) => std::cmp::Ordering::Greater,
-                    _ => a.name.cmp(&b.name),
+                    _ => a.name.cmp(b.name),
                 });
                 providers
             };

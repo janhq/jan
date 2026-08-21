@@ -236,7 +236,7 @@ fn parse_codex_models(value: &serde_json::Value) -> Vec<String> {
         .collect();
     // Rolling ChatGPT codenames carry a user-scoped suffix (e.g.
     // `gpt-5.6-luna-wm`); they are not stable Codex models, so drop them.
-    ids.retain(|id| !matches!(id.split('-').last(), Some("wm")));
+    ids.retain(|id| !id.ends_with("-wm"));
     ids.sort();
     ids.dedup();
     ids
@@ -493,7 +493,7 @@ mod tests {
             let result = login_for_test(&deepseek_at(endpoint), "bad");
             assert!(matches!(result, Err(LoginError::Unauthorized)));
             assert!(CredentialStore::load("deepseek").unwrap().is_none());
-            assert!(load_global_config().unwrap().get("deepseek").is_none());
+            assert!(!load_global_config().unwrap().contains_key("deepseek"));
         });
     }
 

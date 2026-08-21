@@ -4,6 +4,7 @@
 //! `core/server/proxy.rs` (no behavior change) so both the server path and
 //! `core/agent/loop.rs` consume one implementation.
 
+#[cfg(feature = "cli")]
 use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fs;
@@ -246,6 +247,8 @@ fn mcp_call_result_to_string(result: &CallToolResult) -> String {
 
 /// True when the provider carries a credential (an API key or key chain),
 /// so a model id offered by several providers can prefer the signed-in one.
+/// Only the `cli` build ranks providers this way.
+#[cfg(feature = "cli")]
 fn credentialed(config: &ProviderConfig) -> bool {
     config.api_key.is_some() || !config.api_keys.is_empty()
 }
@@ -1808,17 +1811,50 @@ mod tests {
         assert_eq!(keys, vec!["sk-opencode"]);
     }
 
+    /// Holds the secret-store serialization guard, the temp data folder and the
+    /// `JAN_DATA_FOLDER` restore together, so an async test can keep all three
+    /// alive across `.await` without holding a bare lock guard over it.
+    #[cfg(feature = "cli")]
+    struct TempSecretStore {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        previous: Option<String>,
+        _dir: tempfile::TempDir,
+    }
+
+    #[cfg(feature = "cli")]
+    impl TempSecretStore {
+        fn new() -> Self {
+            let guard = crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let dir = tempfile::tempdir().unwrap();
+            let previous = std::env::var("JAN_DATA_FOLDER").ok();
+            std::env::set_var("JAN_DATA_FOLDER", dir.path());
+            crate::core::server::provider_secrets::force_file_secrets();
+            Self {
+                _guard: guard,
+                previous,
+                _dir: dir,
+            }
+        }
+    }
+
+    #[cfg(feature = "cli")]
+    impl Drop for TempSecretStore {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var("JAN_DATA_FOLDER", value),
+                None => std::env::remove_var("JAN_DATA_FOLDER"),
+            }
+        }
+    }
+
     #[cfg(feature = "cli")]
     #[tokio::test]
     async fn account_credentials_override_the_api_key_chain() {
         use crate::core::cli::auth::{Credential, CredentialStore, OAuthToken};
-        use crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK;
 
-        let _guard = SECRET_STORE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let directory = tempfile::tempdir().unwrap();
-        let previous = std::env::var("JAN_DATA_FOLDER").ok();
-        std::env::set_var("JAN_DATA_FOLDER", directory.path());
-        crate::core::server::provider_secrets::force_file_secrets();
+        let _secrets = TempSecretStore::new();
         CredentialStore::store(
             "openai",
             &Credential::OAuthToken(OAuthToken {
@@ -1850,11 +1886,6 @@ mod tests {
         .unwrap();
         assert_eq!(url, "https://chatgpt.com/backend-api/chat/completions");
         assert_eq!(keys, vec!["account-access"]);
-
-        match previous {
-            Some(value) => std::env::set_var("JAN_DATA_FOLDER", value),
-            None => std::env::remove_var("JAN_DATA_FOLDER"),
-        }
     }
 
     #[test]

@@ -898,10 +898,10 @@ pub async fn claude_plan_summary(fallback: &str) -> String {
             .json(&body)
             .send()
             .await;
-        if matches!(&probe, Ok(response) if response.status().is_success()) {
-            if model == "claude-sonnet-5" {
-                heavy_ok = true;
-            }
+        if model == "claude-sonnet-5"
+            && matches!(&probe, Ok(response) if response.status().is_success())
+        {
+            heavy_ok = true;
         }
     }
     let tier = claude_code_subscription_type();
@@ -1081,14 +1081,15 @@ mod tests {
     use crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK;
     use std::io::{Read, Write};
     use std::net::TcpListener;
-    use std::sync::{mpsc, Mutex, MutexGuard};
+    use std::sync::{mpsc, MutexGuard};
 
-    /// Serializes the two tests that mutate the process-global Claude alias
-    /// latch, which cargo runs in parallel threads.
-    static ALIAS_TEST_LOCK: Mutex<()> = Mutex::new(());
+    /// Serializes the tests that mutate the process-global Claude alias latch,
+    /// which cargo runs in parallel threads. A tokio mutex, not a std one:
+    /// these tests hold the guard across `.await`.
+    static ALIAS_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-    fn alias_test_lock() -> MutexGuard<'static, ()> {
-        ALIAS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    async fn alias_test_lock() -> tokio::sync::MutexGuard<'static, ()> {
+        ALIAS_TEST_LOCK.lock().await
     }
 
     struct TempSecrets {
@@ -1152,24 +1153,6 @@ mod tests {
         format!("http://{addr}/v1")
     }
 
-    fn token_server() -> String {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}/token", listener.local_addr().unwrap());
-        std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0; 4096];
-            let _ = stream.read(&mut request).unwrap();
-            let body = r#"{"access_token":"exchanged-account-token","refresh_token":"refresh","expires_in":3600,"token_type":"Bearer","scope":"profile offline_access"}"#;
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            )
-            .unwrap();
-        });
-        endpoint
-    }
     /// Build a signed-shape Codex OAuth access token (a JWT) carrying the
     /// `https://api.openai.com/auth` -> `chatgpt_account_id` claim that jan
     /// uses to verify a Codex account. The signature is a dummy; `codex_chatgpt_account_id`
@@ -1548,7 +1531,7 @@ mod tests {
             fields.get("redirect_uri"),
             Some(&login.redirect_uri.to_string())
         );
-        assert!(fields.get("client_id").is_some());
+        assert!(fields.contains_key("client_id"));
         // Anthropic's token endpoint expects `state` echoed back on exchange;
         // OpenAI's rejects the extra field, so it must stay Claude-only.
         assert_eq!(fields.get("state"), Some(&login.state));
@@ -1636,7 +1619,7 @@ mod tests {
                 }
                 let request = String::from_utf8_lossy(&request);
                 assert!(
-                    request.starts_with(&format!("POST /token HTTP/1.1\r\n")),
+                    request.starts_with("POST /token HTTP/1.1\r\n"),
                     "{request}"
                 );
                 let lower = request.to_ascii_lowercase();
@@ -1729,7 +1712,7 @@ mod tests {
             );
 
             let token = OAuthToken {
-                access_token: codex_jwt("account-321").into(),
+                access_token: codex_jwt("account-321"),
                 refresh_token: Some("refresh".into()),
                 expires_at: CredentialStore::load("openai")
                     .unwrap()
@@ -1799,7 +1782,7 @@ mod tests {
             );
 
             let token = OAuthToken {
-                access_token: codex_jwt("account-321").into(),
+                access_token: codex_jwt("account-321"),
                 refresh_token: Some("refresh".into()),
                 expires_at: CredentialStore::load("openai")
                     .unwrap()
@@ -1839,10 +1822,7 @@ mod tests {
             assert!(CredentialStore::load(AccountProvider::Claude.credential_provider())
                 .unwrap()
                 .is_none());
-            assert!(load_global_config()
-                .unwrap()
-                .get("anthropic")
-                .is_none());
+            assert!(!load_global_config().unwrap().contains_key("anthropic"));
         });
     }
 
@@ -1860,10 +1840,7 @@ mod tests {
             assert!(CredentialStore::load(AccountProvider::Claude.credential_provider())
                 .unwrap()
                 .is_none());
-            assert!(load_global_config()
-                .unwrap()
-                .get("anthropic")
-                .is_none());
+            assert!(!load_global_config().unwrap().contains_key("anthropic"));
         });
     }
 
@@ -1878,10 +1855,7 @@ mod tests {
             assert!(CredentialStore::load(AccountProvider::Claude.credential_provider())
                 .unwrap()
                 .is_none());
-            assert!(load_global_config()
-                .unwrap()
-                .get("anthropic")
-                .is_none());
+            assert!(!load_global_config().unwrap().contains_key("anthropic"));
         });
     }
 
@@ -1977,7 +1951,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn claude_plan_summary_falls_back_when_no_credential() {
-        let _alias = alias_test_lock();
+        let _alias = alias_test_lock().await;
         set_claude_alias(false);
         let _temp = TempSecrets::new();
         // No Claude credential is stored in the fresh temp home, and the alias
@@ -2054,7 +2028,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn claude_alias_is_off_by_default_in_tests() {
-        let _guard = alias_test_lock();
+        let _guard = alias_test_lock().await;
         set_claude_alias(false);
         assert!(!claude_alias_enabled());
         assert_eq!(claude_code_access_token().await, None);
@@ -2062,7 +2036,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn claude_alias_toggle_controls_the_lookup_gate() {
-        let _guard = alias_test_lock();
+        let _guard = alias_test_lock().await;
         set_claude_alias(false);
         // Off: the keychain is never touched, so this is deterministic None
         // even on a machine with Claude Code / omp installed.

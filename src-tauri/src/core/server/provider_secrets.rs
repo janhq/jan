@@ -255,8 +255,9 @@ pub fn delete_secret_record(key: &str) -> Result<(), String> {
 
 /// Force the encrypted-file fallback for the rest of the process. Test-only:
 /// lets unit tests exercise the file path without touching the developer's
-/// keychain.
-#[cfg(test)]
+/// keychain. Every caller is a `cli`-feature test, so the desktop build would
+/// otherwise carry it unused.
+#[cfg(all(test, feature = "cli"))]
 pub(crate) fn force_file_secrets() {
     KEYRING_DOWN.store(true, Ordering::Relaxed);
 }
