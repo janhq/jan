@@ -121,6 +121,28 @@ pub fn resolve_config_file_path() -> PathBuf {
 
 /// Resolve the Jan data folder path without an AppHandle (for CLI use).
 /// Reads AppConfiguration from the config file; falls back to the default location.
+/// Run `f` with `JAN_DATA_FOLDER` pointed at a fresh temp directory, restoring
+/// the previous value afterwards. Serialized on its own lock: the env is
+/// process-wide and Rust runs tests on threads, so two of these overlapping
+/// would each see the other's folder.
+#[cfg(test)]
+pub(crate) fn with_temp_data_folder<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let prev = std::env::var_os("JAN_DATA_FOLDER");
+    std::env::set_var("JAN_DATA_FOLDER", dir.path());
+    let result = f(dir.path());
+    match prev {
+        Some(p) => std::env::set_var("JAN_DATA_FOLDER", p),
+        None => std::env::remove_var("JAN_DATA_FOLDER"),
+    }
+    result
+}
+
 pub fn resolve_jan_data_folder() -> PathBuf {
     // Explicit override wins on every platform. `dirs::data_dir()` reads
     // XDG_DATA_HOME only on Linux, so tests/headless consumers need a portable

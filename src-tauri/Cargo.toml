@@ -105,6 +105,7 @@ async-trait = "0.1"
 env = "1.0.1"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs", optional = true }
 flate2 = "1.0"
+form_urlencoded = "1.2"
 futures-util = "0.3.31"
 hex = "0.4"
 hmac = "0.12"
@@ -115,8 +116,12 @@ tokio-stream = "0.1"
 jan-utils = { path = "./utils" }
 libloading = "0.8.7"
 log = "0.4"
+# Pulled in by rmcp's `auth` feature; used directly for `TokenResponse`
+# accessors on the persisted token record (`core::mcp::oauth`).
+oauth2 = "5.0"
 rand = "0.8"
 rmcp = { version = "0.8.5", features = [
+    "auth",
     "client",
     "transport-sse-client",
     "transport-sse-client-reqwest",

@@ -8,6 +8,9 @@ pub mod helpers;
 #[cfg(not(feature = "cli"))]
 pub mod lockfile;
 pub mod models;
+// OAuth for remote MCP servers: Tauri-free so the CLI drives it today and the
+// desktop activation stack can adopt it unchanged.
+pub mod oauth;
 #[cfg(not(feature = "cli"))]
 pub mod progress;
 
