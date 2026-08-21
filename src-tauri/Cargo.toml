@@ -211,6 +211,11 @@ ratatui = { version = "0.30", optional = true, features = ["unstable-rendered-li
 # cells wide, so counting chars overflows a bordered panel. Already in the graph
 # via ratatui; named here because this crate calls it directly.
 unicode-width = { version = "0.2", optional = true }
+# Grapheme clusters for the `wave` glyph cap: `👁️‍🗨️` is one thing a person sees
+# but five `char`s, so the 3-glyph limit has to count clusters or it rejects a
+# single emoji. Not optional -- `global_config` builds for desktop too. Already
+# compiled in both graphs via ratatui/comfy-table, so this adds no build cost.
+unicode-segmentation = "1"
 pulldown-cmark = { version = "0.13", optional = true, default-features = false }
 # `regex-fancy` keeps this pure Rust: the default `onig` backend links libonig,
 # which the headless CLI must not pull in. The raw `.sublime-syntax`/`.tmTheme`

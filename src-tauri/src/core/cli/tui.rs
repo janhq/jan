@@ -5658,13 +5658,18 @@ static WAVE_GLYPH: std::sync::LazyLock<std::sync::RwLock<Option<String>>> =
         std::sync::RwLock::new(crate::core::agent::global_config::wave_glyph())
     });
 
-/// Apply a new wave glyph to the process, as `/settings` does on save. An
-/// all-whitespace glyph is unset for the reason `wave_glyph` gives: an
-/// invisible traveller reads as letters going missing.
+/// Apply a new wave glyph to the process, as `/settings` does on save.
+///
+/// `None` means the key was removed, so the default sweep comes back -- not
+/// that the sweep is off. Off is `Some("")`, which resolves to no glyph here
+/// for the reason `wave_glyph` gives: an all-whitespace traveller reads as
+/// letters going missing.
 pub(crate) fn set_wave_glyph(glyph: Option<&str>) {
-    let value = glyph
-        .map(str::to_string)
-        .filter(|g| !g.trim().is_empty());
+    let value = match glyph {
+        None => Some(crate::core::agent::global_config::WAVE_DEFAULT.to_string()),
+        Some(g) if g.trim().is_empty() => None,
+        Some(g) => Some(g.to_string()),
+    };
     if let Ok(mut slot) = WAVE_GLYPH.write() {
         *slot = value;
     }
@@ -7325,7 +7330,10 @@ async fn handle_key(
                 };
                 match write_setting(def, &toml_path, None) {
                     Ok(()) => {
-                        let when = if apply_live_setting(def, "") {
+                        // `None`, not `""`: this removed the key, so a `Glyph`
+                        // goes back to its default rather than to off, which
+                        // is what a cleared edit field means.
+                        let when = if apply_live_unset(def) {
                             "in effect now"
                         } else {
                             "takes effect on the next run"
@@ -8426,6 +8434,11 @@ enum SettingScope {
 
 enum AgentSettingKind {
     Int { default: Option<u64>, min: u64 },
+    /// Short display glyph with a grapheme cap, and the one kind where an
+    /// empty field is a *value* rather than an unset: `""` is the deliberate
+    /// "off", distinct from the key being absent, which takes the default.
+    /// `x` on the row still removes the key.
+    Glyph { default: &'static str, max: usize },
     Text { default: &'static str },
     /// Exact-match choice: Enter writes one of `options`, cleared field
     /// unsets. Covers the `read-only | deny | allow` and `always | relevance`
@@ -8525,8 +8538,11 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
     AgentSettingDef {
         key: "wave",
         label: "wave",
-        desc: "glyph swept along the working row (any string; empty = throbber)",
-        kind: AgentSettingKind::Text { default: "" },
+        desc: "glyph swept along the working row (up to 3 chars; empty = throbber)",
+        kind: AgentSettingKind::Glyph {
+            default: crate::core::agent::global_config::WAVE_DEFAULT,
+            max: crate::core::agent::global_config::WAVE_MAX_GRAPHEMES,
+        },
         scope: SettingScope::Global,
     },
 ];
@@ -9002,12 +9018,27 @@ fn setting_path(def: &AgentSettingDef, toml_path: &std::path::Path) -> String {
 /// returning whether it took. Most keys are snapshotted at session start and
 /// genuinely need a restart; a purely cosmetic one like `wave` does not, and
 /// telling someone to restart to see a glyph they just picked would be a lie
-/// the code does not have to tell. `entered` is the trimmed field, empty for
-/// an unset.
+/// the code does not have to tell. `entered` is the trimmed field; empty is an
+/// unset for most kinds and a written "off" for a `Glyph`, which is why this
+/// passes `Some` either way and lets the setter read it.
 fn apply_live_setting(def: &AgentSettingDef, entered: &str) -> bool {
     match def.key {
         "wave" => {
             set_wave_glyph(Some(entered));
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Apply a just-removed setting to the running process, returning whether it
+/// took. Separate from `apply_live_setting` because removing a key and saving
+/// an empty one are different outcomes for a `Glyph`: the first restores the
+/// default, the second is the off switch.
+fn apply_live_unset(def: &AgentSettingDef) -> bool {
+    match def.key {
+        "wave" => {
+            set_wave_glyph(None);
             true
         }
         _ => false,
@@ -9140,8 +9171,16 @@ fn open_provider_settings(app: &mut App) {
     });
 }
 
+/// Truncate to the first `n` grapheme clusters. Slicing by byte or `char`
+/// would split an emoji mid-sequence and leave a different glyph on screen.
+fn grapheme_prefix(s: &str, n: usize) -> String {
+    use unicode_segmentation::UnicodeSegmentation;
+    s.graphemes(true).take(n).collect()
+}
+
 /// Keyboard for the `/settings` edit dock: chars/backspace edit the field,
-/// Enter validates and writes (empty clears the key), Esc cancels. Mirrors
+/// Enter validates and writes (an empty field clears the key, except for a
+/// `Glyph`, where it writes the off value), Esc cancels. Mirrors
 /// `handle_login_key`, minus the secret/verify machinery.
 fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c'))) && app.settings_prompt.is_some()
     {
@@ -9176,6 +9215,17 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.co
                             }
                         }
                     }
+                }
+                AgentSettingKind::Glyph { .. } => {
+                    // Not trimmed to empty-means-unset like `Text`: a cleared
+                    // field writes `""`, which is the off switch. `x` on the
+                    // row is how you get back to the default.
+                    let input = prompt.input.trim();
+                    if let Some(err) = crate::core::agent::global_config::wave_error(input) {
+                        prompt.error = Some(err);
+                        return;
+                    }
+                    Some(toml_edit::value(input.to_string()))
                 }
                 AgentSettingKind::Text { .. } => {
                     (!prompt.input.trim().is_empty())
@@ -9212,10 +9262,13 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.co
             match write_setting(prompt.def(), &toml_path, value) {
                 Ok(()) => {
                     let entered = prompt.input.trim().to_string();
-                    let what = if entered.is_empty() {
-                        format!("{} unset (default applies)", prompt.key)
-                    } else {
-                        format!("{} = {entered} written", prompt.key)
+                    let glyph_kind = matches!(prompt.def().kind, AgentSettingKind::Glyph { .. });
+                    let what = match (entered.is_empty(), glyph_kind) {
+                        // A cleared glyph is a written value, not an unset, so
+                        // saying "default applies" would be a lie.
+                        (true, true) => format!("{} off (throbber)", prompt.key),
+                        (true, false) => format!("{} unset (default applies)", prompt.key),
+                        (false, _) => format!("{} = {entered} written", prompt.key),
                     };
                     let when = if apply_live_setting(prompt.def(), &entered) {
                         "in effect now"
@@ -9232,9 +9285,29 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.co
             }
         }
         KeyCode::Backspace => {
-            prompt.input.pop();
+            // Whole cluster for a glyph field: popping one `char` off `👁️`
+            // leaves `👁`, so the row looks unchanged and the key reads as
+            // broken. Other kinds keep the plain char pop.
+            if matches!(prompt.def().kind, AgentSettingKind::Glyph { .. }) {
+                let keep = crate::core::agent::global_config::wave_len(&prompt.input)
+                    .saturating_sub(1);
+                prompt.input = grapheme_prefix(&prompt.input, keep);
+            } else {
+                prompt.input.pop();
+            }
         }
-        KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
+        KeyCode::Char(ch) if !ctrl => {
+            prompt.input.push(ch);
+            // Checked on the result rather than by counting up: a skin-tone
+            // modifier or ZWJ joins the cluster before it, so the string can
+            // grow by a `char` without growing by a grapheme, and that must
+            // still be allowed at the cap.
+            if let AgentSettingKind::Glyph { max, .. } = prompt.def().kind {
+                if crate::core::agent::global_config::wave_len(&prompt.input) > max {
+                    prompt.input.pop();
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -12085,6 +12158,9 @@ fn settings_prompt_lines(
                 .unwrap_or_else(|| "unset".to_string());
             format!("default: {d} · valid: >= {min}")
         }
+        AgentSettingKind::Glyph { default, max } => {
+            format!("default: {default} · valid: up to {max} chars, empty = off")
+        }
         AgentSettingKind::Text { default } => format!("default: {default}"),
         AgentSettingKind::Enum { options, default } => {
             format!("default: {default} · valid: {}", options.join(" | "))
@@ -12485,6 +12561,11 @@ fn draw_picker(
                         .map(|d| d.to_string())
                         .unwrap_or_else(|| "unset".to_string());
                     format!("default: {d} · valid: >= {min} · current: {current}")
+                }
+                AgentSettingKind::Glyph { default, max } => {
+                    format!(
+                        "default: {default} · valid: up to {max} chars, empty = off · current: {current}"
+                    )
                 }
                 AgentSettingKind::Text { default } => {
                     format!("default: {default} · current: {current}")
@@ -16969,18 +17050,37 @@ mod tests {
             assert!(note.contains("wave = ~ written"), "{note}");
             assert!(note.contains("in effect now"), "no restart is needed: {note}");
 
-            // Clearing the field unsets it, live, in the same file.
+            // Clearing the field writes the off value, live. It does *not*
+            // remove the key: absent means the default 👋 comes back, which is
+            // the opposite of what someone clearing the glyph asked for.
             app.settings_prompt = Some(super::SettingsPrompt::new(def, Some("~")));
             super::handle_settings_key(&mut app, key(KeyCode::Backspace), false);
             super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
-            assert_eq!(super::wave_glyph(), None, "unset applied live");
+            assert_eq!(super::wave_glyph(), None, "off applied live");
             // Asserted through the reader, not the raw text: the scaffolded
             // template carries a commented `# wave = ...` example line that a
             // substring check would match forever.
             assert_eq!(
+                crate::core::agent::global_config::global_value("wave").as_deref(),
+                Some(""),
+                "cleared field persists as the off value"
+            );
+            let note = transcript_text(&app);
+            assert!(note.contains("wave off (throbber)"), "off, not unset: {note}");
+
+            // Removing the key is the other path, and it restores the default
+            // rather than leaving the sweep off.
+            crate::core::agent::global_config::set_global_key("wave", None).expect("unset");
+            super::set_wave_glyph(None);
+            assert_eq!(
                 crate::core::agent::global_config::global_value("wave"),
                 None,
                 "key removed from the file"
+            );
+            assert_eq!(
+                super::wave_glyph().as_deref(),
+                Some(crate::core::agent::global_config::WAVE_DEFAULT),
+                "a removed key brings the default sweep back"
             );
 
             let _ = std::fs::remove_dir_all(&app.agent_dir);
@@ -17054,6 +17154,60 @@ mod tests {
         let doc = std::fs::read_to_string(&toml_path).unwrap();
         assert!(doc.contains("max_parallel_subagents = 7"), "unchanged: {doc}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// The glyph field stops accepting input at the cap rather than letting a
+    /// long string be typed and rejected on Enter, and it counts what the eye
+    /// counts: `👁️👄👁️` is three characters, not five.
+    #[test]
+    fn settings_glyph_field_caps_at_three_graphemes() {
+        let mut app = test_app();
+        let def = AGENT_SETTINGS.iter().find(|d| d.key == "wave").unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+
+        for ch in "👁️👄👁️".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        fn input(app: &App) -> String {
+            app.settings_prompt.as_ref().unwrap().input.clone()
+        }
+        assert_eq!(input(&app), "👁️👄👁️", "three clusters of five chars all fit");
+
+        // One past the cap is dropped, and the field is left exactly as it was
+        // rather than half-appended.
+        super::handle_settings_key(&mut app, key(KeyCode::Char('x')), false);
+        assert_eq!(input(&app), "👁️👄👁️", "a fourth cluster is refused");
+
+        // Backspace removes a whole cluster: popping one `char` off `👁️` would
+        // leave `👁`, which looks like nothing happened.
+        super::handle_settings_key(&mut app, key(KeyCode::Backspace), false);
+        assert_eq!(input(&app), "👁️👄", "backspace drops the whole cluster");
+    }
+
+    /// A hand-typed over-long glyph is rejected inline with a reason, not
+    /// silently truncated: truncation would save something the user did not
+    /// type.
+    #[test]
+    fn settings_glyph_rejects_an_over_long_paste() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            let def = AGENT_SETTINGS.iter().find(|d| d.key == "wave").unwrap();
+            let mut prompt = super::SettingsPrompt::new(def, None);
+            // Set directly: the key handler caps typing, so an over-long value
+            // can only arrive from a paste or a hand-edited file.
+            prompt.input = "abcd".to_string();
+            app.settings_prompt = Some(prompt);
+
+            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+            let prompt = app.settings_prompt.as_ref().expect("dock stays open");
+            let error = prompt.error.as_deref().expect("inline error");
+            assert!(error.contains('3'), "names the cap: {error}");
+            assert_eq!(
+                crate::core::agent::global_config::global_value("wave"),
+                None,
+                "nothing written on a rejected value"
+            );
+        });
     }
 
     #[test]
@@ -20817,11 +20971,17 @@ mod tests {
         app.submit_user("go".into());
         assert_eq!(app.status, Status::Running);
 
+        // Pinned off: these assert on the spinner glyph and the intact action
+        // word, both of which the sweep overwrites a cell of. `wave` is on by
+        // default now, so the sweep has its own tests and these keep testing
+        // the row underneath it.
         let frame_of = |app: &mut App| {
-            render_rows(app, 80, 12)
-                .into_iter()
-                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
-                .expect("running placeholder present")
+            with_wave_glyph(None, || {
+                render_rows(app, 80, 12)
+                    .into_iter()
+                    .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                    .expect("running placeholder present")
+            })
         };
 
         app.spinner_frame = 0;
@@ -20852,10 +21012,14 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: "<think>ponder the plan".into(),
         });
-        let row = render_rows(&mut app, 80, 12)
-            .into_iter()
-            .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
-            .expect("running placeholder present");
+        // Pinned off for the same reason as `working_placeholder_animates`:
+        // the sweep replaces a letter of the word being matched.
+        let row = with_wave_glyph(None, || {
+            render_rows(&mut app, 80, 12)
+                .into_iter()
+                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                .expect("running placeholder present")
+        });
         assert!(
             THINKING_WORDS.iter().any(|w| row.contains(w)),
             "expected a thinking synonym in: {row:?}"
@@ -20877,7 +21041,11 @@ mod tests {
             text: "<think>ponder the plan".into(),
         });
         let mut terminal = Terminal::new(TestBackend::new(80, 12)).unwrap();
-        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        // Pinned off: the row is located by matching the intact word, which
+        // the sweep breaks.
+        with_wave_glyph(None, || {
+            terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        });
         let buf = terminal.backend().buffer().clone();
         // Locate the placeholder row, then assert the action word's cells are
         // orange (the trailing hint stays dim, so only the word carries it).
@@ -20899,10 +21067,14 @@ mod tests {
         app.submit_user("go".into());
         let mut word_at = |frame: usize| {
             app.spinner_frame = frame;
-            let row = render_rows(&mut app, 80, 12)
-                .into_iter()
-                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
-                .expect("running placeholder present");
+            // Pinned off: the sweep would eat a letter of the very word this
+            // looks up.
+            let row = with_wave_glyph(None, || {
+                render_rows(&mut app, 80, 12)
+                    .into_iter()
+                    .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                    .expect("running placeholder present")
+            });
             WORKING_WORDS
                 .iter()
                 .find(|w| row.contains(*w))
@@ -20938,11 +21110,16 @@ mod tests {
         app.apply(StreamEvent::Reasoning {
             text: "ponder the plan".into(),
         });
-        // Orange thinking synonyms while reasoning streams.
-        let row = render_rows(&mut app, 80, 12)
-            .into_iter()
-            .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
-            .expect("running placeholder present");
+        // Pinned off: this asserts on the *word*, and the sweep overwrites a
+        // letter of it with the travelling glyph. `wave` is on by default now,
+        // so leaving it to the process state makes this test depend on
+        // whichever config the shared cell resolved first.
+        let row = with_wave_glyph(None, || {
+            render_rows(&mut app, 80, 12)
+                .into_iter()
+                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                .expect("running placeholder present")
+        });
         assert!(
             THINKING_WORDS.iter().any(|w| row.contains(w)),
             "expected a thinking synonym while reasoning: {row:?}"
