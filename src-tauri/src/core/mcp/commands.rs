@@ -1,6 +1,7 @@
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::{json, Map, Value};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tauri_plugin_opener::OpenerExt;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 
@@ -11,6 +12,7 @@ use super::{
 use crate::core::{
     app::commands::get_jan_data_folder_path,
     mcp::models::{McpSettings, ServerSummary},
+    mcp::oauth,
     state::AppState,
 };
 use crate::core::{
@@ -553,6 +555,83 @@ fn parse_mcp_settings(value: Option<&Value>) -> McpSettings {
     value
         .and_then(|v| serde_json::from_value::<McpSettings>(v.clone()).ok())
         .unwrap_or_default()
+}
+
+/// Read one configured server's entry out of `mcp_config.json`. Errors rather
+/// than defaulting: every caller here is acting on a server the user picked, and
+/// a silent empty config would report "not authenticated" for a typo.
+fn read_server_config<R: Runtime>(app: &AppHandle<R>, name: &str) -> Result<Value, String> {
+    let mut path = get_jan_data_folder_path(app.clone());
+    path.push("mcp_config.json");
+    let body = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str::<Value>(&body)
+        .map_err(|e| format!("Failed to parse mcp_config.json: {e}"))?
+        .get("mcpServers")
+        .and_then(|s| s.get(name))
+        .cloned()
+        .ok_or_else(|| format!("server '{name}' not found in mcp_config.json"))
+}
+
+/// The OAuth state of one configured server. Local only -- no network -- so the
+/// settings screen can call it per row without a round trip each.
+#[tauri::command]
+pub async fn get_mcp_auth_status<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+) -> Result<oauth::AuthStatusInfo, String> {
+    let config = read_server_config(&app, &name)?;
+    let folder = get_jan_data_folder_path(app);
+    Ok(oauth::status(&folder, &name, &config).into())
+}
+
+/// Run an interactive OAuth authorization for one server: discover the
+/// provider, register a client, open the consent page, and wait for the
+/// redirect on a loopback listener.
+///
+/// Resolves only once the flow finishes (or times out after five minutes), so
+/// the caller awaits a single promise. The consent url is also emitted as
+/// `mcp-oauth-url` before the wait begins, so the UI can offer it as a link
+/// when the browser did not come up.
+#[tauri::command]
+pub async fn authorize_mcp_server<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+) -> Result<(), String> {
+    let config = read_server_config(&app, &name)?;
+    let url = config
+        .get("url")
+        .and_then(Value::as_str)
+        .filter(|u| !u.trim().is_empty())
+        .ok_or_else(|| {
+            format!("'{name}' is a stdio server - OAuth applies to http/sse servers only")
+        })?;
+
+    let pending = oauth::begin(&name, url).await?;
+    if let Err(e) = app.emit(
+        "mcp-oauth-url",
+        json!({ "server": &name, "url": &pending.authorization_url }),
+    ) {
+        log::error!("Failed to emit mcp-oauth-url event: {e}");
+    }
+    // Best-effort: the url has already been emitted, so a session with no
+    // browser can still finish by opening it by hand.
+    if let Err(e) = app.opener().open_url(&pending.authorization_url, None::<&str>) {
+        log::warn!("Could not open the browser for '{name}': {e}");
+    }
+
+    let folder = get_jan_data_folder_path(app);
+    pending.complete(&folder).await.map(|_| ())
+}
+
+/// Forget one server's stored tokens. `false` when there were none, so the UI
+/// can tell "cleared" from "nothing to clear".
+#[tauri::command]
+pub async fn clear_mcp_auth<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+) -> Result<bool, String> {
+    let folder = get_jan_data_folder_path(app);
+    oauth::clear(&folder, &name)
 }
 
 #[tauri::command]

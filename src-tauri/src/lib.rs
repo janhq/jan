@@ -121,6 +121,9 @@ macro_rules! invoke_commands_with_extras {
         core::mcp::commands::get_mcp_configs,
         core::mcp::commands::activate_mcp_server,
         core::mcp::commands::deactivate_mcp_server,
+        core::mcp::commands::get_mcp_auth_status,
+        core::mcp::commands::authorize_mcp_server,
+        core::mcp::commands::clear_mcp_auth,
         core::mcp::commands::check_jan_browser_extension_connected,
         // Threads
         core::threads::commands::list_threads,

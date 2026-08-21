@@ -47,6 +47,33 @@ Toggle the server on. It will appear in the list with a green indicator when act
 
 </Steps>
 
+## Authentication
+
+Each remote (`HTTP` / `SSE`) server shows an **Auth** line with its current state and the actions
+that state allows.
+
+- **Sign in** runs OAuth against the server: Jan discovers the provider's metadata, registers itself
+  dynamically, and completes the authorization-code flow with PKCE against a loopback redirect. Your
+  browser opens automatically; if it does not, use the **Open the sign-in page** link that appears
+  while the flow is pending. The wait times out after five minutes.
+- **Clear authentication** forgets the stored tokens and disconnects the server, since the live
+  connection still holds the old token. The server stays configured, so signing back in brings it up
+  again.
+
+A server that fails to connect purely for want of a sign-in says so, instead of showing a transport
+error - Jan asks the server whether it advertises OAuth rather than guessing from the failure.
+
+Tokens are stored in `mcp_oauth.json` in the Jan data folder, next to `mcp_config.json` and never
+inside it, with owner-only permissions. They are refreshed automatically shortly before they expire
+when the provider issued a refresh token. Changing a server's URL invalidates its tokens rather than
+sending credentials issued for a different endpoint, and removing a server clears them too.
+
+<Callout type="info">
+If you set an `Authorization` header on a server yourself, that credential is used as-is: OAuth is
+never attempted and never reported as missing, because wrapping it would put two credentials on one
+request.
+</Callout>
+
 <Callout type="info">
 Find more MCP servers at [mcp.so](https://mcp.so).
 </Callout>

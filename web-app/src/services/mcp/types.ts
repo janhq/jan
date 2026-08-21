@@ -23,6 +23,33 @@ export interface ServerSummary {
   description: string
 }
 
+/**
+ * OAuth state of one remote MCP server, as reported by `get_mcp_auth_status`.
+ * Derived entirely on the Rust side so the UI never re-implements the rules
+ * (a hand-written `Authorization` header, for instance, means OAuth is neither
+ * offered nor reported as missing).
+ */
+export interface MCPAuthStatus {
+  state:
+    | 'notApplicable'
+    | 'staticHeader'
+    | 'authenticated'
+    | 'expired'
+    | 'staleResource'
+    | 'unauthenticated'
+  /** Whether an interactive sign-in is possible and would mean something. */
+  canAuthenticate: boolean
+  /** Whether there are stored tokens to forget. */
+  hasCredentials: boolean
+  /**
+   * Whether a stored refresh token can renew this without the browser. Only
+   * meaningful for `expired`; false everywhere else.
+   */
+  renewable: boolean
+  /** Unix seconds the access token expires at, when known. */
+  expiresAt: number | null
+}
+
 export interface MCPService {
   updateMCPConfig(configs: string): Promise<void>
   restartMCPServers(): Promise<void>
@@ -46,4 +73,16 @@ export interface MCPService {
   activateMCPServer(name: string, config: MCPServerConfig): Promise<void>
   deactivateMCPServer(name: string): Promise<void>
   checkJanBrowserExtensionConnected(): Promise<boolean>
+
+  // OAuth for remote (http/sse) servers
+  /** Local read, no network: safe to call per row. */
+  getMCPAuthStatus(name: string): Promise<MCPAuthStatus>
+  /**
+   * Run the full interactive authorization. Resolves only once the browser
+   * redirect has been exchanged for tokens, so expect this to be pending for as
+   * long as the user takes (the backend gives up after five minutes).
+   */
+  authorizeMCPServer(name: string): Promise<void>
+  /** Forget stored tokens. `false` when there were none. */
+  clearMCPAuth(name: string): Promise<boolean>
 }

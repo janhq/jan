@@ -94,6 +94,15 @@ impl RunningServiceEnum {
             Self::WithInit(s) => s.call_tool(params).await,
         }
     }
+
+    /// The `initialize` response: what the server said it implements. Read by
+    /// the `/mcp` detail screen for its capabilities and version lines.
+    pub fn peer_info(&self) -> Option<rmcp::model::InitializeResult> {
+        match self {
+            Self::NoInit(s) => s.peer_info().cloned(),
+            Self::WithInit(s) => s.peer_info().cloned(),
+        }
+    }
 }
 
 /// Shared desktop application state owned by Tauri. The CLI builds its

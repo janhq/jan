@@ -6,7 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { MCPTool } from '@/types/completion'
 import { DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 import type { MCPServerConfig, MCPServers, MCPSettings } from '@/hooks/useMCPServers'
-import type { MCPConfig, ServerSummary } from './types'
+import type { MCPAuthStatus, MCPConfig, ServerSummary } from './types'
 import { DefaultMCPService } from './default'
 
 export class TauriMCPService extends DefaultMCPService {
@@ -128,6 +128,18 @@ export class TauriMCPService extends DefaultMCPService {
 
   async checkJanBrowserExtensionConnected(): Promise<boolean> {
     return await invoke('check_jan_browser_extension_connected')
+  }
+
+  async getMCPAuthStatus(name: string): Promise<MCPAuthStatus> {
+    return await invoke('get_mcp_auth_status', { name })
+  }
+
+  async authorizeMCPServer(name: string): Promise<void> {
+    return await invoke('authorize_mcp_server', { name })
+  }
+
+  async clearMCPAuth(name: string): Promise<boolean> {
+    return await invoke('clear_mcp_auth', { name })
   }
 }
 

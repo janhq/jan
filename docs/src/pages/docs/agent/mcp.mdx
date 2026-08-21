@@ -42,14 +42,17 @@ half-connected one. A slow stdio server delays that first turn, not the whole se
 /mcp
 ```
 
-Lists every configured server with its state. <kbd>Enter</kbd> toggles the highlighted one. Turning
-one on connects it in the background; the tools appear once it lands.
+Lists every configured server with its state. <kbd>Space</kbd> toggles the highlighted one; turning
+one on connects it in the background and the tools appear once it lands. <kbd>Enter</kbd> opens the
+server's detail screen (see below).
 
-While the picker is open you can also manage the list itself:
+While the list is open you can also manage it:
 
 - <kbd>a</kbd> opens an add form (`name`, transport, then the transport-specific fields)
 - <kbd>e</kbd> edits the highlighted server, prefilled
 - <kbd>d</kbd> removes the highlighted server after writing it out
+
+The list opens even with nothing configured, so <kbd>a</kbd> is reachable on a fresh install.
 
 Inside the form, arrow keys (or <kbd>Tab</kbd>) move between fields. <kbd>k</kbd> and <kbd>j</kbd>
 type as ordinary characters - URLs, paths, and header values contain them - so they no longer
@@ -59,6 +62,51 @@ A newly added server defaults to inactive, so it is persisted but not connected 
 it on.
 
 The change is written back to `mcp_config.json`, so it persists - and applies to Jan Desktop too.
+
+### The server detail screen
+
+<kbd>Enter</kbd> on a row opens that server on its own screen: transport, endpoint or command, the
+`mcp_config.json` path it came from, connection state, authentication state, the tool count, and the
+name and version the server reported when it connected. Everything there is read from local state,
+so it opens immediately; only the tool listing is a round trip and it fills in when it lands.
+
+The actions below the info block are filtered to what the server can actually do - no sign-in rows
+for a stdio server, no `View tools` while it is disconnected, no `Reconnect` while it is disabled:
+
+- `View tools` prints the tool names into the conversation, where they scroll and persist
+- `Authenticate` / `Re-authenticate` runs the OAuth flow (see below)
+- `Clear authentication` forgets the stored tokens and drops the connection, which still holds the
+  old one. The server stays enabled, so signing back in brings it up again
+- `Reconnect`, `Enable` / `Disable`, `Edit configuration`, `Remove server`
+
+<kbd>Esc</kbd> steps back to the list rather than out of `/mcp`.
+
+### Signing in to a remote server
+
+Remote (`http` / `sse`) servers that require OAuth are handled for you: Jan discovers the provider's
+metadata, registers itself dynamically, and runs the authorization-code flow with PKCE against a
+loopback redirect. `Authenticate` prints the consent URL into the conversation *before* it starts
+waiting, and opens it in your browser - so a remote or headless session can still finish the sign-in
+by opening the URL by hand. The wait times out after five minutes.
+
+A server that fails to connect purely for want of a sign-in says so, rather than reporting a
+transport error: Jan asks the server whether it advertises OAuth instead of guessing from the
+failure.
+
+Tokens are written to `mcp_oauth.json`, next to `mcp_config.json` in the Jan data folder, with
+`0600` permissions:
+
+- **not in `mcp_config.json`**, which is hand-edited, copied between machines and shared with Jan
+  Desktop; bearer tokens have no business travelling with it
+- Access tokens are refreshed automatically, a minute before they expire, when the provider issued a
+  refresh token
+- Changing a server's `url` invalidates its stored tokens rather than silently sending credentials
+  issued for a different resource
+- Removing a server clears its tokens too, so a later server reusing the name does not inherit the
+  authorization
+
+If you set an `Authorization` header by hand, that wins: OAuth is never attempted and never reported
+as missing, because wrapping it would put two credentials on one request.
 
 ### From the command line
 
