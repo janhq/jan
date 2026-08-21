@@ -23,6 +23,11 @@ use crate::tools::{BuiltinTool, ImageContentPart, ToolContext};
 
 const MAX_BYTES: usize = 64 * 1024;
 const MAX_LINES: usize = 2000;
+/// Cap on a `read` image payload returned as an `image_url` content part.
+/// Mirrors the TUI's `MAX_IMAGE_BYTES` so an oversized raster (or a large
+/// text file whose name ends in an image extension) cannot flood the model
+/// context as a base64 blob.
+const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
 /// bash output caps: generous enough that typical command output reaches the
 /// model intact on a large-context run, spilling to a temp file only past this.
 const BASH_MAX_BYTES: usize = 256 * 1024;
@@ -500,7 +505,7 @@ async fn read(
     // than text: the model cannot see a raster through a base64 string. Only a
     // plain read (no offset/limit) does this, since slicing an image makes no
     // sense and offset/limit still refers to text lines.
-    if offset.is_none() && limit.is_none() {
+    if offset.is_none() && limit.is_none() && bytes.len() <= MAX_IMAGE_BYTES {
         if let Some(mime) = crate::tools::image::detect(&target) {
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
@@ -1459,6 +1464,25 @@ mod tests {
         )
         .await;
         assert!(out.starts_with("ERROR"), "slicing an image must not render: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_image_over_cap_falls_back_to_text_error() {
+        let root = unique_root();
+        // Valid PNG signature but far larger than MAX_IMAGE_BYTES: the size
+        // gate must refuse to base64-dump it into model context.
+        let mut bytes: Vec<u8> = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        bytes.resize(MAX_IMAGE_BYTES + 1, 0u8);
+        std::fs::write(root.join("huge.png"), &bytes).unwrap();
+        let (content, images) = super::execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "huge.png"}),
+            &ToolContext::new(&root, &crate::workspace::project_store(&root), &[]),
+        )
+        .await;
+        assert!(images.is_none(), "an over-cap image must not yield image parts");
+        assert!(content.starts_with("ERROR"), "got: {content}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
