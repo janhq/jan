@@ -31,12 +31,16 @@ const TONE: Record<MCPAuthStatus['state'], string> = {
   unauthenticated: 'text-red-700 dark:text-red-500 bg-secondary',
 }
 
-/** A coarse "42m" / "3h" until a deadline; the exact second is never useful. */
-function untilLabel(expiresAt: number): string {
-  const left = Math.max(0, expiresAt - Math.floor(Date.now() / 1000))
+/** A coarse "42m" / "3h" distance from now; the exact second is never useful. */
+function spanLabel(seconds: number): string {
+  const left = Math.max(0, seconds)
   if (left < 3600) return `${Math.max(1, Math.floor(left / 60))}m`
   if (left < 86400) return `${Math.floor(left / 3600)}h`
   return `${Math.floor(left / 86400)}d`
+}
+
+function secondsFromNow(unixSeconds: number): number {
+  return unixSeconds - Math.floor(Date.now() / 1000)
 }
 
 export function McpServerAuth({
@@ -61,11 +65,15 @@ export function McpServerAuth({
       >
         {t(`mcp-servers:auth.state.${status.state}`)}
       </span>
-      {status.state === 'authenticated' && status.expiresAt !== null && (
+      {status.expiresAt !== null && (
         <span className="text-xs text-muted-foreground">
-          {t('mcp-servers:auth.expiresIn', {
-            duration: untilLabel(status.expiresAt),
-          })}
+          {status.state === 'expired'
+            ? t('mcp-servers:auth.expiredAgo', {
+                duration: spanLabel(-secondsFromNow(status.expiresAt)),
+              })
+            : t('mcp-servers:auth.expiresIn', {
+                duration: spanLabel(secondsFromNow(status.expiresAt)),
+              })}
         </span>
       )}
 
@@ -79,9 +87,11 @@ export function McpServerAuth({
         >
           {authorizing
             ? t('mcp-servers:auth.waiting')
-            : status.hasCredentials
-              ? t('mcp-servers:auth.reauthenticate')
-              : t('mcp-servers:auth.authenticate')}
+            : status.renewable
+              ? t('mcp-servers:auth.renew')
+              : status.hasCredentials
+                ? t('mcp-servers:auth.reauthenticate')
+                : t('mcp-servers:auth.authenticate')}
         </Button>
       )}
       {status.hasCredentials && !authorizing && (

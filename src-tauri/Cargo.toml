@@ -93,7 +93,7 @@ test-tauri = [
     "deep-link",
     "hardware",
 ]
-cli = ["dep:env_logger", "dep:indicatif", "dep:console", "dep:ratatui", "dep:pulldown-cmark", "dep:syntect", "dep:comfy-table", "dep:arboard", "dep:png"]
+cli = ["dep:env_logger", "dep:indicatif", "dep:console", "dep:ratatui", "dep:unicode-width", "dep:pulldown-cmark", "dep:syntect", "dep:comfy-table", "dep:arboard", "dep:png"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [], optional = true }
@@ -207,6 +207,10 @@ keyring = { version = "3", features = [
 aes-gcm = "0.10"
 machine-uid = "0.5"
 ratatui = { version = "0.30", optional = true, features = ["unstable-rendered-line-info"] }
+# Display width for the TUI's own truncation: a CJK glyph or emoji is two
+# cells wide, so counting chars overflows a bordered panel. Already in the graph
+# via ratatui; named here because this crate calls it directly.
+unicode-width = { version = "0.2", optional = true }
 pulldown-cmark = { version = "0.13", optional = true, default-features = false }
 # `regex-fancy` keeps this pure Rust: the default `onig` backend links libonig,
 # which the headless CLI must not pull in. The raw `.sublime-syntax`/`.tmTheme`

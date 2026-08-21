@@ -91,6 +91,9 @@
     "authorized": "Signed in to {{serverName}}",
     "authorizeFailed": "Sign-in for {{serverName}} failed",
     "cleared": "Cleared stored credentials for {{serverName}}",
-    "nothingToClear": "{{serverName}} had no stored credentials"
+    "nothingToClear": "{{serverName}} had no stored credentials",
+    "clearFailed": "Could not clear credentials for {{serverName}}",
+    "renew": "Renew session",
+    "expiredAgo": "expired {{duration}} ago"
   }
 }

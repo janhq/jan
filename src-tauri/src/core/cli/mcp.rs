@@ -695,14 +695,25 @@ pub async fn describe(name: &str, servers: &SharedMcpServers) -> Option<ServerDe
 ///
 /// This is the one part of the detail screen that talks to the peer, which is
 /// why it is a separate call: the caller runs it off the render loop.
+///
+/// The round trip is bounded by `tool_call_timeout_duration`, as every other
+/// `list_all_tools` call site is: the guard is the process-wide server map that
+/// each agent turn also locks, so a peer that accepts the request and never
+/// answers would otherwise stall turns and not just this screen.
 pub async fn list_tools(name: &str, servers: &SharedMcpServers) -> Result<Vec<String>, String> {
+    let timeout_duration = read_settings().tool_call_timeout_duration();
     let guard = servers.lock().await;
     let service = guard
         .get(name)
         .ok_or_else(|| format!("'{name}' is not connected"))?;
-    let mut names: Vec<String> = service
-        .list_all_tools()
+    let mut names: Vec<String> = tokio::time::timeout(timeout_duration, service.list_all_tools())
         .await
+        .map_err(|_| {
+            format!(
+                "listing tools for '{name}' timed out after {}s",
+                timeout_duration.as_secs()
+            )
+        })?
         .map_err(|e| format!("could not list tools for '{name}': {e}"))?
         .into_iter()
         .map(|t| t.name.to_string())

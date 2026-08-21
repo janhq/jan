@@ -15,7 +15,7 @@ import {
   MCPSettings,
   DEFAULT_MCP_SETTINGS,
 } from '@/hooks/useMCPServers'
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import AddEditMCPServer from '@/containers/dialogs/AddEditMCPServer'
 import DeleteMCPServerConfirm from '@/containers/dialogs/DeleteMCPServerConfirm'
 import EditJsonMCPserver from '@/containers/dialogs/EditJsonMCPserver'
@@ -148,6 +148,16 @@ function MCPServersDesktop() {
     authorize,
     clearAuth,
   } = useMcpAuth(Object.keys(mcpServers))
+
+  const refreshConnectedServers = useCallback(() => {
+    serviceHub
+      .mcp()
+      .getConnectedServers()
+      .then(setConnectedServers)
+      .catch((error) =>
+        console.error('Failed to refresh connected MCP servers:', error)
+      )
+  }, [serviceHub])
   const setErrorMessage = useAppState((state) => state.setErrorMessage)
 
   const updateToolCallTimeout = (rawValue: string) => {
@@ -364,16 +374,29 @@ function MCPServersDesktop() {
    * Forget the tokens and drop the connection: the live transport still holds
    * the old bearer token, so leaving it up would keep working against
    * credentials the user just asked to forget.
+   *
+   * Disconnect only -- the server stays `active` in the config, so re-authorizing
+   * brings it back without the user having to re-enable it. Matches the CLI's
+   * `MCP_ACTION_CLEAR_AUTH`, which also clears and disconnects without touching
+   * the flag.
    */
   const handleClearAuth = async (serverKey: string) => {
-    const cleared = await clearAuth(serverKey)
-    toast.success(
-      cleared
-        ? t('mcp-servers:auth.cleared', { serverName: serverKey })
-        : t('mcp-servers:auth.nothingToClear', { serverName: serverKey })
-    )
-    if (cleared && connectedServers.includes(serverKey)) {
-      toggleServer(serverKey, false)
+    try {
+      const cleared = await clearAuth(serverKey)
+      toast.success(
+        cleared
+          ? t('mcp-servers:auth.cleared', { serverName: serverKey })
+          : t('mcp-servers:auth.nothingToClear', { serverName: serverKey })
+      )
+      if (cleared && connectedServers.includes(serverKey)) {
+        await serviceHub.mcp().deactivateMCPServer(serverKey)
+        refreshConnectedServers()
+      }
+    } catch (error) {
+      setErrorMessage({
+        message: t('mcp-servers:auth.clearFailed', { serverName: serverKey }),
+        subtitle: normalizeAppError(error),
+      })
     }
   }
 
@@ -400,13 +423,7 @@ function MCPServersDesktop() {
                 ? t('mcp-servers:serverStatusActive', { serverKey })
                 : t('mcp-servers:serverStatusInactive', { serverKey })
             )
-            serviceHub
-              .mcp()
-              .getConnectedServers()
-              .then(setConnectedServers)
-              .catch((error) =>
-                console.error('Failed to refresh connected MCP servers:', error)
-              )
+            refreshConnectedServers()
           })
           .catch((error) => {
             editServer(serverKey, {
@@ -445,13 +462,7 @@ function MCPServersDesktop() {
           .mcp()
           .deactivateMCPServer(serverKey)
           .finally(() => {
-            serviceHub
-              .mcp()
-              .getConnectedServers()
-              .then(setConnectedServers)
-              .catch((error) =>
-                console.error('Failed to refresh connected MCP servers:', error)
-              )
+            refreshConnectedServers()
             setLoadingServers((prev) => ({ ...prev, [serverKey]: false }))
           })
       }
@@ -459,24 +470,12 @@ function MCPServersDesktop() {
   }
 
   useEffect(() => {
-    serviceHub
-      .mcp()
-      .getConnectedServers()
-      .then(setConnectedServers)
-      .catch((error) =>
-        console.error('Failed to fetch connected MCP servers:', error)
-      )
+    refreshConnectedServers()
 
     let unlisten: (() => void) | undefined
     const setupListener = async () => {
       unlisten = await listen(SystemEvent.MCP_UPDATE, () => {
-        serviceHub
-          .mcp()
-          .getConnectedServers()
-          .then(setConnectedServers)
-          .catch((error) =>
-            console.error('Failed to refresh MCP servers:', error)
-          )
+        refreshConnectedServers()
       })
     }
     setupListener().catch((error) =>
@@ -486,7 +485,7 @@ function MCPServersDesktop() {
     return () => {
       unlisten?.()
     }
-  }, [serviceHub, setConnectedServers])
+  }, [refreshConnectedServers])
 
   return (
     <Fragment>

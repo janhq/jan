@@ -49,12 +49,9 @@ const CLIENT_NAME: &str = "Jan";
 /// A prefix rather than a typed error because the Tauri command boundary
 /// serializes failures as strings; the CLI has `ConnectError::NeedsAuth` for the
 /// same distinction and does not need this.
+/// Stripped back off on the frontend by `useMcpAuth`'s `needsAuthDetail`; there
+/// is deliberately no Rust splitter, since nothing on this side consumes it.
 pub const NEEDS_AUTH_PREFIX: &str = "NEEDS_AUTH: ";
-
-/// Split `NEEDS_AUTH_PREFIX` off an error, yielding the detail when it is one.
-pub fn needs_auth_detail(error: &str) -> Option<&str> {
-    error.strip_prefix(NEEDS_AUTH_PREFIX)
-}
 
 /// Tokens for one server, as persisted. `client_id` is part of the record
 /// because a dynamically registered client is per-installation: refreshing
@@ -121,7 +118,10 @@ pub enum AuthStatus {
     Authenticated { expires_at: Option<u64> },
     /// Tokens on disk but past their expiry. Renewable without the browser when
     /// a refresh token came with them.
-    Expired { renewable: bool },
+    Expired {
+        renewable: bool,
+        expires_at: Option<u64>,
+    },
     /// Tokens on disk, issued for a different url than the server now points at.
     StaleResource,
     /// Nothing stored. Whether that is a problem is up to the server.
@@ -151,6 +151,7 @@ pub fn status(data_folder: &Path, name: &str, config: &Value) -> AuthStatus {
     if stored.is_expired() {
         return AuthStatus::Expired {
             renewable: stored.has_refresh_token(),
+            expires_at: stored.expires_at,
         };
     }
     AuthStatus::Authenticated {
@@ -174,26 +175,33 @@ pub struct AuthStatusInfo {
     pub can_authenticate: bool,
     /// Whether there are stored tokens to forget.
     pub has_credentials: bool,
+    /// Whether a stored refresh token can renew this without the browser. Only
+    /// meaningful for `expired`; false everywhere else.
+    pub renewable: bool,
     /// Unix seconds the access token expires at, when known.
     pub expires_at: Option<u64>,
 }
 
 impl From<AuthStatus> for AuthStatusInfo {
     fn from(status: AuthStatus) -> Self {
-        let (state, can_authenticate, has_credentials, expires_at) = match status {
-            AuthStatus::NotApplicable => ("notApplicable", false, false, None),
-            AuthStatus::StaticHeader => ("staticHeader", false, false, None),
+        let (state, can_authenticate, has_credentials, renewable, expires_at) = match status {
+            AuthStatus::NotApplicable => ("notApplicable", false, false, false, None),
+            AuthStatus::StaticHeader => ("staticHeader", false, false, false, None),
             AuthStatus::Authenticated { expires_at } => {
-                ("authenticated", true, true, expires_at)
+                ("authenticated", true, true, false, expires_at)
             }
-            AuthStatus::Expired { .. } => ("expired", true, true, None),
-            AuthStatus::StaleResource => ("staleResource", true, true, None),
-            AuthStatus::Unauthenticated => ("unauthenticated", true, false, None),
+            AuthStatus::Expired {
+                renewable,
+                expires_at,
+            } => ("expired", true, true, renewable, expires_at),
+            AuthStatus::StaleResource => ("staleResource", true, true, false, None),
+            AuthStatus::Unauthenticated => ("unauthenticated", true, false, false, None),
         };
         Self {
             state,
             can_authenticate,
             has_credentials,
+            renewable,
             expires_at,
         }
     }
@@ -454,7 +462,11 @@ fn parse_callback_query(query: &str) -> Option<Result<Callback, String>> {
             _ => {}
         }
     }
-    if let Some(error) = error {
+    // An error is only believed when it carries the `state` it was issued
+    // against: a drive-by request to the open loopback port would otherwise abort
+    // a sign-in that is still in flight. Same reasoning that refuses a `code`
+    // with no `state` below -- unverifiable either way, so neither is acted on.
+    if let (Some(error), Some(_)) = (error, state.as_ref()) {
         let detail = description.map(|d| format!(": {d}")).unwrap_or_default();
         return Some(Err(format!(
             "the provider refused the sign-in ({error}){detail}"
@@ -483,11 +495,29 @@ fn callback_page(outcome: &Option<Result<Callback, String>>) -> String {
             "This address is only used for the sign-in redirect.",
         ),
     };
+    let detail = escape_html(detail);
     format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Jan - {title}</title></head>\
          <body style=\"font-family:system-ui,sans-serif;margin:4rem auto;max-width:32rem\">\
          <h1>{title}</h1><p>{detail}</p></body></html>"
     )
+}
+
+/// The failure detail embeds `error`/`error_description` straight from the
+/// redirect query, so it is provider-controlled text going into markup.
+fn escape_html(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Build a transport client that carries this server's bearer token, refreshing
@@ -692,15 +722,21 @@ mod tests {
         );
 
         save(dir.path(), "s", &creds(Some(0), true, "https://x/mcp")).unwrap();
-        assert_eq!(
+        assert!(matches!(
             status(dir.path(), "s", &http),
-            AuthStatus::Expired { renewable: true }
-        );
+            AuthStatus::Expired {
+                renewable: true,
+                expires_at: Some(_)
+            }
+        ));
         save(dir.path(), "s", &creds(Some(0), false, "https://x/mcp")).unwrap();
-        assert_eq!(
+        assert!(matches!(
             status(dir.path(), "s", &http),
-            AuthStatus::Expired { renewable: false }
-        );
+            AuthStatus::Expired {
+                renewable: false,
+                expires_at: Some(_)
+            }
+        ));
     }
 
     #[test]
@@ -778,13 +814,27 @@ mod tests {
         // `Callback` deliberately has no `Debug` (it holds an authorization
         // code), so the error cases are matched rather than `unwrap_err`'d.
         let denied = err_of(parse_callback_query(
-            "error=access_denied&error_description=nope",
+            "error=access_denied&error_description=nope&state=xyz",
         ));
         assert!(denied.contains("access_denied"), "{denied}");
         assert!(denied.contains("nope"), "{denied}");
 
         let no_state = err_of(parse_callback_query("code=abc"));
         assert!(no_state.contains("state"), "{no_state}");
+
+        // An unverifiable error must not kill a sign-in that is still in
+        // flight: any request can reach the open loopback port.
+        assert!(parse_callback_query("error=access_denied").is_none());
+    }
+
+    #[test]
+    fn the_callback_page_escapes_provider_text() {
+        let outcome = parse_callback_query(
+            "error=bad&error_description=%3Cimg%20src%3Dx%20onerror%3Dalert(1)%3E&state=s",
+        );
+        let page = callback_page(&outcome);
+        assert!(!page.contains("<img"), "{page}");
+        assert!(page.contains("&lt;img"), "{page}");
     }
 
     /// The redirect is answered and the code extracted over a real socket, so

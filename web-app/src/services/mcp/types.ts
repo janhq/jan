@@ -41,6 +41,11 @@ export interface MCPAuthStatus {
   canAuthenticate: boolean
   /** Whether there are stored tokens to forget. */
   hasCredentials: boolean
+  /**
+   * Whether a stored refresh token can renew this without the browser. Only
+   * meaningful for `expired`; false everywhere else.
+   */
+  renewable: boolean
   /** Unix seconds the access token expires at, when known. */
   expiresAt: number | null
 }

@@ -6297,9 +6297,14 @@ async fn chat_loop<B: Backend>(
             }
         }
 
-        // The detail screen asked for something off-loop. A request arriving
-        // while a job is in flight is dropped rather than queued: it can only
-        // come from a keypress, and the actions are all re-runnable.
+        // The detail screen asked for something off-loop. One job at a time, and
+        // a request arriving while one is in flight *waits* rather than being
+        // dropped: an authorization owns the slot for up to `CALLBACK_TIMEOUT`
+        // while the browser is out, and a tool listing dropped in that window
+        // would leave the screen on `listing...` with nothing to retrigger it.
+        // The slot holds the latest request only -- a newer one replaces it, and
+        // a request whose server the screen has since left is discarded on
+        // arrival by `finish_mcp_job`.
         if mcp_job.is_none() {
             if let Some(job) = app.mcp_job_request.take() {
                 let servers = mcp_servers.clone();
@@ -9946,7 +9951,7 @@ fn mcp_detail_lines(detail: &McpDetail, width: u16) -> Vec<Line<'static>> {
             }
             spans
         }
-        AuthStatus::Expired { renewable } => vec![Span::styled(
+        AuthStatus::Expired { renewable, .. } => vec![Span::styled(
             if *renewable {
                 "! expired (renewable)"
             } else {
@@ -10046,26 +10051,42 @@ fn until_label(expires_at: u64) -> String {
 /// Two cells short of `width` on purpose: callers pass the *inner* width of a
 /// bordered panel, and a line that exactly fills it wraps into a second row,
 /// which pushes the action list down by one for as long as the value is long.
+///
+/// Measured in display cells, not chars: a CJK server name or an emoji in a tool
+/// name is two cells wide, so a char count would let it overrun the border.
 fn clamp_line(line: Line<'static>, width: u16) -> Line<'static> {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
     let max = width.saturating_sub(2) as usize;
     if max == 0 {
         return Line::raw("");
     }
-    let total: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
+    let total: usize = line.spans.iter().map(|s| s.content.width()).sum();
     if total <= max {
         return line;
     }
     let mut used = 0usize;
     let mut spans: Vec<Span<'static>> = Vec::new();
     for span in line.spans {
-        let len = span.content.chars().count();
+        let len = span.content.width();
         if used + len <= max.saturating_sub(1) {
             used += len;
             spans.push(span);
             continue;
         }
+        // The ellipsis takes the last cell; a wide glyph that would straddle the
+        // boundary is dropped rather than half-drawn.
         let room = max.saturating_sub(used + 1);
-        let cut: String = span.content.chars().take(room).collect();
+        let mut cut = String::new();
+        let mut cut_width = 0usize;
+        for c in span.content.chars() {
+            let w = c.width().unwrap_or(0);
+            if cut_width + w > room {
+                break;
+            }
+            cut_width += w;
+            cut.push(c);
+        }
         spans.push(Span::styled(format!("{cut}…"), span.style));
         break;
     }

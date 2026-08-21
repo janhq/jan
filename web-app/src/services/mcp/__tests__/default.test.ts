@@ -123,6 +123,7 @@ describe('DefaultMCPService', () => {
         state: 'notApplicable',
         canAuthenticate: false,
         hasCredentials: false,
+        renewable: false,
         expiresAt: null,
       })
       await expect(svc.authorizeMCPServer('remote')).resolves.toBeUndefined()

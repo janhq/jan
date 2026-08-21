@@ -97,6 +97,7 @@ export class DefaultMCPService implements MCPService {
       state: 'notApplicable',
       canAuthenticate: false,
       hasCredentials: false,
+      renewable: false,
       expiresAt: null,
     }
   }
