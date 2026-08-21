@@ -15,7 +15,8 @@ use std::process::Stdio;
 use rmcp::{
     model::{ClientCapabilities, ClientInfo, Implementation},
     transport::{
-        sse_client::SseClientConfig, streamable_http_client::StreamableHttpClientTransportConfig,
+        sse_client::{SseClient, SseClientConfig},
+        streamable_http_client::{StreamableHttpClient, StreamableHttpClientTransportConfig},
         SseClientTransport, StreamableHttpClientTransport, TokioChildProcess,
     },
     ServiceExt,
@@ -26,6 +27,7 @@ use tokio::process::Command;
 use crate::core::app::commands::resolve_jan_data_folder;
 use crate::core::mcp::models::McpSettings;
 use crate::core::mcp::models::{extract_active_status, extract_command_args};
+use crate::core::mcp::oauth;
 use crate::core::state::{RunningServiceEnum, SharedMcpServers};
 
 /// The Jan Browser MCP needs the desktop bridge/lockfile machinery, so it is
@@ -332,53 +334,109 @@ pub fn parse_pairs(s: &str, what: &str) -> Result<serde_json::Map<String, Value>
     Ok(map)
 }
 
+/// Why a connect failed, when the difference changes what the user should do.
+///
+/// A missing binary and an unauthorized remote both surface as "failed to
+/// connect" from the transport, but only one of them is fixed by signing in --
+/// so the distinction is carried in the type rather than left for the UI to
+/// guess from an error string.
+#[derive(Debug)]
+pub enum ConnectError {
+    /// The server advertises OAuth and there are no usable credentials for it.
+    /// `/mcp` turns this into an `Authenticate` action.
+    NeedsAuth { server: String, detail: String },
+    Failed(String),
+}
+
+impl std::fmt::Display for ConnectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NeedsAuth { server, detail } => {
+                write!(f, "'{server}' needs authentication: {detail}")
+            }
+            Self::Failed(e) => f.write_str(e),
+        }
+    }
+}
+
+impl ConnectError {
+    pub fn needs_auth(&self) -> bool {
+        matches!(self, Self::NeedsAuth { .. })
+    }
+}
+
+impl From<String> for ConnectError {
+    fn from(e: String) -> Self {
+        Self::Failed(e)
+    }
+}
+
 /// Connect one server and insert it into the shared map. Best-effort: a bad
 /// transport/config returns `Err` without touching the map.
+///
+/// For http/sse this is where OAuth is applied: stored credentials (refreshed
+/// if stale) are wrapped around the base client so every request carries the
+/// bearer token. When there are none and the connect fails, the server is asked
+/// whether it advertises OAuth at all, which is what separates
+/// `ConnectError::NeedsAuth` from an ordinary transport failure.
 pub async fn connect(
     name: &str,
     config: &Value,
     servers: &SharedMcpServers,
-) -> Result<(), String> {
+) -> Result<(), ConnectError> {
+    connect_in(&default_data_folder(), name, config, servers).await
+}
+
+async fn connect_in(
+    data_folder: &std::path::Path,
+    name: &str,
+    config: &Value,
+    servers: &SharedMcpServers,
+) -> Result<(), ConnectError> {
     if name == BROWSER_MCP_NAME {
-        return Err("Jan Browser MCP is desktop-only".to_string());
+        return Err(ConnectError::Failed(
+            "Jan Browser MCP is desktop-only".to_string(),
+        ));
     }
     let params = extract_command_args(config)
-        .ok_or_else(|| format!("invalid MCP config for '{name}'"))?;
+        .ok_or_else(|| ConnectError::Failed(format!("invalid MCP config for '{name}'")))?;
 
     let service = match (params.transport_type.as_deref(), params.url.as_deref()) {
-        (Some("http"), Some(url)) => {
-            let client = http_client(&params.headers)?;
-            let transport = StreamableHttpClientTransport::with_client(
-                client,
-                StreamableHttpClientTransportConfig {
-                    uri: url.to_string().into(),
-                    ..Default::default()
-                },
-            );
-            RunningServiceEnum::WithInit(
-                client_info()
-                    .serve(transport)
-                    .await
-                    .map_err(|e| format!("failed to connect to '{name}': {e}"))?,
-            )
-        }
-        (Some("sse"), Some(url)) => {
-            let client = http_client(&params.headers)?;
-            let transport = SseClientTransport::start_with_client(
-                client,
-                SseClientConfig {
-                    sse_endpoint: url.to_string().into(),
-                    ..Default::default()
-                },
-            )
-            .await
-            .map_err(|e| format!("failed to start SSE transport for '{name}': {e}"))?;
-            RunningServiceEnum::WithInit(
-                client_info()
-                    .serve(transport)
-                    .await
-                    .map_err(|e| format!("failed to connect to '{name}': {e}"))?,
-            )
+        (Some(transport @ ("http" | "sse")), Some(url)) => {
+            let base = http_client(&params.headers)?;
+            // A credential problem we can already name (expired with no refresh
+            // token, or issued for a different url) is `NeedsAuth` outright --
+            // there is no point attempting a connect we know is unauthorized.
+            let auth = oauth::authorized_client(data_folder, name, url, config, base.clone())
+                .await
+                .map_err(|detail| ConnectError::NeedsAuth {
+                    server: name.to_string(),
+                    detail,
+                })?;
+            let authorized = auth.is_some();
+            let result = match (transport, auth) {
+                ("http", Some(client)) => serve_http(client, url, name).await,
+                ("http", None) => serve_http(base, url, name).await,
+                (_, Some(client)) => serve_sse(client, url, name).await,
+                (_, None) => serve_sse(base, url, name).await,
+            };
+            match result {
+                Ok(service) => service,
+                // Only worth probing when we did not already send a token: a
+                // failure *with* credentials is either a real outage or tokens
+                // the provider revoked, and `advertises_oauth` cannot tell the
+                // difference. Re-authenticating is offered from `/mcp` anyway.
+                Err(e) if !authorized && oauth::advertises_oauth(url).await => {
+                    // The transport error is kept: a server can advertise OAuth
+                    // *and* have failed for an unrelated reason, and dropping
+                    // the cause would report that as "needs authentication".
+                    return Err(ConnectError::NeedsAuth {
+                        server: name.to_string(),
+                        detail: format!("no credentials are stored ({e})"),
+                    });
+                }
+                Err(e) => return Err(ConnectError::Failed(e)),
+            }
         }
         _ => {
             let mut cmd = Command::new(&params.command);
@@ -403,18 +461,62 @@ pub async fn connect(
             let (process, _stderr) = TokioChildProcess::builder(cmd)
                 .stderr(Stdio::null())
                 .spawn()
-                .map_err(|e| format!("failed to spawn '{name}': {e}"))?;
+                .map_err(|e| ConnectError::Failed(format!("failed to spawn '{name}': {e}")))?;
             RunningServiceEnum::NoInit(
                 ()
                     .serve(process)
                     .await
-                    .map_err(|e| format!("failed to connect to '{name}': {e}"))?,
+                    .map_err(|e| ConnectError::Failed(format!("failed to connect to '{name}': {e}")))?,
             )
         }
     };
 
     servers.lock().await.insert(name.to_string(), service);
     Ok(())
+}
+
+/// Serve the streamable-http transport over any client that implements it, so
+/// the plain and OAuth-wrapped clients share one code path instead of the
+/// transport construction being written out twice.
+async fn serve_http<C>(client: C, url: &str, name: &str) -> Result<RunningServiceEnum, String>
+where
+    C: StreamableHttpClient + Send + Sync + 'static,
+{
+    let transport = StreamableHttpClientTransport::with_client(
+        client,
+        StreamableHttpClientTransportConfig {
+            uri: url.to_string().into(),
+            ..Default::default()
+        },
+    );
+    Ok(RunningServiceEnum::WithInit(
+        client_info()
+            .serve(transport)
+            .await
+            .map_err(|e| format!("failed to connect to '{name}': {e}"))?,
+    ))
+}
+
+/// `serve_http`'s counterpart for the legacy SSE transport.
+async fn serve_sse<C>(client: C, url: &str, name: &str) -> Result<RunningServiceEnum, String>
+where
+    C: SseClient + Send + Sync + 'static,
+{
+    let transport = SseClientTransport::start_with_client(
+        client,
+        SseClientConfig {
+            sse_endpoint: url.to_string().into(),
+            ..Default::default()
+        },
+    )
+    .await
+    .map_err(|e| format!("failed to start SSE transport for '{name}': {e}"))?;
+    Ok(RunningServiceEnum::WithInit(
+        client_info()
+            .serve(transport)
+            .await
+            .map_err(|e| format!("failed to connect to '{name}': {e}"))?,
+    ))
 }
 
 fn client_info() -> ClientInfo {
@@ -467,6 +569,159 @@ pub async fn disconnect(name: &str, servers: &SharedMcpServers) {
     }
 }
 
+/// The `mcp_config.json` a server is declared in. Surfaced by the `/mcp` detail
+/// screen: "where do I edit this by hand" is otherwise unanswerable from the UI.
+pub fn config_file_path() -> PathBuf {
+    config_path(&default_data_folder())
+}
+
+/// This server's OAuth state, without touching the network.
+pub fn auth_status(name: &str, config: &Value) -> oauth::AuthStatus {
+    oauth::status(&default_data_folder(), name, config)
+}
+
+/// Forget one server's stored tokens. `Ok(false)` when there were none.
+pub fn clear_auth(name: &str) -> Result<bool, String> {
+    oauth::clear(&default_data_folder(), name)
+}
+
+/// Start an interactive authorization for a configured http/sse server. The
+/// caller owns opening the browser and awaiting `PendingAuth::complete`.
+pub async fn begin_auth(name: &str) -> Result<oauth::PendingAuth, String> {
+    let entry =
+        get_server(name).ok_or_else(|| format!("server '{name}' not found in mcp_config.json"))?;
+    let url = entry
+        .config
+        .get("url")
+        .and_then(Value::as_str)
+        .filter(|u| !u.trim().is_empty())
+        .ok_or_else(|| {
+            format!("'{name}' is a stdio server - OAuth applies to http/sse servers only")
+        })?;
+    oauth::begin(name, url).await
+}
+
+/// Finish an authorization by persisting the tokens it produced.
+pub async fn finish_auth(pending: oauth::PendingAuth) -> Result<oauth::StoredCredentials, String> {
+    pending.complete(&default_data_folder()).await
+}
+
+/// Everything the `/mcp` detail screen shows about one server. Split from the
+/// tool list on purpose: all of this is local (config plus the cached
+/// `initialize` response), so the screen opens without a round trip and the
+/// tool list arrives separately.
+pub struct ServerDetail {
+    pub name: String,
+    pub active: bool,
+    pub connected: bool,
+    pub transport: String,
+    /// The url for http/sse, or `command args` for stdio.
+    pub endpoint: String,
+    pub config_path: PathBuf,
+    pub auth: oauth::AuthStatus,
+    /// Capability names the server advertised, in a stable display order.
+    pub capabilities: Vec<&'static str>,
+    /// `name version` from the server's `initialize` response, when connected.
+    pub implementation: Option<String>,
+}
+
+/// Snapshot one server for the detail screen. `None` when the name is no longer
+/// in the config (deleted from another surface while the picker was open).
+pub async fn describe(name: &str, servers: &SharedMcpServers) -> Option<ServerDetail> {
+    let entry = get_server(name)?;
+    let cfg = &entry.config;
+    let transport = cfg
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("stdio")
+        .to_string();
+    let endpoint = if transport == "stdio" {
+        let command = cfg.get("command").and_then(Value::as_str).unwrap_or("");
+        let args: Vec<&str> = cfg
+            .get("args")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
+        if args.is_empty() {
+            command.to_string()
+        } else {
+            format!("{command} {}", args.join(" "))
+        }
+    } else {
+        cfg.get("url").and_then(Value::as_str).unwrap_or("").to_string()
+    };
+
+    // The lock is held only for the cached `initialize` response; nothing here
+    // goes to the network, so the render loop is never parked on a peer.
+    let peer = servers.lock().await.get(name).and_then(|s| s.peer_info());
+    let connected = peer.is_some();
+    let mut capabilities = Vec::new();
+    let mut implementation = None;
+    if let Some(peer) = peer {
+        let caps = &peer.capabilities;
+        for (present, label) in [
+            (caps.tools.is_some(), "tools"),
+            (caps.resources.is_some(), "resources"),
+            (caps.prompts.is_some(), "prompts"),
+            (caps.logging.is_some(), "logging"),
+            (caps.completions.is_some(), "completions"),
+        ] {
+            if present {
+                capabilities.push(label);
+            }
+        }
+        implementation = Some(format!(
+            "{} {}",
+            peer.server_info.name, peer.server_info.version
+        ));
+    }
+
+    Some(ServerDetail {
+        auth: auth_status(name, cfg),
+        name: entry.name,
+        active: entry.active,
+        connected,
+        transport,
+        endpoint,
+        config_path: config_file_path(),
+        capabilities,
+        implementation,
+    })
+}
+
+/// The tool names a connected server exposes, for the detail screen's `Tools:`
+/// line and its `View tools` action. `Err` when the server is not connected or
+/// the listing round trip fails.
+///
+/// This is the one part of the detail screen that talks to the peer, which is
+/// why it is a separate call: the caller runs it off the render loop.
+///
+/// The round trip is bounded by `tool_call_timeout_duration`, as every other
+/// `list_all_tools` call site is: the guard is the process-wide server map that
+/// each agent turn also locks, so a peer that accepts the request and never
+/// answers would otherwise stall turns and not just this screen.
+pub async fn list_tools(name: &str, servers: &SharedMcpServers) -> Result<Vec<String>, String> {
+    let timeout_duration = read_settings().tool_call_timeout_duration();
+    let guard = servers.lock().await;
+    let service = guard
+        .get(name)
+        .ok_or_else(|| format!("'{name}' is not connected"))?;
+    let mut names: Vec<String> = tokio::time::timeout(timeout_duration, service.list_all_tools())
+        .await
+        .map_err(|_| {
+            format!(
+                "listing tools for '{name}' timed out after {}s",
+                timeout_duration.as_secs()
+            )
+        })?
+        .map_err(|e| format!("could not list tools for '{name}': {e}"))?
+        .into_iter()
+        .map(|t| t.name.to_string())
+        .collect();
+    names.sort();
+    Ok(names)
+}
+
 /// Number of servers marked `active` in `mcp_config.json`.
 pub fn active_count() -> usize {
     list_servers().iter().filter(|e| e.active).count()
@@ -484,6 +739,10 @@ pub struct ConnectOutcome {
     pub connected: Vec<String>,
     /// One `failed to connect to '<name>': <error>` per server that didn't.
     pub failed: Vec<String>,
+    /// Servers that are up to the user to sign into, kept apart from `failed`
+    /// so the caller can point at `/mcp` instead of repeating a transport error
+    /// nobody can act on.
+    pub needs_auth: Vec<String>,
 }
 
 /// Connect every `active` server into the shared map, best-effort.
@@ -492,7 +751,8 @@ pub async fn connect_active(servers: &SharedMcpServers) -> ConnectOutcome {
     for entry in list_servers().into_iter().filter(|e| e.active) {
         match connect(&entry.name, &entry.config, servers).await {
             Ok(()) => out.connected.push(entry.name),
-            Err(e) => out.failed.push(e),
+            Err(ConnectError::NeedsAuth { server, .. }) => out.needs_auth.push(server),
+            Err(e) => out.failed.push(e.to_string()),
         }
     }
     out

@@ -4,6 +4,7 @@
 
 pub mod auth;
 pub mod brand;
+pub mod browser;
 pub mod journal;
 pub mod login;
 pub mod mcp;
@@ -1127,6 +1128,14 @@ async fn run_agent_loop(
                 // Headless has no transcript to note into, so these stay logs.
                 for failure in &outcome.failed {
                     log::warn!("MCP: {failure}");
+                }
+                // Signing in needs a browser and a keypress, neither of which
+                // exists here, so the fix is named rather than attempted.
+                if !outcome.needs_auth.is_empty() {
+                    log::warn!(
+                        "MCP: {} need authentication - run `jan` and use /mcp to sign in",
+                        outcome.needs_auth.join(", ")
+                    );
                 }
             }
             Err(e) => log::warn!("MCP connect task failed: {e}"),

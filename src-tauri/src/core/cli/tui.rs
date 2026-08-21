@@ -411,6 +411,9 @@ enum PickerKind {
     /// `/plugin install <collection>`: choose which plugins inside a collection
     /// repo to install. Space toggles a row, Enter installs everything checked.
     PluginSelect,
+    /// One MCP server's detail screen: the info block plus the actions that
+    /// apply to it (see `open_mcp_detail`). Reached with Enter from `ToggleMcp`.
+    McpServer,
 }
 
 /// Interactive list overlay (`/resume`, `/login`, `/mcp`, etc.): rows with a
@@ -426,18 +429,19 @@ struct Picker {
 }
 
 impl Picker {
-    fn title(&self) -> String {
+    fn title(&self) -> &'static str {
         match self.kind {
-            PickerKind::ResumeThread => " resume thread ".to_string(),
-            PickerKind::LoginProvider => " sign in ".to_string(),
-            PickerKind::ToggleMcp => " mcp servers ".to_string(),
-            PickerKind::RewindMessage => " rewind to message ".to_string(),
-            PickerKind::RewindScope => " restore ".to_string(),
-            PickerKind::ViewConfig => " provider config ".to_string(),
-            PickerKind::AgentSettings => " agent settings ".to_string(),
-            PickerKind::ProviderSettings => " providers ".to_string(),
-            PickerKind::Todo => " todo ".to_string(),
-            PickerKind::PluginSelect => " install plugins ".to_string(),
+            PickerKind::ResumeThread => " resume thread ",
+            PickerKind::LoginProvider => " sign in ",
+            PickerKind::ToggleMcp => " mcp servers ",
+            PickerKind::RewindMessage => " rewind to message ",
+            PickerKind::RewindScope => " restore ",
+            PickerKind::ViewConfig => " provider config ",
+            PickerKind::AgentSettings => " agent settings ",
+            PickerKind::ProviderSettings => " providers ",
+            PickerKind::Todo => " todo ",
+            PickerKind::PluginSelect => " install plugins ",
+            PickerKind::McpServer => " mcp server ",
         }
     }
 
@@ -445,7 +449,9 @@ impl Picker {
         match self.kind {
             PickerKind::ResumeThread => " ↑/↓ select   Enter resume   Esc cancel",
             PickerKind::LoginProvider => " ↑/↓ select   Enter sign in   x sign out   Esc cancel",
-            PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   a add   e edit   d delete   Esc close",
+            PickerKind::ToggleMcp => {
+                " ↑/↓ select   Enter open   Space toggle   a add   e edit   d delete   Esc close"
+            }
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
@@ -455,6 +461,7 @@ impl Picker {
             PickerKind::PluginSelect => {
                 " ↑/↓ select   Space toggle   Enter install   Esc cancel"
             }
+            PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
         }
     }
 }
@@ -602,6 +609,65 @@ struct PickerItem {
     hint: Option<String>,
     /// Enabled-state for toggle pickers (`/mcp`); `None` for one-shot pickers.
     checkbox: Option<bool>,
+}
+
+/// The `/mcp` detail screen's data: a local snapshot (config plus the cached
+/// `initialize` response) and the one field that needs a round trip.
+struct McpDetail {
+    server: super::mcp::ServerDetail,
+    tools: ToolsState,
+}
+
+/// Where the detail screen's tool list is. Split from `Option<Vec<_>>` so the
+/// screen can say *why* there is no list -- "not connected" and "the listing
+/// failed" are different problems.
+enum ToolsState {
+    /// Not connected, so there is nothing to ask for.
+    Unavailable,
+    Loading,
+    Ready(Vec<String>),
+    Failed(String),
+}
+
+/// Off-loop MCP work the detail screen hands to the loop. Everything here
+/// either talks to a peer or waits on a browser, so none of it may run inside
+/// `handle_key`.
+enum McpJob {
+    /// List a connected server's tools for the `Tools:` line.
+    Tools(String),
+    /// Discover the provider and mint a consent url. Deliberately separate from
+    /// `Authorize`: the url must reach the transcript *before* anything waits on
+    /// the redirect, or a user with no browser has nothing to act on.
+    BeginAuth(String),
+    /// Wait for the redirect and persist the tokens.
+    Authorize {
+        server: String,
+        pending: Box<crate::core::mcp::oauth::PendingAuth>,
+    },
+    /// Bring a server up. Run as a job rather than detached whenever the detail
+    /// screen is open, so the screen refreshes when the connect lands instead of
+    /// sitting on `not connected` until the user navigates away and back.
+    Connect(String),
+}
+
+/// What an `McpJob` came back with.
+enum McpJobDone {
+    Tools {
+        server: String,
+        result: Result<Vec<String>, String>,
+    },
+    AuthStarted {
+        server: String,
+        result: Result<Box<crate::core::mcp::oauth::PendingAuth>, String>,
+    },
+    Authorized {
+        server: String,
+        result: Result<(), String>,
+    },
+    Connected {
+        server: String,
+        result: Result<(), String>,
+    },
 }
 
 /// `/login` key entry: a docked prompt opened after provider/method selection
@@ -1586,6 +1652,12 @@ struct App {
     settings_prompt: Option<SettingsPrompt>,
     /// Active MCP add/edit wizard (docked); owns the keyboard while open.
     mcp_prompt: Option<McpPrompt>,
+    /// The `/mcp` detail screen's data, alongside the `McpServer` picker whose
+    /// rows are its actions. Held on `App` rather than in the picker so a job
+    /// landing later (a tool list, a finished sign-in) can update it in place.
+    mcp_detail: Option<McpDetail>,
+    /// MCP work handed to the loop to run off the render loop. Taken once.
+    mcp_job_request: Option<McpJob>,
     /// Active OpenAI-compatible provider wizard (docked); owns the keyboard.
     provider_prompt: Option<ProviderPrompt>,
     /// Providers already probed for a missing model list this session
@@ -1980,6 +2052,8 @@ impl App {
             login: None,
             settings_prompt: None,
             mcp_prompt: None,
+            mcp_detail: None,
+            mcp_job_request: None,
             provider_prompt: None,
             probed_models: std::collections::HashSet::new(),
             login_submit: None,
@@ -5935,6 +6009,21 @@ async fn await_snapshot(
     }
 }
 
+/// Await an in-flight `/mcp` job, parking forever when none is running so this
+/// can sit in the loop's `select!` unconditionally.
+async fn await_mcp_job(
+    task: &mut Option<tokio::task::JoinHandle<McpJobDone>>,
+) -> Option<McpJobDone> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    // A cancelled or panicked job is dropped rather than reported: the only
+    // paths that abort it have already told the user why.
+    joined.ok()
+}
+
 /// Await an in-flight `/login` verification, parking forever when none is
 /// running so this can sit in the loop's `select!` unconditionally.
 async fn await_login(
@@ -6439,6 +6528,10 @@ async fn chat_loop<B: Backend>(
     // instead of surfacing later as sonnet/opus 429s. Detached like the update
     // check: the probe is a network round trip and must not block sign-in.
     let mut account_usage_task: Option<tokio::task::JoinHandle<String>> = None;
+    // `/mcp` work that must not run on the render loop: a tool listing is a
+    // round trip to the peer, and an authorization waits on a browser for up to
+    // five minutes. One at a time -- the detail screen only ever asks for one.
+    let mut mcp_job: Option<tokio::task::JoinHandle<McpJobDone>> = None;
 
     // The update check is a network round trip, so it runs off the render loop
     // and notes itself whenever it lands rather than delaying the first frame.
@@ -6541,6 +6634,21 @@ async fn chat_loop<B: Backend>(
                         }));
                     }
                 }
+            }
+        }
+
+        // The detail screen asked for something off-loop. One job at a time, and
+        // a request arriving while one is in flight *waits* rather than being
+        // dropped: an authorization owns the slot for up to `CALLBACK_TIMEOUT`
+        // while the browser is out, and a tool listing dropped in that window
+        // would leave the screen on `listing...` with nothing to retrigger it.
+        // The slot holds the latest request only -- a newer one replaces it, and
+        // a request whose server the screen has since left is discarded on
+        // arrival by `finish_mcp_job`.
+        if mcp_job.is_none() {
+            if let Some(job) = app.mcp_job_request.take() {
+                let servers = mcp_servers.clone();
+                mcp_job = Some(tokio::spawn(run_mcp_job(job, servers)));
             }
         }
 
@@ -6713,6 +6821,17 @@ async fn chat_loop<B: Backend>(
                 for failure in &outcome.failed {
                     app.note(&format!("MCP: {failure}"));
                 }
+                // A server that only needs signing in is separated from a
+                // broken one: the fix is a keypress away, so name it.
+                if !outcome.needs_auth.is_empty() {
+                    app.note(&format!(
+                        "MCP: {} need authentication - open /mcp to sign in",
+                        outcome.needs_auth.join(", ")
+                    ));
+                }
+            }
+            Some(done) = await_mcp_job(&mut mcp_job) => {
+                finish_mcp_job(app, done, mcp_servers, &mut mcp_job).await;
             }
             login_res = await_login(&mut login_task) => {
                 let login_ok = login_res.is_ok();
@@ -7468,12 +7587,36 @@ async fn handle_key(
                 picker.armed_delete = None;
                 picker.selected = (picker.selected + 1).min(picker.items.len() - 1);
             }
-            KeyCode::Enter if picker.kind == PickerKind::ToggleMcp => {
+            // Space toggles the row in place; Enter opens its detail screen.
+            // Enter used to be the toggle, but with a detail screen to reach it
+            // is the row's primary action, and Space is already the toggle in
+            // the one other checkbox picker (`PluginSelect`).
+            KeyCode::Char(' ') if picker.kind == PickerKind::ToggleMcp => {
                 let item = &mut picker.items[picker.selected];
+                if item.value.is_empty() {
+                    return;
+                }
                 let name = item.value.clone();
                 let enable = !item.checkbox.unwrap_or(false);
                 item.checkbox = Some(enable);
-                toggle_mcp_server(app, mcp_servers, name, enable);
+                if set_mcp_active(app, mcp_servers, &name, enable).await {
+                    // Nothing on this screen is waiting on the answer, so it is
+                    // detached rather than taking the single job slot.
+                    reconnect_mcp_server(mcp_servers, name);
+                }
+            }
+            KeyCode::Enter if picker.kind == PickerKind::ToggleMcp => {
+                let name = picker.items[picker.selected].value.clone();
+                // The watermark row of an empty config: nothing to open.
+                if name.is_empty() {
+                    return;
+                }
+                open_mcp_detail(app, &name, mcp_servers).await;
+            }
+            // The detail screen's rows are actions on one server.
+            KeyCode::Enter if picker.kind == PickerKind::McpServer => {
+                let action = picker.items[picker.selected].value.clone();
+                run_mcp_action(app, &action, mcp_servers).await;
             }
             // `/mcp` picker: `a` opens the add wizard, `e` opens the edit
             // wizard prefilled from the selected row, `d` removes the selected
@@ -7496,23 +7639,18 @@ async fn handle_key(
             }
             KeyCode::Char('e') if picker.kind == PickerKind::ToggleMcp => {
                 let name = picker.items[picker.selected].value.clone();
-                let entry = super::mcp::get_server(&name);
-                if let Some(entry) = entry {
-                    app.picker = None;
-                    app.mcp_prompt = Some(McpPrompt::from_entry(&entry));
-                } else {
-                    app.note(&format!("server '{name}' no longer exists"));
+                if name.is_empty() {
+                    return;
                 }
+                edit_mcp_server(app, &name);
             }
             KeyCode::Char('d') if picker.kind == PickerKind::ToggleMcp => {
                 let name = picker.items[picker.selected].value.clone();
-                app.picker = None;
-                if let Err(e) = super::mcp::remove_server(&name) {
-                    app.note(&format!("failed to remove '{name}': {e}"));
-                } else {
-                    super::mcp::disconnect(&name, mcp_servers).await;
-                    app.note(&format!("removed MCP server '{name}'"));
+                if name.is_empty() {
+                    return;
                 }
+                app.picker = None;
+                remove_mcp_server(app, &name, mcp_servers).await;
             }
             // `/settings > providers` picker: `a` opens the add wizard, `d`
             // deletes the selected provider only after a confirmation `d` on
@@ -7722,15 +7860,27 @@ async fn handle_key(
                     PickerKind::Todo => {}
                     // PluginSelect Enter is handled by the guarded arm above.
                     PickerKind::PluginSelect => {}
+                    // McpServer Enter is handled by the guarded arm above.
+                    PickerKind::McpServer => {}
                 }
+            }
+            // Esc on the detail screen steps back to the server list rather
+            // than closing outright: the detail is one level *inside* `/mcp`,
+            // and dropping the user to the prompt loses the place they were at.
+            KeyCode::Esc | KeyCode::Char('q')
+                if !ctrl && picker.kind == PickerKind::McpServer =>
+            {
+                open_mcp_picker(app, mcp_servers).await;
             }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
                 app.plugin_collection_url = None;
                 app.picker = None;
+                app.mcp_detail = None;
             }
             _ if ctrl_c => {
                 app.plugin_collection_url = None;
                 app.picker = None;
+                app.mcp_detail = None;
             }
             _ => {}
         }
@@ -7885,7 +8035,7 @@ async fn handle_key(
             if !text.is_empty() {
                 app.record_submitted(&text);
                 if let Some(cmd) = text.strip_prefix('/') {
-                    run_command(app, cmd).await;
+                    run_command(app, cmd, mcp_servers).await;
                 } else {
                     app.submit_user(text);
                 }
@@ -8408,7 +8558,11 @@ fn parse_command(line: &str) -> (&str, &str) {
 }
 
 /// Execute a `/command` typed into the input box. Runs only while idle.
-async fn run_command(app: &mut App, line: &str) {
+async fn run_command(
+    app: &mut App,
+    line: &str,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+) {
     let (name, arg) = parse_command(line);
     match name {
         "" | "help" | "?" => {
@@ -8475,7 +8629,7 @@ async fn run_command(app: &mut App, line: &str) {
                 app.set_model(arg.to_string());
             }
         }
-        "mcp" => open_mcp_picker(app),
+        "mcp" => open_mcp_picker(app, mcp_servers).await,
         "plugin" => plugin_command(app, arg).await,
         "login" => open_login_picker(app),
         "logout" => logout_command(app, arg),
@@ -8999,11 +9153,16 @@ impl McpPrompt {
             super::mcp::parse_pairs(self.headers.trim(), "header")?,
             self.active,
         )?;
+        // Read the *previous* active flag before the write. `upsert_server` has
+        // already replaced the entry by the time it lands on disk, so reading it
+        // afterwards reports the new value and a server being disabled from this
+        // form was left connected.
+        let was_active = self
+            .editing
+            .as_deref()
+            .is_some_and(|n| super::mcp::get_server(n).is_some_and(|e| e.active));
         super::mcp::upsert_server(self.name.trim(), &config)?;
         let name = self.name.trim().to_string();
-        let was_active = self.editing.as_deref().is_some_and(|n| {
-            super::mcp::get_server(n).is_some_and(|e| e.active)
-        });
         // Disconnect the old live service on rename/edit, then reconnect if active.
         if let Some(old) = self.editing.take() {
             if old != name {
@@ -9011,15 +9170,9 @@ impl McpPrompt {
             }
         }
         if self.active {
-            let cfg = super::mcp::list_servers()
-                .into_iter()
-                .find(|s| s.name == name)
-                .map(|s| s.config);
-            if let Some(cfg) = cfg {
-                if let Err(e) = super::mcp::connect(&name, &cfg, mcp_servers).await {
-                    log::warn!("MCP: {e}");
-                }
-            }
+            // Off the render loop: a cold stdio spawn or an http handshake here
+            // would freeze the frame the form was submitted on.
+            reconnect_mcp_server(mcp_servers, name);
         } else if was_active {
             super::mcp::disconnect(&name, mcp_servers).await;
         }
@@ -10264,23 +10417,65 @@ async fn open_model_picker(app: &mut App) {
 
 }
 
-/// Open the `/mcp` picker listing configured MCP servers with their enabled
-/// state. Enter toggles a row in place (see `toggle_mcp_server`); `a` adds, `e`
-/// edits, and `d` removes (see the picker key handler).
-fn open_mcp_picker(app: &mut App) {
+/// Action ids for the `McpServer` detail screen. String values rather than an
+/// enum because `PickerItem::value` is the picker's one payload; keeping them
+/// as constants is what stops the key handler and the row builder from drifting.
+const MCP_ACTION_TOOLS: &str = "tools";
+const MCP_ACTION_AUTH: &str = "auth";
+const MCP_ACTION_CLEAR_AUTH: &str = "clear-auth";
+const MCP_ACTION_RECONNECT: &str = "reconnect";
+const MCP_ACTION_TOGGLE: &str = "toggle";
+const MCP_ACTION_EDIT: &str = "edit";
+const MCP_ACTION_REMOVE: &str = "remove";
+
+/// Open the `/mcp` screen: one row per configured server, with its live state.
+///
+/// An empty config opens the screen anyway, on a watermark row (the same shape
+/// `open_provider_settings` uses). Returning a note instead left a fresh install
+/// with no way *in* to the thing `/mcp` manages -- `a` to add is only reachable
+/// once the picker exists, so the one state that most needs the add wizard was
+/// the one state that could not reach it.
+async fn open_mcp_picker(app: &mut App, mcp_servers: &crate::core::state::SharedMcpServers) {
     let servers = super::mcp::list_servers();
-    if servers.is_empty() {
-        return app.note("no MCP servers configured (press a to add one, or use `jan cli mcp add ...`)");
-    }
-    let items = servers
-        .into_iter()
-        .map(|s| PickerItem {
-            label: s.name.clone(),
-            value: s.name,
+    let items: Vec<PickerItem> = if servers.is_empty() {
+        vec![PickerItem {
+            label: "no MCP servers configured - press a to add one".to_string(),
+            value: String::new(),
             hint: None,
-            checkbox: Some(s.active),
-        })
-        .collect();
+            checkbox: None,
+        }]
+    } else {
+        // One lock for the whole list: `describe` per row would take and drop it
+        // N times, and nothing here goes to the network.
+        let connected: std::collections::HashSet<String> =
+            mcp_servers.lock().await.keys().cloned().collect();
+        servers
+            .into_iter()
+            .map(|s| {
+                let state = if !s.active {
+                    "disabled".to_string()
+                } else if connected.contains(&s.name) {
+                    "connected".to_string()
+                } else {
+                    match super::mcp::auth_status(&s.name, &s.config) {
+                        crate::core::mcp::oauth::AuthStatus::Unauthenticated
+                        | crate::core::mcp::oauth::AuthStatus::Expired { .. }
+                        | crate::core::mcp::oauth::AuthStatus::StaleResource => {
+                            "needs auth".to_string()
+                        }
+                        _ => "not connected".to_string(),
+                    }
+                };
+                PickerItem {
+                    label: format!("{}  {state}", s.name),
+                    value: s.name,
+                    hint: None,
+                    checkbox: Some(s.active),
+                }
+            })
+            .collect()
+    };
+    app.mcp_detail = None;
     app.picker = Some(Picker {
         kind: PickerKind::ToggleMcp,
         items,
@@ -10291,6 +10486,261 @@ fn open_mcp_picker(app: &mut App) {
 
 fn open_login_picker(app: &mut App) {
     open_login_picker_at(app, None);
+}
+
+/// Open the detail screen for one server: the info block plus the actions that
+/// apply to it. Everything shown is local, so this opens in one frame; the tool
+/// list is requested as a job and fills in when it lands.
+async fn open_mcp_detail(
+    app: &mut App,
+    name: &str,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+) {
+    let Some(server) = super::mcp::describe(name, mcp_servers).await else {
+        app.mcp_detail = None;
+        return app.note(&format!("server '{name}' no longer exists"));
+    };
+    let tools = if server.connected {
+        app.mcp_job_request = Some(McpJob::Tools(name.to_string()));
+        ToolsState::Loading
+    } else {
+        ToolsState::Unavailable
+    };
+    app.picker = Some(Picker {
+        kind: PickerKind::McpServer,
+        items: mcp_action_items(&server),
+        selected: 0,
+        armed_delete: None,
+    });
+    app.mcp_detail = Some(McpDetail { server, tools });
+}
+
+/// The actions offered for one server, filtered to what its state can actually
+/// do: a stdio server has nothing to authenticate, and a disconnected one has no
+/// tools to list.
+fn mcp_action_items(server: &super::mcp::ServerDetail) -> Vec<PickerItem> {
+    use crate::core::mcp::oauth::AuthStatus;
+    let mut actions: Vec<(&str, String)> = Vec::new();
+    if server.connected {
+        actions.push((MCP_ACTION_TOOLS, "View tools".to_string()));
+    }
+    match server.auth {
+        // A pipe has nothing to authorize, and a hand-written header is the
+        // user's own credential -- offering to overwrite it with OAuth would be
+        // offering to break it.
+        AuthStatus::NotApplicable | AuthStatus::StaticHeader => {}
+        // Anything with tokens on disk can be renewed *and* forgotten, whether
+        // they still work or not.
+        AuthStatus::Authenticated { .. }
+        | AuthStatus::Expired { .. }
+        | AuthStatus::StaleResource => {
+            actions.push((MCP_ACTION_AUTH, "Re-authenticate".to_string()));
+            actions.push((MCP_ACTION_CLEAR_AUTH, "Clear authentication".to_string()));
+        }
+        AuthStatus::Unauthenticated => {
+            actions.push((MCP_ACTION_AUTH, "Authenticate".to_string()));
+        }
+    }
+    if server.active {
+        actions.push((MCP_ACTION_RECONNECT, "Reconnect".to_string()));
+        actions.push((MCP_ACTION_TOGGLE, "Disable".to_string()));
+    } else {
+        actions.push((MCP_ACTION_TOGGLE, "Enable".to_string()));
+    }
+    actions.push((MCP_ACTION_EDIT, "Edit configuration".to_string()));
+    actions.push((MCP_ACTION_REMOVE, "Remove server".to_string()));
+
+    actions
+        .into_iter()
+        .enumerate()
+        .map(|(i, (value, label))| PickerItem {
+            // Numbered like the rest of the screen reads: the hint column is
+            // already the dim prefix slot, so this costs no extra layout.
+            hint: Some(format!("{}.", i + 1)),
+            label,
+            value: value.to_string(),
+            checkbox: None,
+        })
+        .collect()
+}
+
+/// The info block above the detail screen's actions: aligned labels, the state
+/// in colour, and the config path so "where do I edit this" is answerable
+/// without leaving the screen.
+fn mcp_detail_lines(detail: &McpDetail, width: u16) -> Vec<Line<'static>> {
+    use crate::core::mcp::oauth::AuthStatus;
+    let server = &detail.server;
+    let dim = Style::new().dark_gray();
+    let good = Style::new().green();
+    let bad = Style::new().red();
+    let warn = Style::new().yellow();
+
+    let mut rows: Vec<(&str, Vec<Span<'static>>)> = Vec::new();
+
+    let status = if !server.active {
+        vec![Span::styled("- disabled", dim)]
+    } else if server.connected {
+        vec![Span::styled("✓ connected", good)]
+    } else {
+        vec![Span::styled("✗ not connected", bad)]
+    };
+    rows.push(("Status", status));
+
+    let auth = match &server.auth {
+        AuthStatus::NotApplicable => vec![Span::styled("- not required (stdio)", dim)],
+        AuthStatus::StaticHeader => {
+            vec![Span::styled("✓ Authorization header (configured)", good)]
+        }
+        AuthStatus::Authenticated { expires_at } => {
+            let mut spans = vec![Span::styled("✓ authenticated", good)];
+            if let Some(at) = expires_at {
+                spans.push(Span::styled(
+                    format!("  (expires in {})", until_label(*at)),
+                    dim,
+                ));
+            }
+            spans
+        }
+        AuthStatus::Expired { renewable, .. } => vec![Span::styled(
+            if *renewable {
+                "! expired (renewable)"
+            } else {
+                "! expired - re-authenticate"
+            },
+            warn,
+        )],
+        AuthStatus::StaleResource => vec![Span::styled(
+            "! tokens were issued for a different url",
+            warn,
+        )],
+        AuthStatus::Unauthenticated => vec![Span::styled("✗ not authenticated", bad)],
+    };
+    rows.push(("Auth", auth));
+
+    let endpoint_label = if server.transport == "stdio" {
+        "Command"
+    } else {
+        "URL"
+    };
+    rows.push((
+        endpoint_label,
+        vec![Span::styled(server.endpoint.clone(), dim)],
+    ));
+    rows.push((
+        "Config location",
+        vec![Span::styled(
+            tilde_path(&server.config_path),
+            dim,
+        )],
+    ));
+    if let Some(implementation) = &server.implementation {
+        rows.push(("Server", vec![Span::styled(implementation.clone(), dim)]));
+    }
+    if !server.capabilities.is_empty() {
+        rows.push((
+            "Capabilities",
+            vec![Span::styled(server.capabilities.join(" · "), dim)],
+        ));
+    }
+    rows.push(("Tools", vec![tools_span(&detail.tools)]));
+
+    // One label column for every row, so the values line up the way the screen
+    // is meant to read.
+    let pad = rows.iter().map(|(k, _)| k.len()).max().unwrap_or(0) + 2;
+    let mut out = vec![
+        Line::from(Span::styled(
+            server.name.clone(),
+            Style::new().cyan().bold(),
+        )),
+        Line::raw(""),
+    ];
+    for (key, value) in rows {
+        let mut spans = vec![Span::styled(
+            format!("{key}:{}", " ".repeat(pad - key.len())),
+            Style::new().bold(),
+        )];
+        spans.extend(value);
+        out.push(clamp_line(Line::from(spans), width));
+    }
+    out.push(Line::raw(""));
+    out
+}
+
+fn tools_span(tools: &ToolsState) -> Span<'static> {
+    let dim = Style::new().dark_gray();
+    match tools {
+        ToolsState::Unavailable => Span::styled("- connect to list", dim),
+        ToolsState::Loading => Span::styled("listing...", dim),
+        ToolsState::Ready(names) if names.is_empty() => {
+            Span::styled("none exposed", dim)
+        }
+        ToolsState::Ready(names) => Span::styled(format!("{} tools", names.len()), dim),
+        ToolsState::Failed(e) => Span::styled(e.clone(), Style::new().red()),
+    }
+}
+
+/// A coarse "in 42m" / "in 3h" for a unix-second deadline. Coarse on purpose:
+/// the exact second a token dies is never what the reader wants to know.
+fn until_label(expires_at: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    match expires_at.saturating_sub(now) {
+        s if s < 60 => format!("{s}s"),
+        s if s < 3600 => format!("{}m", s / 60),
+        s if s < 86400 => format!("{}h", s / 3600),
+        s => format!("{}d", s / 86400),
+    }
+}
+
+/// Truncate a composed line to `width`, so a long url or path cannot push the
+/// panel's border off the frame. Spans are kept whole where they fit and the
+/// overflowing one is cut with an ellipsis.
+///
+/// Two cells short of `width` on purpose: callers pass the *inner* width of a
+/// bordered panel, and a line that exactly fills it wraps into a second row,
+/// which pushes the action list down by one for as long as the value is long.
+///
+/// Measured in display cells, not chars: a CJK server name or an emoji in a tool
+/// name is two cells wide, so a char count would let it overrun the border.
+fn clamp_line(line: Line<'static>, width: u16) -> Line<'static> {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+    let max = width.saturating_sub(2) as usize;
+    if max == 0 {
+        return Line::raw("");
+    }
+    let total: usize = line.spans.iter().map(|s| s.content.width()).sum();
+    if total <= max {
+        return line;
+    }
+    let mut used = 0usize;
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    for span in line.spans {
+        let len = span.content.width();
+        if used + len <= max.saturating_sub(1) {
+            used += len;
+            spans.push(span);
+            continue;
+        }
+        // The ellipsis takes the last cell; a wide glyph that would straddle the
+        // boundary is dropped rather than half-drawn.
+        let room = max.saturating_sub(used + 1);
+        let mut cut = String::new();
+        let mut cut_width = 0usize;
+        for c in span.content.chars() {
+            let w = c.width().unwrap_or(0);
+            if cut_width + w > room {
+                break;
+            }
+            cut_width += w;
+            cut.push(c);
+        }
+        spans.push(Span::styled(format!("{cut}…"), span.style));
+        break;
+    }
+    Line::from(spans)
 }
 
 fn open_login_picker_at(app: &mut App, selected_provider: Option<&str>) {
@@ -10655,41 +11105,267 @@ fn open_config_screen(app: &mut App) {
     });
 }
 
-/// Persist a server's enabled flag and connect/disconnect it in the background
-/// (off the render loop, so a cold stdio spawn never freezes the UI). Later
-/// turns read the shared map fresh, so tools appear/vanish once the task lands.
-fn toggle_mcp_server(
-    app: &mut App,
-    mcp_servers: &crate::core::state::SharedMcpServers,
-    name: String,
-    enable: bool,
-) {
-    if let Err(e) = super::mcp::set_active(&name, enable) {
-        app.note(&format!("failed to update mcp_config.json: {e}"));
-        return;
+/// Run one `McpJob`. Off the render loop: every arm either talks to a peer or
+/// waits on the user's browser.
+async fn run_mcp_job(job: McpJob, servers: crate::core::state::SharedMcpServers) -> McpJobDone {
+    match job {
+        McpJob::Tools(server) => {
+            let result = super::mcp::list_tools(&server, &servers).await;
+            McpJobDone::Tools { server, result }
+        }
+        McpJob::BeginAuth(server) => {
+            let result = super::mcp::begin_auth(&server).await.map(Box::new);
+            McpJobDone::AuthStarted { server, result }
+        }
+        McpJob::Authorize { server, pending } => {
+            let result = super::mcp::finish_auth(*pending).await.map(|_| ());
+            McpJobDone::Authorized { server, result }
+        }
+        McpJob::Connect(server) => {
+            let result = connect_mcp_server(&server, &servers).await;
+            McpJobDone::Connected { server, result }
+        }
     }
-    let servers = mcp_servers.clone();
-    let task_name = name.clone();
-    tokio::spawn(async move {
-        if enable {
-            let cfg = super::mcp::list_servers()
-                .into_iter()
-                .find(|s| s.name == task_name)
-                .map(|s| s.config);
-            if let Some(cfg) = cfg {
-                if let Err(e) = super::mcp::connect(&task_name, &cfg, &servers).await {
-                    log::warn!("MCP: {e}");
-                }
+}
+
+/// Fold a finished job back into the screen. `job` is passed in so the
+/// two-phase authorization can chain its second half without going back through
+/// `mcp_job_request` -- the loop owns the slot, and round-tripping a `PendingAuth`
+/// through `App` would park a bound listener in UI state.
+async fn finish_mcp_job(
+    app: &mut App,
+    done: McpJobDone,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+    job: &mut Option<tokio::task::JoinHandle<McpJobDone>>,
+) {
+    match done {
+        McpJobDone::Tools { server, result } => {
+            // Only apply it if the screen is still showing that server: the user
+            // may have navigated on while the listing was in flight.
+            let Some(detail) = app.mcp_detail.as_mut() else {
+                return;
+            };
+            if detail.server.name != server {
+                return;
             }
-        } else {
-            super::mcp::disconnect(&task_name, &servers).await;
+            detail.tools = match result {
+                Ok(names) => ToolsState::Ready(names),
+                Err(e) => ToolsState::Failed(e),
+            };
+        }
+        McpJobDone::AuthStarted { server, result } => match result {
+            Ok(pending) => {
+                // The url reaches the transcript before anything waits on the
+                // redirect, so a headless or remote session can finish by hand.
+                app.note(&format!("sign in to authorize '{server}':"));
+                app.system_detail(vec![Span::styled(
+                    pending.authorization_url.clone(),
+                    Style::new().cyan(),
+                )]);
+                match super::browser::open(&pending.authorization_url) {
+                    Ok(()) => app.system_detail_text("opening that page in your browser"),
+                    Err(e) => {
+                        app.system_detail_text(&format!("open that URL yourself ({e})"))
+                    }
+                }
+                let servers = mcp_servers.clone();
+                *job = Some(tokio::spawn(run_mcp_job(
+                    McpJob::Authorize { server, pending },
+                    servers,
+                )));
+            }
+            Err(e) => app.note(&format!("could not start sign-in for '{server}': {e}")),
+        },
+        McpJobDone::Authorized { server, result } => match result {
+            Ok(()) => {
+                app.note(&format!("authorized '{server}' - reconnecting..."));
+                // The live connection (if any) predates the token, so it is
+                // replaced rather than left unauthorized.
+                super::mcp::disconnect(&server, mcp_servers).await;
+                let servers = mcp_servers.clone();
+                *job = Some(tokio::spawn(run_mcp_job(McpJob::Connect(server), servers)));
+            }
+            Err(e) => app.note(&format!("sign-in for '{server}' failed: {e}")),
+        },
+        McpJobDone::Connected { server, result } => {
+            match result {
+                Ok(()) => app.note(&format!("'{server}' connected")),
+                Err(e) => app.note(&format!("MCP: {e}")),
+            }
+            if app.mcp_detail.as_ref().is_some_and(|d| d.server.name == server) {
+                open_mcp_detail(app, &server, mcp_servers).await;
+            }
+        }
+    }
+}
+
+/// Open the add/edit wizard prefilled from a configured server.
+fn edit_mcp_server(app: &mut App, name: &str) {
+    match super::mcp::get_server(name) {
+        Some(entry) => {
+            app.picker = None;
+            app.mcp_detail = None;
+            app.mcp_prompt = Some(McpPrompt::from_entry(&entry));
+        }
+        None => app.note(&format!("server '{name}' no longer exists")),
+    }
+}
+
+/// Drop a server from the config and disconnect it. Its OAuth tokens go too:
+/// leaving them behind would silently re-authorize a later server that happened
+/// to reuse the name.
+async fn remove_mcp_server(
+    app: &mut App,
+    name: &str,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+) {
+    if let Err(e) = super::mcp::remove_server(name) {
+        return app.note(&format!("failed to remove '{name}': {e}"));
+    }
+    super::mcp::disconnect(name, mcp_servers).await;
+    let _ = super::mcp::clear_auth(name);
+    app.mcp_detail = None;
+    app.note(&format!("removed MCP server '{name}'"));
+}
+
+/// Run one detail-screen action. Anything that talks to a peer or waits on a
+/// browser leaves as an `McpJob` instead of running here -- `handle_key` is on
+/// the render loop.
+async fn run_mcp_action(
+    app: &mut App,
+    action: &str,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+) {
+    let Some(detail) = app.mcp_detail.as_ref() else {
+        return;
+    };
+    let name = detail.server.name.clone();
+    match action {
+        MCP_ACTION_TOOLS => show_mcp_tools(app),
+        MCP_ACTION_AUTH => {
+            app.note(&format!("starting sign-in for '{name}'..."));
+            app.mcp_job_request = Some(McpJob::BeginAuth(name));
+        }
+        MCP_ACTION_CLEAR_AUTH => {
+            match super::mcp::clear_auth(&name) {
+                Ok(true) => app.note(&format!("cleared stored credentials for '{name}'")),
+                Ok(false) => app.note(&format!("'{name}' had no stored credentials")),
+                Err(e) => app.note(&format!("could not clear credentials for '{name}': {e}")),
+            }
+            // The connection still holds the old bearer token, so it is dropped
+            // too: leaving it up would report "authenticated" work against
+            // credentials the user just asked to forget.
+            super::mcp::disconnect(&name, mcp_servers).await;
+            open_mcp_detail(app, &name, mcp_servers).await;
+        }
+        MCP_ACTION_RECONNECT => {
+            super::mcp::disconnect(&name, mcp_servers).await;
+            app.note(&format!("reconnecting '{name}'..."));
+            open_mcp_detail(app, &name, mcp_servers).await;
+            // Set after `open_mcp_detail`, which requests the tool list and
+            // would otherwise overwrite this.
+            app.mcp_job_request = Some(McpJob::Connect(name));
+        }
+        MCP_ACTION_TOGGLE => {
+            let enable = !detail.server.active;
+            let connect = set_mcp_active(app, mcp_servers, &name, enable).await;
+            open_mcp_detail(app, &name, mcp_servers).await;
+            if connect {
+                // After `open_mcp_detail`, which requests the tool list and
+                // would otherwise overwrite this.
+                app.mcp_job_request = Some(McpJob::Connect(name));
+            }
+        }
+        MCP_ACTION_EDIT => edit_mcp_server(app, &name),
+        MCP_ACTION_REMOVE => {
+            app.picker = None;
+            remove_mcp_server(app, &name, mcp_servers).await;
+        }
+        _ => {}
+    }
+}
+
+/// Write the fetched tool list into the transcript. The detail screen shows a
+/// count; the names belong in the conversation, where they scroll and persist.
+fn show_mcp_tools(app: &mut App) {
+    let Some(detail) = app.mcp_detail.as_ref() else {
+        return;
+    };
+    let name = detail.server.name.clone();
+    match &detail.tools {
+        ToolsState::Ready(names) if names.is_empty() => {
+            app.note(&format!("'{name}' exposes no tools"))
+        }
+        ToolsState::Ready(names) => {
+            let names = names.clone();
+            app.note(&format!("{} tool(s) on '{name}':", names.len()));
+            for tool in names {
+                app.system_detail_text(&tool);
+            }
+        }
+        ToolsState::Loading => app.note("still listing tools..."),
+        ToolsState::Unavailable => app.note(&format!("'{name}' is not connected")),
+        ToolsState::Failed(e) => {
+            let e = e.clone();
+            app.note(&e)
+        }
+    }
+}
+
+/// Bring one server up, reading its config fresh from disk. The single
+/// connect implementation behind every surface: the detail screen's `Reconnect`
+/// runs it as a job (so the screen refreshes), while the list's toggle and the
+/// edit wizard detach it (nothing there is waiting on the answer).
+async fn connect_mcp_server(
+    name: &str,
+    servers: &crate::core::state::SharedMcpServers,
+) -> Result<(), String> {
+    let cfg = super::mcp::list_servers()
+        .into_iter()
+        .find(|s| s.name == name)
+        .map(|s| s.config)
+        .ok_or_else(|| format!("'{name}' is no longer in mcp_config.json"))?;
+    super::mcp::connect(name, &cfg, servers)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// `connect_mcp_server`, detached: for the paths with no screen waiting on the
+/// result. Off the render loop, so a cold stdio spawn never freezes a frame.
+fn reconnect_mcp_server(mcp_servers: &crate::core::state::SharedMcpServers, name: String) {
+    let servers = mcp_servers.clone();
+    tokio::spawn(async move {
+        if let Err(e) = connect_mcp_server(&name, &servers).await {
+            log::warn!("MCP: {e}");
         }
     });
-    app.note(&if enable {
-        format!("enabling MCP server '{name}'...")
+}
+
+/// Persist a server's enabled flag, tear down its connection when disabling,
+/// and say so. Returns whether the caller now owes a *connect* -- which it
+/// does, rather than connecting here, because the two callers want it delivered
+/// differently: the list detaches it, the detail screen runs it as a job so the
+/// screen can refresh when it lands.
+///
+/// Later turns read the shared map fresh, so tools appear/vanish once that
+/// connect completes.
+async fn set_mcp_active(
+    app: &mut App,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+    name: &str,
+    enable: bool,
+) -> bool {
+    if let Err(e) = super::mcp::set_active(name, enable) {
+        app.note(&format!("failed to update mcp_config.json: {e}"));
+        return false;
+    }
+    if enable {
+        app.note(&format!("enabling MCP server '{name}'..."));
     } else {
-        format!("disabled MCP server '{name}'")
-    });
+        super::mcp::disconnect(name, mcp_servers).await;
+        app.note(&format!("disabled MCP server '{name}'"));
+    }
+    enable
 }
 
 /// Resolve a thread by id (exact or unique prefix), load its messages into the
@@ -11451,7 +12127,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     if let Some(picker) = &app.picker {
         app.row_index.clear();
         let toml_path = app.agent_dir.join("agent.toml");
-        draw_picker(f, chunks[1], picker, &toml_path);
+        draw_picker(f, chunks[1], picker, &toml_path, app.mcp_detail.as_ref());
         f.render_widget(input_box(app), chunks[2]);
         f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
         return;
@@ -12644,6 +13320,7 @@ fn draw_picker(
     area: ratatui::layout::Rect,
     picker: &Picker,
     toml_path: &std::path::Path,
+    mcp_detail: Option<&McpDetail>,
 ) {
     use ratatui::widgets::{List, ListItem, ListState};
 
@@ -12724,6 +13401,34 @@ fn draw_picker(
                 },
             );
         }
+    } else if let (PickerKind::McpServer, Some(detail)) = (picker.kind, mcp_detail) {
+        // The info block and the actions share one border: they are one screen,
+        // and two stacked frames would read as two unrelated panels.
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(picker.title());
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let info = mcp_detail_lines(detail, inner.width);
+        // A frame too short for the whole block gives its rows to the actions:
+        // an info line the user cannot act on is worth less than the action row
+        // it would displace.
+        let info_h = (info.len() as u16).min(inner.height.saturating_sub(1));
+        let (info_area, list_area) = (
+            Rect { height: info_h, ..inner },
+            Rect {
+                y: inner.y + info_h,
+                height: inner.height - info_h,
+                ..inner
+            },
+        );
+        f.render_widget(Paragraph::new(info), info_area);
+        f.render_stateful_widget(
+            list.block(Block::default()),
+            list_area,
+            &mut state,
+        );
     } else {
         f.render_stateful_widget(list, area, &mut state);
     }
@@ -13634,6 +14339,12 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
 
 #[cfg(test)]
 mod tests {
+
+    /// An empty MCP map, for the `run_command`/`handle_key` paths that take one
+    /// but whose behaviour under test has nothing to do with MCP.
+    fn no_mcp() -> crate::core::state::SharedMcpServers {
+        std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()))
+    }
     use super::SessionLimits;
     use super::{
         age_closed_todos, apply_resume, assistant_is_awaiting_user_answer, brand, build_user_message,
@@ -13891,7 +14602,7 @@ mod tests {
     #[tokio::test]
     async fn update_command_requests_an_install_once() {
         let mut app = test_app();
-        run_command(&mut app, "update").await;
+        run_command(&mut app, "update", &no_mcp()).await;
         assert!(app.update_requested, "the loop should pick up the request");
         assert!(
             transcript_text(&app).contains("downloading"),
@@ -13902,7 +14613,7 @@ mod tests {
         // concurrent install (two processes rewriting the same binary).
         app.update_installing = true;
         app.update_requested = false;
-        run_command(&mut app, "update").await;
+        run_command(&mut app, "update", &no_mcp()).await;
         assert!(!app.update_requested);
         assert!(transcript_text(&app).contains("already installing"));
     }
@@ -16582,7 +17293,7 @@ mod tests {
     async fn help_login_copy_describes_provider_sign_in_without_stale_tokamak_key_copy() {
         let mut app = test_app();
 
-        run_command(&mut app, "help").await;
+        run_command(&mut app, "help", &no_mcp()).await;
 
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("/login"), "{text}");
@@ -18890,7 +19601,7 @@ mod tests {
             let mut app = test_app();
             // `with_temp_home` is sync; drive the async command on a dedicated runtime.
             let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(super::run_command(&mut app, "model"));
+            rt.block_on(super::run_command(&mut app, "model", &no_mcp()));
 
             let picker = app.model_picker.as_ref().expect("model picker opened");
             assert!(
@@ -18926,7 +19637,7 @@ mod tests {
 
             let mut app = test_app();
             let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(super::run_command(&mut app, "model"));
+            rt.block_on(super::run_command(&mut app, "model", &no_mcp()));
 
             // The picker opened (no reachable pairs => the note path fires,
             // but there is no panic, no hang, and the provider stays put).
@@ -18935,7 +19646,7 @@ mod tests {
 
             // Opening once more must not re-contact the dead endpoint: the
             // session short-circuit means the second open is near-instant.
-            rt.block_on(super::run_command(&mut app, "model"));
+            rt.block_on(super::run_command(&mut app, "model", &no_mcp()));
         });
     }
 
@@ -21586,7 +22297,7 @@ mod tests {
     async fn compact_command_notes_when_unavailable() {
         let mut app = test_app();
         app.history.push(json!({ "role": "user", "content": "hi" }));
-        run_command(&mut app, "compact").await;
+        run_command(&mut app, "compact", &no_mcp()).await;
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("compaction unavailable"), "got: {text}");
         // History untouched when no session is attached.
@@ -21598,7 +22309,7 @@ mod tests {
     async fn compact_command_is_refused_while_one_is_in_flight() {
         let mut app = test_app();
         app.compacting = Some(CompactKind::Auto);
-        run_command(&mut app, "compact").await;
+        run_command(&mut app, "compact", &no_mcp()).await;
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("already compacting"), "got: {text}");
         assert!(app.compact_request.is_none());
@@ -22858,7 +23569,7 @@ mod tests {
     #[tokio::test]
     async fn help_lists_every_keybinding() {
         let mut app = test_app();
-        run_command(&mut app, "help").await;
+        run_command(&mut app, "help", &no_mcp()).await;
         let text: String = app.transcript.iter().map(row_text).collect();
         for (keys, description) in KEY_BINDINGS {
             assert!(text.contains(keys), "missing keys {keys:?} in: {text}");
@@ -22977,7 +23688,7 @@ mod tests {
     #[tokio::test]
     async fn goal_set_stores_condition_and_starts_a_turn() {
         let mut app = test_app();
-        run_command(&mut app, "goal all tests in test/auth pass").await;
+        run_command(&mut app, "goal all tests in test/auth pass", &no_mcp()).await;
         let goal = app.goal.as_ref().expect("goal should be set");
         assert_eq!(goal.condition, "all tests in test/auth pass");
         assert!(goal.is_active());
@@ -22998,7 +23709,7 @@ mod tests {
     async fn goal_clear_removes_active_goal() {
         let mut app = test_app();
         app.goal = Some(crate::core::agent::goal::GoalState::new("x"));
-        run_command(&mut app, "goal clear").await;
+        run_command(&mut app, "goal clear", &no_mcp()).await;
         assert!(app.goal.is_none());
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("goal cleared"), "missing note: {text}");
@@ -23007,7 +23718,7 @@ mod tests {
     #[tokio::test]
     async fn goal_clear_with_no_goal_notes() {
         let mut app = test_app();
-        run_command(&mut app, "goal clear").await;
+        run_command(&mut app, "goal clear", &no_mcp()).await;
         assert!(app.goal.is_none());
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("no active goal"), "missing note: {text}");
@@ -23020,7 +23731,7 @@ mod tests {
         goal.turns = 3;
         goal.last_reason = "two files still modified".into();
         app.goal = Some(goal);
-        run_command(&mut app, "goal").await;
+        run_command(&mut app, "goal", &no_mcp()).await;
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("make git status clean"), "condition: {text}");
         assert!(text.contains("turns: 3"), "turn count: {text}");
@@ -23030,7 +23741,7 @@ mod tests {
     #[tokio::test]
     async fn goal_status_with_no_goal_notes() {
         let mut app = test_app();
-        run_command(&mut app, "goal").await;
+        run_command(&mut app, "goal", &no_mcp()).await;
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("no active goal"), "missing note: {text}");
     }
@@ -23038,7 +23749,7 @@ mod tests {
     #[tokio::test]
     async fn effort_command_reports_current_level() {
         let mut app = test_app();
-        run_command(&mut app, "effort").await;
+        run_command(&mut app, "effort", &no_mcp()).await;
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("medium"), "default level not reported: {text}");
     }
@@ -23046,7 +23757,7 @@ mod tests {
     #[tokio::test]
     async fn effort_command_sets_valid_level() {
         let mut app = test_app();
-        run_command(&mut app, "effort high").await;
+        run_command(&mut app, "effort high", &no_mcp()).await;
         assert_eq!(app.reasoning_effort, "high");
         assert_eq!(app.last_non_low_effort, "high");
         let text: String = app.transcript.iter().map(row_text).collect();
@@ -23056,7 +23767,7 @@ mod tests {
     #[tokio::test]
     async fn effort_command_rejects_unknown_level() {
         let mut app = test_app();
-        run_command(&mut app, "effort turbo").await;
+        run_command(&mut app, "effort turbo", &no_mcp()).await;
         assert_eq!(app.reasoning_effort, "medium", "invalid level must not apply");
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("unknown effort level"), "missing note: {text}");
@@ -23201,9 +23912,9 @@ mod tests {
     async fn plan_command_enters_and_exits_while_idle() {
         use crate::core::agent::plan::RunMode;
         let mut app = test_app();
-        run_command(&mut app, "plan").await;
+        run_command(&mut app, "plan", &no_mcp()).await;
         assert_eq!(app.run_mode, RunMode::Plan);
-        run_command(&mut app, "plan exit").await;
+        run_command(&mut app, "plan exit", &no_mcp()).await;
         assert_eq!(app.run_mode, RunMode::Normal);
     }
 
@@ -23212,7 +23923,7 @@ mod tests {
         use crate::core::agent::plan::RunMode;
         let mut app = test_app();
         app.status = Status::Running;
-        run_command(&mut app, "plan").await;
+        run_command(&mut app, "plan", &no_mcp()).await;
         assert_eq!(app.run_mode, RunMode::Normal, "must not switch mid-turn");
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("only settable while idle"), "note: {text}");
@@ -23225,6 +23936,7 @@ mod tests {
         run_command(
             &mut app,
             "plan make a html cat slide. use 3 subagents to research",
+            &no_mcp(),
         )
         .await;
         assert_eq!(
@@ -23245,7 +23957,7 @@ mod tests {
         use crate::core::agent::plan::RunMode;
         let mut app = test_app();
         app.run_mode = RunMode::Plan;
-        run_command(&mut app, "plan investigate the auth module").await;
+        run_command(&mut app, "plan investigate the auth module", &no_mcp()).await;
         assert_eq!(app.run_mode, RunMode::Plan);
         assert_eq!(app.status, Status::Running);
         let text: String = app.transcript.iter().map(row_text).collect();
@@ -24011,7 +24723,7 @@ mod tests {
     async fn todo_editor_mutations_update_the_canonical_list() {
         let mut app = test_app();
         // Add through the same `append` op the model uses.
-        run_command(&mut app, "todo add Build | ship it").await;
+        run_command(&mut app, "todo add Build | ship it", &no_mcp()).await;
         assert_eq!(app.todos.done_total(), (0, 1));
         assert_eq!(app.todos.active().unwrap().1.content, "ship it");
         // Mark it done via the editor helper; the projection reflects it.
@@ -24028,23 +24740,23 @@ mod tests {
     #[tokio::test]
     async fn todo_clear_command_empties_the_whole_list() {
         let mut app = test_app();
-        run_command(&mut app, "todo add Build | ship it").await;
-        run_command(&mut app, "todo add Build | and this").await;
+        run_command(&mut app, "todo add Build | ship it", &no_mcp()).await;
+        run_command(&mut app, "todo add Build | and this", &no_mcp()).await;
         assert_eq!(app.todos.done_total(), (0, 2));
 
-        run_command(&mut app, "todo clear").await;
+        run_command(&mut app, "todo clear", &no_mcp()).await;
         assert!(app.todos.is_empty(), "{:?}", app.todos);
 
         // Clearing an already-empty list is a no-op note, not an error.
-        run_command(&mut app, "todo clear").await;
+        run_command(&mut app, "todo clear", &no_mcp()).await;
         assert!(app.todos.is_empty());
     }
 
     #[tokio::test]
     async fn todo_command_bare_opens_editor_overlay() {
         let mut app = test_app();
-        run_command(&mut app, "todo add first").await;
-        run_command(&mut app, "todo").await;
+        run_command(&mut app, "todo add first", &no_mcp()).await;
+        run_command(&mut app, "todo", &no_mcp()).await;
         assert!(matches!(
             app.picker.as_ref().map(|p| p.kind),
             Some(PickerKind::Todo)
@@ -24209,7 +24921,7 @@ mod tests {
         app.tokens = 42;
         app.push(Line::raw("old content"));
 
-        run_command(&mut app, "new").await;
+        run_command(&mut app, "new", &no_mcp()).await;
 
         assert!(app.history.is_empty());
         assert!(app.thread_id.is_none(), "must detach from the saved thread");
@@ -24231,7 +24943,7 @@ mod tests {
         app.approval_phrasing = "--safe: approval needed".to_string();
         app.push(Line::raw("old content"));
 
-        run_command(&mut app, "clear").await;
+        run_command(&mut app, "clear", &no_mcp()).await;
 
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(
@@ -24700,7 +25412,7 @@ mod tests {
             "---\ndescription: Build a feature\n---\nBuild: $ARGUMENTS",
         );
         // Plain short form.
-        run_command(&mut app, "feature-dev add auth").await;
+        run_command(&mut app, "feature-dev add auth", &no_mcp()).await;
         let user = app.history.iter().last().unwrap();
         assert!(
             user.get("content")
@@ -24714,7 +25426,7 @@ mod tests {
             transcript_text(&app)
         );
         // Explicit qualified form.
-        run_command(&mut app, "command:feature-dev:feature-dev fix tests").await;
+        run_command(&mut app, "command:feature-dev:feature-dev fix tests", &no_mcp()).await;
         let user = app.history.iter().last().unwrap();
         assert!(
             user.get("content")
@@ -24723,7 +25435,7 @@ mod tests {
             "explicit dispatch: {user}"
         );
         // Unknown command still notes.
-        run_command(&mut app, "warp_drive").await;
+        run_command(&mut app, "warp_drive", &no_mcp()).await;
         assert!(transcript_text(&app).contains("unknown command '/warp_drive'"));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -24836,14 +25548,14 @@ mod tests {
         // the TUI); it hands the spec to the loop, which runs the install off
         // the render loop. Drive the handoff: the request is recorded, a second
         // is refused while one is in flight, and the loop clears it on pick-up.
-        run_command(&mut app, &format!("plugin install file://{}", repo.display())).await;
+        run_command(&mut app, &format!("plugin install file://{}", repo.display()), &no_mcp()).await;
         assert!(
             app.plugin_install_request.is_some(),
             "install spec should be handed to the loop"
         );
         assert!(transcript_text(&app).contains("installing plugin..."), "{}", transcript_text(&app));
         app.plugin_installing = true;
-        run_command(&mut app, "plugin install file://nowhere").await;
+        run_command(&mut app, "plugin install file://nowhere", &no_mcp()).await;
         assert!(
             transcript_text(&app).contains("already in progress"),
             "a second /plugin install must be refused: {}",
@@ -24867,7 +25579,7 @@ mod tests {
             crate::core::agent::skills::plugins_dir(&root).join(".installing-stale"),
         )
         .unwrap();
-        run_command(&mut app, "plugin list").await;
+        run_command(&mut app, "plugin list", &no_mcp()).await;
         let text = transcript_text(&app);
         assert!(
             text.contains("plugin release-tools (v1.2.0 - 1 skill)"),
@@ -24876,12 +25588,12 @@ mod tests {
         assert!(!text.contains("Release automation"), "{text}");
         assert!(!text.contains("release-tools:prepare"), "{text}");
 
-        run_command(&mut app, "plugin list release-tools").await;
+        run_command(&mut app, "plugin list release-tools", &no_mcp()).await;
         let detail = transcript_text(&app);
         assert!(detail.contains("Release automation"), "{detail}");
         assert!(detail.contains("release-tools:prepare"), "{detail}");
 
-        run_command(&mut app, "plugin list missing").await;
+        run_command(&mut app, "plugin list missing", &no_mcp()).await;
         assert!(
             transcript_text(&app).contains("plugin 'missing' is not installed"),
             "{}",
@@ -24890,20 +25602,20 @@ mod tests {
 
         // The installed plugin's skill resolves and dispatches like a project
         // skill (qualified form here; the short form is covered by unit tests).
-        run_command(&mut app, "release-tools:prepare").await;
+        run_command(&mut app, "release-tools:prepare", &no_mcp()).await;
         assert!(
             transcript_text(&app).contains("[skill:release-tools:prepare]"),
             "dispatch: {}",
             transcript_text(&app)
         );
 
-        run_command(&mut app, "plugin remove release-tools").await;
+        run_command(&mut app, "plugin remove release-tools", &no_mcp()).await;
         assert!(
             transcript_text(&app).contains("removed plugin 'release-tools'"),
             "remove note: {}",
             transcript_text(&app)
         );
-        run_command(&mut app, "plugin list").await;
+        run_command(&mut app, "plugin list", &no_mcp()).await;
         assert!(
             transcript_text(&app).contains("no plugins installed"),
             "empty list: {}",
@@ -24990,7 +25702,7 @@ mod tests {
     #[tokio::test]
     async fn run_command_dispatches_installed_skill() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
-        run_command(&mut app, "deploy").await;
+        run_command(&mut app, "deploy", &no_mcp()).await;
         assert!(
             transcript_text(&app).contains("[skill:deploy]"),
             "compact row: {}",
@@ -25017,7 +25729,7 @@ mod tests {
     #[tokio::test]
     async fn run_command_threads_skill_args() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
-        run_command(&mut app, "deploy staging --force").await;
+        run_command(&mut app, "deploy staging --force", &no_mcp()).await;
         let user = app
             .history
             .iter()
@@ -25041,13 +25753,13 @@ mod tests {
         // A skill named like a builtin command: the short form runs the
         // command; `/skill:cancel` still reaches the skill.
         let (mut app, root) = skill_test_app("cancel", "Cancels things.");
-        run_command(&mut app, "cancel").await;
+        run_command(&mut app, "cancel", &no_mcp()).await;
         assert!(
             !transcript_text(&app).contains("[skill:cancel]"),
             "command wins the short form: {}",
             transcript_text(&app)
         );
-        run_command(&mut app, "skill:cancel").await;
+        run_command(&mut app, "skill:cancel", &no_mcp()).await;
         assert!(transcript_text(&app).contains("[skill:cancel]"));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -25098,7 +25810,7 @@ mod tests {
     #[tokio::test]
     async fn run_command_unknown_still_notes() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
-        run_command(&mut app, "warp_drive").await;
+        run_command(&mut app, "warp_drive", &no_mcp()).await;
         assert!(transcript_text(&app).contains("unknown command '/warp_drive'"));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -25925,7 +26637,7 @@ mod tests {
     async fn probe_blocks() {
         let mut app = test_app();
         app.note("conversation cleared");
-        run_command(&mut app, "help").await;
+        run_command(&mut app, "help", &no_mcp()).await;
         for l in render_rows(&mut app, 84, 40) {
             println!("|{}", l.trim_end());
         }
@@ -26174,4 +26886,393 @@ mod tests {
             assert!(app.picker.is_none());
         });
     }
+
+    // --- `/mcp` management screen -------------------------------------------
+
+    /// Write an `mcp_config.json` with the given servers into the redirected
+    /// data folder, so the `/mcp` screen reads a real config.
+    fn write_mcp_config(folder: &std::path::Path, servers: serde_json::Value) {
+        std::fs::write(
+            folder.join("mcp_config.json"),
+            serde_json::to_string(&serde_json::json!({
+                "mcpServers": servers,
+                "mcpSettings": {},
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn rt() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    /// The regression this whole screen exists for: a fresh install used to get
+    /// a note and no screen, so `a` (add) -- the only thing that could fix the
+    /// empty state -- was unreachable.
+    #[test]
+    fn the_mcp_screen_opens_on_a_watermark_row_when_nothing_is_configured() {
+        crate::core::app::commands::with_temp_data_folder(|_| {
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_picker(&mut app, &no_mcp()));
+
+            let picker = app.picker.as_ref().expect("the screen opens even so");
+            assert_eq!(picker.kind, PickerKind::ToggleMcp);
+            assert_eq!(picker.items.len(), 1);
+            assert!(picker.items[0].label.contains("press a to add"));
+            // An empty value marks the row inert, the way the provider screen's
+            // watermark does.
+            assert!(picker.items[0].value.is_empty());
+            assert!(picker.action_hint().contains("a add"));
+        });
+    }
+
+    #[test]
+    fn the_mcp_screen_lists_configured_servers_with_their_state() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "files": { "command": "npx", "args": ["-y", "files"], "active": true },
+                    "remote": { "type": "http", "url": "https://x/mcp", "active": false },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_picker(&mut app, &no_mcp()));
+
+            let items = &app.picker.as_ref().unwrap().items;
+            assert_eq!(items.len(), 2);
+            // Sorted by name, so the order is stable across runs.
+            assert_eq!(items[0].value, "files");
+            assert_eq!(items[0].checkbox, Some(true));
+            assert!(items[0].label.contains("not connected"), "{}", items[0].label);
+            assert_eq!(items[1].value, "remote");
+            assert_eq!(items[1].checkbox, Some(false));
+            assert!(items[1].label.contains("disabled"), "{}", items[1].label);
+        });
+    }
+
+    /// An http server with no stored tokens reads as `needs auth` rather than
+    /// the bare `not connected` a stdio server gets: the two have different
+    /// fixes.
+    #[test]
+    fn an_unauthenticated_remote_server_is_labelled_needs_auth() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "remote": { "type": "http", "url": "https://x/mcp", "active": true },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_picker(&mut app, &no_mcp()));
+            assert!(app.picker.as_ref().unwrap().items[0]
+                .label
+                .contains("needs auth"));
+        });
+    }
+
+    #[test]
+    fn the_detail_screen_shows_status_auth_and_where_the_config_lives() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "remote": { "type": "http", "url": "https://x/mcp", "active": true },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_detail(&mut app, "remote", &no_mcp()));
+
+            assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::McpServer);
+            let detail = app.mcp_detail.as_ref().expect("detail is held on App");
+            let text: String = super::mcp_detail_lines(detail, 120)
+                .iter()
+                .map(|l| {
+                    l.spans
+                        .iter()
+                        .map(|s| s.content.as_ref())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            assert!(text.contains("remote"), "{text}");
+            assert!(text.contains("Status:"), "{text}");
+            assert!(text.contains("not connected"), "{text}");
+            assert!(text.contains("Auth:"), "{text}");
+            assert!(text.contains("not authenticated"), "{text}");
+            assert!(text.contains("URL:"), "{text}");
+            assert!(text.contains("https://x/mcp"), "{text}");
+            assert!(text.contains("Config location:"), "{text}");
+            assert!(text.contains("mcp_config.json"), "{text}");
+            assert!(text.contains("Tools:"), "{text}");
+        });
+    }
+
+    /// A stdio server has no HTTP transport, so the auth rows are absent rather
+    /// than present-and-inert; and a disconnected server has no tools to view.
+    #[test]
+    fn detail_actions_are_filtered_to_what_the_server_can_actually_do() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "files": { "command": "npx", "args": [], "active": true },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_detail(&mut app, "files", &no_mcp()));
+
+            let values: Vec<&str> = app
+                .picker
+                .as_ref()
+                .unwrap()
+                .items
+                .iter()
+                .map(|i| i.value.as_str())
+                .collect();
+            assert!(!values.contains(&super::MCP_ACTION_AUTH), "{values:?}");
+            assert!(!values.contains(&super::MCP_ACTION_CLEAR_AUTH), "{values:?}");
+            // Not connected, so there is nothing to list.
+            assert!(!values.contains(&super::MCP_ACTION_TOOLS), "{values:?}");
+            assert!(values.contains(&super::MCP_ACTION_TOGGLE), "{values:?}");
+            assert!(values.contains(&super::MCP_ACTION_EDIT), "{values:?}");
+            assert!(values.contains(&super::MCP_ACTION_REMOVE), "{values:?}");
+            // An active server can be reconnected; the label reads Disable.
+            assert!(values.contains(&super::MCP_ACTION_RECONNECT), "{values:?}");
+            let toggle = app
+                .picker
+                .as_ref()
+                .unwrap()
+                .items
+                .iter()
+                .find(|i| i.value == super::MCP_ACTION_TOGGLE)
+                .unwrap();
+            assert_eq!(toggle.label, "Disable");
+            // Rows are numbered, as the screen is meant to read.
+            assert_eq!(app.picker.as_ref().unwrap().items[0].hint.as_deref(), Some("1."));
+        });
+    }
+
+    #[test]
+    fn a_remote_server_offers_authenticate_and_no_clear_until_there_is_something_to_clear() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "remote": { "type": "http", "url": "https://x/mcp", "active": false },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_detail(&mut app, "remote", &no_mcp()));
+
+            let items = &app.picker.as_ref().unwrap().items;
+            let auth = items
+                .iter()
+                .find(|i| i.value == super::MCP_ACTION_AUTH)
+                .expect("an unauthenticated remote can sign in");
+            assert_eq!(auth.label, "Authenticate");
+            assert!(!items.iter().any(|i| i.value == super::MCP_ACTION_CLEAR_AUTH));
+            // Inactive, so Reconnect is not offered and the toggle reads Enable.
+            assert!(!items.iter().any(|i| i.value == super::MCP_ACTION_RECONNECT));
+            assert_eq!(
+                items
+                    .iter()
+                    .find(|i| i.value == super::MCP_ACTION_TOGGLE)
+                    .unwrap()
+                    .label,
+                "Enable"
+            );
+        });
+    }
+
+    /// A hand-written `Authorization` header is the user's own credential: OAuth
+    /// must not offer to replace it, because doing so would break it.
+    #[test]
+    fn a_hand_written_authorization_header_suppresses_the_oauth_actions() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "remote": {
+                        "type": "http",
+                        "url": "https://x/mcp",
+                        "headers": { "Authorization": "Bearer mine" },
+                        "active": true,
+                    },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_detail(&mut app, "remote", &no_mcp()));
+            let items = &app.picker.as_ref().unwrap().items;
+            assert!(!items.iter().any(|i| i.value == super::MCP_ACTION_AUTH));
+            assert!(!items.iter().any(|i| i.value == super::MCP_ACTION_CLEAR_AUTH));
+        });
+    }
+
+    /// The watermark row is inert: Enter must not open a detail screen for the
+    /// empty string, and Space must not try to toggle it.
+    #[test]
+    fn the_watermark_row_does_nothing_on_enter_or_space() {
+        crate::core::app::commands::with_temp_data_folder(|_| {
+            let registry: PermissionRegistry =
+                std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+            let mut current: Option<CurrentRun> = None;
+            let mut app = test_app();
+            let servers = no_mcp();
+            rt().block_on(async {
+                super::open_mcp_picker(&mut app, &servers).await;
+                for code in [KeyCode::Enter, KeyCode::Char(' ')] {
+                    handle_key(
+                        &mut app,
+                        KeyEvent::new(code, KeyModifiers::NONE),
+                        &registry,
+                        &mut current,
+                        &servers,
+                    )
+                    .await;
+                    assert!(app.mcp_detail.is_none(), "{code:?} opened a detail screen");
+                    assert_eq!(
+                        app.picker.as_ref().map(|p| p.kind),
+                        Some(PickerKind::ToggleMcp),
+                        "{code:?} left the list"
+                    );
+                }
+            });
+        });
+    }
+
+    /// Esc on the detail screen steps back up to the list rather than closing
+    /// `/mcp` outright.
+    #[test]
+    fn esc_on_the_detail_screen_returns_to_the_server_list() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "files": { "command": "npx", "args": [], "active": true },
+                }),
+            );
+            let registry: PermissionRegistry =
+                std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+            let mut current: Option<CurrentRun> = None;
+            let mut app = test_app();
+            let servers = no_mcp();
+            rt().block_on(async {
+                super::open_mcp_detail(&mut app, "files", &servers).await;
+                assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::McpServer);
+
+                handle_key(
+                    &mut app,
+                    KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+                    &registry,
+                    &mut current,
+                    &servers,
+                )
+                .await;
+                assert_eq!(
+                    app.picker.as_ref().map(|p| p.kind),
+                    Some(PickerKind::ToggleMcp),
+                    "Esc should step back, not close"
+                );
+                assert!(app.mcp_detail.is_none());
+            });
+        });
+    }
+
+    /// Removing a server takes its tokens with it: a later server reusing the
+    /// name must not silently inherit someone else's authorization.
+    #[test]
+    fn removing_a_server_also_forgets_its_stored_credentials() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "remote": { "type": "http", "url": "https://x/mcp", "active": false },
+                }),
+            );
+            // A credential file the removal must clean up. Spelled out rather
+            // than stubbed: an unparseable record would read as an empty store
+            // and the assertion would pass without the removal doing anything.
+            let store = folder.join("mcp_oauth.json");
+            std::fs::write(
+                &store,
+                serde_json::to_string(&serde_json::json!({
+                    "remote": {
+                        "client_id": "c1",
+                        "tokens": {
+                            "access_token": "at",
+                            "token_type": "bearer",
+                            "expires_in": 3600
+                        },
+                        "expires_at": 9_999_999_999u64,
+                        "resource": "https://x/mcp"
+                    }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            // The fixture must actually load, or this test proves nothing.
+            assert!(super::super::mcp::auth_status(
+                "remote",
+                &serde_json::json!({ "type": "http", "url": "https://x/mcp" })
+            ) != crate::core::mcp::oauth::AuthStatus::Unauthenticated);
+
+            let mut app = test_app();
+            rt().block_on(super::remove_mcp_server(&mut app, "remote", &no_mcp()));
+
+            assert!(super::super::mcp::get_server("remote").is_none());
+            let left = std::fs::read_to_string(&store).unwrap_or_default();
+            assert!(!left.contains("remote"), "credentials survived: {left}");
+        });
+    }
+
+    /// The detail screen must open in one frame, so the tool list is requested
+    /// as a job rather than awaited inline.
+    #[test]
+    fn a_connected_servers_tool_list_is_requested_as_a_job_not_awaited() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "files": { "command": "npx", "args": [], "active": true },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_detail(&mut app, "files", &no_mcp()));
+            // Not connected here, so nothing is requested and the state says why.
+            assert!(app.mcp_job_request.is_none());
+            assert!(matches!(
+                app.mcp_detail.as_ref().unwrap().tools,
+                super::ToolsState::Unavailable
+            ));
+        });
+    }
+
+    #[test]
+    fn a_long_value_is_clamped_instead_of_pushing_the_border_off_the_frame() {
+        use ratatui::text::Span;
+        let line = Line::from(vec![
+            Span::raw("URL:  "),
+            Span::raw("x".repeat(400)),
+        ]);
+        let clamped = super::clamp_line(line, 40);
+        let width: usize = clamped
+            .spans
+            .iter()
+            .map(|s| s.content.chars().count())
+            .sum();
+        assert!(width <= 38, "clamped to {width}");
+        assert!(clamped
+            .spans
+            .last()
+            .unwrap()
+            .content
+            .ends_with('\u{2026}'));
+    }
+
 }
