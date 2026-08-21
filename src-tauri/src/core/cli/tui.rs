@@ -1632,6 +1632,85 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 /// Milliseconds per spinner frame, decoupled from the 50ms render tick.
 const SPINNER_ADVANCE_MS: u64 = 80;
 
+/// Sweep the configured glyph back and forth along `message`, replacing the
+/// characters it covers rather than displacing them.
+///
+/// The first cut of this (#8726) inserted the glyph in place of exactly one
+/// `char`. An emoji is two cells wide, so every frame made the row one cell
+/// wider than the text it was drawn from: the tail shifted right, and at the
+/// frame's own width the last character fell off the edge. That is the
+/// "letters vanish" bug the feature was reverted for.
+///
+/// The fix is to spend the glyph's *display width* out of the message: a
+/// 2-cell glyph covers two 1-cell characters, so the composed line is always
+/// exactly as wide as `message`. Whatever the user configured is measured, so a
+/// 1-cell `"~"` covers one character and a 3-cell `"<o>"` covers three.
+///
+/// The glyph is clamped to the message rather than allowed to overhang, so the
+/// last frames of a sweep do not grow the row either.
+fn wave_sweep_line(message: &str, glyph: &str, frame: usize, text_style: Style) -> Line<'static> {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+    let glyph_width = glyph.width().max(1);
+    let chars: Vec<char> = message.chars().collect();
+    // Character offsets the glyph can start at without overhanging the end.
+    let mut stops: Vec<usize> = Vec::new();
+    for i in 0..chars.len() {
+        let mut width = 0usize;
+        for c in &chars[i..] {
+            width += c.width().unwrap_or(0);
+            if width >= glyph_width {
+                break;
+            }
+        }
+        if width >= glyph_width {
+            stops.push(i);
+        }
+    }
+    if stops.is_empty() {
+        return Line::from(vec![Span::styled(message.to_string(), text_style)]);
+    }
+
+    // Ping-pong across the stops: forward to the end, then back, so the glyph
+    // reverses instead of jumping back to the start.
+    let cycle = stops.len().saturating_mul(2).saturating_sub(2).max(1);
+    let step = frame % cycle;
+    let index = if step < stops.len() {
+        step
+    } else {
+        cycle - step
+    };
+    let start = stops[index];
+
+    // Spend the glyph's width out of the message, so the row's total width is
+    // unchanged no matter how wide the glyph is.
+    let mut end = start;
+    let mut spent = 0usize;
+    while end < chars.len() && spent < glyph_width {
+        spent += chars[end].width().unwrap_or(0);
+        end += 1;
+    }
+
+    let head: String = chars[..start].iter().collect();
+    let tail: String = chars[end..].iter().collect();
+    // A glyph landing on a wider character than itself leaves a gap; pad it so
+    // the tail does not slide left under the glyph.
+    let pad = " ".repeat(spent.saturating_sub(glyph_width));
+
+    let mut spans = Vec::with_capacity(4);
+    if !head.is_empty() {
+        spans.push(Span::styled(head, text_style));
+    }
+    spans.push(Span::styled(glyph.to_string(), Style::new().cyan()));
+    if !pad.is_empty() {
+        spans.push(Span::styled(pad, text_style));
+    }
+    if !tail.is_empty() {
+        spans.push(Span::styled(tail, text_style));
+    }
+    Line::from(spans)
+}
+
 /// Rotating action words for the running input placeholder, replacing a static
 /// "working…" so a long turn does not read as a hung UI.
 const WORKING_WORDS: [&str; 12] = [
@@ -5564,6 +5643,43 @@ fn think_tags_parsed() -> bool {
         }
     }
     PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The glyph swept along the working row, or `None` for the static throbber.
+/// Process-wide for the same reason as `PARSE_THINK_TAGS`: `input_box` is a free
+/// function with no session in hand. Read once on first use rather than per
+/// frame, since the row redraws every 50ms and this would otherwise be a file
+/// read on each one.
+static WAVE_GLYPH: std::sync::LazyLock<Option<String>> =
+    std::sync::LazyLock::new(crate::core::agent::global_config::wave_glyph);
+
+#[cfg(test)]
+thread_local! {
+    /// Per-test override, for the same reason as `PARSE_THINK_TAGS_OVERRIDE`: a
+    /// test sets its own thread's glyph rather than the shared cell, which is
+    /// resolved once per process and reads the real `~/.jan/config.toml`.
+    static WAVE_GLYPH_OVERRIDE: std::cell::RefCell<Option<Option<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn wave_glyph() -> Option<String> {
+    #[cfg(test)]
+    {
+        if let Some(over) = WAVE_GLYPH_OVERRIDE.with(|c| c.borrow().clone()) {
+            return over;
+        }
+    }
+    WAVE_GLYPH.clone()
+}
+
+/// Run `f` with `glyph` as this thread's wave setting.
+#[cfg(test)]
+fn with_wave_glyph<T>(glyph: Option<&str>, f: impl FnOnce() -> T) -> T {
+    let value = glyph.map(str::to_string);
+    WAVE_GLYPH_OVERRIDE.with(|c| *c.borrow_mut() = Some(value));
+    let out = f();
+    WAVE_GLYPH_OVERRIDE.with(|c| *c.borrow_mut() = None);
+    out
 }
 
 /// Run `f` with `<think>` parsing off on this thread only.
@@ -12987,15 +13103,27 @@ fn input_box(app: &App) -> Paragraph<'static> {
                     Style::new().dim().italic(),
                 )
             };
-            Paragraph::new(Line::from(vec![
-                Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
-                Span::styled(format!("{word}…"), style),
-                Span::styled(
-                    " (Esc to cancel, type to queue next message)",
-                    Style::new().dim().italic(),
+            // With `wave` set, the glyph travels along the action word in place
+            // of the leading throbber: one moving thing per row, not two.
+            let message = format!("{word}…");
+            let mut spans = Vec::with_capacity(6);
+            match wave_glyph() {
+                Some(glyph) => spans.extend(
+                    wave_sweep_line(&message, &glyph, app.spinner_frame, style).spans,
                 ),
-            ]))
-            .block(block)
+                None => {
+                    spans.push(Span::styled(
+                        format!("{} ", app.spinner()),
+                        Style::new().cyan(),
+                    ));
+                    spans.push(Span::styled(message, style));
+                }
+            }
+            spans.push(Span::styled(
+                " (Esc to cancel, type to queue next message)",
+                Style::new().dim().italic(),
+            ));
+            Paragraph::new(Line::from(spans)).block(block)
         } else {
             let n = app.message_queue.len();
             Paragraph::new(Line::from(vec![
@@ -13215,8 +13343,9 @@ mod tests {
         DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
         KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER, PROVIDERS_SETTINGS_ROW,
         SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
-        alt_scroll_restore, alt_scroll_save_off,
+        alt_scroll_restore, alt_scroll_save_off, spans_width, wave_sweep_line, with_wave_glyph,
     };
+    use unicode_width::UnicodeWidthStr;
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
     use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
@@ -24594,6 +24723,119 @@ mod tests {
             .unwrap()
             .content
             .ends_with('\u{2026}'));
+    }
+
+    /// The bug #8726 was reverted for: a 2-cell emoji stood in for a 1-cell
+    /// character, so every frame was a cell wider than the text and the tail
+    /// slid right until the last character fell off the row. The sweep must
+    /// occupy exactly the width of the message it travels along, at every frame.
+    #[test]
+    fn a_wide_glyph_never_changes_the_row_width() {
+        let message = "working…";
+        let plain = message.width();
+        for glyph in ["👋", "🍌", "~", "<o>"] {
+            for frame in 0..40 {
+                let line = wave_sweep_line(message, glyph, frame, Style::default());
+                assert_eq!(
+                    spans_width(&line.spans),
+                    plain,
+                    "glyph {glyph:?} frame {frame} changed the row width"
+                );
+            }
+        }
+    }
+
+    /// The glyph covers characters instead of deleting them: every frame keeps
+    /// the message's own width, and the characters it is not standing on are
+    /// still there in order.
+    #[test]
+    fn the_sweep_covers_characters_without_dropping_the_rest() {
+        let line = wave_sweep_line("working…", "👋", 0, Style::default());
+        let text = line_text(&line);
+        assert!(text.starts_with('👋'), "{text}");
+        // "👋" is two cells, so it stands on "wo" and the rest survives.
+        assert!(text.ends_with("rking…"), "{text}");
+    }
+
+    /// A 1-cell glyph spends one character, so a narrow ASCII wave is exact
+    /// rather than padded.
+    #[test]
+    fn a_narrow_glyph_covers_exactly_one_character() {
+        let line = wave_sweep_line("abc", "~", 0, Style::default());
+        assert_eq!(line_text(&line), "~bc");
+    }
+
+    /// The sweep reverses at both ends instead of jumping back to the start,
+    /// and never runs off the message.
+    #[test]
+    fn the_sweep_reverses_at_both_ends() {
+        let seen: Vec<String> = (0..8)
+            .map(|frame| line_text(&wave_sweep_line("abcd", "~", frame, Style::default())))
+            .collect();
+        assert_eq!(
+            seen,
+            vec!["~bcd", "a~cd", "ab~d", "abc~", "ab~d", "a~cd", "~bcd", "a~cd"]
+        );
+    }
+
+    /// Multi-byte characters are covered on character boundaries, so a sweep
+    /// over non-ASCII text cannot slice a `char` in half and panic.
+    #[test]
+    fn the_sweep_respects_character_boundaries() {
+        for frame in 0..12 {
+            let line = wave_sweep_line("éxé…", "~", frame, Style::default());
+            assert_eq!(spans_width(&line.spans), "éxé…".width());
+        }
+    }
+
+    /// A message narrower than the glyph has nowhere to sweep, so it is left
+    /// alone rather than being overwritten by a glyph wider than itself.
+    #[test]
+    fn a_message_narrower_than_the_glyph_is_left_alone() {
+        let line = wave_sweep_line("a", "👋", 0, Style::default());
+        assert_eq!(line_text(&line), "a");
+    }
+
+    /// Unset `wave` leaves the Braille throbber in place: the sweep is opt-in,
+    /// so a terminal with no emoji font is unaffected by default.
+    ///
+    /// Anchored on "Esc to cancel", which only the input row carries: the header
+    /// also shows `[working]` and the brand wave, and matching those would test
+    /// the wrong row.
+    #[test]
+    fn the_working_row_keeps_its_throbber_until_a_wave_is_configured() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        let rows = with_wave_glyph(None, || render_rows(&mut app, 80, 12));
+        let row = rows
+            .iter()
+            .find(|r| r.contains("Esc to cancel"))
+            .expect("working row")
+            .clone();
+        assert!(
+            SPINNER.iter().any(|s| row.contains(s)),
+            "expected a throbber in {row:?}"
+        );
+        assert!(!row.contains('👋'), "{row}");
+    }
+
+    /// With `wave` set the glyph replaces the throbber rather than joining it:
+    /// two moving things on one row read as jitter.
+    #[test]
+    fn a_configured_wave_replaces_the_throbber() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        let rows = with_wave_glyph(Some("🍌"), || render_rows(&mut app, 80, 12));
+        let row = rows
+            .iter()
+            .find(|r| r.contains("Esc to cancel"))
+            .expect("working row")
+            .clone();
+        assert!(row.contains('🍌'), "expected the wave in {row:?}");
+        assert!(
+            !SPINNER.iter().any(|s| row.contains(s)),
+            "throbber still present in {row:?}"
+        );
     }
 
 }

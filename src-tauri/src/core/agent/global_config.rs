@@ -33,6 +33,11 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # /terminal-setup when this terminal is
 #                                     # dropping Shift+Enter or Option+Delete.
 #                                     # On by default
+# wave = "👋"                          # sweep this glyph along the working row
+#                                     # instead of the static throbber. Any
+#                                     # string works ("🍌", "~", "<o>"). Unset
+#                                     # by default: a terminal without the font
+#                                     # renders an emoji as tofu
 #
 # [providers.my-provider]
 # api_key = "sk-..."
@@ -76,6 +81,16 @@ struct GlobalConfigToml {
     /// for the check to know it was answered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     terminal_hint: Option<bool>,
+    /// Glyph swept along the working row while a turn runs, in place of the
+    /// static Braille throbber. `None` = the default, off: the sweep is opt-in
+    /// because a terminal without the font renders it as tofu, and the throbber
+    /// is the safe thing to leave a stranger's terminal showing.
+    ///
+    /// Any string is accepted -- `"🍌"`, `"~"`, `"<o>"` -- because what reads as
+    /// a wave is a matter of taste, and the renderer measures whatever it is
+    /// given rather than assuming one cell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    wave: Option<String>,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
 }
@@ -234,6 +249,22 @@ pub(crate) fn stream_reasoning_enabled() -> bool {
         .ok()
         .and_then(|config| config.stream_reasoning)
         .unwrap_or(true)
+}
+
+/// The glyph to sweep along the working row (`wave` in `~/.jan/config.toml`).
+/// `None` leaves the static throbber in place, which is the default.
+///
+/// A glyph that is all whitespace is treated as unset rather than swept: an
+/// invisible traveller reads as letters going missing, which is the bug this
+/// feature had the first time round.
+///
+/// A display preference must never block startup, so an unreadable or malformed
+/// config yields the default rather than an error.
+pub(crate) fn wave_glyph() -> Option<String> {
+    load_raw()
+        .ok()?
+        .wave
+        .filter(|glyph| !glyph.trim().is_empty())
 }
 
 /// Read `~/.jan/config.toml` into the raw TOML struct for editing. Missing file
@@ -430,6 +461,32 @@ mod tests {
 
             std::fs::write(&path, "not valid toml [[[").unwrap();
             assert!(think_tags_enabled(), "an unreadable config keeps the default");
+        });
+    }
+
+    #[test]
+    fn wave_defaults_unset_and_reads_the_toml_key() {
+        with_temp_home(|_| {
+            assert_eq!(wave_glyph(), None, "missing file -> no sweep");
+            let path = ensure_global_config().expect("ensure");
+            assert_eq!(wave_glyph(), None, "scaffolded file -> no sweep");
+
+            std::fs::write(&path, "wave = \"👋\"\n").unwrap();
+            assert_eq!(wave_glyph().as_deref(), Some("👋"));
+            // Any string, not a fixed set: the point of the key is the user's
+            // own glyph.
+            std::fs::write(&path, "wave = \"🍌\"\n").unwrap();
+            assert_eq!(wave_glyph().as_deref(), Some("🍌"));
+            std::fs::write(&path, "wave = \"<o>\"\n").unwrap();
+            assert_eq!(wave_glyph().as_deref(), Some("<o>"));
+
+            // A blank glyph would sweep an invisible traveller along the row,
+            // which reads as characters going missing.
+            std::fs::write(&path, "wave = \"   \"\n").unwrap();
+            assert_eq!(wave_glyph(), None, "whitespace is treated as unset");
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert_eq!(wave_glyph(), None, "an unreadable config keeps the default");
         });
     }
 
