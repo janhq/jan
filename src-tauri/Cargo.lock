@@ -7245,6 +7245,7 @@ dependencies = [
 name = "tauri-plugin-agent-tools"
 version = "0.8.3"
 dependencies = [
+ "base64 0.22.1",
  "glob",
  "ignore",
  "nix 0.30.1",

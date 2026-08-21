@@ -662,10 +662,11 @@ fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
     let indent = " ".repeat(BANNER_INDENT as usize);
     let mut out: Vec<Line<'static>> = Vec::new();
 
-    // A clipped wordmark reads as breakage, so a narrow terminal gets the name
-    // as text instead.
-    if width >= brand::LOGO_WIDTH + BANNER_INDENT * 2 {
-        for art in brand::LOGO {
+    // A clipped logo reads as breakage, so a narrow terminal gets the name
+    // as text instead. The lockup (hand beside the wordmark) is the widest
+    // splash element, so it sets the threshold that gates the whole block.
+    if width >= brand::LOCKUP_WIDTH + BANNER_INDENT * 2 {
+        for art in brand::lockup() {
             out.push(Line::styled(format!("{indent}{art}"), accent));
         }
         out.push(Line::raw(""));
@@ -1217,6 +1218,10 @@ struct App {
     /// Orchestration handle for out-of-run model calls (the `/compact` command).
     /// `None` in unit tests, set by `run` for the live session.
     args: Option<Arc<OrchestrationArgs>>,
+    /// The approval-mode phrasing used by the splash (e.g. "--safe: writes, ...").
+    /// Captured once at startup so `/clear`, `/new` and `/resume` re-print the
+    /// same branding without re-deriving it.
+    approval_phrasing: String,
     /// Context window limit for the current model (default 128K).
     context_window: u64,
     /// Tokens to reserve for the model's response (compaction triggers at limit - reserve).
@@ -1555,46 +1560,6 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 /// Milliseconds per spinner frame, decoupled from the 50ms render tick.
 const SPINNER_ADVANCE_MS: u64 = 80;
 
-const HAND: &str = "👋\u{FE0F}";
-
-fn hand_sweep_position(char_count: usize, frame: usize) -> usize {
-    let cycle = char_count.saturating_mul(2).max(1);
-    let step = frame % cycle;
-    if step <= char_count {
-        step
-    } else {
-        cycle - step
-    }
-}
-
-fn hand_sweep_line(word: &'static str, frame: usize, text_style: Style) -> Line<'static> {
-    let message = format!("{word}...");
-    let char_count = message.chars().count();
-    let position = hand_sweep_position(char_count, frame);
-    let start = message
-        .char_indices()
-        .nth(position)
-        .map_or(message.len(), |(byte, _)| byte);
-    let end = if position == char_count {
-        start
-    } else {
-        message
-            .char_indices()
-            .nth(position + 1)
-            .map_or(message.len(), |(byte, _)| byte)
-    };
-
-    let mut spans = Vec::with_capacity(3);
-    if start > 0 {
-        spans.push(Span::styled(message[..start].to_string(), text_style));
-    }
-    spans.push(Span::styled(HAND, Style::new().cyan()));
-    if end < message.len() {
-        spans.push(Span::styled(message[end..].to_string(), text_style));
-    }
-    Line::from(spans)
-}
-
 /// Rotating action words for the running input placeholder, replacing a static
 /// "working…" so a long turn does not read as a hung UI.
 const WORKING_WORDS: [&str; 12] = [
@@ -1750,6 +1715,7 @@ impl App {
             goal_eval_pending: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             args: None,
+            approval_phrasing: String::new(),
             context_window: limits.context_window,
             reserve_tokens: limits.reserve_tokens,
             max_tokens: limits.max_tokens,
@@ -1960,8 +1926,8 @@ impl App {
             .map(|(_, lines)| lines)
     }
 
-    /// Open the session with the splash: the wordmark, this session's project
-    /// and approval mode, and where to go next.
+    /// Open the session with the splash: the hand-wave logo and wordmark, this
+    /// session's project and approval mode, and where to go next.
     fn push_banner(&mut self, tools: &str, awaiting_first_message: bool) {
         let banner = Banner {
             version: super::updater::build_version(),
@@ -1977,8 +1943,17 @@ impl App {
         self.last_kind = Kind::None;
     }
 
+    /// Push the splash using the startup approval phrasing, to re-brand the
+    /// screen after a slash command opens a fresh view (`/clear`, `/new`,
+    /// `/resume`). `awaiting_first_message` starts false once a thread is
+    /// loaded or a task is seeded.
+    fn push_session_banner(&mut self, awaiting_first_message: bool) {
+        let phrasing = self.approval_phrasing.clone();
+        self.push_banner(&phrasing, awaiting_first_message);
+    }
+
     /// Append a line the *app* is saying, in its own gutter column. Every other
-    /// transcript class owns one (`› ` user, `│ ` tool, `┊ ` reasoning), so
+    /// transcript class owns one (`> ` user, `│ ` tool, `┊ ` reasoning), so
     /// without it a note is indistinguishable from model prose. `glyph` names the
     /// category and `level` carries severity.
     fn system_marked(&mut self, glyph: &'static str, level: Level, text: &str) {
@@ -3140,10 +3115,11 @@ impl App {
 
     /// Inject a hidden todo reminder and continue with one more model turn. The
     /// reminder text enters the conversation (so the model sees it) but renders
-    /// as a dim system note, never a user-authored transcript row.
+    /// as a dim system note, never a user-authored transcript row -- and is
+    /// marked, so `is_user_turn` keeps it out of the rewind picker, recall and
+    /// checkpoint keys.
     fn submit_reminder(&mut self, text: String) {
-        self.history
-            .push(serde_json::json!({ "role": "user", "content": text }));
+        crate::core::agent::reminder::attach(&mut self.history, &text);
         self.note("todo reminder — unfinished work, continuing");
         self.begin_turn();
         self.want_start = true;
@@ -3239,7 +3215,7 @@ impl App {
         // carries its own newlines, and a single `Line` renders those as blank
         // cells in one run-on row.
         self.push_row(RowKind::System {
-            glyph: "›",
+            glyph: ">",
             cont: " ",
             gutter: Style::new().light_magenta().bold(),
             body: vec![Span::styled(text.to_string(), Style::new().bold())],
@@ -3262,14 +3238,14 @@ impl App {
     fn push_invocation_label(&mut self, label: String) {
         self.gap(Kind::User);
         self.push_row(RowKind::System {
-            glyph: "›",
+            glyph: ">",
             cont: " ",
             gutter: Style::new().light_magenta().bold(),
             body: vec![Span::styled(label, Style::new().cyan().bold())],
         });
     }
 
-    /// The `› [skill:foo] <args>` row a slash invocation commits. A `System`
+    /// The `> [skill:foo] <args>` row a slash invocation commits. A `System`
     /// row for the same reason as `push_user_line`: `args` is user text and can
     /// arrive pasted and multi-line, which a single `Line` renders as blank
     /// cells in one run-on row.
@@ -3282,7 +3258,7 @@ impl App {
         }
         self.gap(Kind::User);
         self.push_row(RowKind::System {
-            glyph: "›",
+            glyph: ">",
             cont: " ",
             gutter: Style::new().light_magenta().bold(),
             body,
@@ -3409,16 +3385,15 @@ impl App {
         let user_index = self
             .history
             .iter()
-            .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+            .filter(|m| is_user_turn(m))
             .count()
             .saturating_sub(1);
         let preview = self
             .history
             .iter()
             .rev()
-            .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
-            .and_then(|m| m.get("content").and_then(|v| v.as_str()))
-            .map(truncate_preview)
+            .find(|m| is_user_turn(m))
+            .map(|m| truncate_preview(&user_content_parts(&m["content"]).0))
             .unwrap_or_default();
         self.snap_queue.push_back(SnapshotJob::Checkpoint {
             user_index,
@@ -5969,15 +5944,13 @@ pub async fn run(
     let sandboxed = args
         .sandbox
         .unwrap_or_else(|| crate::core::agent::r#loop::effective_sandbox(&app.project_root));
-    app.push_banner(
-        match (args.auto_approve, sandboxed) {
-            (true, true) => "auto-approved inside the OS sandbox (start with --safe to be asked first)",
-            (true, false) => "auto-approved and unsandboxed: commands run with your own access (--safe to be asked first, --sandbox to confine)",
-            (false, true) => "--safe: writes, shell commands and MCP tool calls need approval",
-            (false, false) => "--safe: approval needed, but unsandboxed - what you approve runs with your own access (--sandbox to confine)",
-        },
-        !seeded,
-    );
+    app.approval_phrasing = match (args.auto_approve, sandboxed) {
+        (true, true) => "auto-approved inside the OS sandbox (start with --safe to be asked first)".to_string(),
+        (true, false) => "auto-approved and unsandboxed: commands run with your own access (--safe to be asked first, --sandbox to confine)".to_string(),
+        (false, true) => "--safe: writes, shell commands and MCP tool calls need approval".to_string(),
+        (false, false) => "--safe: approval needed, but unsandboxed - what you approve runs with your own access (--sandbox to confine)".to_string(),
+    };
+    app.push_session_banner(!seeded);
     if app.model.is_empty() {
         app.note("not signed in — run /login to sign in to Tokamak, or `jan config set` to configure a provider manually");
     }
@@ -7862,11 +7835,13 @@ async fn run_command(app: &mut App, line: &str) {
         "clear" => {
             app.reset_session();
             clear_todos(app).await;
+            app.push_session_banner(true);
             app.note("conversation cleared");
         }
         "new" => {
             app.reset_session();
             clear_todos(app).await;
+            app.push_session_banner(true);
             app.note("started a new session");
         }
         "compact" => compact_command(app),
@@ -9546,11 +9521,10 @@ fn thread_display_name(base: &std::path::Path, id: &str, title: Option<&str>) ->
         return t.to_string();
     }
     if let Ok(messages) = super::cli_list_messages_in(base, id) {
-        if let Some(last_user) = messages
-            .iter()
-            .rev()
-            .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
-        {
+        if let Some(last_user) = messages.iter().rev().find(|m| {
+            m.get("role").and_then(|v| v.as_str()) == Some("user")
+                && !crate::core::agent::reminder::is_reminder_text(&message_text(m))
+        }) {
             let collapsed = message_text(last_user)
                 .split_whitespace()
                 .collect::<Vec<_>>()
@@ -9950,11 +9924,11 @@ fn open_rewind_picker(app: &mut App) {
     let mut items = Vec::new();
     let mut ui = 0usize;
     for m in &app.history {
-        if m.get("role").and_then(|v| v.as_str()) == Some("user") {
-            let text = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        if is_user_turn(m) {
+            let text = user_content_parts(&m["content"]).0;
             items.push(PickerItem {
                 value: ui.to_string(),
-                label: truncate_preview(text),
+                label: truncate_preview(&text),
                 hint: Some(format!("#{}", ui + 1)),
                 checkbox: None,
             });
@@ -10006,7 +9980,7 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     let mut ui = 0usize;
     let mut cut = None;
     for (i, m) in app.history.iter().enumerate() {
-        if m.get("role").and_then(|v| v.as_str()) == Some("user") {
+        if is_user_turn(m) {
             if ui == target {
                 cut = Some(i);
                 break;
@@ -10078,7 +10052,7 @@ fn rebuild_recall(app: &mut App) {
     let texts: Vec<String> = app
         .history
         .iter()
-        .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+        .filter(|m| is_user_turn(m))
         .filter_map(|m| m.get("content"))
         .map(|c| user_content_parts(c).0)
         .filter(|t| !t.is_empty())
@@ -10190,6 +10164,8 @@ fn rebuild_transcript(app: &mut App) {
 }
 
 async fn resume_thread(app: &mut App, id_arg: &str) {
+    // Re-brand the fresh view before the saved conversation is replayed.
+    app.push_session_banner(false);
     apply_resume(app, &ResumeTarget::Id(id_arg.to_string())).await;
 }
 
@@ -10447,9 +10423,21 @@ fn build_user_message(text: &str, images: &[PendingImage]) -> serde_json::Value 
 /// Split a user message's `content` into display text and one label per attached
 /// image. Handles plain-string content and the `image_url` content-part array;
 /// data-URL parts carry no filename, so their label is empty.
+/// True for a `user` message the user actually authored. Hidden reminders ride
+/// in on the `user` role but are not turns: a rewind target, a recall entry or a
+/// checkpoint key built from one would be a row the user never typed, and would
+/// shift every later index out of step with the display journal, which holds no
+/// reminder at all.
+fn is_user_turn(m: &serde_json::Value) -> bool {
+    m.get("role").and_then(|v| v.as_str()) == Some("user")
+        && !crate::core::agent::reminder::is_reminder_only(
+            m.get("content").unwrap_or(&serde_json::Value::Null),
+        )
+}
+
 fn user_content_parts(content: &serde_json::Value) -> (String, Vec<String>) {
     match content {
-        serde_json::Value::String(s) => (s.clone(), Vec::new()),
+        serde_json::Value::String(s) => (crate::core::agent::reminder::strip(s), Vec::new()),
         serde_json::Value::Array(parts) => {
             let mut text = String::new();
             let mut images = Vec::new();
@@ -10457,7 +10445,7 @@ fn user_content_parts(content: &serde_json::Value) -> (String, Vec<String>) {
                 match p.get("type").and_then(|v| v.as_str()) {
                     Some("text") => {
                         if let Some(t) = p.get("text").and_then(|v| v.as_str()) {
-                            text.push_str(t);
+                            text.push_str(&crate::core::agent::reminder::strip(t));
                         }
                     }
                     Some("image_url") => images.push(String::new()),
@@ -10603,7 +10591,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         app.row_index.clear();
         let toml_path = app.agent_dir.join("agent.toml");
         draw_picker(f, chunks[1], picker, &toml_path);
-        f.render_widget(input_box(app, chunks[2].width), chunks[2]);
+        f.render_widget(input_box(app), chunks[2]);
         f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
         return;
     }
@@ -10832,10 +10820,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     if let Some(lines) = panel_lines {
         f.render_widget(Paragraph::new(lines), panel_area);
     }
-    f.render_widget(
-        input_box(app, chunks[2].width).scroll((input_scroll, 0)),
-        chunks[2],
-    );
+    f.render_widget(input_box(app).scroll((input_scroll, 0)), chunks[2]);
     f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
 
     // `/login` is modal and user-initiated (only reachable while idle), so it
@@ -11876,14 +11861,18 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         .map(|t| format!("  {}", format_elapsed(t.elapsed().as_secs())))
         .unwrap_or_default();
     // No name chip: the splash names the app (see `Banner`), and the header's
-    // columns are better spent on state that changes. The model leads instead,
-    // bold so the row still has an anchor on the left; an unset model says so
-    // rather than opening the row with blanks.
-    let mut spans = vec![if app.model.is_empty() {
-        Span::styled(" no model  ", Style::new().red().bold())
-    } else {
-        Span::styled(format!(" {}  ", app.model), Style::new().bold())
-    }];
+    // columns are better spent on state that changes. The wave mark stands in
+    // for the name in one glyph, then the model, bold so the row still has an
+    // anchor on the left; an unset model says so rather than opening the row
+    // with blanks.
+    let mut spans = vec![
+        Span::styled(format!(" {}", brand::WAVE), Style::new().yellow()),
+        if app.model.is_empty() {
+            Span::styled(" no model", Style::new().red().bold())
+        } else {
+            Span::styled(format!(" {}", app.model), Style::new().bold())
+        },
+    ];
     // Reasoning-effort badge: `effort high` after the model, so the configured
     // reasoning depth is visible at a glance. Reported low/medium/high exactly
     // as set, so the display always matches what is sent upstream.
@@ -12198,13 +12187,13 @@ fn input_box_height(app: &App, width: u16) -> u16 {
     content + 1
 }
 
-/// Visible input as styled lines: `› ` on the first line, 2-space hang on
+/// Visible input as styled lines: `> ` on the first line, 2-space hang on
 /// continuations, and a solid block cursor at the byte offset `cursor` (the
 /// character under the cursor is drawn in reverse video; at end of line a
 /// reversed space forms the block). Wrapping is left to the Paragraph so long
 /// single lines fold within the box width.
 fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
-    let arrow = Span::styled("› ", Style::new().cyan().bold());
+    let arrow = Span::styled("> ", Style::new().cyan().bold());
     let segments: Vec<&str> = input.split('\n').collect();
     let last = segments.len() - 1;
     // Locate the segment + in-segment byte offset holding the caret.
@@ -12254,7 +12243,7 @@ fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
         .collect()
 }
 
-fn input_box(app: &App, width: u16) -> Paragraph<'static> {
+fn input_box(app: &App) -> Paragraph<'static> {
     let block = Block::default();
     if let Some(kind) = app.compacting.filter(|_| app.input.is_empty()) {
         // Compaction puts nothing in the transcript while it runs, so the input
@@ -12274,43 +12263,33 @@ fn input_box(app: &App, width: u16) -> Paragraph<'static> {
     } else if app.picker.is_some() {
         Paragraph::new(Line::styled("selecting…", Style::new().dim().italic())).block(block)
     } else if app.status == Status::Running && app.input.is_empty() {
-        // Show queue status when running with empty input.
+        // Show queue status when running with empty input
         if app.message_queue.is_empty() {
+            // The spinner carries the fast motion; the action word turns over
+            // on a slower cadence, cycling "working" synonyms -- or "thinking"
+            // synonyms in orange while a reasoning block streams -- so the row
+            // reads alive without shifting under the eye.
             let step = app.spinner_frame / WORD_ROTATE_FRAMES;
-            let suffix = || {
-                Span::styled(
-                    " (Esc to cancel, type to queue next message)",
+            let (word, style) = if app.reasoning_open() {
+                (
+                    THINKING_WORDS[step % THINKING_WORDS.len()],
+                    Style::new().fg(THINKING_ORANGE).italic(),
+                )
+            } else {
+                (
+                    WORKING_WORDS[step % WORKING_WORDS.len()],
                     Style::new().dim().italic(),
                 )
             };
-            if app.reasoning_open() {
-                let word = THINKING_WORDS[step % THINKING_WORDS.len()];
-                let style = Style::new().fg(THINKING_ORANGE).italic();
-                Paragraph::new(Line::from(vec![
-                    Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
-                    Span::styled(format!("{word}…"), style),
-                    suffix(),
-                ]))
-                .block(block)
-            } else {
-                let word = WORKING_WORDS[step % WORKING_WORDS.len()];
-                let text_style = Style::new().dim().italic();
-                let mut spans = vec![Span::styled("› ", Style::new().cyan().bold())];
-                spans.extend(hand_sweep_line(word, app.spinner_frame, text_style).spans);
-                spans.push(suffix());
-                let animated = Line::from(spans);
-                let line = if spans_width(&animated.spans) <= width as usize {
-                    animated
-                } else {
-                    Line::from(vec![
-                        Span::styled("› ", Style::new().cyan().bold()),
-                        Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
-                        Span::styled(format!("{word}…"), text_style),
-                        suffix(),
-                    ])
-                };
-                Paragraph::new(line).block(block)
-            }
+            Paragraph::new(Line::from(vec![
+                Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
+                Span::styled(format!("{word}…"), style),
+                Span::styled(
+                    " (Esc to cancel, type to queue next message)",
+                    Style::new().dim().italic(),
+                ),
+            ]))
+            .block(block)
         } else {
             let n = app.message_queue.len();
             Paragraph::new(Line::from(vec![
@@ -12323,7 +12302,7 @@ fn input_box(app: &App, width: u16) -> Paragraph<'static> {
             .block(block)
         }
     } else if app.input.is_empty() {
-        // Same `› ` arrow as the typing view, then a fixed (non-blinking)
+        // Same `> ` prompt as the typing view, then a fixed (non-blinking)
         // block cursor in front of the placeholder.
         let placeholder = if app.status == Status::Running {
             "Type to queue next message"
@@ -12331,7 +12310,7 @@ fn input_box(app: &App, width: u16) -> Paragraph<'static> {
             "Type here to chat with agent"
         };
         let cursor_spans: Vec<Span<'static>> = vec![
-            Span::styled("› ", Style::new().cyan().bold()),
+            Span::styled("> ", Style::new().cyan().bold()),
             Span::styled(" ", Style::new().add_modifier(Modifier::REVERSED)),
             Span::raw(" "),
             Span::styled(placeholder, Style::new().dim().italic()),
@@ -12514,11 +12493,10 @@ mod tests {
         unescape_partial_json_string,
         running_group_rows, split_reasoning, strip_system_xml_tags, subagent_activity,
         answer_without_reasoning, assistant_runs, replay_display_log, thinking_open,
-        hand_sweep_line, hand_sweep_position, HAND,
         without_think_tags, ReasoningSeg,
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
-        transcript_top_padding, rewind_to,
+        transcript_top_padding, rewind_to, open_rewind_picker, rebuild_recall,
         row_width, user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind,
         ResumeTarget, RowKind, finish_plugin_install,
         SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
@@ -12850,32 +12828,6 @@ mod tests {
     }
 
     #[test]
-    fn hand_sweep_moves_forward_and_back_across_the_message() {
-        let text = |frame| line_text(&hand_sweep_line("build", frame, Style::default()));
-
-        assert_eq!(text(0), format!("{HAND}uild..."));
-        assert_eq!(text(3), format!("bui{HAND}d..."));
-        assert_eq!(text(8), format!("build...{HAND}"));
-        assert_eq!(text(9), format!("build..{HAND}"));
-        assert_eq!(text(16), format!("{HAND}uild..."));
-    }
-
-    #[test]
-    fn hand_uses_explicit_emoji_presentation() {
-        assert_eq!(HAND.chars().last(), Some('\u{FE0F}'));
-    }
-
-    #[test]
-    fn hand_sweep_uses_character_boundaries() {
-        let message = "éx...";
-        assert_eq!(hand_sweep_position(message.chars().count(), 1), 1);
-        assert_eq!(
-            line_text(&hand_sweep_line("éx", 1, Style::default())),
-            format!("é{HAND}...")
-        );
-    }
-
-    #[test]
     fn transcript_bottom_anchors_short_content() {
         // Short transcript: pad to push the last line to the viewport bottom.
         assert_eq!(transcript_top_padding(3, 20), 17);
@@ -13113,7 +13065,7 @@ mod tests {
         let rows = render_rows(&mut app, 60, 12);
         assert!(
             rows.iter()
-                .any(|r| r.trim_end().ends_with("\u{203a} first line")),
+                .any(|r| r.trim_end().ends_with("> first line")),
             "first line not on its own row: {rows:?}"
         );
         assert!(
@@ -13245,7 +13197,7 @@ mod tests {
         let rows = render_rows(&mut app, 60, 12);
         assert!(
             rows.iter()
-                .any(|r| r.trim_end().ends_with("\u{203a} [skill:deploy] first line")),
+                .any(|r| r.trim_end().ends_with("> [skill:deploy] first line")),
             "first line not on its own row: {rows:?}"
         );
         assert!(
@@ -14695,6 +14647,68 @@ mod tests {
             }
             other => panic!("expected a checkpoint job, got {:?}", other.is_some()),
         }
+    }
+
+    /// A hidden reminder rides in on the `user` role, so every surface that
+    /// counts user turns has to skip it: otherwise it becomes a rewind target
+    /// and a recall entry the user never typed, and shifts the indices those
+    /// share with the display journal (which holds no reminder at all).
+    #[test]
+    fn a_hidden_reminder_is_not_a_user_turn() {
+        let mut app = test_app();
+        app.thread_id = Some("t1".into());
+        app.repo_root = Some(std::path::PathBuf::from("/tmp/repo"));
+        app.base_requested = true;
+        app.submit_user("first".into());
+        app.history
+            .push(json!({ "role": "assistant", "content": "reply" }));
+        app.submit_reminder("unfinished todos remain".into());
+        assert_eq!(
+            app.history.len(),
+            3,
+            "the reminder needed its own turn here"
+        );
+        assert!(crate::core::agent::reminder::is_reminder_only(
+            &app.history[2]["content"]
+        ));
+
+        open_rewind_picker(&mut app);
+        let picker = app.picker.as_ref().expect("picker");
+        assert_eq!(picker.items.len(), 1);
+        assert_eq!(picker.items[0].label, "first");
+
+        rebuild_recall(&mut app);
+        assert_eq!(app.input_history, vec!["first"]);
+
+        app.checkpoint_turn();
+        match app.snap_queue.back() {
+            Some(SnapshotJob::Checkpoint {
+                user_index,
+                preview,
+                ..
+            }) => {
+                assert_eq!(*user_index, 0, "the reminder must not shift the key");
+                assert_eq!(preview, "first");
+            }
+            other => panic!("expected a checkpoint job, got {:?}", other.is_some()),
+        }
+    }
+
+    /// The reminder is folded into a message the model has not answered yet
+    /// where one exists, so no extra turn is invented at all.
+    #[test]
+    fn a_reminder_lands_in_flight_on_an_unanswered_turn() {
+        let mut app = test_app();
+        app.thread_id = Some("t1".into());
+        app.submit_user("first".into());
+        app.submit_reminder("unfinished todos remain".into());
+        assert_eq!(app.history.len(), 1);
+        let content = app.history[0]["content"].as_str().expect("text");
+        assert!(content.starts_with("first\n\n"), "{content}");
+        assert!(content.contains("unfinished todos remain"));
+        // Recall and rewind offer the typed text back, never the reminder.
+        rebuild_recall(&mut app);
+        assert_eq!(app.input_history, vec!["first"]);
     }
 
     #[test]
@@ -17064,14 +17078,14 @@ mod tests {
     fn input_lines_single_line_has_arrow_and_cursor() {
         let lines = input_content_lines("hello", 5);
         assert_eq!(lines.len(), 1);
-        assert_eq!(caret_text(&lines[0]), "› hello▏");
+        assert_eq!(caret_text(&lines[0]), "> hello▏");
     }
 
     #[test]
     fn input_lines_multiline_hangs_and_cursor_on_last() {
         let lines = input_content_lines("one\ntwo\nthree", "one\ntwo\nthree".len());
         assert_eq!(lines.len(), 3);
-        assert_eq!(line_text(&lines[0]), "› one");
+        assert_eq!(line_text(&lines[0]), "> one");
         assert_eq!(line_text(&lines[1]), "  two");
         assert_eq!(caret_text(&lines[2]), "  three▏");
     }
@@ -17080,7 +17094,7 @@ mod tests {
     fn input_lines_trailing_newline_gives_empty_cursor_row() {
         let lines = input_content_lines("hi\n", 3);
         assert_eq!(lines.len(), 2);
-        assert_eq!(line_text(&lines[0]), "› hi");
+        assert_eq!(line_text(&lines[0]), "> hi");
         assert_eq!(caret_text(&lines[1]), "  ▏");
     }
 
@@ -17089,14 +17103,14 @@ mod tests {
         // Caret sits between "he" and "llo" on a single line.
         let lines = input_content_lines("hello", 2);
         assert_eq!(lines.len(), 1);
-        assert_eq!(caret_text(&lines[0]), "› he▏llo");
+        assert_eq!(caret_text(&lines[0]), "> he▏llo");
     }
 
     #[test]
     fn input_lines_caret_on_earlier_line_only() {
         // Cursor inside the first segment: caret there, none on later lines.
         let lines = input_content_lines("one\ntwo", 1);
-        assert_eq!(caret_text(&lines[0]), "› o▏ne");
+        assert_eq!(caret_text(&lines[0]), "> o▏ne");
         assert_eq!(line_text(&lines[1]), "  two");
     }
 
@@ -19758,28 +19772,19 @@ mod tests {
 
         app.spinner_frame = 0;
         let first = frame_of(&mut app);
-        assert!(first.contains(HAND), "expected hand frame: {first:?}");
-        assert!(
-            !first.contains(SPINNER[0]),
-            "working row still has Braille spinner: {first:?}"
-        );
+        assert!(first.contains(SPINNER[0]), "expected frame 0 glyph: {first:?}");
 
-        // The hand covers the first character at frame 0, leaving the rest of
-        // the selected working word visible.
-        assert!(first.starts_with("› "), "working row lost the prompt: {first:?}");
+        // While a plain turn is running (no reasoning), the row shows a
+        // rotating synonym of "working".
         assert!(
-            first.contains("orking..."),
-            "expected the working word behind the hand: {first:?}"
+            WORKING_WORDS.iter().any(|w| first.contains(w)),
+            "expected a working synonym in: {first:?}"
         );
 
         app.spinner_frame = 3;
         let later = frame_of(&mut app);
-        assert!(later.contains(HAND), "expected later hand frame: {later:?}");
-        assert!(
-            !later.contains(SPINNER[3]),
-            "working row still has Braille spinner: {later:?}"
-        );
-        assert_ne!(first, later, "row must change as the hand advances");
+        assert!(later.contains(SPINNER[3]), "expected frame 3 glyph: {later:?}");
+        assert_ne!(first, later, "row must change as the frame advances");
 
         assert!(later.contains("(Esc to cancel, type to queue next message)"), "{later:?}");
     }
@@ -19838,24 +19843,21 @@ mod tests {
     fn working_synonym_rotates_across_frames() {
         let mut app = test_app();
         app.submit_user("go".into());
-        let mut row_at = |frame: usize| {
+        let mut word_at = |frame: usize| {
             app.spinner_frame = frame;
-            render_rows(&mut app, 80, 12)
+            let row = render_rows(&mut app, 80, 12)
                 .into_iter()
                 .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
-                .expect("running placeholder present")
+                .expect("running placeholder present");
+            WORKING_WORDS
+                .iter()
+                .find(|w| row.contains(*w))
+                .map(|w| w.to_string())
+                .expect("working synonym present")
         };
-        let first = row_at(0);
-        let later = row_at(super::WORD_ROTATE_FRAMES);
-        assert!(
-            first.contains("orking..."),
-            "first working word is covered by the hand: {first}"
-        );
-        assert!(
-            later.contains("omputing..."),
-            "later working word is covered by the hand: {later}"
-        );
-        assert_ne!(first, later, "working word must rotate as frames advance");
+        let a = word_at(0);
+        let b = word_at(super::WORD_ROTATE_FRAMES);
+        assert_ne!(a, b, "working word must rotate as frames advance: {a}");
     }
 
     /// A queued-message row is still a running row, so it animates too.
@@ -19870,58 +19872,6 @@ mod tests {
             .find(|r| r.contains("Queued"))
             .expect("queued row present");
         assert!(row.contains(SPINNER[5]), "expected frame 5 glyph: {row:?}");
-    }
-
-    #[test]
-    fn hand_spinner_stays_out_of_reasoning_queued_and_editable_rows() {
-        let mut reasoning = test_app();
-        reasoning.submit_user("go".into());
-        reasoning.apply(StreamEvent::Token {
-            text: "<think>ponder".into(),
-        });
-        let thinking = render_rows(&mut reasoning, 80, 12).join("\n");
-        assert!(!thinking.contains(HAND), "reasoning row must retain Braille spinner");
-        assert!(
-            thinking.contains(SPINNER[0]),
-            "reasoning spinner changed: {thinking}"
-        );
-
-        let mut queued = test_app();
-        queued.submit_user("go".into());
-        queued.message_queue.push_back("next".into());
-        let queued_text = render_rows(&mut queued, 80, 12).join("\n");
-        assert!(!queued_text.contains(HAND), "queued row must retain queue indicator");
-        assert!(
-            queued_text.contains(SPINNER[0]),
-            "queued spinner changed: {queued_text}"
-        );
-
-        let mut editable = test_app();
-        editable.submit_user("go".into());
-        editable.input = "draft".into();
-        let editable_text = render_rows(&mut editable, 80, 12).join("\n");
-        assert!(
-            !editable_text.contains(HAND),
-            "hand must not enter editable input"
-        );
-    }
-
-    #[test]
-    fn narrow_working_row_falls_back_to_braille_spinner() {
-        let mut app = test_app();
-        app.submit_user("go".into());
-        app.spinner_frame = 0;
-
-        let rendered = render_rows(&mut app, 20, 12).join("\n");
-        assert!(
-            !rendered.contains(HAND),
-            "hand row must fall back when it cannot fit"
-        );
-        assert!(
-            rendered.contains(SPINNER[0]),
-            "Braille fallback missing: {rendered}"
-        );
-        assert!(app.input.is_empty(), "status rendering changed the input buffer");
     }
 
     /// Native reasoning events (a dedicated `reasoning_content` field) drive the
@@ -21076,9 +21026,9 @@ mod tests {
         let injected = last_history_content(&app);
         assert!(injected.contains("unfinished todos"), "got: {injected}");
         assert!(injected.contains("t1") && injected.contains("t2"));
-        // The reminder is hidden: no user-authored `› ` row in the transcript.
+        // The reminder is hidden: no user-authored `> ` row in the transcript.
         let rows: String = app.transcript.iter().map(row_text).collect();
-        assert!(!rows.contains("› "), "reminder must not render as a user row");
+        assert!(!rows.contains("> "), "reminder must not render as a user row");
     }
 
     #[test]
@@ -21885,6 +21835,30 @@ mod tests {
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(!text.contains("old content"), "transcript not reset: {text}");
         assert!(text.contains("started a new session"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn clear_re_prints_the_branded_splash() {
+        let mut app = test_app();
+        app.approval_phrasing = "--safe: approval needed".to_string();
+        app.push(Line::raw("old content"));
+
+        run_command(&mut app, "clear").await;
+
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(
+            !text.contains("old content"),
+            "transcript not reset: {text}"
+        );
+        assert!(
+            text.contains(brand::HAND[0].trim()),
+            "hand logo missing after /clear: {text}"
+        );
+        assert!(
+            text.contains("--safe: approval needed"),
+            "approval phrasing missing after /clear: {text}"
+        );
+        assert!(text.contains("type a message to start"), "{text}");
     }
 
     #[test]
@@ -23194,6 +23168,40 @@ mod tests {
         );
     }
 
+    /// The mark and the name are one lockup, so they share rows instead of
+    /// stacking: the wordmark's first row also carries part of the hand.
+    #[test]
+    fn banner_opens_with_the_hand_logo_beside_the_wordmark() {
+        let mut app = test_app();
+        app.push_banner("--safe", true);
+
+        let text = banner_text(&app, 90);
+        let joined = text.join("\n");
+        let row = text
+            .iter()
+            .find(|l| l.contains(brand::LOGO[0].trim()))
+            .unwrap_or_else(|| panic!("wordmark missing:\n{joined}"));
+        let hand_row = brand::HAND
+            .iter()
+            .find(|h| row.contains(h.trim()))
+            .unwrap_or_else(|| panic!("the wordmark's row carries no hand: {row}"));
+        assert!(
+            row.find(hand_row.trim()).unwrap() < row.find(brand::LOGO[0].trim()).unwrap(),
+            "the hand should sit left of the wordmark: {row}"
+        );
+        assert!(joined.contains('█'), "{joined}");
+    }
+
+    #[test]
+    fn a_24_column_terminal_drops_the_hand_logo_too() {
+        let mut app = test_app();
+        app.push_banner("--safe", true);
+        let narrow = banner_text(&app, 24);
+        let joined = narrow.join("\n");
+        assert!(!joined.contains('█'), "{joined}");
+        assert!(joined.contains("jan"), "{joined}");
+    }
+
     /// `/init` is the first thing a new project wants and is invisible unless
     /// promoted, so the splash lists it beside `/help`.
     #[test]
@@ -23251,21 +23259,30 @@ mod tests {
         }
     }
 
+    /// The wave mark is the only branding the header carries: one glyph, then
+    /// the model. A name chip would spend the columns the status needs.
     #[test]
-    fn header_leads_with_the_model_not_a_name_chip() {
+    fn header_leads_with_the_wave_then_the_model() {
         let mut app = test_app();
         app.model = "tokamak-1-preview".into();
         let top = render_rows(&mut app, 60, 12).remove(0);
+        let head = top.trim_start();
         assert!(
-            top.starts_with(" tokamak-1-preview"),
-            "the name chip is back: {top:?}"
+            head.starts_with(brand::WAVE),
+            "the wave should open the row: {top:?}"
+        );
+        assert!(
+            head[brand::WAVE.len()..]
+                .trim_start()
+                .starts_with("tokamak-1-preview"),
+            "the model should follow the wave, with no name chip between: {top:?}"
         );
         // The freed columns are what let the status survive a 60-column frame.
         assert!(top.contains("[ready]"), "{top:?}");
 
         app.model.clear();
         let top = render_rows(&mut app, 60, 12).remove(0);
-        assert!(top.starts_with(" no model"), "{top:?}");
+        assert!(top.contains("no model"), "{top:?}");
     }
 
     #[test]
@@ -23307,7 +23324,7 @@ mod tests {
         assert_eq!(last_row(&app)[0].0, "\u{2022} ", "system note");
 
         app.push_user_line("do it", &[]);
-        assert_eq!(last_row(&app)[0].0, "\u{203a} ", "user message");
+        assert_eq!(last_row(&app)[0].0, "> ", "user message");
 
         app.apply(StreamEvent::ToolCall {
             id: "t1".into(),
@@ -23329,7 +23346,7 @@ mod tests {
         app.flush_assistant();
         let prose = last_row(&app);
         assert!(
-            !prose[0].0.starts_with('\u{2022}') && !prose[0].0.starts_with('\u{203a}'),
+            !prose[0].0.starts_with('\u{2022}') && !prose[0].0.starts_with('>'),
             "prose took a gutter: {prose:?}"
         );
     }
