@@ -114,4 +114,19 @@ describe('DefaultMCPService', () => {
       expect(result).toBe(false)
     })
   })
+
+  describe('OAuth', () => {
+    /// Without a backend there is no token store, so nothing may advertise a
+    /// sign-in button the build cannot honour.
+    it('reports notApplicable rather than offering a sign-in', async () => {
+      await expect(svc.getMCPAuthStatus('remote')).resolves.toEqual({
+        state: 'notApplicable',
+        canAuthenticate: false,
+        hasCredentials: false,
+        expiresAt: null,
+      })
+      await expect(svc.authorizeMCPServer('remote')).resolves.toBeUndefined()
+      await expect(svc.clearMCPAuth('remote')).resolves.toBe(false)
+    })
+  })
 })

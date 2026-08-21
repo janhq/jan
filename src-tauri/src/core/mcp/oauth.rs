@@ -42,6 +42,20 @@ const EXPIRY_SKEW: Duration = Duration::from_secs(60);
 /// provider's consent screen.
 const CLIENT_NAME: &str = "Jan";
 
+/// Marker the desktop's `activate_mcp_server` prefixes onto an error the user
+/// fixes by signing in, so the settings UI can offer an `Authenticate` button
+/// instead of showing a transport error nobody can act on.
+///
+/// A prefix rather than a typed error because the Tauri command boundary
+/// serializes failures as strings; the CLI has `ConnectError::NeedsAuth` for the
+/// same distinction and does not need this.
+pub const NEEDS_AUTH_PREFIX: &str = "NEEDS_AUTH: ";
+
+/// Split `NEEDS_AUTH_PREFIX` off an error, yielding the detail when it is one.
+pub fn needs_auth_detail(error: &str) -> Option<&str> {
+    error.strip_prefix(NEEDS_AUTH_PREFIX)
+}
+
 /// Tokens for one server, as persisted. `client_id` is part of the record
 /// because a dynamically registered client is per-installation: refreshing
 /// needs the same id the code was issued to.
@@ -141,6 +155,47 @@ pub fn status(data_folder: &Path, name: &str, config: &Value) -> AuthStatus {
     }
     AuthStatus::Authenticated {
         expires_at: stored.expires_at,
+    }
+}
+
+/// `AuthStatus` flattened for the wire, so the settings UI can render a badge
+/// and decide which buttons to offer without re-deriving any of it.
+///
+/// A tagged struct rather than the enum itself: `state` is a stable string the
+/// frontend switches on, and adding a variant here cannot silently change the
+/// shape of an existing one.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthStatusInfo {
+    /// One of `notApplicable`, `staticHeader`, `authenticated`, `expired`,
+    /// `staleResource`, `unauthenticated`.
+    pub state: &'static str,
+    /// Whether an interactive sign-in is possible and would mean something.
+    pub can_authenticate: bool,
+    /// Whether there are stored tokens to forget.
+    pub has_credentials: bool,
+    /// Unix seconds the access token expires at, when known.
+    pub expires_at: Option<u64>,
+}
+
+impl From<AuthStatus> for AuthStatusInfo {
+    fn from(status: AuthStatus) -> Self {
+        let (state, can_authenticate, has_credentials, expires_at) = match status {
+            AuthStatus::NotApplicable => ("notApplicable", false, false, None),
+            AuthStatus::StaticHeader => ("staticHeader", false, false, None),
+            AuthStatus::Authenticated { expires_at } => {
+                ("authenticated", true, true, expires_at)
+            }
+            AuthStatus::Expired { .. } => ("expired", true, true, None),
+            AuthStatus::StaleResource => ("staleResource", true, true, None),
+            AuthStatus::Unauthenticated => ("unauthenticated", true, false, None),
+        };
+        Self {
+            state,
+            can_authenticate,
+            has_credentials,
+            expires_at,
+        }
     }
 }
 

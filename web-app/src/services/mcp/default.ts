@@ -4,7 +4,13 @@
 
 import { MCPTool, MCPToolCallResult } from '@janhq/core'
 import type { MCPServerConfig } from '@/hooks/useMCPServers'
-import type { MCPService, MCPConfig, ServerSummary, ToolCallWithCancellationResult } from './types'
+import type {
+  MCPService,
+  MCPConfig,
+  MCPAuthStatus,
+  ServerSummary,
+  ToolCallWithCancellationResult,
+} from './types'
 
 export class DefaultMCPService implements MCPService {
   async updateMCPConfig(configs: string): Promise<void> {
@@ -77,6 +83,31 @@ export class DefaultMCPService implements MCPService {
   }
 
   async checkJanBrowserExtensionConnected(): Promise<boolean> {
+    return false
+  }
+
+  /**
+   * Without a backend there is no token store, so every server reports
+   * `notApplicable` rather than `unauthenticated`: the latter would put a
+   * "sign in" button on a build that cannot run the flow.
+   */
+  async getMCPAuthStatus(name: string): Promise<MCPAuthStatus> {
+    void name
+    return {
+      state: 'notApplicable',
+      canAuthenticate: false,
+      hasCredentials: false,
+      expiresAt: null,
+    }
+  }
+
+  async authorizeMCPServer(name: string): Promise<void> {
+    console.log('authorizeMCPServer called with name:', name)
+    // No-op - not implemented in default service
+  }
+
+  async clearMCPAuth(name: string): Promise<boolean> {
+    console.log('clearMCPAuth called with name:', name)
     return false
   }
 }

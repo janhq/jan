@@ -69,5 +69,28 @@
     "routerModelSearchPlaceholder": "Search models…",
     "routerModelEmptyList": "No lightweight models available. Add a smaller model or configure API keys in Models.",
     "routerModelEmptySearch": "No matches for “{{query}}”."
+  },
+  "auth": {
+    "label": "Auth:",
+    "state": {
+      "notApplicable": "not required",
+      "staticHeader": "Authorization header",
+      "authenticated": "authenticated",
+      "expired": "expired",
+      "staleResource": "issued for another URL",
+      "unauthenticated": "not authenticated"
+    },
+    "expiresIn": "expires in {{duration}}",
+    "authenticate": "Sign in",
+    "reauthenticate": "Re-authenticate",
+    "clear": "Clear authentication",
+    "waiting": "Waiting for browser...",
+    "openSignInPage": "Open the sign-in page",
+    "needsAuth": "{{serverName}} needs authentication",
+    "needsAuthHint": "Sign in to this server to connect.",
+    "authorized": "Signed in to {{serverName}}",
+    "authorizeFailed": "Sign-in for {{serverName}} failed",
+    "cleared": "Cleared stored credentials for {{serverName}}",
+    "nothingToClear": "{{serverName}} had no stored credentials"
   }
 }

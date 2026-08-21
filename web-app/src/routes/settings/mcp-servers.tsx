@@ -35,6 +35,8 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { McpRouterModelPicker } from '@/containers/McpRouterModelPicker'
 import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
 import { normalizeAppError } from '@/utils/appError'
+import { McpServerAuth } from '@/containers/McpServerAuth'
+import { useMcpAuth, needsAuthDetail } from '@/hooks/useMcpAuth'
 
 
 // Function to mask sensitive URL parameters
@@ -138,6 +140,14 @@ function MCPServersDesktop() {
   const [loadingServers, setLoadingServers] = useState<{
     [key: string]: boolean
   }>({})
+  const {
+    statuses: authStatuses,
+    authorizing,
+    consentUrls,
+    refresh: refreshAuth,
+    authorize,
+    clearAuth,
+  } = useMcpAuth(Object.keys(mcpServers))
   const setErrorMessage = useAppState((state) => state.setErrorMessage)
 
   const updateToolCallTimeout = (rawValue: string) => {
@@ -328,6 +338,45 @@ function MCPServersDesktop() {
     }
   }
 
+  /**
+   * Run the interactive sign-in, then bring the server up if it is enabled: a
+   * server that failed to connect for want of a token is still marked active,
+   * so authorizing without reconnecting would leave it down until toggled.
+   */
+  const handleAuthorize = async (serverKey: string) => {
+    try {
+      await authorize(serverKey)
+      toast.success(t('mcp-servers:auth.authorized', { serverName: serverKey }))
+      if (mcpServers[serverKey]?.active) {
+        toggleServer(serverKey, true)
+      }
+    } catch (error) {
+      setErrorMessage({
+        message: t('mcp-servers:auth.authorizeFailed', {
+          serverName: serverKey,
+        }),
+        subtitle: normalizeAppError(error),
+      })
+    }
+  }
+
+  /**
+   * Forget the tokens and drop the connection: the live transport still holds
+   * the old bearer token, so leaving it up would keep working against
+   * credentials the user just asked to forget.
+   */
+  const handleClearAuth = async (serverKey: string) => {
+    const cleared = await clearAuth(serverKey)
+    toast.success(
+      cleared
+        ? t('mcp-servers:auth.cleared', { serverName: serverKey })
+        : t('mcp-servers:auth.nothingToClear', { serverName: serverKey })
+    )
+    if (cleared && connectedServers.includes(serverKey)) {
+      toggleServer(serverKey, false)
+    }
+  }
+
   const toggleServer = (serverKey: string, active: boolean) => {
     if (serverKey) {
       setLoadingServers((prev) => ({ ...prev, [serverKey]: true }))
@@ -364,6 +413,20 @@ function MCPServersDesktop() {
               ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
               active: false,
             })
+            // A server that only needs signing in is not a misconfigured one:
+            // the backend tags it, so point at the fix rather than telling the
+            // user to check parameters they got right.
+            const authDetail = needsAuthDetail(error)
+            if (authDetail !== null) {
+              void refreshAuth()
+              setErrorMessage({
+                message: t('mcp-servers:auth.needsAuth', {
+                  serverName: serverKey,
+                }),
+                subtitle: t('mcp-servers:auth.needsAuthHint'),
+              })
+              return
+            }
             setErrorMessage({
               message: normalizeAppError(error),
               subtitle: t('mcp-servers:checkParams'),
@@ -698,6 +761,13 @@ function MCPServersDesktop() {
                               {config.timeout && (
                                 <div>Timeout: {config.timeout}s</div>
                               )}
+                              <McpServerAuth
+                                status={authStatuses[key]}
+                                authorizing={!!authorizing[key]}
+                                consentUrl={consentUrls[key]}
+                                onAuthorize={() => void handleAuthorize(key)}
+                                onClearAuth={() => void handleClearAuth(key)}
+                              />
                             </>
                           )}
                         </div>
