@@ -11,7 +11,10 @@
 # resolves to the same directory.
 set -euo pipefail
 
-PROFILE="${JAN_ENGINE_PROFILE:-release}"
+# Positional first: cmd.exe has no `VAR=value command` prefix, so the Windows
+# recipes pass the profile as an argument. The env var stays for callers that
+# already set it.
+PROFILE="${1:-${JAN_ENGINE_PROFILE:-release}}"
 PLUGIN_DIR="src-tauri/plugins/tauri-plugin-llamacpp"
 TARGET_DIR="${CARGO_TARGET_DIR:-$PLUGIN_DIR/target}/$PROFILE"
 DEST="src-tauri/resources/bin"

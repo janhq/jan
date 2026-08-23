@@ -66,6 +66,14 @@ jobs:
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 libappindicator3-dev
 
+      # `make build` compiles jan-llama-worker, which the deb and the AppImage
+      # both bundle. Vulkan is the Linux desktop variant: it covers AMD, Intel
+      # and NVIDIA through one driver-provided backend.
+      - name: Set up the llama.cpp engine toolchain
+        uses: ./.github/actions/setup-engine-toolchain
+        with:
+          variant: vulkan
+
       - name: Update app version
         run: |
           echo "Version: ${{ inputs.new_version }}"

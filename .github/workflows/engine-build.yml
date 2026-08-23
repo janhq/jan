@@ -1,0 +1,74 @@
+name: Engine Build
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/engine-build.yml
+      - .github/actions/setup-engine-toolchain/action.yml
+      - Makefile
+      - src-tauri/build-utils/*engine*.sh
+      - src-tauri/plugins/tauri-plugin-llamacpp/build.rs
+      - src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
+      - src-tauri/plugins/tauri-plugin-llamacpp/src/engine/**
+      - src-tauri/plugins/tauri-plugin-llamacpp/shim/**
+      - src-tauri/plugins/tauri-plugin-llamacpp/src/bin/**
+
+concurrency:
+  group: engine-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+# rust-check.yml compiles this plugin with default features, which leave the
+# engine OFF -- so nothing there links llama.cpp, and a broken shim or build.rs
+# would first surface in a nightly desktop build. This job is the cheapest place
+# to catch it: one variant, path-filtered, with the ggml objects in ccache.
+jobs:
+  worker:
+    name: jan-llama-worker (vulkan)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/dotnet /opt/ghc
+          df -h
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # The plugin depends on tauri, so building its binary needs the GUI
+      # headers even though the worker itself has no window.
+      - name: Install Tauri dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
+
+      - name: Set up the llama.cpp engine toolchain
+        uses: ./.github/actions/setup-engine-toolchain
+        with:
+          variant: vulkan
+
+      - name: Build and stage the engine
+        run: make build-engine
+
+      # --version proves the worker starts and resolves libggml through the
+      # rpath; --list-devices additionally exercises the shim and the pinned
+      # llama.cpp assert. Device enumeration is best-effort because a headless
+      # runner has no Vulkan ICD to report.
+      - name: Smoke-test the worker
+        run: |
+          ls -l src-tauri/resources/bin
+          ./src-tauri/resources/bin/jan-llama-worker --version
+          ./src-tauri/resources/bin/jan-llama-worker --list-devices || true
+
+      - name: Upload the engine build log
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: engine-build-log
+          path: src-tauri/target/engine-build.log
+          if-no-files-found: ignore

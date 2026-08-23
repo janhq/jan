@@ -1,0 +1,102 @@
+name: Setup engine toolchain
+description: >
+  Installs what `make build-engine` needs for one JAN_ENGINE_VARIANT and exports
+  the variant. `make build` builds the worker unconditionally now, and
+  tauri.<os>.conf.json bundles jan-llama-worker plus a libggml* glob, so a
+  desktop build without this step fails rather than shipping without an engine.
+
+inputs:
+  variant:
+    description: 'JAN_ENGINE_VARIANT to build: vulkan, cuda12, cuda13, rocm, metal or cpu'
+    required: true
+  vulkan-version:
+    description: >
+      Vulkan SDK version to install on Windows, where the SDK is an installer
+      download rather than a package. Linux takes LunarG's current release.
+    required: false
+    default: '1.4.313.2'
+
+runs:
+  using: composite
+  steps:
+    - name: Select the engine variant
+      shell: bash
+      run: echo "JAN_ENGINE_VARIANT=${{ inputs.variant }}" >> "$GITHUB_ENV"
+
+    # Keyed on build.rs because the pin lives there. An unrelated edit to that
+    # file only costs a re-clone, which is shallow.
+    - name: Cache the pinned llama.cpp checkout
+      uses: actions/cache@v4
+      with:
+        path: src-tauri/plugins/tauri-plugin-llamacpp/vendor/llama.cpp
+        key: llamacpp-src-${{ hashFiles('src-tauri/plugins/tauri-plugin-llamacpp/build.rs') }}
+
+    # One directory for every runner OS, so the cache key below is the only
+    # thing that differs. 2G holds a full ggml rebuild with room to spare.
+    - name: Point ccache at the workspace
+      shell: bash
+      run: |
+        echo "CCACHE_DIR=${{ github.workspace }}/.ccache" >> "$GITHUB_ENV"
+        echo "CCACHE_MAXSIZE=2G" >> "$GITHUB_ENV"
+
+    - name: Cache ccache
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/.ccache
+        key: engine-ccache-${{ runner.os }}-${{ inputs.variant }}-${{ hashFiles('src-tauri/plugins/tauri-plugin-llamacpp/build.rs') }}
+        restore-keys: |
+          engine-ccache-${{ runner.os }}-${{ inputs.variant }}-
+
+    - name: Install cmake and ccache (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ccache
+
+    - name: Install cmake and ccache (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        for tool in cmake ccache; do
+          command -v "$tool" >/dev/null 2>&1 || brew install "$tool"
+        done
+
+    - name: Install cmake and ccache (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        choco install --yes --no-progress ccache
+        echo "$env:ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
+
+    # ggml-vulkan needs Vulkan::glslc at configure time, so this is a build
+    # dependency, not a runtime one. Installed for every variant that carries
+    # the vulkan backend -- which is the CUDA and ROCm variants too, since
+    # JAN_ENGINE_VULKAN_FALLBACK pairs vulkan with them by default.
+    - name: Install the Vulkan SDK (Linux)
+      if: runner.os == 'Linux' && inputs.variant != 'metal' && inputs.variant != 'cpu'
+      shell: bash
+      run: |
+        codename=$(lsb_release -cs)
+        wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc \
+          | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc >/dev/null
+        sudo wget -qO "/etc/apt/sources.list.d/lunarg-vulkan-$codename.list" \
+          "https://packages.lunarg.com/vulkan/lunarg-vulkan-$codename.list"
+        sudo apt-get update
+        sudo apt-get install -y vulkan-sdk
+        glslc --version
+
+    - name: Install the Vulkan SDK (Windows)
+      if: runner.os == 'Windows' && inputs.variant != 'metal' && inputs.variant != 'cpu'
+      shell: pwsh
+      run: |
+        $version = "${{ inputs.vulkan-version }}"
+        curl.exe -L -o "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" `
+          "https://sdk.lunarg.com/sdk/download/$version/windows/vulkansdk-windows-X64-$version.exe"
+        & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
+        echo "VULKAN_SDK=C:\VulkanSDK\$version" >> $env:GITHUB_ENV
+        echo "C:\VulkanSDK\$version\Bin" >> $env:GITHUB_PATH
+
+    - name: Report the toolchain
+      shell: bash
+      run: make check-engine-toolchain

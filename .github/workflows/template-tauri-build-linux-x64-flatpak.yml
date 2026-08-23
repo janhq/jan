@@ -84,6 +84,14 @@ jobs:
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 libappindicator3-dev
 
+      # `make build` compiles jan-llama-worker into the deb this job produces.
+      # Vulkan is also the only backend Flathub's own builders can produce, so
+      # the two Linux paths ship the same engine.
+      - name: Set up the llama.cpp engine toolchain
+        uses: ./.github/actions/setup-engine-toolchain
+        with:
+          variant: vulkan
+
       - name: Update app version base public_provider
         run: |
           echo "Version: ${{ inputs.new_version }}"

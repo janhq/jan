@@ -359,6 +359,9 @@ export JAN_ENGINE_BUILD_LOG := $(ENGINE_BUILD_LOG)
 MAKE_J = $(strip $(patsubst -j%,%,$(filter -j%,$(MAKEFLAGS))))
 JAN_ENGINE_JOBS ?= $(MAKE_J)
 ENGINE_CARGO_JOBS = $(if $(JAN_ENGINE_JOBS),CARGO_BUILD_JOBS=$(JAN_ENGINE_JOBS),)
+# cmd.exe has no `VAR=value command` prefix, and make on Windows runs recipes
+# through cmd, so the same limit is set with `set` there.
+ENGINE_CARGO_JOBS_WIN = $(if $(JAN_ENGINE_JOBS),set CARGO_BUILD_JOBS=$(JAN_ENGINE_JOBS)&&,)
 
 # cargo also finds the jobserver in MAKEFLAGS and tries to join it, but a recipe
 # line make did not mark recursive never inherits its file descriptors, so cargo
@@ -368,7 +371,9 @@ ENGINE_CARGO_JOBS = $(if $(JAN_ENGINE_JOBS),CARGO_BUILD_JOBS=$(JAN_ENGINE_JOBS),
 # cmake -j from the NUM_JOBS cargo derives from it.
 export CARGO_MAKEFLAGS :=
 
-# Streams the build log while $(1) runs, then stops the tail either way.
+# Streams the build log while $(1) runs, then stops the tail either way. Unix
+# only -- the Windows recipes run cargo straight, so cmake output there arrives
+# in cargo's own failure dump rather than live.
 # `tail -F` tolerates the file not existing yet; the trap covers a cargo failure
 # and a Ctrl-C so no reader is left behind.
 define with_engine_log
@@ -395,6 +400,10 @@ endef
 ENGINE_VARIANT_EXPLICIT := $(if $(filter-out file,$(origin JAN_ENGINE_VARIANT)),yes,)
 
 build-engine-dev-if-possible:
+ifeq ($(DETECTED_OS),Windows)
+	@echo "Building the llama.cpp engine (skipped if the toolchain is incomplete)"
+	-$(MAKE) build-engine-dev
+else
 	@if out=$$($(MAKE) --no-print-directory check-engine-toolchain 2>&1); then \
 		$(MAKE) --no-print-directory build-engine-dev; \
 	elif [ -n "$(ENGINE_VARIANT_EXPLICIT)" ]; then \
@@ -415,46 +424,14 @@ build-engine-dev-if-possible:
 		echo "    make build-engine-dev JAN_ENGINE_VARIANT=cpu"; \
 		echo "=============================================================="; \
 	fi
-
-# The pinned llama.cpp, read straight out of build.rs so there is exactly one
-# source of truth for the pin.
-ENGINE_SRC_DIR := $(ENGINE_PLUGIN_DIR)/vendor/llama.cpp
-ENGINE_SRC_URL := https://github.com/ggml-org/llama.cpp.git
-ENGINE_TAG := $(shell sed -n 's/^pub const LLAMA_CPP_TAG: &str = "\(.*\)";/\1/p' $(ENGINE_PLUGIN_DIR)/build.rs)
-ENGINE_COMMIT := $(shell sed -n 's/^pub const LLAMA_CPP_COMMIT: &str = "\(.*\)";/\1/p' $(ENGINE_PLUGIN_DIR)/build.rs)
-
-# Shallow-clones the pinned tag. Not a submodule: we never modify this tree and
-# pin an exact commit, so a submodule only adds gitlink churn and a step every
-# contributor has to remember. `make clean` removes it.
-#
-# The commit is verified after cloning because a git tag is mutable -- upstream
-# could move b10582 and a --branch clone would silently hand us different
-# sources than build.rs claims, which is the one thing the pin exists to stop.
-engine-source:
-ifdef JAN_LLAMA_CPP_DIR
-	@echo "engine source: using JAN_LLAMA_CPP_DIR=$(JAN_LLAMA_CPP_DIR) (skipping the vendored clone)"
-else
-	@if [ -z "$(ENGINE_TAG)" ] || [ -z "$(ENGINE_COMMIT)" ]; then \
-		echo "error: could not read the llama.cpp pin out of $(ENGINE_PLUGIN_DIR)/build.rs" >&2; \
-		exit 1; \
-	fi
-	@if [ ! -f $(ENGINE_SRC_DIR)/CMakeLists.txt ]; then \
-		echo "Cloning llama.cpp $(ENGINE_TAG) (shallow)..."; \
-		rm -rf $(ENGINE_SRC_DIR); \
-		git clone --depth 1 --branch $(ENGINE_TAG) $(ENGINE_SRC_URL) $(ENGINE_SRC_DIR) || { \
-			echo "error: could not clone $(ENGINE_SRC_URL) at tag $(ENGINE_TAG)" >&2; \
-			exit 1; \
-		}; \
-	fi
-	@got=$$(git -C $(ENGINE_SRC_DIR) rev-parse HEAD); \
-	if [ "$$got" != "$(ENGINE_COMMIT)" ]; then \
-		echo "error: $(ENGINE_SRC_DIR) is at $$got but build.rs pins $(ENGINE_COMMIT)." >&2; \
-		echo "       The tag $(ENGINE_TAG) may have moved upstream, or the tree is stale." >&2; \
-		echo "       Delete it and re-run, or point JAN_LLAMA_CPP_DIR at a checkout." >&2; \
-		exit 1; \
-	fi; \
-	echo "engine source: llama.cpp $(ENGINE_TAG) at $$got"
 endif
+
+# The vendored llama.cpp. The pin itself lives in build.rs and is read by
+# fetch-engine-source.sh, so there is exactly one source of truth for it.
+ENGINE_SRC_DIR := $(ENGINE_PLUGIN_DIR)/vendor/llama.cpp
+
+engine-source:
+	bash src-tauri/build-utils/fetch-engine-source.sh
 
 # Drops the vendored clone. A `clean` prerequisite rather than part of its
 # recipe so it runs *before* clean's `find . -name build -type d` sweeps the
@@ -467,52 +444,20 @@ else
 	rm -rf $(ENGINE_SRC_DIR)
 endif
 
-# Fails fast when the toolchain on PATH cannot produce the requested variant.
-# Without this, building `cuda12` on a CUDA 13 host silently yields a cuda13
-# artifact under the cuda12 name -- which then crashes on the Pascal cards the
-# cuda12 build exists to support.
 check-engine-toolchain:
-ifneq (,$(filter $(JAN_ENGINE_VARIANT),cuda12 cuda13))
-	@command -v nvcc >/dev/null 2>&1 || { \
-		echo "error: JAN_ENGINE_VARIANT=$(JAN_ENGINE_VARIANT) needs nvcc on PATH" >&2; exit 1; }
-	@want=$(patsubst cuda%,%,$(JAN_ENGINE_VARIANT)); \
-	got=$$(nvcc --version | sed -n 's/.*release \([0-9]*\)\..*/\1/p' | head -1); \
-	if [ "$$got" != "$$want" ]; then \
-		echo "error: JAN_ENGINE_VARIANT=$(JAN_ENGINE_VARIANT) but nvcc reports CUDA $$got" >&2; \
-		echo "       point PATH/CUDA_HOME at a CUDA $$want toolkit, or build the cuda$$got variant" >&2; \
-		exit 1; \
-	fi; \
-	echo "engine toolchain: CUDA $$got matches $(JAN_ENGINE_VARIANT)"
-endif
-ifeq ($(JAN_ENGINE_VARIANT),rocm)
-	@command -v hipcc >/dev/null 2>&1 || { \
-		echo "error: JAN_ENGINE_VARIANT=rocm needs hipcc on PATH (install ROCm)" >&2; exit 1; }
-	@echo "engine toolchain: hipcc found"
-endif
-	@command -v cmake >/dev/null 2>&1 || { \
-		echo "error: building the engine needs cmake on PATH" >&2; exit 1; }
-	@if command -v ccache >/dev/null 2>&1; then \
-		echo "engine toolchain: ccache found ($$(ccache -s 2>/dev/null | awk -F': *' '/[Mm]ax cache size/ {print $$2; exit}'))"; \
-	elif command -v sccache >/dev/null 2>&1; then \
-		echo "engine toolchain: sccache found"; \
-	else \
-		echo "warning: no ccache/sccache -- every engine rebuild recompiles from scratch." >&2; \
-		echo "         A CUDA rebuild is tens of minutes without it, a couple with it:" >&2; \
-		echo "           sudo apt install ccache && ccache -M 25G" >&2; \
-		echo "         (25G because CUDA objects are large; the default 5G thrashes.)" >&2; \
-	fi
-ifneq (,$(filter engine-vulkan,$(subst $(COMMA), ,$(ENGINE_FEATURES))))
-	@command -v glslc >/dev/null 2>&1 || command -v glslangValidator >/dev/null 2>&1 || { \
-		echo "error: the vulkan backend needs the Vulkan SDK (glslc) on PATH" >&2; exit 1; }
-	@echo "engine toolchain: Vulkan shader compiler found"
-endif
+	bash src-tauri/build-utils/check-engine-toolchain.sh $(JAN_ENGINE_VARIANT) $(ENGINE_FEATURES)
 
 # Release worker plus the ggml runtime it loads.
 build-engine: engine-source check-engine-toolchain
 	@echo "Building llama.cpp engine worker (variant: $(JAN_ENGINE_VARIANT), features: $(ENGINE_FEATURES), jobs: $(if $(JAN_ENGINE_JOBS),$(JAN_ENGINE_JOBS),all cores))"
 	$(call MKDIR,'$(ENGINE_BIN_DIR)')
+ifeq ($(DETECTED_OS),Windows)
+	cd $(ENGINE_PLUGIN_DIR) && $(ENGINE_CARGO_JOBS_WIN) cargo build --release --features $(ENGINE_FEATURES) --bin jan-llama-worker
+	bash src-tauri/build-utils/stage-engine.sh release
+else
 	$(call with_engine_log,cd $(ENGINE_PLUGIN_DIR) && $(ENGINE_CARGO_JOBS) cargo build --release --features $(ENGINE_FEATURES) --bin jan-llama-worker)
-	JAN_ENGINE_PROFILE=release ./src-tauri/build-utils/stage-engine.sh
+	bash src-tauri/build-utils/stage-engine.sh release
+endif
 ifeq ($(DETECTED_OS),Darwin)
 	@echo "Checking for code signing identity..."; \
 	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
@@ -534,8 +479,13 @@ endif
 build-engine-dev: engine-source check-engine-toolchain
 	@echo "Building llama.cpp engine worker (dev, variant: $(JAN_ENGINE_VARIANT), jobs: $(if $(JAN_ENGINE_JOBS),$(JAN_ENGINE_JOBS),all cores))"
 	$(call MKDIR,'$(ENGINE_BIN_DIR)')
+ifeq ($(DETECTED_OS),Windows)
+	cd $(ENGINE_PLUGIN_DIR) && $(ENGINE_CARGO_JOBS_WIN) cargo build --features $(ENGINE_FEATURES) --bin jan-llama-worker
+	bash src-tauri/build-utils/stage-engine.sh debug
+else
 	$(call with_engine_log,cd $(ENGINE_PLUGIN_DIR) && $(ENGINE_CARGO_JOBS) cargo build --features $(ENGINE_FEATURES) --bin jan-llama-worker)
-	JAN_ENGINE_PROFILE=debug ./src-tauri/build-utils/stage-engine.sh
+	bash src-tauri/build-utils/stage-engine.sh debug
+endif
 
 # Debug build for local dev (faster, native arch only)
 build-cli-dev:

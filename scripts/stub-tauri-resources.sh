@@ -18,6 +18,16 @@ for bin in uv bun; do
   stub="src-tauri/resources/bin/${bin}-${TRIPLE}"
   [ -f "$stub" ] || touch "$stub"
 done
+# The engine worker and the ggml runtime beside it. `libggml*` is a glob in the
+# bundle config, and a glob that matches nothing is an error (GlobPathNotFound),
+# not an empty set -- so one stub library is required, not optional.
+case "$(uname -s)" in
+  Darwin) EXE=""; LIB="libggml-base.dylib" ;;
+  MINGW* | MSYS* | CYGWIN*) EXE=".exe"; LIB="ggml-base.dll" ;;
+  *) EXE=""; LIB="libggml-base.so" ;;
+esac
+[ -f "src-tauri/resources/bin/jan-llama-worker${EXE}" ] || touch "src-tauri/resources/bin/jan-llama-worker${EXE}"
+ls src-tauri/resources/bin/*ggml*."${LIB##*.}"* >/dev/null 2>&1 || touch "src-tauri/resources/bin/$LIB"
 # Icons are gitignored; generate_context!() requires them at compile time
 for icon in 32x32.png 128x128.png 128x128@2x.png icon.icns icon.ico; do
   [ -f "src-tauri/icons/$icon" ] || cp src-tauri/icons/icon.png "src-tauri/icons/$icon"

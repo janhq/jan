@@ -104,12 +104,34 @@ jobs:
           yarn --version
           yarn config set -H enableImmutableInstalls false
 
+      # `make build` compiles jan-llama-worker, which the dmg bundles. Metal is
+      # the only backend worth shipping on macOS, and it needs nothing beyond
+      # Xcode.
+      - name: Set up the llama.cpp engine toolchain
+        uses: ./.github/actions/setup-engine-toolchain
+        with:
+          variant: metal
+
       - name: Build app
         run: |
           make build
         env:
           NODE_OPTIONS: "--max-old-space-size=4196"
           APP_PATH: '.'
+
+      # The bundle is universal but the engine build is host-arch, so name the
+      # slice that is actually covered instead of shipping the gap silently.
+      - name: Report the engine's architecture coverage
+        shell: bash
+        run: |
+          archs=$(lipo -archs src-tauri/resources/bin/jan-llama-worker)
+          echo "jan-llama-worker: $archs"
+          for want in x86_64 arm64; do
+            case " $archs " in
+              *" $want "*) ;;
+              *) echo "::warning::jan-llama-worker has no $want slice, so local inference will not start on $want Macs" ;;
+            esac
+          done
 
       - name: Upload Artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

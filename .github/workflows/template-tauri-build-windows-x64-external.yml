@@ -156,6 +156,14 @@ jobs:
           yarn --version
           yarn config set -H enableImmutableInstalls false
 
+      # `make build` compiles jan-llama-worker, which the NSIS and MSI bundles
+      # both carry. Vulkan covers AMD, Intel and NVIDIA here through one
+      # driver-provided backend; a CUDA variant needs a toolkit on the runner.
+      - name: Set up the llama.cpp engine toolchain
+        uses: ./.github/actions/setup-engine-toolchain
+        with:
+          variant: vulkan
+
       - name: Build app
         shell: bash
         run: |
