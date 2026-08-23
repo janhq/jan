@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use super::events::{EventBus, Transition};
 use super::{Engine, EngineError};
 
 /// Monotonic tick for LRU ordering. A counter rather than a clock so ordering
@@ -109,6 +110,8 @@ pub struct Registry {
     failures: HashMap<String, String>,
     /// 0 means unlimited, matching llama.cpp's `--models-max`.
     models_max: usize,
+    /// Where every transition below is published for `/models/sse`.
+    events: EventBus,
 }
 
 impl Registry {
@@ -119,7 +122,13 @@ impl Registry {
             stale: HashSet::new(),
             failures: HashMap::new(),
             models_max,
+            events: EventBus::new(),
         }
+    }
+
+    /// The lifecycle feed, for the HTTP layer to subscribe to.
+    pub fn events(&self) -> EventBus {
+        self.events.clone()
     }
 
     pub fn models_max(&self) -> usize {
@@ -232,6 +241,7 @@ impl Registry {
 
         self.make_room()?;
 
+        self.events.emit(model_id, Transition::Loading);
         let started = match &spec {
             LoadSpec::Args(args) => Engine::start(args),
             LoadSpec::Preset {
@@ -247,6 +257,10 @@ impl Registry {
                 // Recorded so the poll arm sees `failed: true` rather than
                 // waiting out its timeout on a bare "unloaded".
                 self.failures.insert(model_id.to_string(), e.to_string());
+                // Nonzero: this is the transition the desktop treats as a
+                // definitive load failure.
+                self.events
+                    .emit(model_id, Transition::Unloaded { exit_code: 1 });
                 return Err(e.into());
             }
         };
@@ -259,6 +273,7 @@ impl Registry {
                 last_used: next_tick(),
             },
         );
+        self.events.emit(model_id, Transition::Loaded);
         Ok(engine)
     }
 
@@ -274,6 +289,8 @@ impl Registry {
         m.last_used = next_tick();
         if m.inflight == 0 && self.stale.remove(model_id) {
             self.loaded.remove(model_id);
+            self.events
+                .emit(model_id, Transition::Unloaded { exit_code: 0 });
         }
     }
 
@@ -330,6 +347,8 @@ impl Registry {
         match self.loaded.get(model_id) {
             Some(m) if m.inflight == 0 => {
                 self.loaded.remove(model_id);
+                self.events
+                    .emit(model_id, Transition::Unloaded { exit_code: 0 });
             }
             Some(_) => {
                 self.stale.insert(model_id.to_string());
@@ -345,6 +364,8 @@ impl Registry {
             Some(m) if m.inflight == 0 => {
                 self.loaded.remove(model_id);
                 self.stale.remove(model_id);
+                self.events
+                    .emit(model_id, Transition::Unloaded { exit_code: 0 });
                 true
             }
             _ => false,
@@ -376,6 +397,8 @@ impl Registry {
                 });
             };
             self.loaded.remove(&victim);
+            self.events
+                .emit(&victim, Transition::Unloaded { exit_code: 0 });
         }
         Ok(())
     }

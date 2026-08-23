@@ -243,63 +243,6 @@ pub fn resolve_model_by_id(
 
 // ── Binary auto-discovery ──────────────────────────────────────────────────
 
-/// Find the llama-server binary inside the Jan data folder.
-///
-/// Walks `<data_folder>/llamacpp/backends/<version>/<backend>/` and checks
-/// two locations per backend (same logic as the llamacpp-extension):
-///   1. `<backend_dir>/build/bin/llama-server[.exe]`
-///   2. `<backend_dir>/llama-server[.exe]`
-///
-/// Returns the first binary found, or `None` if no installed backend is found.
-pub fn discover_llamacpp_binary() -> Option<PathBuf> {
-    use std::fs;
-
-    let data_folder = resolve_jan_data_folder();
-    let backends_dir = data_folder.join("llamacpp").join("backends");
-
-    if !backends_dir.exists() {
-        return None;
-    }
-
-    let exe = if cfg!(windows) { "llama-server.exe" } else { "llama-server" };
-
-    // Collect version directories, sorted descending so we prefer the latest.
-    let mut version_entries: Vec<_> = fs::read_dir(&backends_dir)
-        .ok()?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_dir())
-        .collect();
-    version_entries.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
-
-    for version_entry in version_entries {
-        let version_dir = version_entry.path();
-        let mut backend_entries: Vec<_> = fs::read_dir(&version_dir)
-            .ok()?
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_dir())
-            .collect();
-        backend_entries.sort_by_key(|a| a.file_name());
-
-        for backend_entry in backend_entries {
-            let backend_dir = backend_entry.path();
-
-            // Primary location: <backend>/build/bin/llama-server
-            let primary = backend_dir.join("build").join("bin").join(exe);
-            if primary.exists() {
-                return Some(primary);
-            }
-
-            // Fallback: <backend>/llama-server
-            let fallback = backend_dir.join(exe);
-            if fallback.exists() {
-                return Some(fallback);
-            }
-        }
-    }
-
-    None
-}
-
 /// Find the mlx-server binary.
 ///
 /// Checks standard locations in order:

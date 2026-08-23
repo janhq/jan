@@ -19,7 +19,9 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <vector>
 #include <chrono>
 #include <thread>
 #include <unordered_map>
@@ -39,6 +41,63 @@ void set_err(char * err, size_t err_len, const std::string & msg) {
 
 jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
                                 char * err, size_t err_len);
+
+// `server_context::load_model` returns a bool and puts the reason -- a CUDA
+// OOM, an unsupported arch, a missing backend -- only in the log, so a caller
+// that reports the bool alone cannot tell those apart. These collect
+// ERROR-level lines while a load runs so `set_err` can carry the cause.
+//
+// The first lines are kept rather than the last: the cause comes first
+// (`cudaMalloc failed: out of memory`) and everything after it is fallout, and
+// keeping the head also stops an unrelated error from a model already serving
+// in this process from evicting it.
+constexpr size_t LOG_CAPTURE_MAX_LINES = 8;
+
+std::mutex               g_capture_mu;
+std::vector<std::string> g_captured;
+bool                     g_capturing = false;
+
+void capture_log_callback(ggml_log_level level, const char * text, void * user_data) {
+    if (level == GGML_LOG_LEVEL_ERROR && text != nullptr) {
+        std::lock_guard<std::mutex> lock(g_capture_mu);
+        if (g_capturing && g_captured.size() < LOG_CAPTURE_MAX_LINES) {
+            std::string line(text);
+            while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+                line.pop_back();
+            }
+            if (!line.empty()) {
+                g_captured.push_back(std::move(line));
+            }
+        }
+    }
+    common_log_default_callback(level, text, user_data);
+}
+
+// Scoped so every exit from the load -- including a throw -- stops capturing.
+struct log_capture {
+    log_capture() {
+        std::lock_guard<std::mutex> lock(g_capture_mu);
+        g_captured.clear();
+        g_capturing = true;
+    }
+
+    ~log_capture() { finish(""); }
+
+    std::string message(const std::string & summary) { return finish(summary); }
+
+private:
+    std::string finish(const std::string & summary) {
+        std::lock_guard<std::mutex> lock(g_capture_mu);
+        g_capturing = false;
+        std::string out = summary;
+        for (const auto & line : g_captured) {
+            out += "; ";
+            out += line;
+        }
+        g_captured.clear();
+        return out;
+    }
+};
 
 // Device descriptions are vendor strings and have carried backslashes and
 // quotes; emitting them raw would produce JSON the Rust side cannot parse.
@@ -270,6 +329,18 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char * ini_path,
         postprocess_cpu_params(engine->params.speculative.draft.cpuparams_batch,
                                &engine->params.cpuparams_batch);
 
+        // Same omission, arg.cpp:946-954: common_params_fit needs spare slots
+        // to write its overrides into and throws "did not provide buffer to
+        // set tensor_buft_overrides" without them, so auto-fit silently gave
+        // up and the load then asked for more VRAM than the device had.
+        const size_t ntbo = llama_max_tensor_buft_overrides();
+        while (engine->params.tensor_buft_overrides.size() < ntbo) {
+            engine->params.tensor_buft_overrides.push_back({nullptr, nullptr});
+        }
+        if (!engine->params.speculative.draft.tensor_buft_overrides.empty()) {
+            engine->params.speculative.draft.tensor_buft_overrides.push_back({nullptr, nullptr});
+        }
+
         return finish_start(std::move(engine), err, err_len);
     } catch (const std::exception & e) {
         set_err(err, err_len, e.what());
@@ -286,6 +357,8 @@ jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
                                 char * err, size_t err_len) {
     try {
         common_init();
+        // After common_init, which installs its own callback.
+        llama_log_set(capture_log_callback, nullptr);
         llama_backend_init();
         llama_numa_init(engine->params.numa);
 
@@ -293,8 +366,9 @@ jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
         // on_sleeping_state callback the sleep path depends on.
         engine->routes = std::make_unique<server_routes>(engine->params, engine->ctx);
 
+        log_capture capture;
         if (!engine->ctx.load_model(engine->params)) {
-            set_err(err, err_len, "failed to load model");
+            set_err(err, err_len, capture.message("failed to load model"));
             return nullptr;
         }
 

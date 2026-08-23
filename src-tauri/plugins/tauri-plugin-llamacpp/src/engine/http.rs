@@ -23,7 +23,7 @@ use hyper::service::service_fn;
 use hyper::{Method, Request, Response as HttpResponse, StatusCode};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{broadcast, mpsc, Mutex};
 
 use super::registry::{Registry, RegistryError};
 use super::slots::{Claim, Identity, SlotOccupancy, StateStore, MIN_TOKENS_TO_SAVE};
@@ -349,6 +349,13 @@ impl EngineServer {
             return self.list_models().await;
         }
 
+        // The lifecycle feed. Subscribed for the length of a load, so a failed
+        // one is reported the moment it happens instead of waiting out the
+        // caller's poll timeout.
+        if method == Method::GET && path == "/models/sse" {
+            return self.models_sse().await;
+        }
+
         // Applying a regenerated preset. The router spelled this
         // `GET /models?reload=1`; a POST is used here because it mutates, and
         // because it carries the resized `models_max` the router could not
@@ -483,6 +490,46 @@ impl EngineServer {
             })
             .collect();
         json_ok(&serde_json::json!({ "object": "list", "data": data }))
+    }
+
+    /// Streams model lifecycle transitions until the client goes away.
+    ///
+    /// Subscribing before the response is returned is what makes this usable
+    /// as a load watcher: a caller that opens the stream and only then posts
+    /// `/models/load` cannot miss the `loading` event.
+    ///
+    /// No keepalive comments: the connection is loopback and short-lived, so
+    /// there is no proxy idle timeout to defeat.
+    async fn models_sse(&self) -> HttpResponse<Body> {
+        let mut rx = self.registry.lock().await.events().subscribe();
+        let (tx, out) = mpsc::channel::<Result<Frame<Bytes>, Infallible>>(STREAM_BUFFER);
+
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        let frame = Bytes::from(event.to_sse_frame());
+                        if tx.send(Ok(Frame::data(frame))).await.is_err() {
+                            return; // client gone
+                        }
+                    }
+                    // A subscriber too slow for CHANNEL_CAPACITY has missed
+                    // events it cannot recover, and inventing them would be
+                    // worse than the gap: keep streaming from here.
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        log::warn!("a /models/sse subscriber lagged and missed {n} event(s)");
+                    }
+                    Err(broadcast::error::RecvError::Closed) => return,
+                }
+            }
+        });
+
+        HttpResponse::builder()
+            .status(StatusCode::OK)
+            .header(hyper::header::CONTENT_TYPE, "text/event-stream")
+            .header(hyper::header::CACHE_CONTROL, "no-cache")
+            .body(StreamBody::new(tokio_stream_wrapper(out)).boxed())
+            .unwrap_or_else(|_| json_error(StatusCode::INTERNAL_SERVER_ERROR, "bad response"))
     }
 
     /// Loads a model and leaves it resident. Synchronous, unlike the router's

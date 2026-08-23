@@ -47,6 +47,94 @@ impl std::fmt::Display for WorkerError {
     }
 }
 
+/// A runtime failure worth telling the user about, classified from one worker
+/// log line. `GGML_ASSERT` calls `abort()`, so for these the line on stderr is
+/// often the only evidence left of what happened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeFault {
+    /// Ran out of device or host memory mid-request.
+    Oom,
+    /// A backend crash: a CUDA/Vulkan/Metal error, a failed assert, device
+    /// loss, or a heap-corruption abort.
+    Backend,
+}
+
+impl RuntimeFault {
+    /// The event name the frontend listens on. Still `router` because that is
+    /// what `LlamacppOomListener` subscribes to; renaming it would be a
+    /// two-sided change for no gain.
+    pub const fn event_name(self) -> &'static str {
+        match self {
+            Self::Oom => "llamacpp-router-oom",
+            Self::Backend => "llamacpp-router-backend-error",
+        }
+    }
+}
+
+/// Classifies a log line. The caller lowercases once and passes that in.
+pub fn classify_fault(line_lower: &str) -> Option<RuntimeFault> {
+    if is_oom_line(line_lower) {
+        return Some(RuntimeFault::Oom);
+    }
+    if is_backend_error_line(line_lower) {
+        return Some(RuntimeFault::Backend);
+    }
+    None
+}
+
+fn is_oom_line(line_lower: &str) -> bool {
+    if line_lower.contains("erroroutofdevicememory") || line_lower.contains("erroroutofhostmemory")
+    {
+        return true;
+    }
+    line_lower.contains("failed to allocate") && line_lower.contains("buffer of size")
+}
+
+fn is_backend_error_line(line_lower: &str) -> bool {
+    if line_lower.contains("cuda error:") || line_lower.contains("ggml_assert(") {
+        return true;
+    }
+    if (line_lower.contains("ggml_vulkan") || line_lower.contains("ggml_metal"))
+        && line_lower.contains("error")
+    {
+        return true;
+    }
+    // GPU device loss (vk::DeviceLostError / ErrorDeviceLost, CUDA device-lost)
+    // and any uncaught C++ exception abort mid-request -- surface them so a
+    // crash during prompt processing still reaches the UI.
+    if line_lower.contains("devicelost")
+        || line_lower.contains("device lost")
+        || line_lower.contains("terminate called after throwing")
+    {
+        return true;
+    }
+    // glibc heap-corruption / stack-protector aborts (SIGABRT). A native memory
+    // bug in the backend (e.g. the mtmd video decode path) prints one of these
+    // just before the process dies -- unclassified, the crash is silent and the
+    // load appears to hang forever.
+    [
+        "corrupted size vs. prev_size",
+        "corrupted double-linked list",
+        "double free or corruption",
+        "malloc(): ",
+        "free(): ",
+        "munmap_chunk(): invalid pointer",
+        "stack smashing detected",
+        "buffer overflow detected",
+    ]
+    .iter()
+    .any(|m| line_lower.contains(m))
+}
+
+/// Called once per classified line, with the line itself. Boxed rather than
+/// generic so `WorkerHandle` does not have to carry a type parameter.
+pub type FaultCallback = std::sync::Arc<dyn Fn(RuntimeFault, String) + Send + Sync + 'static>;
+
+/// Minimum gap between reports. One fault produces a burst of lines (a CUDA
+/// error, then the assert, then the abort message), and the user needs the
+/// first one, not all of them.
+const FAULT_DEBOUNCE: Duration = Duration::from_secs(3);
+
 /// Env var the worker reads its bearer token from. Never an argv flag: argv is
 /// world-readable via `ps` / `/proc/<pid>/cmdline`, and the supervisor logs it.
 pub const API_KEY_ENV: &str = "JAN_LLAMA_API_KEY";
@@ -198,6 +286,7 @@ impl WorkerHandle {
 }
 
 /// Spawns the worker and waits for its handshake line.
+#[allow(clippy::too_many_arguments)]
 pub async fn spawn(
     exe: &Path,
     preset_path: &Path,
@@ -206,6 +295,7 @@ pub async fn spawn(
     models_max: u32,
     slot_cache_mib: u64,
     envs: HashMap<String, String>,
+    on_fault: Option<FaultCallback>,
 ) -> Result<WorkerHandle, WorkerError> {
     let args = worker_args(preset_path, port, models_max, slot_cache_mib);
     log::info!("starting {} {}", exe.display(), args.join(" "));
@@ -236,8 +326,19 @@ pub async fn spawn(
     if let Some(stderr) = child.stderr.take() {
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
+            let mut last_fault_at: Option<tokio::time::Instant> = None;
             while let Ok(Some(line)) = lines.next_line().await {
                 log::debug!("jan-llama-worker: {line}");
+                let Some(cb) = on_fault.as_ref() else { continue };
+                let Some(fault) = classify_fault(&line.to_lowercase()) else {
+                    continue;
+                };
+                let now = tokio::time::Instant::now();
+                if last_fault_at.is_some_and(|t| now.duration_since(t) <= FAULT_DEBOUNCE) {
+                    continue;
+                }
+                last_fault_at = Some(now);
+                cb(fault, line);
             }
         });
     }
@@ -313,6 +414,72 @@ pub fn sidecar_path() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Restored with the marker lists intact: each entry came from a real crash
+    // report, and a fault the classifier misses is a silent hang for the user.
+    #[test]
+    fn classifies_backend_crash_lines() {
+        // Inputs arrive already lowercased from the caller.
+        for line in [
+            "what():  vk::device::waitforfences: errordevicelost",
+            "terminate called after throwing an instance of 'vk::devicelosterror'",
+            "cuda error: out of memory",
+            "ggml_assert(cond) failed",
+            "corrupted size vs. prev_size",
+            "malloc(): corrupted top size",
+            "stack smashing detected",
+        ] {
+            assert_eq!(
+                classify_fault(line),
+                Some(RuntimeFault::Backend),
+                "{line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn classifies_allocation_failures_as_oom() {
+        for line in [
+            "erroroutofdevicememory",
+            "erroroutofhostmemory",
+            "alloc_tensor_range: failed to allocate cuda0 buffer of size 2491323904",
+        ] {
+            assert_eq!(classify_fault(line), Some(RuntimeFault::Oom), "{line:?}");
+        }
+    }
+
+    // OOM is checked first: "cuda error: out of memory" is both, and the OOM
+    // dialog is the one with advice the user can act on.
+    #[test]
+    fn ordinary_log_lines_are_not_faults() {
+        for line in [
+            "srv log_server_r: request: post /v1/chat/completions",
+            "load: control-looking token: 128247 was not control-type",
+            "main: server is listening on http://127.0.0.1:39271",
+            "",
+        ] {
+            assert_eq!(classify_fault(line), None, "{line:?}");
+        }
+    }
+
+    // A partial phrase must not fire: "failed to allocate" alone shows up in
+    // benign fit-params chatter.
+    #[test]
+    fn a_partial_allocation_phrase_is_not_an_oom() {
+        assert_eq!(
+            classify_fault("common_fit_params: failed to allocate a plan"),
+            None
+        );
+    }
+
+    #[test]
+    fn each_fault_maps_to_the_event_the_frontend_listens_on() {
+        assert_eq!(RuntimeFault::Oom.event_name(), "llamacpp-router-oom");
+        assert_eq!(
+            RuntimeFault::Backend.event_name(),
+            "llamacpp-router-backend-error"
+        );
+    }
 
     #[test]
     fn worker_args_are_the_documented_flags() {
@@ -409,6 +576,7 @@ mod tests {
             1,
             0,
             HashMap::new(),
+            None,
         )
         .await
         .expect_err("a missing exe must fail");
@@ -424,7 +592,7 @@ mod tests {
             .map(Path::new)
             .find(|p| p.is_file());
         let Some(exe) = exe else { return };
-        let err = spawn(exe, Path::new("/tmp/x.ini"), 0, "k", 1, 0, HashMap::new())
+        let err = spawn(exe, Path::new("/tmp/x.ini"), 0, "k", 1, 0, HashMap::new(), None)
             .await
             .expect_err("a silent exit must fail");
         assert!(matches!(err, WorkerError::Handshake(_)), "got {err:?}");

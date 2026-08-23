@@ -70,6 +70,11 @@ mod imp {
         }
     }
 
+    /// Room for the shim's summary plus the llama.cpp error lines it captured
+    /// during the load; a load failure carries several and 1 KiB truncated
+    /// them mid-cause.
+    const ERR_BUF_LEN: usize = 4096;
+
     impl Engine {
         /// Starts from llama-server's own flag set, so callers reuse the
         /// upstream arg table instead of mirroring `common_params`.
@@ -79,7 +84,7 @@ mod imp {
                 .map(|a| CString::new(a.as_str()).unwrap_or_default())
                 .collect();
             let argv: Vec<*const c_char> = owned.iter().map(|c| c.as_ptr()).collect();
-            let mut err = vec![0u8; 1024];
+            let mut err = vec![0u8; ERR_BUF_LEN];
             // SAFETY: argv points at `owned`, alive for the call; the shim
             // copies every string and retains none of these pointers.
             let handle = unsafe {
@@ -98,7 +103,7 @@ mod imp {
         pub fn start_from_preset(ini_path: &str, preset: &str) -> Result<Self, EngineError> {
             let ini = CString::new(ini_path).map_err(|e| EngineError::Start(e.to_string()))?;
             let name = CString::new(preset).map_err(|e| EngineError::Start(e.to_string()))?;
-            let mut err = vec![0u8; 1024];
+            let mut err = vec![0u8; ERR_BUF_LEN];
             // SAFETY: both pointers are valid for the duration of the call.
             let handle = unsafe {
                 jan_llama_engine_start_from_preset(

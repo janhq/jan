@@ -125,6 +125,92 @@ async fn post(base: &str, path: &str, body: &str, key: Option<&str>) -> (u16, St
     (res.status().as_u16(), res.text().await.unwrap_or_default())
 }
 
+/// Serves a registry whose one model cannot possibly load, so the lifecycle
+/// feed can be exercised without a GGUF on disk.
+async fn serve_unloadable() -> String {
+    tauri_plugin_llamacpp::engine::load_backend_modules();
+    let mut reg = Registry::new(1);
+    reg.register(MODEL_ID, spec("/nonexistent/jan-test-model.gguf", None));
+    let (server, listener) = EngineServer::bind(Arc::new(Mutex::new(reg)), 0, KEY.into())
+        .await
+        .expect("loopback bind");
+    let base = format!("http://127.0.0.1:{}", server.port);
+    tokio::spawn(server.serve(listener));
+    base
+}
+
+/// The lifecycle feed Jan subscribes to for the length of a load. Needs no
+/// model: a load that cannot succeed still has to announce both transitions,
+/// and the nonzero exit code is what tells the desktop it failed rather than
+/// having been evicted.
+#[tokio::test(flavor = "multi_thread")]
+async fn models_sse_streams_the_load_transitions() {
+    use futures_util::StreamExt;
+
+    let base = serve_unloadable().await;
+
+    let unauth = reqwest::Client::new()
+        .get(format!("{base}/models/sse"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unauth.status(), 401, "the feed must require the key");
+
+    let resp = reqwest::Client::new()
+        .get(format!("{base}/models/sse"))
+        .bearer_auth(KEY)
+        .send()
+        .await
+        .expect("the feed should be reachable");
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok()),
+        Some("text/event-stream")
+    );
+
+    // Posted only once the stream is established, which is the ordering the
+    // plugin's own loader follows -- the load is synchronous, so a subscriber
+    // that arrives afterwards sees nothing.
+    let load = tokio::spawn({
+        let base = base.clone();
+        async move {
+            post(
+                &base,
+                "/models/load",
+                &format!(r#"{{"model":"{MODEL_ID}"}}"#),
+                Some(KEY),
+            )
+            .await
+        }
+    });
+
+    let mut stream = resp.bytes_stream();
+    let mut seen = String::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    while !seen.contains("unloaded") {
+        let next = tokio::time::timeout_at(deadline, stream.next()).await;
+        match next {
+            Ok(Some(Ok(bytes))) => seen.push_str(&String::from_utf8_lossy(&bytes)),
+            Ok(Some(Err(e))) => panic!("stream error: {e}"),
+            Ok(None) => panic!("stream ended before the load resolved: {seen:?}"),
+            Err(_) => panic!("timed out waiting for the transitions: {seen:?}"),
+        }
+    }
+
+    let (status, body) = load.await.unwrap();
+    assert_eq!(status, 400, "an impossible load must be refused: {body}");
+
+    assert!(seen.contains(r#""status":"loading""#), "{seen:?}");
+    assert!(seen.contains(r#""status":"unloaded""#), "{seen:?}");
+    assert!(seen.contains(r#""exit_code":1"#), "{seen:?}");
+    assert!(
+        seen.find("loading").unwrap() < seen.find("unloaded").unwrap(),
+        "transitions must arrive in order: {seen:?}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn models_lists_registered_models_and_requires_the_key() {
     let Some(model) = model_path() else { return };

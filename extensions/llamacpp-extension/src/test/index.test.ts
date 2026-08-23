@@ -1033,7 +1033,7 @@ describe('reportMissingLibrariesFromError', () => {
 
   it('ignores unrelated launch failures', async () => {
     extension['reportMissingLibrariesFromError']({
-      code: 'LLAMA_CPP_PROCESS_ERROR',
+      code: 'MODEL_LOAD_FAILED',
       details: 'something else',
     })
 

@@ -15,10 +15,12 @@
 use std::fmt;
 
 pub mod commands;
+pub mod events;
 pub mod http;
 pub mod preset;
 pub mod registry;
 pub mod slots;
+pub mod watcher;
 pub mod worker;
 mod sys;
 

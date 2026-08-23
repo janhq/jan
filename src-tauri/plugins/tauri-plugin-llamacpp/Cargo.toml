@@ -15,22 +15,17 @@ base64 = "0.22.1"
 byteorder = "1.5.0"
 hmac = "0.12.1"
 jan-utils = { path = "../../utils" }
-# Cross-platform dlopen/LoadLibrary with error strings, for the out-of-process
-# backend load probe. Already present in the lockfile via other crates.
-libloading = "0.8"
 log = "0.4"
-# Bearer tokens for the worker. Unlike the router path, the key is not derived
-# from the port (the OS assigns it), so it is drawn from the OS CSPRNG.
+# Bearer tokens for the worker. The OS assigns the port, so the key cannot be
+# derived from it; it is drawn from the OS CSPRNG instead.
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 sha2 = "0.10.9"
-sysinfo = "0.34.2"
 tauri = { version = "2.5.0", default-features = false, features = [] }
 thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
 tauri-plugin-hardware = { path = "../tauri-plugin-hardware" }
 serde_json = "1.0.149"
-serde_yaml = "0.9.34"
 futures-util = "0.3"
 # The loopback OpenAI-compatible surface. Same versions the app crate already
 # uses, so the workspace resolves one copy.

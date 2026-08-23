@@ -75,7 +75,7 @@ import {
   getMutualExclusionDrops,
   getProviderApiType,
 } from '@/lib/providerCaps'
-import { describeEngineError } from '@/lib/engineError'
+import { engineFailure } from '@/lib/engineError'
 import { i18n } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -918,11 +918,9 @@ export class ModelFactory {
         console.error('Failed to start llamacpp model:', error)
         // A serialized engine error is a plain object, so the previous
         // `instanceof Error` path stringified it into raw JSON for the user.
-        throw new Error(
-          i18n.t('model-errors:startModelFailed', {
-            reason: describeEngineError(error),
-          })
-        )
+        // It rides along as `cause` so an outer layer describes the failure
+        // once from its code instead of nesting this sentence inside its own.
+        throw engineFailure('model-errors:startModelFailed', error)
       }
     }
 
@@ -1002,11 +1000,7 @@ export class ModelFactory {
         }
       } catch (error) {
         console.error('Failed to start MLX model:', error)
-        throw new Error(
-          i18n.t('model-errors:startModelFailed', {
-            reason: describeEngineError(error),
-          })
-        )
+        throw engineFailure('model-errors:startModelFailed', error)
       }
     }
 

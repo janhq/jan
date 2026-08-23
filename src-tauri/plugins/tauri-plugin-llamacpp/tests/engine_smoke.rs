@@ -29,6 +29,36 @@ fn start(model: &str) -> Engine {
     Engine::start(&args).expect("engine should start")
 }
 
+// `server_context::load_model` only returns a bool, so without the shim's log
+// capture every failure reads as the same bare "failed to load model" and the
+// desktop cannot tell a VRAM exhaustion from a bad path. Needs no model file:
+// the point is that llama.cpp's own error text rides along.
+#[test]
+fn a_failed_load_reports_the_reason_llama_cpp_logged() {
+    tauri_plugin_llamacpp::engine::load_backend_modules();
+    let missing = std::env::temp_dir().join("jan-no-such-model.gguf");
+    let args: Vec<String> = [
+        "llama-server",
+        "-m",
+        &missing.to_string_lossy(),
+        "--no-warmup",
+        "-ngl",
+        "0",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+
+    let err = Engine::start(&args).expect_err("a missing model cannot load");
+    let msg = err.to_string();
+
+    assert!(msg.contains("failed to load model"), "{msg}");
+    assert!(
+        msg.len() > "could not start the llama.cpp engine: failed to load model".len(),
+        "no captured log lines in: {msg}"
+    );
+}
+
 #[test]
 fn loads_a_model_and_answers_health_and_models() {
     let Some(model) = model_path() else {

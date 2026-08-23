@@ -48,6 +48,7 @@ async fn spawns_the_worker_reads_its_handshake_and_serves() {
         1,
         0,
         HashMap::new(),
+        None,
     )
     .await
     .expect("the worker should come up");
@@ -115,6 +116,7 @@ async fn a_preset_that_does_not_exist_still_starts_and_serves_no_models() {
         1,
         0,
         HashMap::new(),
+        None,
     )
     .await
     .expect_err("a missing preset must be reported");
@@ -138,6 +140,7 @@ async fn a_stopped_worker_is_actually_gone() {
         1,
         0,
         HashMap::new(),
+        None,
     )
     .await
     .expect("the worker should come up");
@@ -196,6 +199,7 @@ async fn closing_stdin_stops_the_worker_without_a_signal() {
         1,
         0,
         HashMap::new(),
+        None,
     )
     .await
     .expect("the worker should come up");

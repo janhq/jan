@@ -29,8 +29,7 @@ import {
 } from '@/lib/webSearchTool'
 import { useAppState } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
-import { describeEngineError } from '@/lib/engineError'
-import { i18n } from '@/i18n/react-i18next-compat'
+import { engineFailure } from '@/lib/engineError'
 import { ExtensionManager } from '@/lib/extension'
 import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
 import {
@@ -1249,11 +1248,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Preserve AbortError identity so callers/UI can tell a user-initiated
       // Stop from an actual model-load failure.
       if (error instanceof Error && error.name === 'AbortError') throw error
-      throw new Error(
-        i18n.t('model-errors:createModelFailed', {
-          reason: describeEngineError(error),
-        })
-      )
+      throw engineFailure('model-errors:createModelFailed', error)
     }
 
     await this.refreshTools(options.abortSignal)

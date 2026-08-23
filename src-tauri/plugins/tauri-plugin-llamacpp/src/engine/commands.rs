@@ -1,9 +1,4 @@
-//! Tauri commands for the in-process engine.
-//!
-//! Added alongside the router commands rather than replacing them, so the
-//! router path keeps working while the frontend migrates. `EngineInfo` is
-//! deliberately shaped like `router::RouterInfo` (`port`, `api_key`, `pid`) so
-//! the TS caller changes a command name and nothing else.
+//! Tauri commands for the engine worker.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -81,6 +76,19 @@ fn resolve_worker_exe<R: tauri::Runtime>(
     })
 }
 
+/// Forwards a worker fault to the frontend, which turns it into the OOM or
+/// backend-error dialog. A mid-generation `GGML_ASSERT` kills the worker
+/// outright, so its log line is the only account of what happened.
+fn fault_emitter<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) -> worker::FaultCallback {
+    use tauri::Emitter;
+    Arc::new(move |fault: worker::RuntimeFault, line: String| {
+        log::error!("jan-llama-worker fault ({fault:?}): {line}");
+        if let Err(e) = app_handle.emit(fault.event_name(), line) {
+            log::warn!("emit {} failed: {e}", fault.event_name());
+        }
+    })
+}
+
 /// Starts the worker. `slot_cache_mib` is the ceiling on the per-thread KV
 /// cache directory; 0 turns cross-session KV persistence off, which is a
 /// user-facing setting because a single saved conversation is hundreds of MiB.
@@ -109,11 +117,18 @@ pub async fn start_engine<R: tauri::Runtime>(
         models_max,
         slot_cache_mib,
         envs,
+        Some(fault_emitter(app_handle.clone())),
     )
     .await
     .map_err(|e| e.to_string())?;
 
     let info = EngineInfo::from(&handle);
+    // Subscribed here rather than lazily: an eviction can happen on the very
+    // first chat request, before any explicit load opens its own listener.
+    let watcher = super::watcher::spawn(app_handle.clone(), info.port, info.api_key.clone());
+    if let Some(previous) = state.unload_watcher.lock().await.replace(watcher) {
+        previous.abort();
+    }
     *guard = Some(handle);
     Ok(info)
 }
@@ -126,9 +141,8 @@ pub async fn start_engine<R: tauri::Runtime>(
 ///
 /// `Ok(None)` means it is stopped (or was never running); `Ok(Some(busy))`
 /// names the models still generating, and the handle is put back so the caller
-/// can retry. This is the engine's replacement for
-/// `commands::try_graceful_stop_router`, and it is what the app's exit path
-/// uses -- without it the worker would outlive the app it belongs to.
+/// can retry. The app's exit path uses this -- without it the worker would
+/// outlive the app it belongs to.
 pub async fn try_graceful_stop_engine<R: tauri::Runtime>(
     app_handle: tauri::AppHandle<R>,
     deadline_secs: u64,
@@ -155,8 +169,18 @@ pub async fn try_graceful_stop_engine<R: tauri::Runtime>(
         return Ok(Some(busy));
     }
 
+    abort_unload_watcher(&state).await;
     handle.stop().await;
     Ok(None)
+}
+
+/// Drops the `/models/sse` subscription. Called from every stop path: the feed
+/// it reads dies with the worker, and a task left reconnecting would spend its
+/// whole failure budget before noticing.
+async fn abort_unload_watcher(state: &Arc<LlamacppState>) {
+    if let Some(task) = state.unload_watcher.lock().await.take() {
+        task.abort();
+    }
 }
 
 /// Models with a request in flight, from the worker's own `/models` listing.
@@ -186,6 +210,7 @@ async fn busy_models(port: u16, api_key: &str) -> Vec<String> {
 
 #[tauri::command]
 pub async fn stop_engine(state: State<'_, Arc<LlamacppState>>) -> Result<(), String> {
+    abort_unload_watcher(&state).await;
     let handle = state.engine.lock().await.take();
     if let Some(h) = handle {
         h.stop().await;
@@ -307,6 +332,7 @@ pub async fn reload_engine_models(
 /// path there would be the opposite of what they asked for.
 #[tauri::command]
 pub async fn force_stop_engine(state: State<'_, Arc<LlamacppState>>) -> Result<(), String> {
+    abort_unload_watcher(&state).await;
     let handle = state.engine.lock().await.take();
     if let Some(h) = handle {
         h.kill().await;

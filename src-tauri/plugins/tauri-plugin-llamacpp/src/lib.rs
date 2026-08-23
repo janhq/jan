@@ -11,7 +11,6 @@ pub mod engine;
 mod error;
 mod gguf;
 mod process;
-pub mod router;
 pub mod state;
 pub use cleanup::cleanup_llama_processes;
 pub use engine::commands::try_graceful_stop_engine;
@@ -132,9 +131,6 @@ mod permission_tests {
     /// `invoke('plugin:llamacpp|...')` at the call site.
     #[test]
     fn every_command_has_a_guest_js_wrapper() {
-        /// Commands whose only caller is Rust, so no wrapper is owed.
-        const RUST_ONLY: &[&str] = &["try_graceful_stop_router"];
-
         let handlers = names_between(
             include_str!("lib.rs"),
             "tauri::generate_handler![",
@@ -144,7 +140,6 @@ mod permission_tests {
 
         let unwrapped: Vec<_> = handlers
             .iter()
-            .filter(|c| !RUST_ONLY.contains(c))
             .filter(|c| !guest_js.contains(&format!("'plugin:llamacpp|{c}'")))
             .collect();
         assert!(
