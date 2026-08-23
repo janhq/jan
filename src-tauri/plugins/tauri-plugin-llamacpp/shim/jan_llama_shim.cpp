@@ -187,6 +187,8 @@ std::map<std::string, std::string> parse_query(const char * query) {
 struct jan_llama_engine {
     common_params params;
     server_context ctx;
+    jan_llama_state_cb on_state = nullptr;
+    void *             state_ud = nullptr;
     std::unique_ptr<server_routes> routes;
     std::thread loop;
     std::atomic<bool> running{false};
@@ -257,10 +259,14 @@ struct jan_llama_response {
 
 jan_llama_engine * jan_llama_engine_start(const char * const * argv,
                                           int                  argc,
+                                          jan_llama_state_cb   on_state,
+                                          void *               user_data,
                                           char *               err,
                                           size_t               err_len) {
     try {
         auto engine = std::make_unique<jan_llama_engine>();
+        engine->on_state = on_state;
+        engine->state_ud = user_data;
 
         // common_params_parse wants char**; it does not retain the pointers.
         std::vector<std::string> owned;
@@ -289,21 +295,33 @@ jan_llama_engine * jan_llama_engine_start(const char * const * argv,
     }
 }
 
-jan_llama_engine * jan_llama_engine_start_from_preset(const char * ini_path,
-                                                     const char * preset_name,
-                                                     char *       err,
-                                                     size_t       err_len) {
+jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_path,
+                                                     const char *       preset_name,
+                                                     jan_llama_state_cb on_state,
+                                                     void *             user_data,
+                                                     char *             err,
+                                                     size_t             err_len) {
     try {
         if (ini_path == nullptr || preset_name == nullptr) {
             set_err(err, err_len, "ini_path and preset_name are required");
             return nullptr;
         }
         auto engine = std::make_unique<jan_llama_engine>();
+        engine->on_state = on_state;
+        engine->state_ud = user_data;
 
         common_preset_context pctx(LLAMA_EXAMPLE_SERVER);
         // The ini is shared with the router, which owns keys like
         // load-on-startup that are not common_params options.
         pctx.ignore_unknown_keys = true;
+
+        // apply_to_params only writes the keys the ini names, so the base has
+        // to be the example's own defaults rather than a default-constructed
+        // common_params -- otherwise the per-example values
+        // common_params_parser_init sets (for SERVER, n_parallel = -1 = auto)
+        // are silently dropped and an unset key means something different here
+        // than it does on the command line. pctx already built them.
+        engine->params = pctx.default_params;
 
         common_preset global;
         common_presets presets = pctx.load_from_ini(ini_path, global);
@@ -341,6 +359,14 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char * ini_path,
             engine->params.speculative.draft.tensor_buft_overrides.push_back({nullptr, nullptr});
         }
 
+        // arg.cpp:935-938. llama_model_params::kv_overrides is a C array walked
+        // until an entry with an empty key, so a hand-edited `override-kv` in
+        // the ini would otherwise be read past its end.
+        if (!engine->params.kv_overrides.empty()) {
+            engine->params.kv_overrides.emplace_back();
+            engine->params.kv_overrides.back().key[0] = 0;
+        }
+
         return finish_start(std::move(engine), err, err_len);
     } catch (const std::exception & e) {
         set_err(err, err_len, e.what());
@@ -356,6 +382,16 @@ namespace {
 jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
                                 char * err, size_t err_len) {
     try {
+        // server.cpp:152-157, in llama-server's main() -- which neither entry
+        // point here goes through. n_parallel = -1 is the SERVER default, and
+        // server_context loops `for (i = 0; i < n_parallel; i++)` to build its
+        // slots, so leaving the sentinel unresolved yields an engine with no
+        // slots at all and every request waiting forever.
+        if (engine->params.n_parallel < 0) {
+            engine->params.n_parallel = 4;
+            engine->params.kv_unified = true;
+        }
+
         common_init();
         // After common_init, which installs its own callback.
         llama_log_set(capture_log_callback, nullptr);
@@ -365,6 +401,19 @@ jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
         // Must be constructed before load_model: its ctor registers the
         // on_sleeping_state callback the sleep path depends on.
         engine->routes = std::make_unique<server_routes>(engine->params, engine->ctx);
+
+        // Real load progress: server_context reports it here (and nowhere a
+        // caller could poll for it), throttled to one sample per 200ms with
+        // the first and last always emitted.
+        if (engine->on_state != nullptr) {
+            auto * cb = engine->on_state;
+            void * ud = engine->state_ud;
+            engine->ctx.set_state_callback([cb, ud](server_state st, json payload) {
+                const std::string state = server_state_to_str(st);
+                const std::string body  = payload.dump();
+                cb(state.c_str(), body.c_str(), ud);
+            });
+        }
 
         log_capture capture;
         if (!engine->ctx.load_model(engine->params)) {

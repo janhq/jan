@@ -18,6 +18,7 @@ import {
   chatCompletion,
   chatCompletionChunk,
   ImportOptions,
+  type SpecDraftKind,
   chatCompletionRequest,
   events,
   AppEvent,
@@ -41,6 +42,7 @@ import {
   mergeEmbedResponses,
   detectEmbeddingFromGgufMeta,
   detectMtpLayersFromGgufMeta,
+  resolveSpecDraftKind,
   detectTemplateKwargsFromChatTemplate,
   getDefaultEmbeddingModelId,
   setDefaultEmbeddingModelId,
@@ -49,7 +51,6 @@ import {
 import {
   generatePreset,
   DEFAULT_EMBEDDING_UBATCH,
-  MTP_MIN_BUILD,
 } from './preset'
 import {
   evaluateEmbeddingVector,
@@ -69,6 +70,7 @@ import {
   asI32,
   loadLlamaModel,
   readGgufMetadata,
+  findGgufTensors,
   isModelSupported,
   unloadLlamaModel,
   startEngine,
@@ -92,6 +94,10 @@ import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 const EMBEDDING_CHECK_VERSION = 3
 const MTP_CHECK_VERSION = 1
+
+// The tensor that marks a DSpark draft: it is a DFlash one plus this Markov
+// head (common/speculative.cpp, llama-arch.cpp LLM_TENSOR_DSPARK_MARKOV_W1).
+const MARKOV_HEAD_TENSOR = 'markov_w1.weight'
 const TEMPLATE_KWARGS_CHECK_VERSION = 1
 
 // Provider settings that end up in `router.preset.ini` (`[*]` global section
@@ -835,9 +841,6 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       janDataFolderPath,
       this.config,
       {
-        // The engine is pinned, so every build-number capability gate the
-        // downloaded-backend era needed is statically known to hold.
-        supportsMtp: true,
         reservedBackgroundSlots: (await readAutoGenerateTitleSetting()) ? 1 : 0,
       }
     )
@@ -942,7 +945,6 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       janDataFolderPath,
       this.config,
       {
-        supportsMtp: true,
         reservedBackgroundSlots: (await readAutoGenerateTitleSetting()) ? 1 : 0,
       }
     )
@@ -1854,9 +1856,11 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     let mmprojPath = opts.mmprojPath
       ? await maybeDownload(opts.mmprojPath, 'mmproj.gguf')
       : undefined
-    // MTP draft companion (speculative decoding); paired with the main model.
-    let mtpModelPath = opts.mtpPath
-      ? await maybeDownload(opts.mtpPath, 'mtp.gguf')
+    // Speculative-decoding draft companion; paired with the main model. The
+    // file name stays `mtp.gguf` for every flavour: it is the local name of
+    // the paired draft, and changing it would orphan existing installs.
+    let draftModelPath = opts.specDraftPath
+      ? await maybeDownload(opts.specDraftPath, 'mtp.gguf')
       : undefined
 
     if (downloadItems.length > 0) {
@@ -1940,6 +1944,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
     let isEmbedding = false
     let mtpLayers = 0
+    let specKind: SpecDraftKind = 'mtp'
     let templateKwargs: TemplateKwarg[] = []
     let resolvedName: string | undefined
 
@@ -1973,12 +1978,26 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
         )
       }
 
-      // Validate MTP draft and read its head count (the main gguf usually
-      // lacks nextn_predict_layers when MTP ships as a separate file).
-      if (mtpModelPath) {
-        const fullMtpPath = await joinPath([janDataFolderPath, mtpModelPath])
-        const mtpMetadata = await readGgufMetadata(fullMtpPath)
-        const draftLayers = detectMtpLayersFromGgufMeta(mtpMetadata.metadata)
+      // Validate the draft, decide which spec type it implements, and read
+      // its head count (the main gguf usually lacks nextn_predict_layers when
+      // MTP ships as a separate file).
+      if (draftModelPath) {
+        const fullDraftPath = await joinPath([janDataFolderPath, draftModelPath])
+        const draftMetadata = await readGgufMetadata(fullDraftPath)
+        // Only asked for a DFlash-architecture draft, since that is the one
+        // case a tensor decides (DSpark = DFlash + Markov head).
+        const hasMarkovHead =
+          draftMetadata.metadata?.['general.architecture'] === 'dflash'
+            ? (await findGgufTensors(fullDraftPath, [MARKOV_HEAD_TENSOR]))
+                .length > 0
+            : undefined
+        specKind = resolveSpecDraftKind(draftMetadata.metadata, {
+          hasMarkovHead,
+          hint: opts.specDraftKind,
+        })
+        const draftLayers = detectMtpLayersFromGgufMeta(draftMetadata.metadata)
+        // Only an MTP head reports nextn layers; the other flavours have none,
+        // and the count is what makes the settings panel offer the toggle.
         mtpLayers = draftLayers > 0 ? draftLayers : Math.max(mtpLayers, 1)
       }
     } catch (error) {
@@ -1997,9 +2016,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
         await fs.fileStat(await joinPath([janDataFolderPath, mmprojPath]))
       ).size
     }
-    if (mtpModelPath) {
+    if (draftModelPath) {
       size_bytes += (
-        await fs.fileStat(await joinPath([janDataFolderPath, mtpModelPath]))
+        await fs.fileStat(await joinPath([janDataFolderPath, draftModelPath]))
       ).size
     }
 
@@ -2024,9 +2043,16 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       mtp_check_v: MTP_CHECK_VERSION,
       template_kwargs: templateKwargs,
       template_kwargs_check_v: TEMPLATE_KWARGS_CHECK_VERSION,
-      // A separate draft gguf is downloaded only to be used — enable MTP by
-      // default. Embedded-MTP models keep MTP opt-in (no flag written here).
-      ...(mtpModelPath ? { mtp_model_path: mtpModelPath, mtp: true } : {}),
+      // A separate draft gguf is downloaded only to be used, so enable it by
+      // default. Embedded-MTP models stay opt-in (no flag written here) and
+      // need no spec_type: their flavour is always draft-mtp.
+      ...(draftModelPath
+        ? {
+            mtp_model_path: draftModelPath,
+            mtp: true,
+            spec_type: `draft-${specKind}`,
+          }
+        : {}),
       ...(isEmbedding
         ? { pooling: 'mean', ubatch_size: 2048, batch_size: 2048 }
         : {}),

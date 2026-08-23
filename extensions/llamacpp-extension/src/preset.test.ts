@@ -68,7 +68,7 @@ describe('generatePreset MTP emission', () => {
       spec_draft_n_min: 0,
       spec_draft_p_min: 0.8,
     })
-    await generatePreset('/p', '/jan', CONFIG, { supportsMtp: true })
+    await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('spec-type = draft-mtp')
     expect(ini).toContain('spec-draft-n-max = 8')
@@ -76,24 +76,16 @@ describe('generatePreset MTP emission', () => {
     expect(ini).toContain('spec-draft-p-min = 0.8')
   })
 
-  it('omits MTP lines when backend does not support MTP', async () => {
-    setupModel('glm', { mtp: true, mtp_layers: 1, spec_draft_n_max: 8 })
-    await generatePreset('/p', '/jan', CONFIG, { supportsMtp: false })
-    const ini = writtenFiles['/p/router.preset.ini']
-    expect(ini).not.toContain('spec-type')
-    expect(ini).not.toContain('spec-draft')
-  })
-
   it('omits MTP lines when model has no MTP heads (mtp_layers = 0)', async () => {
     setupModel('llama', { mtp: true, mtp_layers: 0 })
-    await generatePreset('/p', '/jan', CONFIG, { supportsMtp: true })
+    await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).not.toContain('spec-type')
   })
 
   it('omits MTP lines when mtp flag is off even if heads exist', async () => {
     setupModel('glm', { mtp: false, mtp_layers: 1 })
-    await generatePreset('/p', '/jan', CONFIG, { supportsMtp: true })
+    await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).not.toContain('spec-type')
   })
@@ -104,7 +96,7 @@ describe('generatePreset MTP emission', () => {
       mtp_layers: 0,
       mtp_model_path: 'models/gemma/mtp.gguf',
     })
-    await generatePreset('/p', '/jan', CONFIG, { supportsMtp: true })
+    await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('spec-type = draft-mtp')
     expect(ini).toContain('spec-draft-model = /jan/models/gemma/mtp.gguf')
@@ -112,7 +104,7 @@ describe('generatePreset MTP emission', () => {
 
   it('does not emit spec-draft-model for embedded MTP (no draft path)', async () => {
     setupModel('glm', { mtp: true, mtp_layers: 1 })
-    await generatePreset('/p', '/jan', CONFIG, { supportsMtp: true })
+    await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('spec-type = draft-mtp')
     expect(ini).not.toContain('spec-draft-model')
@@ -133,7 +125,7 @@ describe('generatePreset MTP emission', () => {
       presence_penalty: 0.5,
       frequency_penalty: 0.25,
     })
-    await generatePreset('/p', '/jan', CONFIG, { supportsMtp: false })
+    await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('temperature = 0')
     expect(ini).toContain('top-k = 20')
@@ -147,7 +139,7 @@ describe('generatePreset MTP emission', () => {
 
   it('omits sampling keys that are absent or non-numeric', async () => {
     setupModel('s', { temperature: 0.7 })
-    await generatePreset('/p', '/jan', CONFIG, { supportsMtp: false })
+    await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('temperature = 0.7')
     expect(ini).not.toContain('top-p')
@@ -161,7 +153,7 @@ describe('generatePreset MTP emission', () => {
       spec_draft_n_max: -5,
       spec_draft_p_min: 1.5,
     })
-    await generatePreset('/p', '/jan', CONFIG, { supportsMtp: true })
+    await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('spec-type = draft-mtp')
     expect(ini).not.toContain('spec-draft-n-max')
@@ -173,7 +165,6 @@ describe('generatePreset parallel reservation', () => {
   it('adds one reserved background slot on top of the global parallel value', async () => {
     setupModel('llama', {})
     await generatePreset('/p', '/jan', { parallel: 1 } as any, {
-      supportsMtp: false,
     })
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('parallel = 2')
@@ -181,22 +172,32 @@ describe('generatePreset parallel reservation', () => {
 
   it('adds one reserved background slot on top of a per-model parallel override', async () => {
     setupModel('llama', { parallel: 3 })
-    await generatePreset('/p', '/jan', {} as any, { supportsMtp: false })
+    await generatePreset('/p', '/jan', {} as any)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('parallel = 4')
   })
 
   it('omits parallel when unset, leaving llama.cpp auto-default untouched', async () => {
     setupModel('llama', {})
-    await generatePreset('/p', '/jan', {} as any, { supportsMtp: false })
+    await generatePreset('/p', '/jan', {} as any)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).not.toContain('parallel =')
+  })
+
+  // 0 is the setting's "let llama.cpp decide": omitting the key is what the
+  // engine resolves to its own auto default (4 slots, unified KV), so a
+  // reserved background slot must not be added on top of nothing.
+  it('omits parallel when the setting is an explicit 0', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { parallel: 0 } as any)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('parallel =')
+    expect(ini).not.toContain('kv-unified')
   })
 
   it('reserves no extra slot when reservedBackgroundSlots is 0 (global)', async () => {
     setupModel('llama', {})
     await generatePreset('/p', '/jan', { parallel: 1 } as any, {
-      supportsMtp: false,
       reservedBackgroundSlots: 0,
     })
     const ini = writtenFiles['/p/router.preset.ini']
@@ -206,7 +207,6 @@ describe('generatePreset parallel reservation', () => {
   it('reserves no extra slot when reservedBackgroundSlots is 0 (per-model)', async () => {
     setupModel('llama', { parallel: 3 })
     await generatePreset('/p', '/jan', {} as any, {
-      supportsMtp: false,
       reservedBackgroundSlots: 0,
     })
     const ini = writtenFiles['/p/router.preset.ini']
@@ -218,7 +218,6 @@ describe('generatePreset kv-unified', () => {
   it('enables unified KV on auto when an explicit parallel is emitted', async () => {
     setupModel('llama', {})
     await generatePreset('/p', '/jan', { parallel: 1 } as any, {
-      supportsMtp: false,
     })
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('parallel = 2')
@@ -227,14 +226,14 @@ describe('generatePreset kv-unified', () => {
 
   it('enables unified KV on auto when only a per-model parallel is emitted', async () => {
     setupModel('llama', { parallel: 3 })
-    await generatePreset('/p', '/jan', {} as any, { supportsMtp: false })
+    await generatePreset('/p', '/jan', {} as any)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('kv-unified = true')
   })
 
   it('omits kv-unified on auto when no explicit parallel is emitted', async () => {
     setupModel('llama', {})
-    await generatePreset('/p', '/jan', {} as any, { supportsMtp: false })
+    await generatePreset('/p', '/jan', {} as any)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).not.toContain('kv-unified')
   })
@@ -242,7 +241,6 @@ describe('generatePreset kv-unified', () => {
   it('respects an explicit off even when parallel is emitted', async () => {
     setupModel('llama', {})
     await generatePreset('/p', '/jan', { parallel: 1, kv_unified: 'off' } as any, {
-      supportsMtp: false,
     })
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('kv-unified = false')
@@ -251,7 +249,6 @@ describe('generatePreset kv-unified', () => {
   it('respects an explicit on when no parallel is emitted', async () => {
     setupModel('llama', {})
     await generatePreset('/p', '/jan', { kv_unified: 'on' } as any, {
-      supportsMtp: false,
     })
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('kv-unified = true')
@@ -262,7 +259,6 @@ describe('generatePreset ctx-size default', () => {
   it('emits ctx-size = 8192 in [*] when fit is off and no ctx_size is set', async () => {
     setupModel('llama', {})
     await generatePreset('/p', '/jan', { fit: false } as any, {
-      supportsMtp: false,
     })
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('ctx-size = 8192')
@@ -273,7 +269,6 @@ describe('generatePreset ctx-size default', () => {
   it('uses the per-model ctx_size over the [*] guard', async () => {
     setupModel('llama', { ctx_size: 16384 })
     await generatePreset('/p', '/jan', { fit: false } as any, {
-      supportsMtp: false,
     })
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('ctx-size = 16384')
@@ -282,7 +277,6 @@ describe('generatePreset ctx-size default', () => {
   it('omits ctx-size when auto-fit is enabled', async () => {
     setupModel('llama', {})
     await generatePreset('/p', '/jan', { fit: true } as any, {
-      supportsMtp: false,
     })
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).not.toContain('ctx-size = 8192')
@@ -291,7 +285,6 @@ describe('generatePreset ctx-size default', () => {
   it('honors a per-model ctx_size = 0 override as native', async () => {
     setupModel('llama', { ctx_size: 0 })
     await generatePreset('/p', '/jan', { fit: false } as any, {
-      supportsMtp: false,
     })
     const ini = writtenFiles['/p/router.preset.ini']
     // [*] keeps the guard, but the per-model section overrides it to native.
@@ -305,7 +298,6 @@ describe('generatePreset n-gpu-layers under fit', () => {
   it('never emits an engine-level n-gpu-layers', async () => {
     setupModel('llama', {})
     await generatePreset('/p', '/jan', { fit: false } as any, {
-      supportsMtp: false,
     })
     expect(writtenFiles['/p/router.preset.ini']).not.toContain('n-gpu-layers')
   })
@@ -313,7 +305,6 @@ describe('generatePreset n-gpu-layers under fit', () => {
   it('emits per-model n-gpu-layers when fit is off', async () => {
     setupModel('llama', { n_gpu_layers: 33 })
     await generatePreset('/p', '/jan', { fit: false } as any, {
-      supportsMtp: false,
     })
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('n-gpu-layers = 33')
@@ -322,7 +313,6 @@ describe('generatePreset n-gpu-layers under fit', () => {
   it('omits per-model n-gpu-layers when auto-fit is enabled', async () => {
     setupModel('llama', { n_gpu_layers: 33 })
     await generatePreset('/p', '/jan', { fit: true } as any, {
-      supportsMtp: false,
     })
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).not.toContain('n-gpu-layers')
@@ -333,7 +323,6 @@ describe('generatePreset context-shift', () => {
   it('emits context-shift = true when ctx_shift is enabled', async () => {
     setupModel('llama', {})
     await generatePreset('/p', '/jan', { ctx_shift: true } as any, {
-      supportsMtp: false,
     })
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('context-shift = true')
@@ -342,7 +331,6 @@ describe('generatePreset context-shift', () => {
   it('omits context-shift when disabled, matching llama.cpp own default', async () => {
     setupModel('llama', {})
     await generatePreset('/p', '/jan', { ctx_shift: false } as any, {
-      supportsMtp: false,
     })
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).not.toContain('context-shift')
@@ -353,7 +341,6 @@ describe('generatePreset embedding ctx-size', () => {
   it('pins embedders to native ctx-size = 0 so they do not inherit the global 8192', async () => {
     setupModel('minilm', { embedding: true })
     await generatePreset('/p', '/jan', { fit: false } as any, {
-      supportsMtp: false,
     })
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('embeddings = true')
@@ -365,7 +352,6 @@ describe('generatePreset embedding ctx-size', () => {
   it('keeps a positive per-model embedder ctx-size instead of forcing native', async () => {
     setupModel('minilm', { embedding: true, ctx_size: 2048 })
     await generatePreset('/p', '/jan', { fit: false } as any, {
-      supportsMtp: false,
     })
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('embeddings = true')
@@ -390,7 +376,7 @@ describe('generatePreset global engine options', () => {
       ubatch_size: 512,
       n_cpu_moe: 0,
       no_kv_offload: false,
-    } as any, { supportsMtp: true })
+    } as any)
     const g = globalSection()
     expect(g).not.toContain('batch-size')
     expect(g).not.toContain('n-cpu-moe')
@@ -399,7 +385,6 @@ describe('generatePreset global engine options', () => {
 
   it('emits batch-size when it differs from the 2048 default', async () => {
     await generatePreset('/p', '/jan', { batch_size: 4096 } as any, {
-      supportsMtp: true,
     })
     expect(globalSection()).toContain('batch-size = 4096')
   })
@@ -410,7 +395,7 @@ describe('generatePreset global engine options', () => {
     await generatePreset('/p', '/jan', {
       batch_size: 1024,
       ubatch_size: 256,
-    } as any, { supportsMtp: true })
+    } as any)
     const g = globalSection()
     expect(g).toContain('batch-size = 1024')
     expect(g).toContain('ubatch-size = 256')
@@ -418,14 +403,12 @@ describe('generatePreset global engine options', () => {
 
   it('emits n-cpu-moe only when at least one layer is pinned to the host', async () => {
     await generatePreset('/p', '/jan', { n_cpu_moe: 12 } as any, {
-      supportsMtp: true,
     })
     expect(globalSection()).toContain('n-cpu-moe = 12')
   })
 
   it('floors a fractional n-cpu-moe rather than emitting a non-integer', async () => {
     await generatePreset('/p', '/jan', { n_cpu_moe: 3.7 } as any, {
-      supportsMtp: true,
     })
     expect(globalSection()).toContain('n-cpu-moe = 3')
   })
@@ -434,7 +417,6 @@ describe('generatePreset global engine options', () => {
   // inverts it, so `true` here really does disable offloading.
   it('emits no-kv-offload only when offloading is disabled', async () => {
     await generatePreset('/p', '/jan', { no_kv_offload: true } as any, {
-      supportsMtp: true,
     })
     expect(globalSection()).toContain('no-kv-offload = true')
   })
@@ -465,7 +447,7 @@ describe('generatePreset upstream-default skipping', () => {
       repeat_last_n: 64,
       repeat_penalty: 1.0,
     })
-    await generatePreset('/p', '/jan', {} as any, { supportsMtp: true })
+    await generatePreset('/p', '/jan', {} as any)
     const sec = modelSection('m')
     for (const k of ['temperature', 'top-k', 'top-p', 'min-p', 'repeat-last-n', 'repeat-penalty']) {
       expect(sec, k).not.toContain(`${k} = `)
@@ -474,7 +456,7 @@ describe('generatePreset upstream-default skipping', () => {
 
   it('still emits a sampling value that differs from the default', async () => {
     setupModel('m', { temperature: 0.6, top_k: 20 })
-    await generatePreset('/p', '/jan', {} as any, { supportsMtp: true })
+    await generatePreset('/p', '/jan', {} as any)
     const sec = modelSection('m')
     expect(sec).toContain('temperature = 0.6')
     expect(sec).toContain('top-k = 20')
@@ -483,7 +465,7 @@ describe('generatePreset upstream-default skipping', () => {
   // temperature 0 is greedy decoding, an explicit choice, not a default.
   it('emits temperature = 0', async () => {
     setupModel('m', { temperature: 0 })
-    await generatePreset('/p', '/jan', {} as any, { supportsMtp: true })
+    await generatePreset('/p', '/jan', {} as any)
     expect(modelSection('m')).toContain('temperature = 0')
   })
 
@@ -491,7 +473,7 @@ describe('generatePreset upstream-default skipping', () => {
   // the load; the old UI documented -1 as "full context".
   it('omits a negative repeat-last-n', async () => {
     setupModel('m', { repeat_last_n: -1 })
-    await generatePreset('/p', '/jan', {} as any, { supportsMtp: true })
+    await generatePreset('/p', '/jan', {} as any)
     expect(modelSection('m')).not.toContain('repeat-last-n')
   })
 
@@ -499,21 +481,21 @@ describe('generatePreset upstream-default skipping', () => {
   // why "Increase Context Size" did nothing while Fit was on.
   it('emits per-model ctx-size even when fit is enabled', async () => {
     setupModel('m', { ctx_size: 16384 })
-    await generatePreset('/p', '/jan', { fit: true } as any, { supportsMtp: true })
+    await generatePreset('/p', '/jan', { fit: true } as any)
     expect(modelSection('m')).toContain('ctx-size = 16384')
   })
 
   it('emits n-gpu-layers for auto (-1) and all (-2) but not below', async () => {
     setupModel('a', { n_gpu_layers: -1 })
-    await generatePreset('/p', '/jan', { fit: false } as any, { supportsMtp: true })
+    await generatePreset('/p', '/jan', { fit: false } as any)
     expect(modelSection('a')).toContain('n-gpu-layers = -1')
 
     setupModel('b', { n_gpu_layers: -2 })
-    await generatePreset('/p', '/jan', { fit: false } as any, { supportsMtp: true })
+    await generatePreset('/p', '/jan', { fit: false } as any)
     expect(modelSection('b')).toContain('n-gpu-layers = -2')
 
     setupModel('c', { n_gpu_layers: -3 })
-    await generatePreset('/p', '/jan', { fit: false } as any, { supportsMtp: true })
+    await generatePreset('/p', '/jan', { fit: false } as any)
     expect(modelSection('c')).not.toContain('n-gpu-layers')
   })
 
@@ -528,8 +510,7 @@ describe('generatePreset upstream-default skipping', () => {
     ]
     for (const [mlock, no_mmap, expected] of cases) {
       await generatePreset('/p', '/jan', { mlock, no_mmap } as any, {
-        supportsMtp: true,
-      })
+        })
       const g = globalSection()
       expect(g, `mlock=${mlock} no_mmap=${no_mmap}`).not.toMatch(/^mlock = /m)
       expect(g).not.toMatch(/^no-mmap = /m)
@@ -542,12 +523,10 @@ describe('generatePreset upstream-default skipping', () => {
   // an explicit "disable scaling" impossible to express.
   it('emits rope-scaling for none but not for auto', async () => {
     await generatePreset('/p', '/jan', { rope_scaling: 'none' } as any, {
-      supportsMtp: true,
     })
     expect(globalSection()).toContain('rope-scaling = none')
 
     await generatePreset('/p', '/jan', { rope_scaling: 'auto' } as any, {
-      supportsMtp: true,
     })
     expect(globalSection()).not.toContain('rope-scaling')
   })
@@ -555,24 +534,20 @@ describe('generatePreset upstream-default skipping', () => {
   // 1.0 is an explicit "force no scaling", not the default (which is 0).
   it('emits rope-freq-scale = 1 and omits it at 0', async () => {
     await generatePreset('/p', '/jan', { rope_freq_scale: 1 } as any, {
-      supportsMtp: true,
     })
     expect(globalSection()).toContain('rope-freq-scale = 1')
 
     await generatePreset('/p', '/jan', { rope_freq_scale: 0 } as any, {
-      supportsMtp: true,
     })
     expect(globalSection()).not.toContain('rope-freq-scale')
   })
 
   it('omits cache-ram at the upstream default and emits an explicit -1', async () => {
     await generatePreset('/p', '/jan', { cache_ram: 8192 } as any, {
-      supportsMtp: true,
     })
     expect(globalSection()).not.toContain('cache-ram')
 
     await generatePreset('/p', '/jan', { cache_ram: -1 } as any, {
-      supportsMtp: true,
     })
     expect(globalSection()).toContain('cache-ram = -1')
   })
@@ -580,13 +555,12 @@ describe('generatePreset upstream-default skipping', () => {
   it('names a slot-save-path unless conversation persistence is off', async () => {
     // Absent by default in llama.cpp, and naming it is what enables the slot
     // save/restore routes at all -- so the default (unset) must still emit it.
-    await generatePreset('/p', '/jan', {} as any, { supportsMtp: true })
+    await generatePreset('/p', '/jan', {} as any)
     expect(globalSection()).toContain(
       `slot-save-path = ${threadCacheDir('/p')}`
     )
 
     await generatePreset('/p', '/jan', { persist_thread_cache: false } as any, {
-      supportsMtp: true,
     })
     expect(globalSection()).not.toContain('slot-save-path')
   })
@@ -599,18 +573,16 @@ describe('generatePreset upstream-default skipping', () => {
 
   it('omits cont-batching when enabled and emits it only when turned off', async () => {
     await generatePreset('/p', '/jan', { cont_batching: true } as any, {
-      supportsMtp: true,
     })
     expect(globalSection()).not.toContain('cont-batching')
 
     await generatePreset('/p', '/jan', { cont_batching: false } as any, {
-      supportsMtp: true,
     })
     expect(globalSection()).toContain('cont-batching = false')
   })
 
   it('emits the newly exposed offload and checkpoint options only when set', async () => {
-    await generatePreset('/p', '/jan', {} as any, { supportsMtp: true })
+    await generatePreset('/p', '/jan', {} as any)
     let g = globalSection()
     expect(g).not.toContain('tensor-split')
     expect(g).not.toContain('no-op-offload')
@@ -626,7 +598,6 @@ describe('generatePreset upstream-default skipping', () => {
         ctx_checkpoints: 8,
         checkpoint_min_step: 4096,
       } as any,
-      { supportsMtp: true }
     )
     g = globalSection()
     expect(g).toContain('tensor-split = 3,1')
@@ -640,10 +611,107 @@ describe('generatePreset upstream-default skipping', () => {
       '/p',
       '/jan',
       { ctx_checkpoints: 32, checkpoint_min_step: 8192 } as any,
-      { supportsMtp: true }
     )
     const g = globalSection()
     expect(g).not.toContain('ctx-checkpoints')
     expect(g).not.toContain('checkpoint-min-step')
+  })
+})
+
+// The ini value grammar ends a value at `#` or `;` and has no line
+// continuation, so an inline template is truncated or flattened. Anything that
+// is not a plain built-in name goes to a file instead.
+describe('generatePreset chat template', () => {
+  it('writes a multi-line template to a file and points the preset at it', async () => {
+    const template = "{%- if x %}\n<|im_start|>\n{%- endif %}"
+    setupModel('glm', { chat_template: template })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain(
+      'chat-template-file = /p/models/glm/chat_template.jinja'
+    )
+    expect(ini).not.toContain('chat-template =')
+    expect(writtenFiles['/p/models/glm/chat_template.jinja']).toBe(template)
+  })
+
+  it('preserves a template containing a comment marker verbatim', async () => {
+    const template = "{# a comment #}{{ '#1' }}; done"
+    setupModel('glm', { chat_template: template })
+    await generatePreset('/p', '/jan', CONFIG)
+    expect(writtenFiles['/p/models/glm/chat_template.jinja']).toBe(template)
+    expect(writtenFiles['/p/router.preset.ini']).toContain(
+      'chat-template-file = /p/models/glm/chat_template.jinja'
+    )
+  })
+
+  // A built-in name is not a template body, and --chat-template-file would
+  // try to read it as a path.
+  it('keeps a built-in template name inline', async () => {
+    setupModel('glm', { chat_template: 'chatml' })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('chat-template = chatml')
+    expect(ini).not.toContain('chat-template-file')
+    expect(writtenFiles['/p/models/glm/chat_template.jinja']).toBeUndefined()
+  })
+
+  it('emits nothing for a blank template', async () => {
+    setupModel('glm', { chat_template: '   ' })
+    await generatePreset('/p', '/jan', CONFIG)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('chat-template')
+  })
+})
+
+// The four draft flavours differ only in the `spec-type` value; a draft that
+// cannot implement the type it is given fails the load with an unrelated
+// message, so the type recorded at import is what must be emitted.
+describe('generatePreset spec type', () => {
+  it('emits the recorded spec type for a dflash draft', async () => {
+    setupModel('dsv4', {
+      mtp: true,
+      mtp_layers: 1,
+      mtp_model_path: 'models/dsv4/mtp.gguf',
+      spec_type: 'draft-dflash',
+    })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('spec-type = draft-dflash')
+    expect(ini).toContain('spec-draft-model = /jan/models/dsv4/mtp.gguf')
+    expect(ini).not.toContain('draft-mtp')
+  })
+
+  it('emits draft-dspark when that is what was detected', async () => {
+    setupModel('dsv4', {
+      mtp: true,
+      mtp_layers: 1,
+      mtp_model_path: 'models/dsv4/mtp.gguf',
+      spec_type: 'draft-dspark',
+    })
+    await generatePreset('/p', '/jan', CONFIG)
+    expect(writtenFiles['/p/router.preset.ini']).toContain(
+      'spec-type = draft-dspark'
+    )
+  })
+
+  // Models imported before the type was recorded, and every embedded-MTP
+  // model, carry no spec_type.
+  it('falls back to draft-mtp when no type was recorded', async () => {
+    setupModel('glm', { mtp: true, mtp_layers: 1 })
+    await generatePreset('/p', '/jan', CONFIG)
+    expect(writtenFiles['/p/router.preset.ini']).toContain(
+      'spec-type = draft-mtp'
+    )
+  })
+
+  it('ignores a spec type that is not one llama.cpp accepts', async () => {
+    setupModel('glm', {
+      mtp: true,
+      mtp_layers: 1,
+      spec_type: 'draft-nonsense',
+    })
+    await generatePreset('/p', '/jan', CONFIG)
+    expect(writtenFiles['/p/router.preset.ini']).toContain(
+      'spec-type = draft-mtp'
+    )
   })
 })

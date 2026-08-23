@@ -20,6 +20,7 @@ Default permissions for the llamacpp plugin
 - `allow-engine-slots-idle`
 - `allow-erase-thread-slot-state`
 - `allow-read-gguf-metadata`
+- `allow-find-gguf-tensors`
 - `allow-is-model-supported`
 
 ## Permission Table
@@ -157,6 +158,32 @@ Enables the erase_thread_slot_state command without any pre-configured scope.
 <td>
 
 Denies the erase_thread_slot_state command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-find-gguf-tensors`
+
+</td>
+<td>
+
+Enables the find_gguf_tensors command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-find-gguf-tensors`
+
+</td>
+<td>
+
+Denies the find_gguf_tensors command without any pre-configured scope.
 
 </td>
 </tr>

@@ -3,6 +3,7 @@
  */
 
 import { SessionInfo, modelInfo, ThreadMessage, UnloadResult } from '@janhq/core'
+import type { SpecDraftKind } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 
 // Types for model catalog
@@ -36,7 +37,7 @@ export interface CatalogModel {
   quants?: ModelQuant[]
   // MTP draft companions split out of `quants` for display; resolved against
   // the chosen quant at download time (see lib/mtp.ts).
-  mtpQuants?: ModelQuant[]
+  specQuants?: ModelQuant[]
   mmproj_models?: MMProjModel[]
   num_mmproj?: number
   safetensors_files?: SafetensorsFile[]
@@ -124,7 +125,8 @@ export interface ModelsService {
     mmprojPath?: string,
     mmprojSha256?: string,
     mmprojSize?: number,
-    mtpPath?: string
+    specDraftPath?: string,
+    specDraftKind?: SpecDraftKind
   ): Promise<void>
   pullModelWithMetadata(
     id: string,
@@ -132,7 +134,8 @@ export interface ModelsService {
     mmprojPath?: string,
     hfToken?: string,
     skipVerification?: boolean,
-    mtpPath?: string
+    specDraftPath?: string,
+    specDraftKind?: SpecDraftKind
   ): Promise<void>
   abortDownload(id: string): Promise<void>
   pauseDownload(id: string): Promise<void>

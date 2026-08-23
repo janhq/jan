@@ -1,4 +1,5 @@
 import { logger } from '@janhq/core'
+import type { SpecDraftKind } from '@janhq/core'
 import type {
   TemplateKwarg,
   TemplateKwargType,
@@ -179,6 +180,28 @@ export function detectEmbeddingFromGgufMeta(
         ? Number(raw)
         : NaN
   return Number.isFinite(n) && n > 0
+}
+
+/**
+ * Which speculative-decoding flavour a draft gguf implements.
+ *
+ * `general.architecture` is authoritative -- llama.cpp registers `eagle3` and
+ * `dflash` as their own architectures (llama-arch.cpp), and a draft with any
+ * other architecture is an MTP head. DSpark is DFlash plus a Markov head, so
+ * only `hasMarkovHead` separates those two; `hint` (the catalog's file naming)
+ * is the fallback for when the tensor could not be read at all.
+ */
+export function resolveSpecDraftKind(
+  meta: Record<string, unknown> | undefined,
+  opts: { hasMarkovHead?: boolean; hint?: SpecDraftKind } = {}
+): SpecDraftKind {
+  const arch = meta?.['general.architecture']
+  if (arch === 'eagle3') return 'eagle3'
+  if (arch === 'dflash') {
+    const isDspark = opts.hasMarkovHead ?? opts.hint === 'dspark'
+    return isDspark ? 'dspark' : 'dflash'
+  }
+  return 'mtp'
 }
 
 export function detectMtpLayersFromGgufMeta(

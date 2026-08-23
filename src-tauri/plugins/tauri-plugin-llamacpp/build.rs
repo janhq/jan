@@ -40,6 +40,7 @@ const COMMANDS: &[&str] = &[
     "erase_thread_slot_state",
     // GGUF commands
     "read_gguf_metadata",
+    "find_gguf_tensors",
     "is_model_supported",
 ];
 

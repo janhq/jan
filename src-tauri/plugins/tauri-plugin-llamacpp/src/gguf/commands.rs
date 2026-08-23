@@ -1,5 +1,7 @@
 use super::types::GgufMetadata;
-use super::utils::{estimate_kv_cache_internal, read_gguf_metadata_internal};
+use super::utils::{
+    estimate_kv_cache_internal, find_gguf_tensors_internal, read_gguf_metadata_internal,
+};
 use crate::gguf::types::ModelSupportStatus;
 use std::fs;
 use tauri_plugin_hardware::{get_system_info, SystemInfo};
@@ -8,6 +10,17 @@ use tauri_plugin_hardware::{get_system_info, SystemInfo};
 #[tauri::command]
 pub async fn read_gguf_metadata(path: String) -> Result<GgufMetadata, String> {
     read_gguf_metadata_internal(path).await
+}
+
+/// Which of `names` exist as tensors in a gguf.
+///
+/// Exact names, not a listing: the questions worth asking are yes/no ones
+/// (`markov_w1.weight` marks a DSpark draft, `blk.<n>.nextn.eh_proj.weight` an
+/// MTP head), and a listing would put every tensor name of a large model
+/// through the IPC boundary to answer one.
+#[tauri::command]
+pub async fn find_gguf_tensors(path: String, names: Vec<String>) -> Result<Vec<String>, String> {
+    find_gguf_tensors_internal(path, names).await
 }
 
 pub async fn get_model_size(path: String) -> Result<u64, String> {

@@ -26,7 +26,7 @@ fn start(model: &str) -> Engine {
     .iter()
     .map(|s| s.to_string())
     .collect();
-    Engine::start(&args).expect("engine should start")
+    Engine::start(&args, None).expect("engine should start")
 }
 
 // `server_context::load_model` only returns a bool, so without the shim's log
@@ -49,7 +49,7 @@ fn a_failed_load_reports_the_reason_llama_cpp_logged() {
     .map(|s| s.to_string())
     .collect();
 
-    let err = Engine::start(&args).expect_err("a missing model cannot load");
+    let err = Engine::start(&args, None).expect_err("a missing model cannot load");
     let msg = err.to_string();
 
     assert!(msg.contains("failed to load model"), "{msg}");
@@ -213,4 +213,103 @@ fn an_engine_stops_promptly_even_if_it_never_served_a_request() {
              loop missed its terminate"
         );
     }
+}
+
+/// The preset path starts from a default-constructed `common_params`, so the
+/// per-example defaults `common_params_parser_init` applies for
+/// `LLAMA_EXAMPLE_SERVER` -- and the `n_parallel < 0` resolution in
+/// `server.cpp`'s `main`, which nothing here goes through -- have to be
+/// applied by the shim. Without them an ini with no `parallel` key gets one
+/// slot instead of llama-server's four.
+#[test]
+fn a_preset_without_parallel_gets_the_server_side_auto_default() {
+    let Some(model) = model_path() else {
+        eprintln!("skipping: set JAN_TEST_GGUF to run");
+        return;
+    };
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ini = dir.path().join("router.preset.ini");
+    std::fs::write(
+        &ini,
+        format!(
+            "[*]\nfit = off\nctx-size = 2048\nno-warmup = true\n\n\
+             [m]\nmodel = {model}\nn-gpu-layers = 0\n"
+        ),
+    )
+    .expect("write ini");
+
+    let engine = Engine::start_from_preset(&ini.to_string_lossy(), "m", None)
+        .expect("engine should start from the preset");
+
+    let res = engine.request(Route::Props.as_shim_name(), "");
+    assert_eq!(res.status(), 200, "props body: {}", res.body());
+    let v: serde_json::Value = serde_json::from_str(&res.body()).unwrap();
+    assert_eq!(
+        v.pointer("/total_slots").and_then(|s| s.as_i64()),
+        Some(4),
+        "props: {}",
+        res.body()
+    );
+}
+
+/// `server_context` is the only source of real load progress: it reports it
+/// through `set_state_callback` and there is nothing to poll for it. Without
+/// the shim installing that callback the desktop's whole progress chain --
+/// `/models/sse` -> `parse_load_progress_event` -> `PromptProgress` -- sits
+/// idle on a plain spinner, which is what it did.
+#[test]
+fn a_load_reports_its_progress_through_the_state_callback() {
+    let Some(model) = model_path() else {
+        eprintln!("skipping: set JAN_TEST_GGUF to run");
+        return;
+    };
+    use std::sync::{Arc, Mutex};
+
+    let samples: Arc<Mutex<Vec<(String, f64)>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&samples);
+    let args: Vec<String> = [
+        "llama-server", "-m", &model, "-c", "2048", "-ngl", "0",
+        "--no-warmup", "-t", "4", "-fit", "off", "-np", "1",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+
+    let engine = Engine::start(
+        &args,
+        Some(Arc::new(move |state: &str, payload: &str| {
+            let v: serde_json::Value = match serde_json::from_str(payload) {
+                Ok(v) => v,
+                Err(_) => return,
+            };
+            if let Some(value) = v.get("value").and_then(|v| v.as_f64()) {
+                let stage = v
+                    .get("current")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                sink.lock().unwrap().push((format!("{state}:{stage}"), value));
+            }
+        })),
+    )
+    .expect("engine should start");
+
+    let seen = samples.lock().unwrap().clone();
+    assert!(!seen.is_empty(), "no progress samples arrived");
+    assert!(
+        seen.iter().all(|(s, _)| s.starts_with("loading:")),
+        "a sample carried a value outside the loading state: {seen:?}"
+    );
+    // The callback always emits the first and the last sample, whatever the
+    // 200ms throttle drops in between.
+    assert_eq!(seen.first().map(|(_, v)| *v), Some(0.0), "{seen:?}");
+    assert!(
+        seen.iter().any(|(s, v)| *v >= 1.0 && s == "loading:text_model"),
+        "the text model never reported completion: {seen:?}"
+    );
+
+    // And the engine is usable, i.e. installing the callback did not disturb
+    // the load it observes.
+    let res = engine.request(Route::Health.as_shim_name(), "");
+    assert_eq!(res.status(), 200, "health body: {}", res.body());
 }

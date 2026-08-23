@@ -35,6 +35,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::find_session_by_model,
             commands::get_loaded_models,
             gguf::commands::read_gguf_metadata,
+            gguf::commands::find_gguf_tensors,
             gguf::commands::is_model_supported,
         ])
         .setup(|app, _api| {

@@ -215,6 +215,13 @@ export interface chatOptions {
 // Output for /chat will be Promise<ChatCompletion> for non-streaming
 // or Promise<AsyncIterable<ChatCompletionChunk>> for streaming
 
+/**
+ * A speculative-decoding draft flavour, matching llama.cpp's `--spec-type`
+ * values minus their `draft-` prefix (common/speculative.cpp). `dspark` is
+ * `dflash` plus a Markov head.
+ */
+export type SpecDraftKind = 'mtp' | 'eagle3' | 'dflash' | 'dspark'
+
 // 7. /import
 export interface ImportOptions {
   modelPath: string
@@ -223,8 +230,11 @@ export interface ImportOptions {
   modelSize?: number
   mmprojSha256?: string
   mmprojSize?: number
-  // Optional MTP draft gguf (speculative decoding companion) downloaded with the model.
-  mtpPath?: string
+  // Optional speculative-decoding draft gguf downloaded alongside the model,
+  // plus which flavour the catalog named it as. The kind is a hint only: the
+  // draft's own `general.architecture` decides, since it is authoritative.
+  specDraftPath?: string
+  specDraftKind?: SpecDraftKind
   // Additional files to download for MLX models
   files?: Array<{
     url: string

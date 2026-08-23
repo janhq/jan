@@ -226,7 +226,8 @@ export const paramsSettings: Record<string, ParamDef> = {
   grammar: {
     key: 'grammar',
     title: 'Grammar (GBNF)',
-    description: 'GBNF grammar to constrain generations.',
+    description:
+      'GBNF grammar to constrain generations. Ignored while tools are enabled, and takes precedence over JSON Schema.',
     value: '',
     controllerType: 'textarea',
     controllerProps: { rows: 4, placeholder: 'root ::= ...' },
@@ -235,7 +236,8 @@ export const paramsSettings: Record<string, ParamDef> = {
   json_schema: {
     key: 'json_schema',
     title: 'JSON Schema',
-    description: 'JSON schema constraining the output to valid JSON.',
+    description:
+      'JSON schema constraining the output to valid JSON. Ignored if a grammar is also set.',
     value: '',
     controllerType: 'textarea',
     controllerProps: { rows: 4, placeholder: '{"type":"object", ...}' },

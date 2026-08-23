@@ -187,6 +187,19 @@ export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
   return await invoke('plugin:llamacpp|read_gguf_metadata', { path })
 }
 
+/**
+ * Which of `names` exist as tensors in a gguf. Exact names, mirroring
+ * llama.cpp's `gguf_find_tensor`: the facts worth knowing are yes/no ones
+ * (`markov_w1.weight` marks a DSpark draft), and listing every tensor of a
+ * large model to answer one would be far more data than the answer.
+ */
+export async function findGgufTensors(
+  path: string,
+  names: string[]
+): Promise<string[]> {
+  return await invoke('plugin:llamacpp|find_gguf_tensors', { path, names })
+}
+
 export async function isModelSupported(
   path: string,
   ctxSize?: number

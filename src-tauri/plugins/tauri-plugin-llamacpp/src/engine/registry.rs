@@ -242,11 +242,29 @@ impl Registry {
         self.make_room()?;
 
         self.events.emit(model_id, Transition::Loading);
+        // Real load progress, straight from server_context. Only the `loading`
+        // state carries a fraction; `ready` and `sleeping` arrive here too and
+        // are already covered by the lifecycle transitions around this call.
+        let progress = {
+            let bus = self.events.clone();
+            let model = model_id.to_string();
+            std::sync::Arc::new(move |state: &str, payload: &str| {
+                if state != "loading" {
+                    return;
+                }
+                match serde_json::from_str::<serde_json::Value>(payload) {
+                    Ok(v) if v.get("value").is_some() => {
+                        bus.emit(&model, Transition::LoadProgress(v));
+                    }
+                    _ => {}
+                }
+            }) as crate::engine::sys::StateCallback
+        };
         let started = match &spec {
-            LoadSpec::Args(args) => Engine::start(args),
+            LoadSpec::Args(args) => Engine::start(args, Some(progress)),
             LoadSpec::Preset {
                 ini_path, section, ..
-            } => Engine::start_from_preset(ini_path, section),
+            } => Engine::start_from_preset(ini_path, section, Some(progress)),
         };
         let engine = match started {
             Ok(e) => {

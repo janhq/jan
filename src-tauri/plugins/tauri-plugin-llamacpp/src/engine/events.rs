@@ -8,9 +8,13 @@
 //! ordered stream is this attempt's outcome. Without the feed the load waits
 //! out its full timeout instead of erroring.
 //!
-//! The wire shape is upstream's, because that is what the desktop parses. A
-//! `progress` field is deliberately never emitted: the fraction upstream
-//! reports is *download* progress, and models here are already on disk.
+//! The wire shape is upstream's, because that is what the desktop parses,
+//! including the `progress` object: `server_context` reports real load
+//! progress through `set_state_callback` (server-context.cpp), and the shim
+//! forwards its `{stages, current, value}` payload verbatim, so the desktop's
+//! `parse_load_progress_event` needs no separate shape to understand. This is
+//! *load* progress, not the download fraction upstream puts there -- these
+//! models are already on disk.
 
 use tokio::sync::broadcast;
 
@@ -20,9 +24,13 @@ const CHANNEL_CAPACITY: usize = 64;
 
 /// A lifecycle *transition*, as opposed to `registry::ModelStatus`, which is
 /// the steady state `GET /models` reports.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Transition {
     Loading,
+    /// A fraction of the way through loading, as reported by the engine. The
+    /// payload is llama.cpp's own (`stages`, `current`, `value`) and is passed
+    /// through rather than re-modelled, since only the desktop reads it.
+    LoadProgress(serde_json::Value),
     Loaded,
     /// `exit_code` is 0 for a deliberate unload or an eviction and nonzero for
     /// a failed load, which is how upstream marks one (`is_failed`) and how the
@@ -30,7 +38,7 @@ pub enum Transition {
     Unloaded { exit_code: i32 },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ModelEvent {
     pub model: String,
     pub status: Transition,
@@ -39,8 +47,13 @@ pub struct ModelEvent {
 impl ModelEvent {
     /// One SSE frame, terminator included.
     pub fn to_sse_frame(&self) -> String {
-        let data = match self.status {
+        let data = match &self.status {
             Transition::Loading => serde_json::json!({ "status": "loading" }),
+            // Still `loading`: the status is the state, `progress` is how far
+            // into it. The desktop keys the percentage off the latter alone.
+            Transition::LoadProgress(progress) => {
+                serde_json::json!({ "status": "loading", "progress": progress })
+            }
             Transition::Loaded => serde_json::json!({ "status": "loaded" }),
             Transition::Unloaded { exit_code } => {
                 serde_json::json!({ "status": "unloaded", "exit_code": exit_code })
@@ -163,4 +176,23 @@ mod tests {
     fn emitting_with_no_subscribers_is_not_an_error() {
         EventBus::new().emit("qwen", Transition::Loaded);
     }
+
+    // The desktop reads the percentage out of `data.progress`, keyed on the
+    // same field names llama.cpp's own callback uses.
+    #[test]
+    fn a_progress_frame_carries_the_engines_payload_verbatim() {
+        let v = parsed(&ModelEvent {
+            model: "qwen".into(),
+            status: Transition::LoadProgress(serde_json::json!({
+                "stages": ["text_model", "mmproj_model"],
+                "current": "text_model",
+                "value": 0.42,
+            })),
+        });
+        assert_eq!(v["data"]["status"], "loading");
+        assert_eq!(v["data"]["progress"]["current"], "text_model");
+        assert_eq!(v["data"]["progress"]["value"], 0.42);
+        assert_eq!(v["data"]["progress"]["stages"][1], "mmproj_model");
+    }
+
 }

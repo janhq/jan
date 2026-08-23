@@ -22,7 +22,7 @@ pub mod registry;
 pub mod slots;
 pub mod watcher;
 pub mod worker;
-mod sys;
+pub mod sys;
 
 /// The llama.cpp this crate is pinned to, from `build.rs`.
 pub const PINNED_TAG: &str = env!("JAN_LLAMA_CPP_TAG");

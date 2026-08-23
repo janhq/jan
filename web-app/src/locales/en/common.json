@@ -254,11 +254,10 @@
       "title": "Default sampling parameters",
       "description": "Default sampler settings for this model. Used unless overridden by per-assistant or per-request values."
     },
-    "mtp": {
-      "section": "Multi-Token Prediction (MTP)",
-      "enable": "Enable MTP",
-      "enableDescription": "Use the model's built-in MTP heads to draft multiple tokens per step. Speeds up generation when the model has MTP weights (DeepSeek-V3, GLM-4.5/4.6, MiMo v2.5, …).",
-      "needsUpgrade": "Update the llama.cpp backend to build b9193 or newer to enable MTP.",
+    "specDraft": {
+      "section": "Speculative decoding",
+      "enable": "Enable speculative decoding",
+      "enableDescription": "Draft several tokens per step and verify them in one pass, which speeds up generation. Uses the model's built-in MTP heads, or the draft model downloaded with it (MTP, Eagle3, DFlash or DSpark).",
       "nMax": "Max draft tokens",
       "nMaxDescription": "Maximum number of tokens to draft per step. Default 16.",
       "nMin": "Min draft tokens",

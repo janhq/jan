@@ -1076,11 +1076,10 @@ mod sse_contract_tests {
         );
     }
 
-    // The engine never emits `progress` (its models are on disk, so there is
-    // no download fraction to report), so the progress parser must find
+    // A lifecycle transition carries no fraction, so the parser must find
     // nothing rather than emitting a 0% event that would stall the bar.
     #[test]
-    fn no_transition_carries_a_progress_payload() {
+    fn no_lifecycle_transition_carries_a_progress_payload() {
         for status in [
             Transition::Loading,
             Transition::Loaded,
@@ -1088,5 +1087,31 @@ mod sse_contract_tests {
         ] {
             assert!(parse_load_progress_event(&frame("m", status), "m").is_none());
         }
+    }
+
+    // The two halves of the progress chain are written apart -- the engine
+    // publishes the transition, the desktop parses the frame -- so this pins
+    // that they still agree on the shape.
+    #[test]
+    fn a_progress_transition_round_trips_to_a_payload() {
+        let status = Transition::LoadProgress(serde_json::json!({
+            "stages": ["text_model", "spec_model"],
+            "current": "spec_model",
+            "value": 0.75,
+        }));
+        let payload = parse_load_progress_event(&frame("m", status), "m")
+            .expect("a progress payload");
+
+        assert_eq!(payload.model, "m");
+        assert_eq!(payload.value, 0.75);
+        assert_eq!(payload.stage.as_deref(), Some("spec_model"));
+        assert_eq!(payload.stages, vec!["text_model", "spec_model"]);
+    }
+
+    // Another model loading concurrently must not move this model's bar.
+    #[test]
+    fn a_progress_transition_for_another_model_is_ignored() {
+        let status = Transition::LoadProgress(serde_json::json!({ "value": 0.5 }));
+        assert!(parse_load_progress_event(&frame("other", status), "m").is_none());
     }
 }

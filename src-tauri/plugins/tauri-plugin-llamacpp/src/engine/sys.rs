@@ -4,13 +4,23 @@
 
 use super::EngineError;
 
+/// Load-lifecycle notifications from the engine: `(state, payload_json)`,
+/// llama.cpp's own `server_state` name and its JSON. Called on the loading
+/// thread, and later on the engine's loop thread for a sleep/resume, so it
+/// must be `Send + Sync`.
+pub type StateCallback = std::sync::Arc<dyn Fn(&str, &str) + Send + Sync>;
+
 #[cfg(feature = "engine")]
 mod imp {
     use super::EngineError;
     use std::ffi::{c_char, c_int, c_void, CStr, CString};
 
+    use super::StateCallback;
+
     type EngineHandle = *mut c_void;
     type ResponseHandle = *mut c_void;
+    type StateTrampoline =
+        unsafe extern "C" fn(state: *const c_char, payload: *const c_char, user_data: *mut c_void);
 
     // The shim's ABI. Hand-declared rather than bindgen-generated: it is our
     // own 14-function surface, so there is no upstream struct layout to track
@@ -19,12 +29,16 @@ mod imp {
         fn jan_llama_engine_start(
             argv: *const *const c_char,
             argc: c_int,
+            on_state: Option<StateTrampoline>,
+            user_data: *mut c_void,
             err: *mut u8,
             err_len: usize,
         ) -> EngineHandle;
         fn jan_llama_engine_start_from_preset(
             ini_path: *const c_char,
             preset_name: *const c_char,
+            on_state: Option<StateTrampoline>,
+            user_data: *mut c_void,
             err: *mut u8,
             err_len: usize,
         ) -> EngineHandle;
@@ -59,9 +73,45 @@ mod imp {
     /// by it. The C++ side funnels every request through `server_queue`, which
     /// is the same cross-thread channel llama-server's HTTP workers use, so
     /// sharing one engine across threads is the intended usage.
-    pub struct Engine(EngineHandle);
+    pub struct Engine {
+        handle: EngineHandle,
+        /// Kept alive for exactly as long as the engine: the C++ side holds a
+        /// `std::function` wrapping this pointer and can call it from its loop
+        /// thread, so it is freed only after `jan_llama_engine_stop` has
+        /// joined that thread.
+        state_cb: Option<*mut StateCallback>,
+    }
     unsafe impl Send for Engine {}
     unsafe impl Sync for Engine {}
+
+    /// The C ABI entry point handed to the shim. Panics are caught rather than
+    /// unwound into C++, where unwinding past a `noexcept` boundary is
+    /// undefined; a poisoned callback drops its sample instead.
+    unsafe extern "C" fn state_trampoline(
+        state: *const c_char,
+        payload: *const c_char,
+        user_data: *mut c_void,
+    ) {
+        if user_data.is_null() {
+            return;
+        }
+        let _ = std::panic::catch_unwind(|| {
+            let cb = unsafe { &*(user_data as *const StateCallback) };
+            let state = unsafe { CStr::from_ptr(state) }.to_string_lossy();
+            let payload = if payload.is_null() {
+                std::borrow::Cow::Borrowed("{}")
+            } else {
+                unsafe { CStr::from_ptr(payload) }.to_string_lossy()
+            };
+            cb(&state, &payload);
+        });
+    }
+
+    /// Leaks the callback for the duration of the call; `from_handle` either
+    /// hands ownership to the `Engine` or frees it.
+    fn leak_state_cb(cb: Option<StateCallback>) -> Option<*mut StateCallback> {
+        cb.map(|c| Box::into_raw(Box::new(c)))
+    }
 
     impl std::fmt::Debug for Engine {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -78,52 +128,71 @@ mod imp {
     impl Engine {
         /// Starts from llama-server's own flag set, so callers reuse the
         /// upstream arg table instead of mirroring `common_params`.
-        pub fn start(args: &[String]) -> Result<Self, EngineError> {
+        pub fn start(args: &[String], on_state: Option<StateCallback>) -> Result<Self, EngineError> {
             let owned: Vec<CString> = args
                 .iter()
                 .map(|a| CString::new(a.as_str()).unwrap_or_default())
                 .collect();
             let argv: Vec<*const c_char> = owned.iter().map(|c| c.as_ptr()).collect();
             let mut err = vec![0u8; ERR_BUF_LEN];
+            let state_cb = leak_state_cb(on_state);
             // SAFETY: argv points at `owned`, alive for the call; the shim
             // copies every string and retains none of these pointers.
             let handle = unsafe {
                 jan_llama_engine_start(
                     argv.as_ptr(),
                     argv.len() as c_int,
+                    state_cb.map(|_| state_trampoline as StateTrampoline),
+                    state_cb.map_or(std::ptr::null_mut(), |p| p as *mut c_void),
                     err.as_mut_ptr(),
                     err.len(),
                 )
             };
-            Self::from_handle(handle, &err)
+            Self::from_handle(handle, state_cb, &err)
         }
 
         /// Starts from a `router.preset.ini` section, the file Jan already
         /// generates. `[*]` is applied first, then the named section.
-        pub fn start_from_preset(ini_path: &str, preset: &str) -> Result<Self, EngineError> {
+        pub fn start_from_preset(
+            ini_path: &str,
+            preset: &str,
+            on_state: Option<StateCallback>,
+        ) -> Result<Self, EngineError> {
             let ini = CString::new(ini_path).map_err(|e| EngineError::Start(e.to_string()))?;
             let name = CString::new(preset).map_err(|e| EngineError::Start(e.to_string()))?;
             let mut err = vec![0u8; ERR_BUF_LEN];
+            let state_cb = leak_state_cb(on_state);
             // SAFETY: both pointers are valid for the duration of the call.
             let handle = unsafe {
                 jan_llama_engine_start_from_preset(
                     ini.as_ptr(),
                     name.as_ptr(),
+                    state_cb.map(|_| state_trampoline as StateTrampoline),
+                    state_cb.map_or(std::ptr::null_mut(), |p| p as *mut c_void),
                     err.as_mut_ptr(),
                     err.len(),
                 )
             };
-            Self::from_handle(handle, &err)
+            Self::from_handle(handle, state_cb, &err)
         }
 
-        fn from_handle(handle: EngineHandle, err: &[u8]) -> Result<Self, EngineError> {
+        fn from_handle(
+            handle: EngineHandle,
+            state_cb: Option<*mut StateCallback>,
+            err: &[u8],
+        ) -> Result<Self, EngineError> {
             if handle.is_null() {
+                // Nothing on the C++ side survived to call it.
+                if let Some(p) = state_cb {
+                    // SAFETY: leaked by this call and reachable from nowhere else.
+                    unsafe { drop(Box::from_raw(p)) };
+                }
                 let msg = CStr::from_bytes_until_nul(err)
                     .map(|c| c.to_string_lossy().into_owned())
                     .unwrap_or_else(|_| "unknown error".to_string());
                 return Err(EngineError::Start(msg));
             }
-            Ok(Self(handle))
+            Ok(Self { handle, state_cb })
         }
 
         pub fn request(&self, route: &str, body: &str) -> Response {
@@ -140,7 +209,7 @@ mod imp {
             // SAFETY: the shim never returns null -- transport failures come
             // back as a 5xx response object -- and copies the body.
             let handle = unsafe {
-                jan_llama_engine_request(self.0, r.as_ptr(), q.as_ptr(), b.as_ptr(), body.len())
+                jan_llama_engine_request(self.handle, r.as_ptr(), q.as_ptr(), b.as_ptr(), body.len())
             };
             Response(handle)
         }
@@ -196,8 +265,14 @@ mod imp {
 
     impl Drop for Engine {
         fn drop(&mut self) {
-            // SAFETY: called once, from Drop, on a handle we own.
-            unsafe { jan_llama_engine_stop(self.0) }
+            // SAFETY: called once, from Drop, on a handle we own. `stop` joins
+            // the loop thread, so no callback can be in flight afterwards --
+            // which is what makes freeing the boxed closure next safe.
+            unsafe { jan_llama_engine_stop(self.handle) }
+            if let Some(p) = self.state_cb.take() {
+                // SAFETY: leaked by `start`/`start_from_preset` for this engine.
+                unsafe { drop(Box::from_raw(p)) };
+            }
         }
     }
 
@@ -296,10 +371,17 @@ mod imp {
     pub struct Engine(());
 
     impl Engine {
-        pub fn start(_args: &[String]) -> Result<Self, EngineError> {
+        pub fn start(
+            _args: &[String],
+            _on_state: Option<super::StateCallback>,
+        ) -> Result<Self, EngineError> {
             Err(EngineError::Unavailable)
         }
-        pub fn start_from_preset(_ini: &str, _preset: &str) -> Result<Self, EngineError> {
+        pub fn start_from_preset(
+            _ini: &str,
+            _preset: &str,
+            _on_state: Option<super::StateCallback>,
+        ) -> Result<Self, EngineError> {
             Err(EngineError::Unavailable)
         }
         pub fn request(&self, _route: &str, _body: &str) -> Response {

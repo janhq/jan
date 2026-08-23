@@ -13,20 +13,34 @@ extern "C" {
 typedef struct jan_llama_engine   jan_llama_engine;
 typedef struct jan_llama_response jan_llama_response;
 
+// Load-lifecycle notifications, called on the thread driving the load (and
+// later, for a sleep/resume, on the engine's own loop thread). `state` is
+// llama.cpp's server state ("loading", "ready", ...) and `payload` its JSON --
+// for "loading" that is {"stages":[..],"current":..,"value":0..1}, which is
+// the only source of real load progress. Must not throw and must stay valid
+// until the engine is stopped. NULL for no notifications.
+typedef void (*jan_llama_state_cb)(const char * state,
+                                  const char * payload,
+                                  void *       user_data);
+
 // argv is llama-server's own flag set (common_params_parse), so callers reuse
 // the upstream arg table instead of mirroring common_params across the FFI.
 // Returns NULL on failure and writes a message into err.
 jan_llama_engine * jan_llama_engine_start(const char * const * argv,
                                           int                  argc,
+                                          jan_llama_state_cb   on_state,
+                                          void *               user_data,
                                           char *               err,
                                           size_t               err_len);
 
 // Starts from a router.preset.ini section, exactly as Jan already generates it:
 // the [*] section is applied first, then the named one overrides it.
-jan_llama_engine * jan_llama_engine_start_from_preset(const char * ini_path,
-                                                     const char * preset_name,
-                                                     char *       err,
-                                                     size_t       err_len);
+jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_path,
+                                                     const char *       preset_name,
+                                                     jan_llama_state_cb on_state,
+                                                     void *             user_data,
+                                                     char *             err,
+                                                     size_t             err_len);
 
 void jan_llama_engine_stop(jan_llama_engine * engine);
 

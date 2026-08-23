@@ -34,6 +34,7 @@ type ModelYaml = ModelConfig & {
   mtp_layers?: number
   mtp?: boolean
   mtp_model_path?: string
+  spec_type?: string
   temperature?: number
   top_k?: number
   top_p?: number
@@ -57,8 +58,6 @@ type ModelYaml = ModelConfig & {
 // must never be able to evict the user's own chat KV cache from its slot.
 // Hidden from the setting's UI value; see reservedSlotId in thread-title-summarizer.ts.
 export const RESERVED_BACKGROUND_SLOTS = 1
-
-export const MTP_MIN_BUILD = 9193
 
 /**
  * The ubatch every embedding model's preset section is pinned to.
@@ -86,6 +85,28 @@ export function threadCacheDir(providerPath: string): string {
 // model's full trained context (which can OOM on large-context models).
 const DEFAULT_CTX_SIZE = 8192
 
+/**
+ * The `--spec-type` values llama.cpp accepts for a draft model
+ * (common/speculative.cpp). A model.yml records one at import; anything else
+ * -- an older install with no record, or a value we do not recognise -- falls
+ * back to MTP, which is what every embedded-head model is.
+ */
+const SPEC_TYPES = new Set([
+  'draft-mtp',
+  'draft-eagle3',
+  'draft-dflash',
+  'draft-dspark',
+])
+const DEFAULT_SPEC_TYPE = 'draft-mtp'
+
+/**
+ * A built-in template name (`chatml`, `llama3`, ...) as opposed to a template
+ * body. `--chat-template` takes either, but `--chat-template-file` reads its
+ * value as a path, so the two have to be told apart. Any real jinja carries
+ * `{`, whitespace or a newline, none of which match here.
+ */
+const BUILTIN_TEMPLATE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+
 function escapeIniValue(v: string): string {
   // INI values for llama-server are read as strings; trim surrounding whitespace
   // and strip stray newlines that would break parsing.
@@ -101,9 +122,8 @@ export async function generatePreset(
   providerPath: string,
   janDataFolderPath: string,
   config: LlamacppConfig,
-  opts: { supportsMtp?: boolean; reservedBackgroundSlots?: number } = {}
+  opts: { reservedBackgroundSlots?: number } = {}
 ): Promise<{ path: string; embeddingCount: number }> {
-  const supportsMtp = opts.supportsMtp === true
   // Reserved background slot count (thread auto-titling). Disabling that
   // feature drops it to 0 so no extra parallel slot is provisioned.
   const reservedBackgroundSlots =
@@ -449,8 +469,24 @@ export async function generatePreset(
       lines.push(`mmproj = ${escapeIniValue(mmprojAbs)}`)
     }
 
-    if (mc.chat_template && mc.chat_template.trim().length > 0) {
-      lines.push(`chat-template = ${escapeIniValue(mc.chat_template)}`)
+    // A template body cannot survive the ini: values have no line
+    // continuation, and `#`/`;` anywhere in one starts a comment. So only a
+    // built-in name goes inline; anything else is written beside model.yml and
+    // passed by path, which llama.cpp reads verbatim.
+    const chatTemplate =
+      typeof mc.chat_template === 'string' ? mc.chat_template.trim() : ''
+    if (chatTemplate.length > 0) {
+      if (BUILTIN_TEMPLATE_NAME_RE.test(chatTemplate)) {
+        lines.push(`chat-template = ${chatTemplate}`)
+      } else {
+        const templatePath = await joinPath([
+          modelsDir,
+          modelId,
+          'chat_template.jinja',
+        ])
+        await fs.writeFileSync(templatePath, chatTemplate)
+        lines.push(`chat-template-file = ${escapeIniValue(templatePath)}`)
+      }
     }
 
     // Per-model overrides -- same default-skipping rules as the [*] block.
@@ -540,13 +576,17 @@ export async function generatePreset(
     }
 
     // MTP either lives in the main gguf (mtp_layers > 0) or ships as a separate
-    // draft gguf (mtp_model_path), which is passed to llama-server as the draft.
+    // draft gguf (mtp_model_path), which is passed to the engine as the draft.
     const hasMtpModel =
       typeof mc.mtp_model_path === 'string' && mc.mtp_model_path.length > 0
     const hasMtpLayers =
       typeof mc.mtp_layers === 'number' && mc.mtp_layers > 0
-    if (mc.mtp === true && supportsMtp && (hasMtpLayers || hasMtpModel)) {
-      lines.push('spec-type = draft-mtp')
+    if (mc.mtp === true && (hasMtpLayers || hasMtpModel)) {
+      const specType =
+        typeof mc.spec_type === 'string' && SPEC_TYPES.has(mc.spec_type)
+          ? mc.spec_type
+          : DEFAULT_SPEC_TYPE
+      lines.push(`spec-type = ${specType}`)
       if (hasMtpModel) {
         const mtpAbs = await joinPath([janDataFolderPath, mc.mtp_model_path!])
         lines.push(`spec-draft-model = ${escapeIniValue(mtpAbs)}`)

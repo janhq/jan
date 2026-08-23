@@ -24,5 +24,6 @@ permissions = [
 
     # GGUF
     "allow-read-gguf-metadata",
+    "allow-find-gguf-tensors",
     "allow-is-model-supported",
 ]
