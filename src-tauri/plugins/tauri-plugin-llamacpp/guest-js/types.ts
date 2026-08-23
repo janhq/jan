@@ -87,6 +87,10 @@ export type LlamacppConfig = {
   rope_freq_base: number
   rope_freq_scale: number
   cache_ram: number
+  /** Keep each thread's prompt cache on disk across sessions. */
+  persist_thread_cache: boolean
+  /** Disk budget for the above, in MiB. */
+  thread_cache_size: number
   cache_reuse: number
   ctx_checkpoints: number
   checkpoint_min_step: number

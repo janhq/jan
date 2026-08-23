@@ -1220,8 +1220,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Pin chat to slot 0 so llama-server reuses this thread's cached KV
       // prefix across turns; title generation uses the reserved background
       // slot (RESERVED_BACKGROUND_SLOTS) and can't evict it.
+      //
+      // thread_id names whose cache that is, which is what lets the engine
+      // park it when another thread takes the slot and pick it back up later,
+      // including in a later session. It is stripped before the request
+      // reaches llama.cpp.
       if (providerId === 'llamacpp') {
         mergedParams.id_slot = 0
+        mergedParams.thread_id = threadId
       }
       this.model = await this.createModelOrAbort(
         modelId,

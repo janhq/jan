@@ -87,6 +87,42 @@ describe('llamacpp_extension', () => {
     })
   })
 
+  describe('resolveThreadCacheBudget', () => {
+    const budget = (cfg: Record<string, unknown>): number => {
+      // `config` is populated by onLoad, which is not run here.
+      ;(extension as any).config = { ...((extension as any).config ?? {}), ...cfg }
+      return (extension as any).resolveThreadCacheBudget()
+    }
+
+    it('reports the configured size when persistence is on', () => {
+      expect(
+        budget({ persist_thread_cache: true, thread_cache_size: 4096 })
+      ).toBe(4096)
+    })
+
+    // 0 is the worker's off switch, so the toggle and the size collapse into
+    // one number rather than being forwarded separately.
+    it('reports 0 when the toggle is off, whatever the size says', () => {
+      expect(
+        budget({ persist_thread_cache: false, thread_cache_size: 4096 })
+      ).toBe(0)
+    })
+
+    it('treats an unusable size as off rather than passing it through', () => {
+      for (const thread_cache_size of [0, -1, NaN, undefined, 'lots']) {
+        expect(
+          budget({ persist_thread_cache: true, thread_cache_size })
+        ).toBe(0)
+      }
+    })
+
+    it('truncates a fractional size, since the flag is an integer of MiB', () => {
+      expect(
+        budget({ persist_thread_cache: true, thread_cache_size: 2048.7 })
+      ).toBe(2048)
+    })
+  })
+
   describe('getProviderPath', () => {
     it('should return correct provider path', async () => {
       const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
@@ -582,7 +618,11 @@ describe('refreshEnginePreset embedding slot reservation', () => {
     })
     await extension['refreshEnginePreset']()
     expect(startEngine).not.toHaveBeenCalled()
-    expect(reloadEngineModels).toHaveBeenCalledWith('/p/router.preset.ini', 2)
+    expect(reloadEngineModels).toHaveBeenCalledWith(
+      '/p/router.preset.ini',
+      2,
+      expect.any(Number)
+    )
   })
 
   it('reloads when the embedding bonus is unchanged', async () => {
@@ -592,7 +632,11 @@ describe('refreshEnginePreset embedding slot reservation', () => {
     })
     await extension['refreshEnginePreset']()
     expect(startEngine).not.toHaveBeenCalled()
-    expect(reloadEngineModels).toHaveBeenCalledWith('/p/router.preset.ini', 1)
+    expect(reloadEngineModels).toHaveBeenCalledWith(
+      '/p/router.preset.ini',
+      1,
+      expect.any(Number)
+    )
   })
 
   // 0 means unlimited, so the +1 bonus must not turn it into a cap of 1.
@@ -602,7 +646,11 @@ describe('refreshEnginePreset embedding slot reservation', () => {
       embeddingCount: 1,
     })
     await extension['refreshEnginePreset']()
-    expect(reloadEngineModels).toHaveBeenCalledWith('/p/router.preset.ini', 0)
+    expect(reloadEngineModels).toHaveBeenCalledWith(
+      '/p/router.preset.ini',
+      0,
+      expect.any(Number)
+    )
   })
 
   it('falls back to a restart when the live reload fails', async () => {

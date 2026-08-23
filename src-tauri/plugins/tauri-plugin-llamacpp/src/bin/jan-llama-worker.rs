@@ -23,6 +23,7 @@ use std::sync::Arc;
 use tauri_plugin_llamacpp::engine::http::EngineServer;
 use tauri_plugin_llamacpp::engine::preset;
 use tauri_plugin_llamacpp::engine::registry::Registry;
+use tauri_plugin_llamacpp::engine::slots::StateStore;
 use tauri_plugin_llamacpp::engine::{assert_pinned_version, PINNED_TAG};
 use tokio::sync::Mutex;
 
@@ -30,6 +31,10 @@ struct Args {
     preset: Option<String>,
     port: u16,
     models_max: usize,
+    /// Ceiling on the saved-KV directory, in MiB. 0 turns cross-session KV
+    /// persistence off entirely: the directory is what the feature is, so
+    /// there is nothing to keep without a budget for it.
+    slot_cache_mib: u64,
     /// Print the offloadable devices as JSON and exit. The desktop process
     /// links the plugin *without* the engine feature, so it has no ggml to ask
     /// -- it shells out here, exactly as it used to shell out to
@@ -47,6 +52,7 @@ fn parse_args() -> Result<Args, String> {
         preset: None,
         port: 0,
         models_max: 1,
+        slot_cache_mib: 0,
         list_devices: false,
     };
     let mut it = std::env::args().skip(1);
@@ -64,6 +70,11 @@ fn parse_args() -> Result<Args, String> {
                 out.models_max = value()?
                     .parse()
                     .map_err(|e| format!("bad --models-max: {e}"))?
+            }
+            "--slot-cache-mib" => {
+                out.slot_cache_mib = value()?
+                    .parse()
+                    .map_err(|e| format!("bad --slot-cache-mib: {e}"))?
             }
             "--list-devices" => out.list_devices = true,
             "--version" => {
@@ -110,6 +121,7 @@ async fn main() {
 
     let mut registry = Registry::new(args.models_max);
     let mut models = Vec::new();
+    let mut slot_store = None;
 
     if let Some(path) = &args.preset {
         let ini = match std::fs::read_to_string(path) {
@@ -124,6 +136,21 @@ async fn main() {
             models.push(section);
         }
         models.sort();
+
+        // The directory has to exist before any model loads: llama.cpp's
+        // --slot-save-path handler throws when it does not, and that unwinds
+        // out of engine startup, so a missing cache directory would take local
+        // inference down rather than disabling one feature.
+        if let Some(dir) = preset::shared_value(&ini, "slot-save-path") {
+            let store = StateStore::new(&dir, args.slot_cache_mib);
+            if let Err(e) = store.ensure_dir() {
+                eprintln!("jan-llama-worker: could not create {dir}: {e}");
+                std::process::exit(7);
+            }
+            if args.slot_cache_mib > 0 {
+                slot_store = Some(store);
+            }
+        }
     }
 
     let registry = Arc::new(Mutex::new(registry));
@@ -141,6 +168,17 @@ async fn main() {
                 std::process::exit(5);
             }
         };
+    let server = match slot_store {
+        Some(store) => {
+            eprintln!(
+                "jan-llama-worker: keeping up to {} MiB of thread KV cache in {}",
+                args.slot_cache_mib,
+                store.dir().display()
+            );
+            server.with_slot_state(store)
+        }
+        None => server,
+    };
 
     // The supervisor reads this instead of scraping stderr, which is what the
     // router path had to do.
@@ -156,9 +194,16 @@ async fn main() {
     use std::io::Write;
     let _ = std::io::stdout().flush();
 
-    server
+    let server = Arc::new(server);
+    Arc::clone(&server)
         .serve_until(listener, shutdown_requested(), DRAIN_TIMEOUT)
         .await;
+
+    // After draining, before releasing the models: the save reads each slot
+    // through its still-live engine. Closing Jan is the common way a thread
+    // stops being current, so without this the feature would only ever help
+    // across a thread switch, not across a session.
+    server.save_resident_slots().await;
 
     // Releasing the models here is the whole point of exiting in-band: each
     // Engine's Drop runs jan_llama_engine_stop, terminating its server_queue

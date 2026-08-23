@@ -66,7 +66,12 @@ pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Pure so the flag set is testable without spawning anything. Port 0 asks the
 /// OS to choose, which the handshake then reports back -- unlike the router
 /// path's `49152 + random` guess, this cannot collide.
-pub fn worker_args(preset_path: &Path, port: u16, models_max: u32) -> Vec<String> {
+pub fn worker_args(
+    preset_path: &Path,
+    port: u16,
+    models_max: u32,
+    slot_cache_mib: u64,
+) -> Vec<String> {
     vec![
         "--preset".to_string(),
         preset_path.to_string_lossy().to_string(),
@@ -74,6 +79,8 @@ pub fn worker_args(preset_path: &Path, port: u16, models_max: u32) -> Vec<String
         port.to_string(),
         "--models-max".to_string(),
         models_max.to_string(),
+        "--slot-cache-mib".to_string(),
+        slot_cache_mib.to_string(),
     ]
 }
 
@@ -197,9 +204,10 @@ pub async fn spawn(
     port: u16,
     api_key: &str,
     models_max: u32,
+    slot_cache_mib: u64,
     envs: HashMap<String, String>,
 ) -> Result<WorkerHandle, WorkerError> {
-    let args = worker_args(preset_path, port, models_max);
+    let args = worker_args(preset_path, port, models_max, slot_cache_mib);
     log::info!("starting {} {}", exe.display(), args.join(" "));
 
     let mut cmd = Command::new(exe);
@@ -308,7 +316,7 @@ mod tests {
 
     #[test]
     fn worker_args_are_the_documented_flags() {
-        let args = worker_args(Path::new("/tmp/router.preset.ini"), 0, 4);
+        let args = worker_args(Path::new("/tmp/router.preset.ini"), 0, 4, 8192);
         assert_eq!(
             args,
             vec![
@@ -317,7 +325,9 @@ mod tests {
                 "--port",
                 "0",
                 "--models-max",
-                "4"
+                "4",
+                "--slot-cache-mib",
+                "8192"
             ]
         );
     }
@@ -325,7 +335,7 @@ mod tests {
     #[test]
     fn the_api_key_never_appears_in_argv() {
         // The router path documents this invariant; keep it here too.
-        let args = worker_args(Path::new("/p.ini"), 1234, 1);
+        let args = worker_args(Path::new("/p.ini"), 1234, 1, 0);
         assert!(
             !args.iter().any(|a| a.contains("api") || a.contains("key")),
             "argv is world-readable via /proc; the token must go through {API_KEY_ENV}"
@@ -334,8 +344,18 @@ mod tests {
 
     #[test]
     fn models_max_zero_is_forwarded_verbatim_as_unlimited() {
-        let args = worker_args(Path::new("/p.ini"), 1, 0);
+        let args = worker_args(Path::new("/p.ini"), 1, 0, 0);
         assert_eq!(args[5], "0");
+    }
+
+    // 0 is the off switch, and it has to survive as 0 rather than being
+    // dropped: an absent flag would fall back to the worker's own default.
+    #[test]
+    fn the_slot_cache_budget_is_forwarded_including_zero() {
+        let off = worker_args(Path::new("/p.ini"), 1, 1, 0);
+        assert_eq!(off[7], "0");
+        let on = worker_args(Path::new("/p.ini"), 1, 1, 4096);
+        assert_eq!(on[7], "4096");
     }
 
     #[test]
@@ -387,6 +407,7 @@ mod tests {
             0,
             "k",
             1,
+            0,
             HashMap::new(),
         )
         .await
@@ -403,7 +424,7 @@ mod tests {
             .map(Path::new)
             .find(|p| p.is_file());
         let Some(exe) = exe else { return };
-        let err = spawn(exe, Path::new("/tmp/x.ini"), 0, "k", 1, HashMap::new())
+        let err = spawn(exe, Path::new("/tmp/x.ini"), 0, "k", 1, 0, HashMap::new())
             .await
             .expect_err("a silent exit must fail");
         assert!(matches!(err, WorkerError::Handshake(_)), "got {err:?}");

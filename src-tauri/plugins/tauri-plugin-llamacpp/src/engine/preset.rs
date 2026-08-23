@@ -41,6 +41,32 @@ fn section_bodies(ini: &str) -> HashMap<String, Vec<String>> {
     out
 }
 
+/// A key from the shared `[*]` block.
+///
+/// Read on the Rust side as well as by the C++ loader because the worker has to
+/// act on two of them before any model is loaded: `slot-save-path` names a
+/// directory llama.cpp *throws* on if it does not exist
+/// (`common/arg.cpp:3580`), and the KV state store has to agree with llama.cpp
+/// on where files land.
+pub fn shared_value(ini: &str, key: &str) -> Option<String> {
+    let mut in_shared = false;
+    for line in ini.lines().map(str::trim) {
+        if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+            in_shared = name == "*";
+            continue;
+        }
+        if !in_shared || line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        if let Some((k, v)) = line.split_once('=') {
+            if k.trim() == key {
+                return Some(v.trim().to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Load specs for every model in a preset.
 ///
 /// The spec carries the section body so `Registry::reload` can diff it. Two
@@ -97,6 +123,34 @@ embeddings = true
         assert_eq!(sections("  [a]  \n key = 1"), vec!["a"]);
         assert!(sections("").is_empty());
         assert!(sections("key = 1\n# comment").is_empty());
+    }
+
+    #[test]
+    fn a_shared_key_is_read_only_from_the_star_section() {
+        let ini = "[*]\nslot-save-path = /a/b\n\n[m]\nslot-save-path = /c/d\n";
+        assert_eq!(
+            shared_value(ini, "slot-save-path"),
+            Some("/a/b".to_string()),
+            "a per-model override must not be mistaken for the engine-wide value"
+        );
+        assert_eq!(shared_value(ini, "absent"), None);
+        assert_eq!(
+            shared_value("[m]\nslot-save-path = /c/d\n", "slot-save-path"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_shared_value_keeps_paths_with_spaces_and_equals_signs() {
+        let ini = "[*]\nslot-save-path = /home/a b/Jan Data/cache\n";
+        assert_eq!(
+            shared_value(ini, "slot-save-path"),
+            Some("/home/a b/Jan Data/cache".to_string())
+        );
+        assert_eq!(
+            shared_value("[*]\nchat-template = a=b\n", "chat-template"),
+            Some("a=b".to_string())
+        );
     }
 
     #[test]

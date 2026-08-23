@@ -43,7 +43,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(async (_cmd: string, args: { path: string }) => modelYamls[args.path]),
 }))
 
-import { generatePreset } from './preset'
+import { generatePreset, threadCacheDir } from './preset'
 
 const CONFIG = {} as any
 
@@ -575,6 +575,26 @@ describe('generatePreset upstream-default skipping', () => {
       supportsMtp: true,
     })
     expect(globalSection()).toContain('cache-ram = -1')
+  })
+
+  it('names a slot-save-path unless conversation persistence is off', async () => {
+    // Absent by default in llama.cpp, and naming it is what enables the slot
+    // save/restore routes at all -- so the default (unset) must still emit it.
+    await generatePreset('/p', '/jan', {} as any, { supportsMtp: true })
+    expect(globalSection()).toContain(
+      `slot-save-path = ${threadCacheDir('/p')}`
+    )
+
+    await generatePreset('/p', '/jan', { persist_thread_cache: false } as any, {
+      supportsMtp: true,
+    })
+    expect(globalSection()).not.toContain('slot-save-path')
+  })
+
+  it('puts the thread cache under the provider directory, not a temp dir', async () => {
+    // A cache the user paid prefill time for has to survive a reboot, which is
+    // the entire point of persisting it.
+    expect(threadCacheDir('/p')).toBe('/p/thread-cache')
   })
 
   it('omits cont-batching when enabled and emits it only when turned off', async () => {

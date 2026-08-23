@@ -69,6 +69,19 @@ export const MTP_MIN_BUILD = 9193
  */
 export const DEFAULT_EMBEDDING_UBATCH = 2048
 
+/**
+ * Where each thread's saved KV cache lives.
+ *
+ * Under the provider directory rather than a temp dir: it is a cache the user
+ * paid prefill time for and expects to survive a reboot, which is the whole
+ * point. Shared verbatim with the Rust side, which llama.cpp joins file names
+ * onto, so the two must not compute it differently -- this function is the one
+ * definition.
+ */
+export function threadCacheDir(providerPath: string): string {
+  return `${providerPath}/thread-cache`
+}
+
 // Fallback context size when the user hasn't set one, to avoid loading a
 // model's full trained context (which can OOM on large-context models).
 const DEFAULT_CTX_SIZE = 8192
@@ -377,6 +390,13 @@ export async function generatePreset(
     config.cache_ram !== 8192
   ) {
     lines.push(`cache-ram = ${Math.floor(config.cache_ram)}`)
+  }
+  // slot-save-path has no default: naming it is what enables llama.cpp's slot
+  // save/restore routes at all. Emitted whenever the feature is on, since the
+  // *budget* is what the worker uses to decide, and the C++ arg handler throws
+  // if the directory is missing -- the worker creates it before loading.
+  if (config.persist_thread_cache !== false) {
+    lines.push(`slot-save-path = ${escapeIniValue(threadCacheDir(providerPath))}`)
   }
   // cache-reuse default = 0 (disabled)
   if (

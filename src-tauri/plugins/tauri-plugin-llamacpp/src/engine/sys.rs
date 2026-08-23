@@ -32,6 +32,7 @@ mod imp {
         fn jan_llama_engine_request(
             engine: EngineHandle,
             route: *const c_char,
+            query: *const c_char,
             body: *const c_char,
             body_len: usize,
         ) -> ResponseHandle;
@@ -121,12 +122,20 @@ mod imp {
         }
 
         pub fn request(&self, route: &str, body: &str) -> Response {
+            self.request_with_query(route, "", body)
+        }
+
+        /// `query` is a url query string. llama.cpp takes a slot action
+        /// (`id_slot=0&action=save`) from there rather than from the body, so
+        /// the slot routes are unreachable through `request` alone.
+        pub fn request_with_query(&self, route: &str, query: &str, body: &str) -> Response {
             let r = CString::new(route).unwrap_or_default();
+            let q = CString::new(query).unwrap_or_default();
             let b = CString::new(body).unwrap_or_default();
             // SAFETY: the shim never returns null -- transport failures come
             // back as a 5xx response object -- and copies the body.
             let handle = unsafe {
-                jan_llama_engine_request(self.0, r.as_ptr(), b.as_ptr(), body.len())
+                jan_llama_engine_request(self.0, r.as_ptr(), q.as_ptr(), b.as_ptr(), body.len())
             };
             Response(handle)
         }
@@ -289,6 +298,9 @@ mod imp {
             Err(EngineError::Unavailable)
         }
         pub fn request(&self, _route: &str, _body: &str) -> Response {
+            Response(())
+        }
+        pub fn request_with_query(&self, _route: &str, _query: &str, _body: &str) -> Response {
             Response(())
         }
         pub fn load_backends(_dir: Option<&str>) {}

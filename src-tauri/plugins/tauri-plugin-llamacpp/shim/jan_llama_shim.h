@@ -32,8 +32,14 @@ void jan_llama_engine_stop(jan_llama_engine * engine);
 
 // route names match server_routes members, e.g. "post_chat_completions".
 // Never returns NULL: transport failures come back as a 5xx response.
+//
+// `query` is a url query string ("id_slot=0&action=save"), parsed into the
+// request's param map. llama.cpp reads slot actions and a few flags from there
+// rather than from the body, so a route like post_slots is unreachable without
+// it. NULL or "" means no params.
 jan_llama_response * jan_llama_engine_request(jan_llama_engine * engine,
                                               const char *       route,
+                                              const char *       query,
                                               const char *       body,
                                               size_t             body_len);
 

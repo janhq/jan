@@ -161,6 +161,26 @@ impl Registry {
         v
     }
 
+    /// The identity a saved KV state is checked against: the model's preset
+    /// section plus the gguf it names.
+    ///
+    /// Read from the registry rather than reconstructed, so the comparison is
+    /// against what the model was actually loaded with. `None` means the model
+    /// is not registered at all, which is not something to guess at.
+    pub fn state_identity(&self, model_id: &str) -> Option<super::slots::Identity> {
+        let spec = self.specs.get(model_id)?;
+        let body = match spec {
+            LoadSpec::Preset { body, .. } => body.clone(),
+            LoadSpec::Args(args) => args.clone(),
+        };
+        let path = spec_model_path(&body).map(std::path::PathBuf::from);
+        Some(super::slots::Identity::new(
+            model_id,
+            &body,
+            path.as_deref(),
+        ))
+    }
+
     pub fn is_loaded(&self, model_id: &str) -> bool {
         self.loaded.contains_key(model_id)
     }
@@ -382,6 +402,24 @@ fn pick_lru_idle<'a>(
         .map(|(id, _, _)| id.to_string())
 }
 
+/// The gguf a spec names, so its size and mtime can join the state guard. The
+/// key is `model` in a preset section and `-m`/`--model` in an arg list; a spec
+/// with neither (a remote or auto-resolved model) simply has no file to stamp.
+fn spec_model_path(body: &[String]) -> Option<String> {
+    let mut it = body.iter();
+    while let Some(line) = it.next() {
+        if line == "-m" || line == "--model" {
+            return it.next().cloned();
+        }
+        if let Some((k, v)) = line.split_once('=') {
+            if k.trim() == "model" {
+                return Some(v.trim().to_string());
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -521,6 +559,42 @@ mod tests {
     fn nothing_is_evictable_when_every_model_is_busy() {
         let entries = [("a", 1usize, 1u64), ("b", 2, 2)];
         assert_eq!(pick_lru_idle(entries.iter().copied()), None);
+    }
+
+    #[test]
+    fn a_specs_model_path_is_found_in_either_spelling() {
+        assert_eq!(
+            spec_model_path(&["ctx-size = 4096".into(), "model = /m/a.gguf".into()]),
+            Some("/m/a.gguf".to_string())
+        );
+        assert_eq!(
+            spec_model_path(&["-m".into(), "/m/b.gguf".into()]),
+            Some("/m/b.gguf".to_string())
+        );
+        assert_eq!(spec_model_path(&["ctx-size = 4096".into()]), None);
+    }
+
+    // `mmproj` and `model-draft` also end in a path; matching them would stamp
+    // the state guard against the wrong file.
+    #[test]
+    fn a_key_merely_ending_in_model_is_not_the_model_path() {
+        assert_eq!(spec_model_path(&["mmproj = /m/mm.gguf".into()]), None);
+        assert_eq!(spec_model_path(&["model-draft = /m/d.gguf".into()]), None);
+    }
+
+    #[test]
+    fn state_identity_follows_the_registered_spec() {
+        let mut r = reg(1, &[]);
+        r.register("m", spec("/m/a.gguf"));
+        let id = r.state_identity("m").expect("registered");
+        assert_eq!(id.model, "m");
+        r.register("m", spec("/m/b.gguf"));
+        assert_ne!(
+            r.state_identity("m").unwrap().spec,
+            id.spec,
+            "a spec change must invalidate saved state"
+        );
+        assert!(r.state_identity("absent").is_none());
     }
 
     #[test]

@@ -72,6 +72,7 @@ import {
   isModelSupported,
   unloadLlamaModel,
   startEngine,
+  eraseThreadSlotState,
   getEngineInfo as pluginGetEngineInfo,
   reloadEngineModels,
   engineDevices,
@@ -123,6 +124,11 @@ const PRESET_AFFECTING_KEYS = new Set<string>([
   'rope_freq_scale',
   'ctx_shift',
   'cache_ram',
+  // persist_thread_cache decides whether slot-save-path is emitted at all;
+  // thread_cache_size is not a preset key but rides the same reload, which
+  // carries it to the worker (see reload_engine_models).
+  'persist_thread_cache',
+  'thread_cache_size',
   'cache_reuse',
   'swa_full',
   'keep',
@@ -846,13 +852,49 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
-    const info = await startEngine(presetPath, modelsMax, envs)
+    const info = await startEngine(
+      presetPath,
+      modelsMax,
+      this.resolveThreadCacheBudget(),
+      envs
+    )
     this.enginePort = info.port
     this.engineApiKey = info.api_key
     this.presetPath = presetPath
     logger.info(
       `Engine worker started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax}, ${info.models.length} models registered, preset=${presetPath})`
     )
+  }
+
+  /**
+   * Drops a thread's saved prompt cache, for a thread the user deleted.
+   *
+   * Best-effort by design: the cache is invisible to the user and the store
+   * prunes by size anyway, so failing here must not make deleting a thread
+   * fail. Returns how many states were dropped.
+   */
+  async forgetThreadCache(threadId: string): Promise<number> {
+    try {
+      return await eraseThreadSlotState({ threadId })
+    } catch (e) {
+      logger.warn(`could not drop the saved cache for thread ${threadId}: ${e}`)
+      return 0
+    }
+  }
+
+  /**
+   * The disk budget for saved thread caches, in MiB.
+   *
+   * 0 is the off switch on the worker side, so the toggle and the size collapse
+   * into one number: a disabled feature and a zero budget are the same thing,
+   * and keeping them separate would let the worker create a directory it would
+   * never write to.
+   */
+  private resolveThreadCacheBudget(): number {
+    if (this.config.persist_thread_cache === false) return 0
+    const raw = Number(this.config.thread_cache_size)
+    if (!Number.isFinite(raw) || raw <= 0) return 0
+    return Math.floor(raw)
   }
 
   /**
@@ -909,7 +951,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     try {
       const report = await reloadEngineModels(
         presetPath,
-        this.resolveModelsMax(embeddingCount)
+        this.resolveModelsMax(embeddingCount),
+        this.resolveThreadCacheBudget()
       )
       logger.info(
         `Engine preset reloaded: +${report.added.length} ~${report.changed.length} -${report.removed.length}, ${report.kept.length} kept loaded`

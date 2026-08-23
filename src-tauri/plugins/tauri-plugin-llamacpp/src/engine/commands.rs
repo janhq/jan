@@ -81,12 +81,16 @@ fn resolve_worker_exe<R: tauri::Runtime>(
     })
 }
 
+/// Starts the worker. `slot_cache_mib` is the ceiling on the per-thread KV
+/// cache directory; 0 turns cross-session KV persistence off, which is a
+/// user-facing setting because a single saved conversation is hundreds of MiB.
 #[tauri::command]
 pub async fn start_engine<R: tauri::Runtime>(
     app_handle: tauri::AppHandle<R>,
     state: State<'_, Arc<LlamacppState>>,
     preset_path: String,
     models_max: u32,
+    slot_cache_mib: u64,
     envs: HashMap<String, String>,
 ) -> Result<EngineInfo, String> {
     let mut guard = state.engine.lock().await;
@@ -103,6 +107,7 @@ pub async fn start_engine<R: tauri::Runtime>(
         0, // OS-assigned; the handshake reports it back
         &api_key,
         models_max,
+        slot_cache_mib,
         envs,
     )
     .await
@@ -258,6 +263,7 @@ pub async fn reload_engine_models(
     state: State<'_, Arc<LlamacppState>>,
     preset_path: String,
     models_max: Option<u32>,
+    slot_cache_mib: Option<u64>,
 ) -> Result<ReloadReport, String> {
     let (port, api_key) = {
         let guard = state.engine.lock().await;
@@ -270,6 +276,9 @@ pub async fn reload_engine_models(
     let mut body = serde_json::json!({ "preset_path": preset_path });
     if let Some(m) = models_max {
         body["models_max"] = serde_json::json!(m);
+    }
+    if let Some(m) = slot_cache_mib {
+        body["slot_cache_mib"] = serde_json::json!(m);
     }
 
     let resp = reqwest::Client::new()
@@ -327,6 +336,64 @@ pub async fn engine_slots_idle(
         Some(id) => !busy.contains(&id),
         None => busy.is_empty(),
     })
+}
+
+/// Drops a thread's saved KV cache, or every thread's for a model.
+///
+/// Called when a thread is deleted: nothing else would ever collect that state,
+/// and the store's own pruning is by size, so an abandoned conversation would
+/// sit at the head of the budget until enough others pushed it out. A thread id
+/// is enough -- the caller deleting a thread does not know which models it was
+/// talked to under, and it may be more than one.
+#[tauri::command]
+pub async fn erase_thread_slot_state(
+    state: State<'_, Arc<LlamacppState>>,
+    thread_id: Option<String>,
+    model_id: Option<String>,
+) -> Result<u32, String> {
+    let (port, api_key) = {
+        let guard = state.engine.lock().await;
+        match guard.as_ref() {
+            Some(h) => (h.port, h.api_key.clone()),
+            // No worker, so nothing is holding the files open. Reporting this
+            // as an error would make deleting a thread fail for a cache the
+            // user cannot see; the size budget reclaims it either way.
+            None => return Ok(0),
+        }
+    };
+    let mut body = serde_json::Map::new();
+    if let Some(t) = thread_id {
+        body.insert("thread".into(), serde_json::Value::String(t));
+    }
+    if let Some(m) = model_id {
+        body.insert("model".into(), serde_json::Value::String(m));
+    }
+    if body.is_empty() {
+        return Err("one of thread_id or model_id is required".to_string());
+    }
+    let body = serde_json::Value::Object(body);
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://127.0.0.1:{port}/slots/state/erase"))
+        .bearer_auth(&api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("could not reach the engine worker: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!(
+            "the engine worker refused the erase (status {})",
+            resp.status()
+        ));
+    }
+    let parsed: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("unreadable erase response: {e}"))?;
+    Ok(parsed
+        .get("erased")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0) as u32)
 }
 
 #[tauri::command]

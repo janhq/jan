@@ -46,6 +46,7 @@ async fn spawns_the_worker_reads_its_handshake_and_serves() {
         0, // let the OS pick, then learn it from the handshake
         "supervised-key",
         1,
+        0,
         HashMap::new(),
     )
     .await
@@ -112,6 +113,7 @@ async fn a_preset_that_does_not_exist_still_starts_and_serves_no_models() {
         0,
         "k",
         1,
+        0,
         HashMap::new(),
     )
     .await
@@ -134,6 +136,7 @@ async fn a_stopped_worker_is_actually_gone() {
         0,
         "stop-key",
         1,
+        0,
         HashMap::new(),
     )
     .await
@@ -191,6 +194,7 @@ async fn closing_stdin_stops_the_worker_without_a_signal() {
         0,
         "eof-key",
         1,
+        0,
         HashMap::new(),
     )
     .await

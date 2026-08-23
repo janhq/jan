@@ -9,36 +9,106 @@ use std::sync::Arc;
 
 use tauri_plugin_llamacpp::engine::http::EngineServer;
 use tauri_plugin_llamacpp::engine::registry::{LoadSpec, Registry};
+use tauri_plugin_llamacpp::engine::slots::{state_key, StateStore};
+use std::time::Duration;
 use tokio::sync::Mutex;
 
 const MODEL_ID: &str = "test-model";
 const KEY: &str = "test-key";
 
 fn model_path() -> Option<String> {
+    // Registering the ggml backends is the caller's job and has to happen
+    // before any other ggml call. A test binary sits in target/<profile>/ with
+    // no backend modules beside it, and with GGML_BACKEND_DL every backend
+    // including the CPU one is a loadable module -- so without this, loading a
+    // model fails with no backend registered at all. Called from here because
+    // it gates every test in the file and is idempotent.
+    tauri_plugin_llamacpp::engine::load_backend_modules();
     std::env::var("JAN_TEST_GGUF").ok().filter(|p| !p.is_empty())
+}
+
+fn spec(model: &str, slot_dir: Option<&str>) -> LoadSpec {
+    let mut args: Vec<String> = [
+        "llama-server", "-m", model, "-c", "2048", "-ngl", "0",
+        "--no-warmup", "-t", "4", "-fit", "off", "-np", "1",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    if let Some(dir) = slot_dir {
+        args.push("--slot-save-path".to_string());
+        args.push(dir.to_string());
+    }
+    LoadSpec::Args(args)
 }
 
 /// Spawns a server on an OS-chosen port and returns its base url.
 async fn serve(model: &str, models_max: usize) -> String {
     let mut reg = Registry::new(models_max);
-    reg.register(
-        MODEL_ID,
-        LoadSpec::Args(
-            [
-                "llama-server", "-m", model, "-c", "2048", "-ngl", "0",
-                "--no-warmup", "-t", "4", "-fit", "off", "-np", "1",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-        ),
-    );
+    reg.register(MODEL_ID, spec(model, None));
     let (server, listener) = EngineServer::bind(Arc::new(Mutex::new(reg)), 0, KEY.into())
         .await
         .expect("loopback bind");
     let base = format!("http://127.0.0.1:{}", server.port);
     tokio::spawn(server.serve(listener));
     base
+}
+
+/// The same server with cross-session KV persistence on, plus the directory it
+/// saves into so a test can inspect what landed there.
+async fn serve_with_state(
+    model: &str,
+    budget_mib: u64,
+) -> (String, std::path::PathBuf, Arc<EngineServer>) {
+    let dir = std::env::temp_dir().join(format!(
+        "jan-slot-it-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut reg = Registry::new(1);
+    reg.register(MODEL_ID, spec(model, Some(dir.to_str().unwrap())));
+    let (server, listener) = EngineServer::bind(Arc::new(Mutex::new(reg)), 0, KEY.into())
+        .await
+        .expect("loopback bind");
+    let base = format!("http://127.0.0.1:{}", server.port);
+    let server = Arc::new(server.with_slot_state(StateStore::new(&dir, budget_mib)));
+    tokio::spawn(
+        Arc::clone(&server)
+            .serve_until(listener, std::future::pending::<()>(), Duration::ZERO),
+    );
+    (base, dir, server)
+}
+
+/// A chat turn long enough to leave more than MIN_TOKENS_TO_SAVE in the slot,
+/// tagged with the thread it belongs to.
+fn chat_body(thread: &str) -> String {
+    // ~40 words repeated: short prompts are deliberately not persisted, so a
+    // one-liner would test the skip path instead of the save path.
+    let filler = "the quick brown fox jumps over the lazy dog and keeps running ".repeat(40);
+    serde_json::json!({
+        "model": MODEL_ID,
+        "thread_id": thread,
+        "id_slot": 0,
+        "max_tokens": 1,
+        "messages": [{ "role": "user", "content": filler }],
+    })
+    .to_string()
+}
+
+fn saved_states(dir: &std::path::Path) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".bin"))
+        .collect();
+    v.sort();
+    v
 }
 
 async fn post(base: &str, path: &str, body: &str, key: Option<&str>) -> (u16, String) {
@@ -408,4 +478,195 @@ async fn reload_requires_the_api_key() {
     assert_eq!(status, 401, "reload mutates state and must be authenticated");
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The point of the whole feature: a thread's cache outlives the turn that
+/// built it, and a *second* thread taking the slot does not lose it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_thread_switch_parks_the_first_threads_cache_and_restores_it() {
+    let Some(model) = model_path() else { return };
+    let (base, dir, _server) = serve_with_state(&model, 4096).await;
+
+    // Thread A runs twice. Nothing is saved: no other thread has claimed the
+    // slot, so there is nothing to evict -- and the second turn must not park
+    // or restore either, since the slot already holds A's own newer cache.
+    for _ in 0..2 {
+        let (status, body) =
+            post(&base, "/v1/chat/completions", &chat_body("thread-a"), Some(KEY)).await;
+        assert_eq!(status, 200, "{body}");
+        assert!(
+            saved_states(&dir).is_empty(),
+            "a thread taking its own slot again is not a handover"
+        );
+    }
+
+    // Thread B takes slot 0, which is what forces A to disk.
+    let (status, body) = post(&base, "/v1/chat/completions", &chat_body("thread-b"), Some(KEY)).await;
+    assert_eq!(status, 200, "{body}");
+    let key_a = state_key(MODEL_ID, "thread-a");
+    assert_eq!(
+        saved_states(&dir),
+        vec![format!("{key_a}.bin")],
+        "thread A's cache should have been parked when B took the slot"
+    );
+    assert!(
+        dir.join(format!("{key_a}.json")).is_file(),
+        "a state file without its sidecar is refused later, so both must land"
+    );
+
+    // Back to A: its state is restored rather than re-read from the prompt.
+    let (status, body) = post(&base, "/v1/chat/completions", &chat_body("thread-a"), Some(KEY)).await;
+    assert_eq!(status, 200, "{body}");
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let cached = v["usage"]["prompt_tokens_details"]["cached_tokens"]
+        .as_u64()
+        .or_else(|| v["timings"]["n_prompt_tokens_cache"].as_u64());
+    if let Some(cached) = cached {
+        assert!(cached > 0, "the restored prefix should be reported as cached: {body}");
+    }
+    // Both files are on disk now: B was evicted in turn, and a restore does not
+    // consume A's file. Keeping it is deliberate -- it is still a valid prefix
+    // of that conversation, so it is the right thing to fall back to if the
+    // next eviction never happens (a crash, a kill).
+    let mut expected = vec![
+        format!("{key_a}.bin"),
+        format!("{}.bin", state_key(MODEL_ID, "thread-b")),
+    ];
+    expected.sort();
+    assert_eq!(saved_states(&dir), expected);
+}
+
+/// The condition the request names: a state saved by another model is refused
+/// rather than restored as plausible-looking nonsense.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_state_saved_by_a_different_model_is_refused_and_dropped() {
+    let Some(model) = model_path() else { return };
+    let (base, dir, _server) = serve_with_state(&model, 4096).await;
+
+    let key = state_key(MODEL_ID, "thread-a");
+    // A state file whose sidecar claims a different model, as a model swap
+    // between sessions would leave behind.
+    std::fs::write(dir.join(format!("{key}.bin")), vec![0u8; 1024]).unwrap();
+    std::fs::write(
+        dir.join(format!("{key}.json")),
+        serde_json::json!({
+            "model": "some-other-model",
+            "spec": "deadbeef",
+            "llama_build": "0",
+            "llama_commit": "0",
+            "model_bytes": 0u64,
+            "model_mtime": 0u64,
+            "n_tokens": 900u64,
+            "saved_at": 1u64,
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let (status, body) = post(&base, "/v1/chat/completions", &chat_body("thread-a"), Some(KEY)).await;
+    assert_eq!(status, 200, "a refused restore must not fail the turn: {body}");
+    assert!(
+        !dir.join(format!("{key}.bin")).exists(),
+        "a state that can never match again must be dropped, not re-checked every turn"
+    );
+}
+
+/// A request with no thread_id behaves exactly as before: nothing is saved and
+/// llama.cpp never sees a field it does not know.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_request_without_a_thread_is_untouched_by_the_feature() {
+    let Some(model) = model_path() else { return };
+    let (base, dir, _server) = serve_with_state(&model, 4096).await;
+
+    let body = serde_json::json!({
+        "model": MODEL_ID,
+        "id_slot": 0,
+        "max_tokens": 1,
+        "messages": [{ "role": "user", "content": "hi" }],
+    })
+    .to_string();
+    let (status, out) = post(&base, "/v1/chat/completions", &body, Some(KEY)).await;
+    assert_eq!(status, 200, "{out}");
+    assert!(saved_states(&dir).is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn erasing_a_threads_state_drops_only_that_thread() {
+    let Some(model) = model_path() else { return };
+    let (base, dir, _server) = serve_with_state(&model, 4096).await;
+
+    for thread in ["thread-a", "thread-b", "thread-c"] {
+        let (status, body) =
+            post(&base, "/v1/chat/completions", &chat_body(thread), Some(KEY)).await;
+        assert_eq!(status, 200, "{body}");
+    }
+    // a and b were both evicted in turn; c is still resident.
+    assert_eq!(saved_states(&dir).len(), 2, "{:?}", saved_states(&dir));
+
+    let (status, body) = post(
+        &base,
+        "/slots/state/erase",
+        &serde_json::json!({ "model": MODEL_ID, "thread": "thread-a" }).to_string(),
+        Some(KEY),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        saved_states(&dir),
+        vec![format!("{}.bin", state_key(MODEL_ID, "thread-b"))]
+    );
+
+    let (status, body) = post(
+        &base,
+        "/slots/state/erase",
+        &serde_json::json!({ "model": MODEL_ID }).to_string(),
+        Some(KEY),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert!(saved_states(&dir).is_empty(), "erasing a model clears all of it");
+}
+
+/// Closing Jan is the common way a thread stops being current, so the resident
+/// slot has to be written at shutdown or the feature would only work across a
+/// thread switch.
+#[tokio::test(flavor = "multi_thread")]
+async fn shutdown_parks_the_resident_thread() {
+    let Some(model) = model_path() else { return };
+    let (base, dir, server) = serve_with_state(&model, 4096).await;
+
+    let (status, body) = post(&base, "/v1/chat/completions", &chat_body("thread-a"), Some(KEY)).await;
+    assert_eq!(status, 200, "{body}");
+    assert!(saved_states(&dir).is_empty(), "nothing evicted it yet");
+
+    server.save_resident_slots().await;
+    assert_eq!(
+        saved_states(&dir),
+        vec![format!("{}.bin", state_key(MODEL_ID, "thread-a"))]
+    );
+}
+
+/// The budget is a real ceiling, not advisory: a saved state directory that
+/// grows without bound is a disk leak, not a cache.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_disk_budget_evicts_the_oldest_saved_state() {
+    let Some(model) = model_path() else { return };
+    // 1 MiB, which a 2048-token slot state comfortably exceeds.
+    let (base, dir, _server) = serve_with_state(&model, 1).await;
+
+    for thread in ["thread-a", "thread-b", "thread-c"] {
+        let (status, body) =
+            post(&base, "/v1/chat/completions", &chat_body(thread), Some(KEY)).await;
+        assert_eq!(status, 200, "{body}");
+    }
+    let total: u64 = std::fs::read_dir(&dir)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("bin"))
+        .map(|e| e.metadata().map(|m| m.len()).unwrap_or(0))
+        .sum();
+    assert!(
+        total <= 1024 * 1024,
+        "the directory should have been pruned to the budget, got {total} bytes"
+    );
 }

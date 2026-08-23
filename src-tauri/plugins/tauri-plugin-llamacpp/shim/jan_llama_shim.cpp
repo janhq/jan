@@ -17,6 +17,7 @@
 #include <cstring>
 #include <exception>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <chrono>
@@ -62,6 +63,63 @@ std::string json_quote(const char * raw) {
         }
     }
     out += '"';
+    return out;
+}
+
+// llama.cpp reads slot actions from the query string, so the shim has to hand
+// it a param map. Percent-decoding is included because a value is not
+// guaranteed to be url-safe -- ours are ints and fixed keywords, but a caller
+// with a filename would silently get the escaped form otherwise.
+int hex_value(unsigned char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+std::string url_decode(const std::string & in) {
+    std::string out;
+    out.reserve(in.size());
+    for (size_t i = 0; i < in.size(); ++i) {
+        if (in[i] == '+') {
+            out += ' ';
+            continue;
+        }
+        if (in[i] == '%' && i + 2 < in.size()) {
+            const int hi = hex_value(static_cast<unsigned char>(in[i + 1]));
+            const int lo = hex_value(static_cast<unsigned char>(in[i + 2]));
+            if (hi >= 0 && lo >= 0) {
+                out += static_cast<char>(hi * 16 + lo);
+                i += 2;
+                continue;
+            }
+        }
+        out += in[i];
+    }
+    return out;
+}
+
+std::map<std::string, std::string> parse_query(const char * query) {
+    std::map<std::string, std::string> out;
+    if (query == nullptr) {
+        return out;
+    }
+    std::string q(query);
+    size_t pos = 0;
+    while (pos < q.size()) {
+        const size_t amp = q.find('&', pos);
+        const std::string pair = q.substr(pos, amp == std::string::npos ? std::string::npos : amp - pos);
+        pos = amp == std::string::npos ? q.size() : amp + 1;
+        if (pair.empty()) {
+            continue;
+        }
+        const size_t eq = pair.find('=');
+        if (eq == std::string::npos) {
+            out[url_decode(pair)] = "";
+        } else {
+            out[url_decode(pair.substr(0, eq))] = url_decode(pair.substr(eq + 1));
+        }
+    }
     return out;
 }
 
@@ -308,6 +366,7 @@ void jan_llama_engine_stop(jan_llama_engine * engine) {
 
 jan_llama_response * jan_llama_engine_request(jan_llama_engine * engine,
                                               const char *       route,
+                                              const char *       query,
                                               const char *       body,
                                               size_t             body_len) {
     auto out = new jan_llama_response();
@@ -329,10 +388,10 @@ jan_llama_response * jan_llama_engine_request(jan_llama_engine * engine,
 
         out->should_stop = [cancel = &out->cancel]() { return cancel->load(); };
         out->req.reset(new server_http_req{
-            /* params       */ {},
+            /* params       */ parse_query(query),
             /* headers      */ {},
             /* path         */ route,
-            /* query_string */ "",
+            /* query_string */ query ? query : "",
             /* body         */ std::string(body ? body : "", body_len),
             /* files        */ {},
             /* should_stop  */ out->should_stop,

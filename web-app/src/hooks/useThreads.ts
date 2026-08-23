@@ -58,6 +58,28 @@ const cleanupVectorDB = async (threadId: string) => {
   }
 }
 
+/**
+ * Drops the thread's saved prompt cache in the local engine.
+ *
+ * Best-effort and fire-and-forget, like the vector DB cleanup above: the cache
+ * is bounded by its own disk budget, so failing to reclaim one thread's share
+ * is not worth failing the delete over.
+ */
+const cleanupThreadCache = async (threadId: string) => {
+  try {
+    const { EngineManager } = await import('@janhq/core')
+    const engine = EngineManager.instance().get('llamacpp') as
+      | { forgetThreadCache?: (id: string) => Promise<number> }
+      | undefined
+    await engine?.forgetThreadCache?.(threadId)
+  } catch (e) {
+    console.warn(
+      `[Threads] Failed to drop the saved prompt cache for thread ${threadId}:`,
+      e
+    )
+  }
+}
+
 export const useThreads = create<ThreadState>()((set, get) => ({
   threads: {},
   isLoadingThreads: true,
@@ -165,6 +187,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       useChatSessions.getState().removeSession(threadId)
       useAppState.getState().clearThreadState(threadId)
       cleanupVectorDB(threadId)
+      cleanupThreadCache(threadId)
       getServiceHub().threads().deleteThread(threadId)
 
       return {
@@ -201,6 +224,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       // Delete threads and clean up their vector DB collections
       threadsToDeleteIds.forEach((threadId) => {
         cleanupVectorDB(threadId)
+        cleanupThreadCache(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
 
@@ -235,6 +259,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
         cleanupVectorDB(threadId)
+        cleanupThreadCache(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
 
@@ -261,6 +286,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
         cleanupVectorDB(threadId)
+        cleanupThreadCache(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
 

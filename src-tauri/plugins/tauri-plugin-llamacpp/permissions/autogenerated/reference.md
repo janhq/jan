@@ -18,6 +18,7 @@ Default permissions for the llamacpp plugin
 - `allow-engine-devices`
 - `allow-force-stop-engine`
 - `allow-engine-slots-idle`
+- `allow-erase-thread-slot-state`
 - `allow-read-gguf-metadata`
 - `allow-is-model-supported`
 
@@ -130,6 +131,32 @@ Enables the ensure_session_ready command without any pre-configured scope.
 <td>
 
 Denies the ensure_session_ready command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-erase-thread-slot-state`
+
+</td>
+<td>
+
+Enables the erase_thread_slot_state command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-erase-thread-slot-state`
+
+</td>
+<td>
+
+Denies the erase_thread_slot_state command without any pre-configured scope.
 
 </td>
 </tr>

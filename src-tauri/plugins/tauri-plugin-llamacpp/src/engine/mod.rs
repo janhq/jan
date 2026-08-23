@@ -18,6 +18,7 @@ pub mod commands;
 pub mod http;
 pub mod preset;
 pub mod registry;
+pub mod slots;
 pub mod worker;
 mod sys;
 
@@ -66,6 +67,10 @@ pub enum Route {
     Props,
     Models,
     Slots,
+    /// `POST /slots/{id}?action=...`, the save/restore/erase actions. Not in
+    /// `from_http_path`: the slot store is Jan's own bookkeeping, not something
+    /// the app's OpenAI-compatible surface should expose.
+    SlotsAction,
     Completions,
     CompletionsOai,
     ChatCompletions,
@@ -84,6 +89,7 @@ impl Route {
             Self::Props => "get_props",
             Self::Models => "get_models",
             Self::Slots => "get_slots",
+            Self::SlotsAction => "post_slots",
             Self::Completions => "post_completions",
             Self::CompletionsOai => "post_completions_oai",
             Self::ChatCompletions => "post_chat_completions",
@@ -94,6 +100,15 @@ impl Route {
             Self::Detokenize => "post_detokenize",
             Self::ApplyTemplate => "post_apply_template",
         }
+    }
+
+    /// Whether the route leaves a prompt in a slot's KV cache, and so has
+    /// state worth persisting. Embeddings and tokenization do not.
+    pub const fn caches_prompt(self) -> bool {
+        matches!(
+            self,
+            Self::Completions | Self::CompletionsOai | Self::ChatCompletions
+        )
     }
 
     /// Maps an HTTP path as the local API server sees it, so `proxy.rs` can

@@ -89,14 +89,22 @@ export async function getLoadedModels(): Promise<string[]> {
  * downloaded backend binary, and the port is OS-assigned then reported back
  * rather than guessed.
  */
+/**
+ * `slotCacheMib` caps the directory holding each thread's KV cache, which lets
+ * a conversation resume without re-reading its prompt. 0 turns that off; a
+ * single saved conversation runs to hundreds of MiB, so it is a budget rather
+ * than a boolean.
+ */
 export async function startEngine(
   presetPath: string,
   modelsMax: number,
+  slotCacheMib: number = 0,
   envs: Record<string, string> = {}
 ): Promise<EngineInfo> {
   return await invoke('plugin:llamacpp|start_engine', {
     presetPath,
     modelsMax,
+    slotCacheMib: asI32(slotCacheMib),
     envs,
   })
 }
@@ -146,13 +154,31 @@ export async function engineSlotsIdle(modelId?: string): Promise<boolean> {
   return await invoke('plugin:llamacpp|engine_slots_idle', { modelId })
 }
 
+/**
+ * Drops saved KV cache: a thread's (under every model it was used with), or a
+ * whole model's. Returns how many were dropped; 0 when no worker is running,
+ * which is not an error.
+ */
+export async function eraseThreadSlotState(args: {
+  threadId?: string
+  modelId?: string
+}): Promise<number> {
+  return await invoke('plugin:llamacpp|erase_thread_slot_state', {
+    threadId: args.threadId,
+    modelId: args.modelId,
+  })
+}
+
 export async function reloadEngineModels(
   presetPath: string,
-  modelsMax?: number
+  modelsMax?: number,
+  slotCacheMib?: number
 ): Promise<ReloadReport> {
   return await invoke('plugin:llamacpp|reload_engine_models', {
     presetPath,
     modelsMax,
+    slotCacheMib:
+      slotCacheMib === undefined ? undefined : asI32(slotCacheMib),
   })
 }
 

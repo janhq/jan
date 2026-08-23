@@ -451,6 +451,27 @@
     }
   },
   {
+    "key": "persist_thread_cache",
+    "title": "Remember Conversations Between Sessions",
+    "description": "Keep each conversation's prompt cache on disk so reopening it does not re-read the whole conversation. Restored only when the model, its settings and the llama.cpp build all match what saved it.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": true
+    }
+  },
+  {
+    "key": "thread_cache_size",
+    "title": "Conversation Cache Disk Limit (MiB)",
+    "description": "Disk budget for saved conversation caches (default: 8192). The oldest are dropped first once it is reached. One long conversation can take hundreds of MiB.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 8192,
+      "placeholder": "8192",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
     "key": "cache_reuse",
     "title": "Cache Reuse",
     "description": "Min chunk size of matching prefix tokens to reuse from cache. 0 = disabled.",

@@ -8,6 +8,13 @@
 use tauri_plugin_llamacpp::engine::{Engine, Route};
 
 fn model_path() -> Option<String> {
+    // Registering the ggml backends is the caller's job and has to happen
+    // before any other ggml call. A test binary sits in target/<profile>/ with
+    // no backend modules beside it, and with GGML_BACKEND_DL every backend
+    // including the CPU one is a loadable module -- so without this, loading a
+    // model fails with no backend registered at all. Called from here because
+    // it gates every test in the file and is idempotent.
+    tauri_plugin_llamacpp::engine::load_backend_modules();
     std::env::var("JAN_TEST_GGUF").ok().filter(|p| !p.is_empty())
 }
 
