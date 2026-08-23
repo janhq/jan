@@ -178,7 +178,7 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
         if SHUTTING_DOWN.load(Ordering::SeqCst) {
             return;
         }
-        match tauri_plugin_llamacpp::try_graceful_stop_router(app_handle.clone(), 1).await {
+        match tauri_plugin_llamacpp::try_graceful_stop_engine(app_handle.clone(), 1).await {
             Ok(None) => {
                 if let Ok(mut g) = BUSY_MODELS.lock() {
                     g.clear();
@@ -204,7 +204,7 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
             Err(e) => {
-                log::warn!("{}: try_graceful_stop_router failed: {}", source, e);
+                log::warn!("{}: try_graceful_stop_engine failed: {}", source, e);
                 SHUTTING_DOWN.store(true, Ordering::SeqCst);
                 app_handle.exit(exit_code);
                 return;

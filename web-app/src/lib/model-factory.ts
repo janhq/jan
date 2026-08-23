@@ -57,6 +57,7 @@ import { createXai } from '@ai-sdk/xai'
 import { createMistral } from '@ai-sdk/mistral'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { invoke } from '@tauri-apps/api/core'
+import { findSessionByModel } from '@janhq/tauri-plugin-llamacpp-api'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
@@ -926,10 +927,7 @@ export class ModelFactory {
     }
 
     // Get session info which includes port and api_key
-    const sessionInfo = await invoke<SessionInfo | null>(
-      'plugin:llamacpp|find_session_by_model',
-      { modelId }
-    )
+    const sessionInfo = await findSessionByModel(modelId)
 
     if (!sessionInfo) {
       throw new Error(

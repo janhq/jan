@@ -10,6 +10,17 @@ pub async fn cleanup_processes<R: Runtime>(app_handle: &tauri::AppHandle<R>) {
             return;
         }
     };
+    // The engine worker first: it is what actually holds the model and the
+    // VRAM now. Unconditional -- this is the last-chance path on RunEvent::Exit,
+    // so a generation in flight is not a reason to leave the process behind.
+    let maybe_worker = {
+        let mut guard = app_state.engine.lock().await;
+        guard.take()
+    };
+    if let Some(worker) = maybe_worker {
+        worker.stop().await;
+    }
+
     let maybe_handle = {
         let mut guard = app_state.router.lock().await;
         guard.take()

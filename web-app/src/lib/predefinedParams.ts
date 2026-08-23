@@ -335,10 +335,12 @@ export const paramsSettings: Record<string, ParamDef> = {
   dry_penalty_last_n: {
     key: 'dry_penalty_last_n',
     title: 'DRY Penalty Window',
-    description: 'Recent-token window DRY scans. -1 = full context, 0 = off.',
-    value: -1,
+    // Upstream throws on a negative window rather than clamping, so the old
+    // -1 default made merely enabling this param fail every request.
+    description: 'Recent-token window DRY scans. 0 = off.',
+    value: 64,
     controllerType: 'input',
-    controllerProps: { min: -1, step: 1 },
+    controllerProps: { min: 0, step: 1 },
     capability: 'dry',
     disabledBy: (v) =>
       Number(v.dry_multiplier) === 0 ? 'Set DRY Multiplier > 0' : null,
@@ -355,10 +357,10 @@ export const paramsSettings: Record<string, ParamDef> = {
     key: 'repeat_last_n',
     title: 'Repeat Last N',
     description:
-      'Number of recent tokens considered for the repeat penalty. -1 = full context, 0 = disabled.',
+      'Number of recent tokens considered for the repeat penalty. 0 = disabled.',
     value: 64,
     controllerType: 'input',
-    controllerProps: { min: -1, step: 1 },
+    controllerProps: { min: 0, step: 1 },
     capability: 'repetition',
   },
   samplers: {

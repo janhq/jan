@@ -1,27 +1,5 @@
 [
   {
-    "key": "llamacpp_version",
-    "title": "Version",
-    "description": "llama.cpp release version",
-    "controllerType": "dropdown",
-    "controllerProps": {
-      "value": "none",
-      "options": [],
-      "recommended": ""
-    }
-  },
-  {
-    "key": "llamacpp_backend",
-    "title": "Backend",
-    "description": "Hardware backend for llama.cpp (CUDA, HIP/ROCm, Vulkan, CPU, etc.)",
-    "controllerType": "dropdown",
-    "controllerProps": {
-      "value": "none",
-      "options": [],
-      "recommended": ""
-    }
-  },
-  {
     "key": "llamacpp_env",
     "title": "Environmental variables",
     "description": "Environmental variables for llama.cpp(KEY=VALUE), separated by ';'",
@@ -34,33 +12,12 @@
     }
   },
   {
-    "key": "check_for_updates",
-    "title": "Check for updates",
-    "description": "Fetch the remote llama.cpp release list. Required for the version dropdown to show releases beyond what's installed locally, and for update notifications.",
-    "controllerType": "checkbox",
-    "controllerProps": { "value": true }
-  },
-  {
-    "key": "auto_update_engine",
-    "title": "Auto update engine",
-    "description": "Automatically download and switch to the latest llamacpp engine when available. Requires \"Check for updates\" to be on.",
-    "controllerType": "checkbox",
-    "controllerProps": { "value": true }
-  },
-  {
-    "key": "verify_backend_deps",
-    "title": "Verify backend dependencies",
-    "description": "Check that GPU backend shared libraries (CUDA, Vulkan, etc.) resolve on startup and warn if any are missing.",
-    "controllerType": "checkbox",
-    "controllerProps": { "value": true }
-  },
-  {
     "key": "models_max",
     "title": "Max Concurrently Loaded Models",
     "description": "Maximum number of models the router will keep loaded at once. 0 = unlimited.",
     "controllerType": "input",
     "controllerProps": {
-      "value": "1",
+      "value": 1,
       "placeholder": "e.g 1",
       "type": "number",
       "textAlign": "right"
@@ -72,7 +29,7 @@
     "description": "Llamacpp connection and load timeout in seconds",
     "controllerType": "input",
     "controllerProps": {
-      "value": "600",
+      "value": 600,
       "placeholder": "e.g 600",
       "type": "number",
       "textAlign": "right"
@@ -157,6 +114,18 @@
     }
   },
   {
+    "key": "batch_size",
+    "title": "Batch Size",
+    "description": "Logical maximum batch size for processing prompts.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 2048,
+      "placeholder": "2048",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
     "key": "ubatch_size",
     "title": "uBatch Size",
     "description": "Physical maximum batch size for processing prompts.",
@@ -169,9 +138,30 @@
     }
   },
   {
+    "key": "n_cpu_moe",
+    "title": "MoE Layers on CPU",
+    "description": "Keep the Mixture-of-Experts weights of the first N layers in CPU memory. Lets a large MoE model fit in limited VRAM. 0 disables it.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "no_kv_offload",
+    "title": "Disable KV Cache Offload",
+    "description": "Keep the KV cache in system RAM instead of GPU memory. Useful when VRAM is scarce, at the cost of speed.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
     "key": "device",
     "title": "Devices for Offload",
-    "description": "Comma-separated list of devices to use for offloading (e.g., 'CUDA0', 'CUDA0,CUDA1'). Leave empty to use default/CPU only.",
+    "description": "Comma-separated accelerators to offload to, named as in the detected hardware list. Leave empty to use every available accelerator, or set \"none\" to disable offload entirely.",
     "controllerType": "input",
     "controllerProps": {
       "value": "",
@@ -187,9 +177,22 @@
     "controllerProps": {
       "value": "layer",
       "options": [
-        { "value": "none", "name": "None" },
-        { "value": "layer", "name": "Layer" },
-        { "value": "row", "name": "Row" }
+        {
+          "value": "none",
+          "name": "None"
+        },
+        {
+          "value": "layer",
+          "name": "Layer"
+        },
+        {
+          "value": "row",
+          "name": "Row"
+        },
+        {
+          "value": "tensor",
+          "name": "Tensor (experimental)"
+        }
       ]
     }
   },
@@ -206,6 +209,26 @@
     }
   },
   {
+    "key": "tensor_split",
+    "title": "Tensor Split",
+    "description": "Comma-separated proportions for splitting the model across devices, e.g. \"3,1\". Leave empty for an even split.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "3,1",
+      "type": "text"
+    }
+  },
+  {
+    "key": "no_op_offload",
+    "title": "Disable Op Offload",
+    "description": "Keep host tensor operations on the CPU instead of offloading them to the accelerator.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
     "key": "flash_attn",
     "title": "Flash Attention",
     "description": "Enable Flash Attention for optimized performance.",
@@ -213,9 +236,18 @@
     "controllerProps": {
       "value": "auto",
       "options": [
-        { "value": "auto", "name": "Auto" },
-        { "value": "on", "name": "On" },
-        { "value": "off", "name": "Off" }
+        {
+          "value": "auto",
+          "name": "Auto"
+        },
+        {
+          "value": "on",
+          "name": "On"
+        },
+        {
+          "value": "off",
+          "name": "Off"
+        }
       ]
     }
   },
@@ -235,10 +267,10 @@
   {
     "key": "cont_batching",
     "title": "Continuous Batching",
-    "description": "Enable continuous batching (a.k.a dynamic batching) for concurrent requests.",
+    "description": "Enable continuous batching (a.k.a dynamic batching) for concurrent requests. Enabled by default, matching llama.cpp.",
     "controllerType": "checkbox",
     "controllerProps": {
-      "value": false
+      "value": true
     }
   },
   {
@@ -253,7 +285,7 @@
   {
     "key": "mlock",
     "title": "MLock",
-    "description": "Force system to keep model in RAM, preventing swapping/compression.",
+    "description": "Lock the model in RAM so it is never swapped out. Combined with \"Disable mmap\" this loads the weights without mmap and then locks them.",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": false
@@ -267,15 +299,42 @@
     "controllerProps": {
       "value": "f16",
       "options": [
-        { "value": "f32", "name": "f32" },
-        { "value": "f16", "name": "f16" },
-        { "value": "bf16", "name": "bf16" },
-        { "value": "q8_0", "name": "q8_0" },
-        { "value": "q4_0", "name": "q4_0" },
-        { "value": "q4_1", "name": "q4_1" },
-        { "value": "iq4_nl", "name": "iq4_nl" },
-        { "value": "q5_0", "name": "q5_0" },
-        { "value": "q5_1", "name": "q5_1" }
+        {
+          "value": "f32",
+          "name": "f32"
+        },
+        {
+          "value": "f16",
+          "name": "f16"
+        },
+        {
+          "value": "bf16",
+          "name": "bf16"
+        },
+        {
+          "value": "q8_0",
+          "name": "q8_0"
+        },
+        {
+          "value": "q4_0",
+          "name": "q4_0"
+        },
+        {
+          "value": "q4_1",
+          "name": "q4_1"
+        },
+        {
+          "value": "iq4_nl",
+          "name": "iq4_nl"
+        },
+        {
+          "value": "q5_0",
+          "name": "q5_0"
+        },
+        {
+          "value": "q5_1",
+          "name": "q5_1"
+        }
       ]
     }
   },
@@ -287,44 +346,70 @@
     "controllerProps": {
       "value": "f16",
       "options": [
-        { "value": "f32", "name": "f32" },
-        { "value": "f16", "name": "f16" },
-        { "value": "bf16", "name": "bf16" },
-        { "value": "q8_0", "name": "q8_0" },
-        { "value": "q4_0", "name": "q4_0" },
-        { "value": "q4_1", "name": "q4_1" },
-        { "value": "iq4_nl", "name": "iq4_nl" },
-        { "value": "q5_0", "name": "q5_0" },
-        { "value": "q5_1", "name": "q5_1" }
+        {
+          "value": "f32",
+          "name": "f32"
+        },
+        {
+          "value": "f16",
+          "name": "f16"
+        },
+        {
+          "value": "bf16",
+          "name": "bf16"
+        },
+        {
+          "value": "q8_0",
+          "name": "q8_0"
+        },
+        {
+          "value": "q4_0",
+          "name": "q4_0"
+        },
+        {
+          "value": "q4_1",
+          "name": "q4_1"
+        },
+        {
+          "value": "iq4_nl",
+          "name": "iq4_nl"
+        },
+        {
+          "value": "q5_0",
+          "name": "q5_0"
+        },
+        {
+          "value": "q5_1",
+          "name": "q5_1"
+        }
       ]
     }
   },
   {
     "key": "rope_scaling",
     "title": "RoPE Scaling Method",
-    "description": "RoPE frequency scaling method.",
+    "description": "RoPE frequency scaling method. \"Model default\" leaves it to the model; \"None\" explicitly disables scaling.",
     "controllerType": "dropdown",
     "controllerProps": {
-      "value": "none",
+      "value": "auto",
       "options": [
-        { "value": "none", "name": "None" },
-        { "value": "linear", "name": "Linear" },
-        { "value": "yarn", "name": "YaRN" }
+        {
+          "value": "auto",
+          "name": "Model default"
+        },
+        {
+          "value": "none",
+          "name": "None"
+        },
+        {
+          "value": "linear",
+          "name": "Linear"
+        },
+        {
+          "value": "yarn",
+          "name": "YaRN"
+        }
       ]
-    }
-  },
-  {
-    "key": "rope_scale",
-    "title": "RoPE Scale Factor",
-    "description": "RoPE context scaling factor.",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 1.0,
-      "placeholder": "1.0",
-      "type": "number",
-      "textAlign": "right",
-      "min": 0,
-      "step": 0.01
     }
   },
   {
@@ -342,11 +427,11 @@
   {
     "key": "rope_freq_scale",
     "title": "RoPE Frequency Scale Factor",
-    "description": "RoPE frequency scaling factor.",
+    "description": "RoPE frequency scaling factor. 0 loads the value from the model; 1 forces no scaling.",
     "controllerType": "input",
     "controllerProps": {
-      "value": 1.0,
-      "placeholder": "1.0",
+      "value": 0,
+      "placeholder": "0",
       "type": "number",
       "textAlign": "right",
       "min": 0,
@@ -356,11 +441,11 @@
   {
     "key": "cache_ram",
     "title": "Prompt Cache RAM (MiB)",
-    "description": "Maximum prompt cache size in MiB. -1 = unlimited, 0 = disabled.",
+    "description": "Prompt cache size in MiB (default: 8192). -1 is unlimited, 0 disables it.",
     "controllerType": "input",
     "controllerProps": {
-      "value": -1,
-      "placeholder": "-1",
+      "value": 8192,
+      "placeholder": "8192",
       "type": "number",
       "textAlign": "right"
     }
@@ -376,6 +461,30 @@
       "type": "number",
       "textAlign": "right",
       "min": 0
+    }
+  },
+  {
+    "key": "ctx_checkpoints",
+    "title": "Context Checkpoints",
+    "description": "Maximum context checkpoints kept per slot, which let a shifted context be restored instead of reprocessed.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 32,
+      "placeholder": "32",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "checkpoint_min_step",
+    "title": "Checkpoint Minimum Step",
+    "description": "Minimum number of tokens between context checkpoints.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 8192,
+      "placeholder": "8192",
+      "type": "number",
+      "textAlign": "right"
     }
   },
   {
@@ -395,9 +504,18 @@
     "controllerProps": {
       "value": "auto",
       "options": [
-        { "value": "auto", "name": "Auto" },
-        { "value": "on", "name": "On" },
-        { "value": "off", "name": "Off" }
+        {
+          "value": "auto",
+          "name": "Auto"
+        },
+        {
+          "value": "on",
+          "name": "On"
+        },
+        {
+          "value": "off",
+          "name": "Off"
+        }
       ]
     }
   },

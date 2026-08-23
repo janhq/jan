@@ -15,11 +15,13 @@ export const modelSettings = {
     key: 'ngl',
     title: 'GPU Layers',
     description:
-      'Number of model layers to offload to the GPU (-1 for all layers, 0 for CPU only).',
+      'Model layers to keep in VRAM. Leave empty for automatic (VRAM-aware) offload; -1 is auto, -2 offloads all layers, 0 is CPU only.',
     controller_type: 'input',
     controller_props: {
-      value: 100,
-      placeholder: '100',
+      // Empty, not 100: a value here pins offload and defeats llama.cpp's own
+      // VRAM-aware auto, which is an OOM on a small GPU.
+      value: '',
+      placeholder: 'auto',
       type: 'number',
     },
   },
@@ -77,12 +79,13 @@ export const modelSettings = {
     key: 'repeat_last_n',
     title: 'Repeat Last N',
     description:
-      'Number of tokens to consider for repeat penalty (0 = disabled, -1 = ctx_size). This is the default setting on load and can be overridden by the assistant settings.',
+      'Number of tokens to consider for repeat penalty (0 = disabled). This is the default setting on load and can be overridden by the assistant settings.',
     controller_type: 'input',
     controller_props: {
       value: '',
       placeholder: '64',
       type: 'number',
+      min: 0,
     },
   },
   repeat_penalty: {

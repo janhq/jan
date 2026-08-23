@@ -5,26 +5,6 @@ import type {
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getBackendSetting, setBackendSetting } from './backend-settings'
 
-// File path utilities
-export function basenameNoExt(filePath: string): string {
-  const VALID_EXTENSIONS = [".tar.gz", ".zip"];
-  
-  // handle VALID extensions first
-  for (const ext of VALID_EXTENSIONS) {
-    if (filePath.toLowerCase().endsWith(ext)) {
-      return filePath.slice(0, -ext.length);
-    }
-  }
-  
-  // fallback: remove only the last extension
-  const lastDotIndex = filePath.lastIndexOf('.');
-  if (lastDotIndex > 0) {
-    return filePath.slice(0, lastDotIndex);
-  }
-  
-  return filePath;
-}
-
 // Zustand proxy state structure
 interface ProxyState {
   proxyEnabled: boolean
@@ -172,7 +152,7 @@ export type EmbedBatchResult = {
 const DEFAULT_CHARS_PER_TOKEN = 3
 const UBATCH_SAFETY_MARGIN = 0.5
 
-export const EMBEDDING_GGUF_ARCHS = new Set([
+const EMBEDDING_GGUF_ARCHS = new Set([
   'bert',
   'nomic-bert',
   'nomic-bert-moe',
@@ -182,10 +162,6 @@ export const EMBEDDING_GGUF_ARCHS = new Set([
   'mpnet',
   't5encoder',
 ])
-
-export function isEmbeddingArchitecture(arch: unknown): boolean {
-  return typeof arch === 'string' && EMBEDDING_GGUF_ARCHS.has(arch)
-}
 
 export function detectEmbeddingFromGgufMeta(
   meta: Record<string, unknown> | undefined

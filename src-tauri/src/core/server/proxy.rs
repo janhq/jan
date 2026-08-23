@@ -829,10 +829,22 @@ fn mcp_call_result_to_string(result: &CallToolResult) -> String {
     }
 }
 
+/// The loopback endpoint local-model requests are forwarded to.
+///
+/// Resolves the in-process engine worker first, then the spawned router. Both
+/// serve the same `/v1` surface, so this is the only place that had to change
+/// when the engine replaced the router -- without it the API server would keep
+/// proxying to a process that is no longer started.
 async fn router_upstream(
     llama_state: &LlamacppState,
     destination_path: &str,
 ) -> Option<(String, String)> {
+    if let Some(h) = llama_state.engine.lock().await.as_ref() {
+        return Some((
+            format!("http://127.0.0.1:{}/v1{}", h.port, destination_path),
+            h.api_key.clone(),
+        ));
+    }
     let guard = llama_state.router.lock().await;
     guard.as_ref().map(|h| {
         (
@@ -843,15 +855,9 @@ async fn router_upstream(
 }
 
 async fn router_list_models(llama_state: &LlamacppState, client: &Client) -> Vec<String> {
-    let (url, key) = {
-        let guard = llama_state.router.lock().await;
-        match guard.as_ref() {
-            Some(h) => (
-                format!("http://127.0.0.1:{}/v1/models", h.port),
-                h.api_key.clone(),
-            ),
-            None => return Vec::new(),
-        }
+    let (url, key) = match router_upstream(llama_state, "/models").await {
+        Some(v) => v,
+        None => return Vec::new(),
     };
     let resp = match client
         .get(&url)

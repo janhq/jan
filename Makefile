@@ -67,6 +67,7 @@ dev: install-and-build
 	yarn download:bin
 	make build-mlx-server-if-exists
 	make build-cli-dev
+	make build-engine-dev-if-possible
 	yarn dev
 
 # Web application targets
@@ -152,15 +153,19 @@ test: test-prepare install-rust-targets
 # stamps these paths emit.
 stub-resources:
 ifeq ($(DETECTED_OS),Windows)
-	-powershell -Command "New-Item -ItemType Directory -Force -Path src-tauri/resources/bin | Out-Null; if (-not (Test-Path 'src-tauri/resources/bin/jan-cli.exe')) { New-Item -ItemType File -Path 'src-tauri/resources/bin/jan-cli.exe' | Out-Null }"
+	-powershell -Command "New-Item -ItemType Directory -Force -Path src-tauri/resources/bin | Out-Null; foreach ($$f in @('jan-cli.exe','jan-llama-worker.exe','ggml-base.dll')) { $$p = Join-Path 'src-tauri/resources/bin' $$f; if (-not (Test-Path $$p)) { New-Item -ItemType File -Path $$p | Out-Null } }"
 else ifeq ($(DETECTED_OS),Darwin)
 	@mkdir -p src-tauri/resources/bin
 	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
 	@[ -e src-tauri/resources/bin/mlx-server ] || touch src-tauri/resources/bin/mlx-server
 	@[ -e src-tauri/resources/bin/mlx-swift_Cmlx.bundle ] || mkdir -p src-tauri/resources/bin/mlx-swift_Cmlx.bundle
+	@[ -e src-tauri/resources/bin/jan-llama-worker ] || touch src-tauri/resources/bin/jan-llama-worker
+	@ls src-tauri/resources/bin/libggml*.dylib >/dev/null 2>&1 || touch src-tauri/resources/bin/libggml-base.dylib
 else
 	@mkdir -p src-tauri/resources/bin
 	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
+	@[ -e src-tauri/resources/bin/jan-llama-worker ] || touch src-tauri/resources/bin/jan-llama-worker
+	@ls src-tauri/resources/bin/libggml*.so* >/dev/null 2>&1 || touch src-tauri/resources/bin/libggml-base.so
 endif
 
 test-ci: test-prepare stub-resources
@@ -262,6 +267,268 @@ else
 	cp src-tauri/target/release/jan-cli src-tauri/resources/bin/jan-cli
 endif
 
+# ---------------------------------------------------------------------------
+# llama.cpp engine worker
+#
+# JAN_ENGINE_VARIANT picks the GPU backends compiled into the worker. Vulkan is
+# in every variant, not just the default: it is the fallback when the CUDA or
+# ROCm runtime turns out to be missing or too old on the user's machine, and
+# ggml chooses between the registered backends at runtime.
+#
+# The CPU backend is always multi-versioned (GGML_CPU_ALL_VARIANTS), so every
+# variant ships the full set of x86-64/ARM microarchitecture modules and ggml
+# scores them at load time. That is what "common CPUs" means here.
+#
+#   vulkan  (default)  vulkan
+#   cuda13             cuda + vulkan   (needs CUDA 13 toolkit on PATH)
+#   cuda12             cuda + vulkan   (needs CUDA 12 toolkit on PATH)
+#   rocm               hip  + vulkan   (needs ROCm/HIP)
+#
+# CUDA 12 vs 13 is not a cmake flag -- it is whichever nvcc is found, and
+# llama.cpp adapts CMAKE_CUDA_ARCHITECTURES to it on its own (ggml-cuda's
+# CMakeLists only adds the 50/61/70 virtual archs below CUDA 13). They are still
+# separate variants because the resulting binaries cover different GPUs, so
+# check-engine-toolchain asserts the toolkit matches the variant name rather
+# than letting a cuda13 build ship labelled cuda12.
+COMMA := ,
+JAN_ENGINE_VARIANT ?= vulkan
+
+# Shipping builds pair Vulkan with CUDA/ROCm so the app still offloads when the
+# vendor runtime turns out to be missing or too old. That needs the Vulkan SDK,
+# which a developer with only a CUDA toolkit has no reason to install, so it can
+# be dropped locally. Never drop it for a release: the fallback is the point.
+JAN_ENGINE_VULKAN_FALLBACK ?= 1
+
+# Overrides the GPU architectures a CUDA build targets. Empty means upstream's
+# own list, which covers discrete desktop/datacenter parts (75/80/86/89/90, plus
+# 50/61/70 below CUDA 13) but has NO Jetson entry -- Orin is sm_87 and Xavier
+# sm_72. Set it for an ARM/Jetson target, or to trim a build to one known GPU:
+#     make build-engine JAN_ENGINE_VARIANT=cuda13 JAN_ENGINE_CUDA_ARCHS=87
+#     make build-engine JAN_ENGINE_VARIANT=cuda13 JAN_ENGINE_CUDA_ARCHS=86-real
+JAN_ENGINE_CUDA_ARCHS ?=
+export JAN_ENGINE_CUDA_ARCHS
+
+ifeq ($(JAN_ENGINE_VARIANT),vulkan)
+    ENGINE_FEATURES := engine-vulkan
+else ifeq ($(JAN_ENGINE_VARIANT),cuda13)
+    ENGINE_FEATURES := engine-cuda$(if $(filter 1,$(JAN_ENGINE_VULKAN_FALLBACK)),$(COMMA)engine-vulkan,)
+else ifeq ($(JAN_ENGINE_VARIANT),cuda12)
+    ENGINE_FEATURES := engine-cuda$(if $(filter 1,$(JAN_ENGINE_VULKAN_FALLBACK)),$(COMMA)engine-vulkan,)
+else ifeq ($(JAN_ENGINE_VARIANT),rocm)
+    ENGINE_FEATURES := engine-hip$(if $(filter 1,$(JAN_ENGINE_VULKAN_FALLBACK)),$(COMMA)engine-vulkan,)
+else ifeq ($(JAN_ENGINE_VARIANT),metal)
+    ENGINE_FEATURES := engine-metal
+else ifeq ($(JAN_ENGINE_VARIANT),cpu)
+    ENGINE_FEATURES := engine
+else
+    $(error Unknown JAN_ENGINE_VARIANT '$(JAN_ENGINE_VARIANT)'. Use vulkan, cuda12, cuda13, rocm, metal or cpu)
+endif
+
+ENGINE_PLUGIN_DIR := src-tauri/plugins/tauri-plugin-llamacpp
+ENGINE_BIN_DIR := src-tauri/resources/bin
+
+# cmake and nvcc output goes here, and is tailed live while cargo runs -- cargo
+# captures a build script's output and only shows it on failure, so without this
+# a fifteen-minute engine build prints nothing and looks hung. Kept afterwards
+# as the artifact to attach to a build report.
+ENGINE_BUILD_LOG := $(CURDIR)/src-tauri/target/engine-build.log
+export JAN_ENGINE_BUILD_LOG := $(ENGINE_BUILD_LOG)
+
+# Parallelism for the engine build only.
+#
+# `make -j2` alone does NOT reach cmake: build.rs reads NUM_JOBS, which *cargo*
+# sets from its own parallelism, and cargo ignores make's jobserver for that
+# purpose -- it defaults to num_cpus. So `make -j2` silently built 8-wide and
+# passed cmake -j8. Translating make's own -j into CARGO_BUILD_JOBS makes the
+# flag mean what it says.
+#
+# Scoped to the engine rather than exported globally, because an 8-way nvcc
+# build is the memory spike worth limiting; throttling the 1,200-crate app build
+# to match would just make everything slower.
+#
+# JAN_ENGINE_JOBS overrides both, for limiting the engine without touching the
+# rest of the tree:
+#     make build-engine JAN_ENGINE_VARIANT=cuda13 JAN_ENGINE_JOBS=2
+#
+# A bare `make -j` (unlimited) yields an empty value and falls through to
+# cargo's default, which is the right reading of "no limit".
+# Deferred (`=`, not `:=`) on purpose: make puts -j into MAKEFLAGS only when it
+# runs a recipe, not while parsing the makefile, so a simple assignment reads an
+# empty value and the limit is silently lost -- the exact failure this is meant
+# to fix. `--jobserver-auth=...` does not match `-j%` (it starts `--`).
+MAKE_J = $(strip $(patsubst -j%,%,$(filter -j%,$(MAKEFLAGS))))
+JAN_ENGINE_JOBS ?= $(MAKE_J)
+ENGINE_CARGO_JOBS = $(if $(JAN_ENGINE_JOBS),CARGO_BUILD_JOBS=$(JAN_ENGINE_JOBS),)
+
+# Streams the build log while $(1) runs, then stops the tail either way.
+# `tail -F` tolerates the file not existing yet; the trap covers a cargo failure
+# and a Ctrl-C so no reader is left behind.
+define with_engine_log
+	@mkdir -p $(dir $(ENGINE_BUILD_LOG))
+	@: > $(ENGINE_BUILD_LOG)
+	@tail -F -n +1 $(ENGINE_BUILD_LOG) 2>/dev/null | sed 's/^/[engine] /' & \
+	tail_pid=$$!; \
+	trap 'kill $$tail_pid 2>/dev/null || true' EXIT INT TERM; \
+	$(1); \
+	rc=$$?; \
+	sleep 1; \
+	kill $$tail_pid 2>/dev/null || true; \
+	exit $$rc
+endef
+
+# `make dev` must not require a GPU toolchain: a contributor working on the UI
+# has no reason to install the Vulkan SDK or CUDA, so the default variant skips
+# rather than blocks.
+#
+# But a variant asked for *explicitly* is a request, not a default -- silently
+# skipping it would leave someone waiting for an engine that was never built.
+# `origin` distinguishes the two: `file` means the `?=` default below, anything
+# else means the caller named it.
+ENGINE_VARIANT_EXPLICIT := $(if $(filter-out file,$(origin JAN_ENGINE_VARIANT)),yes,)
+
+build-engine-dev-if-possible:
+	@if out=$$($(MAKE) --no-print-directory check-engine-toolchain 2>&1); then \
+		$(MAKE) --no-print-directory build-engine-dev; \
+	elif [ -n "$(ENGINE_VARIANT_EXPLICIT)" ]; then \
+		echo "$$out" >&2; \
+		echo "" >&2; \
+		echo "You asked for JAN_ENGINE_VARIANT=$(JAN_ENGINE_VARIANT) explicitly, so this is a" >&2; \
+		echo "hard failure rather than a skip. Note that PATH changes must be in the" >&2; \
+		echo "same shell as make, e.g.:" >&2; \
+		echo "    PATH=/usr/local/cuda-13/bin:\$$PATH make dev JAN_ENGINE_VARIANT=$(JAN_ENGINE_VARIANT)$(if $(filter 1,$(JAN_ENGINE_VULKAN_FALLBACK)), JAN_ENGINE_VULKAN_FALLBACK=0,)" >&2; \
+		exit 1; \
+	else \
+		echo "=============================================================="; \
+		echo "Skipping the llama.cpp engine -- toolchain incomplete:"; \
+		echo "$$out" | sed 's/^/  /'; \
+		echo ""; \
+		echo "Local models will not run. Cloud providers are unaffected."; \
+		echo "To build one, name a variant you have the toolchain for:"; \
+		echo "    make build-engine-dev JAN_ENGINE_VARIANT=cpu"; \
+		echo "=============================================================="; \
+	fi
+
+# The pinned llama.cpp, read straight out of build.rs so there is exactly one
+# source of truth for the pin.
+ENGINE_SRC_DIR := $(ENGINE_PLUGIN_DIR)/vendor/llama.cpp
+ENGINE_SRC_URL := https://github.com/ggml-org/llama.cpp.git
+ENGINE_TAG := $(shell sed -n 's/^pub const LLAMA_CPP_TAG: &str = "\(.*\)";/\1/p' $(ENGINE_PLUGIN_DIR)/build.rs)
+ENGINE_COMMIT := $(shell sed -n 's/^pub const LLAMA_CPP_COMMIT: &str = "\(.*\)";/\1/p' $(ENGINE_PLUGIN_DIR)/build.rs)
+
+# Shallow-clones the pinned tag. Not a submodule: we never modify this tree and
+# pin an exact commit, so a submodule only adds gitlink churn and a step every
+# contributor has to remember. `make clean` removes it.
+#
+# The commit is verified after cloning because a git tag is mutable -- upstream
+# could move b10582 and a --branch clone would silently hand us different
+# sources than build.rs claims, which is the one thing the pin exists to stop.
+engine-source:
+ifdef JAN_LLAMA_CPP_DIR
+	@echo "engine source: using JAN_LLAMA_CPP_DIR=$(JAN_LLAMA_CPP_DIR) (skipping the vendored clone)"
+else
+	@if [ -z "$(ENGINE_TAG)" ] || [ -z "$(ENGINE_COMMIT)" ]; then \
+		echo "error: could not read the llama.cpp pin out of $(ENGINE_PLUGIN_DIR)/build.rs" >&2; \
+		exit 1; \
+	fi
+	@if [ ! -f $(ENGINE_SRC_DIR)/CMakeLists.txt ]; then \
+		echo "Cloning llama.cpp $(ENGINE_TAG) (shallow)..."; \
+		rm -rf $(ENGINE_SRC_DIR); \
+		git clone --depth 1 --branch $(ENGINE_TAG) $(ENGINE_SRC_URL) $(ENGINE_SRC_DIR) || { \
+			echo "error: could not clone $(ENGINE_SRC_URL) at tag $(ENGINE_TAG)" >&2; \
+			exit 1; \
+		}; \
+	fi
+	@got=$$(git -C $(ENGINE_SRC_DIR) rev-parse HEAD); \
+	if [ "$$got" != "$(ENGINE_COMMIT)" ]; then \
+		echo "error: $(ENGINE_SRC_DIR) is at $$got but build.rs pins $(ENGINE_COMMIT)." >&2; \
+		echo "       The tag $(ENGINE_TAG) may have moved upstream, or the tree is stale." >&2; \
+		echo "       Delete it and re-run, or point JAN_LLAMA_CPP_DIR at a checkout." >&2; \
+		exit 1; \
+	fi; \
+	echo "engine source: llama.cpp $(ENGINE_TAG) at $$got"
+endif
+
+# Drops the vendored clone. A `clean` prerequisite rather than part of its
+# recipe so it runs *before* clean's `find . -name build -type d` sweeps the
+# tree -- otherwise those walk the whole llama.cpp checkout on the way to
+# deleting it.
+clean-engine-source:
+ifeq ($(DETECTED_OS),Windows)
+	-powershell -Command "if (Test-Path '$(ENGINE_SRC_DIR)') { Remove-Item -Recurse -Force '$(ENGINE_SRC_DIR)' }"
+else
+	rm -rf $(ENGINE_SRC_DIR)
+endif
+
+# Fails fast when the toolchain on PATH cannot produce the requested variant.
+# Without this, building `cuda12` on a CUDA 13 host silently yields a cuda13
+# artifact under the cuda12 name -- which then crashes on the Pascal cards the
+# cuda12 build exists to support.
+check-engine-toolchain:
+ifneq (,$(filter $(JAN_ENGINE_VARIANT),cuda12 cuda13))
+	@command -v nvcc >/dev/null 2>&1 || { \
+		echo "error: JAN_ENGINE_VARIANT=$(JAN_ENGINE_VARIANT) needs nvcc on PATH" >&2; exit 1; }
+	@want=$(patsubst cuda%,%,$(JAN_ENGINE_VARIANT)); \
+	got=$$(nvcc --version | sed -n 's/.*release \([0-9]*\)\..*/\1/p' | head -1); \
+	if [ "$$got" != "$$want" ]; then \
+		echo "error: JAN_ENGINE_VARIANT=$(JAN_ENGINE_VARIANT) but nvcc reports CUDA $$got" >&2; \
+		echo "       point PATH/CUDA_HOME at a CUDA $$want toolkit, or build the cuda$$got variant" >&2; \
+		exit 1; \
+	fi; \
+	echo "engine toolchain: CUDA $$got matches $(JAN_ENGINE_VARIANT)"
+endif
+ifeq ($(JAN_ENGINE_VARIANT),rocm)
+	@command -v hipcc >/dev/null 2>&1 || { \
+		echo "error: JAN_ENGINE_VARIANT=rocm needs hipcc on PATH (install ROCm)" >&2; exit 1; }
+	@echo "engine toolchain: hipcc found"
+endif
+	@command -v cmake >/dev/null 2>&1 || { \
+		echo "error: building the engine needs cmake on PATH" >&2; exit 1; }
+	@if command -v ccache >/dev/null 2>&1; then \
+		echo "engine toolchain: ccache found ($$(ccache -s 2>/dev/null | awk -F': *' '/[Mm]ax cache size/ {print $$2; exit}'))"; \
+	elif command -v sccache >/dev/null 2>&1; then \
+		echo "engine toolchain: sccache found"; \
+	else \
+		echo "warning: no ccache/sccache -- every engine rebuild recompiles from scratch." >&2; \
+		echo "         A CUDA rebuild is tens of minutes without it, a couple with it:" >&2; \
+		echo "           sudo apt install ccache && ccache -M 25G" >&2; \
+		echo "         (25G because CUDA objects are large; the default 5G thrashes.)" >&2; \
+	fi
+ifneq (,$(filter engine-vulkan,$(subst $(COMMA), ,$(ENGINE_FEATURES))))
+	@command -v glslc >/dev/null 2>&1 || command -v glslangValidator >/dev/null 2>&1 || { \
+		echo "error: the vulkan backend needs the Vulkan SDK (glslc) on PATH" >&2; exit 1; }
+	@echo "engine toolchain: Vulkan shader compiler found"
+endif
+
+# Release worker plus the ggml runtime it loads.
+build-engine: engine-source check-engine-toolchain
+	@echo "Building llama.cpp engine worker (variant: $(JAN_ENGINE_VARIANT), features: $(ENGINE_FEATURES), jobs: $(if $(JAN_ENGINE_JOBS),$(JAN_ENGINE_JOBS),all cores))"
+	$(call MKDIR,'$(ENGINE_BIN_DIR)')
+	$(call with_engine_log,cd $(ENGINE_PLUGIN_DIR) && $(ENGINE_CARGO_JOBS) cargo build --release --features $(ENGINE_FEATURES) --bin jan-llama-worker)
+	JAN_ENGINE_PROFILE=release ./src-tauri/build-utils/stage-engine.sh
+ifeq ($(DETECTED_OS),Darwin)
+	@echo "Checking for code signing identity..."; \
+	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
+	if [ -n "$$SIGNING_IDENTITY" ]; then \
+		echo "Signing the engine worker and ggml libraries with: $$SIGNING_IDENTITY"; \
+		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" \
+			$(ENGINE_BIN_DIR)/jan-llama-worker; \
+		for lib in $(ENGINE_BIN_DIR)/libggml*.dylib; do \
+			[ -e "$$lib" ] || continue; \
+			codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" "$$lib"; \
+		done; \
+		echo "Code signing completed successfully"; \
+	else \
+		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
+	fi
+endif
+
+# Debug worker for local dev. Same staging, so `make dev` behaves like a bundle.
+build-engine-dev: engine-source check-engine-toolchain
+	@echo "Building llama.cpp engine worker (dev, variant: $(JAN_ENGINE_VARIANT), jobs: $(if $(JAN_ENGINE_JOBS),$(JAN_ENGINE_JOBS),all cores))"
+	$(call MKDIR,'$(ENGINE_BIN_DIR)')
+	$(call with_engine_log,cd $(ENGINE_PLUGIN_DIR) && $(ENGINE_CARGO_JOBS) cargo build --features $(ENGINE_FEATURES) --bin jan-llama-worker)
+	JAN_ENGINE_PROFILE=debug ./src-tauri/build-utils/stage-engine.sh
+
 # Debug build for local dev (faster, native arch only)
 build-cli-dev:
 	$(call MKDIR,'src-tauri/resources/bin')	
@@ -274,9 +541,10 @@ endif
 
 # Build
 build: install-and-build install-rust-targets
+	make build-engine
 	yarn build
 
-clean:
+clean: clean-engine-source
 ifeq ($(DETECTED_OS),Windows)
 	-powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out, .turbo, .yarn -Recurse -Directory | Remove-Item -Recurse -Force"
 	-powershell -Command "Get-ChildItem -Path . -Include package-lock.json, tsconfig.tsbuildinfo -Recurse -File | Remove-Item -Recurse -Force"

@@ -1,11 +1,16 @@
 /**
- * @file Generates the llama-server router preset INI from per-model `model.yml`
- * files under `<providerPath>/models/<modelId>/model.yml`.
+ * @file Generates `router.preset.ini` from the per-model `model.yml` files under
+ * `<providerPath>/models/<modelId>/model.yml`.
  *
- * Phase 2 keeps the preset minimal — model path, mmproj, chat-template,
- * load-on-startup=false. A small `[*]` global section pulls a couple of
- * conservative defaults from `LlamacppConfig`. Per-model setting fidelity
- * is deferred to Phase 3.
+ * The file has a `[*]` section of engine-wide defaults, then one `[<modelId>]`
+ * section per model. Only values that differ from llama.cpp's own defaults are
+ * written, so the preset stays intent-revealing and a setting left alone keeps
+ * whatever upstream (or the GGUF) decided. `load-on-startup = false` is the one
+ * unconditional line.
+ *
+ * An ini key is the CLI flag with its leading dashes removed, resolved by
+ * `common/preset.cpp` `get_map_key_opt`. Defaults quoted below are from
+ * `common/common.h` at the pinned build.
  */
 
 import { fs, joinPath } from '@janhq/core'
@@ -55,7 +60,14 @@ export const RESERVED_BACKGROUND_SLOTS = 1
 
 export const MTP_MIN_BUILD = 9193
 
-const DEFAULT_EMBEDDING_UBATCH = 2048
+/**
+ * The ubatch every embedding model's preset section is pinned to.
+ *
+ * Exported because `embed()` has to budget its batches against the *embedder's*
+ * ubatch, not the engine-wide setting: llama.cpp rejects a batch wider than
+ * n_ubatch outright, with no retry path.
+ */
+export const DEFAULT_EMBEDDING_UBATCH = 2048
 
 // Fallback context size when the user hasn't set one, to avoid loading a
 // model's full trained context (which can OOM on large-context models).
@@ -159,27 +171,15 @@ export async function generatePreset(
     lines.push(`fit-ctx = ${fitCtxNum}`)
   }
   // ctx-size: llama.cpp's own default loads the model's full trained context,
-  // which can OOM on large-context models. Fall back to 8192 only when the
-  // value is unset; an explicit 0 is honored as "native" (load from model).
-  // Skip entirely when auto-fit is enabled — fit owns context sizing and an
-  // explicit ctx-size would override it.
+  // which can OOM on a large-context model, so a conservative cap stands in.
+  // There is no engine-level context setting to read here -- per-model
+  // `ctx_len` owns that -- so this is purely the guard.
+  //
+  // Skipped when auto-fit is on: emitting it would make n_ctx non-zero for
+  // every model and stop fit from reducing context to make a model fit.
   const fitEnabled = config.fit !== false
   if (!fitEnabled) {
-    const ctxSize =
-      typeof config.ctx_size === 'number' && Number.isFinite(config.ctx_size) && config.ctx_size >= 0
-        ? config.ctx_size
-        : DEFAULT_CTX_SIZE
-    lines.push(`ctx-size = ${ctxSize}`)
-  }
-  // n-gpu-layers default = 0 / auto; emit any non-negative explicit value.
-  // Skip when auto-fit is on: an explicit n-gpu-layers makes fit abort its
-  // layer-offload computation (llama.cpp common/fit.cpp), so fit owns ngl too.
-  if (
-    !fitEnabled &&
-    typeof config.n_gpu_layers === 'number' &&
-    config.n_gpu_layers >= 0
-  ) {
-    lines.push(`n-gpu-layers = ${config.n_gpu_layers}`)
+    lines.push(`ctx-size = ${DEFAULT_CTX_SIZE}`)
   }
   // flash-attn default = 'auto'; explicit on/off only.
   if (
@@ -242,6 +242,15 @@ export async function generatePreset(
   ) {
     lines.push(`n-predict = ${Math.floor(config.n_predict)}`)
   }
+  // batch-size default = 2048 (common.h: n_batch)
+  if (
+    typeof config.batch_size === 'number' &&
+    Number.isFinite(config.batch_size) &&
+    config.batch_size > 0 &&
+    config.batch_size !== 2048
+  ) {
+    lines.push(`batch-size = ${Math.floor(config.batch_size)}`)
+  }
   // ubatch-size default = 512
   if (
     typeof config.ubatch_size === 'number' &&
@@ -250,6 +259,50 @@ export async function generatePreset(
     config.ubatch_size !== 512
   ) {
     lines.push(`ubatch-size = ${Math.floor(config.ubatch_size)}`)
+  }
+  // n-cpu-moe default = 0 (no MoE weights pinned to the host)
+  if (
+    typeof config.n_cpu_moe === 'number' &&
+    Number.isFinite(config.n_cpu_moe) &&
+    config.n_cpu_moe > 0
+  ) {
+    lines.push(`n-cpu-moe = ${Math.floor(config.n_cpu_moe)}`)
+  }
+  // no-kv-offload default = false (the cache is offloaded). Spelled negatively
+  // to match llama.cpp's own flag and the existing no_mmap setting.
+  // common_preset's parse_bool_arg recognises `no-kv-offload` as the negated
+  // half of the kv-offload pair (arg.cpp:2403-2410) and inverts it, so `true`
+  // here does disable offloading.
+  if (config.no_kv_offload === true) {
+    lines.push('no-kv-offload = true')
+  }
+  // tensor-split default = empty (even split across devices).
+  if (
+    typeof config.tensor_split === 'string' &&
+    config.tensor_split.trim().length > 0
+  ) {
+    lines.push(`tensor-split = ${escapeIniValue(config.tensor_split.trim())}`)
+  }
+  // no-op-offload default = false (host tensor ops are offloaded).
+  if (config.no_op_offload === true) {
+    lines.push('no-op-offload = true')
+  }
+  // ctx-checkpoints default = 32, checkpoint-min-step default = 8192.
+  if (
+    typeof config.ctx_checkpoints === 'number' &&
+    Number.isFinite(config.ctx_checkpoints) &&
+    config.ctx_checkpoints >= 0 &&
+    config.ctx_checkpoints !== 32
+  ) {
+    lines.push(`ctx-checkpoints = ${Math.floor(config.ctx_checkpoints)}`)
+  }
+  if (
+    typeof config.checkpoint_min_step === 'number' &&
+    Number.isFinite(config.checkpoint_min_step) &&
+    config.checkpoint_min_step > 0 &&
+    config.checkpoint_min_step !== 8192
+  ) {
+    lines.push(`checkpoint-min-step = ${Math.floor(config.checkpoint_min_step)}`)
   }
   // device default = empty (auto-pick)
   if (typeof config.device === 'string' && config.device.trim().length > 0) {
@@ -271,31 +324,31 @@ export async function generatePreset(
   ) {
     lines.push(`main-gpu = ${Math.floor(config.main_gpu)}`)
   }
-  // no-mmap / mlock default = false
-  if (config.no_mmap === true) {
-    lines.push('no-mmap = true')
+  // `--mlock` and `--no-mmap` are both deprecated aliases that write the single
+  // params.load_mode field (arg.cpp:2658-2702), so emitting both left load_mode
+  // at NONE and silently dropped mlock -- and mmap+mlock was unreachable.
+  // Deriving the one key it actually wants fixes both.
+  const wantsMlock = config.mlock === true
+  const wantsNoMmap = config.no_mmap === true
+  if (wantsMlock || wantsNoMmap) {
+    const loadMode = wantsMlock
+      ? wantsNoMmap
+        ? 'mlock'
+        : 'mmap+mlock'
+      : 'none'
+    lines.push(`load-mode = ${loadMode}`)
   }
-  if (config.mlock === true) {
-    lines.push('mlock = true')
-  }
-  // rope-scaling default = 'none'
+  // rope-scaling default is UNSPECIFIED (let the model decide), not 'none'.
+  // Treating 'none' as the default made "None" -- an explicit request to
+  // disable scaling -- impossible to express.
   if (
     typeof config.rope_scaling === 'string' &&
     config.rope_scaling.length > 0 &&
-    config.rope_scaling !== 'none'
+    config.rope_scaling !== 'auto'
   ) {
     lines.push(`rope-scaling = ${escapeIniValue(config.rope_scaling)}`)
   }
-  // rope-scale / rope-freq-scale default = 1.0 (identity / no scaling);
   // rope-freq-base default = 0 (loaded from model).
-  if (
-    typeof config.rope_scale === 'number' &&
-    Number.isFinite(config.rope_scale) &&
-    config.rope_scale > 0 &&
-    config.rope_scale !== 1
-  ) {
-    lines.push(`rope-scale = ${config.rope_scale}`)
-  }
   if (
     typeof config.rope_freq_base === 'number' &&
     Number.isFinite(config.rope_freq_base) &&
@@ -303,11 +356,13 @@ export async function generatePreset(
   ) {
     lines.push(`rope-freq-base = ${config.rope_freq_base}`)
   }
+  // rope-freq-scale default = 0 (loaded from model). 1.0 is not the default: it
+  // is an explicit "force no scaling", so it must still be emitted. `rope_scale`
+  // is gone -- it was a second spelling of this same upstream field (as 1/N).
   if (
     typeof config.rope_freq_scale === 'number' &&
     Number.isFinite(config.rope_freq_scale) &&
-    config.rope_freq_scale > 0 &&
-    config.rope_freq_scale !== 1
+    config.rope_freq_scale > 0
   ) {
     lines.push(`rope-freq-scale = ${config.rope_freq_scale}`)
   }
@@ -378,12 +433,15 @@ export async function generatePreset(
       lines.push(`chat-template = ${escapeIniValue(mc.chat_template)}`)
     }
 
-    // Per-model overrides — same default-skipping rules as the [*] block.
-    // ctx-size is skipped when auto-fit is on so fit can size the context.
-    // An explicit 0 overrides the global default with "native" (load from model).
+    // Per-model overrides -- same default-skipping rules as the [*] block.
+    // An explicit 0 means "native" (load the model's own trained context).
+    //
+    // Emitted even with auto-fit on, unlike n-gpu-layers below: upstream's fit
+    // explicitly leaves a user-set context alone (common/fit.cpp: "context size
+    // set by user -> no change") and only bails on an explicit n_gpu_layers. The
+    // old gate is why "Increase Context Size" did nothing while Fit was on.
     let ctxEmitted = false
     if (
-      !fitEnabled &&
       typeof mc.ctx_size === 'number' &&
       Number.isFinite(mc.ctx_size) &&
       mc.ctx_size >= 0
@@ -391,11 +449,13 @@ export async function generatePreset(
       lines.push(`ctx-size = ${mc.ctx_size}`)
       ctxEmitted = true
     }
-    // Skipped when auto-fit is on so fit computes GPU offload (see [*] above).
+    // Skipped when auto-fit is on: an explicit n-gpu-layers makes fit abort its
+    // layer-offload computation. -1 is auto and -2 or below means all layers,
+    // so the floor is -2 rather than 0.
     if (
       !fitEnabled &&
       typeof mc.n_gpu_layers === 'number' &&
-      mc.n_gpu_layers >= 0
+      mc.n_gpu_layers >= -2
     ) {
       lines.push(`n-gpu-layers = ${mc.n_gpu_layers}`)
     }
@@ -496,21 +556,31 @@ export async function generatePreset(
     // defaults for every request to the model (chat and external API clients);
     // a per-request JSON field still overrides them. INI keys are the CLI
     // long-form names minus dashes.
-    const samplingIniKeys: Array<[keyof ModelYaml, string]> = [
-      ['temperature', 'temperature'],
-      ['top_k', 'top-k'],
-      ['top_p', 'top-p'],
-      ['min_p', 'min-p'],
-      ['repeat_last_n', 'repeat-last-n'],
-      ['repeat_penalty', 'repeat-penalty'],
-      ['presence_penalty', 'presence-penalty'],
-      ['frequency_penalty', 'frequency-penalty'],
+    //
+    // Skipping a value equal to llama.cpp's default is not just tidiness here:
+    // passing any of the first six sets a `user_sampling_config` bit that
+    // suppresses the GGUF's own `general.sampling.*` recommendations, so writing
+    // an identical-looking default silently overrode what the model asked for.
+    // `null` means "no default, always emit" -- the two penalties set no bit.
+    const samplingIniKeys: Array<[keyof ModelYaml, string, number | null]> = [
+      ['temperature', 'temperature', 0.8],
+      ['top_k', 'top-k', 40],
+      ['top_p', 'top-p', 0.95],
+      ['min_p', 'min-p', 0.05],
+      ['repeat_last_n', 'repeat-last-n', 64],
+      ['repeat_penalty', 'repeat-penalty', 1.0],
+      ['presence_penalty', 'presence-penalty', null],
+      ['frequency_penalty', 'frequency-penalty', null],
     ]
-    for (const [yamlKey, iniKey] of samplingIniKeys) {
+    for (const [yamlKey, iniKey, upstreamDefault] of samplingIniKeys) {
       const v = mc[yamlKey]
-      if (typeof v === 'number' && Number.isFinite(v)) {
-        lines.push(`${iniKey} = ${v}`)
-      }
+      if (typeof v !== 'number' || !Number.isFinite(v)) continue
+      if (upstreamDefault !== null && v === upstreamDefault) continue
+      // Upstream throws on a negative window rather than clamping, which aborts
+      // the load; a legacy -1 from the old "-1 = full context" UI must not reach
+      // the preset.
+      if (iniKey === 'repeat-last-n' && v < 0) continue
+      lines.push(`${iniKey} = ${v}`)
     }
 
     if (mc.embedding === true) {

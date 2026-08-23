@@ -1,63 +1,27 @@
 [default]
 description = "Default permissions for the llamacpp plugin"
 permissions = [
-    # Cleanup commands
+    # Cleanup
     "allow-cleanup-llama-processes",
 
-    # LlamaCpp server commands
+    # Model lifecycle, served by the engine worker over loopback HTTP
     "allow-load-llama-model",
     "allow-unload-llama-model",
-    "allow-start-router",
-    "allow-stop-router",
-    "allow-try-graceful-stop-router",
-    "allow-force-kill-router-tree",
-    "allow-get-router-info",
-    "allow-reload-router-models",
-    "allow-router-slots-idle",
-    "allow-router-health",
-    "allow-adopt-router",
-    "allow-get-devices",
     "allow-generate-api-key",
-    "allow-is-process-running",
     "allow-ensure-session-ready",
-    "allow-get-random-port",
     "allow-find-session-by-model",
     "allow-get-loaded-models",
-    "allow-get-all-sessions",
-    "allow-get-session-by-model",
 
-    # GGUF commands
+    # The in-process engine worker
+    "allow-start-engine",
+    "allow-stop-engine",
+    "allow-get-engine-info",
+    "allow-reload-engine-models",
+    "allow-engine-devices",
+    "allow-force-stop-engine",
+    "allow-engine-slots-idle",
+
+    # GGUF
     "allow-read-gguf-metadata",
-    "allow-estimate-kv-cache-size",
-    "allow-get-model-size",
     "allow-is-model-supported",
-
-    # Backend management commands
-    "allow-map-old-backend-to-new",
-    "allow-get-local-installed-backends",
-    "allow-list-supported-backends",
-    "allow-determine-supported-backends",
-    "allow-get-supported-features",
-    "allow-is-cuda-installed",
-    "allow-find-latest-version-for-backend",
-    "allow-prioritize-backends",
-    "allow-parse-backend-version",
-    "allow-check-backend-for-updates",
-    "allow-remove-old-backend-versions",
-    "allow-validate-backend-string",
-    "allow-should-migrate-backend",
-    "allow-handle-setting-update",
-
-    # Backend path & download commands
-    "allow-get-backend-dir",
-    "allow-get-backend-exe-path",
-    "allow-check-backend-installed",
-    "allow-verify-backend-installation",
-    "allow-fetch-remote-supported-backends",
-    "allow-build-backend-download-items",
-    "allow-fetch-backend-checksums",
-    "allow-verify-file-sha512",
-
-    # Backend GPU library load probe
-    "allow-probe-backend-load"
 ]

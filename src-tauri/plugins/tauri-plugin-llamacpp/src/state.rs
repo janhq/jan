@@ -16,6 +16,9 @@ pub struct LlamacppState {
     /// Mirror of the router PID for emergency lookup (e.g. force-kill while
     /// the handle is temporarily owned by the watcher loop). 0 = no router.
     pub router_pid: AtomicU32,
+    /// The supervised in-process engine worker, when one is running. Separate
+    /// from `router` so both paths can coexist while the frontend migrates.
+    pub engine: Mutex<Option<crate::engine::worker::WorkerHandle>>,
     /// Persistent `/models/sse` subscriber (router-side unload notifications),
     /// alive for the router's lifetime. Aborted whenever the router stops.
     pub unload_watcher: Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -26,6 +29,7 @@ impl Default for LlamacppState {
         Self {
             router: Mutex::new(None),
             router_pid: AtomicU32::new(0),
+            engine: Mutex::new(None),
             unload_watcher: Mutex::new(None),
         }
     }

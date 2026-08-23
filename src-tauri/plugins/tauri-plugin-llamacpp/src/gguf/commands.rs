@@ -1,7 +1,6 @@
 use super::types::GgufMetadata;
 use super::utils::{estimate_kv_cache_internal, read_gguf_metadata_internal};
-use crate::gguf::types::{KVCacheError, KVCacheEstimate, ModelSupportStatus};
-use std::collections::HashMap;
+use crate::gguf::types::ModelSupportStatus;
 use std::fs;
 use tauri_plugin_hardware::{get_system_info, SystemInfo};
 
@@ -11,15 +10,6 @@ pub async fn read_gguf_metadata(path: String) -> Result<GgufMetadata, String> {
     read_gguf_metadata_internal(path).await
 }
 
-#[tauri::command]
-pub async fn estimate_kv_cache_size(
-    meta: HashMap<String, String>,
-    ctx_size: Option<u64>,
-) -> Result<KVCacheEstimate, KVCacheError> {
-    estimate_kv_cache_internal(meta, ctx_size).await
-}
-
-#[tauri::command]
 pub async fn get_model_size(path: String) -> Result<u64, String> {
     if path.starts_with("https://") {
         // Handle remote URL
