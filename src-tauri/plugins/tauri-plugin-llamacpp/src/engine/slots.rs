@@ -258,6 +258,14 @@ impl StateStore {
         self.budget_bytes.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Whether anything new may be written. A zero budget is the off switch, but
+    /// the store still exists at that setting: the directory a previous session
+    /// filled has to be reclaimable, and a deleted thread's state erasable,
+    /// which needs a store rather than a flag.
+    pub fn saves_enabled(&self) -> bool {
+        self.budget() > 0
+    }
+
     /// Applies a new budget and reclaims down to it at once. Returns the keys
     /// dropped.
     pub fn set_budget_mib(&self, budget_mib: u64) -> Vec<String> {
@@ -685,6 +693,23 @@ mod tests {
         s.commit(&key, ident("m", &["a"]), "t", 900).unwrap();
         assert!(s.total_bytes() <= 1024 * 1024);
         assert!(!s.state_path(&key).exists());
+    }
+
+    // Turning the feature off has to reclaim what an earlier session saved, and
+    // has to stop new writes. Both hang off the budget being zero, which is why
+    // the store outlives the setting.
+    #[test]
+    fn a_zero_budget_clears_the_directory_and_stops_saves() {
+        let s = StateStore::new(tmpdir("off"), 0);
+        assert!(!s.saves_enabled());
+        let key = state_key("m", "t");
+        plant_aged(&s, &key, 1024, 1000);
+        assert_eq!(s.prune(), vec![key.clone()]);
+        assert!(
+            !s.meta_path(&key).exists(),
+            "the sidecar goes with the state"
+        );
+        assert_eq!(s.total_bytes(), 0);
     }
 
     #[test]

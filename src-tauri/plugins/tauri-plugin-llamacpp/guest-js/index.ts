@@ -156,16 +156,22 @@ export async function engineSlotsIdle(modelId?: string): Promise<boolean> {
 
 /**
  * Drops saved KV cache: a thread's (under every model it was used with), or a
- * whole model's. Returns how many were dropped; 0 when no worker is running,
- * which is not an error.
+ * whole model's. Returns how many were dropped.
+ *
+ * `cacheDir` is the preset's `slot-save-path`. With no worker running the erase
+ * is done on disk instead, so deleting a thread reclaims its cache whether or
+ * not a model happens to be loaded; without the directory there is nowhere to
+ * look and the answer is 0.
  */
 export async function eraseThreadSlotState(args: {
   threadId?: string
   modelId?: string
+  cacheDir?: string
 }): Promise<number> {
   return await invoke('plugin:llamacpp|erase_thread_slot_state', {
     threadId: args.threadId,
     modelId: args.modelId,
+    cacheDir: args.cacheDir,
   })
 }
 

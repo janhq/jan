@@ -412,12 +412,11 @@ export async function generatePreset(
     lines.push(`cache-ram = ${Math.floor(config.cache_ram)}`)
   }
   // slot-save-path has no default: naming it is what enables llama.cpp's slot
-  // save/restore routes at all. Emitted whenever the feature is on, since the
-  // *budget* is what the worker uses to decide, and the C++ arg handler throws
-  // if the directory is missing -- the worker creates it before loading.
-  if (config.persist_thread_cache !== false) {
-    lines.push(`slot-save-path = ${escapeIniValue(threadCacheDir(providerPath))}`)
-  }
+  // save/restore routes at all. Emitted even with the feature off, so the worker
+  // knows which directory to keep clear and can still erase a deleted thread's
+  // state; the *budget* is what decides whether anything is written. The C++ arg
+  // handler throws if the directory is missing -- the worker creates it first.
+  lines.push(`slot-save-path = ${escapeIniValue(threadCacheDir(providerPath))}`)
   // cache-reuse default = 0 (disabled)
   if (
     typeof config.cache_reuse === 'number' &&

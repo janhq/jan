@@ -552,7 +552,7 @@ describe('generatePreset upstream-default skipping', () => {
     expect(globalSection()).toContain('cache-ram = -1')
   })
 
-  it('names a slot-save-path unless conversation persistence is off', async () => {
+  it('names a slot-save-path even when conversation persistence is off', async () => {
     // Absent by default in llama.cpp, and naming it is what enables the slot
     // save/restore routes at all -- so the default (unset) must still emit it.
     await generatePreset('/p', '/jan', {} as any)
@@ -560,9 +560,14 @@ describe('generatePreset upstream-default skipping', () => {
       `slot-save-path = ${threadCacheDir('/p')}`
     )
 
+    // Off, the worker still needs the directory: it prunes what an earlier
+    // session left there and erases a deleted thread's state out of it. The
+    // zero budget is what stops it writing.
     await generatePreset('/p', '/jan', { persist_thread_cache: false } as any, {
     })
-    expect(globalSection()).not.toContain('slot-save-path')
+    expect(globalSection()).toContain(
+      `slot-save-path = ${threadCacheDir('/p')}`
+    )
   })
 
   it('puts the thread cache under the provider directory, not a temp dir', async () => {

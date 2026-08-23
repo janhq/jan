@@ -50,6 +50,7 @@ import {
 } from './util'
 import {
   generatePreset,
+  threadCacheDir,
   DEFAULT_EMBEDDING_UBATCH,
 } from './preset'
 import {
@@ -878,7 +879,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    */
   async forgetThreadCache(threadId: string): Promise<number> {
     try {
-      return await eraseThreadSlotState({ threadId })
+      return await eraseThreadSlotState({
+        threadId,
+        cacheDir: threadCacheDir(await this.getProviderPath()),
+      })
     } catch (e) {
       logger.warn(`could not drop the saved cache for thread ${threadId}: ${e}`)
       return 0

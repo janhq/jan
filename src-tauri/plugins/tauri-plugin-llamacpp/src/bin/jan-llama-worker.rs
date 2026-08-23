@@ -147,9 +147,16 @@ async fn main() {
                 eprintln!("jan-llama-worker: could not create {dir}: {e}");
                 std::process::exit(7);
             }
-            if args.slot_cache_mib > 0 {
-                slot_store = Some(store);
+            // Pruned here, not only on reload: a budget lowered (or zeroed)
+            // between sessions must reclaim the disk it was lowered for, and
+            // nothing else walks this directory at startup.
+            let dropped = store.prune().len();
+            if dropped > 0 {
+                eprintln!("jan-llama-worker: pruned {dropped} saved thread cache(s)");
             }
+            // Kept even at a zero budget: erasing a deleted thread's state and
+            // clearing the directory both need the store, and neither writes.
+            slot_store = Some(store);
         }
     }
 
@@ -170,11 +177,18 @@ async fn main() {
         };
     let server = match slot_store {
         Some(store) => {
-            eprintln!(
-                "jan-llama-worker: keeping up to {} MiB of thread KV cache in {}",
-                args.slot_cache_mib,
-                store.dir().display()
-            );
+            if store.saves_enabled() {
+                eprintln!(
+                    "jan-llama-worker: keeping up to {} MiB of thread KV cache in {}",
+                    args.slot_cache_mib,
+                    store.dir().display()
+                );
+            } else {
+                eprintln!(
+                    "jan-llama-worker: thread KV cache is off; keeping {} clear",
+                    store.dir().display()
+                );
+            }
             server.with_slot_state(store)
         }
         None => server,

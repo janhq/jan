@@ -364,6 +364,26 @@ pub async fn engine_slots_idle(
     })
 }
 
+/// Drops saved state without a worker, by editing the directory in this
+/// process.
+///
+/// Safe *because* there is no worker: nothing holds a state file open, and the
+/// sidecar records the thread and model each one belongs to, which is what the
+/// worker matches on too. The thread wins when both are given, matching
+/// `erase_slot_state`.
+fn erase_on_disk(dir: Option<&str>, thread: Option<&str>, model: Option<&str>) -> u32 {
+    let Some(dir) = dir else {
+        return 0;
+    };
+    let store = super::slots::StateStore::new(dir, 0);
+    let n = match (thread, model) {
+        (Some(t), _) => store.forget_thread(t),
+        (None, Some(m)) => store.forget_model(m),
+        (None, None) => 0,
+    };
+    n as u32
+}
+
 /// Drops a thread's saved KV cache, or every thread's for a model.
 ///
 /// Called when a thread is deleted: nothing else would ever collect that state,
@@ -371,31 +391,38 @@ pub async fn engine_slots_idle(
 /// sit at the head of the budget until enough others pushed it out. A thread id
 /// is enough -- the caller deleting a thread does not know which models it was
 /// talked to under, and it may be more than one.
+///
+/// `cache_dir` is the same `slot-save-path` the preset names, so a delete lands
+/// even with no worker running -- which is the common case, since a thread is
+/// usually deleted with no model loaded. Deferring it would mean the state
+/// survived the thread until the size budget happened to reclaim it.
 #[tauri::command]
 pub async fn erase_thread_slot_state(
     state: State<'_, Arc<LlamacppState>>,
     thread_id: Option<String>,
     model_id: Option<String>,
+    cache_dir: Option<String>,
 ) -> Result<u32, String> {
-    let (port, api_key) = {
+    if thread_id.is_none() && model_id.is_none() {
+        return Err("one of thread_id or model_id is required".to_string());
+    }
+    let running = {
         let guard = state.engine.lock().await;
-        match guard.as_ref() {
-            Some(h) => (h.port, h.api_key.clone()),
-            // No worker, so nothing is holding the files open. Reporting this
-            // as an error would make deleting a thread fail for a cache the
-            // user cannot see; the size budget reclaims it either way.
-            None => return Ok(0),
-        }
+        guard.as_ref().map(|h| (h.port, h.api_key.clone()))
+    };
+    let Some((port, api_key)) = running else {
+        return Ok(erase_on_disk(
+            cache_dir.as_deref(),
+            thread_id.as_deref(),
+            model_id.as_deref(),
+        ));
     };
     let mut body = serde_json::Map::new();
-    if let Some(t) = thread_id {
+    if let Some(t) = thread_id.clone() {
         body.insert("thread".into(), serde_json::Value::String(t));
     }
-    if let Some(m) = model_id {
+    if let Some(m) = model_id.clone() {
         body.insert("model".into(), serde_json::Value::String(m));
-    }
-    if body.is_empty() {
-        return Err("one of thread_id or model_id is required".to_string());
     }
     let body = serde_json::Value::Object(body);
     let client = reqwest::Client::new();
@@ -406,6 +433,15 @@ pub async fn erase_thread_slot_state(
         .send()
         .await
         .map_err(|e| format!("could not reach the engine worker: {e}"))?;
+    // A worker started from a preset with no slot-save-path knows no directory
+    // to erase from, but this process does.
+    if resp.status() == reqwest::StatusCode::NOT_IMPLEMENTED {
+        return Ok(erase_on_disk(
+            cache_dir.as_deref(),
+            thread_id.as_deref(),
+            model_id.as_deref(),
+        ));
+    }
     if !resp.status().is_success() {
         return Err(format!(
             "the engine worker refused the erase (status {})",
@@ -465,6 +501,42 @@ mod tests {
             .expect("a missing override must be rejected, not ignored");
         assert!(err.contains("not a file"), "got {err}");
         std::env::remove_var("JAN_LLAMA_WORKER_BIN");
+    }
+
+    // A thread deleted with no model loaded is the common case, so the erase
+    // has to land on disk rather than waiting for a worker that may never run.
+    #[test]
+    fn erasing_without_a_worker_drops_that_threads_files_only() {
+        use super::super::slots::{state_key, Identity, StateStore};
+        let dir = std::env::temp_dir().join(format!("jan-erase-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = StateStore::new(&dir, 1);
+        for thread in ["t1", "t2"] {
+            let key = state_key("m", thread);
+            std::fs::write(dir.join(StateStore::state_file_name(&key)), b"x").unwrap();
+            store
+                .commit(
+                    &key,
+                    Identity::new("m", &["a".to_string()], None),
+                    thread,
+                    900,
+                )
+                .unwrap();
+        }
+        let bin = |t: &str| dir.join(StateStore::state_file_name(&state_key("m", t)));
+
+        assert_eq!(
+            erase_on_disk(Some(&dir.to_string_lossy()), Some("t1"), None),
+            1
+        );
+        assert!(!bin("t1").exists());
+        assert!(bin("t2").exists(), "another thread's cache is untouched");
+        assert_eq!(
+            erase_on_disk(None, Some("t2"), None),
+            0,
+            "no directory named, so there is nowhere to look"
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

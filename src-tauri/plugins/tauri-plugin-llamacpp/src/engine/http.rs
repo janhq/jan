@@ -35,10 +35,10 @@ pub struct EngineServer {
     pub port: u16,
     pub api_key: String,
     registry: Arc<Mutex<Registry>>,
-    /// Cross-session KV persistence, `None` when the feature is off. Absent
-    /// rather than a flag so every call site has to acknowledge that the
-    /// engine may have been started without a `slot-save-path`, in which case
-    /// llama.cpp answers the slot routes with 501 anyway.
+    /// Cross-session KV persistence, `None` only when the preset named no
+    /// `slot-save-path` -- in which case llama.cpp answers the slot routes with
+    /// 501 anyway. A store with a zero budget is still `Some`: the feature is
+    /// off, but the directory has to stay prunable and erasable.
     slots: Option<SlotState>,
 }
 
@@ -679,6 +679,11 @@ impl SlotState {
         thread: &str,
         identity: &Identity,
     ) {
+        // A zero budget keeps the store (so the directory can be pruned and a
+        // deleted thread erased) but writes nothing new.
+        if !self.store.saves_enabled() {
+            return;
+        }
         let n_tokens = slot_tokens(engine, slot).await;
         if n_tokens < MIN_TOKENS_TO_SAVE {
             return;
