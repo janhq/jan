@@ -65,9 +65,9 @@ install-ios-rust-targets:
 
 dev: install-and-build
 	yarn download:bin
-	make build-mlx-server-if-exists
-	make build-cli-dev
-	make build-engine-dev-if-possible
+	$(MAKE) build-mlx-server-if-exists
+	$(MAKE) build-cli-dev
+	$(MAKE) build-engine-dev-if-possible
 	yarn dev
 
 # Web application targets
@@ -142,8 +142,8 @@ test-rust:
 
 test: test-prepare install-rust-targets
 	yarn build:mlx-server
-	make build-cli
-	make test-rust
+	$(MAKE) build-cli
+	$(MAKE) test-rust
 
 # Placeholders for the binaries test-ci no longer builds. Each platform's
 # tauri.<os>.conf.json declares these under bundle.resources, and
@@ -169,7 +169,7 @@ else
 endif
 
 test-ci: test-prepare stub-resources
-	make test-rust
+	$(MAKE) test-rust
 
 # Cheap compile guard for the CLI feature set, covering what test-ci no longer
 # builds. `make build` still builds the real binary on every platform.
@@ -360,6 +360,14 @@ MAKE_J = $(strip $(patsubst -j%,%,$(filter -j%,$(MAKEFLAGS))))
 JAN_ENGINE_JOBS ?= $(MAKE_J)
 ENGINE_CARGO_JOBS = $(if $(JAN_ENGINE_JOBS),CARGO_BUILD_JOBS=$(JAN_ENGINE_JOBS),)
 
+# cargo also finds the jobserver in MAKEFLAGS and tries to join it, but a recipe
+# line make did not mark recursive never inherits its file descriptors, so cargo
+# warns and falls back on every build. An empty CARGO_MAKEFLAGS takes precedence
+# over MAKEFLAGS and reads as "no jobserver", which is the truth here:
+# parallelism reaches cargo as CARGO_BUILD_JOBS above, and build.rs sizes
+# cmake -j from the NUM_JOBS cargo derives from it.
+export CARGO_MAKEFLAGS :=
+
 # Streams the build log while $(1) runs, then stops the tail either way.
 # `tail -F` tolerates the file not existing yet; the trap covers a cargo failure
 # and a Ctrl-C so no reader is left behind.
@@ -541,7 +549,7 @@ endif
 
 # Build
 build: install-and-build install-rust-targets
-	make build-engine
+	$(MAKE) build-engine
 	yarn build
 
 clean: clean-engine-source
