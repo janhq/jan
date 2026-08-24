@@ -13,7 +13,18 @@ else
     DETECTED_OS := $(shell uname -s)
 endif
 
+# On Windows make runs recipes through cmd.exe -- unless an sh.exe is on PATH,
+# which is every Git Bash and MSYS invocation, CI included. The two share no
+# spelling for mkdir or for a one-off environment variable, and the OS alone
+# cannot tell them apart, so the shell make picked is what the Windows-only
+# recipes have to branch on.
 ifeq ($(OS),Windows_NT)
+    RECIPE_SHELL_IS_CMD := $(if $(filter sh sh.exe bash bash.exe,$(notdir $(SHELL))),,yes)
+else
+    RECIPE_SHELL_IS_CMD :=
+endif
+
+ifeq ($(RECIPE_SHELL_IS_CMD),yes)
     MKDIR = if not exist "$(1)" mkdir "$(1)"
 else
     MKDIR = mkdir -p $(1)
@@ -379,9 +390,10 @@ export JAN_ENGINE_BUILD_LOG := $(ENGINE_BUILD_LOG)
 MAKE_J = $(strip $(patsubst -j%,%,$(filter -j%,$(MAKEFLAGS))))
 JAN_ENGINE_JOBS ?= $(MAKE_J)
 ENGINE_CARGO_JOBS = $(if $(JAN_ENGINE_JOBS),CARGO_BUILD_JOBS=$(JAN_ENGINE_JOBS),)
-# cmd.exe has no `VAR=value command` prefix, and make on Windows runs recipes
-# through cmd, so the same limit is set with `set` there.
-ENGINE_CARGO_JOBS_WIN = $(if $(JAN_ENGINE_JOBS),set CARGO_BUILD_JOBS=$(JAN_ENGINE_JOBS)&&,)
+# cmd.exe has no `VAR=value command` prefix, so the same limit is set with `set`
+# there. The Windows recipes still run under sh when one is on PATH, where the
+# prefix form is the only one that works.
+ENGINE_CARGO_JOBS_WIN = $(if $(RECIPE_SHELL_IS_CMD),$(if $(JAN_ENGINE_JOBS),set CARGO_BUILD_JOBS=$(JAN_ENGINE_JOBS)&&,),$(ENGINE_CARGO_JOBS))
 
 # cargo also finds the jobserver in MAKEFLAGS and tries to join it, but a recipe
 # line make did not mark recursive never inherits its file descriptors, so cargo
