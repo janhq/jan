@@ -195,6 +195,99 @@ pub(crate) fn repair_dangling_tool_calls(messages: &mut Vec<serde_json::Value>) 
     repaired
 }
 
+/// Drops "poisoned" tool calls: an assistant `tool_calls` entry whose
+/// `function.arguments` is not parsable JSON. A model (observed with
+/// DeepSeek/vLLM) can end a stream mid-argument while still reporting
+/// `finish_reason: "tool_calls"`, so the truncated call is persisted into the
+/// thread. Every later turn resends it, and an OpenAI-compatible upstream
+/// rejects the whole request with 422 -- the session is wedged, because the
+/// poison is in the history the agent keeps replaying.
+///
+/// Removal, not reconstruction: a truncated argument cannot be recovered, and
+/// inventing one would run a tool the model never actually asked for. The call
+/// is dropped along with any `role: "tool"` reply carrying its `tool_call_id`,
+/// so no orphaned result is left behind. Valid sibling calls in the same turn
+/// survive; an assistant turn whose calls are ALL dropped keeps its text and
+/// loses only the `tool_calls` key (and is removed entirely if that leaves it
+/// empty, which would otherwise be a contentless assistant turn some providers
+/// reject). Returns the number of calls dropped.
+///
+/// Runs before [`repair_dangling_tool_calls`], so a surviving call that lost
+/// its result still gets the synthetic error reply from that pass.
+pub(crate) fn drop_malformed_tool_calls(messages: &mut Vec<serde_json::Value>) -> usize {
+    // A call is poison when arguments are present but unparsable. An absent or
+    // empty `arguments` is the well-formed "no arguments" spelling several
+    // providers use, and is left alone.
+    fn is_malformed(call: &serde_json::Value) -> bool {
+        let Some(args) = call
+            .get("function")
+            .and_then(|f| f.get("arguments"))
+            .and_then(|v| v.as_str())
+        else {
+            return false;
+        };
+        let args = args.trim();
+        !args.is_empty() && serde_json::from_str::<serde_json::Value>(args).is_err()
+    }
+
+    let mut dropped_ids: Vec<String> = Vec::new();
+    let mut dropped = 0;
+    for msg in messages.iter_mut() {
+        let Some(calls) = msg.get("tool_calls").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        if !calls.iter().any(is_malformed) {
+            continue;
+        }
+        let mut kept: Vec<serde_json::Value> = Vec::with_capacity(calls.len());
+        for call in calls {
+            if is_malformed(call) {
+                if let Some(id) = call.get("id").and_then(|v| v.as_str()) {
+                    dropped_ids.push(id.to_string());
+                }
+                dropped += 1;
+            } else {
+                kept.push(call.clone());
+            }
+        }
+        let Some(obj) = msg.as_object_mut() else {
+            continue;
+        };
+        if kept.is_empty() {
+            obj.remove("tool_calls");
+        } else {
+            obj.insert("tool_calls".to_string(), serde_json::Value::Array(kept));
+        }
+    }
+    if dropped == 0 {
+        return 0;
+    }
+    // Drop the results that answered a dropped call, then any assistant turn
+    // left with neither text nor calls (content-null with no tool_calls is not
+    // a valid turn to resend).
+    messages.retain(|m| {
+        let role = m.get("role").and_then(|v| v.as_str()).unwrap_or_default();
+        if role == "tool" {
+            let id = m
+                .get("tool_call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            return !dropped_ids.iter().any(|d| d == id);
+        }
+        if role != "assistant" || m.get("tool_calls").is_some() {
+            return true;
+        }
+        // Keep a turn that still says something; a content-null/empty one is
+        // now an empty shell left by the dropped call.
+        match m.get("content") {
+            Some(serde_json::Value::String(s)) => !s.trim().is_empty(),
+            Some(serde_json::Value::Array(a)) => !a.is_empty(),
+            _ => false,
+        }
+    });
+    dropped
+}
+
 pub(crate) fn set_system_prompt(messages: &mut Vec<serde_json::Value>, system_prompt: &str) {
     messages.retain(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"));
     messages.insert(
@@ -2031,6 +2124,124 @@ mod tests {
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[1]["role"], "tool");
         assert_eq!(messages[1]["tool_call_id"], "call_1");
+    }
+
+    #[test]
+    fn sanitize_leaves_valid_tool_calls_untouched() {
+        // Well-formed arguments, plus the empty-object and absent-arguments
+        // spellings providers use for a no-argument call.
+        let mut messages = vec![
+            json!({ "role": "user", "content": "hi" }),
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                    { "id": "c1", "type": "function", "function": { "name": "read", "arguments": "{\"path\":\"a.rs\"}" } },
+                    { "id": "c2", "type": "function", "function": { "name": "ls", "arguments": "{}" } },
+                    { "id": "c3", "type": "function", "function": { "name": "now" } },
+                ]
+            }),
+            json!({ "role": "tool", "tool_call_id": "c1", "content": "ok" }),
+        ];
+        let before = messages.clone();
+        assert_eq!(drop_malformed_tool_calls(&mut messages), 0);
+        assert_eq!(messages, before);
+    }
+
+    #[test]
+    fn sanitize_drops_a_truncated_call_and_its_result() {
+        // The wedging case: a stream cut mid-argument, persisted, then resent
+        // on every later turn and 422'd by the upstream.
+        let mut messages = vec![
+            json!({ "role": "user", "content": "write the file" }),
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "call_bad",
+                    "type": "function",
+                    "function": { "name": "write", "arguments": "{\"path\":\"a.rs\",\"content\":\"fn ma" }
+                }]
+            }),
+            json!({ "role": "tool", "tool_call_id": "call_bad", "content": "stale" }),
+            json!({ "role": "user", "content": "still there?" }),
+        ];
+        assert_eq!(drop_malformed_tool_calls(&mut messages), 1);
+        // The empty assistant shell and the orphaned result are both gone.
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["content"], "write the file");
+        assert_eq!(messages[1]["content"], "still there?");
+    }
+
+    #[test]
+    fn sanitize_keeps_valid_siblings_of_a_poisoned_call() {
+        let mut messages = vec![
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                    { "id": "ok", "type": "function", "function": { "name": "read", "arguments": "{\"path\":\"a\"}" } },
+                    { "id": "bad", "type": "function", "function": { "name": "write", "arguments": "{\"path\":\"b" } },
+                ]
+            }),
+            json!({ "role": "tool", "tool_call_id": "ok", "content": "contents" }),
+            json!({ "role": "tool", "tool_call_id": "bad", "content": "stale" }),
+        ];
+        assert_eq!(drop_malformed_tool_calls(&mut messages), 1);
+        let calls = messages[0]["tool_calls"].as_array().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0]["id"], "ok");
+        // Only the poisoned call's result was dropped.
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1]["tool_call_id"], "ok");
+    }
+
+    #[test]
+    fn sanitize_preserves_assistant_text_when_all_calls_are_dropped() {
+        let mut messages = vec![json!({
+            "role": "assistant",
+            "content": "I'll write that file now.",
+            "tool_calls": [{
+                "id": "bad",
+                "type": "function",
+                "function": { "name": "write", "arguments": "{\"content\":\"trunc" }
+            }]
+        })];
+        assert_eq!(drop_malformed_tool_calls(&mut messages), 1);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["content"], "I'll write that file now.");
+        assert!(messages[0].get("tool_calls").is_none());
+    }
+
+    #[test]
+    fn sanitize_then_dangling_repair_leaves_a_sendable_conversation() {
+        // The two passes compose the way the orchestrator runs them: the
+        // poisoned call goes away, and the surviving call that lost its result
+        // gets the synthetic error reply rather than being left dangling.
+        let mut messages = vec![
+            json!({ "role": "user", "content": "go" }),
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                    { "id": "keep", "type": "function", "function": { "name": "read", "arguments": "{}" } },
+                    { "id": "poison", "type": "function", "function": { "name": "write", "arguments": "{\"a\":" } },
+                ]
+            }),
+        ];
+        assert_eq!(drop_malformed_tool_calls(&mut messages), 1);
+        assert_eq!(repair_dangling_tool_calls(&mut messages), 1);
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[2]["role"], "tool");
+        assert_eq!(messages[2]["tool_call_id"], "keep");
+        // Every remaining call id has exactly one matching result.
+        let ids: Vec<&str> = messages[1]["tool_calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, vec!["keep"]);
     }
 
     #[test]
