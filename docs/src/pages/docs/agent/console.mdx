@@ -21,7 +21,7 @@ jan --task "..."    # with a first message already sent
 ## The screen
 
 ```
- jan agent   tokamak-1-preview   10:40:49   turn 1/400   ctx 6K/128K   30.1/s   [ready]
+ jan agent   tokamak-1-preview  effort medium   10:40:49   turn 1/400   ctx 6K/128K   30.1/s   [ready]
 ─────────────────────────────────────────────────────────────────────────────────────
  MCP ready: sequential-thinking, serper
 
@@ -41,7 +41,7 @@ jan --task "..."    # with a first message already sent
 
 | Region | What it shows |
 | --- | --- |
-| Header | Model, clock, turn count, context usage, throughput, state |
+| Header | Model, reasoning effort, clock, turn count, context usage, throughput, state |
 | Transcript | The conversation, with tool calls folded into summary rows |
 | Receipt | Per turn: context sent, tokens produced, elapsed, rate |
 | Input | Where you type |
@@ -59,6 +59,51 @@ in, so you can see what's being produced before it lands. <kbd>Esc</kbd> cancels
 
 Type while it's working and your message queues rather than being dropped - see
 [Sessions](/docs/agent/sessions#queueing).
+
+### The working row
+
+While a turn runs, the input row shows an action word that turns over every few seconds, with a 👋
+sweeping back and forth along it, so a long turn does not read as a hung UI.
+
+Pick a different glyph from `/settings > wave`, or set it in `~/.jan/config.toml` directly:
+
+```toml
+wave = "👋"
+```
+
+Any string of up to three characters works - `"🍌"`, `"~"`, `"<o>"`, `"👁️👄👁️"`. The limit counts
+what you see, so a single emoji built from several code points still counts as one. The glyph
+replaces the Braille throbber rather than joining it, and covers the characters it passes over
+instead of pushing them along, so the row never changes width no matter how wide the glyph is.
+
+Unlike most settings, this one applies the moment you save it, with no restart.
+
+To go back to the plain Braille throbber - if your terminal lacks the font and draws a
+missing-character box - clear the field in `/settings` and save. That writes `wave = ""`, which is
+the off switch. Pressing <kbd>x</kbd> on the row is the other direction: it removes the key, so the
+default 👋 comes back.
+
+## Reasoning
+
+While a model works it may emit a chain of thought before it lands on an answer. By default the
+console folds that reasoning into a summary row instead of dumping it into the transcript. The
+header shows where it is: `[thinking]` while a reasoning block streams, then `[thought for Ns]`
+once it closes. With folding on, an open block also streams its last few lines into the live tail,
+so you can watch the thought form without pushing the answer off the screen.
+
+<kbd>Ctrl</kbd>+<kbd>O</kbd> expands every folded reasoning block, or click a row to expand just
+that one.
+
+Two knobs in `agent.toml` and two in `~/.jan/config.toml` tune this:
+
+| Key | Where | Default | What it does |
+| --- | --- | --- | --- |
+| `[agent].show_reasoning` | `agent.toml` | `false` | Unfold every reasoning block in the transcript by default. Still folds when off; <kbd>Ctrl</kbd>+<kbd>O</kbd> or a click expands a block either way |
+| `[agent].send_reasoning` | `agent.toml` | `true` | Resend a prior turn's reasoning to the model with the conversation. Turn off for an upstream that rejects the field (Groq), or to keep chains of thought out of the context budget |
+| `think_tags` | `~/.jan/config.toml` | `true` | Treat `<thinking>` tags in model content as reasoning (folded and resendable). Off renders them as ordinary prose |
+| `stream_reasoning` | `~/.jan/config.toml` | `true` | Stream an open reasoning block's last lines into the live tail. Off shows only the `[thinking]` badge |
+
+See [Project config](/docs/agent/project-config) for the `agent.toml` keys.
 
 ## Approving work
 
@@ -84,7 +129,7 @@ as you type.
 
 <DocCards>
   <DocCard title="Slash commands" href="/docs/agent/slash-commands" icon={<Command size={20} />}>Every command, grouped by what it's for.</DocCard>
-  <DocCard title="Keybindings" href="/docs/agent/keybindings" icon={<Keyboard size={20} />}>Shortcuts for input, scrolling, and approval prompts.</DocCard>
+  <DocCard title="Keybindings" href="/docs/agent/keybindings" icon={<Keyboard size={20} />}>Shortcuts for editing, scrolling, and approval prompts.</DocCard>
   <DocCard title="Run modes" href="/docs/agent/run-modes" icon={<GitBranch size={20} />}>Auto-approval, safe mode, and read-only plan mode.</DocCard>
   <DocCard title="Sessions" href="/docs/agent/sessions" icon={<Layers size={20} />}>Resuming, rewinding, and queueing.</DocCard>
 </DocCards>

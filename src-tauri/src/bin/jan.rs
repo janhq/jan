@@ -609,7 +609,13 @@ async fn handle_plugin(cmd: PluginCommands) {
         }
         PluginCommands::Install { spec, project } => cli_plugin_install(&project, &spec)
             .await
-            .map(|plugin| println!("{}", serde_json::to_string_pretty(&plugin).unwrap())),
+            .map(|plugins| match plugins.as_slice() {
+                // A single install keeps the original JSON-object output so
+                // existing scripts parsing it are unaffected; a batch install
+                // (plugin collection) prints the JSON array.
+                [plugin] => println!("{}", serde_json::to_string_pretty(plugin).unwrap()),
+                many => println!("{}", serde_json::to_string_pretty(many).unwrap()),
+            }),
         PluginCommands::Remove { name, project } => {
             cli_plugin_remove(&project, &name).map(|()| println!("Removed plugin '{name}'"))
         }

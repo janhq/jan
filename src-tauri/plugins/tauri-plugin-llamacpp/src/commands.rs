@@ -1106,7 +1106,7 @@ pub async fn try_graceful_stop_router<R: Runtime>(
         }
         Err((h, busy)) => {
             let mut guard = state.router.lock().await;
-            *guard = Some(h);
+            *guard = Some(*h);
             Ok(Some(busy))
         }
     }

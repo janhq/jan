@@ -1,6 +1,7 @@
 use rmcp::{
     model::{ClientCapabilities, ClientInfo, Implementation},
     transport::{
+        sse_client::SseClient, streamable_http_client::StreamableHttpClient,
         streamable_http_client::StreamableHttpClientTransportConfig, SseClientTransport,
         StreamableHttpClientTransport, TokioChildProcess,
     },
@@ -19,6 +20,7 @@ use tokio::{
 use crate::core::{
     app::commands::get_jan_data_folder_path,
     mcp::models::{extract_active_status, extract_command_args, McpSettings},
+    mcp::oauth,
     mcp::progress::JanClientHandler,
     state::{AppState, RunningMcpService, SharedMcpServers},
 };
@@ -410,56 +412,42 @@ async fn schedule_mcp_start_task<R: Runtime>(
     let config_params = extract_command_args(&config)
         .ok_or_else(|| format!("Failed to extract command args from config for {name}"))?;
 
-    if let (Some("http"), Some(url)) = (
+    if let (Some(transport @ ("http" | "sse")), Some(url)) = (
         config_params.transport_type.as_deref(),
         config_params.url.clone(),
     ) {
-        let transport = StreamableHttpClientTransport::with_client(
-            reqwest::Client::builder()
-                .default_headers({
-                    // Map envs to request headers
-                    let mut headers: tauri::http::HeaderMap = reqwest::header::HeaderMap::new();
-                    for (key, value) in config_params.headers.iter() {
-                        if let Some(v_str) = value.as_str() {
-                            // Try to map env keys to HTTP header names (case-insensitive)
-                            // Most HTTP headers are Title-Case, so we try to convert
-                            let header_name =
-                                reqwest::header::HeaderName::from_bytes(key.as_bytes());
-                            if let Ok(header_name) = header_name {
-                                if let Ok(header_value) =
-                                    reqwest::header::HeaderValue::from_str(v_str)
-                                {
-                                    headers.insert(header_name, header_value);
-                                }
-                            }
-                        }
-                    }
-                    headers
-                })
-                .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
-                .build()
-                .unwrap(),
-            StreamableHttpClientTransportConfig {
-                uri: url.into(),
-                ..Default::default()
-            },
-        );
+        // One client for both transports, and one place the configured headers
+        // are turned into a `HeaderMap` -- the http and sse arms used to carry
+        // identical copies of that loop.
+        let base = reqwest::Client::builder()
+            .default_headers(header_map(&config_params.headers))
+            .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
+            .build()
+            .map_err(|e| format!("Failed to build HTTP client for {name}: {e}"))?;
 
-        let client_info = ClientInfo {
-            protocol_version: Default::default(),
-            capabilities: ClientCapabilities::default(),
-            client_info: Implementation {
-                name: "Jan Streamable Client".to_string(),
-                version: "0.0.1".to_string(),
-                title: None,
-                website_url: None,
-                icons: None,
-            },
+        // Stored OAuth credentials (refreshed if stale) are wrapped around the
+        // base client so every request carries the bearer token. `None` means
+        // there is no OAuth here -- nothing stored, or the user configured their
+        // own `Authorization` header, which the base client already sends.
+        let authorized =
+            oauth::authorized_client(&app_path, &name, &url, &config, base.clone())
+                .await
+                .map_err(|detail| oauth::NEEDS_AUTH_PREFIX.to_string() + &detail)?;
+        let had_credentials = authorized.is_some();
+
+        let label = if transport == "http" {
+            "Jan Streamable Client"
+        } else {
+            "Jan SSE Client"
         };
-        let handler = JanClientHandler::new(client_info, name.clone(), app.clone());
-        let client = handler.serve(transport).await.inspect_err(|e| {
-            log::error!("client error: {e:?}");
-        });
+        let handler = JanClientHandler::new(client_info(label), name.clone(), app.clone());
+
+        let client = match (transport, authorized) {
+            ("http", Some(c)) => serve_http(c, &url, handler).await,
+            ("http", None) => serve_http(base, &url, handler).await,
+            (_, Some(c)) => serve_sse(c, &url, handler).await,
+            (_, None) => serve_sse(base, &url, handler).await,
+        };
 
         match client {
             Ok(client) => {
@@ -470,75 +458,16 @@ async fn schedule_mcp_start_task<R: Runtime>(
             }
             Err(e) => {
                 log::error!("Failed to connect to server: {e}");
-                return Err(format!("Failed to connect to server: {e}"));
-            }
-        }
-    } else if let (Some("sse"), Some(url)) = (
-        config_params.transport_type.as_deref(),
-        config_params.url.clone(),
-    ) {
-        let transport = SseClientTransport::start_with_client(
-            reqwest::Client::builder()
-                .default_headers({
-                    // Map envs to request headers
-                    let mut headers = reqwest::header::HeaderMap::new();
-                    for (key, value) in config_params.headers.iter() {
-                        if let Some(v_str) = value.as_str() {
-                            // Try to map env keys to HTTP header names (case-insensitive)
-                            // Most HTTP headers are Title-Case, so we try to convert
-                            let header_name =
-                                reqwest::header::HeaderName::from_bytes(key.as_bytes());
-                            if let Ok(header_name) = header_name {
-                                if let Ok(header_value) =
-                                    reqwest::header::HeaderValue::from_str(v_str)
-                                {
-                                    headers.insert(header_name, header_value);
-                                }
-                            }
-                        }
-                    }
-                    headers
-                })
-                .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
-                .build()
-                .unwrap(),
-            rmcp::transport::sse_client::SseClientConfig {
-                sse_endpoint: url.into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .map_err(|e| {
-            log::error!("transport error: {e:?}");
-            format!("Failed to start SSE transport: {e}")
-        })?;
-
-        let client_info = ClientInfo {
-            protocol_version: Default::default(),
-            capabilities: ClientCapabilities::default(),
-            client_info: Implementation {
-                name: "Jan SSE Client".to_string(),
-                version: "0.0.1".to_string(),
-                title: None,
-                website_url: None,
-                icons: None,
-            },
-        };
-        let handler = JanClientHandler::new(client_info, name.clone(), app.clone());
-        let client = handler.serve(transport).await.map_err(|e| {
-            log::error!("client error: {e:?}");
-            e.to_string()
-        });
-
-        match client {
-            Ok(client) => {
-                log::info!("Connected to server: {:?}", client.peer_info());
-                servers.lock().await.insert(name.clone(), client);
-
-                emit_mcp_update_event(&app, &name);
-            }
-            Err(e) => {
-                log::error!("Failed to connect to server: {e}");
+                // Only probe when no token was sent: a failure *with* credentials
+                // is either a real outage or tokens the provider revoked, and
+                // discovery cannot tell those apart. Re-authenticating is offered
+                // from the settings screen regardless.
+                if !had_credentials && oauth::advertises_oauth(&url).await {
+                    return Err(format!(
+                        "{}no credentials are stored ({e})",
+                        oauth::NEEDS_AUTH_PREFIX
+                    ));
+                }
                 return Err(format!("Failed to connect to server: {e}"));
             }
         }
@@ -832,6 +761,78 @@ fn log_mcp_stderr_line(server_name: &str, line: &str) {
         Some("TRACE") => log::trace!("[mcp-stderr:{server_name}] {line}"),
         _ => log::info!("[mcp-stderr:{server_name}] {line}"),
     }
+}
+
+/// Turn the entry's configured `headers` map into a `HeaderMap`, skipping any
+/// pair that is not a valid header name/value. Shared by both remote transports.
+fn header_map(headers: &serde_json::Map<String, Value>) -> reqwest::header::HeaderMap {
+    let mut map = reqwest::header::HeaderMap::new();
+    for (key, value) in headers.iter() {
+        if let Some(v) = value.as_str() {
+            if let (Ok(name), Ok(val)) = (
+                reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                reqwest::header::HeaderValue::from_str(v),
+            ) {
+                map.insert(name, val);
+            }
+        }
+    }
+    map
+}
+
+fn client_info(label: &str) -> ClientInfo {
+    ClientInfo {
+        protocol_version: Default::default(),
+        capabilities: ClientCapabilities::default(),
+        client_info: Implementation {
+            name: label.to_string(),
+            version: "0.0.1".to_string(),
+            title: None,
+            website_url: None,
+            icons: None,
+        },
+    }
+}
+
+/// Serve the streamable-http transport over any client that implements it, so
+/// the plain and OAuth-wrapped clients share one transport construction.
+async fn serve_http<C>(
+    client: C,
+    url: &str,
+    handler: JanClientHandler,
+) -> Result<RunningMcpService, String>
+where
+    C: StreamableHttpClient + Send + Sync + 'static,
+{
+    let transport = StreamableHttpClientTransport::with_client(
+        client,
+        StreamableHttpClientTransportConfig {
+            uri: url.to_string().into(),
+            ..Default::default()
+        },
+    );
+    handler.serve(transport).await.map_err(|e| e.to_string())
+}
+
+/// `serve_http`'s counterpart for the legacy SSE transport.
+async fn serve_sse<C>(
+    client: C,
+    url: &str,
+    handler: JanClientHandler,
+) -> Result<RunningMcpService, String>
+where
+    C: SseClient + Send + Sync + 'static,
+{
+    let transport = SseClientTransport::start_with_client(
+        client,
+        rmcp::transport::sse_client::SseClientConfig {
+            sse_endpoint: url.to_string().into(),
+            ..Default::default()
+        },
+    )
+    .await
+    .map_err(|e| format!("Failed to start SSE transport: {e}"))?;
+    handler.serve(transport).await.map_err(|e| e.to_string())
 }
 
 fn emit_mcp_update_event<R: Runtime>(app: &AppHandle<R>, name: &str) {

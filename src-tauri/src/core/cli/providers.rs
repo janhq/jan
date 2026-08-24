@@ -14,6 +14,7 @@
 //!    above - the most explicit, most ephemeral signal.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use crate::core::agent::global_config::load_global_config;
 use crate::core::agent::project::ProviderSection;
@@ -141,7 +142,7 @@ fn is_usable(config: &ProviderConfig) -> bool {
 
 /// Whether a base URL points at this machine, where an API key is usually not
 /// required. Host-only match (no DNS): anything else is treated as remote.
-fn is_loopback_url(url: &str) -> bool {
+pub(crate) fn is_loopback_url(url: &str) -> bool {
     let authority = url
         .split_once("://")
         .map(|(_, rest)| rest)
@@ -209,6 +210,147 @@ pub fn list_provider_models(project_root: Option<&std::path::Path>) -> Vec<(Stri
             Vec::new()
         }
     }
+}
+
+/// Populate model lists for providers that have none configured
+/// (e.g. a provider just added via the `/settings` wizard with the models field
+/// left blank). For each reachable provider with an empty `models` list, query
+/// its OpenAI-compatible `GET {base_url}/models` endpoint and persist the
+/// discovered ids back to `~/.jan/config.toml`, mirroring how `/login` records
+/// Tokamak's model list. Returns `true` if at least one provider was populated.
+/// An unreachable endpoint is not fatal: it yields a warning and is skipped, so
+/// a dead credential never blocks the picker. The configured list is preserved
+/// when a provider already names models (the user's explicit choice wins), and
+/// only providers present in the global store are touched -- writing a
+/// models-only entry for a Desktop-inherited provider would shadow it.
+/// `already_probed` records which `(provider, base_url)` pairs were queried,
+/// so each is touched at most once per session: a dead upstream is not
+/// re-contacted on every picker open.
+pub async fn fetch_missing_models(
+    project_root: Option<&std::path::Path>,
+    already_probed: &mut std::collections::HashSet<String>,
+) -> Result<bool, String> {
+    let global = load_global_config()?;
+    let configs = load_provider_configs(project_root, &ProviderOverrides::default().with_env())?;
+    let to_fetch: Vec<(String, String, Vec<String>)> = configs
+        .values()
+        .filter(|c| {
+            global.contains_key(&c.provider) && is_cli_reachable(c) && c.models.is_empty()
+        })
+        .map(|c| {
+            (
+                c.provider.clone(),
+                c.base_url.clone().unwrap_or_default(),
+                c.bearer_key_chain(),
+            )
+        })
+        // Probe each provider at most once per session. A provider that still
+        // has an empty list after a probe was unreachable or offered nothing;
+        // re-probing it on every bare `/model` would freeze the render loop
+        // for the full request timeout each time.
+        .filter(|(name, base_url, _)| {
+            let tag = format!("{name}|{base_url}");
+            if already_probed.contains(&tag) {
+                return false;
+            }
+            already_probed.insert(tag);
+            true
+        })
+        .collect();
+    if to_fetch.is_empty() {
+        return Ok(false);
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+    // Probe providers concurrently so a batch of dead upstreams cannot stall
+    // the `/model` picker for the sum of their timeouts; the slowest provider
+    // bounds the wait.
+    let results = futures::future::join_all(to_fetch.into_iter().map(|(name, base_url, keys)| {
+        let client = &client;
+        async move {
+            let models = fetch_models(client, &base_url, &keys).await;
+            (name, base_url, models)
+        }
+    }))
+    .await;
+    let mut populated = false;
+    for (name, _, result) in results {
+        let models = match result {
+            Ok(m) => m,
+            Err(e) => {
+                log::warn!("could not list models for provider '{name}': {e}");
+                continue;
+            }
+        };
+        if models.is_empty() {
+            continue;
+        }
+        crate::core::agent::global_config::set_provider(
+            &name,
+            crate::core::agent::global_config::ProviderUpdate {
+                api_key: None,
+                base_url: None,
+                models: Some(models),
+                api_type: None,
+            },
+        )?;
+        populated = true;
+    }
+    Ok(populated)
+}
+
+/// Query an OpenAI-compatible `GET {base_url}/models` with Bearer auth (trying
+/// each key in the chain on 401/403, matching upstream resolution) and return
+/// the parsed, sorted, deduped ids from the response body. A provider with no
+/// key (a keyless local endpoint) is queried unauthenticated. A remote
+/// plaintext-`http` base URL is rejected up front so a bearer key is never
+/// sent over a cleartext connection (loopback `http` is allowed).
+async fn fetch_models(
+    client: &reqwest::Client,
+    base_url: &str,
+    keys: &[String],
+) -> Result<Vec<String>, String> {
+    if !(base_url.starts_with("https://")
+        || (base_url.starts_with("http://") && is_loopback_url(base_url)))
+    {
+        return Err(format!(
+            "base URL must be https:// (or http:// for localhost): {base_url}"
+        ));
+    }
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let mut last_err = format!("GET {url} failed");
+    let attempts: Vec<Option<&String>> = if keys.is_empty() {
+        vec![None]
+    } else {
+        keys.iter().map(Some).collect()
+    };
+    for key in attempts {
+        let mut request = client.get(&url);
+        if let Some(key) = key {
+            request = request.header("Authorization", format!("Bearer {key}"));
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|e| format!("could not reach {url}: {e}"))?;
+        let status = response.status();
+        if status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            let parsed: serde_json::Value = serde_json::from_str(&body)
+                .map_err(|e| format!("{url} returned a response we could not read: {e}"))?;
+            return Ok(super::tokamak::parse_models(&parsed));
+        }
+        if status != reqwest::StatusCode::UNAUTHORIZED && status != reqwest::StatusCode::FORBIDDEN {
+            // A non-auth error (rate limit, upstream down) won't be fixed by
+            // trying another key, so report it and stop.
+            return Err(format!("GET {url} returned {status}"));
+        }
+        last_err = format!("{url} rejected the key ({status})");
+    }
+    Err(last_err)
 }
 
 /// Load provider configs by layering the four `.jan`-based scopes (see module
@@ -743,5 +885,193 @@ mod tests {
             configs.get("anthropic").and_then(|c| c.api_key.as_deref()),
             Some("sk-ant-123")
         );
+    }
+
+    /// One-shot `/models` stub on a random loopback port. Returns the bound
+    /// address; each accepted connection gets `body` back as JSON.
+    fn models_stub(body: String, connections: usize) -> std::net::SocketAddr {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(connections) {
+                let Ok(mut stream) = stream else { continue };
+                let mut buf = [0u8; 4096];
+                let _ = std::io::Read::read(&mut stream, &mut buf);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = std::io::Write::write_all(&mut stream, resp.as_bytes());
+            }
+        });
+        addr
+    }
+
+    #[test]
+    fn fetch_missing_models_populates_and_persists_empty_providers() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(
+                serde_json::json!({"data": [{"id": "m-b"}, {"id": "m-a"}]}).to_string(),
+                1,
+            );
+            crate::core::agent::global_config::set_provider(
+                "bare",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec![]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
+            assert!(populated);
+
+            let configs = load_global_config().unwrap();
+            assert_eq!(
+                configs.get("bare").unwrap().models,
+                vec!["m-a".to_string(), "m-b".to_string()],
+                "discovered ids persist sorted"
+            );
+        });
+    }
+
+    #[test]
+    fn fetch_missing_models_leaves_configured_lists_alone() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "chosen",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("http://127.0.0.1:9/v1".into()), // would refuse
+                    models: Some(vec!["my-model".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            // Nothing to fetch: the provider already names its models, so the
+            // dead endpoint above must never be contacted.
+            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
+            assert!(!populated);
+            let configs = load_global_config().unwrap();
+            assert_eq!(configs.get("chosen").unwrap().models, vec!["my-model".to_string()]);
+        });
+    }
+
+    #[test]
+    fn fetch_missing_models_queries_keyless_loopback_providers() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(
+                serde_json::json!({"data": [{"id": "local-model"}]}).to_string(),
+                1,
+            );
+            crate::core::agent::global_config::set_provider(
+                "local",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: None,
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec![]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
+            assert!(populated, "a keyless endpoint is queried unauthenticated");
+            let configs = load_global_config().unwrap();
+            assert_eq!(configs.get("local").unwrap().models, vec!["local-model".to_string()]);
+        });
+    }
+
+    /// Probes must run concurrently, not sequentially: each stub here only
+    /// responds after BOTH providers have connected, so a sequential
+    /// implementation (probe one to completion before starting the next)
+    /// deadlocks into its 15s timeout and populates only one provider.
+    #[test]
+    fn fetch_missing_models_probes_concurrently() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+            let stub = |models: &str| {
+                let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                let addr = listener.local_addr().unwrap();
+                let body = serde_json::json!({"data": [{"id": models}]}).to_string();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let Ok((mut stream, _)) = listener.accept() else { return };
+                    let mut buf = [0u8; 4096];
+                    let _ = std::io::Read::read(&mut stream, &mut buf);
+                    barrier.wait();
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = std::io::Write::write_all(&mut stream, resp.as_bytes());
+                });
+                addr
+            };
+            let addr_a = stub("model-a");
+            let addr_b = stub("model-b");
+            for (name, addr) in [("prov-a", addr_a), ("prov-b", addr_b)] {
+                crate::core::agent::global_config::set_provider(
+                    name,
+                    crate::core::agent::global_config::ProviderUpdate {
+                        api_key: Some("k".into()),
+                        base_url: Some(format!("http://{addr}/v1")),
+                        models: Some(vec![]),
+                        api_type: None,
+                    },
+                )
+                .unwrap();
+            }
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let populated = rt
+                .block_on(fetch_missing_models(None, &mut std::collections::HashSet::new()))
+                .expect("fetch");
+            assert!(populated);
+            let configs = load_global_config().unwrap();
+            assert_eq!(configs.get("prov-a").unwrap().models, vec!["model-a".to_string()]);
+            assert_eq!(configs.get("prov-b").unwrap().models, vec!["model-b".to_string()]);
+        });
+    }
+
+    #[test]
+    fn fetch_missing_models_short_circuits_already_probed() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            // A dead endpoint: if it were contacted, the 15s timeout would hang.
+            crate::core::agent::global_config::set_provider(
+                "dead",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("http://127.0.0.1:9/v1".into()), // refuses instantly
+                    models: Some(vec![]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let mut probed = std::collections::HashSet::new();
+            // First probe hits the dead endpoint (fast refusal) and warns.
+            let populated = rt
+                .block_on(fetch_missing_models(None, &mut probed))
+                .expect("fetch");
+            assert!(!populated);
+            assert_eq!(probed.len(), 1, "dead provider is recorded as probed");
+
+            // A second fetch must not re-contact the dead endpoint at all
+            // (the probed set short-circuits it), and must not error.
+            let again = rt
+                .block_on(fetch_missing_models(None, &mut probed))
+                .expect("second fetch");
+            assert!(!again, "already-probed provider is not re-fetched");
+        });
     }
 }

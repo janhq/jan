@@ -105,6 +105,19 @@ pub(crate) fn parse_openai_messages(
         let mut obj = serde_json::Map::new();
         obj.insert("role".to_string(), serde_json::json!(role));
         obj.insert("content".to_string(), content);
+        // Preserve a resent assistant turn's reasoning alongside its content and
+        // tool calls. Some providers require prior reasoning to be resubmitted
+        // to keep a (local llama.cpp `preserve_thinking`) chat template honest:
+        // dropping it would shrink earlier assistant turns and force reprocessing
+        // of the KV-cache prefix. Only assistant messages carry it; user/tool/
+        // system passes are untouched by construction.
+        if role == "assistant" {
+            if let Some(r) = msg.get("reasoning_content").and_then(|v| v.as_str()) {
+                if !r.is_empty() {
+                    obj.insert("reasoning_content".to_string(), serde_json::json!(r));
+                }
+            }
+        }
         if has_tool_calls {
             obj.insert("tool_calls".to_string(), msg["tool_calls"].clone());
         }
@@ -177,6 +190,99 @@ pub(crate) fn repair_dangling_tool_calls(messages: &mut Vec<serde_json::Value>) 
         i = j;
     }
     repaired
+}
+
+/// Drops "poisoned" tool calls: an assistant `tool_calls` entry whose
+/// `function.arguments` is not parsable JSON. A model (observed with
+/// DeepSeek/vLLM) can end a stream mid-argument while still reporting
+/// `finish_reason: "tool_calls"`, so the truncated call is persisted into the
+/// thread. Every later turn resends it, and an OpenAI-compatible upstream
+/// rejects the whole request with 422 -- the session is wedged, because the
+/// poison is in the history the agent keeps replaying.
+///
+/// Removal, not reconstruction: a truncated argument cannot be recovered, and
+/// inventing one would run a tool the model never actually asked for. The call
+/// is dropped along with any `role: "tool"` reply carrying its `tool_call_id`,
+/// so no orphaned result is left behind. Valid sibling calls in the same turn
+/// survive; an assistant turn whose calls are ALL dropped keeps its text and
+/// loses only the `tool_calls` key (and is removed entirely if that leaves it
+/// empty, which would otherwise be a contentless assistant turn some providers
+/// reject). Returns the number of calls dropped.
+///
+/// Runs before [`repair_dangling_tool_calls`], so a surviving call that lost
+/// its result still gets the synthetic error reply from that pass.
+pub(crate) fn drop_malformed_tool_calls(messages: &mut Vec<serde_json::Value>) -> usize {
+    // A call is poison when arguments are present but unparsable. An absent or
+    // empty `arguments` is the well-formed "no arguments" spelling several
+    // providers use, and is left alone.
+    fn is_malformed(call: &serde_json::Value) -> bool {
+        let Some(args) = call
+            .get("function")
+            .and_then(|f| f.get("arguments"))
+            .and_then(|v| v.as_str())
+        else {
+            return false;
+        };
+        let args = args.trim();
+        !args.is_empty() && serde_json::from_str::<serde_json::Value>(args).is_err()
+    }
+
+    let mut dropped_ids: Vec<String> = Vec::new();
+    let mut dropped = 0;
+    for msg in messages.iter_mut() {
+        let Some(calls) = msg.get("tool_calls").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        if !calls.iter().any(is_malformed) {
+            continue;
+        }
+        let mut kept: Vec<serde_json::Value> = Vec::with_capacity(calls.len());
+        for call in calls {
+            if is_malformed(call) {
+                if let Some(id) = call.get("id").and_then(|v| v.as_str()) {
+                    dropped_ids.push(id.to_string());
+                }
+                dropped += 1;
+            } else {
+                kept.push(call.clone());
+            }
+        }
+        let Some(obj) = msg.as_object_mut() else {
+            continue;
+        };
+        if kept.is_empty() {
+            obj.remove("tool_calls");
+        } else {
+            obj.insert("tool_calls".to_string(), serde_json::Value::Array(kept));
+        }
+    }
+    if dropped == 0 {
+        return 0;
+    }
+    // Drop the results that answered a dropped call, then any assistant turn
+    // left with neither text nor calls (content-null with no tool_calls is not
+    // a valid turn to resend).
+    messages.retain(|m| {
+        let role = m.get("role").and_then(|v| v.as_str()).unwrap_or_default();
+        if role == "tool" {
+            let id = m
+                .get("tool_call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            return !dropped_ids.iter().any(|d| d == id);
+        }
+        if role != "assistant" || m.get("tool_calls").is_some() {
+            return true;
+        }
+        // Keep a turn that still says something; a content-null/empty one is
+        // now an empty shell left by the dropped call.
+        match m.get("content") {
+            Some(serde_json::Value::String(s)) => !s.trim().is_empty(),
+            Some(serde_json::Value::Array(a)) => !a.is_empty(),
+            _ => false,
+        }
+    });
+    dropped
 }
 
 pub(crate) fn set_system_prompt(messages: &mut Vec<serde_json::Value>, system_prompt: &str) {
@@ -320,6 +426,7 @@ pub(crate) fn copy_optional_chat_params(
         "stop",
         "frequency_penalty",
         "presence_penalty",
+        "reasoning_effort",
     ] {
         if let Some(v) = from.get(key) {
             into.insert(key.to_string(), v.clone());
@@ -497,14 +604,15 @@ pub(crate) async fn call_openai_chat_completions(
             req = req.header("Authorization", format!("Bearer {key}"));
         }
 
-        let resp = req
-            .body(body.to_string())
-            .send()
-            .await
-            .map_err(|e| format!("Upstream request failed: {e}"))?;
+        let resp = send_with_one_retry(req.body(body.to_string())).await?;
 
         let status = resp.status();
-        let text = resp.text().await.map_err(|e| e.to_string())?;
+        let text = resp.text().await.map_err(|e| {
+            format!(
+                "Reading the upstream response failed ({upstream_url}): {}",
+                describe_request_error(&e)
+            )
+        })?;
 
         if status.is_success() {
             return serde_json::from_str::<serde_json::Value>(&text)
@@ -556,6 +664,201 @@ pub(crate) fn is_context_overflow_error(err: &str) -> bool {
     err.contains(CONTEXT_OVERFLOW_MARKER)
 }
 
+/// True when the upstream rejected the request *because* an assistant turn
+/// carries `reasoning_content`. The field is a DeepSeek extension that some
+/// providers require to be resent (llama.cpp `preserve_thinking`) while strict
+/// OpenAI-compatible endpoints (Groq, vLLM's pydantic validation) reject the
+/// whole request rather than ignoring the unknown key. Recognizing it lets the
+/// caller drop the field and retry instead of failing the turn, so
+/// `send_reasoning` does not have to be configured per provider by hand.
+/// Requires both the field name and a rejection phrase: a body that merely
+/// echoes the request must not be read as a rejection of it.
+pub(crate) fn is_reasoning_field_error(err: &str) -> bool {
+    let e = err.to_lowercase();
+    e.contains("reasoning_content")
+        && [
+            "unsupported",
+            "unrecognized",
+            "unknown",
+            "not permitted",
+            "not allowed",
+            "unexpected",
+            "additional",
+            "extra input",
+            "extra field",
+            "invalid",
+        ]
+        .iter()
+        .any(|phrase| e.contains(phrase))
+}
+
+/// Every message in an error's `source()` chain, outermost cause first.
+/// `reqwest::Error` prints only its own layer -- `error sending request for url
+/// (...)` -- so the reason the request never left (DNS failure, refused
+/// connection, TLS mismatch, dropped socket) is one or more sources down and is
+/// otherwise lost to the user. Consecutive duplicates are collapsed: hyper and
+/// its io error often stringify identically.
+fn error_source_chain(err: &dyn std::error::Error) -> Vec<String> {
+    let mut chain = Vec::new();
+    let mut cur = err.source();
+    while let Some(e) = cur {
+        let msg = e.to_string();
+        if !msg.trim().is_empty() && chain.last() != Some(&msg) {
+            chain.push(msg);
+        }
+        cur = e.source();
+    }
+    chain
+}
+
+/// True when a failed send can be retried safely: the connection died before any
+/// response arrived, so nothing has been streamed to the caller and no side
+/// effect on the upstream is implied. Covers a refused/failed connect and the
+/// stale-keep-alive family -- hyper reports a pooled connection the peer had
+/// already closed as `connection closed before message completed`, or as an
+/// `ECONNRESET`/`EPIPE` io error if the RST lands while the request is going
+/// out. A timeout is deliberately excluded: retrying one doubles the wait.
+fn is_retryable_send_error(err: &reqwest::Error) -> bool {
+    if err.is_timeout() || err.is_body() || err.is_decode() || err.is_builder() {
+        return false;
+    }
+    err.is_connect() || chain_indicates_dropped_connection(&error_source_chain(err))
+}
+
+/// Whether an error's cause chain names a connection the peer dropped. Matched
+/// on text because the io error is several opaque layers down (hyper's
+/// `SendRequest` -> `connection error` -> `std::io::Error`) and its `ErrorKind`
+/// is not exposed through `reqwest`.
+fn chain_indicates_dropped_connection(chain: &[String]) -> bool {
+    const MARKERS: &[&str] = &[
+        "connection closed before message completed",
+        "connection reset by peer",
+        "broken pipe",
+        "connection aborted",
+        "unexpected eof",
+    ];
+    chain
+        .iter()
+        .any(|msg| {
+            let msg = msg.to_lowercase();
+            MARKERS.iter().any(|m| msg.contains(m))
+        })
+}
+
+/// How long to wait before the one retry of a dropped connection. Long enough
+/// for a load balancer that just recycled a backend to finish, short enough that
+/// the user does not read it as a hang.
+const SEND_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// Send a request, retrying it once when the connection dropped before any
+/// response arrived. This is the failure a long turn invites: while tools run
+/// locally no bytes flow, an idle keep-alive connection is reclaimed by the peer
+/// or its load balancer, and the next turn's request is written into a socket
+/// that is already gone. Retrying is safe precisely because nothing was received
+/// -- see [`is_retryable_send_error`].
+async fn send_with_one_retry(req: reqwest::RequestBuilder) -> Result<reqwest::Response, String> {
+    // `try_clone` returns `None` only for a streaming body; every caller here
+    // sends a `String`, so the retry path is always available in practice.
+    let retry = req.try_clone();
+    let first = match req.send().await {
+        Ok(resp) => return Ok(resp),
+        Err(e) => e,
+    };
+    let Some(retry) = retry.filter(|_| is_retryable_send_error(&first)) else {
+        return Err(format!(
+            "Upstream request failed: {}",
+            describe_request_error(&first)
+        ));
+    };
+    log::warn!(
+        "upstream: {} -- retrying once",
+        describe_request_error(&first)
+    );
+    tokio::time::sleep(SEND_RETRY_DELAY).await;
+    retry.send().await.map_err(|e| {
+        format!(
+            "Upstream request failed after one retry: {} (first attempt: {})",
+            describe_request_error(&e),
+            describe_request_error(&first)
+        )
+    })
+}
+
+/// The HTTP client every agent turn goes through. `Client::new()`'s defaults are
+/// wrong for this traffic in one specific way: connections idle for up to 90s
+/// stay in the pool, but a turn spends far longer than that running tools, and
+/// the peer (or its load balancer) closes an idle connection well before then.
+/// Reusing one is the `Connection reset by peer` a long session eventually hits,
+/// so the pool is kept shorter-lived than any plausible upstream idle timeout.
+/// No overall request timeout: a streamed answer legitimately runs for minutes.
+pub(crate) fn agent_http_client() -> Client {
+    Client::builder()
+        .pool_idle_timeout(std::time::Duration::from_secs(15))
+        .tcp_keepalive(std::time::Duration::from_secs(30))
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_else(|_| Client::new())
+}
+
+/// Names the proxy environment variables in force, without their values (they
+/// routinely carry credentials). A proxy set in the environment is a common
+/// reason a request fails for Jan and for nothing else, and it is invisible in
+/// the error itself.
+fn proxy_env_hint() -> Option<String> {
+    const VARS: &[&str] = &[
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+        "NO_PROXY",
+        "no_proxy",
+    ];
+    let set: Vec<&str> = VARS
+        .iter()
+        .copied()
+        .filter(|name| {
+            std::env::var_os(name).is_some_and(|v| !v.to_string_lossy().trim().is_empty())
+        })
+        .collect();
+    (!set.is_empty()).then(|| format!("proxy env set: {}", set.join(", ")))
+}
+
+/// A failed HTTP request described well enough to act on: what stage failed, the
+/// `reqwest` message, its whole cause chain, and -- for a connect or timeout
+/// failure, where the environment is usually the culprit -- which proxy
+/// variables are set.
+pub(crate) fn describe_request_error(err: &reqwest::Error) -> String {
+    let stage = if err.is_timeout() {
+        "timed out"
+    } else if err.is_connect() {
+        "could not connect"
+    } else if err.is_redirect() {
+        "too many redirects"
+    } else if err.is_body() || err.is_decode() {
+        "response body failed"
+    } else if err.is_builder() {
+        "request could not be built"
+    } else {
+        "send failed"
+    };
+    let mut msg = format!("{stage}: {err}");
+    let chain = error_source_chain(err);
+    if !chain.is_empty() {
+        msg.push_str(&format!(" (caused by: {})", chain.join(" <- ")));
+    }
+    if let Some(status) = err.status() {
+        msg.push_str(&format!(" [HTTP {status}]"));
+    }
+    if err.is_connect() || err.is_timeout() {
+        if let Some(hint) = proxy_env_hint() {
+            msg.push_str(&format!(" [{hint}]"));
+        }
+    }
+    msg
+}
+
 pub(crate) async fn stream_openai_chat_completions(
     client: &Client,
     upstream_url: &str,
@@ -590,11 +893,7 @@ pub(crate) async fn stream_openai_chat_completions(
             req = req.header("Authorization", format!("Bearer {key}"));
         }
 
-        let resp = req
-            .body(req_body.to_string())
-            .send()
-            .await
-            .map_err(|e| format!("Upstream request failed: {e}"))?;
+        let resp = send_with_one_retry(req.body(req_body.to_string())).await?;
 
         let status = resp.status();
         if status.is_success() {
@@ -637,13 +936,14 @@ struct ToolCallAccum {
 #[derive(Default)]
 struct SseAccumulator {
     content: String,
+    /// Natively streamed reasoning (`reasoning_content` deltas), accumulated so
+    /// the reconstructed completion carries it back on the assistant message.
+    /// Kept apart from `content`: reasoning is never part of the answer prose,
+    /// but a caller resending assistant turns may forward it to the model.
+    reasoning: String,
     tool_calls: Vec<ToolCallAccum>,
     finish_reason: Option<String>,
     usage: Option<serde_json::Value>,
-    /// A `<think>` boundary was streamed for `reasoning_content` and not yet
-    /// closed. Reasoning is display-only (dimmed in the TUI) and deliberately
-    /// kept out of `content` so it is never resent to the model as history.
-    reasoning_open: bool,
     /// An error object delivered inside the stream (`data: {"error": {...}}`).
     /// OpenAI-compatible upstreams can fail mid-stream after a `200 OK`; without
     /// capturing it the run would end as a silent "no answer" instead of
@@ -652,15 +952,6 @@ struct SseAccumulator {
 }
 
 impl SseAccumulator {
-    fn close_reasoning(&mut self, events: &mpsc::UnboundedSender<StreamEvent>) {
-        if self.reasoning_open {
-            self.reasoning_open = false;
-            let _ = events.send(StreamEvent::Token {
-                text: "</think>".to_string(),
-            });
-        }
-    }
-
     /// Parse one raw SSE line (`data: {...}`); non-`data:`/blank lines are ignored.
     fn ingest_line(&mut self, line: &str, events: &mpsc::UnboundedSender<StreamEvent>) {
         if let Some(rest) = line.trim_end_matches('\r').strip_prefix("data:") {
@@ -710,22 +1001,21 @@ impl SseAccumulator {
 
         if let Some(fr) = choice.get("finish_reason").and_then(|v| v.as_str()) {
             self.finish_reason = Some(fr.to_string());
-            self.close_reasoning(events);
         }
 
         let Some(delta) = choice.get("delta") else {
             return;
         };
 
+        // Native reasoning: providers exposing a dedicated `reasoning_content`
+        // field stream it as `Reasoning` events, never as content tokens, so
+        // consumers get the boundary for free instead of re-parsing synthetic
+        // `<think>` tags. Providers that inline tags in `content` still flow
+        // through `Token`; consumers keep the tag-stripping fallback for them.
         if let Some(text) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
             if !text.is_empty() {
-                if !self.reasoning_open {
-                    self.reasoning_open = true;
-                    let _ = events.send(StreamEvent::Token {
-                        text: "<think>".to_string(),
-                    });
-                }
-                let _ = events.send(StreamEvent::Token {
+                self.reasoning.push_str(text);
+                let _ = events.send(StreamEvent::Reasoning {
                     text: text.to_string(),
                 });
             }
@@ -733,7 +1023,6 @@ impl SseAccumulator {
 
         if let Some(text) = delta.get("content").and_then(|v| v.as_str()) {
             if !text.is_empty() {
-                self.close_reasoning(events);
                 self.content.push_str(text);
                 let _ = events.send(StreamEvent::Token {
                     text: text.to_string(),
@@ -830,6 +1119,13 @@ impl SseAccumulator {
                 serde_json::json!(self.content)
             },
         );
+        // Reasoning stays out of `content` but is carried on the message so a
+        // caller that resends assistant turns to the model can forward it (and
+        // so a turn that only reasoned still surfaces its reasoning). Empty is
+        // omitted so non-reasoning providers produce an unchanged shape.
+        if !self.reasoning.is_empty() {
+            message.insert("reasoning_content".to_string(), serde_json::json!(self.reasoning));
+        }
         if !tool_calls.is_empty() {
             message.insert(
                 "tool_calls".to_string(),
@@ -891,12 +1187,22 @@ async fn consume_openai_sse(
     resp: reqwest::Response,
     events: &mpsc::UnboundedSender<StreamEvent>,
 ) -> Result<serde_json::Value, String> {
+    let url = resp.url().to_string();
     let mut stream = resp.bytes_stream();
     let mut buf = String::new();
     let mut acc = SseAccumulator::default();
+    let mut bytes = 0usize;
 
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Upstream stream error: {e}"))?;
+        // A stream that dies mid-response is the hardest case to tell apart from
+        // an empty answer, so the byte count so far goes in the message.
+        let chunk = chunk.map_err(|e| {
+            format!(
+                "Upstream stream error ({url}) after {bytes} bytes: {}",
+                describe_request_error(&e)
+            )
+        })?;
+        bytes += chunk.len();
         buf.push_str(&String::from_utf8_lossy(&chunk));
         drain_complete_lines(&mut buf, &mut acc, events);
     }
@@ -924,6 +1230,193 @@ mod tests {
         mpsc::UnboundedReceiver<StreamEvent>,
     ) {
         mpsc::unbounded_channel()
+    }
+
+    /// `reqwest` prints only its own layer, so the cause chain is where the
+    /// actual failure lives -- the whole point of `describe_request_error`.
+    #[test]
+    fn error_source_chain_lists_every_cause_and_collapses_repeats() {
+        #[derive(Debug)]
+        struct Err2(&'static str, Option<Box<Err2>>);
+        impl std::fmt::Display for Err2 {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.0)
+            }
+        }
+        impl std::error::Error for Err2 {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                self.1.as_ref().map(|e| e.as_ref() as &(dyn std::error::Error + 'static))
+            }
+        }
+
+        // The outermost message is printed by the caller, so the chain starts at
+        // its first source; the repeated innermost layer collapses.
+        let inner = Err2("connection refused", None);
+        let middle = Err2("connection refused", Some(Box::new(inner)));
+        let connect = Err2("tcp connect error", Some(Box::new(middle)));
+        let outer = Err2("error sending request", Some(Box::new(connect)));
+        assert_eq!(
+            error_source_chain(&outer),
+            vec![
+                "tcp connect error".to_string(),
+                "connection refused".to_string()
+            ],
+            "sources only, consecutive duplicates collapsed"
+        );
+        assert!(
+            error_source_chain(&Err2("alone", None)).is_empty(),
+            "no sources -> nothing to add"
+        );
+    }
+
+    /// The reported error must name the stage and carry the OS-level reason, not
+    /// just the URL. Port 1 on loopback refuses without touching the network.
+    #[tokio::test]
+    async fn describe_request_error_names_the_stage_and_the_os_cause() {
+        let err = Client::new()
+            .post("http://127.0.0.1:1/v1/chat/completions")
+            .body("{}")
+            .send()
+            .await
+            .expect_err("loopback port 1 refuses");
+        let msg = describe_request_error(&err);
+        assert!(msg.starts_with("could not connect: "), "stage named: {msg}");
+        assert!(msg.contains("caused by: "), "cause chain present: {msg}");
+        assert!(
+            msg.to_lowercase().contains("refused") || msg.to_lowercase().contains("connect"),
+            "the OS reason survives: {msg}"
+        );
+    }
+
+    #[test]
+    fn dropped_connection_is_recognised_from_the_cause_chain() {
+        assert!(chain_indicates_dropped_connection(&[
+            "client error (SendRequest)".to_string(),
+            "connection error".to_string(),
+            "Connection reset by peer (os error 104)".to_string(),
+        ]));
+        assert!(chain_indicates_dropped_connection(&[
+            "connection closed before message completed".to_string()
+        ]));
+        assert!(
+            !chain_indicates_dropped_connection(&[
+                "dns error".to_string(),
+                "failed to lookup address information".to_string()
+            ]),
+            "a name that does not resolve is not a dropped connection"
+        );
+        assert!(!chain_indicates_dropped_connection(&[]));
+    }
+
+    /// A refused connect never reached the peer, so retrying it is safe; a
+    /// timeout is excluded on purpose (retrying one doubles the wait).
+    #[tokio::test]
+    async fn a_refused_connect_is_retryable_but_a_timeout_is_not() {
+        let refused = Client::new()
+            .post("http://127.0.0.1:1/v1/chat/completions")
+            .body("{}")
+            .send()
+            .await
+            .expect_err("loopback port 1 refuses");
+        assert!(is_retryable_send_error(&refused), "{refused}");
+
+        // 10.255.255.1 is a reserved address that black-holes rather than
+        // refusing, so the connect attempt hits the timeout instead.
+        let timed_out = Client::builder()
+            .connect_timeout(std::time::Duration::from_millis(50))
+            .build()
+            .expect("client")
+            .post("http://10.255.255.1:81/v1/chat/completions")
+            .body("{}")
+            .send()
+            .await
+            .expect_err("black-holed address times out");
+        if timed_out.is_timeout() {
+            assert!(!is_retryable_send_error(&timed_out), "{timed_out}");
+        }
+    }
+
+    /// The failure a long turn invites: the peer reclaims a keep-alive
+    /// connection while tools run, and the next request is written into a socket
+    /// that is already gone. One retry must carry the turn through, transparently
+    /// -- the caller sees a normal completion, not an error.
+    #[tokio::test]
+    async fn a_dropped_first_connection_is_retried_and_the_turn_succeeds() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = tokio::spawn(async move {
+            // First connection: read the request, then hang up without a byte of
+            // response -- exactly what a reclaimed pooled connection looks like.
+            let (mut first, _) = listener.accept().await.expect("first accept");
+            let mut scratch = [0u8; 1024];
+            let _ = first.read(&mut scratch).await;
+            drop(first);
+
+            // Second connection: a normal one-token SSE answer.
+            let (mut second, _) = listener.accept().await.expect("second accept");
+            let _ = second.read(&mut scratch).await;
+            let sse = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n\
+                       data: [DONE]\n\n";
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{sse}",
+                sse.len()
+            );
+            let _ = second.write_all(resp.as_bytes()).await;
+            let _ = second.flush().await;
+        });
+
+        let (tx, mut rx) = sink();
+        let url = format!("http://{addr}/v1/chat/completions");
+        let completion = stream_openai_chat_completions(
+            &Client::new(),
+            &url,
+            &[],
+            &json!({ "model": "m", "messages": [] }),
+            &tx,
+        )
+        .await
+        .expect("the retry carries the turn");
+
+        assert_eq!(
+            completion["choices"][0]["message"]["content"], "hi",
+            "answer from the second connection: {completion}"
+        );
+        let mut tokens = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            if let StreamEvent::Token { text } = ev {
+                tokens.push(text);
+            }
+        }
+        assert_eq!(tokens, vec!["hi".to_string()], "streamed once, not twice");
+        server.await.expect("server task");
+    }
+
+    /// A proxy in the environment breaks Jan and nothing else, and never shows up
+    /// in the error. Names only: the values carry credentials.
+    #[test]
+    fn proxy_env_hint_names_set_variables_without_their_values() {
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev = std::env::var_os("HTTPS_PROXY");
+        std::env::remove_var("HTTPS_PROXY");
+        let before = proxy_env_hint();
+
+        std::env::set_var("HTTPS_PROXY", "http://user:secret@proxy.internal:8080");
+        let hint = proxy_env_hint().expect("a set proxy is reported");
+        assert!(hint.contains("HTTPS_PROXY"), "names the variable: {hint}");
+        assert!(!hint.contains("secret"), "never prints the value: {hint}");
+
+        std::env::set_var("HTTPS_PROXY", "   ");
+        assert_eq!(proxy_env_hint(), before, "a blank value is not a proxy");
+
+        match prev {
+            Some(v) => std::env::set_var("HTTPS_PROXY", v),
+            None => std::env::remove_var("HTTPS_PROXY"),
+        }
     }
 
     /// A model served both by a Jan desktop API server (reachable over HTTP) and
@@ -1110,6 +1603,124 @@ mod tests {
     }
 
     #[test]
+    fn sanitize_leaves_valid_tool_calls_untouched() {
+        // Well-formed arguments, plus the empty-object and absent-arguments
+        // spellings providers use for a no-argument call.
+        let mut messages = vec![
+            json!({ "role": "user", "content": "hi" }),
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                    { "id": "c1", "type": "function", "function": { "name": "read", "arguments": "{\"path\":\"a.rs\"}" } },
+                    { "id": "c2", "type": "function", "function": { "name": "ls", "arguments": "{}" } },
+                    { "id": "c3", "type": "function", "function": { "name": "now" } },
+                ]
+            }),
+            json!({ "role": "tool", "tool_call_id": "c1", "content": "ok" }),
+        ];
+        let before = messages.clone();
+        assert_eq!(drop_malformed_tool_calls(&mut messages), 0);
+        assert_eq!(messages, before);
+    }
+
+    #[test]
+    fn sanitize_drops_a_truncated_call_and_its_result() {
+        // The wedging case: a stream cut mid-argument, persisted, then resent
+        // on every later turn and 422'd by the upstream.
+        let mut messages = vec![
+            json!({ "role": "user", "content": "write the file" }),
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "call_bad",
+                    "type": "function",
+                    "function": { "name": "write", "arguments": "{\"path\":\"a.rs\",\"content\":\"fn ma" }
+                }]
+            }),
+            json!({ "role": "tool", "tool_call_id": "call_bad", "content": "stale" }),
+            json!({ "role": "user", "content": "still there?" }),
+        ];
+        assert_eq!(drop_malformed_tool_calls(&mut messages), 1);
+        // The empty assistant shell and the orphaned result are both gone.
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["content"], "write the file");
+        assert_eq!(messages[1]["content"], "still there?");
+    }
+
+    #[test]
+    fn sanitize_keeps_valid_siblings_of_a_poisoned_call() {
+        let mut messages = vec![
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                    { "id": "ok", "type": "function", "function": { "name": "read", "arguments": "{\"path\":\"a\"}" } },
+                    { "id": "bad", "type": "function", "function": { "name": "write", "arguments": "{\"path\":\"b" } },
+                ]
+            }),
+            json!({ "role": "tool", "tool_call_id": "ok", "content": "contents" }),
+            json!({ "role": "tool", "tool_call_id": "bad", "content": "stale" }),
+        ];
+        assert_eq!(drop_malformed_tool_calls(&mut messages), 1);
+        let calls = messages[0]["tool_calls"].as_array().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0]["id"], "ok");
+        // Only the poisoned call's result was dropped.
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1]["tool_call_id"], "ok");
+    }
+
+    #[test]
+    fn sanitize_preserves_assistant_text_when_all_calls_are_dropped() {
+        let mut messages = vec![json!({
+            "role": "assistant",
+            "content": "I'll write that file now.",
+            "tool_calls": [{
+                "id": "bad",
+                "type": "function",
+                "function": { "name": "write", "arguments": "{\"content\":\"trunc" }
+            }]
+        })];
+        assert_eq!(drop_malformed_tool_calls(&mut messages), 1);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["content"], "I'll write that file now.");
+        assert!(messages[0].get("tool_calls").is_none());
+    }
+
+    #[test]
+    fn sanitize_then_dangling_repair_leaves_a_sendable_conversation() {
+        // The two passes compose the way the orchestrator runs them: the
+        // poisoned call goes away, and the surviving call that lost its result
+        // gets the synthetic error reply rather than being left dangling.
+        let mut messages = vec![
+            json!({ "role": "user", "content": "go" }),
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                    { "id": "keep", "type": "function", "function": { "name": "read", "arguments": "{}" } },
+                    { "id": "poison", "type": "function", "function": { "name": "write", "arguments": "{\"a\":" } },
+                ]
+            }),
+        ];
+        assert_eq!(drop_malformed_tool_calls(&mut messages), 1);
+        assert_eq!(repair_dangling_tool_calls(&mut messages), 1);
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[2]["role"], "tool");
+        assert_eq!(messages[2]["tool_call_id"], "keep");
+        // Every remaining call id has exactly one matching result.
+        let ids: Vec<&str> = messages[1]["tool_calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, vec!["keep"]);
+    }
+
+    #[test]
     fn detects_provider_context_overflow_bodies() {
         assert!(is_context_overflow_body(
             "{\"error\":{\"code\":\"context_length_exceeded\"}}"
@@ -1133,6 +1744,27 @@ mod tests {
         let err = format!("[{CONTEXT_OVERFLOW_MARKER}] Upstream returned HTTP 400: ...");
         assert!(is_context_overflow_error(&err));
         assert!(!is_context_overflow_error("Upstream returned HTTP 500: boom"));
+    }
+
+    /// The shapes strict endpoints actually return, plus the two ways a false
+    /// positive would arise: an error that names the field without rejecting it,
+    /// and a rejection of some other field.
+    #[test]
+    fn detects_a_rejected_reasoning_content_field() {
+        for body in [
+            "Upstream returned HTTP 400: {\"error\":{\"message\":\"'messages.1' : for 'role':'assistant' the following must be satisfied[('messages.1.reasoning_content' : property 'reasoning_content' is unsupported)]\"}}",
+            "Upstream returned HTTP 400: Unrecognized request argument supplied: reasoning_content",
+            "Upstream returned HTTP 400: body.messages.1.reasoning_content: Extra inputs are not permitted",
+            "Upstream returned HTTP 400: Invalid value for 'reasoning_content'",
+        ] {
+            assert!(is_reasoning_field_error(body), "missed: {body}");
+        }
+        assert!(!is_reasoning_field_error(
+            "Upstream returned HTTP 500: reasoning_content was truncated"
+        ));
+        assert!(!is_reasoning_field_error(
+            "Upstream returned HTTP 400: property 'audio' is unsupported"
+        ));
     }
 
     #[test]
@@ -1170,7 +1802,7 @@ mod tests {
     }
 
     #[test]
-    fn reasoning_content_streams_as_think_wrapped_tokens_but_stays_out_of_content() {
+    fn reasoning_content_streams_as_native_reasoning_events_and_stays_out_of_content() {
         let (tx, mut rx) = sink();
         let mut acc = SseAccumulator::default();
         acc.ingest(
@@ -1190,21 +1822,33 @@ mod tests {
             &tx,
         );
 
-        // Reasoning must not leak into the reconstructed message sent back to the
-        // model as history; only the answer prose is persisted.
+        // Reasoning stays out of the answer prose, but is preserved on the
+        // reconstructed message so a caller can resend it as history.
         let completion = acc.into_completion();
         assert_eq!(completion["choices"][0]["message"]["content"], "answer");
+        assert_eq!(
+            completion["choices"][0]["message"]["reasoning_content"],
+            "let me think"
+        );
 
         drop(tx);
+        let mut reasoning = Vec::new();
         let mut tokens = Vec::new();
-        while let Ok(StreamEvent::Token { text }) = rx.try_recv() {
-            tokens.push(text);
+        while let Ok(ev) = rx.try_recv() {
+            match ev {
+                StreamEvent::Reasoning { text } => reasoning.push(text),
+                StreamEvent::Token { text } => tokens.push(text),
+                _ => {}
+            }
         }
-        assert_eq!(tokens, vec!["<think>", "let me ", "think", "</think>", "answer"]);
+        // Native events: no synthetic <think> wrapper tokens on the content
+        // stream, so a consumer never has to re-parse tags it did not receive.
+        assert_eq!(reasoning, vec!["let me ", "think"]);
+        assert_eq!(tokens, vec!["answer"]);
     }
 
     #[test]
-    fn reasoning_only_completion_closes_the_open_think_block() {
+    fn reasoning_only_completion_emits_reasoning_and_no_tokens() {
         let (tx, mut rx) = sink();
         let mut acc = SseAccumulator::default();
         acc.ingest(
@@ -1220,11 +1864,120 @@ mod tests {
         assert!(completion["choices"][0]["message"]["content"].is_null());
 
         drop(tx);
+        let mut reasoning = Vec::new();
         let mut tokens = Vec::new();
-        while let Ok(StreamEvent::Token { text }) = rx.try_recv() {
-            tokens.push(text);
+        while let Ok(ev) = rx.try_recv() {
+            match ev {
+                StreamEvent::Reasoning { text } => reasoning.push(text),
+                StreamEvent::Token { text } => tokens.push(text),
+                _ => {}
+            }
         }
-        assert_eq!(tokens, vec!["<think>", "hmm", "</think>"]);
+        assert_eq!(reasoning, vec!["hmm"]);
+        assert!(tokens.is_empty(), "no content tokens for a reasoning-only turn: {tokens:?}");
+    }
+
+    /// A completion with no `reasoning_content` deltas must keep exactly the
+    /// shape it always had: the field is omitted, not emitted empty, so a
+    /// provider that rejects unknown assistant keys is unaffected.
+    #[test]
+    fn a_turn_without_reasoning_omits_the_field_entirely() {
+        let (tx, _rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "content": "answer" } }] }).to_string(),
+            &tx,
+        );
+        let completion = acc.into_completion();
+        let message = &completion["choices"][0]["message"];
+        assert_eq!(message["content"], "answer");
+        assert!(
+            message.get("reasoning_content").is_none(),
+            "no reasoning streamed, so the key must be absent: {message}"
+        );
+    }
+
+    /// A tool-call turn's reasoning is preserved too: the model reasons about
+    /// which tool to call, and that reasoning has to survive onto the assistant
+    /// turn the loop resends with its `tool_calls`.
+    #[test]
+    fn reasoning_is_preserved_on_a_tool_call_turn() {
+        let (tx, _rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "reasoning_content": "need to grep" } }] })
+                .to_string(),
+            &tx,
+        );
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "tool_calls": [{
+                "index": 0,
+                "id": "c1",
+                "function": { "name": "bash", "arguments": "{}" }
+            }] } }] })
+            .to_string(),
+            &tx,
+        );
+        let completion = acc.into_completion();
+        let message = &completion["choices"][0]["message"];
+        assert_eq!(message["reasoning_content"], "need to grep");
+        assert_eq!(message["tool_calls"][0]["id"], "c1");
+    }
+
+    /// A resent assistant turn keeps its `reasoning_content` through the message
+    /// normalizer. Local llama.cpp templates with `preserve_thinking` re-emit
+    /// prior reasoning from this field; dropping it would shrink earlier turns
+    /// and force the KV-cache prefix to be reprocessed.
+    #[test]
+    fn parse_messages_preserves_assistant_reasoning_content() {
+        let messages = json!([{
+            "role": "assistant",
+            "content": "the answer",
+            "reasoning_content": "the thinking"
+        }]);
+        let out = parse_openai_messages(&messages).unwrap();
+        assert_eq!(out[0]["content"], "the answer");
+        assert_eq!(out[0]["reasoning_content"], "the thinking");
+    }
+
+    /// Only assistant turns carry reasoning back. A stray field on another role
+    /// is not part of the protocol, so it is dropped rather than forwarded.
+    #[test]
+    fn parse_messages_drops_reasoning_on_non_assistant_roles() {
+        let messages = json!([
+            { "role": "user", "content": "q", "reasoning_content": "nope" },
+            { "role": "assistant", "content": "a" },
+        ]);
+        let out = parse_openai_messages(&messages).unwrap();
+        assert!(out[0].get("reasoning_content").is_none());
+        assert!(
+            out[1].get("reasoning_content").is_none(),
+            "an assistant turn with no reasoning stays unchanged"
+        );
+    }
+
+    /// Providers that inline `<think>` tags in `content` (no reasoning_content
+    /// field) keep streaming through Token untouched: the tag-stripping
+    /// fallback lives in the consumers.
+    #[test]
+    fn inline_think_tags_in_content_pass_through_as_tokens() {
+        let (tx, mut rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "content": "<think>hmm</think>answer" } }] })
+                .to_string(),
+            &tx,
+        );
+        drop(tx);
+        let mut tokens = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            match ev {
+                StreamEvent::Token { text } => tokens.push(text),
+                StreamEvent::Reasoning { .. } => panic!("no native reasoning here"),
+                _ => {}
+            }
+        }
+        assert_eq!(tokens, vec!["<think>hmm</think>answer"]);
     }
 
     #[test]

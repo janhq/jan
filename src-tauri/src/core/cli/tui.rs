@@ -41,7 +41,7 @@ use markdown::{
 };
 
 use super::brand;
-use super::journal::{self, DisplayEntry};
+use super::journal::{self, DisplayEntry, ReasoningSeg};
 use super::mcp::McpServerEntry;
 use super::{sort_threads_recent, AgentSession, ResumeTarget, SessionLimits};
 use serde_json::Value;
@@ -63,6 +63,23 @@ const MOUSE_TRACK_ON: &str = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
 /// tracking is on, since with tracking off the wheel would otherwise type.
 const ALT_SCROLL_SAVE_OFF: &str = "\x1b[?1007s\x1b[?1007l";
 const ALT_SCROLL_RESTORE: &str = "\x1b[?1007r";
+
+/// Kitty keyboard protocol, flags 1 (disambiguate escape codes) + 4 (report
+/// alternate keys). Disambiguation is what makes `Shift+Enter` reachable at
+/// all: legacy encoding has no room for a modifier on `Enter`, so the terminal
+/// sends a bare `\r` that is indistinguishable from a plain `Enter`, and the
+/// same goes for `Cmd`/`SUPER` on any key. Alternate keys ride along so a
+/// shifted printable arrives as its shifted character instead of the base key
+/// plus SHIFT, which would otherwise type lowercase on a terminal that reports
+/// shifted text as an escape code. Event types (2) are deliberately left off:
+/// they add key-release and repeat events that nothing here consumes, and
+/// `handle_key` would have to filter every one of them. A terminal without the
+/// protocol ignores both sequences, so the pair is safe to send unconditionally
+/// -- querying support first (`supports_keyboard_enhancement`) costs a blocking
+/// stdin read of up to two seconds before the first frame.
+const KITTY_KEYS_ON: &str = "\x1b[>5u";
+/// Pop what `KITTY_KEYS_ON` pushed, restoring whatever the shell had.
+const KITTY_KEYS_OFF: &str = "\x1b[<u";
 
 /// Whether to hand the wheel to the terminal's native alternate-scroll instead
 /// of asking it to report wheel events to the app. Disabling alternate scroll
@@ -86,6 +103,18 @@ fn alt_scroll_restore() -> &'static str {
     } else {
         ALT_SCROLL_RESTORE
     }
+}
+
+/// The private modes to set on entry, in one write. Keyboard enhancement is
+/// unconditional -- it is what the editing keys are decoded from -- while mouse
+/// tracking follows the `mouse` config key.
+fn startup_modes(mouse: bool) -> String {
+    let mut modes = String::from(alt_scroll_save_off());
+    modes.push_str(KITTY_KEYS_ON);
+    if mouse {
+        modes.push_str(MOUSE_TRACK_ON);
+    }
+    modes
 }
 
 /// How long the dock advertises a finished copy.
@@ -279,6 +308,46 @@ impl Pending {
         }
     }
 
+    /// The prompt's header rows -- who is asking, for what capability, and on
+    /// which command or path -- laid out at `inner`. A command keeps its own
+    /// newlines and wraps, so a heredoc is approved on what it actually says
+    /// rather than on its first 60 columns.
+    fn detail_lines(&self, inner: u16) -> Vec<Line<'static>> {
+        let dim = Style::new().dark_gray();
+        let max = inner.max(1) as usize;
+        let mut out = Vec::new();
+        if let Some(name) = &self.subagent {
+            out.push(Line::from(vec![
+                Span::styled("subagent ", dim),
+                Span::styled(name.clone(), Style::new().magenta().bold()),
+                Span::styled(" is asking:", dim),
+            ]));
+        }
+        out.extend(
+            wrap_spans_hard(
+                vec![
+                    Span::styled(self.tool_name.clone(), Style::new().cyan().bold()),
+                    Span::styled(" wants ", dim),
+                    Span::styled(self.capability.clone(), Style::new().yellow().bold()),
+                ],
+                max,
+            )
+            .into_iter()
+            .map(Line::from),
+        );
+        let (lead, body) = match (&self.command, &self.path) {
+            (Some(command), _) => ("$ ", command.clone()),
+            (None, Some(path)) => ("on ", path.clone()),
+            (None, None) => return out,
+        };
+        out.extend(gutter_lines(
+            wrap_text(&body, Style::new().white(), max.saturating_sub(2).max(1)),
+            vec![Span::styled(lead, dim)],
+            vec![Span::raw("  ")],
+        ));
+        out
+    }
+
     /// Boxed diff preview for the prompt, sized to `inner` width; empty when the
     /// tool carries no diff (exec/read). No gutter: the panel sits flush in the
     /// prompt box, unlike the tool-row-aligned result diff.
@@ -323,12 +392,21 @@ enum PickerKind {
     RewindScope,
     /// Read-only view of `~/.jan/config.toml` providers (`/config`). Enter closes.
     ViewConfig,
-    /// `/settings`: browse editable `[agent]` keys from agent.toml; Enter opens
-    /// a docked edit prompt for the selected row.
+    /// `/settings`: browse editable keys from agent.toml and `~/.jan/config.toml`;
+    /// Enter opens a docked edit prompt for the selected row.
     AgentSettings,
+    /// `/settings > providers`: manage `~/.jan/config.toml` providers via a
+    /// docked add/edit wizard (`a`/`e`) or deletion (`d`).
+    ProviderSettings,
     /// `/todo` editor: browse the phased list and mutate the selected task
     /// (done/drop/rm) through the same canonical `TodoList` the model uses.
     Todo,
+    /// `/plugin install <collection>`: choose which plugins inside a collection
+    /// repo to install. Space toggles a row, Enter installs everything checked.
+    PluginSelect,
+    /// One MCP server's detail screen: the info block plus the actions that
+    /// apply to it (see `open_mcp_detail`). Reached with Enter from `ToggleMcp`.
+    McpServer,
 }
 
 /// Interactive list overlay (`/resume` threads, `/model` models, `/mcp`
@@ -337,6 +415,10 @@ struct Picker {
     kind: PickerKind,
     items: Vec<PickerItem>,
     selected: usize,
+    /// Index of the provider row a first `d` armed for deletion, so a second
+    /// `d` on the same row confirms it. `None` = nothing armed. Resets on
+    /// navigation so an unrelated keypress can never delete by accident.
+    armed_delete: Option<usize>,
 }
 
 impl Picker {
@@ -349,7 +431,10 @@ impl Picker {
             PickerKind::RewindScope => " restore ",
             PickerKind::ViewConfig => " provider config ",
             PickerKind::AgentSettings => " agent settings ",
+            PickerKind::ProviderSettings => " providers ",
             PickerKind::Todo => " todo ",
+            PickerKind::PluginSelect => " install plugins ",
+            PickerKind::McpServer => " mcp server ",
         }
     }
 
@@ -357,12 +442,19 @@ impl Picker {
         match self.kind {
             PickerKind::ResumeThread => " ↑/↓ select   Enter resume   Esc cancel",
             PickerKind::SelectModel => " ↑/↓ select   Enter choose   Esc cancel",
-            PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   a add   e edit   d delete   Esc close",
+            PickerKind::ToggleMcp => {
+                " ↑/↓ select   Enter open   Space toggle   a add   e edit   d delete   Esc close"
+            }
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
             PickerKind::AgentSettings => " ↑/↓ select   Enter edit   x unset   Esc close",
+            PickerKind::ProviderSettings => " ↑/↓ select   Enter edit   a add   dd delete   Esc close",
             PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
+            PickerKind::PluginSelect => {
+                " ↑/↓ select   Space toggle   Enter install   Esc cancel"
+            }
+            PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
         }
     }
 }
@@ -376,6 +468,65 @@ struct PickerItem {
     hint: Option<String>,
     /// Enabled-state for toggle pickers (`/mcp`); `None` for one-shot pickers.
     checkbox: Option<bool>,
+}
+
+/// The `/mcp` detail screen's data: a local snapshot (config plus the cached
+/// `initialize` response) and the one field that needs a round trip.
+struct McpDetail {
+    server: super::mcp::ServerDetail,
+    tools: ToolsState,
+}
+
+/// Where the detail screen's tool list is. Split from `Option<Vec<_>>` so the
+/// screen can say *why* there is no list -- "not connected" and "the listing
+/// failed" are different problems.
+enum ToolsState {
+    /// Not connected, so there is nothing to ask for.
+    Unavailable,
+    Loading,
+    Ready(Vec<String>),
+    Failed(String),
+}
+
+/// Off-loop MCP work the detail screen hands to the loop. Everything here
+/// either talks to a peer or waits on a browser, so none of it may run inside
+/// `handle_key`.
+enum McpJob {
+    /// List a connected server's tools for the `Tools:` line.
+    Tools(String),
+    /// Discover the provider and mint a consent url. Deliberately separate from
+    /// `Authorize`: the url must reach the transcript *before* anything waits on
+    /// the redirect, or a user with no browser has nothing to act on.
+    BeginAuth(String),
+    /// Wait for the redirect and persist the tokens.
+    Authorize {
+        server: String,
+        pending: Box<crate::core::mcp::oauth::PendingAuth>,
+    },
+    /// Bring a server up. Run as a job rather than detached whenever the detail
+    /// screen is open, so the screen refreshes when the connect lands instead of
+    /// sitting on `not connected` until the user navigates away and back.
+    Connect(String),
+}
+
+/// What an `McpJob` came back with.
+enum McpJobDone {
+    Tools {
+        server: String,
+        result: Result<Vec<String>, String>,
+    },
+    AuthStarted {
+        server: String,
+        result: Result<Box<crate::core::mcp::oauth::PendingAuth>, String>,
+    },
+    Authorized {
+        server: String,
+        result: Result<(), String>,
+    },
+    Connected {
+        server: String,
+        result: Result<(), String>,
+    },
 }
 
 /// `/login` key entry: a docked prompt that collects a Tokamak API key without
@@ -577,10 +728,11 @@ fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
     let indent = " ".repeat(BANNER_INDENT as usize);
     let mut out: Vec<Line<'static>> = Vec::new();
 
-    // A clipped wordmark reads as breakage, so a narrow terminal gets the name
-    // as text instead.
-    if width >= brand::LOGO_WIDTH + BANNER_INDENT * 2 {
-        for art in brand::LOGO {
+    // A clipped logo reads as breakage, so a narrow terminal gets the name
+    // as text instead. The lockup (hand beside the wordmark) is the widest
+    // splash element, so it sets the threshold that gates the whole block.
+    if width >= brand::LOCKUP_WIDTH + BANNER_INDENT * 2 {
+        for art in brand::lockup() {
             out.push(Line::styled(format!("{indent}{art}"), accent));
         }
         out.push(Line::raw(""));
@@ -810,19 +962,17 @@ impl Row {
             } => {
                 let lead = glyph.chars().count() + 1;
                 let max = width.saturating_sub(lead as u16).max(8) as usize;
-                markdown::wrap_spans_at_words(body.clone(), max)
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, spans)| {
-                        let mark = if i == 0 { *glyph } else { *cont };
-                        let mut row = vec![Span::styled(
-                            format!("{mark:<width$}", width = lead),
-                            *gutter,
-                        )];
-                        row.extend(spans);
-                        Line::from(row)
-                    })
-                    .collect()
+                gutter_lines(
+                    wrap_spans_hard(body.clone(), max),
+                    vec![Span::styled(
+                        format!("{glyph:<width$}", width = lead),
+                        *gutter,
+                    )],
+                    vec![Span::styled(
+                        format!("{cont:<width$}", width = lead),
+                        *gutter,
+                    )],
+                )
             }
             RowKind::Tool {
                 tag,
@@ -830,15 +980,7 @@ impl Row {
                 label,
                 label_style,
                 reserve,
-            } => {
-                let max = width.saturating_sub(*reserve).max(1) as usize;
-                vec![tool_row(
-                    tag,
-                    *tag_style,
-                    &truncate(label, max),
-                    *label_style,
-                )]
-            }
+            } => tool_row_lines(tag, *tag_style, label, *label_style, *reserve, width, None),
             RowKind::Result {
                 tag,
                 tag_style,
@@ -961,6 +1103,84 @@ impl PendingAsk {
         self.question().options.len() + 1 + usize::from(self.question().multi)
     }
 
+    /// Cells the `List` leaves an item after `highlight_symbol`.
+    const HIGHLIGHT_W: u16 = 2;
+
+    /// The question, wrapped to `width`.
+    fn question_lines(&self, width: u16) -> Vec<Line<'static>> {
+        wrap_text(
+            &self.question().question,
+            Style::new().bold(),
+            width.max(1) as usize,
+        )
+        .into_iter()
+        .map(Line::from)
+        .collect()
+    }
+
+    /// One entry per selectable row, each already laid out at `width`. Both the
+    /// box height and `draw_ask` build from this, so a wrapped label cannot put
+    /// the mouse hitboxes out of step with what is on screen.
+    fn option_lines(&self, width: u16) -> Vec<Vec<Line<'static>>> {
+        let question = self.question();
+        let answer = &self.answers[self.question_index];
+        let dim = Style::new().dark_gray();
+        let mark_w = if question.multi { 4 } else { 2 };
+        let body = width.saturating_sub(Self::HIGHLIGHT_W + mark_w).max(1) as usize;
+        let indent = || vec![Span::raw(" ".repeat(mark_w as usize))];
+        let mark = |selected: bool| {
+            let glyph = match (question.multi, selected) {
+                (true, true) => "[x] ",
+                (true, false) => "[ ] ",
+                (false, true) => "● ",
+                (false, false) => "○ ",
+            };
+            vec![Span::styled(glyph, Style::new().cyan())]
+        };
+
+        let mut out: Vec<Vec<Line<'static>>> = Vec::with_capacity(self.row_count());
+        for (index, option) in question.options.iter().enumerate() {
+            let mut head = vec![Span::raw(option.label.clone())];
+            if question.recommended == Some(index) {
+                head.push(Span::styled("  recommended", Style::new().green().dim()));
+            }
+            let selected = answer.selected.iter().any(|label| label == &option.label);
+            let mut lines = gutter_lines(wrap_spans_hard(head, body), mark(selected), indent());
+            // The description gets its own rows rather than trailing the label:
+            // inline, one long description pushes the next option's label off
+            // the bottom of a box that has to fit above the input.
+            if let Some(description) = &option.description {
+                lines.extend(gutter_lines(
+                    wrap_text(description, dim, body),
+                    indent(),
+                    indent(),
+                ));
+            }
+            out.push(lines);
+        }
+        out.push(gutter_lines(
+            wrap_text("Other (type your own)", Style::new(), body),
+            mark(answer.custom_input.is_some()),
+            indent(),
+        ));
+        if question.multi {
+            out.push(vec![Line::styled(
+                "Submit answers",
+                Style::new().green().bold(),
+            )]);
+        }
+        out
+    }
+
+    /// Rows the whole box needs at `width`: borders, question, every option and
+    /// the help line.
+    fn box_height(&self, width: u16) -> u16 {
+        let inner = width.saturating_sub(2);
+        let options: usize = self.option_lines(inner).iter().map(|item| item.len()).sum();
+        let question = self.question_lines(inner).len();
+        (question + options + 3).min(u16::MAX as usize) as u16
+    }
+
     fn move_selection(&mut self, delta: isize) {
         self.selected =
             (self.selected as isize + delta).rem_euclid(self.row_count() as isize) as usize;
@@ -1064,6 +1284,10 @@ struct App {
     /// Orchestration handle for out-of-run model calls (the `/compact` command).
     /// `None` in unit tests, set by `run` for the live session.
     args: Option<Arc<OrchestrationArgs>>,
+    /// The approval-mode phrasing used by the splash (e.g. "--safe: writes, ...").
+    /// Captured once at startup so `/clear`, `/new` and `/resume` re-print the
+    /// same branding without re-deriving it.
+    approval_phrasing: String,
     /// Context window limit for the current model (default 128K).
     context_window: u64,
     /// Tokens to reserve for the model's response (compaction triggers at limit - reserve).
@@ -1089,6 +1313,14 @@ struct App {
     /// so the diff in its `ToolResult` (which carries no path) can be
     /// syntax-highlighted for the right language. Removed as results arrive.
     diff_paths: HashMap<String, String>,
+    /// Command of each in-flight `bash` call, keyed by call id, kept only until
+    /// its result lands -- which is where a job id would appear.
+    bash_commands: HashMap<String, String>,
+    /// Commands the `bash` tool backgrounded, keyed by the `job_id` it handed
+    /// out. The later call that collects a job carries only that id, and blocks
+    /// until the command finishes, so without this its row -- live for as long
+    /// as the command runs -- has nothing to name.
+    bash_jobs: HashMap<String, String>,
     /// Base snapshot (working-tree state before the first turn) for the active
     /// thread. `Some` once snapshotting is armed; `None` = no workspace restore.
     base_snapshot: Option<String>,
@@ -1123,6 +1355,14 @@ struct App {
     /// In-progress assistant text for the current turn, flushed on the next
     /// step/tool/terminal event.
     assistant_buf: String,
+    /// Reasoning streamed natively via `StreamEvent::Reasoning` since the last
+    /// flush, each segment anchored to the `assistant_buf` offset it arrived at.
+    /// Kept apart from `assistant_buf` so it is never wrapped into the wire
+    /// history: it is display-only, folded like `<think>` blocks. Anchoring
+    /// (rather than one flat buffer) is what keeps a turn that interleaves
+    /// reasoning with prose in emission order, and what lets `reasoning_open`
+    /// tell "still reasoning" from "prose has started".
+    reasoning_segs: Vec<ReasoningSeg>,
     /// The current run of consecutive collapsible tool calls, rendered as one
     /// transcript row that updates in real time and finalizes to a short summary.
     /// edit/write are excluded (they render their own diff panel).
@@ -1143,6 +1383,24 @@ struct App {
     /// from `[agent].show_reasoning` in agent.toml (false). Ctrl-O toggles every
     /// existing block between its summary row and full detail for the session.
     show_reasoning: bool,
+    /// Whether reasoning streams into the live tail while folding is on.
+    /// Defaults from `stream_reasoning` in `~/.jan/config.toml` (true). The open
+    /// block shows its last `LIVE_REASONING_TAIL_LINES` lines and still folds to
+    /// a summary row when the turn commits; false shows nothing but the header
+    /// badge, as before. Orthogonal to `show_reasoning`, which unfolds for good.
+    stream_reasoning: bool,
+    /// Whether a prior assistant turn's reasoning is resent to the model.
+    /// Defaults from `[agent].send_reasoning` in agent.toml (true). False keeps
+    /// long chains of thought out of the request (and satisfies upstreams that
+    /// reject the key); the display journal keeps reasoning for a resume either
+    /// way.
+    send_reasoning: bool,
+    /// Normalized reasoning effort level sent with each model request.
+    /// Valid values: `"low"`, `"medium"`, `"high"`. Defaults to `"medium"`.
+    reasoning_effort: String,
+    /// The most recently selected non-low effort level, used by the Alt+T
+    /// toggle to switch between `"low"` and this value.
+    last_non_low_effort: String,
     /// Transcript row indices of collapsed regions (tool groups or reasoning
     /// blocks) the user has expanded to full detail.
     expanded: std::collections::HashSet<usize>,
@@ -1207,10 +1465,34 @@ struct App {
     settings_prompt: Option<SettingsPrompt>,
     /// Active MCP add/edit wizard (docked); owns the keyboard while open.
     mcp_prompt: Option<McpPrompt>,
+    /// The `/mcp` detail screen's data, alongside the `McpServer` picker whose
+    /// rows are its actions. Held on `App` rather than in the picker so a job
+    /// landing later (a tool list, a finished sign-in) can update it in place.
+    mcp_detail: Option<McpDetail>,
+    /// MCP work handed to the loop to run off the render loop. Taken once.
+    mcp_job_request: Option<McpJob>,
+    /// Active OpenAI-compatible provider wizard (docked); owns the keyboard.
+    provider_prompt: Option<ProviderPrompt>,
+    /// Providers already probed for a missing model list this session
+    /// (success or failure). A dead/unreachable upstream must not be re-contacted
+    /// on every bare `/model` -- that would freeze the render loop for the whole
+    /// request timeout -- so only unprobed providers are fetched once.
+    probed_models: std::collections::HashSet<String>,
     /// Key handed off to the loop to verify off the render loop. Taken once.
     login_submit: Option<String>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
     update_requested: bool,
+    /// `/plugin install` handed off to the loop, which runs the git clone off
+    /// the render loop and notes the result when it lands. Taken once.
+    plugin_install_request: Option<String>,
+    /// A collection picker's chosen plugins handed off to the loop: the source
+    /// URL plus the payload-root-relative paths to install. Taken once.
+    plugin_select_request: Option<(String, Vec<String>)>,
+    /// Source URL behind the open `PluginSelect` picker, so Enter knows which
+    /// collection the checked rows came from. Cleared when the picker resolves.
+    plugin_collection_url: Option<String>,
+    /// A plugin install is in flight: a second request is refused.
+    plugin_installing: bool,
     /// Compaction handed off to the loop, which spawns the summarizing model
     /// call off the render loop. Taken once.
     compact_request: Option<CompactKind>,
@@ -1350,6 +1632,129 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 /// Milliseconds per spinner frame, decoupled from the 50ms render tick.
 const SPINNER_ADVANCE_MS: u64 = 80;
 
+/// Sweep the configured glyph back and forth along `message`, replacing the
+/// characters it covers rather than displacing them.
+///
+/// The first cut of this (#8726) inserted the glyph in place of exactly one
+/// `char`. An emoji is two cells wide, so every frame made the row one cell
+/// wider than the text it was drawn from: the tail shifted right, and at the
+/// frame's own width the last character fell off the edge. That is the
+/// "letters vanish" bug the feature was reverted for.
+///
+/// The fix is to spend the glyph's *display width* out of the message: a
+/// 2-cell glyph covers two 1-cell characters, so the composed line is always
+/// exactly as wide as `message`. Whatever the user configured is measured, so a
+/// 1-cell `"~"` covers one character and a 3-cell `"<o>"` covers three.
+///
+/// The glyph is clamped to the message rather than allowed to overhang, so the
+/// last frames of a sweep do not grow the row either.
+fn wave_sweep_line(message: &str, glyph: &str, frame: usize, text_style: Style) -> Line<'static> {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+    let glyph_width = glyph.width().max(1);
+    let chars: Vec<char> = message.chars().collect();
+    // Character offsets the glyph can start at without overhanging the end.
+    let mut stops: Vec<usize> = Vec::new();
+    for i in 0..chars.len() {
+        let mut width = 0usize;
+        for c in &chars[i..] {
+            width += c.width().unwrap_or(0);
+            if width >= glyph_width {
+                break;
+            }
+        }
+        if width >= glyph_width {
+            stops.push(i);
+        }
+    }
+    if stops.is_empty() {
+        return Line::from(vec![Span::styled(message.to_string(), text_style)]);
+    }
+
+    // Ping-pong across the stops: forward to the end, then back, so the glyph
+    // reverses instead of jumping back to the start.
+    let cycle = stops.len().saturating_mul(2).saturating_sub(2).max(1);
+    let step = frame % cycle;
+    let index = if step < stops.len() {
+        step
+    } else {
+        cycle - step
+    };
+    let start = stops[index];
+
+    // Spend the glyph's width out of the message, so the row's total width is
+    // unchanged no matter how wide the glyph is.
+    let mut end = start;
+    let mut spent = 0usize;
+    while end < chars.len() && spent < glyph_width {
+        spent += chars[end].width().unwrap_or(0);
+        end += 1;
+    }
+
+    let head: String = chars[..start].iter().collect();
+    let tail: String = chars[end..].iter().collect();
+    // A glyph landing on a wider character than itself leaves a gap; pad it so
+    // the tail does not slide left under the glyph.
+    let pad = " ".repeat(spent.saturating_sub(glyph_width));
+
+    let mut spans = Vec::with_capacity(4);
+    if !head.is_empty() {
+        spans.push(Span::styled(head, text_style));
+    }
+    spans.push(Span::styled(glyph.to_string(), Style::new().cyan()));
+    if !pad.is_empty() {
+        spans.push(Span::styled(pad, text_style));
+    }
+    if !tail.is_empty() {
+        spans.push(Span::styled(tail, text_style));
+    }
+    Line::from(spans)
+}
+
+/// Rotating action words for the running input placeholder, replacing a static
+/// "working…" so a long turn does not read as a hung UI.
+const WORKING_WORDS: [&str; 12] = [
+    "working",
+    "computing",
+    "processing",
+    "analyzing",
+    "crunching",
+    "grinding",
+    "executing",
+    "running",
+    "handling",
+    "compiling",
+    "operating",
+    "fetching",
+];
+
+/// Rotating action words shown while the model is reasoning (a ` think>` block
+/// is streaming), coloured orange. Mirrors the working list so the two states
+/// read as the same kind of progress, just distinct in wording and colour.
+const THINKING_WORDS: [&str; 12] = [
+    "thinking",
+    "reasoning",
+    "pondering",
+    "reflecting",
+    "deliberating",
+    "musing",
+    "ruminating",
+    "meditating",
+    "contemplating",
+    "weighing",
+    "cogitating",
+    "calculating",
+];
+
+/// Spinner frames per placeholder-word change, so the action word turns over
+/// at a relaxed pace (60 frames x 80ms ~= 4.8s) rather than shifting under
+/// the eye alongside the braille spinner.
+const WORD_ROTATE_FRAMES: usize = 60;
+
+/// Orange used for the "thinking" action word, matching the markdown bold
+/// accent so reasoning reads consistently across the TUI.
+const THINKING_ORANGE: Color = Color::Rgb(255, 165, 0);
+
 /// How long the `[thought for Ns]` header summary lingers after a reasoning
 /// block closes before it falls back to the plain `[working]` status. The
 /// summary is only a transient cue that a block finished; it should not pin the
@@ -1400,16 +1805,22 @@ struct SubagentBlock {
 }
 
 impl SubagentBlock {
+    /// The child's call list, revealed by Ctrl-O. Wrapped, not elided, for the
+    /// same reason as `group_detail_lines`: this is the surface the folded
+    /// summary row sends the user to, so it is the one that has to be complete.
     fn detail_lines(&self, width: u16) -> Vec<Line<'static>> {
         let max = width.saturating_sub(8).max(1) as usize;
         self.calls
             .iter()
-            .map(|label| {
-                Line::from(vec![
-                    Span::styled("│   ", Style::new().dark_gray()),
-                    Span::styled("▸ ", Style::new().magenta()),
-                    Span::styled(truncate(label, max), Style::new().dim()),
-                ])
+            .flat_map(|label| {
+                gutter_lines(
+                    wrap_text(label, Style::new().dim(), max),
+                    vec![
+                        Span::styled("│   ", Style::new().dark_gray()),
+                        Span::styled("▸ ", Style::new().magenta()),
+                    ],
+                    vec![Span::styled("│     ", Style::new().dark_gray())],
+                )
             })
             .collect()
     }
@@ -1455,6 +1866,7 @@ impl App {
             goal_eval_pending: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             args: None,
+            approval_phrasing: String::new(),
             context_window: limits.context_window,
             reserve_tokens: limits.reserve_tokens,
             max_tokens: limits.max_tokens,
@@ -1464,6 +1876,8 @@ impl App {
             project_root,
             turn_touched: Vec::new(),
             diff_paths: HashMap::new(),
+            bash_commands: HashMap::new(),
+            bash_jobs: HashMap::new(),
             base_snapshot: None,
             checkpoints: Vec::new(),
             snap_queue: std::collections::VecDeque::new(),
@@ -1477,12 +1891,18 @@ impl App {
             display_log: Vec::new(),
             journal_writer: None,
             assistant_buf: String::new(),
+            reasoning_segs: Vec::new(),
             tool_group: None,
             grouped_ids: std::collections::HashSet::new(),
             groups: Vec::new(),
             pending_rows: Vec::new(),
             reasoning_blocks: Vec::new(),
             show_reasoning,
+            // Overwritten from the session config right after construction.
+            stream_reasoning: true,
+            send_reasoning: true,
+            reasoning_effort: "medium".into(),
+            last_non_low_effort: "medium".into(),
             expanded: std::collections::HashSet::new(),
             reveal: None,
             input: String::new(),
@@ -1510,8 +1930,16 @@ impl App {
             login: None,
             settings_prompt: None,
             mcp_prompt: None,
+            mcp_detail: None,
+            mcp_job_request: None,
+            provider_prompt: None,
+            probed_models: std::collections::HashSet::new(),
             login_submit: None,
             update_requested: false,
+            plugin_install_request: None,
+            plugin_select_request: None,
+            plugin_collection_url: None,
+            plugin_installing: false,
             update_installing: false,
             compact_request: None,
             compacting: None,
@@ -1615,6 +2043,7 @@ impl App {
         self.expanded.clear();
         self.reveal = None;
         self.assistant_buf.clear();
+        self.reasoning_segs.clear();
         self.message_queue.clear();
         self.pending_queue.clear();
         self.ask_queue.clear();
@@ -1650,8 +2079,8 @@ impl App {
             .map(|(_, lines)| lines)
     }
 
-    /// Open the session with the splash: the wordmark, this session's project
-    /// and approval mode, and where to go next.
+    /// Open the session with the splash: the hand-wave logo and wordmark, this
+    /// session's project and approval mode, and where to go next.
     fn push_banner(&mut self, tools: &str, awaiting_first_message: bool) {
         let banner = Banner {
             version: super::updater::build_version(),
@@ -1667,8 +2096,17 @@ impl App {
         self.last_kind = Kind::None;
     }
 
+    /// Push the splash using the startup approval phrasing, to re-brand the
+    /// screen after a slash command opens a fresh view (`/clear`, `/new`,
+    /// `/resume`). `awaiting_first_message` starts false once a thread is
+    /// loaded or a task is seeded.
+    fn push_session_banner(&mut self, awaiting_first_message: bool) {
+        let phrasing = self.approval_phrasing.clone();
+        self.push_banner(&phrasing, awaiting_first_message);
+    }
+
     /// Append a line the *app* is saying, in its own gutter column. Every other
-    /// transcript class owns one (`› ` user, `│ ` tool, `┊ ` reasoning), so
+    /// transcript class owns one (`> ` user, `│ ` tool, `┊ ` reasoning), so
     /// without it a note is indistinguishable from model prose. `glyph` names the
     /// category and `level` carries severity.
     fn system_marked(&mut self, glyph: &'static str, level: Level, text: &str) {
@@ -1714,34 +2152,43 @@ impl App {
     }
 
     fn flush_assistant(&mut self) {
-        let text = self.assistant_buf.trim_end().to_string();
+        let segs = std::mem::take(&mut self.reasoning_segs);
+        let prose = self.assistant_buf.trim_end().to_string();
         self.assistant_buf.clear();
         // The buffered stream is committed: any open reasoning window closes
         // (its elapsed time was stashed when the block itself closed, so this
         // only matters for a flush that happens mid-block, e.g. a tool call).
         self.thinking_since = None;
         // No-op (and, crucially, don't finalize the tool group) on an empty or
-        // whitespace-only buffer, so silent consecutive tool calls keep folding.
-        if !assistant_has_content(&text) {
+        // whitespace-only turn, so silent consecutive tool calls keep folding.
+        if !assistant_has_content(&prose, &segs) {
             return;
         }
         // Model prose ends the current run of tool calls.
         self.finalize_tool_group();
-        // Journaled with its `<think>` markers intact: this is the only place the
-        // reasoning exists (it is kept out of `history` on purpose), and the
-        // replay folds it exactly as the live turn did.
+        // Display-logged here (out of `history` on purpose) so the replay folds
+        // reasoning like the live turn did. Prose and reasoning are journaled
+        // apart, exactly as they arrived.
         self.display_log.push(DisplayEntry::Assistant {
-            text: text.clone(),
+            text: prose.clone(),
+            reasoning: segs.clone(),
         });
-        self.push_assistant_blocks(&text);
+        self.push_assistant_blocks(&prose, &segs);
     }
 
     /// Commit assistant `text` to the transcript in emission order: answer prose
     /// through markdown, each `<think>` block folded to a one-line summary row
     /// whose full dimmed detail is retained for expansion.
-    fn push_assistant_blocks(&mut self, text: &str) {
-        let text = strip_system_xml_tags(text);
-        for (reasoning, seg) in split_reasoning(&text) {
+    fn push_assistant_blocks(&mut self, prose: &str, segs: &[ReasoningSeg]) {
+        for (reasoning, seg) in assistant_runs(prose, segs) {
+            // Only answer prose can carry an injected `<system>` block; stripping
+            // per run rather than over the whole turn keeps the reasoning
+            // offsets meaningful.
+            let seg = if reasoning {
+                seg
+            } else {
+                strip_system_xml_tags(&seg).to_string()
+            };
             if seg.trim().is_empty() {
                 continue;
             }
@@ -1902,6 +2349,43 @@ impl App {
         self.awaiting.clear();
     }
 
+    /// Pair a `bash` call with the backgrounded command it is about.
+    ///
+    /// Both directions run off the same maps: a call carrying a `command` is
+    /// remembered against its call id until its result lands (which is where a
+    /// `job_id` would appear), and a call carrying only a `job_id` gets that
+    /// command filled back in, so every row labelling the call names the work
+    /// rather than an opaque id. Labels are built from the returned value; the
+    /// journal keeps the arguments as they arrived, so a replay rebuilds the
+    /// pairing from the same events in the same order.
+    fn track_bash_job(
+        &mut self,
+        id: &str,
+        name: &str,
+        mut args: serde_json::Value,
+    ) -> serde_json::Value {
+        if !matches!(name, "bash" | "shell" | "exec") {
+            return args;
+        }
+        let cmd = args
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if !cmd.is_empty() {
+            self.bash_commands.insert(id.to_string(), cmd);
+            return args;
+        }
+        let remembered = bash_job_id(&args)
+            .and_then(|job| self.bash_jobs.get(job))
+            .cloned();
+        if let (Some(cmd), Some(obj)) = (remembered, args.as_object_mut()) {
+            obj.insert("command".to_string(), serde_json::Value::String(cmd));
+        }
+        args
+    }
+
     /// Rewrite a standalone tool row to its resolved form once its result lands:
     /// past-tense label plus an outcome tag, matching how a tool group's row
     /// resolves. Without this a finished `edit` keeps reading as "Editing X".
@@ -1986,11 +2470,28 @@ impl App {
             .is_some_and(|closed| closed.elapsed() >= TODO_HIDE_AFTER)
     }
 
-    /// True while a reasoning block is streaming with folding on: the one
-    /// stretch of a run that puts nothing on screen, so the header badge is the
-    /// only place progress can show.
+    /// True while a reasoning block is streaming and nothing of it is on screen:
+    /// the one stretch of a run with no visible motion, which is what the
+    /// header's shimmering `[thinking]` badge stands in for. With
+    /// `stream_reasoning` on the tail itself is moving, so the badge stays flat.
     fn is_thinking(&self) -> bool {
-        self.status != Status::Idle && !self.show_reasoning && thinking_open(&self.assistant_buf)
+        self.status != Status::Idle
+            && !self.show_reasoning
+            && !self.stream_reasoning
+            && self.reasoning_open()
+    }
+
+    /// True while the model is mid-reasoning: either a `<think>` block is live
+    /// in the answer buffer (inline-tag providers) or the newest native segment
+    /// is still at the tail, i.e. no content token has arrived since
+    /// (`reasoning_content` providers). The tail check is what closes the window
+    /// when prose starts, since native segments live on until the next flush.
+    fn reasoning_open(&self) -> bool {
+        thinking_open(&self.assistant_buf)
+            || self
+                .reasoning_segs
+                .last()
+                .is_some_and(|seg| seg.at == self.assistant_buf.len())
     }
 
     /// Header status while a turn is running with reasoning folding on:
@@ -1999,7 +2500,7 @@ impl App {
     /// plain `[working]`) once the model is working again. `None` when no
     /// reasoning has happened recently this turn.
     fn reasoning_status(&self) -> Option<(String, Style)> {
-        if thinking_open(&self.assistant_buf) {
+        if self.reasoning_open() {
             Some(("thinking".to_string(), Style::new().yellow().bold()))
         } else {
             // The summary is transient: it lasts only `THOUGHT_FOR_TTL` after the
@@ -2519,6 +3020,100 @@ impl App {
         }
     }
 
+    /// Cut `start..end` out of the buffer and leave the caret at `start`.
+    /// Every kill below funnels through here so none of them can forget the
+    /// hint refresh that an edit owes the popups.
+    fn delete_span(&mut self, start: usize, end: usize) {
+        if start >= end {
+            return;
+        }
+        self.input.replace_range(start..end, "");
+        self.cursor = start;
+        self.reset_slash_hint();
+        self.refresh_path_hints();
+    }
+
+    fn cursor_word_left(&mut self) {
+        self.cursor = prev_word_start(&self.input, self.cursor);
+    }
+
+    fn cursor_word_right(&mut self) {
+        self.cursor = next_word_end(&self.input, self.cursor);
+    }
+
+    fn cursor_line_start(&mut self) {
+        self.cursor = line_bounds(&self.input, self.cursor).0;
+    }
+
+    fn cursor_line_end(&mut self) {
+        self.cursor = line_bounds(&self.input, self.cursor).1;
+    }
+
+    /// Alt+Backspace / Ctrl+Backspace.
+    fn delete_word_left(&mut self) {
+        let start = prev_word_start(&self.input, self.cursor);
+        self.delete_span(start, self.cursor);
+    }
+
+    /// Ctrl-W, on the wider whitespace-delimited word.
+    fn delete_unix_word_left(&mut self) {
+        let start = prev_unix_word_start(&self.input, self.cursor);
+        self.delete_span(start, self.cursor);
+    }
+
+    /// Alt+D / Ctrl+Delete.
+    fn delete_word_right(&mut self) {
+        let end = next_word_end(&self.input, self.cursor);
+        self.delete_span(self.cursor, end);
+    }
+
+    /// Ctrl-U (and Cmd+Backspace).
+    fn delete_to_line_start(&mut self) {
+        let start = line_bounds(&self.input, self.cursor).0;
+        self.delete_span(start, self.cursor);
+    }
+
+    /// Ctrl-K. Already at the end of a line, it swallows the newline instead of
+    /// doing nothing, so repeated presses join the buffer up as readline does.
+    fn delete_to_line_end(&mut self) {
+        let end = line_bounds(&self.input, self.cursor).1;
+        if end == self.cursor {
+            self.delete_span(self.cursor, (self.cursor + 1).min(self.input.len()));
+        } else {
+            self.delete_span(self.cursor, end);
+        }
+    }
+
+    /// Ctrl-T: swap the chars either side of the caret and step past the pair.
+    /// At the end of the buffer there is nothing after the caret, so the last
+    /// two chars swap in place, matching readline.
+    fn transpose_chars(&mut self) {
+        let before = &self.input[..self.cursor];
+        let Some(prev) = before.chars().next_back() else {
+            return;
+        };
+        let (first, second, start, end) = match self.input[self.cursor..].chars().next() {
+            Some(next) => (
+                prev,
+                next,
+                self.cursor - prev.len_utf8(),
+                self.cursor + next.len_utf8(),
+            ),
+            None => {
+                let head = &before[..before.len() - prev.len_utf8()];
+                let Some(prev2) = head.chars().next_back() else {
+                    return;
+                };
+                (prev2, prev, head.len() - prev2.len_utf8(), self.cursor)
+            }
+        };
+        self.input
+            .replace_range(start..end, &format!("{second}{first}"));
+        self.cursor = end;
+        self.reset_slash_hint();
+        self.refresh_path_hints();
+    }
+
     /// Queue a user message: record it in history and the transcript, and ask
     /// the loop to start a run. Flips to `Running` synchronously so further keys
     /// in the same input batch can't slip through as a second submit.
@@ -2632,18 +3227,7 @@ impl App {
         let args = args.trim();
         self.history
             .push(serde_json::json!({ "role": "user", "content": msg }));
-        let mut spans = vec![Span::styled("› ", Style::new().light_magenta().bold())];
-        spans.push(Span::styled(
-            format!("[skill:{name}]"),
-            Style::new().cyan().bold(),
-        ));
-        if !args.is_empty() {
-            spans.push(Span::raw(format!(" {args}")));
-        } else if !description.is_empty() {
-            spans.push(Span::raw(format!(" - {description}")));
-        }
-        self.gap(Kind::User);
-        self.push(Line::from(spans));
+        self.push_invocation_row(&format!("[skill:{name}]"), args, &description);
         self.begin_turn();
         // A fresh user turn is new context: same reminder reset as submit_user.
         self.last_todo_reminder = None;
@@ -2671,18 +3255,7 @@ impl App {
         let args = args.trim();
         self.history
             .push(serde_json::json!({ "role": "user", "content": msg }));
-        let mut spans = vec![Span::styled("› ", Style::new().light_magenta().bold())];
-        spans.push(Span::styled(
-            format!("[command:{name}]"),
-            Style::new().cyan().bold(),
-        ));
-        if !args.is_empty() {
-            spans.push(Span::raw(format!(" {args}")));
-        } else if !description.is_empty() {
-            spans.push(Span::raw(format!(" - {description}")));
-        }
-        self.gap(Kind::User);
-        self.push(Line::from(spans));
+        self.push_invocation_row(&format!("[command:{name}]"), args, &description);
         self.begin_turn();
         // A fresh user turn is new context: same reminder reset as submit_user.
         self.last_todo_reminder = None;
@@ -2695,10 +3268,11 @@ impl App {
 
     /// Inject a hidden todo reminder and continue with one more model turn. The
     /// reminder text enters the conversation (so the model sees it) but renders
-    /// as a dim system note, never a user-authored transcript row.
+    /// as a dim system note, never a user-authored transcript row -- and is
+    /// marked, so `is_user_turn` keeps it out of the rewind picker, recall and
+    /// checkpoint keys.
     fn submit_reminder(&mut self, text: String) {
-        self.history
-            .push(serde_json::json!({ "role": "user", "content": text }));
+        crate::core::agent::reminder::attach(&mut self.history, &text);
         self.note("todo reminder — unfinished work, continuing");
         self.begin_turn();
         self.want_start = true;
@@ -2790,10 +3364,15 @@ impl App {
     /// attached image ending in an `[IMAGE]` label (basename when known).
     fn push_user_line(&mut self, text: &str, images: &[String]) {
         self.gap(Kind::User);
-        self.push(Line::from(vec![
-            Span::styled("› ", Style::new().light_magenta().bold()),
-            Span::styled(text.to_string(), Style::new().bold()),
-        ]));
+        // A `System` row rather than a `Line`: a pasted or shift-entered message
+        // carries its own newlines, and a single `Line` renders those as blank
+        // cells in one run-on row.
+        self.push_row(RowKind::System {
+            glyph: ">",
+            cont: " ",
+            gutter: Style::new().light_magenta().bold(),
+            body: vec![Span::styled(text.to_string(), Style::new().bold())],
+        });
         for name in images {
             let label = if name.is_empty() {
                 "[IMAGE]".to_string()
@@ -2811,10 +3390,32 @@ impl App {
     /// the label only, never the template body (see `super::invocation_label`).
     fn push_invocation_label(&mut self, label: String) {
         self.gap(Kind::User);
-        self.push(Line::from(vec![
-            Span::styled("› ", Style::new().light_magenta().bold()),
-            Span::styled(label, Style::new().cyan().bold()),
-        ]));
+        self.push_row(RowKind::System {
+            glyph: ">",
+            cont: " ",
+            gutter: Style::new().light_magenta().bold(),
+            body: vec![Span::styled(label, Style::new().cyan().bold())],
+        });
+    }
+
+    /// The `> [skill:foo] <args>` row a slash invocation commits. A `System`
+    /// row for the same reason as `push_user_line`: `args` is user text and can
+    /// arrive pasted and multi-line, which a single `Line` renders as blank
+    /// cells in one run-on row.
+    fn push_invocation_row(&mut self, label: &str, args: &str, description: &str) {
+        let mut body = vec![Span::styled(label.to_string(), Style::new().cyan().bold())];
+        if !args.is_empty() {
+            body.push(Span::raw(format!(" {args}")));
+        } else if !description.is_empty() {
+            body.push(Span::raw(format!(" - {description}")));
+        }
+        self.gap(Kind::User);
+        self.push_row(RowKind::System {
+            glyph: ">",
+            cont: " ",
+            gutter: Style::new().light_magenta().bold(),
+            body,
+        });
     }
 
     /// Stage the OS clipboard's image for the next message, noting the result.
@@ -2856,6 +3457,15 @@ impl App {
         if self.goal.as_ref().is_some_and(|g| g.is_active()) {
             body["goal_mode"] = serde_json::json!(true);
         }
+        // Reasoning resend policy: forwarded only when the user opted out, so a
+        // default session sends an unchanged body (the loop defaults to true).
+        if !self.send_reasoning {
+            body["send_reasoning"] = serde_json::json!(false);
+        }
+        // Reasoning effort: forwarded to the upstream via
+        // `copy_optional_chat_params` so compatible providers (OpenAI, Gemini)
+        // adjust their reasoning depth. Incompatible providers ignore it.
+        body["reasoning_effort"] = serde_json::json!(self.reasoning_effort);
         body
     }
 
@@ -2928,16 +3538,15 @@ impl App {
         let user_index = self
             .history
             .iter()
-            .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+            .filter(|m| is_user_turn(m))
             .count()
             .saturating_sub(1);
         let preview = self
             .history
             .iter()
             .rev()
-            .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
-            .and_then(|m| m.get("content").and_then(|v| v.as_str()))
-            .map(truncate_preview)
+            .find(|m| is_user_turn(m))
+            .map(|m| truncate_preview(&user_content_parts(&m["content"]).0))
             .unwrap_or_default();
         self.snap_queue.push_back(SnapshotJob::Checkpoint {
             user_index,
@@ -3030,10 +3639,13 @@ impl App {
             StreamEvent::Token { text } => {
                 self.assistant_buf.push_str(&text);
                 // Track the live thinking state so the header can fold reasoning
-                // to `[thinking]` / `[thought for Ns]`. Start the timer when a
-                //  block opens; close it (stashing the duration) once the block
-                // closes or the tool group proceeds.
-                let open = thinking_open(&self.assistant_buf);
+                // to `[thinking]` / `[thought for Ns]`. Start the timer when
+                // reasoning is open; close it (stashing the duration) once the
+                // block ends. `reasoning_open` covers both inline ` think>` tags
+                // and native reasoning_buf, so a content token after reasoning
+                // closes the window (and prose arriving with no reasoning leaves
+                // it closed).
+                let open = self.reasoning_open();
                 if open && self.thinking_since.is_none() {
                     self.thinking_since = Some(Instant::now());
                 } else if !open {
@@ -3048,6 +3660,23 @@ impl App {
                 // into its own row.
                 if self.tool_group.is_some() && has_answer_text(&self.assistant_buf) {
                     self.finalize_tool_group();
+                }
+            }
+            StreamEvent::Reasoning { text } => {
+                // Native reasoning stays out of the answer buffer entirely; it is
+                // folded into the display log on the next flush. Deltas that
+                // arrive with no prose in between extend the open segment;
+                // reasoning after prose starts a new one, so the timeline keeps
+                // emission order instead of hoisting every thought to the top.
+                if !text.is_empty() {
+                    let at = self.assistant_buf.len();
+                    match self.reasoning_segs.last_mut() {
+                        Some(seg) if seg.at == at => seg.text.push_str(&text),
+                        _ => self.reasoning_segs.push(ReasoningSeg { at, text }),
+                    }
+                    if self.thinking_since.is_none() {
+                        self.thinking_since = Some(Instant::now());
+                    }
                 }
             }
             StreamEvent::Step { index, max } => {
@@ -3109,6 +3738,7 @@ impl App {
                     self.awaiting.push((id, run_id.to_string(), sub));
                     return;
                 }
+                let args = self.track_bash_job(&id, &name, args);
                 // Untruncated: every row that shows these clamps to the width it
                 // is drawn at, so they survive a resize either way.
                 let label = tool_activity(&name, &args);
@@ -3154,6 +3784,14 @@ impl App {
                     is_error,
                     diff: diff.clone(),
                 });
+                // Before the grouped-call early return: a backgrounded command
+                // is reported by its result, and the call that later collects it
+                // needs the pairing whichever way this row renders.
+                if let Some(cmd) = self.bash_commands.remove(&id) {
+                    if let Some(job) = backgrounded_job_id(&content) {
+                        self.bash_jobs.insert(job.to_string(), cmd);
+                    }
+                }
                 let resolved = self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
                 // reminder fired; let a later stop remind again if work is still
@@ -3429,6 +4067,18 @@ impl App {
         answer
     }
 
+    /// The concatenated natively-streamed reasoning text for the current turn.
+    /// Used to resend the final answer's reasoning on the wire. Inline
+    /// `<think>` blocks (which arrive through `Token` and live in the buffer)
+    /// are handled separately by `answer_without_reasoning` and the loop path;
+    /// this covers the `reasoning_content` delta case, which never touches the
+    /// buffer.
+    fn native_reasoning_text(&self) -> String {
+        self.reasoning_segs
+            .iter()
+            .map(|s| s.text.clone())
+            .collect::<String>()
+    }
     fn on_done(&mut self, stop_reason: String, usage: Option<Usage>) {
         self.finalize_tool_group();
         // Done is terminal: nothing more arrives on this stream, so a call that
@@ -3438,11 +4088,23 @@ impl App {
         // arrive on its stream. Any panel still open here never got its own
         // `SubagentEnd`.
         self.close_live_subagents();
+        // Capture the turn's reasoning before `take_answer` flushes it: native
+        // reasoning lives in `reasoning_segs` until the flush, and inline
+        // ` thinking` blocks are folded into the buffer. Preserved so the
+        // final assistant turn can be resent with its reasoning (see below).
+        let reasoning = self.native_reasoning_text();
         let answer = self.take_answer();
         let wire = answer_without_reasoning(&answer);
         if !wire.is_empty() {
-            self.history
-                .push(serde_json::json!({ "role": "assistant", "content": wire }));
+            let mut msg = serde_json::json!({ "role": "assistant", "content": wire });
+            // Resend the final answer's reasoning on the wire turn, mirroring
+            // how tool-call turns are threaded in the loop. Kept out of
+            // `content`; only added when the upstream actually streamed it, so
+            // non-reasoning providers send an unchanged shape.
+            if !reasoning.is_empty() {
+                msg["reasoning_content"] = serde_json::json!(reasoning);
+            }
+            self.history.push(msg);
         }
         // A closing receipt for the turn: when, how much context went up, how
         // much came back, how long it took, how fast. Cheap to skim, and the
@@ -3591,6 +4253,16 @@ impl App {
     /// `finish_compaction` when an overflow recovery is abandoned, so the two
     /// paths cannot drift.
     fn halt_turn(&mut self) {
+        // A run that died on an error rather than Esc is still an abnormal exit:
+        // it may well have run tools whose side effects exist on disk, but a
+        // mid-turn `MessagesUpdated` was never published (the stream errored
+        // before a natural stop), so those calls are absent from `history`.
+        // Fold them in exactly as a hard cancel does, so a later prompt or
+        // /resume sees the tools it ran and what they returned. The overflow-
+        // retry path deliberately avoids this (see `on_error`): that turn
+        // re-runs, so folding now would resend completed calls into the retried
+        // request before the model asks for them again.
+        self.append_cancelled_turn_tools();
         // An errored turn halts the goal loop; the user decides how to recover.
         self.goal_eval_pending = false;
         if let Some(goal) = self.goal.as_ref() {
@@ -3677,10 +4349,17 @@ impl App {
         // preceding tool calls stay in the transcript, and record the partial
         // answer in history so the next turn and a later /resume both see it.
         self.abort_tool_rows();
+        self.append_cancelled_turn_tools();
+        // Captured before the flush clears it, like `on_done`, so a cancelled
+        // turn's partial answer keeps the reasoning that produced it.
+        let reasoning = self.native_reasoning_text();
         let answer = answer_without_reasoning(&self.take_answer());
         if !answer.is_empty() {
-            self.history
-                .push(serde_json::json!({ "role": "assistant", "content": answer }));
+            let mut msg = serde_json::json!({ "role": "assistant", "content": answer });
+            if !reasoning.is_empty() {
+                msg["reasoning_content"] = serde_json::json!(reasoning);
+            }
+            self.history.push(msg);
         }
         self.status = Status::Idle;
         self.run_started = None;
@@ -3699,6 +4378,87 @@ impl App {
         self.dequeue_next();
         self.persist();
     }
+
+    /// Fold this cancelled turn's completed tool calls and their results into
+    /// `history` (wire form), so the model on the next prompt sees the tools it
+    /// ran and what they returned instead of only the streamed prose. Without
+    /// this, `self.history` only ever carries tool exchanges when the backend
+    /// publishes a `MessagesUpdated` at a natural stop -- a run killed mid-way
+    /// by a cancel loses them from the model's view (they still render from the
+    /// display journal). Calls still in flight at the cancel are paired with a
+    /// placeholder result so the exchange stays protocol-valid.
+    fn append_cancelled_turn_tools(&mut self) {
+        let start = self
+            .display_log
+            .iter()
+            .rposition(|e| matches!(e, DisplayEntry::User { .. }))
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        // `display_log` is not cleared by a cancel and the fold is reached from
+        // several terminal paths, so a call can already be in `history`: the
+        // backend publishes a mid-turn `MessagesUpdated` on a compaction retry
+        // and on the budget soft-stop, and a cancel is routinely followed by a
+        // late `Error` or stream close from the aborted task. Folding it twice
+        // puts the exchange on the wire twice, which invites a double execution
+        // and wastes context, so ids already folded are skipped.
+        let folded: std::collections::HashSet<&str> = self
+            .history
+            .iter()
+            .filter_map(|m| m.get("tool_calls").and_then(|v| v.as_array()))
+            .flatten()
+            .filter_map(|tc| tc.get("id").and_then(|v| v.as_str()))
+            .collect();
+        let mut calls: Vec<(String, String, serde_json::Value)> = Vec::new();
+        let mut results: Vec<(String, String)> = Vec::new();
+        for entry in self.display_log.iter().skip(start) {
+            match entry {
+                DisplayEntry::ToolCall { id, name, args } if !folded.contains(id.as_str()) => {
+                    calls.push((id.clone(), name.clone(), args.clone()));
+                }
+                DisplayEntry::ToolResult { id, content, .. } => {
+                    results.push((id.clone(), content.clone()));
+                }
+                _ => {}
+            }
+        }
+        if calls.is_empty() {
+            return;
+        }
+        let tool_calls: serde_json::Value = calls
+            .iter()
+            .map(|(id, name, args)| {
+                serde_json::json!({
+                    "id": id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": args.to_string(),
+                    }
+                })
+            })
+            .collect();
+        self.history.push(serde_json::json!({
+            "role": "assistant",
+            "content": serde_json::Value::Null,
+            "tool_calls": tool_calls,
+        }));
+        // Results are paired to the ids of the `tool_calls` array and emitted in
+        // its order, not in the order they finished: the loop dispatches calls
+        // concurrently, so an out-of-order or partial completion would otherwise
+        // hand a strict endpoint results it cannot match to the calls above.
+        for (id, _, _) in &calls {
+            let content = results
+                .iter()
+                .find(|(rid, _)| rid == id)
+                .map(|(_, c)| c.clone())
+                .unwrap_or_else(|| super::MISSING_TOOL_RESULT.to_string());
+            self.history.push(serde_json::json!({
+                "role": "tool",
+                "tool_call_id": id,
+                "content": content,
+            }));
+        }
+    }
 }
 
 /// Truncate to `max` chars with a trailing ellipsis (char-safe).
@@ -3708,6 +4468,65 @@ fn truncate(s: &str, max: usize) -> String {
     }
     let head: String = s.chars().take(max.saturating_sub(1).max(1)).collect();
     format!("{head}…")
+}
+
+/// `s` on one line: every newline (and the whitespace around it) becomes a
+/// single space. For the surfaces whose height is fixed at one row -- the live
+/// group row, the subagent panel -- where an embedded `\n` would either be
+/// swallowed by ratatui or silently change the row's height.
+fn single_line(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Word-wrap `spans` to `max`, breaking hard at their embedded newlines first.
+/// `wrap_spans_at_words` treats `\n` as an ordinary character, so a multi-line
+/// command or user message laid out through it alone renders as one run-on line
+/// with blank cells where the breaks were.
+fn wrap_spans_hard(spans: Vec<Span<'static>>, max: usize) -> Vec<Vec<Span<'static>>> {
+    let mut segments: Vec<Vec<Span<'static>>> = vec![Vec::new()];
+    for span in spans {
+        let style = span.style;
+        let mut parts = span.content.split('\n').peekable();
+        while let Some(part) = parts.next() {
+            let part = part.strip_suffix('\r').unwrap_or(part);
+            if !part.is_empty() {
+                segments
+                    .last_mut()
+                    .expect("seeded with one segment")
+                    .push(Span::styled(part.to_string(), style));
+            }
+            if parts.peek().is_some() {
+                segments.push(Vec::new());
+            }
+        }
+    }
+    segments
+        .into_iter()
+        .flat_map(|segment| markdown::wrap_spans_at_words(segment, max))
+        .collect()
+}
+
+/// `text` laid out at `max` in one style. The single-span case of
+/// `wrap_spans_hard`.
+fn wrap_text(text: &str, style: Style, max: usize) -> Vec<Vec<Span<'static>>> {
+    wrap_spans_hard(vec![Span::styled(text.to_string(), style)], max)
+}
+
+/// Prefix each wrapped row with its gutter: `lead` on the first, `cont` on the
+/// rest, so the body keeps one left edge no matter how many rows it took.
+fn gutter_lines(
+    rows: Vec<Vec<Span<'static>>>,
+    lead: Vec<Span<'static>>,
+    cont: Vec<Span<'static>>,
+) -> Vec<Line<'static>> {
+    rows.into_iter()
+        .enumerate()
+        .map(|(i, spans)| {
+            let mut row = if i == 0 { lead.clone() } else { cont.clone() };
+            row.extend(spans);
+            Line::from(row)
+        })
+        .collect()
 }
 
 /// Per-message envelope (role, delimiters) in the estimate below, the usual
@@ -3786,18 +4605,39 @@ const DIFF_MAX_ROWS: usize = 1000;
 /// long diff has to collapse rather than crowd out the options.
 const DIFF_PREVIEW_MAX_ROWS: usize = 20;
 
-/// Max chars shown for a bash/shell/exec command label in the transcript.
-const COMMAND_LABEL_MAX: usize = 80;
-
 /// Cells a `tool_row` spends on its gutter and tag, subtracted from the draw
-/// width to bound the label so the row never wraps.
+/// width before the label is wrapped.
 const TOOL_ROW_RESERVE: u16 = 6;
+
+/// Columns held back for the live row's elapsed badge. Fixed rather than
+/// measured so the body's wrap points never move as the counter ticks; wide
+/// enough for the four digits a single tool call will not outlive.
+const ELAPSED_RESERVE: usize = 8;
+
+/// Rows one tool label may occupy before it elides. A label is wrapped rather
+/// than cut so a long command stays readable, but a heredoc body would
+/// otherwise push the conversation off screen; the full text is still under
+/// Ctrl-O.
+const TOOL_ROW_MAX_LINES: usize = 8;
 
 /// Diff row backgrounds. Dark and desaturated on purpose: the syntax-highlighted
 /// foreground is drawn on top of them, so the tint has to read as added/removed
 /// at a glance without swallowing the code.
 const DIFF_ADD_BG: Color = Color::Rgb(22, 52, 32);
 const DIFF_DEL_BG: Color = Color::Rgb(66, 26, 30);
+
+/// Selection style shared by every arrow-navigable list (ask, permission, slash
+/// hints, path hints, pickers). Palette-only on purpose: `reversed()` swaps in
+/// the terminal's default foreground as a background, which lands as an opaque
+/// white block matching nothing else on screen. Bold survives `Style::patch`
+/// even where a row's spans set their own colors, so it marks the row
+/// everywhere; the cyan reaches `SELECT_MARK` and any unstyled label, and both
+/// follow the terminal's own theme.
+fn select_style() -> Style {
+    Style::new().cyan().bold()
+}
+
+const SELECT_MARK: &str = "\u{25b6} ";
 
 /// Render focused-diff text as a boxed panel: a light rule frames the change,
 /// `+` rows on a green background and `-` rows on a red one across the whole row
@@ -3966,6 +4806,41 @@ fn subagent_name_from_run_id(run_id: &str) -> &str {
     }
 }
 
+/// A command as the transcript shows it: each line's internal whitespace
+/// collapsed, but the line structure kept, so a heredoc or a script written one
+/// step per line reads the way it was authored. `RowKind::Tool` breaks on those
+/// newlines and wraps whatever is still too wide.
+fn collapse_command(cmd: &str) -> String {
+    cmd.lines()
+        .map(single_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim_matches('\n')
+        .to_string()
+}
+
+/// The `job_id` of a `bash` poll: a call that collects an already-backgrounded
+/// command instead of starting a new one. Blank is treated as absent.
+fn bash_job_id(args: &serde_json::Value) -> Option<&str> {
+    args.get("job_id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+/// The job id in a `bash` result reporting that its command was backgrounded.
+/// Matched on the `job_id=` marker the tool prints and stopping at the first
+/// character that cannot be part of an id, so the instruction text repeating
+/// the id parses to the same value.
+fn backgrounded_job_id(content: &str) -> Option<&str> {
+    let at = content.find("job_id=")? + "job_id=".len();
+    let rest = &content[at..];
+    let end = rest
+        .find(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+        .unwrap_or(rest.len());
+    Some(&rest[..end]).filter(|id| !id.is_empty())
+}
+
 fn tool_activity(name: &str, args: &serde_json::Value) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
     let base = |p: &str| {
@@ -3978,13 +4853,13 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
     match name {
         "bash" | "shell" | "exec" => {
             let cmd = s("command");
-            if cmd.trim().is_empty() {
-                "Executing command".to_string()
-            } else {
-                // Untruncated: the row clamps to the draw width, so the command
-                // fills the terminal rather than eliding at a fixed 80.
-                let collapsed = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-                format!("Executing: {collapsed}")
+            // Untruncated: the row wraps at the draw width, so the command
+            // fills the terminal rather than eliding at a fixed 80.
+            match (bash_job_id(args), cmd.trim()) {
+                (Some(job), "") => format!("Waiting for background job {job}"),
+                (Some(_), cmd) => format!("Waiting for: {}", collapse_command(cmd)),
+                (None, "") => "Executing command".to_string(),
+                (None, cmd) => format!("Executing: {}", collapse_command(cmd)),
             }
         }
         "grep" | "search" => "Searching".to_string(),
@@ -4002,7 +4877,7 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             if q.is_empty() {
                 "Searching the web".to_string()
             } else {
-                format!("Searching the web: {}", truncate(q, COMMAND_LABEL_MAX))
+                format!("Searching the web: {q}")
             }
         }
         "web_fetch" => {
@@ -4010,7 +4885,7 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             if u.is_empty() {
                 "Fetching a page".to_string()
             } else {
-                format!("Fetching: {}", truncate(u, COMMAND_LABEL_MAX))
+                format!("Fetching: {u}")
             }
         }
         "ask" => "Asking a question".to_string(),
@@ -4046,7 +4921,7 @@ fn todo_op_verb(args: &serde_json::Value, past: bool) -> &'static str {
 /// item count for `append`, or "todos" as a generic fallback.
 fn todo_target_label(args: &serde_json::Value) -> String {
     if let Some(task) = args.get("task").and_then(|v| v.as_str()) {
-        return format!("task: {}", truncate(task, COMMAND_LABEL_MAX));
+        return format!("task: {task}");
     }
     if let Some(phase) = args.get("phase").and_then(|v| v.as_str()) {
         if let Some(items) = args.get("items").and_then(|v| v.as_array()) {
@@ -4076,10 +4951,13 @@ fn subagent_activity(name: &str, args: &serde_json::Value) -> String {
     match name {
         "bash" | "shell" | "exec" => {
             let cmd = s("command");
-            if cmd.trim().is_empty() {
-                "command".to_string()
-            } else {
-                format!("$ {}", cmd.split_whitespace().collect::<Vec<_>>().join(" "))
+            // The live panel gives each call exactly one row, so this one stays
+            // flattened where the transcript's label keeps its breaks.
+            match (bash_job_id(args), cmd.trim()) {
+                (Some(job), "") => format!("awaiting job {job}"),
+                (Some(_), cmd) => format!("awaiting $ {}", single_line(cmd)),
+                (None, "") => "command".to_string(),
+                (None, cmd) => format!("$ {}", single_line(cmd)),
             }
         }
         "grep" | "search" => format!("grep {}", s("pattern")),
@@ -4106,11 +4984,11 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
     match name {
         "bash" | "shell" | "exec" => {
             let cmd = s("command");
-            if cmd.trim().is_empty() {
-                "Ran command".to_string()
-            } else {
-                let collapsed = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-                format!("Ran: {collapsed}")
+            match (bash_job_id(args), cmd.trim()) {
+                (Some(job), "") => format!("Collected background job {job}"),
+                (Some(_), cmd) => format!("Collected: {}", collapse_command(cmd)),
+                (None, "") => "Ran command".to_string(),
+                (None, cmd) => format!("Ran: {}", collapse_command(cmd)),
             }
         }
         "grep" | "search" => "Searched".to_string(),
@@ -4128,7 +5006,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
             if q.is_empty() {
                 "Searched the web".to_string()
             } else {
-                format!("Searched the web: {}", truncate(q, COMMAND_LABEL_MAX))
+                format!("Searched the web: {q}")
             }
         }
         "web_fetch" => {
@@ -4136,7 +5014,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
             if u.is_empty() {
                 "Fetched a page".to_string()
             } else {
-                format!("Fetched: {}", truncate(u, COMMAND_LABEL_MAX))
+                format!("Fetched: {u}")
             }
         }
         "ask" => "Asked a question".to_string(),
@@ -4213,12 +5091,57 @@ impl StartingCall {
         tail.reverse();
         let total = body.bytes().filter(|&b| b == b'\n').count() + 1;
         self.preview.skipped = total - tail.len();
-        // Highlighted here rather than in the row builder so the cost tracks
-        // arriving bytes, not the frame rate: this window is a fresh cache key
-        // on every delta, and highlighting 12 lines costs ~4.6ms.
+        // The last line is the one still being written; the rest are finished.
+        let open = tail.len().saturating_sub(1);
+        let clamped: Vec<(String, bool)> = tail
+            .iter()
+            .enumerate()
+            .map(|(i, line)| clamp_preview_line(line, i == open))
+            .collect();
+        let window: Vec<&str> = clamped.iter().map(|(text, _)| text.as_str()).collect();
+        // Highlighted here rather than in the row builder so it happens once
+        // per derivation rather than once per frame; highlighting 12 lines
+        // costs ~4.6ms, and this window is a fresh cache key every time the
+        // body grows.
         let lang = self.preview.path.clone().unwrap_or_default();
-        self.preview.tail = Some(highlight::block(&tail, &lang));
+        let mut rows = highlight::block(&window, &lang);
+        for (i, (row, (_, truncated))) in rows.iter_mut().zip(&clamped).enumerate() {
+            if !truncated {
+                continue;
+            }
+            let marker = Span::styled("\u{2026}", Style::new().dark_gray());
+            if i == open {
+                row.insert(0, marker);
+            } else {
+                row.push(marker);
+            }
+        }
+        self.preview.tail = Some(rows);
     }
+}
+
+/// Clamp one preview line to `STREAM_MAX_LINE_CHARS`, reporting whether
+/// anything was dropped.
+///
+/// `open` marks the line still being written, which keeps its tail: that is
+/// where new bytes land, so it is the end that shows the write progressing. A
+/// finished line keeps its head, where it reads from.
+fn clamp_preview_line(line: &str, open: bool) -> (String, bool) {
+    // A line can only exceed the char budget if it exceeds it in bytes.
+    if line.len() <= STREAM_MAX_LINE_CHARS {
+        return (line.to_string(), false);
+    }
+    let count = line.chars().count();
+    if count <= STREAM_MAX_LINE_CHARS {
+        return (line.to_string(), false);
+    }
+    let at = |n: usize| line.char_indices().nth(n).map_or(line.len(), |(i, _)| i);
+    let kept = if open {
+        &line[at(count - STREAM_MAX_LINE_CHARS)..]
+    } else {
+        &line[..at(STREAM_MAX_LINE_CHARS)]
+    };
+    (kept.to_string(), true)
 }
 
 impl StartingCall {
@@ -4240,6 +5163,13 @@ const STREAM_TAIL_LINES: usize = 12;
 /// Minimum width of the line-number gutter, so a short preview doesn't jitter
 /// sideways as the count crosses 10 / 100.
 const STREAM_GUTTER_MIN: usize = 3;
+/// Longest preview line handed to the highlighter. Minified content (a bundle,
+/// a JSON blob) is one line that grows for the whole write, and both costs it
+/// drives are linear in its length: syntect re-highlights the line on every
+/// delta, and the wrapped row count grows with it until the preview owns the
+/// viewport. Wide enough to fill any real terminal row, so nothing a user could
+/// have read is dropped.
+const STREAM_MAX_LINE_CHARS: usize = 300;
 
 /// Pull one *string-valued* field out of a JSON object that is still streaming
 /// and therefore almost certainly truncated mid-value.
@@ -4314,12 +5244,15 @@ fn unescape_partial_json_string(raw: &str) -> String {
 /// `content` field opens -- falls back to a one-line throbber, which is all
 /// there is to say about a call whose arguments haven't arrived.
 ///
-/// Derivation is cached on the call (see `refresh_preview`), so the cost
-/// tracks how fast bytes arrive rather than the frame rate: ~0.15ms per frame
-/// at 400KB of arguments, against ~2ms without the cache. A rescan is still
-/// linear in the whole buffer, so a multi-megabyte write would make each
-/// *delta* expensive -- if that shows up, unescape only from the last
-/// `STREAM_TAIL_LINES` newline escapes instead of the whole body.
+/// Derivation is cached on the call (see `refresh_preview`) and re-runs only
+/// when the argument buffer has grown, so it costs at most one rescan per
+/// frame -- and, because `drain_stream_events` collapses a burst of deltas into
+/// one frame, far fewer than one per delta. A rescan is still linear in the
+/// whole buffer (~1.4ms at 314KB), so a multi-megabyte write would make each
+/// *frame* expensive: if that shows up, unescape only from the last
+/// `STREAM_TAIL_LINES` newline escapes instead of the whole body. Line length
+/// is already bounded by `STREAM_MAX_LINE_CHARS`, without which minified
+/// content cost 650ms per delta at 53KB and grew from there.
 fn starting_call_lines(call: &mut StartingCall, frame: &str) -> Vec<Line<'static>> {
     call.refresh_preview();
     let Some(tail) = call.preview.tail.as_ref() else {
@@ -4373,6 +5306,53 @@ fn starting_call_lines(call: &mut StartingCall, frame: &str) -> Vec<Line<'static
     out
 }
 
+/// A tool row laid out at `width`: `tag` in the gutter, `label` wrapped
+/// beneath it with continuations aligned under the label rather than under the
+/// tag, bounded by `TOOL_ROW_MAX_LINES`. Shared by the committed `RowKind::Tool`
+/// and the live group row so the running command and the finished one wrap
+/// identically -- the row must not re-flow at the moment it resolves.
+///
+/// `suffix` rides the end of the last row (the live row's elapsed badge). The
+/// wrap reserves `ELAPSED_RESERVE` for it up front instead of measuring it, so a
+/// counter ticking past 9s or 99s cannot re-flow the command above it.
+fn tool_row_lines(
+    tag: &str,
+    tag_style: Style,
+    label: &str,
+    label_style: Style,
+    reserve: u16,
+    width: u16,
+    suffix: Option<(String, Style)>,
+) -> Vec<Line<'static>> {
+    let held = if suffix.is_some() { ELAPSED_RESERVE } else { 0 };
+    let max = (width.saturating_sub(reserve) as usize)
+        .saturating_sub(held)
+        .max(1);
+    let mut rows = wrap_text(label, label_style, max);
+    if rows.len() > TOOL_ROW_MAX_LINES {
+        rows.truncate(TOOL_ROW_MAX_LINES);
+        if let Some(last) = rows.last_mut() {
+            last.push(Span::styled(" …", label_style));
+        }
+    }
+    if let Some((text, style)) = suffix {
+        rows.last_mut()
+            .expect("wrap_text yields at least one row")
+            .push(Span::styled(format!(" {text}"), style));
+    }
+    gutter_lines(
+        rows,
+        vec![
+            Span::styled("│ ", Style::new().dark_gray()),
+            Span::styled(format!("{tag} "), tag_style),
+        ],
+        vec![
+            Span::styled("│ ", Style::new().dark_gray()),
+            Span::raw(" ".repeat(tag.chars().count() + 1)),
+        ],
+    )
+}
+
 fn tool_row(tag: &str, tag_style: Style, text: &str, text_style: Style) -> Line<'static> {
     Line::from(vec![
         Span::styled("│ ", Style::new().dark_gray()),
@@ -4397,11 +5377,14 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
     };
     for call in &group.calls {
         if show_headers {
-            out.push(Line::from(vec![
-                Span::styled("│   ", Style::new().dark_gray()),
-                Span::styled("▸ ", Style::new().cyan()),
-                Span::styled(truncate(&call.done, max), Style::new().dim()),
-            ]));
+            out.extend(gutter_lines(
+                wrap_text(&call.done, Style::new().dim(), max),
+                vec![
+                    Span::styled("│   ", Style::new().dark_gray()),
+                    Span::styled("▸ ", Style::new().cyan()),
+                ],
+                vec![Span::styled("│     ", Style::new().dark_gray())],
+            ));
         }
         if let Some(content) = &call.content {
             let (tag, tag_style) = if call.is_error {
@@ -4409,22 +5392,19 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
             } else {
                 ("✓", Style::new().green())
             };
-            // Expanded view shows the full output verbatim (one row per line,
-            // width-clamped): the tag rides the first line, the rest indent to
-            // align under it. Empty content still gets a bare tag row.
-            let mut content_lines = content.lines();
-            let first = content_lines.next().unwrap_or("");
-            out.push(Line::from(vec![
-                Span::styled(tag_gutter, Style::new().dark_gray()),
-                Span::styled(format!("{tag} "), tag_style),
-                Span::styled(truncate(first, max), Style::new().dim()),
-            ]));
-            for line in content_lines {
-                out.push(Line::from(vec![
-                    Span::styled(cont_gutter, Style::new().dark_gray()),
-                    Span::styled(truncate(line, max), Style::new().dim()),
-                ]));
-            }
+            // Expanded view shows the full output verbatim: the tag rides the
+            // first line, the rest indent to align under it, and a line wider
+            // than the terminal wraps rather than eliding -- this is the surface
+            // the transcript's one-line summary sends the user to. Empty content
+            // still gets a bare tag row.
+            out.extend(gutter_lines(
+                wrap_text(content, Style::new().dim(), max),
+                vec![
+                    Span::styled(tag_gutter, Style::new().dark_gray()),
+                    Span::styled(format!("{tag} "), tag_style),
+                ],
+                vec![Span::styled(cont_gutter, Style::new().dark_gray())],
+            ));
             if let Some(diff) = &call.diff {
                 for line in diff_lines(diff, width as usize, DIFF_MAX_ROWS, cont_gutter, None) {
                     out.push(line);
@@ -4458,17 +5438,29 @@ fn group_summary(nouns: &[(&str, bool)]) -> String {
     group_clauses(nouns, "Read", "ran")
 }
 
-/// Live row for the still-open tool group: a braille throbber in place of the
-/// static `▸` tag, plus elapsed time, so the user can see it's actively
-/// working and how long it's taken. Rebuilt fresh every draw (not stored in
-/// `transcript`) since the group's row there is only overwritten on the next
-/// tool call, not every tick.
-fn running_group_row(group: &ToolGroup, spinner_frame: usize, width: u16) -> Line<'static> {
+/// Live rows for the still-open tool group: a braille throbber in place of the
+/// static `▸` tag, the running call's label, and elapsed time, so the user can
+/// see it's actively working and how long it's taken. Rebuilt fresh every draw
+/// (not stored in `transcript`) since the group's row there is only overwritten
+/// on the next tool call, not every tick.
+///
+/// The label wraps exactly as the committed row will, so a long command is
+/// readable *while* it runs -- which is when the user most wants to check what
+/// they approved -- and the row does not re-lay itself out the instant the call
+/// resolves. The elapsed badge is dark rather than dim cyan: at the tail of a
+/// wrapped command it has to read as chrome, not as another argument.
+fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
     let frame = SPINNER[spinner_frame % SPINNER.len()];
     let elapsed = group.started.elapsed().as_secs();
-    let text = format!("{} ({elapsed}s)", group.activity());
-    let max = (width as usize).saturating_sub(6).max(1);
-    tool_row(frame, Style::new().cyan(), &truncate(&text, max), Style::new().cyan().dim())
+    tool_row_lines(
+        frame,
+        Style::new().cyan(),
+        &group.activity(),
+        Style::new().cyan().dim(),
+        TOOL_ROW_RESERVE,
+        width,
+        Some((format!("({elapsed}s)"), Style::new().dark_gray())),
+    )
 }
 
 /// Bucket `nouns` into read-style and run-style clauses (first-seen order,
@@ -4535,8 +5527,9 @@ fn has_answer_text(buf: &str) -> bool {
 }
 
 /// `text` with its reasoning removed, for the copy that goes into `history`.
-/// Reasoning is display-only and must never be resent to the model (see
-/// `SseAccumulator`); the display journal is what keeps it for a resume.
+/// Reasoning never belongs in `content`; it rides along on the message's
+/// `reasoning_content` instead (see `on_done`), and the display journal is what
+/// keeps it for a resume.
 pub(crate) fn answer_without_reasoning(text: &str) -> String {
     split_reasoning(text)
         .into_iter()
@@ -4623,10 +5616,120 @@ fn think_re() -> &'static regex::Regex {
     RE.get_or_init(|| regex::Regex::new(r"</?[a-zA-Z:]*think>").unwrap())
 }
 
+/// Whether inline `<think>` tags in model content are parsed as reasoning.
+/// Process-wide rather than a session field because the split runs on every
+/// rendered row, from free functions a `Row` reaches with no session in hand.
+/// Seeded once from `~/.jan/config.toml` by `set_think_tags_parsed`; `true`
+/// until then, which is also the default.
+static PARSE_THINK_TAGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+#[cfg(test)]
+thread_local! {
+    /// Per-test override. A test flips its own thread's answer instead of the
+    /// shared static, so a gate-off test cannot race the rest of the suite.
+    static PARSE_THINK_TAGS_OVERRIDE: std::cell::Cell<Option<bool>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Apply the `think_tags` setting for the process. Called once per session from
+/// `prepare_agent_session`, the chokepoint every agent surface goes through.
+pub(crate) fn set_think_tags_parsed(enabled: bool) {
+    PARSE_THINK_TAGS.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn think_tags_parsed() -> bool {
+    #[cfg(test)]
+    {
+        if let Some(over) = PARSE_THINK_TAGS_OVERRIDE.with(|c| c.get()) {
+            return over;
+        }
+    }
+    PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The glyph swept along the working row, or `None` for the static throbber.
+/// Process-wide for the same reason as `PARSE_THINK_TAGS`: `input_box` is a free
+/// function with no session in hand. Resolved from the config on first use
+/// rather than per frame, since the row redraws every 50ms and this would
+/// otherwise be a file read on each one.
+///
+/// Behind a lock rather than a `LazyLock` value because `/settings` edits it
+/// live: a glyph you have to restart the console to see is not a toggle.
+static WAVE_GLYPH: std::sync::LazyLock<std::sync::RwLock<Option<String>>> =
+    std::sync::LazyLock::new(|| {
+        std::sync::RwLock::new(crate::core::agent::global_config::wave_glyph())
+    });
+
+/// Apply a new wave glyph to the process, as `/settings` does on save.
+///
+/// `None` means the key was removed, so the default sweep comes back -- not
+/// that the sweep is off. Off is `Some("")`, which resolves to no glyph here
+/// for the reason `wave_glyph` gives: an all-whitespace traveller reads as
+/// letters going missing.
+pub(crate) fn set_wave_glyph(glyph: Option<&str>) {
+    let value = match glyph {
+        None => Some(crate::core::agent::global_config::WAVE_DEFAULT.to_string()),
+        Some(g) if g.trim().is_empty() => None,
+        Some(g) => Some(g.to_string()),
+    };
+    if let Ok(mut slot) = WAVE_GLYPH.write() {
+        *slot = value;
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Per-test override, for the same reason as `PARSE_THINK_TAGS_OVERRIDE`: a
+    /// test sets its own thread's glyph rather than the shared cell, which is
+    /// resolved once per process and reads the real `~/.jan/config.toml`.
+    static WAVE_GLYPH_OVERRIDE: std::cell::RefCell<Option<Option<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn wave_glyph() -> Option<String> {
+    #[cfg(test)]
+    {
+        if let Some(over) = WAVE_GLYPH_OVERRIDE.with(|c| c.borrow().clone()) {
+            return over;
+        }
+    }
+    WAVE_GLYPH.read().ok().and_then(|g| g.clone())
+}
+
+/// Run `f` with `glyph` as this thread's wave setting.
+#[cfg(test)]
+fn with_wave_glyph<T>(glyph: Option<&str>, f: impl FnOnce() -> T) -> T {
+    let value = glyph.map(str::to_string);
+    WAVE_GLYPH_OVERRIDE.with(|c| *c.borrow_mut() = Some(value));
+    let out = f();
+    WAVE_GLYPH_OVERRIDE.with(|c| *c.borrow_mut() = None);
+    out
+}
+
+/// Run `f` with `<think>` parsing off on this thread only.
+#[cfg(test)]
+fn without_think_tags<T>(f: impl FnOnce() -> T) -> T {
+    PARSE_THINK_TAGS_OVERRIDE.with(|c| c.set(Some(false)));
+    let out = f();
+    PARSE_THINK_TAGS_OVERRIDE.with(|c| c.set(None));
+    out
+}
+
 /// Split assistant text into `(is_reasoning, segment)` runs by `<think>` /
 /// `<mm:think>` tags (tags themselves dropped). An unterminated open tag makes
 /// the trailing text reasoning, which keeps live streaming clean.
+///
+/// With `think_tags = false` in `~/.jan/config.toml` the tags carry no meaning:
+/// the whole text is one answer run, so it renders verbatim and stays in the
+/// answer that goes back as history.
 fn split_reasoning(text: &str) -> Vec<(bool, String)> {
+    if !think_tags_parsed() {
+        return if text.is_empty() {
+            Vec::new()
+        } else {
+            vec![(false, text.to_string())]
+        };
+    }
     let mut out = Vec::new();
     let mut in_think = false;
     let mut last = 0;
@@ -4645,10 +5748,44 @@ fn split_reasoning(text: &str) -> Vec<(bool, String)> {
     out
 }
 
+/// Interleave a turn's answer prose with its natively streamed reasoning
+/// segments into `(is_reasoning, run)` in emission order -- the one form every
+/// consumer (live tail, committed rows, replay) reads.
+///
+/// The two sources stay apart end to end: native reasoning arrives structurally
+/// and is placed by its offset, never encoded into the prose, while an
+/// inline-tag provider's `<think>` markers are found by `split_reasoning` inside
+/// the prose runs alone. So a model writing about `<think>` tags cannot close a
+/// native block, and the `think_tags` gate governs only the inline case.
+///
+/// Offsets come from `prose.len()` at emission time, so they are always char
+/// boundaries and always ascending.
+fn assistant_runs(prose: &str, segs: &[ReasoningSeg]) -> Vec<(bool, String)> {
+    if segs.is_empty() {
+        return split_reasoning(prose);
+    }
+    let mut out = Vec::new();
+    let mut last = 0;
+    for seg in segs {
+        let at = seg.at.min(prose.len()).max(last);
+        out.extend(split_reasoning(&prose[last..at]));
+        let text = seg.text.trim_end();
+        if !text.is_empty() {
+            out.push((true, text.to_string()));
+        }
+        last = at;
+    }
+    out.extend(split_reasoning(&prose[last..]));
+    out
+}
+
 /// True if `text` ends inside an unclosed ` think>` block (an opening tag whose
 /// matching close has not yet streamed). Used to show `[thinking]` while
 /// reasoning streams. Re-uses the same tag matcher as `split_reasoning`.
 fn thinking_open(text: &str) -> bool {
+    if !think_tags_parsed() {
+        return false;
+    }
     let mut open = false;
     for m in think_re().find_iter(text) {
         open = !m.as_str().starts_with("</");
@@ -4656,9 +5793,9 @@ fn thinking_open(text: &str) -> bool {
     open
 }
 
-/// True if `text` has any non-whitespace content in any reasoning/answer run.
-fn assistant_has_content(text: &str) -> bool {
-    split_reasoning(text)
+/// True if the turn has any non-whitespace content in any reasoning/answer run.
+fn assistant_has_content(prose: &str, segs: &[ReasoningSeg]) -> bool {
+    assistant_runs(prose, segs)
         .iter()
         .any(|(_, seg)| !seg.trim().is_empty())
 }
@@ -4752,6 +5889,21 @@ async fn await_snapshot(
         Ok(inner) => inner,
         Err(e) => Err(format!("snapshot task failed: {e}")),
     }
+}
+
+/// Await an in-flight `/mcp` job, parking forever when none is running so this
+/// can sit in the loop's `select!` unconditionally.
+async fn await_mcp_job(
+    task: &mut Option<tokio::task::JoinHandle<McpJobDone>>,
+) -> Option<McpJobDone> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    // A cancelled or panicked job is dropped rather than reported: the only
+    // paths that abort it have already told the user why.
+    joined.ok()
 }
 
 /// Await an in-flight `/login` verification, parking forever when none is
@@ -4865,6 +6017,83 @@ fn finish_update_install(app: &mut App, result: Result<super::updater::UpdateOut
     }
 }
 
+/// Await an in-flight `/plugin install`, parking forever when none is running.
+/// Same cancel-safe borrow as `await_mcp`.
+async fn await_plugin_install(
+    task: &mut Option<
+        tokio::task::JoinHandle<Result<crate::core::agent::plugins::GitInstall, String>>,
+    >,
+) -> Result<crate::core::agent::plugins::GitInstall, String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    match joined {
+        Ok(inner) => inner,
+        Err(e) => Err(format!("plugin install task failed: {e}")),
+    }
+}
+
+/// Hint text marking a plugin row already installed (see `finish_plugin_install`
+/// and the PluginSelect Space guard). Kept as a named constant so a label rename
+/// can't silently re-enable toggling on installed rows.
+const INSTALLED_HINT: &str = "installed";
+
+/// Report a plugin install. Clears the in-flight flag so the next request is
+/// accepted. A collection source installed nothing yet: it opens the picker so
+/// the user chooses which plugins to install. The flag is cleared here the
+/// moment the listing opens the picker, so a second `/plugin install` during
+/// that picker-open window is allowed and, if it is also a collection,
+/// replaces the open picker (only one clone is ever in flight -- the
+/// `plugin_install_task` guard holds).
+fn finish_plugin_install(
+    app: &mut App,
+    url: Option<String>,
+    result: Result<crate::core::agent::plugins::GitInstall, String>,
+) {
+    use crate::core::agent::plugins::GitInstall;
+    app.plugin_installing = false;
+    match result {
+        Ok(GitInstall::Installed(plugins)) => {
+            app.refresh_slash_catalog();
+            if plugins.is_empty() {
+                app.note("nothing installed");
+            }
+            for p in plugins {
+                app.note(&format!("installed plugin '{}' ({} skills)", p.name, p.skills));
+            }
+        }
+        Ok(GitInstall::Collection(candidates)) => {
+            let Some(url) = url else {
+                app.note("ERROR: lost the collection source URL");
+                return;
+            };
+            app.note(&format!(
+                "{} is a collection of {} plugins - pick which to install",
+                url,
+                candidates.len()
+            ));
+            app.picker = Some(Picker {
+                kind: PickerKind::PluginSelect,
+                items: candidates
+                    .into_iter()
+                    .map(|c| PickerItem {
+                        value: c.path.clone(),
+                        label: c.path,
+                        hint: c.installed.then(|| INSTALLED_HINT.to_string()),
+                        checkbox: Some(false),
+                    })
+                    .collect(),
+                selected: 0,
+                armed_delete: None,
+            });
+            app.plugin_collection_url = Some(url);
+        }
+        Err(e) => app.note(&e),
+    }
+}
+
 pub async fn run(
     session: AgentSession,
     agent_dir: std::path::PathBuf,
@@ -4880,6 +6109,8 @@ pub async fn run(
         smol_model,
         limits,
         show_reasoning,
+        stream_reasoning,
+        send_reasoning,
         mcp_servers,
         mcp_task,
     } = session;
@@ -4908,10 +6139,7 @@ pub async fn run(
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableBracketedPaste).map_err(|e| e.to_string())?;
-    let mut modes = String::from(alt_scroll_save_off());
-    if crate::core::agent::global_config::mouse_enabled() {
-        modes.push_str(MOUSE_TRACK_ON);
-    }
+    let modes = startup_modes(crate::core::agent::global_config::mouse_enabled());
     let _ = stdout.write_all(modes.as_bytes());
     let _ = stdout.flush();
     let backend = CrosstermBackend::new(stdout);
@@ -4929,6 +6157,8 @@ pub async fn run(
         repo_root,
     );
     app.smol_model = smol_model;
+    app.stream_reasoning = stream_reasoning;
+    app.send_reasoning = send_reasoning;
     app.args = Some(args.clone());
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
     // shows immediately; a resumed thread overrides this via restore_run_mode.
@@ -4943,15 +6173,13 @@ pub async fn run(
     let sandboxed = args
         .sandbox
         .unwrap_or_else(|| crate::core::agent::r#loop::effective_sandbox(&app.project_root));
-    app.push_banner(
-        match (args.auto_approve, sandboxed) {
-            (true, true) => "auto-approved inside the OS sandbox (start with --safe to be asked first)",
-            (true, false) => "auto-approved and unsandboxed: commands run with your own access (--safe to be asked first, --sandbox to confine)",
-            (false, true) => "--safe: writes, shell commands and MCP tool calls need approval",
-            (false, false) => "--safe: approval needed, but unsandboxed - what you approve runs with your own access (--sandbox to confine)",
-        },
-        !seeded,
-    );
+    app.approval_phrasing = match (args.auto_approve, sandboxed) {
+        (true, true) => "auto-approved inside the OS sandbox (start with --safe to be asked first)".to_string(),
+        (true, false) => "auto-approved and unsandboxed: commands run with your own access (--safe to be asked first, --sandbox to confine)".to_string(),
+        (false, true) => "--safe: writes, shell commands and MCP tool calls need approval".to_string(),
+        (false, false) => "--safe: approval needed, but unsandboxed - what you approve runs with your own access (--sandbox to confine)".to_string(),
+    };
+    app.push_session_banner(!seeded);
     if app.model.is_empty() {
         app.note("not signed in — run /login to sign in to Tokamak, or `jan config set` to configure a provider manually");
     }
@@ -4959,6 +6187,21 @@ pub async fn run(
     // no invitation, and the splash hint covers re-running /init deliberately.
     if !crate::core::agent::context::has_context_file(&app.project_root) {
         app.note("no JAN.md here — run /init to study this project and write one");
+    }
+    // A modified key the terminal is dropping looks like a bug in the composer,
+    // so say so once, and only where a config file proves it is unconfigured
+    // (see `terminal_setup::setup_hint`): the note disappears on its own once
+    // /terminal-setup has run.
+    if let Some(hint) = dirs::home_dir()
+        .filter(|_| crate::core::agent::global_config::terminal_hint_enabled())
+        .and_then(|home| {
+            super::terminal_setup::setup_hint(&home, cfg!(target_os = "macos"), |k| {
+                std::env::var(k).ok()
+            })
+        })
+    {
+        app.note(&hint);
+        app.system_detail_text("(terminal_hint = false in ~/.jan/config.toml silences this)");
     }
     // A failed resume is not fatal: the note explains why and the blank session
     // the user already has stays usable.
@@ -4998,6 +6241,7 @@ pub async fn run(
         terminal.backend_mut(),
         DisableBracketedPaste,
         DisableMouseCapture,
+        Print(KITTY_KEYS_OFF),
         Print(alt_scroll_restore()),
         LeaveAlternateScreen,
     );
@@ -5015,6 +6259,84 @@ pub async fn run(
         let _ = workspace::remove_scratch_dir(session).await;
     }
     res
+}
+
+/// Apply one event from the active run's stream, clearing `current` on a
+/// terminal one. `None` is a stream that closed without a terminal event (an
+/// aborted task).
+async fn apply_stream_event(
+    app: &mut App,
+    ev: Option<StreamEvent>,
+    current: &mut Option<CurrentRun>,
+) {
+    match ev {
+        Some(StreamEvent::Done { stop_reason, usage }) => {
+            app.on_done(stop_reason, usage);
+            *current = None;
+            // Auto-compact when approaching the context limit. Handed to
+            // the loop like `/compact` so the summarizing call runs off
+            // the render loop.
+            if app.should_auto_compact() && app.compacting.is_none() {
+                app.compact_request = Some(CompactKind::Auto);
+            }
+        }
+        Some(StreamEvent::Error { code, message }) => {
+            app.on_error(code, message);
+            *current = None;
+        }
+        // Each model roundtrip is one turn toward the finished-todo
+        // aging grace period. A single run can span many tool-call
+        // turns, so aging must count turns, not runs -- otherwise a
+        // finished plan lingers through the rest of a long run.
+        Some(ev @ StreamEvent::Step { .. }) => {
+            app.apply(ev);
+            age_closed_todos(app).await;
+        }
+        Some(other) => app.apply(other),
+        None => {
+            // Stream closed without a terminal event (aborted task).
+            // Keep any partial prose/tool calls already streamed.
+            app.pending_queue.clear();
+            if app.status == Status::Running {
+                app.flush_assistant();
+                app.abort_tool_rows();
+                // The task was killed without a natural stop, so the
+                // mid-turn `MessagesUpdated` that would have folded the
+                // completed tool calls never fired -- fold them here,
+                // exactly as the cancel/error paths do.
+                app.append_cancelled_turn_tools();
+                app.status = Status::Idle;
+                app.run_started = None;
+            }
+            // Auto-dequeue the next queued message
+            app.dequeue_next();
+            *current = None;
+        }
+    }
+}
+
+/// How many events one drain pass applies before handing control back to the
+/// render loop, so a run that emits faster than the loop can drain still
+/// yields to the keyboard poll.
+const EVENT_DRAIN_MAX: usize = 512;
+
+/// Apply every event already sitting in the run's channel, then return how many
+/// landed. A file-sized `write` streams its arguments in thousands of deltas
+/// (measured: 7000 for a 314KB file), and the loop draws once per iteration, so
+/// handling one event per pass means thousands of full repaints for a preview
+/// that only ever shows its last few lines. Draining first collapses a burst
+/// into a single frame. Stops early on a terminal event, which clears `current`
+/// -- nothing queued behind it belongs to a finished run.
+async fn drain_stream_events(app: &mut App, current: &mut Option<CurrentRun>) -> usize {
+    let mut applied = 0;
+    while applied < EVENT_DRAIN_MAX {
+        let Some(ev) = current.as_mut().and_then(|c| c.rx.try_recv().ok()) else {
+            break;
+        };
+        apply_stream_event(app, Some(ev), current).await;
+        applied += 1;
+    }
+    applied
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5046,6 +6368,11 @@ async fn chat_loop<B: Backend>(
         tokio::task::JoinHandle<Result<super::tokamak::Login, String>>,
     > = None;
 
+    // `/mcp` work that must not run on the render loop: a tool listing is a
+    // round trip to the peer, and an authorization waits on a browser for up to
+    // five minutes. One at a time -- the detail screen only ever asks for one.
+    let mut mcp_job: Option<tokio::task::JoinHandle<McpJobDone>> = None;
+
     // The update check is a network round trip, so it runs off the render loop
     // and notes itself whenever it lands rather than delaying the first frame.
     let mut update_task = Some(tokio::spawn(super::updater::available_update()));
@@ -5060,6 +6387,14 @@ async fn chat_loop<B: Backend>(
     let mut update_install_task: Option<
         tokio::task::JoinHandle<Result<super::updater::UpdateOutcome, String>>,
     > = None;
+    // `/plugin install` clones a git repo, so it runs off the render loop via
+    // the installer's internal `spawn_blocking`; one at a time. A collection
+    // source resolves in two steps (list -> picker -> install the chosen set),
+    // and `plugin_install_url` remembers the source across them.
+    let mut plugin_install_task: Option<
+        tokio::task::JoinHandle<Result<crate::core::agent::plugins::GitInstall, String>>,
+    > = None;
+    let mut plugin_install_url: Option<String> = None;
 
     // Compaction is a summarizing model call, so it runs off the render loop
     // too; `compact_base` is the history length it was computed from.
@@ -5102,6 +6437,21 @@ async fn chat_loop<B: Backend>(
             }
         }
 
+        // The detail screen asked for something off-loop. One job at a time, and
+        // a request arriving while one is in flight *waits* rather than being
+        // dropped: an authorization owns the slot for up to `CALLBACK_TIMEOUT`
+        // while the browser is out, and a tool listing dropped in that window
+        // would leave the screen on `listing...` with nothing to retrigger it.
+        // The slot holds the latest request only -- a newer one replaces it, and
+        // a request whose server the screen has since left is discarded on
+        // arrival by `finish_mcp_job`.
+        if mcp_job.is_none() {
+            if let Some(job) = app.mcp_job_request.take() {
+                let servers = mcp_servers.clone();
+                mcp_job = Some(tokio::spawn(run_mcp_job(job, servers)));
+            }
+        }
+
         // A key was submitted at the `/login` prompt: verify it off-loop. One at
         // a time -- the prompt is read-only while `verifying`.
         if login_task.is_none() {
@@ -5121,6 +6471,31 @@ async fn chat_loop<B: Backend>(
                 app.update_installing = true;
                 app.detail = "installing update...".to_string();
                 update_install_task = Some(tokio::spawn(super::updater::self_update(false)));
+            }
+        }
+        // `/plugin install` was typed: clone off-loop (the network-bound git
+        // work runs inside the installer's `spawn_blocking`), and refuse a
+        // second while one is in flight. `list_collection` installs a plain
+        // source outright and only *lists* an ambiguous collection, which
+        // `finish_plugin_install` turns into the picker.
+        if plugin_install_task.is_none() {
+            if let Some(spec) = app.plugin_install_request.take() {
+                app.plugin_installing = true;
+                let root = app.project_root.clone();
+                plugin_install_url = Some(spec.clone());
+                plugin_install_task = Some(tokio::spawn(async move {
+                    crate::core::agent::plugins::list_collection(&root, &spec).await
+                }));
+            } else if let Some((spec, paths)) = app.plugin_select_request.take() {
+                // Second step: the picker's chosen subset of a collection.
+                app.plugin_installing = true;
+                let root = app.project_root.clone();
+                plugin_install_url = Some(spec.clone());
+                plugin_install_task = Some(tokio::spawn(async move {
+                    crate::core::agent::plugins::install_selected(&root, &spec, paths)
+                        .await
+                        .map(crate::core::agent::plugins::GitInstall::Installed)
+                }));
             }
         }
 
@@ -5239,6 +6614,17 @@ async fn chat_loop<B: Backend>(
                 for failure in &outcome.failed {
                     app.note(&format!("MCP: {failure}"));
                 }
+                // A server that only needs signing in is separated from a
+                // broken one: the fix is a keypress away, so name it.
+                if !outcome.needs_auth.is_empty() {
+                    app.note(&format!(
+                        "MCP: {} need authentication - open /mcp to sign in",
+                        outcome.needs_auth.join(", ")
+                    ));
+                }
+            }
+            Some(done) = await_mcp_job(&mut mcp_job) => {
+                finish_mcp_job(app, done, mcp_servers, &mut mcp_job).await;
             }
             login_res = await_login(&mut login_task) => {
                 let login_ok = login_res.is_ok();
@@ -5252,6 +6638,9 @@ async fn chat_loop<B: Backend>(
             }
             install = await_update_install(&mut update_install_task) => {
                 finish_update_install(app, install);
+            }
+            plugin_res = await_plugin_install(&mut plugin_install_task) => {
+                finish_plugin_install(app, plugin_install_url.take(), plugin_res);
             }
             compacted = await_compaction(&mut compact_task) => {
                 finish_compaction(app, compacted, compact_base);
@@ -5279,45 +6668,10 @@ async fn chat_loop<B: Backend>(
                     (None, _) => {}
                 }
             }
-            ev = next_event(&mut current) => match ev {
-                Some(StreamEvent::Done { stop_reason, usage }) => {
-                    app.on_done(stop_reason, usage);
-                    current = None;
-                    // Auto-compact when approaching the context limit. Handed to
-                    // the loop like `/compact` so the summarizing call runs off
-                    // the render loop.
-                    if app.should_auto_compact() && app.compacting.is_none() {
-                        app.compact_request = Some(CompactKind::Auto);
-                    }
-                }
-                Some(StreamEvent::Error { code, message }) => {
-                    app.on_error(code, message);
-                    current = None;
-                }
-                // Each model roundtrip is one turn toward the finished-todo
-                // aging grace period. A single run can span many tool-call
-                // turns, so aging must count turns, not runs -- otherwise a
-                // finished plan lingers through the rest of a long run.
-                Some(ev @ StreamEvent::Step { .. }) => {
-                    app.apply(ev);
-                    age_closed_todos(app).await;
-                }
-                Some(other) => app.apply(other),
-                None => {
-                    // Stream closed without a terminal event (aborted task).
-                    // Keep any partial prose/tool calls already streamed.
-                    app.pending_queue.clear();
-                    if app.status == Status::Running {
-                        app.flush_assistant();
-                        app.abort_tool_rows();
-                        app.status = Status::Idle;
-                        app.run_started = None;
-                    }
-                    // Auto-dequeue the next queued message
-                    app.dequeue_next();
-                    current = None;
-                }
-            },
+            ev = next_event(&mut current) => {
+                apply_stream_event(app, ev, &mut current).await;
+                drain_stream_events(app, &mut current).await;
+            }
         }
     }
 
@@ -5585,7 +6939,10 @@ async fn handle_ask_key(
     true
 }
 
-/// Route a bracketed paste event to the active input owner.
+/// Route a bracketed paste event to the active input owner. The order mirrors
+/// `handle_key`: each docked prompt owns the keyboard while open, so a paste
+/// must land in its fields rather than the chat composer (where a pasted API
+/// key would echo).
 fn route_paste_event(app: &mut App, event: Event) {
     let Event::Paste(text) = event else {
         return;
@@ -5593,6 +6950,12 @@ fn route_paste_event(app: &mut App, event: Event) {
     if let Some(prompt) = app.login.as_mut() {
         // A pasted API key belongs to the login field, not the chat composer
         // (where it would echo).
+        prompt.paste(&text);
+    } else if let Some(prompt) = app.settings_prompt.as_mut() {
+        prompt.paste(&text);
+    } else if let Some(prompt) = app.mcp_prompt.as_mut() {
+        prompt.paste(&text);
+    } else if let Some(prompt) = app.provider_prompt.as_mut() {
         prompt.paste(&text);
     } else if !app.ask_queue.is_empty() {
         handle_ask_paste(app, &text);
@@ -5716,6 +7079,11 @@ async fn handle_key(
     }
 
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let alt = key.modifiers.contains(KeyModifiers::ALT);
+    let sup = key.modifiers.contains(KeyModifiers::SUPER);
+    // A modified Enter is a newline, never a submit or a completion, so the
+    // hint popups below have to let it through to the editing keys.
+    let newline = key.code == KeyCode::Enter && (alt || key.modifiers.contains(KeyModifiers::SHIFT));
     let ctrl_c = ctrl && key.code == KeyCode::Char('c');
     let ctrl_d = ctrl && key.code == KeyCode::Char('d');
 
@@ -5736,6 +7104,12 @@ async fn handle_key(
     // The MCP add/edit wizard owns the keyboard while open.
     if app.mcp_prompt.is_some() {
         handle_mcp_prompt_key(app, key, ctrl, mcp_servers).await;
+        return;
+    }
+
+    // The provider add/edit wizard owns the keyboard while open.
+    if app.provider_prompt.is_some() {
+        handle_provider_prompt_key(app, key, ctrl);
         return;
     }
 
@@ -5805,21 +7179,47 @@ async fn handle_key(
     if let Some(picker) = app.picker.as_mut() {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
+                picker.armed_delete = None;
                 picker.selected = picker.selected.saturating_sub(1);
             }
             KeyCode::Down | KeyCode::Char('j') => {
+                picker.armed_delete = None;
                 picker.selected = (picker.selected + 1).min(picker.items.len() - 1);
             }
-            KeyCode::Enter if picker.kind == PickerKind::ToggleMcp => {
+            // Space toggles the row in place; Enter opens its detail screen.
+            // Enter used to be the toggle, but with a detail screen to reach it
+            // is the row's primary action, and Space is already the toggle in
+            // the one other checkbox picker (`PluginSelect`).
+            KeyCode::Char(' ') if picker.kind == PickerKind::ToggleMcp => {
                 let item = &mut picker.items[picker.selected];
+                if item.value.is_empty() {
+                    return;
+                }
                 let name = item.value.clone();
                 let enable = !item.checkbox.unwrap_or(false);
                 item.checkbox = Some(enable);
-                toggle_mcp_server(app, mcp_servers, name, enable);
+                if set_mcp_active(app, mcp_servers, &name, enable).await {
+                    // Nothing on this screen is waiting on the answer, so it is
+                    // detached rather than taking the single job slot.
+                    reconnect_mcp_server(mcp_servers, name);
+                }
+            }
+            KeyCode::Enter if picker.kind == PickerKind::ToggleMcp => {
+                let name = picker.items[picker.selected].value.clone();
+                // The watermark row of an empty config: nothing to open.
+                if name.is_empty() {
+                    return;
+                }
+                open_mcp_detail(app, &name, mcp_servers).await;
+            }
+            // The detail screen's rows are actions on one server.
+            KeyCode::Enter if picker.kind == PickerKind::McpServer => {
+                let action = picker.items[picker.selected].value.clone();
+                run_mcp_action(app, &action, mcp_servers).await;
             }
             // `/mcp` picker: `a` opens the add wizard, `e` opens the edit
-            // wizard prefilled from the selected row, `d` removes it after a
-            // confirmation keystroke. All act through the shared config layer.
+            // wizard prefilled from the selected row, `d` removes the selected
+            // server. All act through the shared config layer.
             KeyCode::Char('a') if picker.kind == PickerKind::ToggleMcp => {
                 app.picker = None;
                 app.mcp_prompt = Some(McpPrompt {
@@ -5838,22 +7238,52 @@ async fn handle_key(
             }
             KeyCode::Char('e') if picker.kind == PickerKind::ToggleMcp => {
                 let name = picker.items[picker.selected].value.clone();
-                let entry = super::mcp::get_server(&name);
-                if let Some(entry) = entry {
-                    app.picker = None;
-                    app.mcp_prompt = Some(McpPrompt::from_entry(&entry));
-                } else {
-                    app.note(&format!("server '{name}' no longer exists"));
+                if name.is_empty() {
+                    return;
                 }
+                edit_mcp_server(app, &name);
             }
             KeyCode::Char('d') if picker.kind == PickerKind::ToggleMcp => {
                 let name = picker.items[picker.selected].value.clone();
+                if name.is_empty() {
+                    return;
+                }
                 app.picker = None;
-                if let Err(e) = super::mcp::remove_server(&name) {
-                    app.note(&format!("failed to remove '{name}': {e}"));
+                remove_mcp_server(app, &name, mcp_servers).await;
+            }
+            // `/settings > providers` picker: `a` opens the add wizard, `d`
+            // deletes the selected provider only after a confirmation `d` on
+            // the same row (an API key is unrecoverable). The leading
+            // watermark row (an empty list) is inert. All writes go through
+            // the shared headless `~/.jan/config.toml` path.
+            KeyCode::Char('a') if picker.kind == PickerKind::ProviderSettings => {
+                app.picker = None;
+                app.provider_prompt = Some(ProviderPrompt::new());
+            }
+            KeyCode::Char('d') if picker.kind == PickerKind::ProviderSettings => {
+                let Some(item) = picker.items.get(picker.selected) else {
+                    return;
+                };
+                let name = item.value.clone();
+                if name.is_empty() {
+                    // The watermark row: nothing to delete.
+                    return;
+                }
+                let sel = picker.selected;
+                if picker.armed_delete == Some(sel) {
+                    // Second `d` on the same row confirms the delete.
+                    app.picker = None;
+                    if crate::core::agent::global_config::remove_provider(&name)
+                        .unwrap_or(false)
+                    {
+                        app.note(&format!("removed provider '{name}'"));
+                    } else {
+                        app.note(&format!("provider '{name}' was not configured"));
+                    }
                 } else {
-                    super::mcp::disconnect(&name, mcp_servers).await;
-                    app.note(&format!("removed MCP server '{name}'"));
+                    // First `d` arms; a second `d` on this row confirms.
+                    picker.armed_delete = Some(sel);
+                    app.note(&format!("press d again to delete provider '{name}'"));
                 }
             }
             // `/todo` editor: d/Enter = done, x = abandon (drop), r = remove.
@@ -5890,24 +7320,67 @@ async fn handle_key(
                 }
             }
             // `/settings` picker: `x` restores the selected key to its default
-            // by removing it from agent.toml - same write as clearing the
-            // field in the edit dock, one keypress instead of two.
+            // by removing it from the file its scope names - same write as
+            // clearing the field in the edit dock, one keypress instead of two.
             KeyCode::Char('x') if picker.kind == PickerKind::AgentSettings => {
                 let key = picker.items[picker.selected].value.clone();
                 // (picker borrow ends here; nothing below reads it before rebuild)
                 let toml_path = app.agent_dir.join("agent.toml");
-                match crate::core::agent::project::set_agent_key(&toml_path, &key, None) {
+                let Some(def) = AGENT_SETTINGS.iter().find(|d| d.key == key) else {
+                    // The leading "providers" row has no key to unset.
+                    return;
+                };
+                match write_setting(def, &toml_path, None) {
                     Ok(()) => {
-                        app.note(&format!(
-                            "{key} unset (default applies); takes effect on the next run"
-                        ));
+                        // `None`, not `""`: this removed the key, so a `Glyph`
+                        // goes back to its default rather than to off, which
+                        // is what a cleared edit field means.
+                        let when = if apply_live_unset(def) {
+                            "in effect now"
+                        } else {
+                            "takes effect on the next run"
+                        };
+                        app.note(&format!("{key} unset (default applies); {when}"));
                         if let Some(picker) = app.picker.as_mut() {
                             picker.items = build_agent_settings_items(&toml_path);
                             picker.selected =
                                 picker.selected.min(picker.items.len().saturating_sub(1));
                         }
                     }
-                    Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
+                    Err(e) => {
+                        app.note(&format!("failed to write {}: {e}", setting_path(def, &toml_path)))
+                    }
+                }
+            }
+            // Collection picker: Space toggles the selected plugin, Enter hands
+            // the checked set to the loop (see `plugin_select_request`). Rows
+            // already installed stay displayed but are not toggleable -- checking
+            // one and pressing Enter would make the batch install skip everything
+            // and error with "nothing installed". A Space on such a row is a
+            // no-op note so the confusion stays out.
+            KeyCode::Char(' ') if picker.kind == PickerKind::PluginSelect => {
+                let already_installed =
+                    picker.items[picker.selected].hint.as_deref() == Some(INSTALLED_HINT);
+                if already_installed {
+                    app.note("already installed - nothing to install");
+                } else {
+                    let item = &mut picker.items[picker.selected];
+                    item.checkbox = Some(!item.checkbox.unwrap_or(false));
+                }
+            }
+            KeyCode::Enter if picker.kind == PickerKind::PluginSelect => {
+                let paths: Vec<String> = picker
+                    .items
+                    .iter()
+                    .filter(|i| i.checkbox.unwrap_or(false))
+                    .map(|i| i.value.clone())
+                    .collect();
+                app.picker = None;
+                if paths.is_empty() {
+                    app.note("no plugin selected - install aborted");
+                } else if let Some(url) = app.plugin_collection_url.take() {
+                    app.note(&format!("installing {} plugin(s)...", paths.len()));
+                    app.plugin_select_request = Some((url, paths));
                 }
             }
             KeyCode::Enter => {
@@ -5929,24 +7402,54 @@ async fn handle_key(
                         }
                     }
                     PickerKind::ViewConfig => {}
-                    // `/settings`: open the edit dock for the selected row.
+                    // `/settings`: open the edit dock for the selected row,
+                    // or the provider screen for the leading "providers" row.
                     PickerKind::AgentSettings => {
-                        if let Some(def) = AGENT_SETTINGS.iter().find(|d| d.key == value) {
+                        if value == PROVIDERS_SETTINGS_ROW {
+                            open_provider_settings(app);
+                        } else if let Some(def) =
+                            AGENT_SETTINGS.iter().find(|d| d.key == value)
+                        {
                             let toml_path = app.agent_dir.join("agent.toml");
-                            let current = current_agent_value(&toml_path, def.key);
+                            let current = current_setting_value(def, &toml_path);
                             app.settings_prompt =
                                 Some(SettingsPrompt::new(def, current.as_deref()));
                         }
                     }
+                    // `/settings > providers`: open the wizard for the row.
+                    PickerKind::ProviderSettings => {
+                        let entry = crate::core::agent::global_config::load_global_config()
+                            .ok()
+                            .and_then(|c| c.get(&value).cloned());
+                        if let Some(entry) = entry {
+                            app.provider_prompt = Some(ProviderPrompt::from_entry(&entry));
+                        }
+                    }
                     // Todo Enter is handled by the guarded action arm above.
                     PickerKind::Todo => {}
+                    // PluginSelect Enter is handled by the guarded arm above.
+                    PickerKind::PluginSelect => {}
+                    // McpServer Enter is handled by the guarded arm above.
+                    PickerKind::McpServer => {}
                 }
             }
+            // Esc on the detail screen steps back to the server list rather
+            // than closing outright: the detail is one level *inside* `/mcp`,
+            // and dropping the user to the prompt loses the place they were at.
+            KeyCode::Esc | KeyCode::Char('q')
+                if !ctrl && picker.kind == PickerKind::McpServer =>
+            {
+                open_mcp_picker(app, mcp_servers).await;
+            }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
+                app.plugin_collection_url = None;
                 app.picker = None;
+                app.mcp_detail = None;
             }
             _ if ctrl_c => {
+                app.plugin_collection_url = None;
                 app.picker = None;
+                app.mcp_detail = None;
             }
             _ => {}
         }
@@ -5984,7 +7487,7 @@ async fn handle_key(
                 app.slash_dismissed = true;
                 return;
             }
-            KeyCode::Enter => {
+            KeyCode::Enter if !newline => {
                 let matches = app.slash_matches();
                 let sel = app.slash_selected.min(matches.len() - 1);
                 if app.input.trim() != matches[sel].name() {
@@ -6009,7 +7512,7 @@ async fn handle_key(
                 app.path_hint_move(1);
                 return;
             }
-            KeyCode::Tab | KeyCode::Enter => {
+            KeyCode::Tab | KeyCode::Enter if !newline => {
                 app.accept_path_hint();
                 return;
             }
@@ -6045,9 +7548,11 @@ async fn handle_key(
                 }
             }
         }
-        // Alt+Enter (or Ctrl+J) inserts a newline for multi-line input; plain
-        // Enter submits.
-        KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
+        // Alt+Enter, Shift+Enter or Ctrl+J insert a newline for multi-line
+        // input; plain Enter submits. Shift+Enter only reaches us from a
+        // terminal that disambiguates it (kitty keyboard protocol / CSI-u);
+        // the other two work everywhere.
+        KeyCode::Enter if newline => {
             app.input_insert('\n');
         }
         KeyCode::Char('j') if ctrl => {
@@ -6058,40 +7563,99 @@ async fn handle_key(
         KeyCode::Char('o') if ctrl => {
             app.toggle_regions();
         }
+        // Alt+T toggles reasoning effort between "low" and the last non-low
+        // level (default medium). A quick way to quiet or deepen a model run
+        // without typing the full `/effort` command.
+        KeyCode::Char('t') if alt => {
+            app.toggle_reasoning_effort();
+        }
         // Ctrl-V stages an image from the OS clipboard (terminal paste is
         // text-only, so we read the clipboard directly) for the next message.
         KeyCode::Char('v') if ctrl => {
             app.attach_clipboard_image();
         }
+        // Readline editing keys, so the composer behaves like the shell the
+        // user just came from. Motion and word-kills are line-wise because the
+        // buffer is multi-line.
+        KeyCode::Char('a') if ctrl => app.cursor_line_start(),
+        KeyCode::Char('e') if ctrl => app.cursor_line_end(),
+        KeyCode::Char('b') if ctrl => app.cursor_left(),
+        KeyCode::Char('f') if ctrl => app.cursor_right(),
+        KeyCode::Char('h') if ctrl => app.input_backspace(),
+        KeyCode::Char('w') if ctrl => app.delete_unix_word_left(),
+        KeyCode::Char('u') if ctrl => app.delete_to_line_start(),
+        KeyCode::Char('k') if ctrl => app.delete_to_line_end(),
+        KeyCode::Char('t') if ctrl => app.transpose_chars(),
+        // Ctrl-P/Ctrl-N are Up/Down's shell spelling; recall declines when
+        // there is nothing to recall, and unlike the arrows they never fall
+        // through to scrolling.
+        KeyCode::Char('p') if ctrl => {
+            app.recall_prev();
+        }
+        KeyCode::Char('n') if ctrl => {
+            app.recall_next();
+        }
+        KeyCode::Char('b') if alt => app.cursor_word_left(),
+        KeyCode::Char('f') if alt => app.cursor_word_right(),
+        KeyCode::Char('d') if alt => app.delete_word_right(),
         KeyCode::Enter => {
             let text = app.input.trim().to_string();
             app.input_clear();
             if !text.is_empty() {
                 app.record_submitted(&text);
                 if let Some(cmd) = text.strip_prefix('/') {
-                    run_command(app, cmd).await;
+                    run_command(app, cmd, mcp_servers).await;
                 } else {
                     app.submit_user(text);
                 }
             }
         }
+        // Cmd (SUPER) is line-wise, Alt/Ctrl word-wise, bare char-wise. SUPER
+        // only arrives from a terminal with the keyboard enhancement flags on,
+        // so the macOS Cmd bindings degrade to nothing rather than misfiring.
+        KeyCode::Backspace if sup => {
+            app.delete_to_line_start();
+        }
+        KeyCode::Backspace if alt || ctrl => {
+            app.delete_word_left();
+        }
         KeyCode::Backspace => {
             app.input_backspace();
+        }
+        KeyCode::Delete if alt || ctrl => {
+            app.delete_word_right();
         }
         KeyCode::Delete => {
             app.input_delete();
         }
+        KeyCode::Left if sup => {
+            app.cursor_line_start();
+        }
+        KeyCode::Left if alt || ctrl => {
+            app.cursor_word_left();
+        }
         KeyCode::Left => {
             app.cursor_left();
+        }
+        KeyCode::Right if sup => {
+            app.cursor_line_end();
+        }
+        KeyCode::Right if alt || ctrl => {
+            app.cursor_word_right();
         }
         KeyCode::Right => {
             app.cursor_right();
         }
         KeyCode::Home => {
-            app.cursor = 0;
+            app.cursor_line_start();
+        }
+        // Shift+Tab (crossterm sends it as BackTab, not Tab+SHIFT) cycles
+        // reasoning effort low -> medium -> high -> low, matching Claude Code.
+        KeyCode::BackTab => {
+            app.cycle_reasoning_effort();
         }
         KeyCode::End => {
-            app.cursor = app.input.len();
+            app.cursor_line_end();
         }
         // Tab is a no-op in normal input mode; slash-command and path-hint
         // popups intercept it before reaching this arm.
@@ -6409,6 +7973,16 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Switch model (bare: pick interactively)",
     },
     SlashCommand {
+        name: "/effort",
+        hint: "[low|medium|high]",
+        description: "Set reasoning effort (bare: show current; low: faster, high: deeper thinking)",
+    },
+    SlashCommand {
+        name: "/terminal-setup",
+        hint: "",
+        description: "Configure this terminal so Shift+Enter inserts a newline",
+    },
+    SlashCommand {
         name: "/mcp",
         hint: "",
         description: "List, add, edit, remove, or toggle MCP servers",
@@ -6436,7 +8010,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/settings",
         hint: "[max_parallel_subagents N]",
-        description: "Edit [agent] settings from agent.toml (menu); takes effect next run",
+        description: "Edit agent.toml and ~/.jan settings (menu); most apply next run",
     },
     SlashCommand {
         name: "/update",
@@ -6454,15 +8028,82 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
 /// of truth for the `/help` listing and the first-run footer hint, so the two
 /// can't drift. Deliberately not rendered on every frame -- the footer is for
 /// transient state (running, prompts, pickers), not a permanent cheat sheet.
+/// A word character for the emacs-style motions (Alt+B/F/D, Alt+Backspace,
+/// Ctrl/Alt+arrows), matching readline: alphanumerics plus `_`.
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Byte offset of the emacs word boundary before `at`: skip any run of
+/// non-word chars, then the word itself, so `"foo bar"` with the caret at the
+/// end lands on `b` and `"foo   "` lands on 0.
+fn prev_word_start(s: &str, at: usize) -> usize {
+    let mut i = at;
+    let mut in_word = false;
+    while let Some(c) = s[..i].chars().next_back() {
+        if is_word_char(c) {
+            in_word = true;
+        } else if in_word {
+            break;
+        }
+        i -= c.len_utf8();
+    }
+    i
+}
+
+/// The mirror of [`prev_word_start`], scanning forward from `at`.
+fn next_word_end(s: &str, at: usize) -> usize {
+    let mut i = at;
+    let mut in_word = false;
+    while let Some(c) = s[i..].chars().next() {
+        if is_word_char(c) {
+            in_word = true;
+        } else if in_word {
+            break;
+        }
+        i += c.len_utf8();
+    }
+    i
+}
+
+/// `Ctrl-W`'s boundary: whitespace-delimited, like the shell's
+/// unix-word-rubout, so it takes a whole `src/core/cli/tui.rs` token rather
+/// than stopping at every `/`.
+fn prev_unix_word_start(s: &str, at: usize) -> usize {
+    let mut i = at;
+    for stop_on_space in [false, true] {
+        while let Some(c) = s[..i].chars().next_back() {
+            if c.is_whitespace() == stop_on_space {
+                break;
+            }
+            i -= c.len_utf8();
+        }
+    }
+    i
+}
+
+/// Byte offsets bounding the line `at` sits on, newlines excluded. The
+/// composer is multi-line (Alt/Shift+Enter), so "line" is not the whole buffer.
+fn line_bounds(s: &str, at: usize) -> (usize, usize) {
+    let start = s[..at].rfind('\n').map_or(0, |i| i + 1);
+    let end = s[at..].find('\n').map_or(s.len(), |i| at + i);
+    (start, end)
+}
+
 const KEY_BINDINGS: &[(&str, &str)] = &[
     ("Enter", "Send the message"),
-    ("Alt+Enter / Ctrl-J", "Insert a newline"),
+    ("Alt+Enter / Ctrl-J", "Insert a newline (Shift+Enter where reported)"),
+    ("Ctrl-A/E, Alt+B/F", "Start/end of line, word left/right"),
+    ("Ctrl-W, Alt+Backspace", "Delete the word before the caret"),
+    ("Ctrl-U / Ctrl-K", "Delete to the start / end of the line"),
     ("Esc / Ctrl-C", "Cancel the running turn"),
     ("Esc Esc", "Rewind to an earlier message"),
     ("↑/↓", "Recall sent messages (scrolls while the input has text)"),
     ("PgUp/PgDn", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
+    ("Shift+Tab", "Cycle reasoning effort (low/medium/high)"),
+    ("Alt+T", "Toggle reasoning effort (low / last)"),
     ("Drag", "Select text, copied on release (Alt+drag for a block)"),
     ("Ctrl-D", "Quit"),
 ];
@@ -6476,7 +8117,11 @@ fn parse_command(line: &str) -> (&str, &str) {
 }
 
 /// Execute a `/command` typed into the input box. Runs only while idle.
-async fn run_command(app: &mut App, line: &str) {
+async fn run_command(
+    app: &mut App,
+    line: &str,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+) {
     let (name, arg) = parse_command(line);
     match name {
         "" | "help" | "?" => {
@@ -6501,11 +8146,13 @@ async fn run_command(app: &mut App, line: &str) {
         "clear" => {
             app.reset_session();
             clear_todos(app).await;
+            app.push_session_banner(true);
             app.note("conversation cleared");
         }
         "new" => {
             app.reset_session();
             clear_todos(app).await;
+            app.push_session_banner(true);
             app.note("started a new session");
         }
         "compact" => compact_command(app),
@@ -6540,20 +8187,22 @@ async fn run_command(app: &mut App, line: &str) {
         }
         "model" => {
             if arg.is_empty() {
-                open_model_picker(app);
+                open_model_picker(app).await;
             } else {
                 app.set_model(arg.to_string());
             }
         }
-        "mcp" => open_mcp_picker(app),
+        "mcp" => open_mcp_picker(app, mcp_servers).await,
         "plugin" => plugin_command(app, arg).await,
         "login" => open_login_prompt(app),
         "update" => update_command(app),
         "config" => open_config_screen(app),
+        "terminal-setup" => terminal_setup_command(app),
         "settings" => settings_command(app, arg),
         "goal" => goal_command(app, arg),
         "init" => init_command(app),
         "plan" => plan_command(app, arg),
+        "effort" => effort_command(app, arg),
         "todo" => todo_command(app, arg).await,
         "cancel" => cancel_command(app, arg),
         "quit" | "exit" => app.should_quit = true,
@@ -6765,18 +8414,37 @@ fn goal_command(app: &mut App, arg: &str) {
     }
 }
 
-/// One editable `[agent]` key surfaced by `/settings`. Mirrors the template's
-/// knobs; defaults match `load_agent_config`. `model` is deliberately absent:
-/// it has its own `/model` picker.
+/// One editable key surfaced by `/settings`. Mirrors the templates' knobs;
+/// defaults match `load_agent_config` for project keys and the
+/// `global_config` accessors for user-wide ones. `model` is deliberately
+/// absent: it has its own `/model` picker.
 struct AgentSettingDef {
     key: &'static str,
     label: &'static str,
     desc: &'static str,
     kind: AgentSettingKind,
+    scope: SettingScope,
+}
+
+/// Which file a `/settings` row reads and writes. Both are surfaced by the one
+/// menu because the distinction is an implementation detail to the person
+/// looking for a knob: they want the setting, not the file it lives in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SettingScope {
+    /// This project's `.jan/agent/agent.toml`, under `[agent]` unless the key
+    /// names its own section.
+    Project,
+    /// The user-wide `~/.jan/config.toml`, at the document root.
+    Global,
 }
 
 enum AgentSettingKind {
     Int { default: Option<u64>, min: u64 },
+    /// Short display glyph with a grapheme cap, and the one kind where an
+    /// empty field is a *value* rather than an unset: `""` is the deliberate
+    /// "off", distinct from the key being absent, which takes the default.
+    /// `x` on the row still removes the key.
+    Glyph { default: &'static str, max: usize },
     Text { default: &'static str },
     /// Exact-match choice: Enter writes one of `options`, cleared field
     /// unsets. Covers the `read-only | deny | allow` and `always | relevance`
@@ -6787,24 +8455,31 @@ enum AgentSettingKind {
     Bool { default: bool },
 }
 
+/// Sentinel row value in the `/settings` picker that opens the provider
+/// management screen instead of an `[agent]` edit dock.
+const PROVIDERS_SETTINGS_ROW: &str = "__providers__";
+
 const AGENT_SETTINGS: &[AgentSettingDef] = &[
     AgentSettingDef {
         key: "context_window",
         label: "context_window",
         desc: "context limit in tokens",
         kind: AgentSettingKind::Int { default: Some(128000), min: 1 },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "compaction_reserve_tokens",
         label: "compaction_reserve_tokens",
         desc: "headroom kept free before compaction",
         kind: AgentSettingKind::Int { default: Some(16384), min: 0 },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "max_tokens",
         label: "max_tokens",
         desc: "cap on tokens generated per response (omitted when unset)",
         kind: AgentSettingKind::Int { default: None, min: 1 },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "max_parallel_subagents",
@@ -6814,6 +8489,7 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
             default: Some(10),
             min: 1,
         },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "instructions_file",
@@ -6822,12 +8498,14 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         kind: AgentSettingKind::Text {
             default: "AGENT.md",
         },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "budget.max_tokens",
         label: "budget.max_tokens",
         desc: "token-spend ceiling per run; the only cap on run length",
         kind: AgentSettingKind::Int { default: Some(128000), min: 0 },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "tools.default",
@@ -6837,6 +8515,7 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
             options: &["read-only", "deny", "allow"],
             default: "read-only",
         },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "skills.inject",
@@ -6846,12 +8525,31 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
             options: &["always", "relevance"],
             default: "always",
         },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "show_reasoning",
         label: "show_reasoning",
         desc: "expand  reasoning in the transcript (Ctrl-O still toggles)",
         kind: AgentSettingKind::Bool { default: false },
+        scope: SettingScope::Project,
+    },
+    AgentSettingDef {
+        key: "send_reasoning",
+        label: "send_reasoning",
+        desc: "resend prior reasoning to the model (false drops it from requests)",
+        kind: AgentSettingKind::Bool { default: true },
+        scope: SettingScope::Project,
+    },
+    AgentSettingDef {
+        key: "wave",
+        label: "wave",
+        desc: "glyph swept along the working row (up to 3 chars; empty = throbber)",
+        kind: AgentSettingKind::Glyph {
+            default: crate::core::agent::global_config::WAVE_DEFAULT,
+            max: crate::core::agent::global_config::WAVE_MAX_GRAPHEMES,
+        },
+        scope: SettingScope::Global,
     },
 ];
 
@@ -6877,6 +8575,12 @@ impl SettingsPrompt {
             .iter()
             .find(|d| d.key == self.key)
             .expect("settings prompt always opens for a def row")
+    }
+
+    /// Apply a bracketed paste to the field, dropping the whitespace terminals
+    /// add around a paste.
+    fn paste(&mut self, text: &str) {
+        self.input.push_str(super::secret_input::pasted(text));
     }
 }
 
@@ -7021,11 +8725,16 @@ impl McpPrompt {
             super::mcp::parse_pairs(self.headers.trim(), "header")?,
             self.active,
         )?;
+        // Read the *previous* active flag before the write. `upsert_server` has
+        // already replaced the entry by the time it lands on disk, so reading it
+        // afterwards reports the new value and a server being disabled from this
+        // form was left connected.
+        let was_active = self
+            .editing
+            .as_deref()
+            .is_some_and(|n| super::mcp::get_server(n).is_some_and(|e| e.active));
         super::mcp::upsert_server(self.name.trim(), &config)?;
         let name = self.name.trim().to_string();
-        let was_active = self.editing.as_deref().is_some_and(|n| {
-            super::mcp::get_server(n).is_some_and(|e| e.active)
-        });
         // Disconnect the old live service on rename/edit, then reconnect if active.
         if let Some(old) = self.editing.take() {
             if old != name {
@@ -7033,19 +8742,29 @@ impl McpPrompt {
             }
         }
         if self.active {
-            let cfg = super::mcp::list_servers()
-                .into_iter()
-                .find(|s| s.name == name)
-                .map(|s| s.config);
-            if let Some(cfg) = cfg {
-                if let Err(e) = super::mcp::connect(&name, &cfg, mcp_servers).await {
-                    log::warn!("MCP: {e}");
-                }
-            }
+            // Off the render loop: a cold stdio spawn or an http handshake here
+            // would freeze the frame the form was submitted on.
+            reconnect_mcp_server(mcp_servers, name);
         } else if was_active {
             super::mcp::disconnect(&name, mcp_servers).await;
         }
         Ok(())
+    }
+
+    /// Apply a bracketed paste to the active text field. Toggle fields
+    /// (transport, active) ignore pastes exactly as they ignore typed
+    /// characters.
+    fn paste(&mut self, text: &str) {
+        let text = super::secret_input::pasted(text);
+        match self.field {
+            McpField::Name => self.name.push_str(text),
+            McpField::Command => self.command.push_str(text),
+            McpField::Args => self.args.push_str(text),
+            McpField::Env => self.env.push_str(text),
+            McpField::Url => self.url.push_str(text),
+            McpField::Headers => self.headers.push_str(text),
+            _ => {}
+        }
     }
 }
 
@@ -7059,6 +8778,191 @@ fn pairs_to_str(map: Option<&serde_json::Map<String, Value>>) -> String {
             .join(",")
     })
     .unwrap_or_default()
+}
+
+/// A docked multi-field wizard for adding or editing an OpenAI-compatible
+/// provider in `~/.jan/config.toml`. Mirrors `McpPrompt`: Up/Down move between
+/// fields, chars/backspace edit the current field, Enter saves. The API key is
+/// never echoed (see `secret_input::mask`). `edit` mode prefills from the
+/// existing entry and defaults `name` to it; `add` mode starts blank.
+struct ProviderPrompt {
+    /// `Some(original_name)` when editing; `None` when adding a new provider.
+    editing: Option<String>,
+    /// Which field the keyboard is currently filling in.
+    field: ProviderField,
+    name: String,
+    base_url: String,
+    api_key: String,
+    /// Whether the user edited the api-key field this session. While editing a
+    /// provider the stored key is never loaded into the prompt (it must not be
+    /// echoable), so an untouched field means "keep the stored key" and a
+    /// touched one replaces it on save -- including with nothing, which clears
+    /// it (e.g. a local endpoint that dropped auth).
+    key_touched: bool,
+    /// Whitespace-separated model ids (replaces the existing list on save).
+    models: String,
+    error: Option<String>,
+}
+
+/// The fields of `ProviderPrompt`, in input order.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ProviderField {
+    Name,
+    BaseUrl,
+    ApiKey,
+    Models,
+}
+
+impl ProviderPrompt {
+    const FIELD_ORDER: [ProviderField; 4] = [
+        ProviderField::Name,
+        ProviderField::BaseUrl,
+        ProviderField::ApiKey,
+        ProviderField::Models,
+    ];
+
+    fn next_field(&mut self) {
+        if self.editing.is_some() {
+            // Name is read-only while editing; cycle through the editable
+            // fields only (BaseUrl -> ApiKey -> Models -> BaseUrl).
+            self.field = match self.field {
+                ProviderField::BaseUrl => ProviderField::ApiKey,
+                ProviderField::ApiKey => ProviderField::Models,
+                _ => ProviderField::BaseUrl,
+            };
+        } else {
+            let pos = Self::FIELD_ORDER
+                .iter()
+                .position(|f| *f == self.field)
+                .unwrap_or(0);
+            self.field = Self::FIELD_ORDER[(pos + 1) % Self::FIELD_ORDER.len()];
+        }
+    }
+
+    fn prev_field(&mut self) {
+        if self.editing.is_some() {
+            // Name is read-only while editing; cycle backwards through the
+            // editable fields only (BaseUrl <- ApiKey <- Models <- BaseUrl).
+            self.field = match self.field {
+                ProviderField::ApiKey => ProviderField::BaseUrl,
+                ProviderField::Models => ProviderField::ApiKey,
+                _ => ProviderField::Models,
+            };
+        } else {
+            let pos = Self::FIELD_ORDER
+                .iter()
+                .position(|f| *f == self.field)
+                .unwrap_or(0);
+            self.field = Self::FIELD_ORDER[
+                (pos + Self::FIELD_ORDER.len() - 1) % Self::FIELD_ORDER.len()
+            ];
+        }
+    }
+
+    fn from_entry(entry: &crate::core::state::ProviderConfig) -> Self {
+        Self {
+            editing: Some(entry.provider.clone()),
+            field: ProviderField::BaseUrl,
+            name: entry.provider.clone(),
+            base_url: entry.base_url.clone().unwrap_or_default(),
+            api_key: String::new(),
+            key_touched: false,
+            models: entry.models.join(" "),
+            error: None,
+        }
+    }
+
+    fn new() -> Self {
+        Self {
+            editing: None,
+            field: ProviderField::Name,
+            name: String::new(),
+            base_url: String::new(),
+            api_key: String::new(),
+            key_touched: false,
+            models: String::new(),
+            error: None,
+        }
+    }
+
+    /// Apply a bracketed paste to the active field, dropping the whitespace
+    /// terminals add around a paste. The name field is read-only while editing
+    /// (renaming would orphan the config entry), so a paste lands in the
+    /// editable fields only.
+    fn paste(&mut self, text: &str) {
+        let text = super::secret_input::pasted(text);
+        if self.editing.is_some() && self.field == ProviderField::Name {
+            return;
+        }
+        match self.field {
+            ProviderField::Name => self.name.push_str(text),
+            ProviderField::BaseUrl => self.base_url.push_str(text),
+            ProviderField::ApiKey => {
+                self.api_key.push_str(text);
+                self.key_touched = true;
+            }
+            ProviderField::Models => self.models.push_str(text),
+        }
+    }
+
+    /// API key field for rendering: the stored key is never loaded into the
+    /// prompt, so an untouched field while editing says `(unchanged)`; anything
+    /// typed/pasted renders masked so a key never reaches the screen or
+    /// scrollback.
+    fn masked_key(&self) -> String {
+        if self.editing.is_some() && !self.key_touched {
+            return "(unchanged)".to_string();
+        }
+        super::secret_input::mask(self.api_key.chars().count())
+    }
+
+    /// An error explaining why a base URL is not a usable http(s) upstream.
+    /// Only `https` (or `http` for a loopback host) is accepted, so a bearer
+    /// key is never sent over a plaintext remote connection.
+    fn validate_base_url(&self) -> Option<String> {
+        use super::providers::is_loopback_url;
+        let url = self.base_url.trim();
+        if url.is_empty() {
+            return Some("base URL is required".to_string());
+        }
+        if url.starts_with("https://") {
+            return None;
+        }
+        if url.starts_with("http://") && is_loopback_url(url) {
+            return None;
+        }
+        Some(
+            "base URL must be https:// (or http:// for a localhost/loopback host)"
+                .to_string(),
+        )
+    }
+
+    /// Persist the provider to `~/.jan/config.toml` via the headless config
+    /// path the CLI shares. `api_type` stays default (OpenAI-compatible
+    /// passthrough) unless an explicit type is chosen elsewhere. Returns an
+    /// error keeping the prompt open on invalid input. The name is read-only
+    /// while editing, so `save` always writes under the original key and never
+    /// orphans the prior entry. An untouched api-key field keeps the stored
+    /// key; a touched one replaces it -- with nothing, if emptied, which clears
+    /// the key (see `key_touched`).
+    fn save(&self) -> Result<(), String> {
+        let name = self.name.trim();
+        if name.is_empty() {
+            return Err("provider name is required".to_string());
+        }
+        if let Some(err) = self.validate_base_url() {
+            return Err(err);
+        }
+        let base_url = self.base_url.trim().to_string();
+        let api_key = (self.key_touched || self.editing.is_none())
+            .then(|| self.api_key.trim().to_string());
+        let models: Vec<String> = self
+            .models
+            .split_whitespace()
+            .map(str::to_string)
+            .collect();
+        super::cli_agent_config_set(name, api_key, Some(base_url), Some(models), None).map(|_| ())
+    }
 }
 
 /// Value of an `[agent]` key in `agent.toml` as a display string, `None` when
@@ -7080,12 +8984,79 @@ fn current_agent_value(toml_path: &std::path::Path, key: &str) -> Option<String>
     })
 }
 
+/// Current on-disk value of a `/settings` row, from whichever file its scope
+/// names. `None` when unset or the file is unreadable.
+fn current_setting_value(def: &AgentSettingDef, toml_path: &std::path::Path) -> Option<String> {
+    match def.scope {
+        SettingScope::Project => current_agent_value(toml_path, def.key),
+        SettingScope::Global => crate::core::agent::global_config::global_value(def.key),
+    }
+}
+
+/// Write a `/settings` row to whichever file its scope names. `None` removes
+/// the key so its default applies again.
+fn write_setting(
+    def: &AgentSettingDef,
+    toml_path: &std::path::Path,
+    value: Option<toml_edit::Item>,
+) -> Result<(), String> {
+    match def.scope {
+        SettingScope::Project => {
+            crate::core::agent::project::set_agent_key(toml_path, def.key, value)
+        }
+        SettingScope::Global => {
+            crate::core::agent::global_config::set_global_key(def.key, value).map(|_| ())
+        }
+    }
+}
+
+/// The file a `/settings` row writes, for the error message when a write fails.
+fn setting_path(def: &AgentSettingDef, toml_path: &std::path::Path) -> String {
+    match def.scope {
+        SettingScope::Project => toml_path.display().to_string(),
+        SettingScope::Global => crate::core::agent::global_config::global_config_path()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "~/.jan/config.toml".to_string()),
+    }
+}
+
+/// Apply a just-saved setting to the running process where that is possible,
+/// returning whether it took. Most keys are snapshotted at session start and
+/// genuinely need a restart; a purely cosmetic one like `wave` does not, and
+/// telling someone to restart to see a glyph they just picked would be a lie
+/// the code does not have to tell. `entered` is the trimmed field; empty is an
+/// unset for most kinds and a written "off" for a `Glyph`, which is why this
+/// passes `Some` either way and lets the setter read it.
+fn apply_live_setting(def: &AgentSettingDef, entered: &str) -> bool {
+    match def.key {
+        "wave" => {
+            set_wave_glyph(Some(entered));
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Apply a just-removed setting to the running process, returning whether it
+/// took. Separate from `apply_live_setting` because removing a key and saving
+/// an empty one are different outcomes for a `Glyph`: the first restores the
+/// default, the second is the off switch.
+fn apply_live_unset(def: &AgentSettingDef) -> bool {
+    match def.key {
+        "wave" => {
+            set_wave_glyph(None);
+            true
+        }
+        _ => false,
+    }
+}
+
 /// `/settings` dispatcher: bare opens the interactive settings menu (an
-/// `AgentSettings` picker over the `[agent]` keys; Enter on a row docks an edit
-/// prompt); `max_parallel_subagents <N>` still works as a one-shot shortcut.
-/// Writes are format-preserving and take effect on the next run (the current
-/// run snapshotted its config at start). Runs only while idle, like every
-/// command.
+/// `AgentSettings` picker over every def, project-scoped or user-wide; Enter on
+/// a row docks an edit prompt); `max_parallel_subagents <N>` still works as a
+/// one-shot shortcut. Writes are format-preserving and take effect on the next
+/// run (the current run snapshotted its config at start), except the cosmetic
+/// ones `apply_live_setting` handles. Runs only while idle, like every command.
 fn settings_command(app: &mut App, arg: &str) {
     let toml_path = app.agent_dir.join("agent.toml");
     let arg = arg.trim();
@@ -7118,28 +9089,39 @@ fn settings_command(app: &mut App, arg: &str) {
     }
 }
 
-/// One picker row per `[agent]` def; the hint carries the current on-disk
-/// value (`= 400`) or `(unset)` when the default applies. `value` is the key
-/// so the edit dock and the `x` unset shortcut can act on it.
+/// One picker row per setting def, whatever file its scope names, plus a
+/// leading "providers" entry that opens the provider-management screen (see
+/// `open_provider_settings`). The hint carries the current on-disk value
+/// (`= 400`) or `(unset)` when the default applies. `value` is the key so the
+/// edit dock and the `x` unset shortcut can act on it.
 fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
-    AGENT_SETTINGS
-        .iter()
-        .map(|def| {
-            let current = current_agent_value(toml_path, def.key);
-            PickerItem {
-                value: def.key.to_string(),
-                label: def.label.to_string(),
-                hint: Some(match &current {
-                    Some(v) => format!("= {v}"),
-                    None => "(unset)".to_string(),
-                }),
-                checkbox: None,
-            }
-        })
-        .collect()
+    let mut items = vec![PickerItem {
+        value: PROVIDERS_SETTINGS_ROW.to_string(),
+        label: "providers".to_string(),
+        hint: Some("configure OpenAI-compatible providers".to_string()),
+        checkbox: None,
+    }];
+    items.extend(
+        AGENT_SETTINGS
+            .iter()
+            .map(|def| {
+                let current = current_setting_value(def, toml_path);
+                PickerItem {
+                    value: def.key.to_string(),
+                    label: def.label.to_string(),
+                    hint: Some(match &current {
+                        Some(v) => format!("= {v}"),
+                        None => "(unset)".to_string(),
+                    }),
+                    checkbox: None,
+                }
+            })
+            .collect::<Vec<_>>(),
+    );
+    items
 }
 
-/// Open the `/settings` menu: a picker row per `[agent]` key, hint showing the
+/// Open the `/settings` menu: a picker row per setting key, hint showing the
 /// current value (or `unset`), Enter docking the edit prompt for that row, `x`
 /// removing the key so its default applies again.
 fn open_settings_screen(app: &mut App) {
@@ -7148,11 +9130,63 @@ fn open_settings_screen(app: &mut App) {
         kind: PickerKind::AgentSettings,
         items: build_agent_settings_items(&toml_path),
         selected: 0,
+        armed_delete: None,
     });
 }
 
+/// Open the `/settings > providers` screen: a picker row per provider in
+/// `~/.jan/config.toml` (the standalone-agent credential store), with `a` to
+/// add, Enter to edit the selected row, and `d` pressed twice to delete it
+/// (the first `d` arms, the second confirms; see the picker key handler).
+fn open_provider_settings(app: &mut App) {
+    let providers = match crate::core::agent::global_config::load_global_config() {
+        Ok(c) => c,
+        Err(e) => return app.note(&format!("failed to read ~/.jan/config.toml: {e}")),
+    };
+    let mut providers: Vec<_> = providers.into_values().collect();
+    providers.sort_by(|a, b| a.provider.cmp(&b.provider));
+
+    let items: Vec<PickerItem> = if providers.is_empty() {
+        vec![PickerItem {
+            label: "no providers configured - press a to add an OpenAI-compatible one"
+                .to_string(),
+            value: String::new(),
+            hint: None,
+            checkbox: None,
+        }]
+    } else {
+        providers
+            .into_iter()
+            .map(|c| {
+                let key = if c.api_key.is_some() { "key set" } else { "no key" };
+                let base = c.base_url.as_deref().unwrap_or("default url");
+                PickerItem {
+                    label: format!("{key}  {base}  {} model(s)", c.models.len()),
+                    value: c.provider.clone(),
+                    hint: Some(c.provider),
+                    checkbox: None,
+                }
+            })
+            .collect()
+    };
+    app.picker = Some(Picker {
+        kind: PickerKind::ProviderSettings,
+        items,
+        selected: 0,
+        armed_delete: None,
+    });
+}
+
+/// Truncate to the first `n` grapheme clusters. Slicing by byte or `char`
+/// would split an emoji mid-sequence and leave a different glyph on screen.
+fn grapheme_prefix(s: &str, n: usize) -> String {
+    use unicode_segmentation::UnicodeSegmentation;
+    s.graphemes(true).take(n).collect()
+}
+
 /// Keyboard for the `/settings` edit dock: chars/backspace edit the field,
-/// Enter validates and writes (empty clears the key), Esc cancels. Mirrors
+/// Enter validates and writes (an empty field clears the key, except for a
+/// `Glyph`, where it writes the off value), Esc cancels. Mirrors
 /// `handle_login_key`, minus the secret/verify machinery.
 fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c'))) && app.settings_prompt.is_some()
     {
@@ -7188,6 +9222,17 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.co
                         }
                     }
                 }
+                AgentSettingKind::Glyph { .. } => {
+                    // Not trimmed to empty-means-unset like `Text`: a cleared
+                    // field writes `""`, which is the off switch. `x` on the
+                    // row is how you get back to the default.
+                    let input = prompt.input.trim();
+                    if let Some(err) = crate::core::agent::global_config::wave_error(input) {
+                        prompt.error = Some(err);
+                        return;
+                    }
+                    Some(toml_edit::value(input.to_string()))
+                }
                 AgentSettingKind::Text { .. } => {
                     (!prompt.input.trim().is_empty())
                         .then(|| toml_edit::value(prompt.input.trim().to_string()))
@@ -7220,32 +9265,63 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.co
                     }
                 }
             };
-            match crate::core::agent::project::set_agent_key(&toml_path, prompt.key, value) {
+            match write_setting(prompt.def(), &toml_path, value) {
                 Ok(()) => {
-                    let what = if prompt.input.trim().is_empty() {
-                        format!("{} unset (default applies)", prompt.key)
-                    } else {
-                        format!("{} = {} written", prompt.key, prompt.input.trim())
+                    let entered = prompt.input.trim().to_string();
+                    let glyph_kind = matches!(prompt.def().kind, AgentSettingKind::Glyph { .. });
+                    let what = match (entered.is_empty(), glyph_kind) {
+                        // A cleared glyph is a written value, not an unset, so
+                        // saying "default applies" would be a lie.
+                        (true, true) => format!("{} off (throbber)", prompt.key),
+                        (true, false) => format!("{} unset (default applies)", prompt.key),
+                        (false, _) => format!("{} = {entered} written", prompt.key),
                     };
-                    app.note(&format!("{what}; takes effect on the next run"));
+                    let when = if apply_live_setting(prompt.def(), &entered) {
+                        "in effect now"
+                    } else {
+                        "takes effect on the next run"
+                    };
+                    app.note(&format!("{what}; {when}"));
                     app.settings_prompt = None;
                 }
                 Err(e) => {
-                    prompt.error = Some(format!("failed to write {}: {e}", toml_path.display()));
+                    let path = setting_path(prompt.def(), &toml_path);
+                    prompt.error = Some(format!("failed to write {path}: {e}"));
                 }
             }
         }
         KeyCode::Backspace => {
-            prompt.input.pop();
+            // Whole cluster for a glyph field: popping one `char` off `👁️`
+            // leaves `👁`, so the row looks unchanged and the key reads as
+            // broken. Other kinds keep the plain char pop.
+            if matches!(prompt.def().kind, AgentSettingKind::Glyph { .. }) {
+                let keep = crate::core::agent::global_config::wave_len(&prompt.input)
+                    .saturating_sub(1);
+                prompt.input = grapheme_prefix(&prompt.input, keep);
+            } else {
+                prompt.input.pop();
+            }
         }
-        KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
+        KeyCode::Char(ch) if !ctrl => {
+            prompt.input.push(ch);
+            // Checked on the result rather than by counting up: a skin-tone
+            // modifier or ZWJ joins the cluster before it, so the string can
+            // grow by a `char` without growing by a grapheme, and that must
+            // still be allowed at the cap.
+            if let AgentSettingKind::Glyph { max, .. } = prompt.def().kind {
+                if crate::core::agent::global_config::wave_len(&prompt.input) > max {
+                    prompt.input.pop();
+                }
+            }
+        }
         _ => {}
     }
 }
 
 /// Keyboard for the MCP add/edit wizard: Up/Down move between fields, chars/
 /// backspace edit the current text field, Space toggles the transport/active
-/// rows, Enter saves and connects, Esc cancels.
+/// rows, Enter saves and connects, Esc cancels. Only arrow keys steer: `k`/`j`
+/// are ordinary characters in these fields (URLs, paths), so they always type.
 #[allow(clippy::too_many_lines)]
 async fn handle_mcp_prompt_key(
     app: &mut App,
@@ -7263,8 +9339,8 @@ async fn handle_mcp_prompt_key(
         return;
     };
     match key.code {
-        KeyCode::Up | KeyCode::Char('k') => prompt.prev_field(),
-        KeyCode::Down | KeyCode::Char('j') => prompt.next_field(),
+        KeyCode::Up => prompt.prev_field(),
+        KeyCode::Down => prompt.next_field(),
         KeyCode::Tab => prompt.next_field(),
         KeyCode::Enter => {
             // Take the prompt out so `save` can borrow `app` freely for notes
@@ -7320,6 +9396,78 @@ async fn handle_mcp_prompt_key(
     }
 }
 
+/// Keyboard for the provider add/edit wizard: Up/Down move between fields,
+/// chars/backspace edit the current field, Enter saves, Esc cancels. The API
+/// key field masks what is typed (see `ProviderPrompt::masked_key`). Only
+/// arrow keys steer: `k`/`j` are ordinary characters in these fields (API keys
+/// start with `sk-...`), so they always type.
+fn handle_provider_prompt_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+    if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c')))
+        && app.provider_prompt.is_some()
+    {
+        app.provider_prompt = None;
+        return;
+    }
+    let Some(prompt) = app.provider_prompt.as_mut() else {
+        return;
+    };
+    match key.code {
+        KeyCode::Up => prompt.prev_field(),
+        KeyCode::Down => prompt.next_field(),
+        KeyCode::Tab => prompt.next_field(),
+        KeyCode::Enter => {
+            // Take the prompt out so `save` can borrow `app` freely for notes
+            // and put it back on error.
+            let mut taken = app.provider_prompt.take().expect("prompt is Some");
+            match taken.save() {
+                Ok(()) => {
+                    let name = taken.name.trim().to_string();
+                    if taken.editing.is_some() {
+                        app.note(&format!("updated provider '{name}'"));
+                    } else {
+                        app.note(&format!("added provider '{name}'"));
+                    }
+                }
+                Err(e) => {
+                    taken.error = Some(e);
+                    app.provider_prompt = Some(taken);
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            if prompt.editing.is_some() && prompt.field == ProviderField::Name {
+                return;
+            }
+            match prompt.field {
+                ProviderField::Name => {
+                    prompt.name.pop();
+                }
+                ProviderField::BaseUrl => {
+                    prompt.base_url.pop();
+                }
+                ProviderField::ApiKey => {
+                    prompt.api_key.pop();
+                    prompt.key_touched = true;
+                }
+                ProviderField::Models => {
+                    prompt.models.pop();
+                }
+            }
+        }
+        KeyCode::Char(ch) if !ctrl => match prompt.field {
+            ProviderField::Name if prompt.editing.is_some() => {}
+            ProviderField::Name => prompt.name.push(ch),
+            ProviderField::BaseUrl => prompt.base_url.push(ch),
+            ProviderField::ApiKey => {
+                prompt.api_key.push(ch);
+                prompt.key_touched = true;
+            }
+            ProviderField::Models => prompt.models.push(ch),
+        },
+        _ => {}
+    }
+}
+
 /// `/plan` dispatcher: bare enters read-only plan mode, `/plan exit` leaves
 /// it, and `/plan <text>` enters plan mode (if not already in it) and
 /// immediately submits `<text>` as the first message to investigate — same
@@ -7360,6 +9508,68 @@ fn plan_command(app: &mut App, arg: &str) {
     }
     if !arg.is_empty() {
         app.submit_user(arg.to_string());
+    }
+}
+
+const EFFORT_LEVELS: &[&str] = &["low", "medium", "high"];
+
+/// `/effort` -- report or change the reasoning effort level for subsequent model
+/// requests. Without arguments, shows the current level. With a level argument,
+/// validates and applies it.
+fn effort_command(app: &mut App, arg: &str) {
+    let arg = arg.trim();
+    if arg.is_empty() {
+        app.note(&format!(
+            "reasoning effort: {} (use /effort low|medium|high)",
+            app.reasoning_effort
+        ));
+        return;
+    }
+    let level = arg.to_ascii_lowercase();
+    if !EFFORT_LEVELS.contains(&level.as_str()) {
+        app.note(&format!(
+            "unknown effort level '{arg}' -- supported: low, medium, high"
+        ));
+        return;
+    }
+    app.reasoning_effort = level.clone();
+    if level != "low" {
+        app.last_non_low_effort = level.clone();
+    }
+    app.note(&format!("reasoning effort set to {level}"));
+}
+
+impl App {
+    /// Cycle reasoning effort between `"low"` and the most recent non-low level.
+    /// `Alt+T` in the TUI toggles between a quiet and a deep run without typing
+    /// `/effort`; the last non-low selection is remembered so toggling back off
+    /// low restores the user's preferred depth.
+    fn toggle_reasoning_effort(&mut self) {
+        if self.reasoning_effort == "low" {
+            self.reasoning_effort = self.last_non_low_effort.clone();
+        } else {
+            self.last_non_low_effort = self.reasoning_effort.clone();
+            self.reasoning_effort = "low".into();
+        }
+        self.note(&format!("reasoning effort: {}", self.reasoning_effort));
+    }
+
+    /// Advance through the effort levels (low -> medium -> high -> low),
+    /// Claude Code-style. `Shift+Tab` calls this; it always updates
+    /// `last_non_low_effort` so a subsequent `Alt+T` low/non-low toggle stays
+    /// coherent.
+    fn cycle_reasoning_effort(&mut self) {
+        let next = match self.reasoning_effort.as_str() {
+            "low" => "medium",
+            "medium" => "high",
+            "high" => "low",
+            _ => "medium",
+        };
+        self.reasoning_effort = next.to_string();
+        if next != "low" {
+            self.last_non_low_effort = next.to_string();
+        }
+        self.note(&format!("reasoning effort: {}", self.reasoning_effort));
     }
 }
 
@@ -7467,6 +9677,7 @@ fn open_todo_picker(app: &mut App) {
         kind: PickerKind::Todo,
         items: build_todo_items(&app.todos),
         selected: 0,
+        armed_delete: None,
     });
 }
 
@@ -7659,16 +9870,16 @@ async fn plugin_command(app: &mut App, arg: &str) {
                 app.note("usage: /plugin install <git-url[#ref]> | <marketplace-name>");
                 return;
             }
-            match crate::core::agent::plugins::install(&root, &rest).await {
-                Ok(p) => {
-                    app.refresh_slash_catalog();
-                    app.note(&format!(
-                        "installed plugin '{}' ({} skills)",
-                        p.name, p.skills
-                    ));
-                }
-                Err(e) => app.note(&e),
+            // The clone is network-bound, so the install runs off the render
+            // loop (see the loop's `plugin_install_request` handling); if we
+            // awaited it inline, the TUI would freeze for the whole clone.
+            // Refuse a second request while one is in flight.
+            if app.plugin_installing {
+                app.note("a plugin install is already in progress");
+                return;
             }
+            app.plugin_install_request = Some(rest);
+            app.note("installing plugin...");
         }
         "remove" => {
             if rest.is_empty() {
@@ -7775,11 +9986,10 @@ fn thread_display_name(base: &std::path::Path, id: &str, title: Option<&str>) ->
         return t.to_string();
     }
     if let Ok(messages) = super::cli_list_messages_in(base, id) {
-        if let Some(last_user) = messages
-            .iter()
-            .rev()
-            .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
-        {
+        if let Some(last_user) = messages.iter().rev().find(|m| {
+            m.get("role").and_then(|v| v.as_str()) == Some("user")
+                && !crate::core::agent::reminder::is_reminder_text(&message_text(m))
+        }) {
             let collapsed = message_text(last_user)
                 .split_whitespace()
                 .collect::<Vec<_>>()
@@ -7817,6 +10027,7 @@ fn open_thread_picker(app: &mut App) {
                     kind: PickerKind::ResumeThread,
                     items,
                     selected: 0,
+                    armed_delete: None,
                 });
             }
         }
@@ -7825,9 +10036,29 @@ fn open_thread_picker(app: &mut App) {
 }
 
 /// Open the `/model` selector listing the `provider / model` pairs this build
-/// can actually run, with the current model pre-highlighted.
-fn open_model_picker(app: &mut App) {
-    let pairs = super::providers::list_provider_models(Some(&app.project_root));
+/// can actually run, with the current model pre-highlighted. A reachable
+/// provider with no configured model list (e.g. just added via the settings
+/// wizard) is queried for its `GET /models` on the spot and the discovered ids
+/// persisted, so a bare provider becomes selectable immediately.
+async fn open_model_picker(app: &mut App) {
+    let project_root = app.project_root.clone();
+    match super::providers::fetch_missing_models(
+        Some(&project_root),
+        &mut app.probed_models,
+    )
+    .await
+    {
+        Ok(true) => {
+            // The discovered ids now live on disk; refresh the session's
+            // in-memory provider snapshot so a picked model resolves on the
+            // next run without a restart (#8688 parallels the /login reload).
+            reload_provider_configs(app).await;
+            app.note("fetched models for provider(s) with no configured list");
+        }
+        Ok(_) => {}
+        Err(e) => app.note(&format!("could not fetch models: {e}")),
+    }
+    let pairs = super::providers::list_provider_models(Some(&project_root));
     if pairs.is_empty() {
         return app.note(
             "no models available (add a provider with `jan config set`, or configure one in the desktop app)",
@@ -7847,31 +10078,330 @@ fn open_model_picker(app: &mut App) {
         kind: PickerKind::SelectModel,
         items,
         selected,
+        armed_delete: None,
     });
 }
 
-/// Open the `/mcp` picker listing configured MCP servers with their enabled
-/// state. Enter toggles a row in place (see `toggle_mcp_server`); `a` adds, `e`
-/// edits, and `d` removes (see the picker key handler).
-fn open_mcp_picker(app: &mut App) {
+/// Action ids for the `McpServer` detail screen. String values rather than an
+/// enum because `PickerItem::value` is the picker's one payload; keeping them
+/// as constants is what stops the key handler and the row builder from drifting.
+const MCP_ACTION_TOOLS: &str = "tools";
+const MCP_ACTION_AUTH: &str = "auth";
+const MCP_ACTION_CLEAR_AUTH: &str = "clear-auth";
+const MCP_ACTION_RECONNECT: &str = "reconnect";
+const MCP_ACTION_TOGGLE: &str = "toggle";
+const MCP_ACTION_EDIT: &str = "edit";
+const MCP_ACTION_REMOVE: &str = "remove";
+
+/// Open the `/mcp` screen: one row per configured server, with its live state.
+///
+/// An empty config opens the screen anyway, on a watermark row (the same shape
+/// `open_provider_settings` uses). Returning a note instead left a fresh install
+/// with no way *in* to the thing `/mcp` manages -- `a` to add is only reachable
+/// once the picker exists, so the one state that most needs the add wizard was
+/// the one state that could not reach it.
+async fn open_mcp_picker(app: &mut App, mcp_servers: &crate::core::state::SharedMcpServers) {
     let servers = super::mcp::list_servers();
-    if servers.is_empty() {
-        return app.note("no MCP servers configured (press a to add one, or use `jan cli mcp add ...`)");
-    }
-    let items = servers
-        .into_iter()
-        .map(|s| PickerItem {
-            label: s.name.clone(),
-            value: s.name,
+    let items: Vec<PickerItem> = if servers.is_empty() {
+        vec![PickerItem {
+            label: "no MCP servers configured - press a to add one".to_string(),
+            value: String::new(),
             hint: None,
-            checkbox: Some(s.active),
-        })
-        .collect();
+            checkbox: None,
+        }]
+    } else {
+        // One lock for the whole list: `describe` per row would take and drop it
+        // N times, and nothing here goes to the network.
+        let connected: std::collections::HashSet<String> =
+            mcp_servers.lock().await.keys().cloned().collect();
+        servers
+            .into_iter()
+            .map(|s| {
+                let state = if !s.active {
+                    "disabled".to_string()
+                } else if connected.contains(&s.name) {
+                    "connected".to_string()
+                } else {
+                    match super::mcp::auth_status(&s.name, &s.config) {
+                        crate::core::mcp::oauth::AuthStatus::Unauthenticated
+                        | crate::core::mcp::oauth::AuthStatus::Expired { .. }
+                        | crate::core::mcp::oauth::AuthStatus::StaleResource => {
+                            "needs auth".to_string()
+                        }
+                        _ => "not connected".to_string(),
+                    }
+                };
+                PickerItem {
+                    label: format!("{}  {state}", s.name),
+                    value: s.name,
+                    hint: None,
+                    checkbox: Some(s.active),
+                }
+            })
+            .collect()
+    };
+    app.mcp_detail = None;
     app.picker = Some(Picker {
         kind: PickerKind::ToggleMcp,
         items,
         selected: 0,
+        armed_delete: None,
     });
+}
+
+/// Open the detail screen for one server: the info block plus the actions that
+/// apply to it. Everything shown is local, so this opens in one frame; the tool
+/// list is requested as a job and fills in when it lands.
+async fn open_mcp_detail(
+    app: &mut App,
+    name: &str,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+) {
+    let Some(server) = super::mcp::describe(name, mcp_servers).await else {
+        app.mcp_detail = None;
+        return app.note(&format!("server '{name}' no longer exists"));
+    };
+    let tools = if server.connected {
+        app.mcp_job_request = Some(McpJob::Tools(name.to_string()));
+        ToolsState::Loading
+    } else {
+        ToolsState::Unavailable
+    };
+    app.picker = Some(Picker {
+        kind: PickerKind::McpServer,
+        items: mcp_action_items(&server),
+        selected: 0,
+        armed_delete: None,
+    });
+    app.mcp_detail = Some(McpDetail { server, tools });
+}
+
+/// The actions offered for one server, filtered to what its state can actually
+/// do: a stdio server has nothing to authenticate, and a disconnected one has no
+/// tools to list.
+fn mcp_action_items(server: &super::mcp::ServerDetail) -> Vec<PickerItem> {
+    use crate::core::mcp::oauth::AuthStatus;
+    let mut actions: Vec<(&str, String)> = Vec::new();
+    if server.connected {
+        actions.push((MCP_ACTION_TOOLS, "View tools".to_string()));
+    }
+    match server.auth {
+        // A pipe has nothing to authorize, and a hand-written header is the
+        // user's own credential -- offering to overwrite it with OAuth would be
+        // offering to break it.
+        AuthStatus::NotApplicable | AuthStatus::StaticHeader => {}
+        // Anything with tokens on disk can be renewed *and* forgotten, whether
+        // they still work or not.
+        AuthStatus::Authenticated { .. }
+        | AuthStatus::Expired { .. }
+        | AuthStatus::StaleResource => {
+            actions.push((MCP_ACTION_AUTH, "Re-authenticate".to_string()));
+            actions.push((MCP_ACTION_CLEAR_AUTH, "Clear authentication".to_string()));
+        }
+        AuthStatus::Unauthenticated => {
+            actions.push((MCP_ACTION_AUTH, "Authenticate".to_string()));
+        }
+    }
+    if server.active {
+        actions.push((MCP_ACTION_RECONNECT, "Reconnect".to_string()));
+        actions.push((MCP_ACTION_TOGGLE, "Disable".to_string()));
+    } else {
+        actions.push((MCP_ACTION_TOGGLE, "Enable".to_string()));
+    }
+    actions.push((MCP_ACTION_EDIT, "Edit configuration".to_string()));
+    actions.push((MCP_ACTION_REMOVE, "Remove server".to_string()));
+
+    actions
+        .into_iter()
+        .enumerate()
+        .map(|(i, (value, label))| PickerItem {
+            // Numbered like the rest of the screen reads: the hint column is
+            // already the dim prefix slot, so this costs no extra layout.
+            hint: Some(format!("{}.", i + 1)),
+            label,
+            value: value.to_string(),
+            checkbox: None,
+        })
+        .collect()
+}
+
+/// The info block above the detail screen's actions: aligned labels, the state
+/// in colour, and the config path so "where do I edit this" is answerable
+/// without leaving the screen.
+fn mcp_detail_lines(detail: &McpDetail, width: u16) -> Vec<Line<'static>> {
+    use crate::core::mcp::oauth::AuthStatus;
+    let server = &detail.server;
+    let dim = Style::new().dark_gray();
+    let good = Style::new().green();
+    let bad = Style::new().red();
+    let warn = Style::new().yellow();
+
+    let mut rows: Vec<(&str, Vec<Span<'static>>)> = Vec::new();
+
+    let status = if !server.active {
+        vec![Span::styled("- disabled", dim)]
+    } else if server.connected {
+        vec![Span::styled("✓ connected", good)]
+    } else {
+        vec![Span::styled("✗ not connected", bad)]
+    };
+    rows.push(("Status", status));
+
+    let auth = match &server.auth {
+        AuthStatus::NotApplicable => vec![Span::styled("- not required (stdio)", dim)],
+        AuthStatus::StaticHeader => {
+            vec![Span::styled("✓ Authorization header (configured)", good)]
+        }
+        AuthStatus::Authenticated { expires_at } => {
+            let mut spans = vec![Span::styled("✓ authenticated", good)];
+            if let Some(at) = expires_at {
+                spans.push(Span::styled(
+                    format!("  (expires in {})", until_label(*at)),
+                    dim,
+                ));
+            }
+            spans
+        }
+        AuthStatus::Expired { renewable, .. } => vec![Span::styled(
+            if *renewable {
+                "! expired (renewable)"
+            } else {
+                "! expired - re-authenticate"
+            },
+            warn,
+        )],
+        AuthStatus::StaleResource => vec![Span::styled(
+            "! tokens were issued for a different url",
+            warn,
+        )],
+        AuthStatus::Unauthenticated => vec![Span::styled("✗ not authenticated", bad)],
+    };
+    rows.push(("Auth", auth));
+
+    let endpoint_label = if server.transport == "stdio" {
+        "Command"
+    } else {
+        "URL"
+    };
+    rows.push((
+        endpoint_label,
+        vec![Span::styled(server.endpoint.clone(), dim)],
+    ));
+    rows.push((
+        "Config location",
+        vec![Span::styled(
+            tilde_path(&server.config_path),
+            dim,
+        )],
+    ));
+    if let Some(implementation) = &server.implementation {
+        rows.push(("Server", vec![Span::styled(implementation.clone(), dim)]));
+    }
+    if !server.capabilities.is_empty() {
+        rows.push((
+            "Capabilities",
+            vec![Span::styled(server.capabilities.join(" · "), dim)],
+        ));
+    }
+    rows.push(("Tools", vec![tools_span(&detail.tools)]));
+
+    // One label column for every row, so the values line up the way the screen
+    // is meant to read.
+    let pad = rows.iter().map(|(k, _)| k.len()).max().unwrap_or(0) + 2;
+    let mut out = vec![
+        Line::from(Span::styled(
+            server.name.clone(),
+            Style::new().cyan().bold(),
+        )),
+        Line::raw(""),
+    ];
+    for (key, value) in rows {
+        let mut spans = vec![Span::styled(
+            format!("{key}:{}", " ".repeat(pad - key.len())),
+            Style::new().bold(),
+        )];
+        spans.extend(value);
+        out.push(clamp_line(Line::from(spans), width));
+    }
+    out.push(Line::raw(""));
+    out
+}
+
+fn tools_span(tools: &ToolsState) -> Span<'static> {
+    let dim = Style::new().dark_gray();
+    match tools {
+        ToolsState::Unavailable => Span::styled("- connect to list", dim),
+        ToolsState::Loading => Span::styled("listing...", dim),
+        ToolsState::Ready(names) if names.is_empty() => {
+            Span::styled("none exposed", dim)
+        }
+        ToolsState::Ready(names) => Span::styled(format!("{} tools", names.len()), dim),
+        ToolsState::Failed(e) => Span::styled(e.clone(), Style::new().red()),
+    }
+}
+
+/// A coarse "in 42m" / "in 3h" for a unix-second deadline. Coarse on purpose:
+/// the exact second a token dies is never what the reader wants to know.
+fn until_label(expires_at: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    match expires_at.saturating_sub(now) {
+        s if s < 60 => format!("{s}s"),
+        s if s < 3600 => format!("{}m", s / 60),
+        s if s < 86400 => format!("{}h", s / 3600),
+        s => format!("{}d", s / 86400),
+    }
+}
+
+/// Truncate a composed line to `width`, so a long url or path cannot push the
+/// panel's border off the frame. Spans are kept whole where they fit and the
+/// overflowing one is cut with an ellipsis.
+///
+/// Two cells short of `width` on purpose: callers pass the *inner* width of a
+/// bordered panel, and a line that exactly fills it wraps into a second row,
+/// which pushes the action list down by one for as long as the value is long.
+///
+/// Measured in display cells, not chars: a CJK server name or an emoji in a tool
+/// name is two cells wide, so a char count would let it overrun the border.
+fn clamp_line(line: Line<'static>, width: u16) -> Line<'static> {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+    let max = width.saturating_sub(2) as usize;
+    if max == 0 {
+        return Line::raw("");
+    }
+    let total: usize = line.spans.iter().map(|s| s.content.width()).sum();
+    if total <= max {
+        return line;
+    }
+    let mut used = 0usize;
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    for span in line.spans {
+        let len = span.content.width();
+        if used + len <= max.saturating_sub(1) {
+            used += len;
+            spans.push(span);
+            continue;
+        }
+        // The ellipsis takes the last cell; a wide glyph that would straddle the
+        // boundary is dropped rather than half-drawn.
+        let room = max.saturating_sub(used + 1);
+        let mut cut = String::new();
+        let mut cut_width = 0usize;
+        for c in span.content.chars() {
+            let w = c.width().unwrap_or(0);
+            if cut_width + w > room {
+                break;
+            }
+            cut_width += w;
+            cut.push(c);
+        }
+        spans.push(Span::styled(format!("{cut}…"), span.style));
+        break;
+    }
+    Line::from(spans)
 }
 
 /// Open the `/login` prompt: send the user to Tokamak's API-keys page and wait
@@ -7960,6 +10490,40 @@ async fn reload_provider_configs(app: &mut App) {
     }
 }
 
+/// `/terminal-setup`: teach the host terminal to send `Shift+Enter`. See
+/// `terminal_setup` for why a terminal-side binding is the only reliable route.
+fn terminal_setup_command(app: &mut App) {
+    use super::terminal_setup::{apply, Outcome};
+    let Some(home) = dirs::home_dir() else {
+        app.system(Level::Error, "no home directory for terminal config");
+        return;
+    };
+    app.note("terminal setup:");
+    for outcome in apply(&home, cfg!(target_os = "macos"), |k| std::env::var(k).ok()) {
+        match outcome {
+            Outcome::Works(why) => {
+                app.system_detail_text(&format!("Shift+Enter already works -- {why}"));
+            }
+            Outcome::AlreadyDone(path) => {
+                app.system_detail_text(&format!("already configured: {}", tilde_path(&path)));
+            }
+            Outcome::Wrote { path, detail } => {
+                app.system_detail_text(&format!("wrote {} -- {detail}", tilde_path(&path)));
+            }
+            Outcome::Failed { path, error } => {
+                app.system_detail_text(&format!("could not write {}: {error}", tilde_path(&path)));
+            }
+            Outcome::Manual { title, steps } => {
+                app.system_detail_text(&title);
+                for step in steps {
+                    app.system_detail_text(&format!("  - {step}"));
+                }
+            }
+        }
+    }
+    app.system_detail_text("Alt+Enter and Ctrl-J insert a newline on every terminal");
+}
+
 /// Open the `/config` screen: a read-only view of the providers configured in
 /// `~/.jan/config.toml` (the standalone-agent credential store), with API keys
 /// redacted. Editing is headless via `jan config set/unset` (shown in the
@@ -7999,44 +10563,271 @@ fn open_config_screen(app: &mut App) {
         kind: PickerKind::ViewConfig,
         items,
         selected: 0,
+        armed_delete: None,
     });
 }
 
-/// Persist a server's enabled flag and connect/disconnect it in the background
-/// (off the render loop, so a cold stdio spawn never freezes the UI). Later
-/// turns read the shared map fresh, so tools appear/vanish once the task lands.
-fn toggle_mcp_server(
-    app: &mut App,
-    mcp_servers: &crate::core::state::SharedMcpServers,
-    name: String,
-    enable: bool,
-) {
-    if let Err(e) = super::mcp::set_active(&name, enable) {
-        app.note(&format!("failed to update mcp_config.json: {e}"));
-        return;
+/// Run one `McpJob`. Off the render loop: every arm either talks to a peer or
+/// waits on the user's browser.
+async fn run_mcp_job(job: McpJob, servers: crate::core::state::SharedMcpServers) -> McpJobDone {
+    match job {
+        McpJob::Tools(server) => {
+            let result = super::mcp::list_tools(&server, &servers).await;
+            McpJobDone::Tools { server, result }
+        }
+        McpJob::BeginAuth(server) => {
+            let result = super::mcp::begin_auth(&server).await.map(Box::new);
+            McpJobDone::AuthStarted { server, result }
+        }
+        McpJob::Authorize { server, pending } => {
+            let result = super::mcp::finish_auth(*pending).await.map(|_| ());
+            McpJobDone::Authorized { server, result }
+        }
+        McpJob::Connect(server) => {
+            let result = connect_mcp_server(&server, &servers).await;
+            McpJobDone::Connected { server, result }
+        }
     }
-    let servers = mcp_servers.clone();
-    let task_name = name.clone();
-    tokio::spawn(async move {
-        if enable {
-            let cfg = super::mcp::list_servers()
-                .into_iter()
-                .find(|s| s.name == task_name)
-                .map(|s| s.config);
-            if let Some(cfg) = cfg {
-                if let Err(e) = super::mcp::connect(&task_name, &cfg, &servers).await {
-                    log::warn!("MCP: {e}");
-                }
+}
+
+/// Fold a finished job back into the screen. `job` is passed in so the
+/// two-phase authorization can chain its second half without going back through
+/// `mcp_job_request` -- the loop owns the slot, and round-tripping a `PendingAuth`
+/// through `App` would park a bound listener in UI state.
+async fn finish_mcp_job(
+    app: &mut App,
+    done: McpJobDone,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+    job: &mut Option<tokio::task::JoinHandle<McpJobDone>>,
+) {
+    match done {
+        McpJobDone::Tools { server, result } => {
+            // Only apply it if the screen is still showing that server: the user
+            // may have navigated on while the listing was in flight.
+            let Some(detail) = app.mcp_detail.as_mut() else {
+                return;
+            };
+            if detail.server.name != server {
+                return;
             }
-        } else {
-            super::mcp::disconnect(&task_name, &servers).await;
+            detail.tools = match result {
+                Ok(names) => ToolsState::Ready(names),
+                Err(e) => ToolsState::Failed(e),
+            };
+        }
+        McpJobDone::AuthStarted { server, result } => match result {
+            Ok(pending) => {
+                // The url reaches the transcript before anything waits on the
+                // redirect, so a headless or remote session can finish by hand.
+                app.note(&format!("sign in to authorize '{server}':"));
+                app.system_detail(vec![Span::styled(
+                    pending.authorization_url.clone(),
+                    Style::new().cyan(),
+                )]);
+                match super::browser::open(&pending.authorization_url) {
+                    Ok(()) => app.system_detail_text("opening that page in your browser"),
+                    Err(e) => {
+                        app.system_detail_text(&format!("open that URL yourself ({e})"))
+                    }
+                }
+                let servers = mcp_servers.clone();
+                *job = Some(tokio::spawn(run_mcp_job(
+                    McpJob::Authorize { server, pending },
+                    servers,
+                )));
+            }
+            Err(e) => app.note(&format!("could not start sign-in for '{server}': {e}")),
+        },
+        McpJobDone::Authorized { server, result } => match result {
+            Ok(()) => {
+                app.note(&format!("authorized '{server}' - reconnecting..."));
+                // The live connection (if any) predates the token, so it is
+                // replaced rather than left unauthorized.
+                super::mcp::disconnect(&server, mcp_servers).await;
+                let servers = mcp_servers.clone();
+                *job = Some(tokio::spawn(run_mcp_job(McpJob::Connect(server), servers)));
+            }
+            Err(e) => app.note(&format!("sign-in for '{server}' failed: {e}")),
+        },
+        McpJobDone::Connected { server, result } => {
+            match result {
+                Ok(()) => app.note(&format!("'{server}' connected")),
+                Err(e) => app.note(&format!("MCP: {e}")),
+            }
+            if app.mcp_detail.as_ref().is_some_and(|d| d.server.name == server) {
+                open_mcp_detail(app, &server, mcp_servers).await;
+            }
+        }
+    }
+}
+
+/// Open the add/edit wizard prefilled from a configured server.
+fn edit_mcp_server(app: &mut App, name: &str) {
+    match super::mcp::get_server(name) {
+        Some(entry) => {
+            app.picker = None;
+            app.mcp_detail = None;
+            app.mcp_prompt = Some(McpPrompt::from_entry(&entry));
+        }
+        None => app.note(&format!("server '{name}' no longer exists")),
+    }
+}
+
+/// Drop a server from the config and disconnect it. Its OAuth tokens go too:
+/// leaving them behind would silently re-authorize a later server that happened
+/// to reuse the name.
+async fn remove_mcp_server(
+    app: &mut App,
+    name: &str,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+) {
+    if let Err(e) = super::mcp::remove_server(name) {
+        return app.note(&format!("failed to remove '{name}': {e}"));
+    }
+    super::mcp::disconnect(name, mcp_servers).await;
+    let _ = super::mcp::clear_auth(name);
+    app.mcp_detail = None;
+    app.note(&format!("removed MCP server '{name}'"));
+}
+
+/// Run one detail-screen action. Anything that talks to a peer or waits on a
+/// browser leaves as an `McpJob` instead of running here -- `handle_key` is on
+/// the render loop.
+async fn run_mcp_action(
+    app: &mut App,
+    action: &str,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+) {
+    let Some(detail) = app.mcp_detail.as_ref() else {
+        return;
+    };
+    let name = detail.server.name.clone();
+    match action {
+        MCP_ACTION_TOOLS => show_mcp_tools(app),
+        MCP_ACTION_AUTH => {
+            app.note(&format!("starting sign-in for '{name}'..."));
+            app.mcp_job_request = Some(McpJob::BeginAuth(name));
+        }
+        MCP_ACTION_CLEAR_AUTH => {
+            match super::mcp::clear_auth(&name) {
+                Ok(true) => app.note(&format!("cleared stored credentials for '{name}'")),
+                Ok(false) => app.note(&format!("'{name}' had no stored credentials")),
+                Err(e) => app.note(&format!("could not clear credentials for '{name}': {e}")),
+            }
+            // The connection still holds the old bearer token, so it is dropped
+            // too: leaving it up would report "authenticated" work against
+            // credentials the user just asked to forget.
+            super::mcp::disconnect(&name, mcp_servers).await;
+            open_mcp_detail(app, &name, mcp_servers).await;
+        }
+        MCP_ACTION_RECONNECT => {
+            super::mcp::disconnect(&name, mcp_servers).await;
+            app.note(&format!("reconnecting '{name}'..."));
+            open_mcp_detail(app, &name, mcp_servers).await;
+            // Set after `open_mcp_detail`, which requests the tool list and
+            // would otherwise overwrite this.
+            app.mcp_job_request = Some(McpJob::Connect(name));
+        }
+        MCP_ACTION_TOGGLE => {
+            let enable = !detail.server.active;
+            let connect = set_mcp_active(app, mcp_servers, &name, enable).await;
+            open_mcp_detail(app, &name, mcp_servers).await;
+            if connect {
+                // After `open_mcp_detail`, which requests the tool list and
+                // would otherwise overwrite this.
+                app.mcp_job_request = Some(McpJob::Connect(name));
+            }
+        }
+        MCP_ACTION_EDIT => edit_mcp_server(app, &name),
+        MCP_ACTION_REMOVE => {
+            app.picker = None;
+            remove_mcp_server(app, &name, mcp_servers).await;
+        }
+        _ => {}
+    }
+}
+
+/// Write the fetched tool list into the transcript. The detail screen shows a
+/// count; the names belong in the conversation, where they scroll and persist.
+fn show_mcp_tools(app: &mut App) {
+    let Some(detail) = app.mcp_detail.as_ref() else {
+        return;
+    };
+    let name = detail.server.name.clone();
+    match &detail.tools {
+        ToolsState::Ready(names) if names.is_empty() => {
+            app.note(&format!("'{name}' exposes no tools"))
+        }
+        ToolsState::Ready(names) => {
+            let names = names.clone();
+            app.note(&format!("{} tool(s) on '{name}':", names.len()));
+            for tool in names {
+                app.system_detail_text(&tool);
+            }
+        }
+        ToolsState::Loading => app.note("still listing tools..."),
+        ToolsState::Unavailable => app.note(&format!("'{name}' is not connected")),
+        ToolsState::Failed(e) => {
+            let e = e.clone();
+            app.note(&e)
+        }
+    }
+}
+
+/// Bring one server up, reading its config fresh from disk. The single
+/// connect implementation behind every surface: the detail screen's `Reconnect`
+/// runs it as a job (so the screen refreshes), while the list's toggle and the
+/// edit wizard detach it (nothing there is waiting on the answer).
+async fn connect_mcp_server(
+    name: &str,
+    servers: &crate::core::state::SharedMcpServers,
+) -> Result<(), String> {
+    let cfg = super::mcp::list_servers()
+        .into_iter()
+        .find(|s| s.name == name)
+        .map(|s| s.config)
+        .ok_or_else(|| format!("'{name}' is no longer in mcp_config.json"))?;
+    super::mcp::connect(name, &cfg, servers)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// `connect_mcp_server`, detached: for the paths with no screen waiting on the
+/// result. Off the render loop, so a cold stdio spawn never freezes a frame.
+fn reconnect_mcp_server(mcp_servers: &crate::core::state::SharedMcpServers, name: String) {
+    let servers = mcp_servers.clone();
+    tokio::spawn(async move {
+        if let Err(e) = connect_mcp_server(&name, &servers).await {
+            log::warn!("MCP: {e}");
         }
     });
-    app.note(&if enable {
-        format!("enabling MCP server '{name}'...")
+}
+
+/// Persist a server's enabled flag, tear down its connection when disabling,
+/// and say so. Returns whether the caller now owes a *connect* -- which it
+/// does, rather than connecting here, because the two callers want it delivered
+/// differently: the list detaches it, the detail screen runs it as a job so the
+/// screen can refresh when it lands.
+///
+/// Later turns read the shared map fresh, so tools appear/vanish once that
+/// connect completes.
+async fn set_mcp_active(
+    app: &mut App,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+    name: &str,
+    enable: bool,
+) -> bool {
+    if let Err(e) = super::mcp::set_active(name, enable) {
+        app.note(&format!("failed to update mcp_config.json: {e}"));
+        return false;
+    }
+    if enable {
+        app.note(&format!("enabling MCP server '{name}'..."));
     } else {
-        format!("disabled MCP server '{name}'")
-    });
+        super::mcp::disconnect(name, mcp_servers).await;
+        app.note(&format!("disabled MCP server '{name}'"));
+    }
+    enable
 }
 
 /// Resolve a thread by id (exact or unique prefix), load its messages into the
@@ -8121,11 +10912,11 @@ fn open_rewind_picker(app: &mut App) {
     let mut items = Vec::new();
     let mut ui = 0usize;
     for m in &app.history {
-        if m.get("role").and_then(|v| v.as_str()) == Some("user") {
-            let text = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        if is_user_turn(m) {
+            let text = user_content_parts(&m["content"]).0;
             items.push(PickerItem {
                 value: ui.to_string(),
-                label: truncate_preview(text),
+                label: truncate_preview(&text),
                 hint: Some(format!("#{}", ui + 1)),
                 checkbox: None,
             });
@@ -8140,6 +10931,7 @@ fn open_rewind_picker(app: &mut App) {
         kind: PickerKind::RewindMessage,
         items,
         selected,
+        armed_delete: None,
     });
 }
 
@@ -8165,6 +10957,7 @@ fn open_rewind_scope(app: &mut App, user_index: usize) {
         kind: PickerKind::RewindScope,
         items,
         selected: 0,
+        armed_delete: None,
     });
 }
 
@@ -8175,7 +10968,7 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     let mut ui = 0usize;
     let mut cut = None;
     for (i, m) in app.history.iter().enumerate() {
-        if m.get("role").and_then(|v| v.as_str()) == Some("user") {
+        if is_user_turn(m) {
             if ui == target {
                 cut = Some(i);
                 break;
@@ -8247,7 +11040,7 @@ fn rebuild_recall(app: &mut App) {
     let texts: Vec<String> = app
         .history
         .iter()
-        .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+        .filter(|m| is_user_turn(m))
         .filter_map(|m| m.get("content"))
         .map(|c| user_content_parts(c).0)
         .filter(|t| !t.is_empty())
@@ -8273,8 +11066,9 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
             // the blocks directly leaves the group open, so every later call
             // folds back into one row that is never committed -- the whole turn's
             // tool calls then render as nothing at all.
-            DisplayEntry::Assistant { text } => {
+            DisplayEntry::Assistant { text, reasoning } => {
                 app.assistant_buf = text.clone();
+                app.reasoning_segs = reasoning.clone();
                 app.flush_assistant();
             }
             DisplayEntry::ToolCall { id, name, args } => app.apply(StreamEvent::ToolCall {
@@ -8328,6 +11122,7 @@ fn rebuild_transcript(app: &mut App) {
     app.expanded.clear();
     app.reveal = None;
     app.assistant_buf.clear();
+    app.reasoning_segs.clear();
     app.last_kind = Kind::None;
     if !app.display_log.is_empty() {
         let logged = std::mem::take(&mut app.display_log);
@@ -8350,13 +11145,15 @@ fn rebuild_transcript(app: &mut App) {
         } else if role == "assistant" {
             let text = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
             if !text.is_empty() {
-                app.push_assistant_blocks(text);
+                app.push_assistant_blocks(text, &[]);
             }
         }
     }
 }
 
 async fn resume_thread(app: &mut App, id_arg: &str) {
+    // Re-brand the fresh view before the saved conversation is replayed.
+    app.push_session_banner(false);
     apply_resume(app, &ResumeTarget::Id(id_arg.to_string())).await;
 }
 
@@ -8392,6 +11189,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     app.expanded.clear();
     app.reveal = None;
     app.assistant_buf.clear();
+    app.reasoning_segs.clear();
     app.turn = (0, 0);
     app.tokens = 0;
     app.scrollback = 0;
@@ -8613,9 +11411,21 @@ fn build_user_message(text: &str, images: &[PendingImage]) -> serde_json::Value 
 /// Split a user message's `content` into display text and one label per attached
 /// image. Handles plain-string content and the `image_url` content-part array;
 /// data-URL parts carry no filename, so their label is empty.
+/// True for a `user` message the user actually authored. Hidden reminders ride
+/// in on the `user` role but are not turns: a rewind target, a recall entry or a
+/// checkpoint key built from one would be a row the user never typed, and would
+/// shift every later index out of step with the display journal, which holds no
+/// reminder at all.
+fn is_user_turn(m: &serde_json::Value) -> bool {
+    m.get("role").and_then(|v| v.as_str()) == Some("user")
+        && !crate::core::agent::reminder::is_reminder_only(
+            m.get("content").unwrap_or(&serde_json::Value::Null),
+        )
+}
+
 fn user_content_parts(content: &serde_json::Value) -> (String, Vec<String>) {
     match content {
-        serde_json::Value::String(s) => (s.clone(), Vec::new()),
+        serde_json::Value::String(s) => (crate::core::agent::reminder::strip(s), Vec::new()),
         serde_json::Value::Array(parts) => {
             let mut text = String::new();
             let mut images = Vec::new();
@@ -8623,7 +11433,7 @@ fn user_content_parts(content: &serde_json::Value) -> (String, Vec<String>) {
                 match p.get("type").and_then(|v| v.as_str()) {
                     Some("text") => {
                         if let Some(t) = p.get("text").and_then(|v| v.as_str()) {
-                            text.push_str(t);
+                            text.push_str(&crate::core::agent::reminder::strip(t));
                         }
                     }
                     Some("image_url") => images.push(String::new()),
@@ -8768,7 +11578,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     if let Some(picker) = &app.picker {
         app.row_index.clear();
         let toml_path = app.agent_dir.join("agent.toml");
-        draw_picker(f, chunks[1], picker, &toml_path);
+        draw_picker(f, chunks[1], picker, &toml_path, app.mcp_detail.as_ref());
         f.render_widget(input_box(app), chunks[2]);
         f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
         return;
@@ -8799,7 +11609,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         {
             Some(g) => Segment::eager(
                 Some(i),
-                vec![running_group_row(g, app.spinner_frame, width)],
+                running_group_rows(g, app.spinner_frame, width),
                 width,
             ),
             None => Segment {
@@ -8847,16 +11657,24 @@ fn draw(f: &mut Frame, app: &mut App) {
     // Streaming prose and the awaiting throbbers have no transcript index; they
     // are rebuilt every frame and ride along as one trailing segment.
     let mut tail: Vec<Line<'static>> = Vec::new();
-    if !app.assistant_buf.is_empty() {
-        let live = live_assistant_lines(&app.assistant_buf, width, !app.show_reasoning);
+    if !app.assistant_buf.is_empty() || !app.reasoning_segs.is_empty() {
+        // Native reasoning is placed beside the live prose by its offset, so the
+        // shared renderer dims/folds it exactly like inline-tag providers.
+        let live = live_assistant_lines(
+            &app.assistant_buf,
+            &app.reasoning_segs,
+            width,
+            !app.show_reasoning,
+            app.stream_reasoning,
+        );
         if !live.is_empty() {
             // Mirror flush_assistant's `gap(Kind::Prose)` so the separator above
-            // streaming prose is present live, not only once it's finalized.
+            // streaming prose is present live, not only once it is finalized.
             if !trailing_blank(&tail, &app.transcript, width) {
                 tail.push(Line::raw(""));
             }
             // Live tail: same renderer as finalized messages, so an open
-            // (unterminated) <think> block dims and grows during streaming.
+            // (unterminated) wrapped reasoning block dims and grows during streaming.
             tail.extend(live);
         }
     }
@@ -8996,7 +11814,9 @@ fn draw(f: &mut Frame, app: &mut App) {
     // `/login` is modal and user-initiated (only reachable while idle), so it
     // outranks the queues below: nothing else may take keystrokes meant for a key.
     if let Some(prompt) = &app.login {
-        let height = (LOGIN_PROMPT_ROWS + u16::from(prompt.error.is_some())).min(chunks[1].height);
+        let height = (login_prompt_lines(prompt, chunks[2].width.saturating_sub(2)).len() as u16
+            + 2)
+        .min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -9006,7 +11826,11 @@ fn draw(f: &mut Frame, app: &mut App) {
         };
         draw_login(f, rect, prompt);
     } else if let Some(prompt) = &app.settings_prompt {
-        let height = (5 + u16::from(prompt.error.is_some())).min(chunks[1].height);
+        let toml_path = app.agent_dir.join("agent.toml");
+        let height = (settings_prompt_lines(prompt, &toml_path, chunks[2].width.saturating_sub(2))
+            .len() as u16
+            + 2)
+        .min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -9014,11 +11838,10 @@ fn draw(f: &mut Frame, app: &mut App) {
             width: chunks[2].width,
             height,
         };
-        let toml_path = app.agent_dir.join("agent.toml");
         draw_settings_prompt(f, rect, prompt, &toml_path);
     } else if let Some(prompt) = &app.mcp_prompt {
-        let height = prompt.visible_fields().len() as u16 + 3;
-        let height = height.min(chunks[1].height);
+        let height = (mcp_prompt_lines(prompt, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
+            .min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -9027,10 +11850,20 @@ fn draw(f: &mut Frame, app: &mut App) {
             height,
         };
         draw_mcp_prompt(f, rect, prompt);
+    } else if let Some(prompt) = &app.provider_prompt {
+        let height = (4 + 3 + u16::from(prompt.error.is_some())).min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        draw_provider_prompt(f, rect, prompt);
     } else if !app.ask_queue.is_empty() {
         let queue_len = app.ask_queue.len();
         let ask = app.ask_queue.front_mut().expect("checked non-empty above");
-        let height = (ask.row_count() as u16 + 4).min(chunks[1].height);
+        let height = ask.box_height(chunks[2].width).min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -9040,10 +11873,9 @@ fn draw(f: &mut Frame, app: &mut App) {
         };
         draw_ask(f, rect, ask, queue_len);
     } else if let Some(pending) = app.pending() {
-        let detail_rows = 1
-            + u16::from(pending.path.is_some() || pending.command.is_some())
-            + u16::from(pending.subagent.is_some());
-        let diff_rows = pending.diff_preview(chunks[2].width.saturating_sub(2)).len() as u16;
+        let inner_w = chunks[2].width.saturating_sub(2);
+        let detail_rows = pending.detail_lines(inner_w).len() as u16;
+        let diff_rows = pending.diff_preview(inner_w).len() as u16;
         let height =
             (pending.options().len() as u16 + detail_rows + diff_rows + 2).min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
@@ -9107,12 +11939,10 @@ fn draw(f: &mut Frame, app: &mut App) {
 fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
-    let question = ask.question().clone();
-    let answer = ask.answers[ask.question_index].clone();
     let dim = Style::new().dark_gray();
     let title = if queue_len > 1 {
         format!(
-            " question {}/{} · request 1/{queue_len} ",
+            " question {}/{} \u{b7} request 1/{queue_len} ",
             ask.question_index + 1,
             ask.request.questions.len()
         )
@@ -9128,93 +11958,57 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
         .border_style(Style::new().cyan())
         .title(Span::styled(title, Style::new().on_cyan().black().bold()));
     let inner = block.inner(area);
+    let question = ask.question_lines(inner.width);
+    let items = ask.option_lines(inner.width);
+    let heights: Vec<u16> = items.iter().map(|item| item.len() as u16).collect();
     let rows = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Min(ask.row_count() as u16),
+        Constraint::Length(question.len() as u16),
+        Constraint::Min(1),
         Constraint::Length(1),
     ])
     .split(inner);
 
-    let mut items = Vec::with_capacity(ask.row_count());
-    for (index, option) in question.options.iter().enumerate() {
-        let selected = answer.selected.iter().any(|label| label == &option.label);
-        let mark = if question.multi {
-            if selected {
-                "[x] "
-            } else {
-                "[ ] "
-            }
-        } else if selected {
-            "● "
-        } else {
-            "○ "
-        };
-        let mut spans = vec![
-            Span::styled(mark, Style::new().cyan()),
-            Span::raw(option.label.clone()),
-        ];
-        if question.recommended == Some(index) {
-            spans.push(Span::styled("  recommended", Style::new().green().dim()));
-        }
-        if let Some(description) = &option.description {
-            spans.push(Span::styled(format!("  {description}"), dim));
-        }
-        items.push(ListItem::new(Line::from(spans)));
-    }
-    let custom_mark = if question.multi {
-        if answer.custom_input.is_some() {
-            "[x] "
-        } else {
-            "[ ] "
-        }
-    } else if answer.custom_input.is_some() {
-        "● "
-    } else {
-        "○ "
-    };
-    items.push(ListItem::new(Line::from(vec![
-        Span::styled(custom_mark, Style::new().cyan()),
-        Span::raw("Other (type your own)"),
-    ])));
-    if question.multi {
-        items.push(ListItem::new(Line::styled(
-            "Submit answers",
-            Style::new().green().bold(),
-        )));
-    }
-
-    ask.rect = area;
-    ask.row_hitboxes = (0..items.len())
-        .filter_map(|index| {
-            let y = rows[1].y.saturating_add(index as u16);
-            (y < rows[1].y.saturating_add(rows[1].height)).then_some((y, index))
-        })
-        .collect();
-
     f.render_widget(Clear, area);
     f.render_widget(block, area);
-    f.render_widget(
-        Paragraph::new(Line::styled(question.question, Style::new().bold())),
-        rows[0],
-    );
-    let list = List::new(items)
-        .highlight_style(Style::new().reversed().bold())
-        .highlight_symbol("▶ ");
+    f.render_widget(Paragraph::new(question), rows[0]);
+
+    let list = List::new(items.into_iter().map(ListItem::new).collect::<Vec<_>>())
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(ask.selected));
     f.render_stateful_widget(list, rows[1], &mut state);
+
+    // Hitboxes come from the same heights the list just laid out, offset by the
+    // scroll the list chose to keep the selection visible -- an item may be
+    // several rows tall, and a box clamped to the space above the input may not
+    // show every item at all.
+    ask.rect = area;
+    ask.row_hitboxes.clear();
+    let mut y = rows[1].y;
+    let bottom = rows[1].y.saturating_add(rows[1].height);
+    for (index, height) in heights.iter().enumerate().skip(state.offset()) {
+        for _ in 0..*height {
+            if y >= bottom {
+                break;
+            }
+            ask.row_hitboxes.push((y, index));
+            y = y.saturating_add(1);
+        }
+    }
+
     let help = if ask.editing_custom {
         Line::from(vec![
             Span::styled("Other: ", Style::new().cyan()),
             Span::raw(ask.custom_input.clone()),
-            Span::styled("█", Style::new().cyan()),
+            Span::styled("\u{2588}", Style::new().cyan()),
         ])
     } else {
         Line::styled(
-            if question.multi {
-                "↑↓ move · Space toggle · Enter choose · ←→ question · Esc cancel"
+            if ask.question().multi {
+                "\u{2191}\u{2193} move \u{b7} Space toggle \u{b7} Enter choose \u{b7} \u{2190}\u{2192} question \u{b7} Esc cancel"
             } else {
-                "↑↓ move · Enter choose · ←→ question · Esc cancel"
+                "\u{2191}\u{2193} move \u{b7} Enter choose \u{b7} \u{2190}\u{2192} question \u{b7} Esc cancel"
             },
             dim,
         )
@@ -9222,31 +12016,32 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
     f.render_widget(Paragraph::new(help), rows[2]);
 }
 
-/// Rows the `/login` box needs: two borders, the URL, the field, and the help
-/// line. An error adds one more (see the `draw` call site).
-const LOGIN_PROMPT_ROWS: u16 = 5;
-
 /// The `/login` prompt: the API-keys URL, a masked key field, and a help line.
 /// The key is never rendered, so a shared screen or scrollback capture cannot
 /// leak it.
-fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) {
-    use ratatui::widgets::Clear;
-
+/// The `/login` box's contents at `width`. Separate from `draw_login` so the
+/// call site can size the box from the rows it will actually need: the error
+/// carries an arbitrary-length upstream message, and it is the one line in
+/// there the user has to be able to read.
+fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
     let dim = Style::new().dark_gray();
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
-        .title(Span::styled(
-            " tokamak sign-in ",
-            Style::new().on_cyan().black().bold(),
-        ));
-
-    let mut lines = vec![Line::from(vec![
-        Span::styled("get a key at ", dim),
-        Span::styled(super::tokamak::API_KEYS_URL, Style::new().cyan()),
-    ])];
+    let max = width.max(1) as usize;
+    let mut lines: Vec<Line<'static>> = wrap_spans_hard(
+        vec![
+            Span::styled("get a key at ", dim),
+            Span::styled(super::tokamak::API_KEYS_URL, Style::new().cyan()),
+        ],
+        max,
+    )
+    .into_iter()
+    .map(Line::from)
+    .collect();
     if let Some(error) = &prompt.error {
-        lines.push(Line::styled(error.clone(), Style::new().red()));
+        lines.extend(
+            wrap_text(error, Style::new().red(), max)
+                .into_iter()
+                .map(Line::from),
+        );
     }
     if prompt.verifying {
         lines.push(Line::styled(
@@ -9255,21 +12050,57 @@ fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) 
         ));
         lines.push(Line::styled("Esc cancel".to_string(), dim));
     } else {
-        lines.push(Line::from(vec![
-            Span::styled("API key: ", Style::new().bold()),
-            Span::raw(prompt.masked()),
-            Span::styled("█", Style::new().cyan()),
-        ]));
+        lines.extend(field_lines(
+            vec![Span::styled("API key: ", Style::new().bold())],
+            &prompt.masked(),
+            Style::new(),
+            max,
+        ));
         lines.push(Line::styled(
             "paste the key · Enter verify · Esc cancel".to_string(),
             dim,
         ));
     }
+    lines
+}
+
+/// One edited field: `lead` (a label) then the value wrapped beneath it,
+/// continuations aligned under the value rather than under the label, with the
+/// cursor block on the last row. Shared by the `/login`, `/settings` and MCP
+/// prompts -- a value long enough to leave the box is exactly the one the user
+/// needs to see, since they are still typing it.
+fn field_lines(
+    lead: Vec<Span<'static>>,
+    value: &str,
+    value_style: Style,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let lead_w: usize = lead.iter().map(|s| s.content.chars().count()).sum();
+    let mut rows = wrap_text(value, value_style, width.saturating_sub(lead_w + 1).max(1));
+    rows.last_mut()
+        .expect("wrap_text yields at least one row")
+        .push(Span::styled("█", Style::new().cyan()));
+    gutter_lines(rows, lead, vec![Span::raw(" ".repeat(lead_w))])
+}
+
+fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) {
+    use ratatui::widgets::Clear;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            " tokamak sign-in ",
+            Style::new().on_cyan().black().bold(),
+        ));
 
     f.render_widget(Clear, area);
     let inner = block.inner(area);
     f.render_widget(block, area);
-    f.render_widget(Paragraph::new(lines), inner);
+    f.render_widget(
+        Paragraph::new(login_prompt_lines(prompt, inner.width)),
+        inner,
+    );
 }
 
 /// Docked `/settings` edit prompt, styled like the `/login` dock: description,
@@ -9283,59 +12114,85 @@ fn draw_settings_prompt(
 ) {
     use ratatui::widgets::Clear;
 
-    let dim = Style::new().dark_gray();
-    let def = prompt.def();
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::new().cyan())
         .title(Span::styled(
-            format!(" agent settings: {} ", def.key),
+            format!(" agent settings: {} ", prompt.def().key),
             Style::new().on_cyan().black().bold(),
         ));
 
-    let mut lines = vec![Line::from(vec![
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(
+        Paragraph::new(settings_prompt_lines(prompt, toml_path, inner.width)),
+        inner,
+    );
+}
+
+/// The `/settings` box's contents at `width`, sized by the call site the same
+/// way as `login_prompt_lines`. The description, the current value and the
+/// enum `valid:` list are all long enough to leave a narrow box.
+fn settings_prompt_lines(
+    prompt: &SettingsPrompt,
+    toml_path: &std::path::Path,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let def = prompt.def();
+    let max = width.max(1) as usize;
+    let wrapped = |spans: Vec<Span<'static>>| {
+        wrap_spans_hard(spans, max)
+            .into_iter()
+            .map(Line::from)
+            .collect::<Vec<_>>()
+    };
+
+    let mut lines = wrapped(vec![
         Span::styled(def.desc, dim),
         Span::styled("   current: ", dim),
         Span::styled(
             current_agent_value(toml_path, def.key).unwrap_or_else(|| "unset".to_string()),
             Style::new().cyan(),
         ),
-    ])];
-    lines.push(Line::styled(
-        match def.kind {
-            AgentSettingKind::Int { default, min } => {
-                let d = default
-                    .map(|d| d.to_string())
-                    .unwrap_or_else(|| "unset".to_string());
-                format!("default: {d} · valid: >= {min}")
-            }
-            AgentSettingKind::Text { default } => format!("default: {default}"),
-            AgentSettingKind::Enum { options, default } => {
-                format!("default: {default} · valid: {}", options.join(" | "))
-            }
-            AgentSettingKind::Bool { default } => {
-                format!("default: {default} · valid: true | false")
-            }
-        },
-        dim,
-    ));
+    ]);
+    let meta = match def.kind {
+        AgentSettingKind::Int { default, min } => {
+            let d = default
+                .map(|d| d.to_string())
+                .unwrap_or_else(|| "unset".to_string());
+            format!("default: {d} · valid: >= {min}")
+        }
+        AgentSettingKind::Glyph { default, max } => {
+            format!("default: {default} · valid: up to {max} chars, empty = off")
+        }
+        AgentSettingKind::Text { default } => format!("default: {default}"),
+        AgentSettingKind::Enum { options, default } => {
+            format!("default: {default} · valid: {}", options.join(" | "))
+        }
+        AgentSettingKind::Bool { default } => {
+            format!("default: {default} · valid: true | false")
+        }
+    };
+    lines.extend(wrapped(vec![Span::styled(meta, dim)]));
     if let Some(error) = &prompt.error {
-        lines.push(Line::styled(error.clone(), Style::new().red()));
+        lines.extend(wrapped(vec![Span::styled(
+            error.clone(),
+            Style::new().red(),
+        )]));
     }
-    lines.push(Line::from(vec![
-        Span::styled("value: ", Style::new().bold()),
-        Span::raw(prompt.input.clone()),
-        Span::styled("█", Style::new().cyan()),
-    ]));
+    lines.extend(field_lines(
+        vec![Span::styled("value: ", Style::new().bold())],
+        &prompt.input,
+        Style::new(),
+        max,
+    ));
     lines.push(Line::styled(
         "Enter save · Esc cancel · clear field to unset (default applies)".to_string(),
         dim,
     ));
-
-    f.render_widget(Clear, area);
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-    f.render_widget(Paragraph::new(lines), inner);
+    lines
 }
 
 /// Dock the MCP add/edit wizard above the input: one row per visible field,
@@ -9343,7 +12200,6 @@ fn draw_settings_prompt(
 fn draw_mcp_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &McpPrompt) {
     use ratatui::widgets::Clear;
 
-    let dim = Style::new().dark_gray();
     let title = if prompt.editing.is_some() {
         " mcp server: edit "
     } else {
@@ -9354,47 +12210,132 @@ fn draw_mcp_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &McpPromp
         .border_style(Style::new().cyan())
         .title(Span::styled(title, Style::new().on_cyan().black().bold()));
 
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(mcp_prompt_lines(prompt, inner.width)), inner);
+}
+
+/// The MCP wizard's contents at `width`, sized by the call site the same way as
+/// `login_prompt_lines`. These fields are being *typed*: a command line, an
+/// args string or an env/headers blob easily outruns the box, and clipping the
+/// field you are editing leaves no way to see what you entered.
+fn mcp_prompt_lines(prompt: &McpPrompt, width: u16) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let max = width.max(1) as usize;
     let mut lines = Vec::new();
     for field in prompt.visible_fields() {
         let selected = field == prompt.field;
         let (label, value, toggle) = match field {
             McpField::Name => ("name", prompt.name.as_str(), None),
-            McpField::Transport => ("type", prompt.transport.as_str(), Some(prompt.transport.as_str())),
+            McpField::Transport => (
+                "type",
+                prompt.transport.as_str(),
+                Some(prompt.transport.as_str()),
+            ),
             McpField::Command => ("command", prompt.command.as_str(), None),
             McpField::Args => ("args", prompt.args.as_str(), None),
             McpField::Env => ("env", prompt.env.as_str(), None),
             McpField::Url => ("url", prompt.url.as_str(), None),
             McpField::Headers => ("headers", prompt.headers.as_str(), None),
-            McpField::Active => {
-                ("active", if prompt.active { "yes" } else { "no" }, Some(if prompt.active { "yes" } else { "no" }))
+            McpField::Active => (
+                "active",
+                if prompt.active { "yes" } else { "no" },
+                Some(if prompt.active { "yes" } else { "no" }),
+            ),
+        };
+        let marker = if selected { "› " } else { "  " };
+        let style = if selected { Style::new().bold() } else { dim };
+        let lead = vec![Span::styled(format!("{marker}{label}: "), style)];
+        match toggle {
+            // A toggle row is a fixed word, never typed into: no cursor, and
+            // nothing long enough to wrap.
+            Some(toggle) => {
+                let mut spans = lead;
+                spans.push(Span::styled(
+                    toggle.to_string(),
+                    if selected { Style::new().cyan() } else { dim },
+                ));
+                lines.push(Line::from(spans));
             }
+            None if selected => lines.extend(field_lines(lead, value, style, max)),
+            None => {
+                let lead_w: usize = lead.iter().map(|s| s.content.chars().count()).sum();
+                lines.extend(gutter_lines(
+                    wrap_text(value, style, max.saturating_sub(lead_w).max(1)),
+                    lead,
+                    vec![Span::raw(" ".repeat(lead_w))],
+                ));
+            }
+        }
+    }
+    if let Some(error) = &prompt.error {
+        lines.extend(
+            wrap_text(error, Style::new().red(), max)
+                .into_iter()
+                .map(Line::from),
+        );
+    }
+    lines.push(Line::styled(
+        "↑/↓ move · Enter save · Space toggle · Esc cancel".to_string(),
+        dim,
+    ));
+    lines
+}
+
+/// Dock the provider add/edit wizard above the input: one row per field, the
+/// active field highlighted, with the API key masked so it never reaches the
+/// screen or scrollback.
+fn draw_provider_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &ProviderPrompt) {
+    use ratatui::widgets::Clear;
+
+    let dim = Style::new().dark_gray();
+    let title = if prompt.editing.is_some() {
+        " provider: edit "
+    } else {
+        " provider: add "
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(title, Style::new().on_cyan().black().bold()));
+
+    let mut lines = Vec::new();
+    for field in ProviderPrompt::FIELD_ORDER {
+        let read_only = prompt.editing.is_some() && field == ProviderField::Name;
+        let selected = field == prompt.field && !read_only;
+        let (label, value): (&str, String) = match field {
+            ProviderField::Name => ("name", prompt.name.clone()),
+            ProviderField::BaseUrl => ("base url", prompt.base_url.clone()),
+            ProviderField::ApiKey => ("api key", prompt.masked_key()),
+            ProviderField::Models => ("models", prompt.models.clone()),
         };
         let marker = if selected { "› " } else { "  " };
         let style = if selected {
             Style::new().bold()
+        } else if read_only {
+            // A renamed provider would orphan its config entry and lose the
+            // API key, so the name is fixed while editing.
+            Style::new().dark_gray()
         } else {
             dim
         };
-        let mut spans = vec![
-            Span::styled(format!("{marker}{label}: "), style),
-        ];
-        if let Some(toggle) = toggle {
-            spans.push(Span::styled(toggle.to_string(), if selected { Style::new().cyan() } else { dim }));
-        } else {
-            spans.push(Span::styled(value.to_string(), style));
-            if selected {
-                spans.push(Span::styled("█", Style::new().cyan()));
-            }
+        let mut spans = vec![Span::styled(format!("{marker}{label}: "), style)];
+        spans.push(Span::styled(value, style));
+        if selected {
+            spans.push(Span::styled("█", Style::new().cyan()));
         }
         lines.push(Line::from(spans));
     }
     if let Some(error) = &prompt.error {
         lines.push(Line::styled(error.clone(), Style::new().red()));
     }
-    lines.push(Line::styled(
-        "↑/↓ move · Enter save · Space toggle · Esc cancel".to_string(),
-        dim,
-    ));
+    let hint = if prompt.editing.is_some() {
+        "↑/↓ move · Enter save · Esc cancel (api key: type to replace, blank out to clear)"
+    } else {
+        "↑/↓ move · Enter save · Esc cancel (models space-separated)"
+    };
+    lines.push(Line::styled(hint.to_string(), dim));
 
     f.render_widget(Clear, area);
     let inner = block.inner(area);
@@ -9469,8 +12410,8 @@ fn draw_slash_hints(
     f.render_widget(Clear, area);
     let list = List::new(items)
         .block(block)
-        .highlight_style(Style::new().reversed())
-        .highlight_symbol("▶ ");
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(selected.min(matches.len().saturating_sub(1))));
     f.render_stateful_widget(list, area, &mut state);
@@ -9515,8 +12456,8 @@ fn draw_path_hints(
     f.render_widget(Clear, area);
     let list = List::new(items)
         .block(block)
-        .highlight_style(Style::new().reversed())
-        .highlight_symbol("▶ ");
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(selected.min(entries.len().saturating_sub(1))));
     f.render_stateful_widget(list, area, &mut state);
@@ -9527,32 +12468,6 @@ fn draw_path_hints(
 /// highlighted choice; `y`/`a`/`n` still work as shortcuts).
 fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending, queue_len: usize) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
-
-    let dim = Style::new().dark_gray();
-    let mut detail = Vec::new();
-    if let Some(name) = &pending.subagent {
-        detail.push(Line::from(vec![
-            Span::styled("subagent ", dim),
-            Span::styled(name.clone(), Style::new().magenta().bold()),
-            Span::styled(" is asking:", dim),
-        ]));
-    }
-    detail.push(Line::from(vec![
-        Span::styled(pending.tool_name.clone(), Style::new().cyan().bold()),
-        Span::styled(" wants ", dim),
-        Span::styled(pending.capability.clone(), Style::new().yellow().bold()),
-    ]));
-    if let Some(command) = &pending.command {
-        detail.push(Line::from(vec![
-            Span::styled("$ ", dim),
-            Span::styled(command.clone(), Style::new().white()),
-        ]));
-    } else if let Some(path) = &pending.path {
-        detail.push(Line::from(vec![
-            Span::styled("on ", dim),
-            Span::styled(path.clone(), Style::new().white()),
-        ]));
-    }
 
     let title = if queue_len > 1 {
         format!(" permission required (1 of {queue_len}) ")
@@ -9567,6 +12482,7 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
     f.render_widget(Clear, area);
     f.render_widget(block, area);
 
+    let detail = pending.detail_lines(inner.width);
     let diff = pending.diff_preview(inner.width);
     let rows = Layout::vertical([
         Constraint::Length(detail.len() as u16),
@@ -9574,7 +12490,7 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
         Constraint::Length(pending.options().len() as u16),
     ])
     .split(inner);
-    f.render_widget(Paragraph::new(detail).wrap(Wrap { trim: false }), rows[0]);
+    f.render_widget(Paragraph::new(detail), rows[0]);
     if !diff.is_empty() {
         f.render_widget(Paragraph::new(diff), rows[1]);
     }
@@ -9585,8 +12501,8 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
         .map(|(_, label)| ListItem::new(Line::raw(label)))
         .collect();
     let list = List::new(items)
-        .highlight_style(Style::new().reversed().bold())
-        .highlight_symbol("▶ ");
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(pending.selected));
     f.render_stateful_widget(list, rows[2], &mut state);
@@ -9597,6 +12513,7 @@ fn draw_picker(
     area: ratatui::layout::Rect,
     picker: &Picker,
     toml_path: &std::path::Path,
+    mcp_detail: Option<&McpDetail>,
 ) {
     use ratatui::widgets::{List, ListItem, ListState};
 
@@ -9622,8 +12539,8 @@ fn draw_picker(
         .collect();
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(picker.title()))
-        .highlight_style(Style::new().reversed())
-        .highlight_symbol("▶ ");
+        .highlight_style(select_style())
+        .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
     state.select(Some(picker.selected));
 
@@ -9651,6 +12568,11 @@ fn draw_picker(
                         .unwrap_or_else(|| "unset".to_string());
                     format!("default: {d} · valid: >= {min} · current: {current}")
                 }
+                AgentSettingKind::Glyph { default, max } => {
+                    format!(
+                        "default: {default} · valid: up to {max} chars, empty = off · current: {current}"
+                    )
+                }
                 AgentSettingKind::Text { default } => {
                     format!("default: {default} · current: {current}")
                 }
@@ -9677,6 +12599,34 @@ fn draw_picker(
                 },
             );
         }
+    } else if let (PickerKind::McpServer, Some(detail)) = (picker.kind, mcp_detail) {
+        // The info block and the actions share one border: they are one screen,
+        // and two stacked frames would read as two unrelated panels.
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(picker.title());
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let info = mcp_detail_lines(detail, inner.width);
+        // A frame too short for the whole block gives its rows to the actions:
+        // an info line the user cannot act on is worth less than the action row
+        // it would displace.
+        let info_h = (info.len() as u16).min(inner.height.saturating_sub(1));
+        let (info_area, list_area) = (
+            Rect { height: info_h, ..inner },
+            Rect {
+                y: inner.y + info_h,
+                height: inner.height - info_h,
+                ..inner
+            },
+        );
+        f.render_widget(Paragraph::new(info), info_area);
+        f.render_stateful_widget(
+            list.block(Block::default()),
+            list_area,
+            &mut state,
+        );
     } else {
         f.render_stateful_widget(list, area, &mut state);
     }
@@ -9936,14 +12886,25 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         .map(|t| format!("  {}", format_elapsed(t.elapsed().as_secs())))
         .unwrap_or_default();
     // No name chip: the splash names the app (see `Banner`), and the header's
-    // columns are better spent on state that changes. The model leads instead,
-    // bold so the row still has an anchor on the left; an unset model says so
-    // rather than opening the row with blanks.
-    let mut spans = vec![if app.model.is_empty() {
-        Span::styled(" no model  ", Style::new().red().bold())
-    } else {
-        Span::styled(format!(" {}  ", app.model), Style::new().bold())
-    }];
+    // columns are better spent on state that changes. The wave mark stands in
+    // for the name in one glyph, then the model, bold so the row still has an
+    // anchor on the left; an unset model says so rather than opening the row
+    // with blanks.
+    let mut spans = vec![
+        Span::styled(format!(" {}", brand::WAVE), Style::new().yellow()),
+        if app.model.is_empty() {
+            Span::styled(" no model", Style::new().red().bold())
+        } else {
+            Span::styled(format!(" {}", app.model), Style::new().bold())
+        },
+    ];
+    // Reasoning-effort badge: `effort high` after the model, so the configured
+    // reasoning depth is visible at a glance. Reported low/medium/high exactly
+    // as set, so the display always matches what is sent upstream.
+    spans.push(Span::styled(
+        format!("  effort {}", app.reasoning_effort),
+        Style::new().yellow(),
+    ));
     // Wall-clock (local) segment, mirroring the reference status line's leading
     // HH:MM. Shown only while a run is active: a clock that ticks once per
     // minute repaints the screen only on the minute, which clears the terminal's
@@ -10251,13 +13212,13 @@ fn input_box_height(app: &App, width: u16) -> u16 {
     content + 1
 }
 
-/// Visible input as styled lines: `› ` on the first line, 2-space hang on
+/// Visible input as styled lines: `> ` on the first line, 2-space hang on
 /// continuations, and a solid block cursor at the byte offset `cursor` (the
 /// character under the cursor is drawn in reverse video; at end of line a
 /// reversed space forms the block). Wrapping is left to the Paragraph so long
 /// single lines fold within the box width.
 fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
-    let arrow = Span::styled("› ", Style::new().cyan().bold());
+    let arrow = Span::styled("> ", Style::new().cyan().bold());
     let segments: Vec<&str> = input.split('\n').collect();
     let last = segments.len() - 1;
     // Locate the segment + in-segment byte offset holding the caret.
@@ -10329,16 +13290,43 @@ fn input_box(app: &App) -> Paragraph<'static> {
     } else if app.status == Status::Running && app.input.is_empty() {
         // Show queue status when running with empty input
         if app.message_queue.is_empty() {
-            // The spinner carries the motion; the rest of the row is static so
-            // the text stays readable rather than shifting under the eye.
-            Paragraph::new(Line::from(vec![
-                Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
-                Span::styled(
-                    "working… (Esc to cancel, type to queue next message)",
+            // The spinner carries the fast motion; the action word turns over
+            // on a slower cadence, cycling "working" synonyms -- or "thinking"
+            // synonyms in orange while a reasoning block streams -- so the row
+            // reads alive without shifting under the eye.
+            let step = app.spinner_frame / WORD_ROTATE_FRAMES;
+            let (word, style) = if app.reasoning_open() {
+                (
+                    THINKING_WORDS[step % THINKING_WORDS.len()],
+                    Style::new().fg(THINKING_ORANGE).italic(),
+                )
+            } else {
+                (
+                    WORKING_WORDS[step % WORKING_WORDS.len()],
                     Style::new().dim().italic(),
+                )
+            };
+            // With `wave` set, the glyph travels along the action word in place
+            // of the leading throbber: one moving thing per row, not two.
+            let message = format!("{word}…");
+            let mut spans = Vec::with_capacity(6);
+            match wave_glyph() {
+                Some(glyph) => spans.extend(
+                    wave_sweep_line(&message, &glyph, app.spinner_frame, style).spans,
                 ),
-            ]))
-            .block(block)
+                None => {
+                    spans.push(Span::styled(
+                        format!("{} ", app.spinner()),
+                        Style::new().cyan(),
+                    ));
+                    spans.push(Span::styled(message, style));
+                }
+            }
+            spans.push(Span::styled(
+                " (Esc to cancel, type to queue next message)",
+                Style::new().dim().italic(),
+            ));
+            Paragraph::new(Line::from(spans)).block(block)
         } else {
             let n = app.message_queue.len();
             Paragraph::new(Line::from(vec![
@@ -10351,7 +13339,7 @@ fn input_box(app: &App) -> Paragraph<'static> {
             .block(block)
         }
     } else if app.input.is_empty() {
-        // Same `› ` arrow as the typing view, then a fixed (non-blinking)
+        // Same `> ` prompt as the typing view, then a fixed (non-blinking)
         // block cursor in front of the placeholder.
         let placeholder = if app.status == Status::Running {
             "Type to queue next message"
@@ -10359,7 +13347,7 @@ fn input_box(app: &App) -> Paragraph<'static> {
             "Type here to chat with agent"
         };
         let cursor_spans: Vec<Span<'static>> = vec![
-            Span::styled("› ", Style::new().cyan().bold()),
+            Span::styled("> ", Style::new().cyan().bold()),
             Span::styled(" ", Style::new().add_modifier(Modifier::REVERSED)),
             Span::raw(" "),
             Span::styled(placeholder, Style::new().dim().italic()),
@@ -10520,6 +13508,12 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
 
 #[cfg(test)]
 mod tests {
+
+    /// An empty MCP map, for the `run_command`/`handle_key` paths that take one
+    /// but whose behaviour under test has nothing to do with MCP.
+    fn no_mcp() -> crate::core::state::SharedMcpServers {
+        std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()))
+    }
     use super::SessionLimits;
     use super::{journal, DisplayEntry};
     use super::{
@@ -10535,19 +13529,26 @@ mod tests {
         note_update, open_config_screen, spawn_branch_poll, await_branch_poll,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
         McpPrompt, McpField, pairs_to_str,
+        ProviderField,
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
-        run_command, starting_call_lines, unescape_partial_json_string,
-        running_group_row, split_reasoning, strip_system_xml_tags, subagent_activity,
+        startup_modes, KITTY_KEYS_OFF, KITTY_KEYS_ON,
+        backgrounded_job_id, drain_stream_events, run_command, starting_call_lines,
+        unescape_partial_json_string,
+        running_group_rows, split_reasoning, strip_system_xml_tags, subagent_activity,
+        answer_without_reasoning, assistant_runs, replay_display_log, thinking_open,
+        without_think_tags, ReasoningSeg,
         subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
         tool_activity, tool_finished,
-        transcript_top_padding, rewind_to,
+        transcript_top_padding, rewind_to, open_rewind_picker, rebuild_recall,
         row_width, user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind,
-        ResumeTarget, RowKind,
+        ResumeTarget, RowKind, finish_plugin_install,
         SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
-        COMMAND_LABEL_MAX, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
-        KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER,
-        SPINNER_ADVANCE_MS, alt_scroll_restore, alt_scroll_save_off,
+        DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
+        KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER, PROVIDERS_SETTINGS_ROW,
+        SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
+        alt_scroll_restore, alt_scroll_save_off, spans_width, wave_sweep_line, with_wave_glyph,
     };
+    use unicode_width::UnicodeWidthStr;
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
     use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
@@ -10766,7 +13767,7 @@ mod tests {
     #[tokio::test]
     async fn update_command_requests_an_install_once() {
         let mut app = test_app();
-        run_command(&mut app, "update").await;
+        run_command(&mut app, "update", &no_mcp()).await;
         assert!(app.update_requested, "the loop should pick up the request");
         assert!(transcript_text(&app).contains("downloading"), "no progress note");
 
@@ -10774,7 +13775,7 @@ mod tests {
         // concurrent install (two processes rewriting the same binary).
         app.update_installing = true;
         app.update_requested = false;
-        run_command(&mut app, "update").await;
+        run_command(&mut app, "update", &no_mcp()).await;
         assert!(!app.update_requested);
         assert!(transcript_text(&app).contains("already installing"));
     }
@@ -10888,6 +13889,7 @@ mod tests {
         app.push_assistant_blocks(
             "| column one heading | column two heading |\n|---|---|\n\
              | a reasonably long value here | another reasonably long value |",
+            &[],
         );
         let wide = render_rows(&mut app, 100, 20);
         let narrow = render_rows(&mut app, 46, 20);
@@ -10990,10 +13992,11 @@ mod tests {
         );
     }
 
-    /// A tool row's label is stored untruncated and clamped at draw time, so it
-    /// grows back when the terminal widens rather than staying elided.
+    /// A tool row's label is stored untruncated and laid out at draw time: it
+    /// wraps onto as many rows as the width needs, and re-packs onto fewer when
+    /// the terminal widens.
     #[test]
-    fn tool_row_labels_retruncate_on_resize() {
+    fn tool_row_labels_rewrap_on_resize() {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
             id: "t1".into(),
@@ -11009,29 +14012,309 @@ mod tests {
         // Close the group so its row reads as the finished command, not the
         // live "running 1 command" throbber.
         app.finalize_tool_group();
-        let label = |rows: &[String]| {
-            rows.iter()
-                .find(|r| r.contains("Ran: echo"))
-                .expect("no tool row")
-                .trim_end()
-                .to_string()
+        // The label's rows, stripped of gutter and tag and joined back into the
+        // text they display.
+        let label = |rows: &[String], width: usize| {
+            let start = rows
+                .iter()
+                .position(|r| r.contains("Ran: echo"))
+                .expect("no tool row");
+            let body: Vec<String> = rows[start..]
+                .iter()
+                .take_while(|r| r.starts_with('│') && r.trim_end() != "│")
+                .map(|r| {
+                    assert!(
+                        r.trim_end().chars().count() <= width,
+                        "row overflows: {r:?}"
+                    );
+                    r.trim_end().trim_start_matches(['│', ' ', '✓']).to_string()
+                })
+                .collect();
+            (body.len(), body.join(" "))
         };
-        let narrow = label(&render_rows(&mut app, 40, 12));
-        let wide = label(&render_rows(&mut app, 100, 12));
-        assert!(narrow.contains('…'), "narrow row was not elided: {narrow:?}");
-        assert!(narrow.chars().count() <= 40, "narrow row overflows: {narrow:?}");
+        let (narrow_rows, narrow) = label(&render_rows(&mut app, 40, 12), 40);
+        let (wide_rows, wide) = label(&render_rows(&mut app, 100, 12), 100);
+        let full = "Ran: echo the quick brown fox jumps over the lazy dog";
+        assert_eq!(narrow, full, "narrow layout dropped text");
+        assert_eq!(wide, full, "wide layout dropped text");
         assert!(
-            wide.chars().count() > narrow.chars().count(),
-            "row did not grow back: {wide:?}"
+            narrow_rows > wide_rows,
+            "label did not re-pack when widened: {narrow_rows} vs {wide_rows}"
         );
     }
+
+    /// A multi-line command keeps its breaks in the transcript row: the label
+    /// is not flattened onto one line, and the row is not one wide `Line` whose
+    /// newlines ratatui swallows.
+    #[test]
+    fn multiline_command_label_keeps_its_line_breaks() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({"command": "cd /tmp\ncargo build\ncargo test"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.finalize_tool_group();
+        let rows = render_rows(&mut app, 80, 16);
+        let has = |needle: &str| rows.iter().any(|r| r.trim_end().ends_with(needle));
+        assert!(has("Ran: cd /tmp"), "first command line missing: {rows:?}");
+        assert!(has("cargo build"), "second command line missing: {rows:?}");
+        assert!(has("cargo test"), "third command line missing: {rows:?}");
+    }
+
+    /// A tool label wraps, but a pathological one (a pasted heredoc body) is
+    /// bounded so it cannot push the conversation off screen.
+    #[test]
+    fn tool_label_wrapping_is_bounded() {
+        let mut app = test_app();
+        let command = (0..40)
+            .map(|i| format!("echo line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": command }),
+        });
+        app.finalize_tool_group();
+        let rendered = app.transcript.last().expect("no row").lines(80);
+        assert_eq!(
+            rendered.len(),
+            super::TOOL_ROW_MAX_LINES,
+            "label was not bounded"
+        );
+        let last: String = rendered[super::TOOL_ROW_MAX_LINES - 1]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            last.ends_with('\u{2026}'),
+            "elision was not marked: {last:?}"
+        );
+    }
+
+    /// A newline in a user message is a line break in the transcript, not a
+    /// blank cell in one run-on row.
+    #[test]
+    fn user_message_keeps_its_line_breaks() {
+        let mut app = test_app();
+        app.push_user_line("first line\nsecond line", &[]);
+        let rows = render_rows(&mut app, 60, 12);
+        assert!(
+            rows.iter()
+                .any(|r| r.trim_end().ends_with("> first line")),
+            "first line not on its own row: {rows:?}"
+        );
+        assert!(
+            rows.iter().any(|r| r.trim_end().ends_with("  second line")),
+            "second line not on its own row: {rows:?}"
+        );
+    }
+
+    /// The expanded (Ctrl-O) view is where the full output lives, so a line
+    /// wider than the terminal wraps there instead of eliding.
+    #[test]
+    fn expanded_group_detail_wraps_instead_of_eliding() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({"command": "cat notes"}),
+        });
+        let long = "alpha bravo charlie delta echo foxtrot golf hotel india juliett kilo lima";
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: long.into(),
+            is_error: false,
+            diff: None,
+        });
+        app.finalize_tool_group();
+        let group = app.groups.last().expect("no group");
+        let text: String = super::group_detail_lines(group, 40)
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect::<String>();
+        assert!(!text.contains('\u{2026}'), "detail elided: {text:?}");
+        for word in long.split(' ') {
+            assert!(text.contains(word), "detail dropped {word:?}: {text:?}");
+        }
+    }
+
+    /// A long option label and its description wrap inside the ask box, and the
+    /// box grows to hold them rather than clipping.
+    #[test]
+    fn ask_options_wrap_and_size_the_box() {
+        let mut app = test_app();
+        let request = crate::core::agent::interaction::AskRequest::parse(&json!({
+            "questions": [{
+                "id": "scope",
+                "question": "Which of these two rather long scopes should the agent take on next?",
+                "options": [
+                    {"label": "A thoroughly long option label that cannot fit one row",
+                     "description": "and a description that is longer still, needing rows of its own"},
+                    {"label": "Short"}
+                ],
+                "multi": false
+            }]
+        }))
+        .expect("valid ask request");
+        app.apply(StreamEvent::AskRequest {
+            request_id: "r1".into(),
+            request,
+        });
+        let rows = render_rows(&mut app, 50, 30);
+        let joined = rows.join("\n");
+        for word in ["thoroughly", "fit one row", "longer still", "Short"] {
+            assert!(joined.contains(word), "ask box clipped {word:?}:\n{joined}");
+        }
+        for row in &rows {
+            assert!(row.chars().count() <= 50, "row overflows: {row:?}");
+        }
+    }
+
+    /// The Ctrl-O expansion of a finished subagent wraps its call list, like
+    /// the tool-group expansion it sits beside -- it is the surface the folded
+    /// summary row sends the user to, so it has to be complete.
+    #[test]
+    fn expanded_subagent_detail_wraps_instead_of_eliding() {
+        let mut app = test_app();
+        let long = "Executing: cargo test --no-default-features --features cli -- cli::tui::tests";
+        app.push_subagent_summary("reviewer", vec![long.to_string()], true);
+        let block = app.subagent_blocks.last().expect("no subagent block");
+        let lines = block.detail_lines(50);
+        assert!(lines.len() > 1, "detail was not wrapped: {lines:?}");
+        let text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(!text.contains('\u{2026}'), "detail elided: {text:?}");
+        for word in ["--no-default-features", "cli::tui::tests"] {
+            assert!(text.contains(word), "dropped {word:?}: {text:?}");
+        }
+        for line in &lines {
+            let w: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
+            assert!(w <= 50, "row overflows: {w}");
+        }
+    }
+
+    /// Web and todo labels are stored whole like the bash one: the row wraps
+    /// them at the draw width, so a long URL is not cut at a fixed 80 on a
+    /// terminal with room for it.
+    #[test]
+    fn web_and_todo_labels_are_not_capped_at_a_fixed_width() {
+        let url = format!("https://example.com/{}", "segment/".repeat(20));
+        assert_eq!(
+            tool_activity("web_fetch", &json!({ "url": url.clone() })),
+            format!("Fetching: {url}")
+        );
+        assert_eq!(
+            tool_finished("web_fetch", &json!({ "url": url.clone() })),
+            format!("Fetched: {url}")
+        );
+        let query = "rust async runtime ".repeat(12);
+        assert_eq!(
+            tool_activity("web_search", &json!({ "query": query.clone() })),
+            format!("Searching the web: {query}")
+        );
+        let task = "refactor the transport layer ".repeat(6);
+        assert_eq!(
+            tool_activity("todo", &json!({ "op": "start", "task": task.clone() })),
+            format!("Starting task: {task}")
+        );
+    }
+
+    /// A slash invocation's args are user text and can arrive pasted and
+    /// multi-line, so its row breaks on newlines like `push_user_line`.
+    #[test]
+    fn invocation_row_keeps_its_line_breaks() {
+        let mut app = test_app();
+        app.push_invocation_label("[skill:deploy] first line\nsecond line".to_string());
+        let rows = render_rows(&mut app, 60, 12);
+        assert!(
+            rows.iter()
+                .any(|r| r.trim_end().ends_with("> [skill:deploy] first line")),
+            "first line not on its own row: {rows:?}"
+        );
+        assert!(
+            rows.iter().any(|r| r.trim_end().ends_with("  second line")),
+            "second line not on its own row: {rows:?}"
+        );
+    }
+
+    /// The docked prompts size themselves from the rows they will need, so an
+    /// arbitrary-length upstream error is readable rather than clipped to the
+    /// one row a fixed height budgeted for it.
+    #[test]
+    fn login_prompt_grows_to_fit_a_long_error() {
+        let mut app = test_app();
+        let error = "verification failed: the upstream returned 502 Bad Gateway \
+                     from https://api.tokamak.sh/v1/models after three attempts";
+        app.login = Some(super::LoginPrompt {
+            input: String::new(),
+            error: Some(error.to_string()),
+            verifying: false,
+        });
+        let rows = render_rows(&mut app, 56, 24);
+        let joined = rows.join(" ");
+        // Single tokens: the assertion must not straddle a wrap point.
+        for word in ["502", "api.tokamak.sh/v1/models", "attempts"] {
+            assert!(
+                joined.contains(word),
+                "error clipped ({word}):\n{}",
+                rows.join("\n")
+            );
+        }
+    }
+
+    /// An MCP field is being typed into: a long command line wraps inside the
+    /// box instead of running off its right edge with no way to see the rest.
+    #[test]
+    fn mcp_prompt_wraps_the_field_being_edited() {
+        let mut app = test_app();
+        let command = "npx -y @modelcontextprotocol/server-filesystem /home/user/projects/jan";
+        app.mcp_prompt = Some(super::McpPrompt {
+            editing: None,
+            field: super::McpField::Command,
+            name: "files".to_string(),
+            transport: "stdio".to_string(),
+            command: command.to_string(),
+            args: String::new(),
+            env: String::new(),
+            url: String::new(),
+            headers: String::new(),
+            active: true,
+            error: None,
+        });
+        let rows = render_rows(&mut app, 52, 26);
+        let joined = rows.join(" ");
+        for word in ["@modelcontextprotocol/server-", "/home/user/projects/jan"] {
+            assert!(
+                joined.contains(word),
+                "field clipped ({word}):\n{}",
+                rows.join("\n")
+            );
+        }
+        for row in &rows {
+            assert!(row.chars().count() <= 52, "row overflows: {row:?}");
+        }
+    }
+
 
     /// Degenerate frames (a sliver of a terminal mid-drag) must render, not panic.
     #[test]
     fn tiny_frames_render_without_panicking() {
         let mut app = test_app();
         app.push_user_line("hello", &[]);
-        app.push_assistant_blocks("| a | b |\n|---|---|\n| 1 | 2 |\n\n```rs\nlet x = 1;\n```");
+        app.push_assistant_blocks("| a | b |\n|---|---|\n| 1 | 2 |\n\n```rs\nlet x = 1;\n```", &[]);
         app.apply(StreamEvent::ToolResult {
             id: "x".into(),
             content: "done".into(),
@@ -11269,7 +14552,18 @@ mod tests {
         });
         let mut terminal = Terminal::new(TestBackend::new(36, 24)).unwrap();
         terminal.draw(|frame| super::draw(frame, &mut app)).unwrap();
-        let other_row = app.ask_queue.front().unwrap().row_hitboxes[2].0;
+        // Hitboxes are per screen row and an option may be several rows tall,
+        // so find the first row belonging to the "Other" item rather than the
+        // third entry in the list.
+        let other_row = app
+            .ask_queue
+            .front()
+            .unwrap()
+            .row_hitboxes
+            .iter()
+            .find(|(_, index)| *index == 2)
+            .expect("no hitbox for the custom row")
+            .0;
 
         assert!(
             handle_ask_mouse(
@@ -11396,6 +14690,156 @@ mod tests {
         assert_eq!(segs, vec![(true, "reasoning tail".to_string())]);
     }
 
+    /// With `think_tags = false` the tags carry no meaning: one answer run, so
+    /// the text renders verbatim instead of folding into a reasoning block.
+    #[test]
+    fn think_tags_gate_off_makes_the_whole_text_answer_prose() {
+        let text = "before<think>hidden</think>after";
+        let segs = without_think_tags(|| split_reasoning(text));
+        assert_eq!(segs, vec![(false, text.to_string())]);
+    }
+
+    /// The tags stay in the answer that goes back as history: not parsing them
+    /// means there is no reasoning to strip.
+    #[test]
+    fn think_tags_gate_off_keeps_the_tags_in_the_wire_answer() {
+        let text = "<think>hidden</think>answer";
+        assert_eq!(
+            without_think_tags(|| answer_without_reasoning(text)),
+            text,
+            "nothing is reasoning with the gate off"
+        );
+        assert_eq!(
+            answer_without_reasoning(text),
+            "answer",
+            "the default still strips it"
+        );
+    }
+
+    /// An unterminated tag no longer opens a thinking window, so the header
+    /// badge and the folded live tail stay off.
+    #[test]
+    fn think_tags_gate_off_never_reports_an_open_block() {
+        assert!(thinking_open("<think>still going"));
+        assert!(!without_think_tags(|| thinking_open("<think>still going")));
+    }
+
+    /// A journal written before reasoning was stored apart has its markers
+    /// inside `text` and no `reasoning` field. It must still replay as a folded
+    /// block: the markers go down the inline path, which is exactly what they
+    /// were before the split.
+    #[test]
+    fn a_pre_split_journal_entry_still_replays_its_reasoning() {
+        let raw = r#"{"kind":"assistant","text":"<think>old thought</think>Answer."}"#;
+        let entry: DisplayEntry = serde_json::from_str(raw).expect("legacy entry parses");
+        assert_eq!(
+            entry,
+            DisplayEntry::Assistant {
+                text: "<think>old thought</think>Answer.".into(),
+                reasoning: Vec::new(),
+            }
+        );
+        let mut app = test_app();
+        replay_display_log(&mut app, vec![entry]);
+        assert_eq!(
+            app.reasoning_blocks.len(),
+            1,
+            "legacy markers must still fold into a reasoning block"
+        );
+    }
+
+    /// A turn journaled with reasoning apart replays to the same rows, without
+    /// any marker round-trip.
+    #[test]
+    fn a_split_journal_entry_replays_prose_and_reasoning_apart() {
+        let entry = DisplayEntry::Assistant {
+            text: "Answer.".into(),
+            reasoning: vec![ReasoningSeg { at: 0, text: "a thought".into() }],
+        };
+        let round_tripped: DisplayEntry =
+            serde_json::from_str(&serde_json::to_string(&entry).unwrap()).unwrap();
+        assert_eq!(round_tripped, entry);
+        let mut app = test_app();
+        replay_display_log(&mut app, vec![entry]);
+        assert_eq!(app.reasoning_blocks.len(), 1);
+    }
+
+    /// The gate governs inline tags only. Native reasoning is carried
+    /// structurally, so it keeps rendering as its own run either way.
+    #[test]
+    fn think_tags_gate_does_not_touch_native_reasoning() {
+        let segs = vec![ReasoningSeg {
+            at: 0,
+            text: "a thought".into(),
+        }];
+        let expected = vec![
+            (true, "a thought".to_string()),
+            (false, "answer".to_string()),
+        ];
+        assert_eq!(assistant_runs("answer", &segs), expected);
+        assert_eq!(
+            without_think_tags(|| assistant_runs("answer", &segs)),
+            expected,
+            "native reasoning is not encoded as tags, so the gate cannot hide it"
+        );
+    }
+
+    /// Native segments are placed at the offset they streamed at, so a turn that
+    /// reasons, answers, then reasons again keeps emission order.
+    #[test]
+    fn assistant_runs_interleaves_native_reasoning_by_offset() {
+        let segs = vec![
+            ReasoningSeg { at: 0, text: "first".into() },
+            ReasoningSeg { at: 6, text: "second".into() },
+        ];
+        assert_eq!(
+            assistant_runs("prose tail", &segs),
+            vec![
+                (true, "first".to_string()),
+                (false, "prose ".to_string()),
+                (true, "second".to_string()),
+                (false, "tail".to_string()),
+            ]
+        );
+    }
+
+    /// A model writing *about* think tags cannot close a native reasoning
+    /// segment: the two sources never share a string, so no escaping is needed.
+    #[test]
+    fn a_think_tag_inside_native_reasoning_stays_in_that_run() {
+        let segs = vec![ReasoningSeg {
+            at: 0,
+            text: "the </think> tag closes a block".into(),
+        }];
+        assert_eq!(
+            assistant_runs("answer", &segs),
+            vec![
+                (true, "the </think> tag closes a block".to_string()),
+                (false, "answer".to_string()),
+            ]
+        );
+    }
+
+    /// The gate reaches the App: a turn whose content carries tags commits them
+    /// as ordinary prose, with no reasoning block folded out of the transcript.
+    #[test]
+    fn think_tags_gate_off_commits_tagged_content_as_one_answer() {
+        without_think_tags(|| {
+            let mut app = test_app();
+            app.submit_user("go".into());
+            app.apply(StreamEvent::Token {
+                text: "<think>ponder</think>Answer.".into(),
+            });
+            app.on_done("stop".into(), None);
+            assert!(
+                app.reasoning_blocks.is_empty(),
+                "nothing may fold with the gate off"
+            );
+            let last = app.history.last().expect("assistant turn in history");
+            assert_eq!(last["content"], "<think>ponder</think>Answer.");
+        });
+    }
+
     #[test]
     fn strip_system_xml_tags_removes_system_blocks() {
         assert_eq!(
@@ -11429,37 +14873,106 @@ mod tests {
     }
 
     #[test]
-    fn live_tail_hides_open_think_block_and_shows_it_when_revealed() {
-        use ratatui::{backend::TestBackend, Terminal};
+    fn live_tail_streams_open_reasoning_and_the_gate_hides_it() {
         let mut app = test_app();
         app.assistant_buf = "<think>pondering the answer".to_string();
 
-        let render = |app: &mut App| {
-            let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
-            terminal.draw(|f| super::draw(f, app)).unwrap();
-            let buf = terminal.backend().buffer().clone();
-            (0..buf.area.height)
-                .map(|y| {
-                    (0..buf.area.width)
-                        .map(|x| buf[(x, y)].symbol())
-                        .collect::<String>()
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-
-        // Reasoning folding is the default: an open  block is hidden from
-        // the live tail (the header shows [thinking] instead).
-        let hidden = render(&mut app);
+        // Streaming is the default: a folded, still-open block shows its tail so
+        // the user can watch the thought form.
+        let streamed = render_rows(&mut app, 60, 30).join("\n");
         assert!(
-            !hidden.contains("pondering"),
-            "open reasoning must be hidden by default"
+            streamed.contains("pondering"),
+            "open reasoning streams by default: {streamed}"
         );
 
-        // With show_reasoning on, the streaming reasoning renders dimmed as before.
+        // With the gate off only the header's [thinking] badge stands for it.
+        app.stream_reasoning = false;
+        let hidden = render_rows(&mut app, 60, 30).join("\n");
+        assert!(
+            !hidden.contains("pondering"),
+            "stream_reasoning = false hides the open block"
+        );
+
+        // With show_reasoning on, folding is off entirely and it renders whole.
         app.show_reasoning = true;
-        let shown = render(&mut app);
+        let shown = render_rows(&mut app, 60, 30).join("\n");
         assert!(shown.contains("pondering"), "revealed live tail must contain it");
+    }
+
+    /// A long chain of thought must not push the answer, or the conversation
+    /// above it, off the screen: the live tail keeps only the last few lines.
+    #[test]
+    fn live_tail_bounds_streaming_reasoning_to_its_last_lines() {
+        let body: String = (1..=20).map(|n| format!("step {n}\n")).collect();
+        let lines = super::live_assistant_lines(
+            &format!("<think>{body}"),
+            &[],
+            60,
+            true,
+            true,
+        );
+        let text: Vec<String> = lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect();
+        assert_eq!(text.len(), 6, "capped at the tail: {text:?}");
+        assert!(text[0].contains("step 15"), "starts at the tail: {text:?}");
+        assert!(text[5].contains("step 20"), "ends at the newest: {text:?}");
+    }
+
+    /// The tail is bounded in *rendered* rows, not source lines. Reasoning
+    /// usually arrives as one long paragraph, so a newline-counted cap let a
+    /// single line wrap into an unpredictable number of screen rows and the
+    /// block's height jittered between frames as that line grew.
+    #[test]
+    fn live_tail_height_is_stable_as_one_long_line_grows() {
+        let width = 40u16;
+        let words: Vec<String> = (1..=120).map(|n| format!("word{n}")).collect();
+        let mut seen = 0u16;
+        for n in (1..=words.len()).step_by(3) {
+            let body = words[..n].join(" ");
+            let lines =
+                super::live_assistant_lines(&format!("<think>{body}"), &[], width, true, true);
+            let rows = lines.len() as u16;
+            assert_eq!(
+                rows,
+                super::wrapped_height(lines.clone(), width),
+                "a pre-wrapped tail must not re-wrap ({n} words)"
+            );
+            assert!(rows <= 6, "tail grew to {rows} rows ({n} words)");
+            assert!(rows >= seen, "tail shrank from {seen} to {rows} rows ({n} words)");
+            seen = rows;
+        }
+        assert_eq!(seen, 6, "tail never filled to its cap");
+    }
+
+    /// A block that already closed mid-turn folds to the very summary row the
+    /// commit will emit, so finalizing the turn does not move the transcript.
+    #[test]
+    fn live_tail_folds_a_closed_reasoning_run_to_its_summary_row() {
+        let lines = super::live_assistant_lines(
+            "<think>weighed it\ntwice</think>Here is the answer.",
+            &[],
+            60,
+            true,
+            true,
+        );
+        let text: Vec<String> = lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect();
+        assert!(
+            text.iter().any(|l| l.contains("reasoning (2 lines)")),
+            "closed run folds to a summary: {text:?}"
+        );
+        assert!(
+            !text.iter().any(|l| l.contains("weighed it")),
+            "closed run is not shown in full: {text:?}"
+        );
+        assert!(
+            text.iter().any(|l| l.contains("Here is the answer.")),
+            "prose still renders: {text:?}"
+        );
     }
 
     #[test]
@@ -11740,6 +15253,101 @@ mod tests {
         );
     }
 
+    /// A `bash` call carrying only a `job_id` is a poll of an already
+    /// backgrounded command: it blocks until that command finishes, so its row
+    /// can stay live for minutes. "Executing command" said nothing at all
+    /// about what was running.
+    #[test]
+    fn a_backgrounded_bash_poll_names_the_job_it_waits_on() {
+        assert_eq!(
+            tool_activity("bash", &json!({ "job_id": "bash-3" })),
+            "Waiting for background job bash-3"
+        );
+        assert_eq!(
+            tool_finished("bash", &json!({ "job_id": "bash-3" })),
+            "Collected background job bash-3"
+        );
+        assert_eq!(
+            subagent_activity("bash", &json!({ "job_id": "bash-3" })),
+            "awaiting job bash-3"
+        );
+        // The command, once the run remembers which one the job is:
+        let args = json!({ "job_id": "bash-3", "command": "cargo build --release" });
+        assert_eq!(
+            tool_activity("bash", &args),
+            "Waiting for: cargo build --release"
+        );
+        assert_eq!(
+            tool_finished("bash", &args),
+            "Collected: cargo build --release"
+        );
+        assert_eq!(
+            subagent_activity("bash", &args),
+            "awaiting $ cargo build --release"
+        );
+        // A blank job id is no job id: an ordinary call is unaffected.
+        assert_eq!(
+            tool_activity("bash", &json!({ "command": "ls", "job_id": "  " })),
+            "Executing: ls"
+        );
+    }
+
+    /// The job id is read back out of the result that handed it out, so the
+    /// marker the tool prints is what this has to match.
+    #[test]
+    fn a_backgrounding_notice_yields_its_job_id() {
+        let notice = "Command exceeded 30s and is continuing in the background \
+             (job_id=bash-7). Call bash again with {\"job_id\": \"bash-7\"} (no \
+             command) to wait for and collect its output once it finishes.";
+        assert_eq!(backgrounded_job_id(notice), Some("bash-7"));
+        // Not every bash result carries one.
+        assert_eq!(backgrounded_job_id("hello\n[exit 0]"), None);
+        assert_eq!(
+            backgrounded_job_id("ERROR: unknown or already-collected job_id 'nope'"),
+            None
+        );
+    }
+
+    /// End to end: the command a job was started with reaches the poll's row.
+    #[tokio::test]
+    async fn a_polled_job_row_names_the_command_it_was_started_with() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cargo build --release", "timeout": 1 }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "Command exceeded 1s and is continuing in the background \
+                      (job_id=bash-1). Call bash again with {\"job_id\": \"bash-1\"}."
+                .into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "bash".into(),
+            args: json!({ "job_id": "bash-1" }),
+        });
+
+        let text: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .chain(std::iter::once(
+                app.tool_group
+                    .as_ref()
+                    .map(|g| g.calls.iter().map(|c| c.activity.clone()).collect())
+                    .unwrap_or_default(),
+            ))
+            .collect();
+        assert!(
+            text.contains("Waiting for: cargo build --release"),
+            "the poll row does not name its command: {text}"
+        );
+    }
+
     #[test]
     fn tool_activity_is_concise_present_tense() {
         assert_eq!(
@@ -11752,7 +15360,7 @@ mod tests {
         );
         // Kept whole: the row clamps to the draw width, so a long command fills
         // the terminal instead of being cut at a fixed 80.
-        let long = format!("echo {}", "x".repeat(2 * COMMAND_LABEL_MAX));
+        let long = format!("echo {}", "x".repeat(200));
         assert_eq!(
             tool_activity("bash", &json!({ "command": long })),
             format!("Executing: {long}")
@@ -11776,7 +15384,7 @@ mod tests {
         );
         // Whole command on the finished row too, for the same reason as
         // `tool_activity`: the row clamps to the draw width.
-        let long = format!("echo {}", "x".repeat(2 * COMMAND_LABEL_MAX));
+        let long = format!("echo {}", "x".repeat(200));
         assert_eq!(
             tool_finished("bash", &json!({ "command": long })),
             format!("Ran: {long}")
@@ -11857,6 +15465,10 @@ mod tests {
 
     fn line_text(line: &ratatui::text::Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    fn lines_text(lines: &[ratatui::text::Line]) -> String {
+        lines.iter().map(line_text).collect::<Vec<_>>().join("\n")
     }
 
     /// Text of a streaming write preview's tail, dropping the highlight styles.
@@ -12081,6 +15693,68 @@ mod tests {
             }
             other => panic!("expected a checkpoint job, got {:?}", other.is_some()),
         }
+    }
+
+    /// A hidden reminder rides in on the `user` role, so every surface that
+    /// counts user turns has to skip it: otherwise it becomes a rewind target
+    /// and a recall entry the user never typed, and shifts the indices those
+    /// share with the display journal (which holds no reminder at all).
+    #[test]
+    fn a_hidden_reminder_is_not_a_user_turn() {
+        let mut app = test_app();
+        app.thread_id = Some("t1".into());
+        app.repo_root = Some(std::path::PathBuf::from("/tmp/repo"));
+        app.base_requested = true;
+        app.submit_user("first".into());
+        app.history
+            .push(json!({ "role": "assistant", "content": "reply" }));
+        app.submit_reminder("unfinished todos remain".into());
+        assert_eq!(
+            app.history.len(),
+            3,
+            "the reminder needed its own turn here"
+        );
+        assert!(crate::core::agent::reminder::is_reminder_only(
+            &app.history[2]["content"]
+        ));
+
+        open_rewind_picker(&mut app);
+        let picker = app.picker.as_ref().expect("picker");
+        assert_eq!(picker.items.len(), 1);
+        assert_eq!(picker.items[0].label, "first");
+
+        rebuild_recall(&mut app);
+        assert_eq!(app.input_history, vec!["first"]);
+
+        app.checkpoint_turn();
+        match app.snap_queue.back() {
+            Some(SnapshotJob::Checkpoint {
+                user_index,
+                preview,
+                ..
+            }) => {
+                assert_eq!(*user_index, 0, "the reminder must not shift the key");
+                assert_eq!(preview, "first");
+            }
+            other => panic!("expected a checkpoint job, got {:?}", other.is_some()),
+        }
+    }
+
+    /// The reminder is folded into a message the model has not answered yet
+    /// where one exists, so no extra turn is invented at all.
+    #[test]
+    fn a_reminder_lands_in_flight_on_an_unanswered_turn() {
+        let mut app = test_app();
+        app.thread_id = Some("t1".into());
+        app.submit_user("first".into());
+        app.submit_reminder("unfinished todos remain".into());
+        assert_eq!(app.history.len(), 1);
+        let content = app.history[0]["content"].as_str().expect("text");
+        assert!(content.starts_with("first\n\n"), "{content}");
+        assert!(content.contains("unfinished todos remain"));
+        // Recall and rewind offer the typed text back, never the reminder.
+        rebuild_recall(&mut app);
+        assert_eq!(app.input_history, vec!["first"]);
     }
 
     #[test]
@@ -12397,6 +16071,189 @@ mod tests {
         );
     }
 
+    /// Put `text` in the composer with the caret marked by `|`.
+    fn composer(app: &mut App, text: &str) {
+        let cursor = text.find('|').expect("mark the caret with |");
+        app.input = text.replace('|', "");
+        app.cursor = cursor;
+    }
+
+    /// The composer as `text|with the caret marked`.
+    fn composed(app: &App) -> String {
+        let mut s = app.input.clone();
+        s.insert(app.cursor, '|');
+        s
+    }
+
+    #[tokio::test]
+    async fn word_deletion_covers_every_spelling() {
+        // Alt+Backspace (Option+Delete on macOS), Ctrl+Backspace and Ctrl-W all
+        // delete backwards; Alt+D and Ctrl+Delete delete forwards.
+        for mods in [KeyModifiers::ALT, KeyModifiers::CONTROL] {
+            let mut app = test_app();
+            composer(&mut app, "hello world|");
+            press(&mut app, KeyCode::Backspace, mods).await;
+            assert_eq!(composed(&app), "hello |", "Backspace with {mods:?}");
+
+            composer(&mut app, "|hello world");
+            press(&mut app, KeyCode::Delete, mods).await;
+            assert_eq!(composed(&app), "| world", "Delete with {mods:?}");
+        }
+
+        let mut app = test_app();
+        composer(&mut app, "hello world|");
+        press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "hello |");
+
+        composer(&mut app, "|hello world");
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "| world");
+    }
+
+    /// Ctrl-W takes a whole whitespace-delimited token (the shell's
+    /// unix-word-rubout) where Alt+Backspace stops at the punctuation, which is
+    /// the whole reason both exist.
+    #[tokio::test]
+    async fn ctrl_w_eats_a_path_and_alt_backspace_does_not() {
+        let mut app = test_app();
+        composer(&mut app, "open src/core/tui.rs|");
+        press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "open |");
+
+        composer(&mut app, "open src/core/tui.rs|");
+        press(&mut app, KeyCode::Backspace, KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "open src/core/tui.|");
+    }
+
+    /// Trailing whitespace goes with the word, and an empty buffer is a no-op
+    /// rather than a panic.
+    #[tokio::test]
+    async fn word_deletion_handles_the_edges() {
+        let mut app = test_app();
+        composer(&mut app, "foo   |");
+        press(&mut app, KeyCode::Backspace, KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "|");
+
+        press(&mut app, KeyCode::Backspace, KeyModifiers::ALT).await;
+        press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL).await;
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "|");
+
+        // Multi-byte chars: the caret must land on a char boundary.
+        composer(&mut app, "café über|");
+        press(&mut app, KeyCode::Backspace, KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "café |");
+    }
+
+    #[tokio::test]
+    async fn word_and_line_motion_keys_move_the_caret() {
+        let mut app = test_app();
+        for mods in [KeyModifiers::ALT, KeyModifiers::CONTROL] {
+            composer(&mut app, "hello world|");
+            press(&mut app, KeyCode::Left, mods).await;
+            assert_eq!(composed(&app), "hello |world", "Left with {mods:?}");
+            press(&mut app, KeyCode::Right, mods).await;
+            assert_eq!(composed(&app), "hello world|", "Right with {mods:?}");
+        }
+
+        composer(&mut app, "hello world|");
+        press(&mut app, KeyCode::Char('b'), KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "hello |world");
+        press(&mut app, KeyCode::Char('f'), KeyModifiers::ALT).await;
+        assert_eq!(composed(&app), "hello world|");
+
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "|hello world");
+        press(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "h|ello world");
+        press(&mut app, KeyCode::Char('b'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "|hello world");
+        press(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "hello world|");
+    }
+
+    /// Home/End/Ctrl-A/Ctrl-E and the line kills are line-wise, not
+    /// buffer-wise: the composer takes newlines via Shift/Alt+Enter.
+    #[tokio::test]
+    async fn line_keys_act_on_the_caret_line_of_a_multiline_buffer() {
+        let mut app = test_app();
+        composer(&mut app, "first\nsec|ond\nthird");
+        press(&mut app, KeyCode::Home, KeyModifiers::NONE).await;
+        assert_eq!(composed(&app), "first\n|second\nthird");
+        press(&mut app, KeyCode::End, KeyModifiers::NONE).await;
+        assert_eq!(composed(&app), "first\nsecond|\nthird");
+
+        composer(&mut app, "first\nsec|ond\nthird");
+        press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "first\nsec|\nthird");
+        // At the end of a line Ctrl-K takes the newline, joining the next up.
+        press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "first\nsec|third");
+
+        composer(&mut app, "first\nsec|ond\nthird");
+        press(&mut app, KeyCode::Char('u'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "first\n|ond\nthird");
+    }
+
+    #[tokio::test]
+    async fn shift_enter_inserts_a_newline_instead_of_submitting() {
+        let mut app = test_app();
+        composer(&mut app, "line one|");
+        press(&mut app, KeyCode::Enter, KeyModifiers::SHIFT).await;
+        assert_eq!(composed(&app), "line one\n|");
+        assert_eq!(app.status, Status::Idle, "Shift+Enter must not submit");
+    }
+
+    /// The slash and `@path` popups own Enter, but a *modified* Enter is a
+    /// newline: it must reach the composer instead of accepting a completion.
+    #[tokio::test]
+    async fn a_newline_keystroke_survives_an_open_hint_popup() {
+        for mods in [KeyModifiers::SHIFT, KeyModifiers::ALT] {
+            let mut app = test_app();
+            type_key_chars(&mut app, "/mod").await;
+            assert!(!app.slash_matches().is_empty(), "the popup must be open");
+            press(&mut app, KeyCode::Enter, mods).await;
+            assert_eq!(app.input, "/mod\n", "{mods:?} must insert a newline");
+        }
+    }
+
+    #[tokio::test]
+    async fn ctrl_h_and_ctrl_t_edit_characters() {
+        let mut app = test_app();
+        composer(&mut app, "abc|");
+        press(&mut app, KeyCode::Char('h'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "ab|");
+
+        // Ctrl-T at the end of the buffer swaps the last two chars.
+        press(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "ba|");
+
+        composer(&mut app, "a|bc");
+        press(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "ba|c");
+
+        // Nothing to swap: a no-op, not a panic.
+        composer(&mut app, "|a");
+        press(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL).await;
+        assert_eq!(composed(&app), "|a");
+    }
+
+    #[tokio::test]
+    async fn ctrl_p_and_ctrl_n_recall_history_without_scrolling() {
+        let mut app = test_app();
+        submit_line(&mut app, "first message").await;
+        submit_line(&mut app, "second message").await;
+        app.scrollback = 0;
+
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::CONTROL).await;
+        assert_eq!(app.input, "second message");
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::CONTROL).await;
+        assert_eq!(app.input, "first message");
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::CONTROL).await;
+        assert_eq!(app.input, "second message");
+        assert_eq!(app.scrollback, 0, "recall keys never scroll the transcript");
+    }
+
     async fn press(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let mcp_servers: crate::core::state::SharedMcpServers =
@@ -12499,7 +16356,7 @@ mod tests {
     #[tokio::test]
     async fn login_prompt_captures_keys_and_never_renders_the_key() {
         let mut app = test_app();
-        run_command(&mut app, "login").await;
+        run_command(&mut app, "login", &no_mcp()).await;
         assert!(app.login.is_some(), "/login must open the prompt");
 
         type_key_chars(&mut app, "tk-secret").await;
@@ -12521,7 +16378,7 @@ mod tests {
     #[tokio::test]
     async fn login_enter_hands_a_trimmed_key_to_the_loop() {
         let mut app = test_app();
-        run_command(&mut app, "login").await;
+        run_command(&mut app, "login", &no_mcp()).await;
         app.login.as_mut().unwrap().paste("  tk-abc\n");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
 
@@ -12532,7 +16389,7 @@ mod tests {
     #[tokio::test]
     async fn login_rejects_a_mispasted_key_before_any_request() {
         let mut app = test_app();
-        run_command(&mut app, "login").await;
+        run_command(&mut app, "login", &no_mcp()).await;
         type_key_chars(&mut app, "tk-abc def").await;
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
 
@@ -12550,7 +16407,7 @@ mod tests {
     #[tokio::test]
     async fn login_backspace_edits_and_esc_cancels() {
         let mut app = test_app();
-        run_command(&mut app, "login").await;
+        run_command(&mut app, "login", &no_mcp()).await;
         type_key_chars(&mut app, "tk-ab").await;
         press(&mut app, KeyCode::Backspace, KeyModifiers::NONE).await;
         assert_eq!(app.login.as_ref().unwrap().input, "tk-a");
@@ -12563,7 +16420,7 @@ mod tests {
     #[tokio::test]
     async fn login_stays_cancellable_while_verifying() {
         let mut app = test_app();
-        run_command(&mut app, "login").await;
+        run_command(&mut app, "login", &no_mcp()).await;
         app.login.as_mut().unwrap().paste("tk-abc");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
         app.login_submit.take();
@@ -12582,7 +16439,7 @@ mod tests {
     #[tokio::test]
     async fn failed_verification_keeps_the_prompt_open_with_the_reason() {
         let mut app = test_app();
-        run_command(&mut app, "login").await;
+        run_command(&mut app, "login", &no_mcp()).await;
         app.login.as_mut().unwrap().paste("tk-abc");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
         app.login_submit.take();
@@ -12729,7 +16586,7 @@ mod tests {
             let provider_configs: std::collections::HashMap<String, crate::core::state::ProviderConfig> =
                 std::collections::HashMap::new();
             let args = std::sync::Arc::new(super::OrchestrationArgs {
-                client: reqwest::Client::new(),
+                client: crate::core::agent::upstream::agent_http_client(),
                 provider_configs: std::sync::Arc::new(tokio::sync::Mutex::new(
                     provider_configs,
                 )),
@@ -13063,7 +16920,9 @@ mod tests {
         super::settings_command(&mut app, "");
         let picker = app.picker.as_ref().expect("bare /settings opens picker");
         assert_eq!(picker.kind, PickerKind::AgentSettings);
-        assert_eq!(picker.items.len(), AGENT_SETTINGS.len());
+        // One leading "providers" row plus a row per `[agent]` def.
+        assert_eq!(picker.items.len(), AGENT_SETTINGS.len() + 1);
+        assert_eq!(picker.items[0].value, PROVIDERS_SETTINGS_ROW);
         let row = picker
             .items
             .iter()
@@ -13087,8 +16946,18 @@ mod tests {
         std::fs::write(&toml_path, "[agent]\ncontext_window = 64000\n").unwrap();
 
         super::settings_command(&mut app, "");
-        // Select the context_window row (index 0) and press x: the key must be
-        // removed, the row hint flip back to (unset), the note rendered.
+        // Select the context_window row and press x: the key must be removed,
+        // the row hint flip back to (unset), the note rendered. (Found by value
+        // rather than index since index 0 is the leading "providers" row.)
+        let idx = app
+            .picker
+            .as_ref()
+            .unwrap()
+            .items
+            .iter()
+            .position(|i| i.value == "context_window")
+            .expect("context_window row");
+        app.picker.as_mut().unwrap().selected = idx;
         press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
         let doc = std::fs::read_to_string(&toml_path).unwrap();
         assert!(!doc.contains("context_window = 64000"), "key removed: {doc}");
@@ -13161,6 +17030,122 @@ mod tests {
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
+    /// `wave` lives in `~/.jan/config.toml`, not the project's agent.toml, so
+    /// the row has to write across scopes. It is also the one setting that
+    /// applies live: a cosmetic glyph you must restart to see is not a toggle,
+    /// and the note must not claim a restart is needed.
+    #[test]
+    fn settings_prompt_writes_a_global_scope_key_and_applies_it_live() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            let mut app = test_app();
+            std::fs::create_dir_all(&app.agent_dir).unwrap();
+            let toml_path = app.agent_dir.join("agent.toml");
+            std::fs::write(&toml_path, "[agent]\n").unwrap();
+
+            let def = AGENT_SETTINGS.iter().find(|d| d.key == "wave").unwrap();
+            app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+            super::handle_settings_key(&mut app, key(KeyCode::Char('~')), false);
+            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+
+            assert!(app.settings_prompt.is_none(), "Enter closes the dock");
+            let global = std::fs::read_to_string(home.join(".jan").join("config.toml")).unwrap();
+            assert!(global.contains("wave = \"~\""), "written globally: {global}");
+            let project = std::fs::read_to_string(&toml_path).unwrap();
+            assert!(
+                !project.contains("wave"),
+                "a global key must not land in agent.toml: {project}"
+            );
+            assert_eq!(super::wave_glyph().as_deref(), Some("~"), "applied live");
+            let note = transcript_text(&app);
+            assert!(note.contains("wave = ~ written"), "{note}");
+            assert!(note.contains("in effect now"), "no restart is needed: {note}");
+
+            // Clearing the field writes the off value, live. It does *not*
+            // remove the key: absent means the default 👋 comes back, which is
+            // the opposite of what someone clearing the glyph asked for.
+            app.settings_prompt = Some(super::SettingsPrompt::new(def, Some("~")));
+            super::handle_settings_key(&mut app, key(KeyCode::Backspace), false);
+            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+            assert_eq!(super::wave_glyph(), None, "off applied live");
+            // Asserted through the reader, not the raw text: the scaffolded
+            // template carries a commented `# wave = ...` example line that a
+            // substring check would match forever.
+            assert_eq!(
+                crate::core::agent::global_config::global_value("wave").as_deref(),
+                Some(""),
+                "cleared field persists as the off value"
+            );
+            let note = transcript_text(&app);
+            assert!(note.contains("wave off (throbber)"), "off, not unset: {note}");
+
+            // Removing the key is the other path, and it restores the default
+            // rather than leaving the sweep off.
+            crate::core::agent::global_config::set_global_key("wave", None).expect("unset");
+            super::set_wave_glyph(None);
+            assert_eq!(
+                crate::core::agent::global_config::global_value("wave"),
+                None,
+                "key removed from the file"
+            );
+            assert_eq!(
+                super::wave_glyph().as_deref(),
+                Some(crate::core::agent::global_config::WAVE_DEFAULT),
+                "a removed key brings the default sweep back"
+            );
+
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+        });
+    }
+
+    /// The picker hint for a global row must read the global file, or every
+    /// user-wide key would show `(unset)` however it is configured.
+    /// Sync, with a local runtime for the one keypress: `with_temp_home` swaps
+    /// the process `HOME`, so the guard must not be held across an await.
+    #[test]
+    fn settings_picker_reads_and_unsets_a_global_scope_key() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime");
+            let mut app = test_app();
+            std::fs::create_dir_all(&app.agent_dir).unwrap();
+            std::fs::write(app.agent_dir.join("agent.toml"), "[agent]\n").unwrap();
+            std::fs::create_dir_all(home.join(".jan")).unwrap();
+            let global_path = home.join(".jan").join("config.toml");
+            std::fs::write(&global_path, "wave = \"🍌\"\n").unwrap();
+
+            super::settings_command(&mut app, "");
+            let picker = app.picker.as_ref().expect("picker opens");
+            let row = picker
+                .items
+                .iter()
+                .find(|i| i.value == "wave")
+                .expect("wave row present");
+            assert_eq!(row.hint.as_deref(), Some("= 🍌"), "hint reads ~/.jan");
+
+            let idx = picker.items.iter().position(|i| i.value == "wave").unwrap();
+            app.picker.as_mut().unwrap().selected = idx;
+            rt.block_on(press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE));
+            assert_eq!(
+                crate::core::agent::global_config::global_value("wave"),
+                None,
+                "x unsets globally"
+            );
+            let row = app
+                .picker
+                .as_ref()
+                .expect("picker stays open")
+                .items
+                .iter()
+                .find(|i| i.value == "wave")
+                .expect("wave row present");
+            assert_eq!(row.hint.as_deref(), Some("(unset)"));
+
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+        });
+    }
+
     #[test]
     fn settings_prompt_esc_cancels_without_writing() {
         let mut app = test_app();
@@ -13179,6 +17164,60 @@ mod tests {
         let doc = std::fs::read_to_string(&toml_path).unwrap();
         assert!(doc.contains("max_parallel_subagents = 7"), "unchanged: {doc}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// The glyph field stops accepting input at the cap rather than letting a
+    /// long string be typed and rejected on Enter, and it counts what the eye
+    /// counts: `👁️👄👁️` is three characters, not five.
+    #[test]
+    fn settings_glyph_field_caps_at_three_graphemes() {
+        let mut app = test_app();
+        let def = AGENT_SETTINGS.iter().find(|d| d.key == "wave").unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+
+        for ch in "👁️👄👁️".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        fn input(app: &App) -> String {
+            app.settings_prompt.as_ref().unwrap().input.clone()
+        }
+        assert_eq!(input(&app), "👁️👄👁️", "three clusters of five chars all fit");
+
+        // One past the cap is dropped, and the field is left exactly as it was
+        // rather than half-appended.
+        super::handle_settings_key(&mut app, key(KeyCode::Char('x')), false);
+        assert_eq!(input(&app), "👁️👄👁️", "a fourth cluster is refused");
+
+        // Backspace removes a whole cluster: popping one `char` off `👁️` would
+        // leave `👁`, which looks like nothing happened.
+        super::handle_settings_key(&mut app, key(KeyCode::Backspace), false);
+        assert_eq!(input(&app), "👁️👄", "backspace drops the whole cluster");
+    }
+
+    /// A hand-typed over-long glyph is rejected inline with a reason, not
+    /// silently truncated: truncation would save something the user did not
+    /// type.
+    #[test]
+    fn settings_glyph_rejects_an_over_long_paste() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            let def = AGENT_SETTINGS.iter().find(|d| d.key == "wave").unwrap();
+            let mut prompt = super::SettingsPrompt::new(def, None);
+            // Set directly: the key handler caps typing, so an over-long value
+            // can only arrive from a paste or a hand-edited file.
+            prompt.input = "abcd".to_string();
+            app.settings_prompt = Some(prompt);
+
+            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+            let prompt = app.settings_prompt.as_ref().expect("dock stays open");
+            let error = prompt.error.as_deref().expect("inline error");
+            assert!(error.contains('3'), "names the cap: {error}");
+            assert_eq!(
+                crate::core::agent::global_config::global_value("wave"),
+                None,
+                "nothing written on a rejected value"
+            );
+        });
     }
 
     #[test]
@@ -13290,6 +17329,52 @@ mod tests {
         assert_eq!(p.field, McpField::Active);
     }
 
+    /// `k`/`j` are ordinary characters in MCP text fields (URLs, paths), so
+    /// they must be typed, not steered with vim-style keys.
+    #[test]
+    fn mcp_prompt_types_k_and_j_into_fields() {
+        let mut app = test_app();
+        app.mcp_prompt = Some(McpPrompt {
+            editing: None,
+            field: McpField::Name,
+            name: String::new(),
+            transport: "http".to_string(),
+            command: String::new(),
+            args: String::new(),
+            env: String::new(),
+            url: String::new(),
+            headers: String::new(),
+            active: false,
+            error: None,
+        });
+        let servers: crate::core::state::SharedMcpServers =
+            Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            // Skip to the Url field: Name -> Transport -> Url.
+            super::handle_mcp_prompt_key(
+                &mut app, key(KeyCode::Down), false, &servers,
+            )
+            .await;
+            super::handle_mcp_prompt_key(
+                &mut app, key(KeyCode::Down), false, &servers,
+            )
+            .await;
+            assert_eq!(app.mcp_prompt.as_ref().unwrap().field, McpField::Url);
+            for ch in "https://jk.example/".chars() {
+                super::handle_mcp_prompt_key(
+                    &mut app, key(KeyCode::Char(ch)), false, &servers,
+                )
+                .await;
+            }
+        });
+
+        let prompt = app.mcp_prompt.as_ref().expect("still open");
+        assert_eq!(prompt.field, McpField::Url, "typing k must not move up");
+        assert_eq!(prompt.url, "https://jk.example/");
+    }
+
     #[test]
     fn pairs_to_str_roundtrips() {
         let map = crate::core::cli::mcp::parse_pairs("A=1,B=2", "env").unwrap();
@@ -13346,6 +17431,659 @@ mod tests {
         let doc = std::fs::read_to_string(&toml_path).unwrap();
         assert!(doc.contains("default = \"read-only\""), "unchanged: {doc}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn provider_prompt_field_navigation_wraps() {
+        let mut p = super::ProviderPrompt::new();
+        p.field = ProviderField::Name;
+        p.next_field();
+        assert_eq!(p.field, ProviderField::BaseUrl);
+        p.next_field();
+        assert_eq!(p.field, ProviderField::ApiKey);
+        p.prev_field();
+        assert_eq!(p.field, ProviderField::BaseUrl);
+        p.field = ProviderField::Models;
+        p.next_field();
+        assert_eq!(p.field, ProviderField::Name);
+        p.prev_field();
+        assert_eq!(p.field, ProviderField::Models);
+    }
+
+    #[test]
+    fn provider_prompt_validates_base_url() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut p = super::ProviderPrompt::new();
+            assert!(p.save().is_err(), "empty name rejected");
+            p.name = "myprovider".to_string();
+            assert!(p.save().is_err(), "empty base url rejected");
+            p.base_url = "not-a-url".to_string();
+            assert!(p.save().is_err(), "scheme required");
+            p.base_url = "https://my-provider.example/v1".to_string();
+            assert!(p.save().is_ok(), "valid https provider saved");
+        });
+    }
+
+    #[test]
+    fn provider_prompt_save_writes_global_config() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut p = super::ProviderPrompt::new();
+            p.name = "myprovider".to_string();
+            p.base_url = "https://my-provider.example/v1".to_string();
+            p.api_key = "sk-test-123".to_string();
+            p.models = "gpt-4o gpt-4o-mini".to_string();
+            assert!(p.save().is_ok());
+
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            let cfg = configs.get("myprovider").expect("provider written");
+            assert_eq!(cfg.base_url.as_deref(), Some("https://my-provider.example/v1"));
+            assert_eq!(cfg.api_key.as_deref(), Some("sk-test-123"));
+            assert_eq!(cfg.models, vec!["gpt-4o", "gpt-4o-mini"]);
+        });
+    }
+
+    #[test]
+    fn provider_prompt_save_and_cancel_via_keys() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            app.provider_prompt = Some(super::ProviderPrompt::new());
+
+            // Type name, advance, type base url, advance to models (skip key).
+            for ch in "myprovider".chars() {
+                super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+            for ch in "https://my.example/v1".chars() {
+                super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            // Advance past the API-key field to models.
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+            for ch in "model-a".chars() {
+                super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Enter), false);
+
+            // Enter closed the dock and wrote the global config.
+            assert!(app.provider_prompt.is_none());
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            let cfg = configs.get("myprovider").expect("provider written");
+            assert_eq!(cfg.base_url.as_deref(), Some("https://my.example/v1"));
+            assert_eq!(cfg.models, vec!["model-a"]);
+            assert!(transcript_text(&app).contains("added provider 'myprovider'"));
+
+            // Cancel leaves the store untouched.
+            app.provider_prompt = Some(super::ProviderPrompt::new());
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Esc), false);
+            assert!(app.provider_prompt.is_none());
+        });
+    }
+
+    /// `k`/`j` are ordinary characters in text fields (API keys start with
+    /// `sk-...`), so they must be typed, not steered with vim-style keys.
+    #[test]
+    fn provider_prompt_types_k_and_j_into_fields() {
+        let mut app = test_app();
+        app.provider_prompt = Some(super::ProviderPrompt::new());
+
+        // Type a name containing both letters, then an API key shaped like a
+        // real secret. Neither may move the active field.
+        for ch in "kitty-jet".chars() {
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+        super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+        assert_eq!(app.provider_prompt.as_ref().unwrap().field, ProviderField::ApiKey);
+        for ch in "sk-ant-k3y-j".chars() {
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+
+        let prompt = app.provider_prompt.as_ref().expect("still open");
+        assert_eq!(prompt.field, ProviderField::ApiKey, "typing k must not move up");
+        assert_eq!(prompt.name, "kitty-jet");
+        assert_eq!(prompt.api_key, "sk-ant-k3y-j");
+    }
+
+    /// Editing a provider: an untouched api-key field keeps the stored key on
+    /// save, so a user who opens a provider and saves without touching the key
+    /// must never silently lose or replace it.
+    #[test]
+    fn provider_edit_untouched_key_keeps_stored_key() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "p",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("sk-old".into()),
+                    base_url: Some("https://api.example/v1".into()),
+                    models: Some(vec!["m1".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+            let entry = crate::core::agent::global_config::load_global_config()
+                .unwrap()
+                .remove("p")
+                .unwrap();
+            let mut app = test_app();
+            app.provider_prompt = Some(super::ProviderPrompt::from_entry(&entry));
+
+            // Add a model so the save `models` value changes, proving the save
+            // ran; the key field is never touched.
+            app.provider_prompt.as_mut().unwrap().models = "m1 m2".to_string();
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Enter), false);
+
+            assert!(app.provider_prompt.is_none(), "edit saved");
+            let cfg = crate::core::agent::global_config::load_global_config()
+                .unwrap()
+                .get("p")
+                .cloned()
+                .unwrap();
+            assert_eq!(cfg.api_key.as_deref(), Some("sk-old"), "stored key kept");
+        });
+    }
+
+    /// Editing a provider: typing in the api-key field must replace the stored
+    /// key on save, and emptying it must clear the stored key (a local
+    /// endpoint that dropped auth).
+    #[test]
+    fn provider_edit_touched_key_replaces_or_clears() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let fresh = || {
+                crate::core::agent::global_config::set_provider(
+                    "p",
+                    crate::core::agent::global_config::ProviderUpdate {
+                        api_key: Some("sk-old".into()),
+                        base_url: Some("https://api.example/v1".into()),
+                        models: Some(vec!["m1".into()]),
+                        api_type: None,
+                    },
+                )
+                .unwrap();
+                let entry = crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .remove("p")
+                    .unwrap();
+                Some(super::ProviderPrompt::from_entry(&entry))
+            };
+
+            let stored_key = || {
+                crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .get("p")
+                    .and_then(|c| c.api_key.clone())
+            };
+
+            let mut app = test_app();
+            app.provider_prompt = fresh();
+            // Type a new key: it replaces the stored one on save.
+            app.provider_prompt.as_mut().unwrap().field = ProviderField::ApiKey;
+            for ch in "sk-new-key".chars() {
+                super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Enter), false);
+            assert!(app.provider_prompt.is_none());
+            assert_eq!(stored_key().as_deref(), Some("sk-new-key"), "typed key replaces");
+
+            // Empty the key field: the stored key is cleared.
+            app.provider_prompt = fresh();
+            app.provider_prompt.as_mut().unwrap().field = ProviderField::ApiKey;
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Backspace), false);
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Enter), false);
+            assert!(app.provider_prompt.is_none());
+            assert_eq!(stored_key(), None, "emptied key clears the stored one");
+        });
+    }
+
+    /// The masked key placeholder must not pretend a stored key is present: an
+    /// untouched edit shows `(unchanged)`, whereas typing a replacement shows
+    /// mask characters.
+    #[test]
+    fn provider_edit_masked_key_renders_unchanged_until_touched() {
+        let mut p = super::ProviderPrompt {
+            editing: Some("p".into()),
+            field: ProviderField::BaseUrl,
+            name: "p".into(),
+            base_url: String::new(),
+            api_key: String::new(),
+            key_touched: false,
+            models: String::new(),
+            error: None,
+        };
+        assert_eq!(p.masked_key(), "(unchanged)", "untouched edit shows unchanged");
+        p.key_touched = true;
+        p.api_key = "sk-abc".to_string();
+        assert_eq!(p.masked_key(), "******", "touched key masks its length");
+    }
+
+    /// A bracketed paste while the provider wizard is open must land in the
+    /// active field, not the chat composer (where a pasted API key would echo).
+    #[test]
+    fn provider_prompt_paste_routes_to_active_field() {
+        let mut app = test_app();
+        app.provider_prompt = Some(super::ProviderPrompt::new());
+
+        // Paste into the name field; outer whitespace is trimmed.
+        route_paste_event(&mut app, Event::Paste(" my-provider ".into()));
+        assert_eq!(
+            app.provider_prompt.as_ref().unwrap().name,
+            "my-provider",
+            "outer whitespace is trimmed"
+        );
+
+        // Advance to the API key field and paste a key shaped like a real one.
+        super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+        super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
+        assert_eq!(app.provider_prompt.as_ref().unwrap().field, ProviderField::ApiKey);
+        route_paste_event(&mut app, Event::Paste("sk-ant-pasted-key".into()));
+        assert_eq!(
+            app.provider_prompt.as_ref().unwrap().api_key,
+            "sk-ant-pasted-key"
+        );
+
+        assert!(app.input.is_empty(), "paste leaked into chat composer");
+    }
+
+    /// A paste while the MCP wizard is open lands in the active text field,
+    /// is ignored on a toggle field, and never leaks to the chat composer.
+    #[test]
+    fn mcp_prompt_paste_routes_to_active_text_field() {
+        let mut app = test_app();
+        app.mcp_prompt = Some(McpPrompt {
+            editing: None,
+            field: McpField::Name,
+            name: String::new(),
+            transport: "http".to_string(),
+            command: String::new(),
+            args: String::new(),
+            env: String::new(),
+            url: String::new(),
+            headers: String::new(),
+            active: false,
+            error: None,
+        });
+
+        // Name field: paste a name, trimmed of outer whitespace.
+        route_paste_event(&mut app, Event::Paste(" my-server ".into()));
+        assert_eq!(app.mcp_prompt.as_ref().unwrap().name, "my-server");
+
+        // Paste into the Url field.
+        app.mcp_prompt.as_mut().unwrap().field = McpField::Url;
+        route_paste_event(&mut app, Event::Paste("https://jk.example/mcp".into()));
+        assert_eq!(
+            app.mcp_prompt.as_ref().unwrap().url,
+            "https://jk.example/mcp"
+        );
+
+        // A paste on a toggle field is ignored, not typed or leaked.
+        app.mcp_prompt.as_mut().unwrap().field = McpField::Transport;
+        let transport_before = app.mcp_prompt.as_ref().unwrap().transport.clone();
+        route_paste_event(&mut app, Event::Paste("stdio".into()));
+        assert_eq!(
+            app.mcp_prompt.as_ref().unwrap().transport,
+            transport_before,
+            "pasting on a toggle field must not change it"
+        );
+
+        assert!(app.input.is_empty(), "paste leaked into chat composer");
+    }
+
+    /// A paste while a settings edit dock is open lands in its field, not the
+    /// chat composer.
+    #[test]
+    fn settings_prompt_paste_routes_to_field() {
+        let mut app = test_app();
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "max_parallel_subagents")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+
+        route_paste_event(&mut app, Event::Paste(" 4 ".into()));
+        assert_eq!(app.settings_prompt.as_ref().unwrap().input, "4");
+        assert!(app.input.is_empty(), "paste leaked into chat composer");
+    }
+
+    #[test]
+    fn open_provider_settings_lists_configured_providers() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "myprovider",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("https://my.example/v1".into()),
+                    models: Some(vec!["m1".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let picker = app.picker.as_ref().expect("picker opened");
+            assert_eq!(picker.kind, PickerKind::ProviderSettings);
+            assert_eq!(picker.items.len(), 1);
+            assert_eq!(picker.items[0].value, "myprovider");
+            assert!(picker.items[0].label.contains("key set"));
+            assert!(picker.items[0].label.contains("1 model(s)"));
+        });
+    }
+
+    /// Deleting a provider is unrecoverable (the API key is lost), so a single
+    /// `d` must only arm a confirmation and a second `d` on the same row must be
+    /// required to actually remove it. Navigating away disarms.
+    #[test]
+    fn provider_delete_requires_two_d_presses() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "myprovider",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("https://my.example/v1".into()),
+                    models: Some(vec![]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            assert!(
+                crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .contains_key("myprovider")
+            );
+
+            // First `d` arms but must not delete.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            assert!(
+                crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .contains_key("myprovider"),
+                "first d must only arm, not delete"
+            );
+            assert!(
+                transcript_text(&app).contains("press d again to delete provider 'myprovider'"),
+                "note tells the user to confirm: {}",
+                transcript_text(&app)
+            );
+
+            // Second `d` on the same row confirms and removes it.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            assert!(
+                !crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .contains_key("myprovider"),
+                "second d confirms the delete"
+            );
+            assert!(app.picker.is_none(), "picker closes after delete");
+            assert!(transcript_text(&app).contains("removed provider 'myprovider'"));
+        });
+    }
+
+    /// Navigating away must disarm a pending delete so an unrelated keystroke
+    /// can never confirm an arm from a different row.
+    #[test]
+    fn provider_delete_arms_reset_on_navigation() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            for p in ["a", "b"] {
+                crate::core::agent::global_config::set_provider(
+                    p,
+                    crate::core::agent::global_config::ProviderUpdate {
+                        api_key: Some("k".into()),
+                        base_url: Some("https://my.example/v1".into()),
+                        models: Some(vec![]),
+                        api_type: None,
+                    },
+                )
+                .unwrap();
+            }
+
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let p = app.picker.as_ref().expect("picker");
+            assert_eq!(p.items.len(), 2);
+            let idx_a = p.items.iter().position(|i| i.value == "a").unwrap();
+            let idx_b = p.items.iter().position(|i| i.value == "b").unwrap();
+            app.picker.as_mut().unwrap().selected = idx_a;
+            let rt = tokio::runtime::Runtime::new().unwrap();
+
+            // Arm on `a`.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            assert!(app.picker.as_ref().unwrap().armed_delete == Some(idx_a));
+
+            // Move down to `b` (disarms), then press `d`: this must arm `b`,
+            // not delete `a`.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            assert!(configs.contains_key("a"), "a must still exist, only armed on b");
+            assert!(configs.contains_key("b"));
+            assert!(app.picker.as_ref().unwrap().armed_delete == Some(idx_b));
+        });
+    }
+
+    /// The watermark row (no providers configured) must be inert: `d` on it
+    /// must not arm/delete an empty-named entry, and Enter must not open a
+    /// wizard for it.
+    #[test]
+    fn provider_picker_empty_watermark_is_inert() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let picker = app.picker.as_ref().expect("picker opened");
+            assert_eq!(picker.items.len(), 1);
+            assert!(picker.items[0].value.is_empty(), "watermark row has no value");
+            let rt = tokio::runtime::Runtime::new().unwrap();
+
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
+            });
+            assert!(
+                app.picker.as_ref().unwrap().armed_delete.is_none(),
+                "no arm on watermark"
+            );
+            assert!(
+                !crate::core::agent::global_config::load_global_config().unwrap().contains_key(""),
+                "d on the watermark must not delete an empty-named entry"
+            );
+
+            rt.block_on(async {
+                press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+            });
+            assert!(app.provider_prompt.is_none(), "Enter on the watermark opens no wizard");
+        });
+    }
+
+    /// Editing a provider must keep its name read-only so the save writes back
+    /// under the original key: renaming would orphan the old entry and lose the
+    /// API key. The existing key and models must be preserved on save.
+    #[test]
+    fn provider_edit_preserves_name_key_and_models() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "myprovider",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("sk-secret".into()),
+                    base_url: Some("https://my.example/v1".into()),
+                    models: Some(vec!["m1".into(), "m2".into()]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let mut app = test_app();
+            super::open_provider_settings(&mut app);
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            // Enter opens the edit wizard prefilled from the row.
+            rt.block_on(async {
+                press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+            });
+            let prompt = app.provider_prompt.as_ref().expect("edit wizard opened");
+            assert_eq!(prompt.name, "myprovider");
+            assert!(prompt.editing.is_some());
+
+            // The name field is read-only while editing; typing must not change it.
+            assert_eq!(prompt.field, ProviderField::BaseUrl, "edit starts on base url");
+            app.provider_prompt.as_mut().unwrap().field = ProviderField::Name;
+            for ch in "RENAMED".chars() {
+                super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
+            }
+            assert_eq!(
+                app.provider_prompt.as_ref().unwrap().name,
+                "myprovider",
+                "name is read-only while editing"
+            );
+
+            // Back to an editable field; change base_url and save.
+            app.provider_prompt.as_mut().unwrap().field = ProviderField::BaseUrl;
+            super::handle_provider_prompt_key(&mut app, key(KeyCode::Backspace), false);
+            rt.block_on(async {
+                press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+            });
+
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            assert_eq!(configs.len(), 1, "no orphaned entry");
+            let cfg = configs.get("myprovider").expect("still under original key");
+            assert_eq!(cfg.api_key.as_deref(), Some("sk-secret"), "key preserved");
+            assert_eq!(cfg.models, vec!["m1", "m2"], "models preserved");
+        });
+    }
+
+    /// Editing navigation skips the read-only name field: from BaseUrl it
+    /// cycles BaseUrl -> ApiKey -> Models -> BaseUrl.
+    #[test]
+    fn provider_edit_navigation_skips_name() {
+        let mut p = super::ProviderPrompt {
+            editing: Some("p".into()),
+            field: ProviderField::BaseUrl,
+            name: "p".into(),
+            base_url: String::new(),
+            api_key: String::new(),
+            key_touched: false,
+            models: String::new(),
+            error: None,
+        };
+        p.next_field();
+        assert_eq!(p.field, ProviderField::ApiKey);
+        p.next_field();
+        assert_eq!(p.field, ProviderField::Models);
+        p.next_field();
+        assert_eq!(p.field, ProviderField::BaseUrl);
+        p.prev_field();
+        assert_eq!(p.field, ProviderField::Models);
+        p.prev_field();
+        assert_eq!(p.field, ProviderField::ApiKey);
+    }
+
+    /// The base URL is validated before the bearer key is ever sent: only
+    /// https (or http to a loopback host) is accepted.
+    #[test]
+    fn provider_prompt_rejects_plaintext_remote_base_url() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut p = super::ProviderPrompt::new();
+            p.name = "p".to_string();
+            p.base_url = "http://remote.example/v1".to_string();
+            assert!(p.save().is_err(), "plaintext remote rejected");
+            p.base_url = "http://127.0.0.1:8080/v1".to_string();
+            assert!(p.save().is_ok(), "loopback http allowed");
+            p.base_url = "https://remote.example/v1".to_string();
+            assert!(p.save().is_ok(), "https allowed");
+        });
+    }
+
+    /// A provider added through the wizard with no model list would otherwise
+    /// vanish from `/model`, since the picker only offers explicitly configured
+    /// ids. Opening the picker must fetch that provider's `GET /models` and
+    /// populate the list so a bare provider is usable immediately.
+    #[test]
+    fn model_picker_autofetches_models_for_empty_provider() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            // A local `/models` endpoint returning one id.
+            let body = serde_json::json!({"object": "list", "data": [{"id": "discovered-model"}]})
+                .to_string();
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap();
+            std::thread::spawn(move || {
+                for stream in listener.incoming().take(1) {
+                    let Ok(mut stream) = stream else { continue };
+                    let mut buf = [0u8; 4096];
+                    let _ = std::io::Read::read(&mut stream, &mut buf);
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = std::io::Write::write_all(&mut stream, resp.as_bytes());
+                }
+            });
+
+            crate::core::agent::global_config::set_provider(
+                "myprovider",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec![]), // no models configured
+                    api_type: None,
+                },
+            )
+            .expect("seed provider");
+
+            let mut app = test_app();
+            // `with_temp_home` is sync; drive the async command on a dedicated runtime.
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(super::run_command(&mut app, "model", &no_mcp()));
+
+            let picker = app.picker.as_ref().expect("model picker opened");
+            assert_eq!(picker.kind, PickerKind::SelectModel);
+            assert!(
+                picker.items.iter().any(|i| i.label.contains("discovered-model")),
+                "discovered model must be offered: {:?}",
+                picker.items.iter().map(|i| &i.label).collect::<Vec<_>>()
+            );
+        });
+    }
+
+    /// A reachable-looking but dead provider (empty model list, unreachable
+    /// endpoint) must not break or block the `/model` picker: the fetch is
+    /// skipped with a note, and the picker still opens with what is reachable.
+    #[test]
+    fn model_picker_survives_unreachable_provider() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            // A dead endpoint fills the empty-model-list probe slot and fails
+            // fast on 127.0.0.1:9 (nothing listens there).
+            crate::core::agent::global_config::set_provider(
+                "dead",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("http://127.0.0.1:9/v1".into()),
+                    models: Some(vec![]),
+                    api_type: None,
+                },
+            )
+            .unwrap();
+
+            let mut app = test_app();
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(super::run_command(&mut app, "model", &no_mcp()));
+
+            // The picker opened (no reachable pairs => the note path fires,
+            // but there is no panic, no hang, and the provider stays put).
+            let configs = crate::core::agent::global_config::load_global_config().unwrap();
+            assert!(configs.contains_key("dead"), "provider not removed by a failed probe");
+
+            // Opening once more must not re-contact the dead endpoint: the
+            // session short-circuit means the second open is near-instant.
+            rt.block_on(super::run_command(&mut app, "model", &no_mcp()));
+        });
     }
 
     #[test]
@@ -13563,14 +18301,14 @@ mod tests {
     fn input_lines_single_line_has_arrow_and_cursor() {
         let lines = input_content_lines("hello", 5);
         assert_eq!(lines.len(), 1);
-        assert_eq!(caret_text(&lines[0]), "› hello▏");
+        assert_eq!(caret_text(&lines[0]), "> hello▏");
     }
 
     #[test]
     fn input_lines_multiline_hangs_and_cursor_on_last() {
         let lines = input_content_lines("one\ntwo\nthree", "one\ntwo\nthree".len());
         assert_eq!(lines.len(), 3);
-        assert_eq!(line_text(&lines[0]), "› one");
+        assert_eq!(line_text(&lines[0]), "> one");
         assert_eq!(line_text(&lines[1]), "  two");
         assert_eq!(caret_text(&lines[2]), "  three▏");
     }
@@ -13579,7 +18317,7 @@ mod tests {
     fn input_lines_trailing_newline_gives_empty_cursor_row() {
         let lines = input_content_lines("hi\n", 3);
         assert_eq!(lines.len(), 2);
-        assert_eq!(line_text(&lines[0]), "› hi");
+        assert_eq!(line_text(&lines[0]), "> hi");
         assert_eq!(caret_text(&lines[1]), "  ▏");
     }
 
@@ -13588,14 +18326,14 @@ mod tests {
         // Caret sits between "he" and "llo" on a single line.
         let lines = input_content_lines("hello", 2);
         assert_eq!(lines.len(), 1);
-        assert_eq!(caret_text(&lines[0]), "› he▏llo");
+        assert_eq!(caret_text(&lines[0]), "> he▏llo");
     }
 
     #[test]
     fn input_lines_caret_on_earlier_line_only() {
         // Cursor inside the first segment: caret there, none on later lines.
         let lines = input_content_lines("one\ntwo", 1);
-        assert_eq!(caret_text(&lines[0]), "› o▏ne");
+        assert_eq!(caret_text(&lines[0]), "> o▏ne");
         assert_eq!(line_text(&lines[1]), "  two");
     }
 
@@ -13931,6 +18669,304 @@ mod tests {
                 .unwrap_or_default()
                 .contains("Here is what I found so far"),
             "partial answer not in history: {last}"
+        );
+    }
+
+    #[test]
+    fn cancel_preserves_completed_tool_calls_and_results_in_history() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "grep -n foo src/" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "match on line 3\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        // The run is cancelled before the model emits any answer prose, so
+        // nothing is streamed to be committed as assistant text.
+        app.cancel_run();
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            wire.contains("\"tool_calls\"") && wire.contains("c1"),
+            "tool call missing from wire history on cancel: {wire}"
+        );
+        assert!(
+            wire.contains("\"tool_call_id\":\"c1\"") && wire.contains("match on line 3"),
+            "tool result missing from wire history on cancel: {wire}"
+        );
+    }
+
+    #[test]
+    fn on_error_preserves_completed_tool_calls_and_results_in_history() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "grep -n foo src/" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "match on line 3\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        // The run dies on an upstream error before the model emits any answer
+        // prose. The backend never publishes a mid-turn `MessagesUpdated`, so
+        // the completed call must be folded into history by the error path
+        // (the same guarantee the Esc-cancel path already provides).
+        app.on_error("upstream".into(), "connection reset".into());
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            wire.contains("\"tool_calls\"") && wire.contains("c1"),
+            "tool call missing from wire history on error: {wire}"
+        );
+        assert!(
+            wire.contains("\"tool_call_id\":\"c1\"") && wire.contains("match on line 3"),
+            "tool result missing from wire history on error: {wire}"
+        );
+    }
+
+    #[test]
+    fn on_error_pairs_in_flight_calls_with_a_placeholder_result() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 300" }),
+        });
+        // The call was still in flight when the stream errored; no ToolResult
+        // ever arrives. It must still reach the wire, paired with a placeholder
+        // result so the exchange is protocol-valid for a later prompt.
+        app.on_error("upstream".into(), "connection reset".into());
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            wire.contains("\"tool_calls\"") && wire.contains("c1"),
+            "interrupted call missing from wire history on error: {wire}"
+        );
+        assert!(
+            wire.contains("\"tool_call_id\":\"c1\""),
+            "interrupted call must be paired with a result: {wire}"
+        );
+    }
+
+    #[test]
+    fn on_error_does_not_double_fold_when_flush_assistant_committed_prose() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "ls" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        // Some prose streamed before the error, so `on_error`'s flush_assistant
+        // commits it. The completed call must still be folded - and folded only
+        // once regardless of the prose that preceded the error.
+        app.apply(StreamEvent::Token {
+            text: "I found it".into(),
+        });
+        app.on_error("upstream".into(), "connection reset".into());
+        let assistant_tool_turns = app
+            .history
+            .iter()
+            .filter(|m| m.get("tool_calls").is_some())
+            .count();
+        assert_eq!(assistant_tool_turns, 1, "tool call folded exactly once");
+    }
+
+    #[test]
+    fn cancel_surfaces_interrupted_calls_paired_with_a_placeholder_result() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 300" }),
+        });
+        // No ToolResult arrives: the call was still in flight at cancel. It
+        // must still reach the wire history, paired with a placeholder result
+        // so the upstream sees a valid (call, result) exchange, not a dangling
+        // call that OpenAI-compatible endpoints reject.
+        app.cancel_run();
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            wire.contains("\"tool_calls\"") && wire.contains("c1"),
+            "interrupted call missing from wire history: {wire}"
+        );
+        assert!(
+            wire.contains("\"tool_call_id\":\"c1\""),
+            "interrupted call must be paired with a result for a valid exchange: {wire}"
+        );
+    }
+
+    /// Helper: the wire messages carrying `tool_calls`, and the `role: "tool"`
+    /// messages, for the assertions below.
+    fn tool_turns(app: &App) -> (Vec<&serde_json::Value>, Vec<&serde_json::Value>) {
+        (
+            app.history
+                .iter()
+                .filter(|m| m.get("tool_calls").is_some())
+                .collect(),
+            app.history
+                .iter()
+                .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("tool"))
+                .collect(),
+        )
+    }
+
+    /// The backend publishes a mid-turn `MessagesUpdated` on a compaction retry
+    /// and on the budget soft-stop, so the turn's exchange can already be in
+    /// `history` when the cancel folds it. Folding it again would put the same
+    /// call and result on the wire twice.
+    #[test]
+    fn cancel_after_a_mid_turn_messages_updated_folds_each_call_once() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "ls" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::MessagesUpdated {
+            messages: vec![
+                json!({ "role": "user", "content": "do a thing" }),
+                json!({
+                    "role": "assistant",
+                    "content": serde_json::Value::Null,
+                    "tool_calls": [{
+                        "id": "c1",
+                        "type": "function",
+                        "function": { "name": "bash", "arguments": "{\"command\":\"ls\"}" }
+                    }],
+                }),
+                json!({ "role": "tool", "tool_call_id": "c1", "content": "ok" }),
+            ],
+        });
+        app.cancel_run();
+        let (calls, results) = tool_turns(&app);
+        assert_eq!(calls.len(), 1, "call folded twice: {:?}", app.history);
+        assert_eq!(results.len(), 1, "result folded twice: {:?}", app.history);
+    }
+
+    /// A cancel is routinely followed by a late `Error` or stream close from the
+    /// task it aborted, and `display_log` is not cleared by the cancel, so the
+    /// fold must be idempotent across both.
+    #[test]
+    fn cancel_then_a_late_error_folds_each_call_once() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "ls" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.cancel_run();
+        app.on_error("upstream".into(), "connection reset".into());
+        let (calls, results) = tool_turns(&app);
+        assert_eq!(calls.len(), 1, "call folded twice: {:?}", app.history);
+        assert_eq!(results.len(), 1, "result folded twice: {:?}", app.history);
+    }
+
+    /// The loop emits every `ToolCall` in the model's order and then dispatches
+    /// them concurrently, so results arrive in completion order. The folded
+    /// exchange must pair each result to its call by id and keep the
+    /// `tool_calls` order, the invariant strict endpoints enforce.
+    #[test]
+    fn cancelled_turn_pairs_out_of_order_results_to_their_calls() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        for (id, command) in [("c1", "sleep 5"), ("c2", "ls"), ("c3", "pwd")] {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: "bash".into(),
+                args: json!({ "command": command }),
+            });
+        }
+        // c3 and c2 finish first; c1 is still in flight at the cancel.
+        for id in ["c3", "c2"] {
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: format!("out of {id}"),
+                is_error: false,
+                diff: None,
+            });
+        }
+        app.cancel_run();
+        let (calls, results) = tool_turns(&app);
+        assert_eq!(
+            calls.len(),
+            1,
+            "one assistant tool-call turn: {:?}",
+            app.history
+        );
+        let ids: Vec<&str> = calls[0]["tool_calls"]
+            .as_array()
+            .expect("tool_calls array")
+            .iter()
+            .map(|tc| tc["id"].as_str().expect("id"))
+            .collect();
+        assert_eq!(ids, ["c1", "c2", "c3"], "tool_calls kept in model order");
+        let paired: Vec<(&str, &str)> = results
+            .iter()
+            .map(|m| {
+                (
+                    m["tool_call_id"].as_str().expect("tool_call_id"),
+                    m["content"].as_str().expect("content"),
+                )
+            })
+            .collect();
+        assert_eq!(
+            paired,
+            [
+                ("c1", super::super::MISSING_TOOL_RESULT),
+                ("c2", "out of c2"),
+                ("c3", "out of c3"),
+            ],
+            "results follow the tool_calls order, paired by id"
         );
     }
 
@@ -14271,8 +19307,7 @@ mod tests {
             args: json!({ "pattern": "foo" }),
         });
         let group = app.tool_group.as_ref().expect("group open");
-        let row = running_group_row(group, 2, 80);
-        let text = line_text(&row);
+        let text = lines_text(&running_group_rows(group, 2, 80));
         assert!(text.contains(SPINNER[2]), "{text}");
         assert!(text.contains("(0s)") || text.contains("(1s)"), "{text}");
     }
@@ -14289,7 +19324,7 @@ mod tests {
             args: json!({ "command": cmd }),
         });
         let group = app.tool_group.as_ref().expect("group open");
-        let text = line_text(&running_group_row(group, 0, 200));
+        let text = lines_text(&running_group_rows(group, 0, 200));
         assert!(text.contains(&format!("Executing: {cmd}")), "{text}");
         assert!(!text.contains("running 1 command"), "{text}");
     }
@@ -14308,9 +19343,78 @@ mod tests {
             });
         }
         let group = app.tool_group.as_ref().expect("group open");
-        let text = line_text(&running_group_row(group, 0, 200));
+        let text = lines_text(&running_group_rows(group, 0, 200));
         assert!(text.contains("Executing: cargo clippy"), "{text}");
         assert!(!text.contains("Running 2 commands"), "{text}");
+    }
+
+    /// The live row wraps its command like the committed one, keeping its line
+    /// breaks, so a long command is readable while it runs -- which is when the
+    /// user most wants to check what they approved.
+    #[test]
+    fn running_row_wraps_a_long_multiline_command() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cd /tmp\nmake -j8 all install DESTDIR=/opt/somewhere/deep" }),
+        });
+        let group = app.tool_group.as_ref().expect("group open");
+        let rows = running_group_rows(group, 0, 40);
+        assert!(rows.len() > 2, "long command was not wrapped: {rows:?}");
+        for row in &rows {
+            assert!(
+                line_text(row).chars().count() <= 40,
+                "row overflows: {:?}",
+                line_text(row)
+            );
+        }
+        let text = lines_text(&rows).replace(['\u{2502}', '\n'], " ");
+        // Not the long `DESTDIR=` token: at 40 columns it is wider than the
+        // body and hard-breaks, which is the correct fallback, not a drop.
+        for word in ["cd /tmp", "make -j8", "all install"] {
+            assert!(text.contains(word), "dropped {word:?}: {text}");
+        }
+        assert!(
+            line_text(rows.first().expect("no rows")).contains("cd /tmp"),
+            "the first command line did not lead the row"
+        );
+    }
+
+    /// The elapsed badge trails the last row and its width is reserved up
+    /// front, so a counter ticking past 9s or 99s cannot re-flow the command
+    /// above it -- a live row that re-wraps every second is unreadable.
+    #[test]
+    fn running_row_elapsed_badge_does_not_reflow_the_command() {
+        let mut app = test_app();
+        let cmd = "grep -rn needle src/ --include=*.rs --exclude-dir=target";
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": cmd }),
+        });
+        let group = app.tool_group.as_mut().expect("group open");
+        // The body's wrap points must be the same at 0s and at four digits.
+        let strip = |rows: &[ratatui::text::Line]| {
+            rows.iter()
+                .map(|r| {
+                    let t = line_text(r);
+                    t.split(" (").next().unwrap_or_default().to_string()
+                })
+                .collect::<Vec<_>>()
+        };
+        let fresh = strip(&running_group_rows(group, 0, 44));
+        group.started = Instant::now() - Duration::from_secs(4321);
+        let old = running_group_rows(group, 0, 44);
+        assert_eq!(strip(&old), fresh, "the counter re-flowed the command");
+        assert!(
+            line_text(old.last().expect("no rows")).contains("(4321s)"),
+            "badge is not on the last row: {:?}",
+            lines_text(&old)
+        );
+        for row in &old {
+            assert!(line_text(row).chars().count() <= 44, "row overflows");
+        }
     }
 
     #[test]
@@ -14550,7 +19654,7 @@ mod tests {
         // its header row can scroll out of view. A click on any of its detail
         // rows -- not just the header -- must still collapse it.
         let mut app = test_app();
-        app.push_assistant_blocks("<think>line one\nline two\nline three</think>answer");
+        app.push_assistant_blocks("<think>line one\nline two\nline three</think>answer", &[]);
         assert_eq!(app.reasoning_blocks.len(), 1);
         let idx = app.reasoning_blocks[0].idx;
 
@@ -15312,6 +20416,41 @@ mod tests {
         assert!(ALT_SCROLL_RESTORE.contains("?1007r"), "restore on exit");
     }
 
+    /// The keyboard enhancement flags are the only reason `Shift+Enter` and the
+    /// `Cmd` bindings can be decoded at all, so they go out on every start --
+    /// but only flags 1 and 4. Flag 2 (report event types) would deliver key
+    /// releases and repeats that no handler here filters, and flag 8 (report
+    /// all keys as escape codes) would route ordinary text through CSI-u.
+    #[test]
+    fn keyboard_enhancement_asks_for_disambiguation_and_nothing_costly() {
+        let flags: u8 = KITTY_KEYS_ON
+            .trim_start_matches("\x1b[>")
+            .trim_end_matches('u')
+            .parse()
+            .expect("the push is a numeric flag set");
+        assert_eq!(flags & 1, 1, "disambiguate escape codes");
+        assert_eq!(flags & 4, 4, "report alternate keys");
+        assert_eq!(flags & 2, 0, "event types would add releases and repeats");
+        assert_eq!(flags & 8, 0, "all-keys-as-escapes would reroute plain text");
+        assert_eq!(KITTY_KEYS_OFF, "\x1b[<u", "the push must be popped on exit");
+    }
+
+    /// Keyboard enhancement is not the mouse: it goes out whether or not
+    /// tracking is on, since the composer's editing keys depend on it.
+    #[test]
+    fn startup_modes_always_push_keyboard_enhancement() {
+        for mouse in [true, false] {
+            let modes = startup_modes(mouse);
+            assert!(modes.contains(KITTY_KEYS_ON), "mouse={mouse}: {modes:?}");
+            assert_eq!(
+                modes.contains(MOUSE_TRACK_ON),
+                mouse,
+                "tracking must follow the config key alone"
+            );
+            assert!(modes.starts_with(alt_scroll_save_off()));
+        }
+    }
+
     #[test]
     fn alt_scroll_is_disabled_only_where_the_terminal_reports_wheel() {
         // The app keeps native alternate scroll (i.e. sends nothing) on Windows,
@@ -15552,7 +20691,7 @@ mod tests {
     async fn compact_command_notes_when_unavailable() {
         let mut app = test_app();
         app.history.push(json!({ "role": "user", "content": "hi" }));
-        run_command(&mut app, "compact").await;
+        run_command(&mut app, "compact", &no_mcp()).await;
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("compaction unavailable"), "got: {text}");
         // History untouched when no session is attached.
@@ -15564,7 +20703,7 @@ mod tests {
     async fn compact_command_is_refused_while_one_is_in_flight() {
         let mut app = test_app();
         app.compacting = Some(CompactKind::Auto);
-        run_command(&mut app, "compact").await;
+        run_command(&mut app, "compact", &no_mcp()).await;
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("already compacting"), "got: {text}");
         assert!(app.compact_request.is_none());
@@ -15897,31 +21036,127 @@ mod tests {
 
     /// The running placeholder is the row a user stares at during a long turn.
     /// A static "working…" reads as a hung UI, so it animates on the same
-    /// cadence as every other throbber.
+    /// cadence as every other throbber: the spinner glyph rotates, and the
+    /// action word cycles through synonyms of "working".
     #[test]
     fn working_placeholder_animates() {
         let mut app = test_app();
         app.submit_user("go".into());
         assert_eq!(app.status, Status::Running);
 
+        // Pinned off: these assert on the spinner glyph and the intact action
+        // word, both of which the sweep overwrites a cell of. `wave` is on by
+        // default now, so the sweep has its own tests and these keep testing
+        // the row underneath it.
         let frame_of = |app: &mut App| {
-            render_rows(app, 80, 12)
-                .into_iter()
-                .find(|r| r.contains("working…"))
-                .expect("running placeholder present")
+            with_wave_glyph(None, || {
+                render_rows(app, 80, 12)
+                    .into_iter()
+                    .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                    .expect("running placeholder present")
+            })
         };
 
         app.spinner_frame = 0;
         let first = frame_of(&mut app);
         assert!(first.contains(SPINNER[0]), "expected frame 0 glyph: {first:?}");
 
+        // While a plain turn is running (no reasoning), the row shows a
+        // rotating synonym of "working".
+        assert!(
+            WORKING_WORDS.iter().any(|w| first.contains(w)),
+            "expected a working synonym in: {first:?}"
+        );
+
         app.spinner_frame = 3;
         let later = frame_of(&mut app);
         assert!(later.contains(SPINNER[3]), "expected frame 3 glyph: {later:?}");
         assert_ne!(first, later, "row must change as the frame advances");
 
-        // The wording itself does not move, only the glyph.
         assert!(later.contains("(Esc to cancel, type to queue next message)"), "{later:?}");
+    }
+
+    /// When the model is reasoning (a ` think>` block is streaming), the input
+    /// placeholder cycles through synonyms of "thinking".
+    #[test]
+    fn thinking_placeholder_uses_thinking_synonyms() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Token {
+            text: "<think>ponder the plan".into(),
+        });
+        // Pinned off for the same reason as `working_placeholder_animates`:
+        // the sweep replaces a letter of the word being matched.
+        let row = with_wave_glyph(None, || {
+            render_rows(&mut app, 80, 12)
+                .into_iter()
+                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                .expect("running placeholder present")
+        });
+        assert!(
+            THINKING_WORDS.iter().any(|w| row.contains(w)),
+            "expected a thinking synonym in: {row:?}"
+        );
+        assert!(
+            !WORKING_WORDS.iter().any(|w| row.contains(w)),
+            "no working synonym while reasoning: {row:?}"
+        );
+    }
+
+    /// Thinking synonyms are coloured orange so the active reasoning state
+    /// stands out from the quiet working rows.
+    #[test]
+    fn thinking_synonym_is_orange() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Token {
+            text: "<think>ponder the plan".into(),
+        });
+        let mut terminal = Terminal::new(TestBackend::new(80, 12)).unwrap();
+        // Pinned off: the row is located by matching the intact word, which
+        // the sweep breaks.
+        with_wave_glyph(None, || {
+            terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        });
+        let buf = terminal.backend().buffer().clone();
+        // Locate the placeholder row, then assert the action word's cells are
+        // orange (the trailing hint stays dim, so only the word carries it).
+        let orange = (0..buf.area.height).any(|y| {
+            let row: String = (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect();
+            if !THINKING_WORDS.iter().any(|w| row.contains(w)) {
+                return false;
+            }
+            (0..buf.area.width)
+                .any(|x| buf[(x, y)].style().fg == Some(super::THINKING_ORANGE))
+        });
+        assert!(orange, "thinking synonym not orange");
+    }
+
+    /// The working word rotates to a different synonym as the frame advances.
+    #[test]
+    fn working_synonym_rotates_across_frames() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        let mut word_at = |frame: usize| {
+            app.spinner_frame = frame;
+            // Pinned off: the sweep would eat a letter of the very word this
+            // looks up.
+            let row = with_wave_glyph(None, || {
+                render_rows(&mut app, 80, 12)
+                    .into_iter()
+                    .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                    .expect("running placeholder present")
+            });
+            WORKING_WORDS
+                .iter()
+                .find(|w| row.contains(*w))
+                .map(|w| w.to_string())
+                .expect("working synonym present")
+        };
+        let a = word_at(0);
+        let b = word_at(super::WORD_ROTATE_FRAMES);
+        assert_ne!(a, b, "working word must rotate as frames advance: {a}");
     }
 
     /// A queued-message row is still a running row, so it animates too.
@@ -15936,6 +21171,211 @@ mod tests {
             .find(|r| r.contains("Queued"))
             .expect("queued row present");
         assert!(row.contains(SPINNER[5]), "expected frame 5 glyph: {row:?}");
+    }
+
+    /// Native reasoning events (a dedicated `reasoning_content` field) drive the
+    /// same orange thinking placeholder as inline `<`> tags, are folded into the
+    /// transcript like a wrapped block on flush, and never enter the wire answer.
+    #[test]
+    fn native_reasoning_drives_thinking_placeholder_and_folds_on_flush() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning {
+            text: "ponder the plan".into(),
+        });
+        // Pinned off: this asserts on the *word*, and the sweep overwrites a
+        // letter of it with the travelling glyph. `wave` is on by default now,
+        // so leaving it to the process state makes this test depend on
+        // whichever config the shared cell resolved first.
+        let row = with_wave_glyph(None, || {
+            render_rows(&mut app, 80, 12)
+                .into_iter()
+                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                .expect("running placeholder present")
+        });
+        assert!(
+            THINKING_WORDS.iter().any(|w| row.contains(w)),
+            "expected a thinking synonym while reasoning: {row:?}"
+        );
+        // The answer arrives: reasoning stays folded into a summary row.
+        app.apply(StreamEvent::Token {
+            text: "Here is the answer".into(),
+        });
+        app.on_done("stop".into(), None);
+        assert_eq!(app.reasoning_blocks.len(), 1, "reasoning folded into one block");
+        // The wire history carries the answer, with the reasoning preserved on
+        // the message's `reasoning_content` rather than inlined into `content`.
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "Here is the answer");
+        assert_eq!(
+            last["reasoning_content"], "ponder the plan",
+            "reasoning must be preserved for resend: {last}"
+        );
+        assert!(
+            !last["content"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("ponder the plan"),
+            "reasoning must not be inlined into the answer content: {last}"
+        );
+    }
+
+    /// The resend policy reaches the wire: a default session sends an unchanged
+    /// body (the loop defaults to resending), and opting out forwards the flag.
+    #[test]
+    fn send_reasoning_opt_out_is_forwarded_in_the_request_body() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        assert!(
+            app.body().get("send_reasoning").is_none(),
+            "the default session must send an unchanged body"
+        );
+        app.send_reasoning = false;
+        assert_eq!(
+            app.body()["send_reasoning"],
+            serde_json::json!(false),
+            "opting out must reach the loop"
+        );
+    }
+
+    /// A cancelled turn keeps the reasoning that produced its partial answer,
+    /// so the next prompt resumes with the same context the model had.
+    #[test]
+    fn cancel_preserves_native_reasoning_on_the_partial_answer() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning {
+            text: "half a thought".into(),
+        });
+        app.apply(StreamEvent::Token {
+            text: "Partial answer".into(),
+        });
+        app.cancel_run();
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "Partial answer");
+        assert_eq!(last["reasoning_content"], "half a thought");
+    }
+
+    /// A turn with no native reasoning must not grow a `reasoning_content` key:
+    /// providers that reject unknown assistant fields see an unchanged shape.
+    #[test]
+    fn a_turn_without_reasoning_adds_no_reasoning_key_to_history() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Token {
+            text: "Just an answer".into(),
+        });
+        app.on_done("stop".into(), None);
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "Just an answer");
+        assert!(
+            last.get("reasoning_content").is_none(),
+            "no reasoning streamed, so the key must be absent: {last}"
+        );
+    }
+
+    /// The `[thinking]` badge and the orange placeholder must close when the
+    /// answer starts streaming: native segments live until the next flush, so
+    /// only the "newest segment is still at the tail" check can tell the two
+    /// apart. Without it the badge shimmered through the whole answer and
+    /// `[thought for Ns]` never appeared for a `reasoning_content` provider.
+    #[test]
+    fn native_reasoning_badge_closes_once_prose_starts() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning { text: "ponder".into() });
+        assert_eq!(
+            app.reasoning_status().map(|(w, _)| w),
+            Some("thinking".to_string())
+        );
+        assert!(app.reasoning_open(), "reasoning is live");
+        app.apply(StreamEvent::Token { text: "Answer".into() });
+        assert!(!app.reasoning_open(), "prose has started");
+        assert_eq!(
+            app.reasoning_status().map(|(w, _)| w),
+            Some("thought for 0s".to_string()),
+            "the closed block reports its duration"
+        );
+    }
+
+    fn detail_text(block: &super::ReasoningBlock) -> String {
+        block
+            .detail
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|sp| sp.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// Reasoning that mentions a `</think>` tag must not close the block it is
+    /// wrapped in and spill the rest of the thought into the answer.
+    #[test]
+    fn native_reasoning_mentioning_a_close_tag_stays_reasoning() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning {
+            text: "the </think> tag is tricky".into(),
+        });
+        app.on_done("stop".into(), None);
+        let rows = render_rows(&mut app, 80, 30).join("\n");
+        assert!(
+            !rows.contains("tag is tricky"),
+            "reasoning rendered as answer prose: {rows}"
+        );
+        assert_eq!(app.reasoning_blocks.len(), 1, "one folded reasoning block");
+        // Kept verbatim: reasoning never shares a string with the prose, so
+        // there is no block for the tag to close and nothing to neutralize.
+        assert!(
+            detail_text(&app.reasoning_blocks[0]).contains("</think>"),
+            "the tag is preserved as written: {}",
+            detail_text(&app.reasoning_blocks[0])
+        );
+    }
+
+    /// Interleaved reasoning keeps emission order: each stretch folds where it
+    /// streamed instead of every thought being hoisted above all the prose.
+    #[test]
+    fn interleaved_native_reasoning_keeps_emission_order() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Reasoning { text: "first thought".into() });
+        app.apply(StreamEvent::Token { text: "Part one.".into() });
+        app.apply(StreamEvent::Reasoning { text: "second thought".into() });
+        app.apply(StreamEvent::Token { text: " Part two.".into() });
+        app.on_done("stop".into(), None);
+        assert_eq!(app.reasoning_blocks.len(), 2, "two separate stretches");
+        // Journaled apart: prose verbatim, each stretch at the offset it
+        // streamed at, so a replay rebuilds the order without parsing markers.
+        let DisplayEntry::Assistant { text, reasoning } = app
+            .display_log
+            .iter()
+            .rev()
+            .find(|e| matches!(e, DisplayEntry::Assistant { .. }))
+            .expect("assistant entry journaled")
+        else {
+            unreachable!()
+        };
+        assert_eq!(text, "Part one. Part two.");
+        assert_eq!(
+            reasoning,
+            &vec![
+                ReasoningSeg { at: 0, text: "first thought".into() },
+                ReasoningSeg { at: 9, text: "second thought".into() },
+            ]
+        );
+        // The wire answer is prose only; both thoughts ride along on
+        // `reasoning_content`, concatenated in emission order.
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "Part one. Part two.");
+        assert_eq!(
+            last["reasoning_content"], "first thoughtsecond thought",
+            "both stretches must be preserved for resend: {last}"
+        );
     }
 
     #[test]
@@ -16197,6 +21637,135 @@ mod tests {
         assert!(text[0].contains("Preparing bash"), "got {text:?}");
     }
 
+    /// A `write` of minified or single-line content (a bundle, a JSON blob)
+    /// grows one preview line without bound. Unclamped that line is
+    /// re-highlighted in full on every argument delta -- syntect is linear in
+    /// line length -- and its wrapped row count floods the viewport the
+    /// preview lives in. Both are bounded by clamping the line itself.
+    #[test]
+    fn an_enormous_single_preview_line_is_clamped() {
+        let mut call = super::StartingCall::new("c1".into(), "write".into());
+        let body = "x".repeat(20_000);
+        call.args = format!(r#"{{"path":"bundle.js","content":"{body}"#);
+        let text: Vec<String> = starting_call_lines(&mut call, "\u{280b}")
+            .iter()
+            .map(line_text)
+            .collect();
+
+        let body_row = text
+            .iter()
+            .find(|l| l.contains("xxx"))
+            .unwrap_or_else(|| panic!("no body row in {text:?}"));
+        let xs = body_row.chars().filter(|&c| c == 'x').count();
+        assert!(
+            xs <= super::STREAM_MAX_LINE_CHARS,
+            "preview line kept {xs} chars of a 20000-char line"
+        );
+        assert!(
+            body_row.contains('\u{2026}'),
+            "clamped line is not marked as truncated: {body_row:?}"
+        );
+    }
+
+    /// Which end survives the clamp differs by line: a finished line reads
+    /// from its start, while the last one is still open and is where new bytes
+    /// land, so watching its tail is what shows the write progressing.
+    #[test]
+    fn a_clamped_line_keeps_its_head_unless_it_is_the_open_one() {
+        let mut call = super::StartingCall::new("c1".into(), "write".into());
+        let filler = "-".repeat(super::STREAM_MAX_LINE_CHARS * 2);
+        call.args = format!(
+            r#"{{"path":"a.txt","content":"HEAD1{filler}TAIL1\nHEAD2{filler}TAIL2"#
+        );
+        let text: Vec<String> = starting_call_lines(&mut call, "\u{280b}")
+            .iter()
+            .map(line_text)
+            .collect();
+        let joined = text.join("\n");
+
+        assert!(joined.contains("HEAD1"), "finished line lost its head: {joined}");
+        assert!(!joined.contains("TAIL1"), "finished line kept its tail: {joined}");
+        assert!(joined.contains("TAIL2"), "open line lost its tail: {joined}");
+        assert!(!joined.contains("HEAD2"), "open line kept its head: {joined}");
+    }
+
+    /// A file-sized `write` streams its arguments in thousands of deltas. One
+    /// repaint each is thousands of full frames for a preview that only ever
+    /// shows its last few lines, so a burst already sitting in the channel is
+    /// drained into a single frame.
+    #[tokio::test]
+    async fn a_burst_of_stream_events_is_drained_into_one_frame() {
+        let mut app = test_app();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut current = Some(CurrentRun {
+            rx,
+            handle: tokio::spawn(async {}),
+        });
+
+        tx.send(StreamEvent::ToolCallStarted {
+            id: "c1".into(),
+            name: "write".into(),
+        })
+        .expect("send");
+        for _ in 0..64 {
+            tx.send(StreamEvent::ToolCallArgsDelta {
+                id: "c1".into(),
+                delta: "ab".into(),
+            })
+            .expect("send");
+        }
+
+        let drained = drain_stream_events(&mut app, &mut current).await;
+        assert_eq!(drained, 65, "the whole burst must land in one pass");
+        assert_eq!(app.starting[0].args.len(), 128);
+        assert!(current.is_some(), "an unfinished run must stay live");
+
+        // Nothing left: draining an empty channel is a no-op, not a stall.
+        assert_eq!(drain_stream_events(&mut app, &mut current).await, 0);
+    }
+
+    /// The drain must not starve input handling: a run that emits faster than
+    /// the loop can drain still has to yield back to the keyboard poll.
+    #[tokio::test]
+    async fn the_drain_is_bounded() {
+        let mut app = test_app();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut current = Some(CurrentRun {
+            rx,
+            handle: tokio::spawn(async {}),
+        });
+        for _ in 0..(super::EVENT_DRAIN_MAX + 50) {
+            tx.send(StreamEvent::Token { text: "x".into() }).expect("send");
+        }
+        assert_eq!(
+            drain_stream_events(&mut app, &mut current).await,
+            super::EVENT_DRAIN_MAX
+        );
+    }
+
+    /// A terminal event inside a burst ends the run there and stops the drain,
+    /// so nothing queued behind it is applied to a finished run.
+    #[tokio::test]
+    async fn the_drain_stops_at_a_terminal_event() {
+        let mut app = test_app();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut current = Some(CurrentRun {
+            rx,
+            handle: tokio::spawn(async {}),
+        });
+        tx.send(StreamEvent::Token { text: "hi".into() }).expect("send");
+        tx.send(StreamEvent::Done {
+            stop_reason: "stop".into(),
+            usage: None,
+        })
+        .expect("send");
+        tx.send(StreamEvent::Token { text: "late".into() }).expect("send");
+
+        let drained = drain_stream_events(&mut app, &mut current).await;
+        assert_eq!(drained, 2, "drain must stop on the terminal event");
+        assert!(current.is_none(), "the run was not cleared");
+    }
+
     /// A path-carrying tool that isn't `write` must be named as itself.
     #[test]
     fn starting_throbber_names_the_actual_tool() {
@@ -16317,7 +21886,7 @@ mod tests {
     #[tokio::test]
     async fn help_lists_every_keybinding() {
         let mut app = test_app();
-        run_command(&mut app, "help").await;
+        run_command(&mut app, "help", &no_mcp()).await;
         let text: String = app.transcript.iter().map(row_text).collect();
         for (keys, description) in KEY_BINDINGS {
             assert!(text.contains(keys), "missing keys {keys:?} in: {text}");
@@ -16436,7 +22005,7 @@ mod tests {
     #[tokio::test]
     async fn goal_set_stores_condition_and_starts_a_turn() {
         let mut app = test_app();
-        run_command(&mut app, "goal all tests in test/auth pass").await;
+        run_command(&mut app, "goal all tests in test/auth pass", &no_mcp()).await;
         let goal = app.goal.as_ref().expect("goal should be set");
         assert_eq!(goal.condition, "all tests in test/auth pass");
         assert!(goal.is_active());
@@ -16454,7 +22023,7 @@ mod tests {
     async fn goal_clear_removes_active_goal() {
         let mut app = test_app();
         app.goal = Some(crate::core::agent::goal::GoalState::new("x"));
-        run_command(&mut app, "goal clear").await;
+        run_command(&mut app, "goal clear", &no_mcp()).await;
         assert!(app.goal.is_none());
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("goal cleared"), "missing note: {text}");
@@ -16463,7 +22032,7 @@ mod tests {
     #[tokio::test]
     async fn goal_clear_with_no_goal_notes() {
         let mut app = test_app();
-        run_command(&mut app, "goal clear").await;
+        run_command(&mut app, "goal clear", &no_mcp()).await;
         assert!(app.goal.is_none());
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("no active goal"), "missing note: {text}");
@@ -16476,7 +22045,7 @@ mod tests {
         goal.turns = 3;
         goal.last_reason = "two files still modified".into();
         app.goal = Some(goal);
-        run_command(&mut app, "goal").await;
+        run_command(&mut app, "goal", &no_mcp()).await;
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("make git status clean"), "condition: {text}");
         assert!(text.contains("turns: 3"), "turn count: {text}");
@@ -16486,9 +22055,71 @@ mod tests {
     #[tokio::test]
     async fn goal_status_with_no_goal_notes() {
         let mut app = test_app();
-        run_command(&mut app, "goal").await;
+        run_command(&mut app, "goal", &no_mcp()).await;
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("no active goal"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn effort_command_reports_current_level() {
+        let mut app = test_app();
+        run_command(&mut app, "effort", &no_mcp()).await;
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("medium"), "default level not reported: {text}");
+    }
+
+    #[tokio::test]
+    async fn effort_command_sets_valid_level() {
+        let mut app = test_app();
+        run_command(&mut app, "effort high", &no_mcp()).await;
+        assert_eq!(app.reasoning_effort, "high");
+        assert_eq!(app.last_non_low_effort, "high");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("set to high"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn effort_command_rejects_unknown_level() {
+        let mut app = test_app();
+        run_command(&mut app, "effort turbo", &no_mcp()).await;
+        assert_eq!(app.reasoning_effort, "medium", "invalid level must not apply");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("unknown effort level"), "missing note: {text}");
+    }
+
+    #[test]
+    fn alt_t_toggles_between_low_and_last_non_low() {
+        let mut app = test_app();
+        app.reasoning_effort = "medium".into();
+        app.toggle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "low");
+        assert_eq!(app.last_non_low_effort, "medium");
+        app.toggle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "medium", "toggle back restores last non-low");
+    }
+
+    #[test]
+    fn alt_t_remembers_the_latest_non_low_selection() {
+        let mut app = test_app();
+        app.reasoning_effort = "high".into();
+        app.last_non_low_effort = "high".into();
+        app.toggle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "low");
+        app.toggle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "high", "restores the latest non-low, not a hardcoded default");
+    }
+
+    #[test]
+    fn shift_tab_cycles_effort_through_all_levels() {
+        let mut app = test_app();
+        app.reasoning_effort = "low".into();
+        app.cycle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "medium");
+        app.cycle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "high");
+        app.cycle_reasoning_effort();
+        assert_eq!(app.reasoning_effort, "low", "cycles back to low");
+        assert_eq!(app.last_non_low_effort, "high", "tracks the most recent non-low");
     }
 
     #[test]
@@ -16588,9 +22219,9 @@ mod tests {
     async fn plan_command_enters_and_exits_while_idle() {
         use crate::core::agent::plan::RunMode;
         let mut app = test_app();
-        run_command(&mut app, "plan").await;
+        run_command(&mut app, "plan", &no_mcp()).await;
         assert_eq!(app.run_mode, RunMode::Plan);
-        run_command(&mut app, "plan exit").await;
+        run_command(&mut app, "plan exit", &no_mcp()).await;
         assert_eq!(app.run_mode, RunMode::Normal);
     }
 
@@ -16599,7 +22230,7 @@ mod tests {
         use crate::core::agent::plan::RunMode;
         let mut app = test_app();
         app.status = Status::Running;
-        run_command(&mut app, "plan").await;
+        run_command(&mut app, "plan", &no_mcp()).await;
         assert_eq!(app.run_mode, RunMode::Normal, "must not switch mid-turn");
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("only settable while idle"), "note: {text}");
@@ -16609,7 +22240,7 @@ mod tests {
     async fn plan_command_with_text_enters_plan_and_submits_it() {
         use crate::core::agent::plan::RunMode;
         let mut app = test_app();
-        run_command(&mut app, "plan make a html cat slide. use 3 subagents to research").await;
+        run_command(&mut app, "plan make a html cat slide. use 3 subagents to research", &no_mcp()).await;
         assert_eq!(app.run_mode, RunMode::Plan, "text arg must also enter plan mode");
         assert_eq!(app.status, Status::Running, "seeded text must start a turn");
         let text: String = app.transcript.iter().map(row_text).collect();
@@ -16624,7 +22255,7 @@ mod tests {
         use crate::core::agent::plan::RunMode;
         let mut app = test_app();
         app.run_mode = RunMode::Plan;
-        run_command(&mut app, "plan investigate the auth module").await;
+        run_command(&mut app, "plan investigate the auth module", &no_mcp()).await;
         assert_eq!(app.run_mode, RunMode::Plan);
         assert_eq!(app.status, Status::Running);
         let text: String = app.transcript.iter().map(row_text).collect();
@@ -16699,9 +22330,9 @@ mod tests {
         let injected = last_history_content(&app);
         assert!(injected.contains("unfinished todos"), "got: {injected}");
         assert!(injected.contains("t1") && injected.contains("t2"));
-        // The reminder is hidden: no user-authored `› ` row in the transcript.
+        // The reminder is hidden: no user-authored `> ` row in the transcript.
         let rows: String = app.transcript.iter().map(row_text).collect();
-        assert!(!rows.contains("› "), "reminder must not render as a user row");
+        assert!(!rows.contains("> "), "reminder must not render as a user row");
     }
 
     #[test]
@@ -17040,8 +22671,11 @@ mod tests {
     /// The animation is scoped to the state that needs it: a folded, streaming
     /// reasoning block. Everything else keeps its flat badge.
     #[test]
-    fn only_folded_live_reasoning_animates_the_badge() {
+    fn only_invisible_live_reasoning_animates_the_badge() {
         let mut app = test_app();
+        // Streaming reasoning puts the thought on screen, so the badge has
+        // nothing to stand in for; the shimmer is for the hidden case.
+        app.stream_reasoning = false;
         assert!(!app.is_thinking(), "idle");
         app.submit_user("hi".into());
         assert!(!app.is_thinking(), "running, but nothing thinking yet");
@@ -17058,12 +22692,15 @@ mod tests {
         });
         assert!(!app.is_thinking(), "the block closed");
 
-        // With reasoning shown inline the transcript itself is moving, so the
-        // badge stays flat.
-        app.show_reasoning = true;
+        // With reasoning on screen -- streamed into the live tail, or unfolded
+        // outright -- the transcript itself is moving, so the badge stays flat.
+        app.stream_reasoning = true;
         app.apply(StreamEvent::Token {
             text: "<think>more".into(),
         });
+        assert!(!app.is_thinking(), "streamed reasoning needs no badge motion");
+        app.stream_reasoning = false;
+        app.show_reasoning = true;
         assert!(!app.is_thinking(), "unfolded reasoning needs no badge motion");
     }
 
@@ -17308,7 +22945,7 @@ mod tests {
     async fn todo_editor_mutations_update_the_canonical_list() {
         let mut app = test_app();
         // Add through the same `append` op the model uses.
-        run_command(&mut app, "todo add Build | ship it").await;
+        run_command(&mut app, "todo add Build | ship it", &no_mcp()).await;
         assert_eq!(app.todos.done_total(), (0, 1));
         assert_eq!(app.todos.active().unwrap().1.content, "ship it");
         // Mark it done via the editor helper; the projection reflects it.
@@ -17325,23 +22962,23 @@ mod tests {
     #[tokio::test]
     async fn todo_clear_command_empties_the_whole_list() {
         let mut app = test_app();
-        run_command(&mut app, "todo add Build | ship it").await;
-        run_command(&mut app, "todo add Build | and this").await;
+        run_command(&mut app, "todo add Build | ship it", &no_mcp()).await;
+        run_command(&mut app, "todo add Build | and this", &no_mcp()).await;
         assert_eq!(app.todos.done_total(), (0, 2));
 
-        run_command(&mut app, "todo clear").await;
+        run_command(&mut app, "todo clear", &no_mcp()).await;
         assert!(app.todos.is_empty(), "{:?}", app.todos);
 
         // Clearing an already-empty list is a no-op note, not an error.
-        run_command(&mut app, "todo clear").await;
+        run_command(&mut app, "todo clear", &no_mcp()).await;
         assert!(app.todos.is_empty());
     }
 
     #[tokio::test]
     async fn todo_command_bare_opens_editor_overlay() {
         let mut app = test_app();
-        run_command(&mut app, "todo add first").await;
-        run_command(&mut app, "todo").await;
+        run_command(&mut app, "todo add first", &no_mcp()).await;
+        run_command(&mut app, "todo", &no_mcp()).await;
         assert!(matches!(
             app.picker.as_ref().map(|p| p.kind),
             Some(PickerKind::Todo)
@@ -17494,7 +23131,7 @@ mod tests {
         app.tokens = 42;
         app.push(Line::raw("old content"));
 
-        run_command(&mut app, "new").await;
+        run_command(&mut app, "new", &no_mcp()).await;
 
         assert!(app.history.is_empty());
         assert!(app.thread_id.is_none(), "must detach from the saved thread");
@@ -17502,6 +23139,30 @@ mod tests {
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(!text.contains("old content"), "transcript not reset: {text}");
         assert!(text.contains("started a new session"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn clear_re_prints_the_branded_splash() {
+        let mut app = test_app();
+        app.approval_phrasing = "--safe: approval needed".to_string();
+        app.push(Line::raw("old content"));
+
+        run_command(&mut app, "clear", &no_mcp()).await;
+
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(
+            !text.contains("old content"),
+            "transcript not reset: {text}"
+        );
+        assert!(
+            text.contains(brand::HAND[0].trim()),
+            "hand logo missing after /clear: {text}"
+        );
+        assert!(
+            text.contains("--safe: approval needed"),
+            "approval phrasing missing after /clear: {text}"
+        );
+        assert!(text.contains("type a message to start"), "{text}");
     }
 
     #[test]
@@ -17955,7 +23616,7 @@ mod tests {
             "---\ndescription: Build a feature\n---\nBuild: $ARGUMENTS",
         );
         // Plain short form.
-        run_command(&mut app, "feature-dev add auth").await;
+        run_command(&mut app, "feature-dev add auth", &no_mcp()).await;
         let user = app.history.iter().last().unwrap();
         assert!(
             user.get("content")
@@ -17969,7 +23630,7 @@ mod tests {
             transcript_text(&app)
         );
         // Explicit qualified form.
-        run_command(&mut app, "command:feature-dev:feature-dev fix tests").await;
+        run_command(&mut app, "command:feature-dev:feature-dev fix tests", &no_mcp()).await;
         let user = app.history.iter().last().unwrap();
         assert!(
             user.get("content")
@@ -17978,7 +23639,7 @@ mod tests {
             "explicit dispatch: {user}"
         );
         // Unknown command still notes.
-        run_command(&mut app, "warp_drive").await;
+        run_command(&mut app, "warp_drive", &no_mcp()).await;
         assert!(transcript_text(&app).contains("unknown command '/warp_drive'"));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -18086,22 +23747,43 @@ mod tests {
         assert!(st.success());
 
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
-        run_command(
-            &mut app,
-            &format!("plugin install file://{}", repo.display()),
-        )
-        .await;
+
+        // `/plugin install` no longer awaits the clone inline (that would freeze
+        // the TUI); it hands the spec to the loop, which runs the install off
+        // the render loop. Drive the handoff: the request is recorded, a second
+        // is refused while one is in flight, and the loop clears it on pick-up.
+        run_command(&mut app, &format!("plugin install file://{}", repo.display()), &no_mcp()).await;
         assert!(
-            transcript_text(&app).contains("installed plugin 'release-tools' (1 skills)"),
-            "install note: {}",
+            app.plugin_install_request.is_some(),
+            "install spec should be handed to the loop"
+        );
+        assert!(transcript_text(&app).contains("installing plugin..."), "{}", transcript_text(&app));
+        app.plugin_installing = true;
+        run_command(&mut app, "plugin install file://nowhere", &no_mcp()).await;
+        assert!(
+            transcript_text(&app).contains("already in progress"),
+            "a second /plugin install must be refused: {}",
             transcript_text(&app)
         );
+        app.plugin_installing = false;
+        app.plugin_install_request.take();
+
+        // Actually install so the list/dispatch/remove checks below have a
+        // plugin present (the install itself is covered by plugins::tests).
+        let p = crate::core::agent::plugins::install(
+            &root,
+            &format!("file://{}", repo.display()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(p.name, "release-tools");
+        app.refresh_slash_catalog();
 
         std::fs::create_dir_all(
             crate::core::agent::skills::plugins_dir(&root).join(".installing-stale"),
         )
         .unwrap();
-        run_command(&mut app, "plugin list").await;
+        run_command(&mut app, "plugin list", &no_mcp()).await;
         let text = transcript_text(&app);
         assert!(
             text.contains("plugin release-tools (v1.2.0 - 1 skill)"),
@@ -18110,12 +23792,12 @@ mod tests {
         assert!(!text.contains("Release automation"), "{text}");
         assert!(!text.contains("release-tools:prepare"), "{text}");
 
-        run_command(&mut app, "plugin list release-tools").await;
+        run_command(&mut app, "plugin list release-tools", &no_mcp()).await;
         let detail = transcript_text(&app);
         assert!(detail.contains("Release automation"), "{detail}");
         assert!(detail.contains("release-tools:prepare"), "{detail}");
 
-        run_command(&mut app, "plugin list missing").await;
+        run_command(&mut app, "plugin list missing", &no_mcp()).await;
         assert!(
             transcript_text(&app).contains("plugin 'missing' is not installed"),
             "{}",
@@ -18124,20 +23806,20 @@ mod tests {
 
         // The installed plugin's skill resolves and dispatches like a project
         // skill (qualified form here; the short form is covered by unit tests).
-        run_command(&mut app, "release-tools:prepare").await;
+        run_command(&mut app, "release-tools:prepare", &no_mcp()).await;
         assert!(
             transcript_text(&app).contains("[skill:release-tools:prepare]"),
             "dispatch: {}",
             transcript_text(&app)
         );
 
-        run_command(&mut app, "plugin remove release-tools").await;
+        run_command(&mut app, "plugin remove release-tools", &no_mcp()).await;
         assert!(
             transcript_text(&app).contains("removed plugin 'release-tools'"),
             "remove note: {}",
             transcript_text(&app)
         );
-        run_command(&mut app, "plugin list").await;
+        run_command(&mut app, "plugin list", &no_mcp()).await;
         assert!(
             transcript_text(&app).contains("no plugins installed"),
             "empty list: {}",
@@ -18147,10 +23829,84 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo);
     }
 
+    /// Drive `PickerKind::PluginSelect` end to end: open it via a collection
+    /// listing, toggle a row with Space (an already-installed row is a no-op),
+    /// cancel clears the stashed source URL, and a fresh open + Enter hands
+    /// the checked paths to the loop via `plugin_select_request`.
+    #[tokio::test]
+    async fn plugin_select_picker_toggles_cancels_and_submits_checked_paths() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+
+        // Open the picker exactly as the loop does after `finish_plugin_install`
+        // sees a collection listing: one installable row and one already-
+        // installed row.
+        let candidates = vec![
+            crate::core::agent::plugins::CollectionPlugin {
+                path: "alpha".to_string(),
+                installed: false,
+            },
+            crate::core::agent::plugins::CollectionPlugin {
+                path: "beta".to_string(),
+                installed: true,
+            },
+        ];
+        finish_plugin_install(
+            &mut app,
+            Some("file:///tmp/collection".to_string()),
+            Ok(crate::core::agent::plugins::GitInstall::Collection(candidates)),
+        );
+        let picker = app.picker.as_ref().expect("collection listing opens the picker");
+        assert_eq!(picker.kind, PickerKind::PluginSelect);
+        assert_eq!(picker.items.len(), 2);
+
+        // An already-installed row is not toggleable: Space is a no-op note.
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().unwrap().items[1].checkbox, Some(false));
+        assert!(
+            transcript_text(&app).contains("already installed - nothing to install"),
+            "no-op Space note missing: {}",
+            transcript_text(&app)
+        );
+
+        // Toggle the installable row.
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().unwrap().items[0].checkbox, Some(true));
+
+        // Cancelling clears the stashed collection URL so no stale source
+        // lingers for a later Enter on a different picker.
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.picker.is_none());
+        assert!(app.plugin_collection_url.is_none());
+
+        // Re-open and submit: Enter hands the checked paths to the loop.
+        finish_plugin_install(
+            &mut app,
+            Some("file:///tmp/collection".to_string()),
+            Ok(crate::core::agent::plugins::GitInstall::Collection(vec![
+                crate::core::agent::plugins::CollectionPlugin {
+                    path: "alpha".to_string(),
+                    installed: false,
+                },
+            ])),
+        );
+        assert!(app.plugin_collection_url.is_some());
+        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        let (url, paths) = app.plugin_select_request.expect("Enter submits the pick").clone();
+        assert_eq!(url, "file:///tmp/collection");
+        assert_eq!(paths, vec!["alpha".to_string()]);
+        assert!(app.picker.is_none());
+        assert!(app.plugin_collection_url.is_none(), "URL consumed on submit");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[tokio::test]
     async fn run_command_dispatches_installed_skill() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
-        run_command(&mut app, "deploy").await;
+        run_command(&mut app, "deploy", &no_mcp()).await;
         assert!(
             transcript_text(&app).contains("[skill:deploy]"),
             "compact row: {}",
@@ -18177,7 +23933,7 @@ mod tests {
     #[tokio::test]
     async fn run_command_threads_skill_args() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
-        run_command(&mut app, "deploy staging --force").await;
+        run_command(&mut app, "deploy staging --force", &no_mcp()).await;
         let user = app
             .history
             .iter()
@@ -18201,13 +23957,13 @@ mod tests {
         // A skill named like a builtin command: the short form runs the
         // command; `/skill:cancel` still reaches the skill.
         let (mut app, root) = skill_test_app("cancel", "Cancels things.");
-        run_command(&mut app, "cancel").await;
+        run_command(&mut app, "cancel", &no_mcp()).await;
         assert!(
             !transcript_text(&app).contains("[skill:cancel]"),
             "command wins the short form: {}",
             transcript_text(&app)
         );
-        run_command(&mut app, "skill:cancel").await;
+        run_command(&mut app, "skill:cancel", &no_mcp()).await;
         assert!(transcript_text(&app).contains("[skill:cancel]"));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -18258,7 +24014,7 @@ mod tests {
     #[tokio::test]
     async fn run_command_unknown_still_notes() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
-        run_command(&mut app, "warp_drive").await;
+        run_command(&mut app, "warp_drive", &no_mcp()).await;
         assert!(transcript_text(&app).contains("unknown command '/warp_drive'"));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -18582,6 +24338,23 @@ mod tests {
     }
 
     #[test]
+    fn header_shows_the_reasoning_effort_badge() {
+        let mut app = test_app();
+        app.reasoning_effort = "high".into();
+        let text: String = header_spans(&app)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect::<String>();
+        assert!(text.contains("effort high"), "effort badge missing: {text}");
+        app.reasoning_effort = "low".into();
+        let text: String = header_spans(&app)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect::<String>();
+        assert!(text.contains("effort low"), "badge must track the level: {text}");
+    }
+
+    #[test]
     fn subagent_share_is_suppressed_when_the_window_is_untrusted() {
         let mut app = test_app();
         app.subagents.push(SubagentPanel {
@@ -18622,6 +24395,16 @@ mod tests {
         app.max_tokens = Some(4096);
         let body = app.body();
         assert_eq!(body.get("max_tokens").and_then(|v| v.as_u64()), Some(4096));
+    }
+
+    /// The reasoning-effort level is always forwarded so compatible providers
+    /// (OpenAI, Gemini, Tokamak) can scale reasoning depth per request.
+    #[test]
+    fn body_includes_reasoning_effort() {
+        let mut app = test_app();
+        assert_eq!(app.body().get("reasoning_effort").and_then(|v| v.as_str()), Some("medium"));
+        app.reasoning_effort = "high".into();
+        assert_eq!(app.body().get("reasoning_effort").and_then(|v| v.as_str()), Some("high"));
     }
 
     /// The session token budget is the only cap: it is always forwarded, and no
@@ -18689,6 +24472,40 @@ mod tests {
         );
     }
 
+    /// The mark and the name are one lockup, so they share rows instead of
+    /// stacking: the wordmark's first row also carries part of the hand.
+    #[test]
+    fn banner_opens_with_the_hand_logo_beside_the_wordmark() {
+        let mut app = test_app();
+        app.push_banner("--safe", true);
+
+        let text = banner_text(&app, 90);
+        let joined = text.join("\n");
+        let row = text
+            .iter()
+            .find(|l| l.contains(brand::LOGO[0].trim()))
+            .unwrap_or_else(|| panic!("wordmark missing:\n{joined}"));
+        let hand_row = brand::HAND
+            .iter()
+            .find(|h| row.contains(h.trim()))
+            .unwrap_or_else(|| panic!("the wordmark's row carries no hand: {row}"));
+        assert!(
+            row.find(hand_row.trim()).unwrap() < row.find(brand::LOGO[0].trim()).unwrap(),
+            "the hand should sit left of the wordmark: {row}"
+        );
+        assert!(joined.contains('█'), "{joined}");
+    }
+
+    #[test]
+    fn a_24_column_terminal_drops_the_hand_logo_too() {
+        let mut app = test_app();
+        app.push_banner("--safe", true);
+        let narrow = banner_text(&app, 24);
+        let joined = narrow.join("\n");
+        assert!(!joined.contains('█'), "{joined}");
+        assert!(joined.contains("jan"), "{joined}");
+    }
+
     /// `/init` is the first thing a new project wants and is invisible unless
     /// promoted, so the splash lists it beside `/help`.
     #[test]
@@ -18746,21 +24563,30 @@ mod tests {
         }
     }
 
+    /// The wave mark is the only branding the header carries: one glyph, then
+    /// the model. A name chip would spend the columns the status needs.
     #[test]
-    fn header_leads_with_the_model_not_a_name_chip() {
+    fn header_leads_with_the_wave_then_the_model() {
         let mut app = test_app();
         app.model = "tokamak-1-preview".into();
         let top = render_rows(&mut app, 60, 12).remove(0);
+        let head = top.trim_start();
         assert!(
-            top.starts_with(" tokamak-1-preview"),
-            "the name chip is back: {top:?}"
+            head.starts_with(brand::WAVE),
+            "the wave should open the row: {top:?}"
+        );
+        assert!(
+            head[brand::WAVE.len()..]
+                .trim_start()
+                .starts_with("tokamak-1-preview"),
+            "the model should follow the wave, with no name chip between: {top:?}"
         );
         // The freed columns are what let the status survive a 60-column frame.
         assert!(top.contains("[ready]"), "{top:?}");
 
         app.model.clear();
         let top = render_rows(&mut app, 60, 12).remove(0);
-        assert!(top.starts_with(" no model"), "{top:?}");
+        assert!(top.contains("no model"), "{top:?}");
     }
 
     #[test]
@@ -18802,7 +24628,7 @@ mod tests {
         assert_eq!(last_row(&app)[0].0, "\u{2022} ", "system note");
 
         app.push_user_line("do it", &[]);
-        assert_eq!(last_row(&app)[0].0, "\u{203a} ", "user message");
+        assert_eq!(last_row(&app)[0].0, "> ", "user message");
 
         app.apply(StreamEvent::ToolCall {
             id: "t1".into(),
@@ -18824,7 +24650,7 @@ mod tests {
         app.flush_assistant();
         let prose = last_row(&app);
         assert!(
-            !prose[0].0.starts_with('\u{2022}') && !prose[0].0.starts_with('\u{203a}'),
+            !prose[0].0.starts_with('\u{2022}') && !prose[0].0.starts_with('>'),
             "prose took a gutter: {prose:?}"
         );
     }
@@ -18858,7 +24684,7 @@ mod tests {
     async fn probe_blocks() {
         let mut app = test_app();
         app.note("conversation cleared");
-        run_command(&mut app, "help").await;
+        run_command(&mut app, "help", &no_mcp()).await;
         for l in render_rows(&mut app, 84, 40) { println!("|{}", l.trim_end()); }
     }
 
@@ -18973,4 +24799,506 @@ mod tests {
             "the last body row must map to the last transcript row"
         );
     }
+
+    // --- `/mcp` management screen -------------------------------------------
+
+    /// Write an `mcp_config.json` with the given servers into the redirected
+    /// data folder, so the `/mcp` screen reads a real config.
+    fn write_mcp_config(folder: &std::path::Path, servers: serde_json::Value) {
+        std::fs::write(
+            folder.join("mcp_config.json"),
+            serde_json::to_string(&serde_json::json!({
+                "mcpServers": servers,
+                "mcpSettings": {},
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn rt() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    /// The regression this whole screen exists for: a fresh install used to get
+    /// a note and no screen, so `a` (add) -- the only thing that could fix the
+    /// empty state -- was unreachable.
+    #[test]
+    fn the_mcp_screen_opens_on_a_watermark_row_when_nothing_is_configured() {
+        crate::core::app::commands::with_temp_data_folder(|_| {
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_picker(&mut app, &no_mcp()));
+
+            let picker = app.picker.as_ref().expect("the screen opens even so");
+            assert_eq!(picker.kind, PickerKind::ToggleMcp);
+            assert_eq!(picker.items.len(), 1);
+            assert!(picker.items[0].label.contains("press a to add"));
+            // An empty value marks the row inert, the way the provider screen's
+            // watermark does.
+            assert!(picker.items[0].value.is_empty());
+            assert!(picker.action_hint().contains("a add"));
+        });
+    }
+
+    #[test]
+    fn the_mcp_screen_lists_configured_servers_with_their_state() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "files": { "command": "npx", "args": ["-y", "files"], "active": true },
+                    "remote": { "type": "http", "url": "https://x/mcp", "active": false },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_picker(&mut app, &no_mcp()));
+
+            let items = &app.picker.as_ref().unwrap().items;
+            assert_eq!(items.len(), 2);
+            // Sorted by name, so the order is stable across runs.
+            assert_eq!(items[0].value, "files");
+            assert_eq!(items[0].checkbox, Some(true));
+            assert!(items[0].label.contains("not connected"), "{}", items[0].label);
+            assert_eq!(items[1].value, "remote");
+            assert_eq!(items[1].checkbox, Some(false));
+            assert!(items[1].label.contains("disabled"), "{}", items[1].label);
+        });
+    }
+
+    /// An http server with no stored tokens reads as `needs auth` rather than
+    /// the bare `not connected` a stdio server gets: the two have different
+    /// fixes.
+    #[test]
+    fn an_unauthenticated_remote_server_is_labelled_needs_auth() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "remote": { "type": "http", "url": "https://x/mcp", "active": true },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_picker(&mut app, &no_mcp()));
+            assert!(app.picker.as_ref().unwrap().items[0]
+                .label
+                .contains("needs auth"));
+        });
+    }
+
+    #[test]
+    fn the_detail_screen_shows_status_auth_and_where_the_config_lives() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "remote": { "type": "http", "url": "https://x/mcp", "active": true },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_detail(&mut app, "remote", &no_mcp()));
+
+            assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::McpServer);
+            let detail = app.mcp_detail.as_ref().expect("detail is held on App");
+            let text: String = super::mcp_detail_lines(detail, 120)
+                .iter()
+                .map(|l| {
+                    l.spans
+                        .iter()
+                        .map(|s| s.content.as_ref())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            assert!(text.contains("remote"), "{text}");
+            assert!(text.contains("Status:"), "{text}");
+            assert!(text.contains("not connected"), "{text}");
+            assert!(text.contains("Auth:"), "{text}");
+            assert!(text.contains("not authenticated"), "{text}");
+            assert!(text.contains("URL:"), "{text}");
+            assert!(text.contains("https://x/mcp"), "{text}");
+            assert!(text.contains("Config location:"), "{text}");
+            assert!(text.contains("mcp_config.json"), "{text}");
+            assert!(text.contains("Tools:"), "{text}");
+        });
+    }
+
+    /// A stdio server has no HTTP transport, so the auth rows are absent rather
+    /// than present-and-inert; and a disconnected server has no tools to view.
+    #[test]
+    fn detail_actions_are_filtered_to_what_the_server_can_actually_do() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "files": { "command": "npx", "args": [], "active": true },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_detail(&mut app, "files", &no_mcp()));
+
+            let values: Vec<&str> = app
+                .picker
+                .as_ref()
+                .unwrap()
+                .items
+                .iter()
+                .map(|i| i.value.as_str())
+                .collect();
+            assert!(!values.contains(&super::MCP_ACTION_AUTH), "{values:?}");
+            assert!(!values.contains(&super::MCP_ACTION_CLEAR_AUTH), "{values:?}");
+            // Not connected, so there is nothing to list.
+            assert!(!values.contains(&super::MCP_ACTION_TOOLS), "{values:?}");
+            assert!(values.contains(&super::MCP_ACTION_TOGGLE), "{values:?}");
+            assert!(values.contains(&super::MCP_ACTION_EDIT), "{values:?}");
+            assert!(values.contains(&super::MCP_ACTION_REMOVE), "{values:?}");
+            // An active server can be reconnected; the label reads Disable.
+            assert!(values.contains(&super::MCP_ACTION_RECONNECT), "{values:?}");
+            let toggle = app
+                .picker
+                .as_ref()
+                .unwrap()
+                .items
+                .iter()
+                .find(|i| i.value == super::MCP_ACTION_TOGGLE)
+                .unwrap();
+            assert_eq!(toggle.label, "Disable");
+            // Rows are numbered, as the screen is meant to read.
+            assert_eq!(app.picker.as_ref().unwrap().items[0].hint.as_deref(), Some("1."));
+        });
+    }
+
+    #[test]
+    fn a_remote_server_offers_authenticate_and_no_clear_until_there_is_something_to_clear() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "remote": { "type": "http", "url": "https://x/mcp", "active": false },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_detail(&mut app, "remote", &no_mcp()));
+
+            let items = &app.picker.as_ref().unwrap().items;
+            let auth = items
+                .iter()
+                .find(|i| i.value == super::MCP_ACTION_AUTH)
+                .expect("an unauthenticated remote can sign in");
+            assert_eq!(auth.label, "Authenticate");
+            assert!(!items.iter().any(|i| i.value == super::MCP_ACTION_CLEAR_AUTH));
+            // Inactive, so Reconnect is not offered and the toggle reads Enable.
+            assert!(!items.iter().any(|i| i.value == super::MCP_ACTION_RECONNECT));
+            assert_eq!(
+                items
+                    .iter()
+                    .find(|i| i.value == super::MCP_ACTION_TOGGLE)
+                    .unwrap()
+                    .label,
+                "Enable"
+            );
+        });
+    }
+
+    /// A hand-written `Authorization` header is the user's own credential: OAuth
+    /// must not offer to replace it, because doing so would break it.
+    #[test]
+    fn a_hand_written_authorization_header_suppresses_the_oauth_actions() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "remote": {
+                        "type": "http",
+                        "url": "https://x/mcp",
+                        "headers": { "Authorization": "Bearer mine" },
+                        "active": true,
+                    },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_detail(&mut app, "remote", &no_mcp()));
+            let items = &app.picker.as_ref().unwrap().items;
+            assert!(!items.iter().any(|i| i.value == super::MCP_ACTION_AUTH));
+            assert!(!items.iter().any(|i| i.value == super::MCP_ACTION_CLEAR_AUTH));
+        });
+    }
+
+    /// The watermark row is inert: Enter must not open a detail screen for the
+    /// empty string, and Space must not try to toggle it.
+    #[test]
+    fn the_watermark_row_does_nothing_on_enter_or_space() {
+        crate::core::app::commands::with_temp_data_folder(|_| {
+            let registry: PermissionRegistry =
+                std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+            let mut current: Option<CurrentRun> = None;
+            let mut app = test_app();
+            let servers = no_mcp();
+            rt().block_on(async {
+                super::open_mcp_picker(&mut app, &servers).await;
+                for code in [KeyCode::Enter, KeyCode::Char(' ')] {
+                    handle_key(
+                        &mut app,
+                        KeyEvent::new(code, KeyModifiers::NONE),
+                        &registry,
+                        &mut current,
+                        &servers,
+                    )
+                    .await;
+                    assert!(app.mcp_detail.is_none(), "{code:?} opened a detail screen");
+                    assert_eq!(
+                        app.picker.as_ref().map(|p| p.kind),
+                        Some(PickerKind::ToggleMcp),
+                        "{code:?} left the list"
+                    );
+                }
+            });
+        });
+    }
+
+    /// Esc on the detail screen steps back up to the list rather than closing
+    /// `/mcp` outright.
+    #[test]
+    fn esc_on_the_detail_screen_returns_to_the_server_list() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "files": { "command": "npx", "args": [], "active": true },
+                }),
+            );
+            let registry: PermissionRegistry =
+                std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+            let mut current: Option<CurrentRun> = None;
+            let mut app = test_app();
+            let servers = no_mcp();
+            rt().block_on(async {
+                super::open_mcp_detail(&mut app, "files", &servers).await;
+                assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::McpServer);
+
+                handle_key(
+                    &mut app,
+                    KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+                    &registry,
+                    &mut current,
+                    &servers,
+                )
+                .await;
+                assert_eq!(
+                    app.picker.as_ref().map(|p| p.kind),
+                    Some(PickerKind::ToggleMcp),
+                    "Esc should step back, not close"
+                );
+                assert!(app.mcp_detail.is_none());
+            });
+        });
+    }
+
+    /// Removing a server takes its tokens with it: a later server reusing the
+    /// name must not silently inherit someone else's authorization.
+    #[test]
+    fn removing_a_server_also_forgets_its_stored_credentials() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "remote": { "type": "http", "url": "https://x/mcp", "active": false },
+                }),
+            );
+            // A credential file the removal must clean up. Spelled out rather
+            // than stubbed: an unparseable record would read as an empty store
+            // and the assertion would pass without the removal doing anything.
+            let store = folder.join("mcp_oauth.json");
+            std::fs::write(
+                &store,
+                serde_json::to_string(&serde_json::json!({
+                    "remote": {
+                        "client_id": "c1",
+                        "tokens": {
+                            "access_token": "at",
+                            "token_type": "bearer",
+                            "expires_in": 3600
+                        },
+                        "expires_at": 9_999_999_999u64,
+                        "resource": "https://x/mcp"
+                    }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            // The fixture must actually load, or this test proves nothing.
+            assert!(super::super::mcp::auth_status(
+                "remote",
+                &serde_json::json!({ "type": "http", "url": "https://x/mcp" })
+            ) != crate::core::mcp::oauth::AuthStatus::Unauthenticated);
+
+            let mut app = test_app();
+            rt().block_on(super::remove_mcp_server(&mut app, "remote", &no_mcp()));
+
+            assert!(super::super::mcp::get_server("remote").is_none());
+            let left = std::fs::read_to_string(&store).unwrap_or_default();
+            assert!(!left.contains("remote"), "credentials survived: {left}");
+        });
+    }
+
+    /// The detail screen must open in one frame, so the tool list is requested
+    /// as a job rather than awaited inline.
+    #[test]
+    fn a_connected_servers_tool_list_is_requested_as_a_job_not_awaited() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "files": { "command": "npx", "args": [], "active": true },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_detail(&mut app, "files", &no_mcp()));
+            // Not connected here, so nothing is requested and the state says why.
+            assert!(app.mcp_job_request.is_none());
+            assert!(matches!(
+                app.mcp_detail.as_ref().unwrap().tools,
+                super::ToolsState::Unavailable
+            ));
+        });
+    }
+
+    #[test]
+    fn a_long_value_is_clamped_instead_of_pushing_the_border_off_the_frame() {
+        use ratatui::text::Span;
+        let line = Line::from(vec![
+            Span::raw("URL:  "),
+            Span::raw("x".repeat(400)),
+        ]);
+        let clamped = super::clamp_line(line, 40);
+        let width: usize = clamped
+            .spans
+            .iter()
+            .map(|s| s.content.chars().count())
+            .sum();
+        assert!(width <= 38, "clamped to {width}");
+        assert!(clamped
+            .spans
+            .last()
+            .unwrap()
+            .content
+            .ends_with('\u{2026}'));
+    }
+
+    /// The bug #8726 was reverted for: a 2-cell emoji stood in for a 1-cell
+    /// character, so every frame was a cell wider than the text and the tail
+    /// slid right until the last character fell off the row. The sweep must
+    /// occupy exactly the width of the message it travels along, at every frame.
+    #[test]
+    fn a_wide_glyph_never_changes_the_row_width() {
+        let message = "working…";
+        let plain = message.width();
+        for glyph in ["👋", "🍌", "~", "<o>"] {
+            for frame in 0..40 {
+                let line = wave_sweep_line(message, glyph, frame, Style::default());
+                assert_eq!(
+                    spans_width(&line.spans),
+                    plain,
+                    "glyph {glyph:?} frame {frame} changed the row width"
+                );
+            }
+        }
+    }
+
+    /// The glyph covers characters instead of deleting them: every frame keeps
+    /// the message's own width, and the characters it is not standing on are
+    /// still there in order.
+    #[test]
+    fn the_sweep_covers_characters_without_dropping_the_rest() {
+        let line = wave_sweep_line("working…", "👋", 0, Style::default());
+        let text = line_text(&line);
+        assert!(text.starts_with('👋'), "{text}");
+        // "👋" is two cells, so it stands on "wo" and the rest survives.
+        assert!(text.ends_with("rking…"), "{text}");
+    }
+
+    /// A 1-cell glyph spends one character, so a narrow ASCII wave is exact
+    /// rather than padded.
+    #[test]
+    fn a_narrow_glyph_covers_exactly_one_character() {
+        let line = wave_sweep_line("abc", "~", 0, Style::default());
+        assert_eq!(line_text(&line), "~bc");
+    }
+
+    /// The sweep reverses at both ends instead of jumping back to the start,
+    /// and never runs off the message.
+    #[test]
+    fn the_sweep_reverses_at_both_ends() {
+        let seen: Vec<String> = (0..8)
+            .map(|frame| line_text(&wave_sweep_line("abcd", "~", frame, Style::default())))
+            .collect();
+        assert_eq!(
+            seen,
+            vec!["~bcd", "a~cd", "ab~d", "abc~", "ab~d", "a~cd", "~bcd", "a~cd"]
+        );
+    }
+
+    /// Multi-byte characters are covered on character boundaries, so a sweep
+    /// over non-ASCII text cannot slice a `char` in half and panic.
+    #[test]
+    fn the_sweep_respects_character_boundaries() {
+        for frame in 0..12 {
+            let line = wave_sweep_line("éxé…", "~", frame, Style::default());
+            assert_eq!(spans_width(&line.spans), "éxé…".width());
+        }
+    }
+
+    /// A message narrower than the glyph has nowhere to sweep, so it is left
+    /// alone rather than being overwritten by a glyph wider than itself.
+    #[test]
+    fn a_message_narrower_than_the_glyph_is_left_alone() {
+        let line = wave_sweep_line("a", "👋", 0, Style::default());
+        assert_eq!(line_text(&line), "a");
+    }
+
+    /// Unset `wave` leaves the Braille throbber in place: the sweep is opt-in,
+    /// so a terminal with no emoji font is unaffected by default.
+    ///
+    /// Anchored on "Esc to cancel", which only the input row carries: the header
+    /// also shows `[working]` and the brand wave, and matching those would test
+    /// the wrong row.
+    #[test]
+    fn the_working_row_keeps_its_throbber_until_a_wave_is_configured() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        let rows = with_wave_glyph(None, || render_rows(&mut app, 80, 12));
+        let row = rows
+            .iter()
+            .find(|r| r.contains("Esc to cancel"))
+            .expect("working row")
+            .clone();
+        assert!(
+            SPINNER.iter().any(|s| row.contains(s)),
+            "expected a throbber in {row:?}"
+        );
+        assert!(!row.contains('👋'), "{row}");
+    }
+
+    /// With `wave` set the glyph replaces the throbber rather than joining it:
+    /// two moving things on one row read as jitter.
+    #[test]
+    fn a_configured_wave_replaces_the_throbber() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        let rows = with_wave_glyph(Some("🍌"), || render_rows(&mut app, 80, 12));
+        let row = rows
+            .iter()
+            .find(|r| r.contains("Esc to cancel"))
+            .expect("working row")
+            .clone();
+        assert!(row.contains('🍌'), "expected the wave in {row:?}");
+        assert!(
+            !SPINNER.iter().any(|s| row.contains(s)),
+            "throbber still present in {row:?}"
+        );
+    }
+
 }

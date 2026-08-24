@@ -682,18 +682,27 @@ impl Drop for AbortOnDrop {
     }
 }
 
+/// What a child inherits from the run that dispatched it: the model to fall back
+/// on when the definition names none, the parent's remaining token budget, and
+/// its `send_reasoning` answer.
+#[derive(Clone)]
+pub(crate) struct ParentRun {
+    pub(crate) model: String,
+    pub(crate) budget_remaining: Option<u64>,
+    pub(crate) send_reasoning: bool,
+}
+
 /// Build the child request body shared by every subagent run.
 fn child_body(
     resolved: &ResolvedDispatch,
     description: &str,
-    parent_model: &str,
-    budget_remaining: Option<u64>,
+    parent: &ParentRun,
 ) -> serde_json::Value {
     let model = resolved
         .definition
         .model
         .clone()
-        .unwrap_or_else(|| parent_model.to_string());
+        .unwrap_or_else(|| parent.model.clone());
     let mut body = serde_json::Map::new();
     body.insert("model".to_string(), serde_json::json!(model));
     body.insert(
@@ -706,8 +715,14 @@ fn child_body(
     if let Some(tools) = &resolved.allowed_tools {
         body.insert("allowed_tools".to_string(), serde_json::json!(tools));
     }
-    if let Some(remaining) = budget_remaining {
+    if let Some(remaining) = parent.budget_remaining {
         body.insert("max_session_tokens".to_string(), serde_json::json!(remaining));
+    }
+    // A child's own tool-call turns carry `reasoning_content`, so the parent's
+    // opt-out has to travel with the dispatch or a strict provider still sees
+    // the field on the second child turn.
+    if !parent.send_reasoning {
+        body.insert("send_reasoning".to_string(), serde_json::json!(false));
     }
     serde_json::Value::Object(body)
 }
@@ -719,8 +734,7 @@ async fn run_subagent(
     parent_args: crate::core::agent::r#loop::OrchestrationArgs,
     resolved: ResolvedDispatch,
     description: String,
-    parent_model: String,
-    budget_remaining: Option<u64>,
+    parent: ParentRun,
     events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
     run_id: String,
 ) -> Result<String, SubagentError> {
@@ -743,7 +757,7 @@ async fn run_subagent(
     // context, matching ask_requests above).
     child_args.todo_registry = None;
 
-    let body = child_body(&resolved, &description, &parent_model, budget_remaining);
+    let body = child_body(&resolved, &description, &parent);
 
     let _ = events.send(StreamEvent::SubagentStart {
         run_id: run_id.clone(),
@@ -801,8 +815,7 @@ pub(crate) fn spawn_subagent(
     bg: &Arc<BackgroundSubagents>,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     req: SubagentRequest,
-    parent_model: &str,
-    budget_remaining: Option<u64>,
+    parent: &ParentRun,
     events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
 ) -> Result<String, SubagentError> {
     use crate::core::agent::events::StreamEvent;
@@ -848,7 +861,7 @@ pub(crate) fn spawn_subagent(
     let parent_args = parent_args.clone();
     let task_events = events.clone();
     let entry_events = events.clone();
-    let model = parent_model.to_string();
+    let inherited = parent.clone();
     let description = req.description.clone();
     let run_id_task = run_id.clone();
     let queued_counter = bg.clone();
@@ -869,8 +882,7 @@ pub(crate) fn spawn_subagent(
             parent_args,
             resolved,
             description,
-            model,
-            budget_remaining,
+            inherited,
             task_events,
             run_id_task,
         )
@@ -1428,6 +1440,41 @@ mod tests {
         }
     }
 
+    /// The dispatching run's inheritance, with the defaults every test that only
+    /// cares about scheduling wants.
+    fn parent_run() -> ParentRun {
+        ParentRun {
+            model: "m".to_string(),
+            budget_remaining: None,
+            send_reasoning: true,
+        }
+    }
+
+    /// `[agent].send_reasoning = false` has to reach the child body: a child
+    /// resends the `reasoning_content` of its own tool-call turns, so an opt-out
+    /// that stopped at the parent would still break a strict provider on the
+    /// child's second turn.
+    #[test]
+    fn child_body_forwards_the_parents_send_reasoning_opt_out() {
+        let reg = registry_with("reviewer", None);
+        let p = ToolPermissions::allow_all();
+        let resolved = resolve_dispatch(&reg, &req("reviewer", None), &p).expect("resolves");
+        let on = child_body(&resolved, "task", &parent_run());
+        assert!(
+            on.get("send_reasoning").is_none(),
+            "the default is inherited implicitly: {on}"
+        );
+        let off = child_body(
+            &resolved,
+            "task",
+            &ParentRun {
+                send_reasoning: false,
+                ..parent_run()
+            },
+        );
+        assert_eq!(off["send_reasoning"], serde_json::json!(false));
+    }
+
     #[test]
     fn resolve_unknown_name_without_inline_prompt_errors() {
         let reg = registry_with("reviewer", None);
@@ -1905,9 +1952,9 @@ mod tests {
         let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
         let mut starts = Vec::new();
 
-        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
-        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
-        let r3 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let r3 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
         assert_ne!(r1, r2);
         assert_ne!(r2, r3);
 
@@ -1960,8 +2007,8 @@ mod tests {
         // Occupy the only slot BEFORE dispatching, so every dispatch queues and
         // the await below is deterministic: nothing can start while held.
         let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
-        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
-        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
 
         // r2 is queued (not started), and awaiting it must NOT start it: the
         // slot is still held, so the await parks. Assert via the events: no
@@ -2002,9 +2049,9 @@ mod tests {
         // Hold the slot before dispatching so r1, r2, r3 all queue (parked on
         // the semaphore) -- the interesting teardown case.
         let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
-        let _r1 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
-        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
-        let r3 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+        let _r1 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let r3 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
 
         AbortOnDrop(bg.clone()); // teardown with queued children parked
 

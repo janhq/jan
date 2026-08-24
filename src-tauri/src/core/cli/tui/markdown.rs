@@ -4,11 +4,17 @@
 
 use ratatui::prelude::*;
 
-/// Render assistant text to styled lines: reasoning dimmed, answer prose passed
-/// through markdown formatting. `width` bounds table wrapping.
-pub(super) fn format_assistant_lines(text: &str, width: u16) -> Vec<Line<'static>> {
+/// Render a turn to styled lines: reasoning dimmed, answer prose passed through
+/// markdown formatting. Native reasoning arrives as `segs` and is placed by its
+/// offset; inline `<think>` markers are found inside the prose. `width` bounds
+/// table wrapping.
+pub(super) fn format_assistant_lines(
+    prose: &str,
+    segs: &[super::ReasoningSeg],
+    width: u16,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    for (reasoning, seg) in super::split_reasoning(text) {
+    for (reasoning, seg) in super::assistant_runs(prose, segs) {
         if reasoning {
             lines.extend(reasoning_detail_lines(&seg));
         } else {
@@ -18,21 +24,46 @@ pub(super) fn format_assistant_lines(text: &str, width: u16) -> Vec<Line<'static
     lines
 }
 
+/// Lines of an open reasoning block kept in the live tail: enough to see the
+/// thought moving without letting a long chain of thought push the answer, and
+/// the conversation above it, off the screen.
+const LIVE_REASONING_TAIL_LINES: usize = 6;
+
 /// Live tail rendering for the in-progress assistant buffer. With reasoning
-/// folding on (`fold_reasoning`), an open (unterminated) think block is hidden
-/// entirely so the user sees only the answer prose stream, matching the
-/// `[thinking]` header state; once the tag closes (or prose begins) the rest
-/// renders as usual. When folding is off this is identical to
-/// `format_assistant_lines`, so the existing live-tail tests hold.
-pub(super) fn live_assistant_lines(text: &str, width: u16, fold_reasoning: bool) -> Vec<Line<'static>> {
+/// folding on (`fold_reasoning`) the block is bounded rather than shown whole:
+/// the open (unterminated) one keeps its last [`LIVE_REASONING_TAIL_LINES`]
+/// lines when `stream_reasoning` is on, and a block that already closed shows
+/// the same summary row `push_assistant_blocks` will commit for it, so nothing
+/// jumps as the turn finalizes. With `stream_reasoning` off the open block is
+/// hidden entirely and only the `[thinking]` header stands for it. When folding
+/// is off this is identical to `format_assistant_lines`, so the existing
+/// live-tail tests hold.
+pub(super) fn live_assistant_lines(
+    prose: &str,
+    segs: &[super::ReasoningSeg],
+    width: u16,
+    fold_reasoning: bool,
+    stream_reasoning: bool,
+) -> Vec<Line<'static>> {
     if !fold_reasoning {
-        return format_assistant_lines(text, width);
+        return format_assistant_lines(prose, segs, width);
     }
+    let runs = super::assistant_runs(prose, segs);
+    let last = runs.len().saturating_sub(1);
     let mut lines = Vec::new();
-    for (reasoning, seg) in super::split_reasoning(text) {
+    for (i, (reasoning, seg)) in runs.into_iter().enumerate() {
         if reasoning {
-            // Folded: the streaming content is hidden; nothing to show. (Once it
-            // commits, `push_assistant_blocks` emits the summary row instead.)
+            // Only the trailing run can still be open; anything a later run
+            // follows has ended and folds to its summary row.
+            let body: Vec<&str> = seg.lines().filter(|l| !l.trim().is_empty()).collect();
+            if body.is_empty() {
+                continue;
+            }
+            if i < last {
+                lines.push(reasoning_summary_row(body.len()));
+            } else if stream_reasoning {
+                lines.extend(live_reasoning_tail(&body, width));
+            }
             continue;
         }
         if !seg.trim().is_empty() {
@@ -42,16 +73,46 @@ pub(super) fn live_assistant_lines(text: &str, width: u16, fold_reasoning: bool)
     lines
 }
 
+/// Columns the reasoning gutter takes. Subtracted from the width before the
+/// live tail wraps, so a pre-wrapped row still fits and the terminal re-wraps
+/// nothing.
+const REASONING_GUTTER_COLS: usize = 2;
+
+fn reasoning_row(body: Vec<Span<'static>>) -> Line<'static> {
+    let mut spans = vec![Span::styled("┊ ", Style::new().dark_gray())];
+    spans.extend(body);
+    Line::from(spans)
+}
+
+fn reasoning_body_span(text: String) -> Span<'static> {
+    Span::styled(text, Style::new().dim().italic())
+}
+
 /// A reasoning block's full dimmed lines (`┊ ` gutter, dim italic body).
 pub(super) fn reasoning_detail_lines(seg: &str) -> Vec<Line<'static>> {
     seg.lines()
         .filter(|l| !l.trim().is_empty())
-        .map(|l| {
-            Line::from(vec![
-                Span::styled("┊ ", Style::new().dark_gray()),
-                Span::styled(l.to_string(), Style::new().dim().italic()),
-            ])
-        })
+        .map(|l| reasoning_row(vec![reasoning_body_span(l.to_string())]))
+        .collect()
+}
+
+/// The open block's tail, bounded to [`LIVE_REASONING_TAIL_LINES`] *rendered*
+/// rows rather than source lines. Reasoning usually arrives as one long
+/// paragraph, so a source-line cap bounded nothing on screen: the block's
+/// height moved with however far the newest line had wrapped, jittering by a
+/// row or two as it grew. Wrapping here also gives every continuation its own
+/// gutter instead of letting it start under the margin.
+fn live_reasoning_tail(body: &[&str], width: u16) -> Vec<Line<'static>> {
+    let max = (width as usize)
+        .saturating_sub(REASONING_GUTTER_COLS)
+        .max(1);
+    let rows: Vec<Vec<Span<'static>>> = body
+        .iter()
+        .flat_map(|l| wrap_spans_at_words(vec![reasoning_body_span(l.to_string())], max))
+        .collect();
+    rows[rows.len().saturating_sub(LIVE_REASONING_TAIL_LINES)..]
+        .iter()
+        .map(|spans| reasoning_row(spans.clone()))
         .collect()
 }
 
@@ -62,10 +123,7 @@ pub(super) fn reasoning_summary_row(n: usize) -> Line<'static> {
     } else {
         format!("reasoning ({n} lines)")
     };
-    Line::from(vec![
-        Span::styled("┊ ", Style::new().dark_gray()),
-        Span::styled(label, Style::new().dim().italic()),
-    ])
+    reasoning_row(vec![reasoning_body_span(label)])
 }
 
 /// Render answer prose to styled lines. Every block -- prose, code fences,
@@ -1387,6 +1445,4 @@ mod tests {
             .collect();
         assert_eq!(joined, long);
     }
-
 }
-

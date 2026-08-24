@@ -3,6 +3,7 @@
 //! This module is only compiled when the `cli` feature is enabled.
 
 pub mod brand;
+pub mod browser;
 pub mod journal;
 pub mod login;
 pub mod mcp;
@@ -11,6 +12,7 @@ pub mod run_report;
 pub mod providers;
 mod secret_input;
 pub mod telemetry;
+pub mod terminal_setup;
 pub mod tokamak;
 mod tui;
 pub mod updater;
@@ -304,7 +306,7 @@ pub fn cli_set_project_model(agent_dir: &std::path::Path, model: &str) -> Result
 
 /// Stands in for a tool result that never reached disk, so the call it answers
 /// stays valid. Says what happened rather than inventing an outcome.
-const MISSING_TOOL_RESULT: &str =
+pub(crate) const MISSING_TOOL_RESULT: &str =
     "(result not saved: the session ended before this call's output was recorded)";
 
 /// Rebuild the wire conversation from persisted `thread.message` records: the
@@ -609,12 +611,17 @@ pub fn cli_plugin_list(project: &str) -> Vec<crate::core::agent::plugins::Instal
     crate::core::agent::plugins::installed(&resolve_project_root(project))
 }
 
-/// Install a git or marketplace plugin for a project.
+/// Install git or marketplace plugin(s) for a project.
+///
+/// This is the interactive CLI path: a multi-plugin collection prompts the user
+/// to choose which plugins to install (it has an owning terminal, unlike the
+/// TUI render loop which reads stdin itself and so uses the non-interactive
+/// listing-error behavior). Returns every plugin actually installed.
 pub async fn cli_plugin_install(
     project: &str,
     spec: &str,
-) -> Result<crate::core::agent::plugins::InstalledPlugin, String> {
-    crate::core::agent::plugins::install(&resolve_project_root(project), spec).await
+) -> Result<Vec<crate::core::agent::plugins::InstalledPlugin>, String> {
+    crate::core::agent::plugins::install_interactive(&resolve_project_root(project), spec).await
 }
 
 /// Remove a plugin from a project.
@@ -681,7 +688,7 @@ fn build_cli_orchestration_args(
     sandbox: Option<bool>,
 ) -> OrchestrationArgs {
     OrchestrationArgs {
-        client: reqwest::Client::new(),
+        client: crate::core::agent::upstream::agent_http_client(),
         provider_configs: Arc::new(Mutex::new(provider_configs)),
         mcp_servers,
         mcp_settings: Arc::new(Mutex::new(mcp_settings)),
@@ -764,6 +771,14 @@ pub(crate) struct AgentSession {
     pub limits: SessionLimits,
     /// Whether the TUI expands `<think>` reasoning blocks (default false).
     pub show_reasoning: bool,
+    /// Whether the TUI streams reasoning into the live tail while it folds
+    /// (`stream_reasoning` in `~/.jan/config.toml`, default true). Independent
+    /// of `show_reasoning`, which unfolds it for good.
+    pub stream_reasoning: bool,
+    /// Whether to resend a prior assistant turn's reasoning to the model
+    /// (default true). False drops `reasoning_content` from outgoing assistant
+    /// messages; the display journal still keeps reasoning for a resume.
+    pub send_reasoning: bool,
     /// Shared MCP connection map (same Arc held by `args`), so the TUI can
     /// connect/disconnect servers live via `/mcp` and later turns pick them up.
     pub mcp_servers: crate::core::state::SharedMcpServers,
@@ -786,6 +801,9 @@ impl AgentSession {
         if let Some(max) = self.limits.max_tokens {
             body["max_tokens"] = serde_json::json!(max);
         }
+        // Reasoning resend policy: the request-level flag the loop reads to
+        // decide whether prior assistant `reasoning_content` goes back out.
+        body["send_reasoning"] = serde_json::json!(self.send_reasoning);
         body
     }
 }
@@ -899,6 +917,10 @@ fn prepare_agent_session(
         None
     };
 
+    // `think_tags` is user-wide and read from free rendering functions, so it is
+    // applied to the process here, the one path every agent surface takes.
+    tui::set_think_tags_parsed(crate::core::agent::global_config::think_tags_enabled());
+
     let permission_requests: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
     let max_parallel_subagents = cfg
         .agent
@@ -929,6 +951,8 @@ fn prepare_agent_session(
             max_session_tokens: cfg.budget.max_tokens.unwrap_or(DEFAULT_MAX_SESSION_TOKENS),
         },
         show_reasoning: cfg.agent.show_reasoning.unwrap_or(false),
+        stream_reasoning: crate::core::agent::global_config::stream_reasoning_enabled(),
+        send_reasoning: cfg.agent.send_reasoning.unwrap_or(true),
         mcp_servers,
         mcp_task,
     })
@@ -1092,6 +1116,14 @@ async fn run_agent_loop(
                 // Headless has no transcript to note into, so these stay logs.
                 for failure in &outcome.failed {
                     log::warn!("MCP: {failure}");
+                }
+                // Signing in needs a browser and a keypress, neither of which
+                // exists here, so the fix is named rather than attempted.
+                if !outcome.needs_auth.is_empty() {
+                    log::warn!(
+                        "MCP: {} need authentication - run `jan` and use /mcp to sign in",
+                        outcome.needs_auth.join(", ")
+                    );
                 }
             }
             Err(e) => log::warn!("MCP connect task failed: {e}"),
@@ -1258,6 +1290,12 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::Token { text } => {
             print!("{text}");
             let _ = std::io::stdout().flush();
+        }
+        // Reasoning is progress, not answer: dimmed on stderr so piping stdout
+        // yields only the real completion.
+        StreamEvent::Reasoning { text } => {
+            eprint!("\x1b[2m{text}\x1b[0m");
+            let _ = std::io::stderr().flush();
         }
         StreamEvent::Step { index, max } => match max {
             0 => eprintln!("\n\x1b[2m[turn {index}]\x1b[0m"),
