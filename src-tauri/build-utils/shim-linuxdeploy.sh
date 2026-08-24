@@ -24,7 +24,17 @@ if [ ! -f "$LINUXDEPLOY" ]; then
   chmod a+x "$LINUXDEPLOY"
 fi
 
-rm -f "$SYMLINK"
-ln -s "$LINUXDEPLOY" "$SYMLINK"
+# A wrapper rather than a symlink: tauri discards linuxdeploy's output, so a
+# failure reaches CI as `failed to run linuxdeploy` and nothing else. The copy
+# is what the build job uploads when it fails.
+LINUXDEPLOY_LOG="$XDG_CACHE_HOME/tauri/linuxdeploy.log"
+rm -f "$SYMLINK" "$LINUXDEPLOY_LOG"
+cat > "$SYMLINK" <<EOF
+#!/usr/bin/env bash
+set -o pipefail
+"$LINUXDEPLOY" "\$@" 2>&1 | tee -a "$LINUXDEPLOY_LOG"
+exit \${PIPESTATUS[0]}
+EOF
+chmod +x "$SYMLINK"
 
 "$@"

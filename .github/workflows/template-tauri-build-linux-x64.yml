@@ -229,14 +229,17 @@ jobs:
       # Publish app
 
       # The engine build is fifteen minutes of cmake whose output cargo only
-      # surfaces as a tail. When it fails, the whole log is the artifact worth
+      # surfaces as a tail, and tauri reports a linuxdeploy failure without its
+      # output at all. When a build fails, those logs are the artifact worth
       # having.
-      - name: Upload the engine build log
+      - name: Upload the build logs
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: engine-build-log-linux-x64
-          path: src-tauri/target/engine-build.log
+          name: build-logs-linux-x64
+          path: |
+            src-tauri/target/engine-build.log
+            .cache/tauri/linuxdeploy.log
           if-no-files-found: ignore
 
       ## Artifacts, for dev and test
