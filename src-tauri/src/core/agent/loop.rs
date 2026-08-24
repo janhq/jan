@@ -18,10 +18,10 @@ use crate::core::agent::events::{StreamEvent, Usage};
 use crate::core::agent::session::SessionBudget;
 use tauri_plugin_agent_tools::tools::gate::{DenyReason, PermissionDecision};
 use crate::core::agent::upstream::{
-    collect_mcp_openai_tools, copy_optional_chat_params, execute_mcp_tool_calls,
-    extract_choice_message, extract_tool_calls, load_assistant_config, parse_openai_messages,
-    repair_dangling_tool_calls, resolve_upstream_for_model, set_system_prompt,
-    stream_openai_chat_completions,
+    collect_mcp_openai_tools, copy_optional_chat_params, drop_malformed_tool_calls,
+    execute_mcp_tool_calls, extract_choice_message, extract_tool_calls, load_assistant_config,
+    parse_openai_messages, repair_dangling_tool_calls, resolve_upstream_for_model,
+    set_system_prompt, stream_openai_chat_completions,
 };
 #[cfg(not(feature = "cli"))]
 use crate::core::server::proxy::router_first_model;
@@ -1252,6 +1252,16 @@ async fn orchestrate_inner(
         .get("messages")
         .ok_or("Missing required field 'messages'")?;
     let mut conversation_messages = parse_openai_messages(messages_value)?;
+    // Drop tool calls a truncated stream left with unparsable arguments before
+    // anything else looks at the history. Such a call is persisted by the run
+    // that produced it and resent on every later turn, and an OpenAI-compatible
+    // upstream 422s the whole request over it -- so without this the session is
+    // wedged on its own history and cannot heal. Runs first so the dangling
+    // repair below sees the post-removal shape.
+    let poisoned = drop_malformed_tool_calls(&mut conversation_messages);
+    if poisoned > 0 {
+        log::warn!("agent: dropped {poisoned} tool call(s) with unparsable arguments from history");
+    }
     // Self-heal a conversation an earlier interrupted run may have left with a
     // tool_calls turn missing one of its results (e.g. the process was killed
     // while an `ask`/permission prompt was still pending). Providers like
@@ -2501,6 +2511,122 @@ mod tests {
         assert_eq!(content[1]["type"], "image_url");
         assert_eq!(content[1]["image_url"]["url"], "data:image/png;base64,QUJD");
         assert_eq!(content[1]["image_url"]["detail"], "auto");
+    }
+
+    /// End-to-end proof of the poisoned-history fix against an upstream that
+    /// behaves like the real one: a strict validator that rejects the whole
+    /// request (as a 422 does) when any tool call in the inbound history has
+    /// unparsable `function.arguments`.
+    ///
+    /// Without the sanitizer the session is wedged -- every turn resends the
+    /// truncated call and every turn is rejected, so the run can never make
+    /// progress. With it, the turn goes through.
+    #[tokio::test]
+    async fn poisoned_history_wedges_a_strict_upstream_until_sanitized() {
+        /// Rejects any request still carrying an unparsable tool-call argument.
+        struct StrictModel {
+            calls: std::sync::atomic::AtomicU32,
+        }
+        #[async_trait]
+        impl ModelInvoker for StrictModel {
+            async fn invoke(
+                &self,
+                request: &serde_json::Value,
+                _events: &mpsc::UnboundedSender<StreamEvent>,
+            ) -> Result<serde_json::Value, String> {
+                self.calls
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                for m in request["messages"].as_array().into_iter().flatten() {
+                    for tc in m["tool_calls"].as_array().into_iter().flatten() {
+                        if let Some(args) = tc["function"]["arguments"].as_str() {
+                            if !args.trim().is_empty()
+                                && serde_json::from_str::<serde_json::Value>(args).is_err()
+                            {
+                                return Err("HTTP 422: invalid tool call arguments".to_string());
+                            }
+                        }
+                    }
+                }
+                Ok(json!({
+                    "choices": [{ "message": { "content": "healed" }, "finish_reason": "stop" }]
+                }))
+            }
+        }
+
+        // The history a truncated stream leaves behind: `arguments` cut
+        // mid-JSON while the turn still claimed `finish_reason: "tool_calls"`.
+        let poisoned = vec![
+            json!({ "role": "user", "content": "write the file" }),
+            json!({
+                "role": "assistant",
+                "content": serde_json::Value::Null,
+                "tool_calls": [{
+                    "id": "call_trunc",
+                    "type": "function",
+                    "function": { "name": "write", "arguments": "{\"path\":\"a.rs\",\"content\":\"fn ma" }
+                }]
+            }),
+            json!({ "role": "tool", "tool_call_id": "call_trunc", "content": "(never ran)" }),
+            json!({ "role": "user", "content": "are you stuck?" }),
+        ];
+
+        // Before: the untouched history is rejected -- this is the wedge.
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let wedged = StrictModel {
+            calls: Default::default(),
+        };
+        let err = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            poisoned.clone(),
+            8,
+            &mut SessionBudget::new(None),
+            &wedged,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await;
+        assert!(
+            err.is_err_and(|e| e.contains("422")),
+            "unsanitized poisoned history must be rejected, reproducing the wedge"
+        );
+
+        // After: the same history, through the sanitizer the orchestrator runs
+        // on every inbound request, is accepted and the turn completes.
+        let mut healed_history = poisoned;
+        assert_eq!(drop_malformed_tool_calls(&mut healed_history), 1);
+        assert_eq!(repair_dangling_tool_calls(&mut healed_history), 0);
+
+        let (tx2, _rx2) = mpsc::unbounded_channel();
+        let healed = StrictModel {
+            calls: Default::default(),
+        };
+        let result = run_turn_cycle(
+            &tx2,
+            &json!({}),
+            "m",
+            &[],
+            healed_history,
+            8,
+            &mut SessionBudget::new(None),
+            &healed,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .expect("sanitized history must be accepted so the session can continue");
+        assert_eq!(result["choices"][0]["message"]["content"], "healed");
+        assert_eq!(
+            healed.calls.load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "one clean round trip"
+        );
     }
 
     #[tokio::test]
