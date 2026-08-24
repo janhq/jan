@@ -50,10 +50,10 @@ command -v cmake >/dev/null 2>&1 || {
   exit 1
 }
 
-# Windows only. ggml builds vulkan-shaders-gen as an ExternalProject that
-# reconfigures with the parent's generator and no compiler, and under the Visual
-# Studio generator that nested configure cannot identify one -- so build.rs asks
-# for Ninja there, and names clang-cl in the environment for both configures.
+# Windows only, and both are upstream llama.cpp's own recipe for this build:
+# Ninja because ggml's vulkan-shaders-gen ExternalProject cannot identify a
+# compiler when nested inside MSBuild, and clang because ggml's per-CPU-variant
+# flags (-mavxvnni and friends) live in its GNU-driver branch.
 case "$(uname -s)" in
 MINGW* | MSYS* | CYGWIN*)
   command -v ninja >/dev/null 2>&1 || {
@@ -61,11 +61,15 @@ MINGW* | MSYS* | CYGWIN*)
     echo "       (the Visual Studio generator cannot build vulkan-shaders-gen)" >&2
     exit 1
   }
-  command -v clang-cl >/dev/null 2>&1 || {
-    echo "error: the engine build needs clang-cl on PATH on Windows (install LLVM)" >&2
+  command -v clang >/dev/null 2>&1 || {
+    echo "error: the engine build needs clang on PATH on Windows (install LLVM)" >&2
     exit 1
   }
-  echo "engine toolchain: ninja and clang-cl found"
+  command -v cl >/dev/null 2>&1 || {
+    echo "warning: cl is not on PATH; run from a Visual Studio developer prompt" >&2
+    echo "         if the build cannot find the MSVC headers and libraries." >&2
+  }
+  echo "engine toolchain: ninja and clang found"
   ;;
 esac
 

@@ -97,7 +97,7 @@ mod engine {
     /// developer prompt is needed, while staying an MSVC-ABI, MSVC-naming
     /// compiler: the archives here link into a Rust `*-pc-windows-msvc` binary,
     /// which a GNU-driver clang would break by emitting `libllama.a`.
-    fn windows_generator(cmd: &mut Command) {
+    fn windows_generator(cmd: &mut Command, src: &Path) {
         if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() != "windows" {
             return;
         }
@@ -108,36 +108,40 @@ mod engine {
             );
             return;
         }
-        cmd.args(["-G", "Ninja"]);
-        windows_compiler_env(cmd);
-    }
-
-    /// Names the compiler for a cmake step, including the *build* steps.
-    ///
-    /// The vulkan-shaders-gen child configures itself during the parent's
-    /// build, not during its configure, so a `CC` set only on the configure
-    /// command never reaches it: it then picks whatever it finds on PATH, which
-    /// on the hosted image is a GNU-driver `clang`. That builds the tool with
-    /// GNU-style dependency flags and dies on its own `.obj.d` file, and the
-    /// two sides are visible in the log by their diagnostics -- `file(line,col)`
-    /// from the parent's clang-cl against `file:line:col` from the child.
-    fn windows_compiler_env(cmd: &mut Command) {
-        if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() != "windows" {
-            return;
-        }
-        if on_path("clang-cl") {
-            cmd.env("CC", "clang-cl").env("CXX", "clang-cl");
-        }
+        cmd.args(["-G", WINDOWS_GENERATOR]);
+        cmd.arg(format!(
+            "-DCMAKE_TOOLCHAIN_FILE={}",
+            src.join("cmake/x64-windows-llvm.cmake").display()
+        ));
     }
 
     fn on_path(exe: &str) -> bool {
         let Some(path) = env::var_os("PATH") else {
             return false;
         };
-        env::split_paths(&path).any(|dir| {
-            dir.join(exe).is_file() || dir.join(format!("{exe}.exe")).is_file()
-        })
+        env::split_paths(&path)
+            .any(|dir| dir.join(exe).is_file() || dir.join(format!("{exe}.exe")).is_file())
     }
+
+    /// upstream llama.cpp's own Windows recipe for this exact configuration
+    /// (`GGML_BACKEND_DL` plus `GGML_CPU_ALL_VARIANTS`), down to the generator
+    /// and toolchain file, and it is what its release job runs on this very
+    /// image -- its ccache key says `windows-2025-vs2026`.
+    ///
+    /// Both halves are load-bearing. Ninja keeps the vulkan-shaders-gen
+    /// ExternalProject out of MSBuild, which cannot identify a compiler when
+    /// nested. The toolchain file sets `CMAKE_SYSTEM_NAME`, which makes
+    /// `CMAKE_CROSSCOMPILING` true, which is what makes ggml generate a host
+    /// toolchain and *pass it to that child* -- the only channel by which the
+    /// child gets a compiler at all, since ExternalProject forwards nothing but
+    /// the generator. It also selects clang's GNU driver, whose branch in
+    /// ggml-cpu/CMakeLists.txt carries the per-variant `-mavxvnni` flags; the
+    /// MSVC branch beside it only defines `__AVXVNNI__` and adds no flag, so
+    /// clang-cl refused `_mm256_dpbusd_avx_epi32` in the alderlake variant.
+    /// Artifact naming stays MSVC (`ggml.lib`, no `lib` prefix) because that
+    /// follows the target, not the driver, which is what lets these archives
+    /// link into a Rust `*-pc-windows-msvc` binary.
+    const WINDOWS_GENERATOR: &str = "Ninja Multi-Config";
 
     /// The cmake configuration. Named on every build and install step, not
     /// just at configure time: a multi-config generator (Visual Studio, which
@@ -259,7 +263,7 @@ mod engine {
         discard_stale_ggml_cache(&build, &src.join("ggml"));
 
         let mut cfg = Command::new("cmake");
-        windows_generator(&mut cfg);
+        windows_generator(&mut cfg, src);
         cfg.arg("-S").arg(&wrapper).arg("-B").arg(&build);
         cfg.arg(format!(
             "-DJAN_GGML_SRC={}",
@@ -330,7 +334,6 @@ mod engine {
         run(&mut cfg, "cmake configure (ggml)");
 
         let mut bld = Command::new("cmake");
-        windows_compiler_env(&mut bld);
         bld.arg("--build").arg(&build).args(["--config", CONFIG]);
         if let Ok(jobs) = env::var("NUM_JOBS") {
             bld.arg("-j").arg(jobs);
@@ -338,7 +341,6 @@ mod engine {
         run(&mut bld, "cmake build (ggml)");
 
         let mut inst = Command::new("cmake");
-        windows_compiler_env(&mut inst);
         inst.arg("--install").arg(&build).args(["--config", CONFIG]);
         run(&mut inst, "cmake install (ggml)");
 
@@ -352,7 +354,7 @@ mod engine {
         fs::create_dir_all(&out).expect("could not create the cmake build dir");
 
         let mut cfg = Command::new("cmake");
-        windows_generator(&mut cfg);
+        windows_generator(&mut cfg, src);
         cfg.arg("-S").arg(src).arg("-B").arg(&out);
         cfg.arg(format!(
             "-DCMAKE_PREFIX_PATH={}",
@@ -400,7 +402,6 @@ mod engine {
         run(&mut cfg, "cmake configure (llama)");
 
         let mut bld = Command::new("cmake");
-        windows_compiler_env(&mut bld);
         bld.arg("--build")
             .arg(&out)
             .args(["--config", CONFIG])
@@ -441,7 +442,7 @@ mod engine {
         else {
             return;
         };
-        let want = if on_path("ninja") { "Ninja" } else { return };
+        let want = if on_path("ninja") { WINDOWS_GENERATOR } else { return };
         if cached != want {
             println!(
                 "cargo:warning=cmake generator changed ({cached} -> {want}); discarding the cache"
