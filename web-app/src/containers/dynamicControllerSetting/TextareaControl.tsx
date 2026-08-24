@@ -24,7 +24,7 @@ export function TextareaControl({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       rows={rows}
-      className={cn('w-full resize-none')}
+      className={cn('w-full resize-none max-h-64 overflow-y-auto')}
       spellCheck={spellCheckChatInput}
       data-gramm={spellCheckChatInput}
       data-gramm_editor={spellCheckChatInput}
