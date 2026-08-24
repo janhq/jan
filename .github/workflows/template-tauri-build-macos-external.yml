@@ -15,9 +15,24 @@ on:
         type: string
         default: 'nightly'
         description: 'The channel to use for this job'
+      runner:
+        required: false
+        type: string
+        default: 'macos-latest'
+        description: >
+          Label of the runner to build on. A self-hosted arm64 label is what
+          carries the engine toolchain; the default keeps the GitHub-hosted
+          image, where Xcode alone is enough for the metal variant.
+      engine_variant:
+        required: false
+        type: string
+        default: 'metal'
+        description: >
+          JAN_ENGINE_VARIANT for the bundled jan-llama-worker. Metal is the only
+          backend worth shipping on macOS.
 jobs:
   build-macos-external:
-    runs-on: macos-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -110,7 +125,7 @@ jobs:
       - name: Set up the llama.cpp engine toolchain
         uses: ./.github/actions/setup-engine-toolchain
         with:
-          variant: metal
+          variant: ${{ inputs.engine_variant }}
 
       - name: Build app
         run: |

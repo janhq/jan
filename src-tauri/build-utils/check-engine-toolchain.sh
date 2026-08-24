@@ -12,13 +12,22 @@ set -uo pipefail
 VARIANT="${1:?usage: check-engine-toolchain.sh <variant> <features>}"
 FEATURES="${2-}"
 
-case "$VARIANT" in
-cuda12 | cuda13)
+# The variant is a `-` separated backend list, so each toolkit is asked for by
+# the token that needs it rather than by the whole name.
+TOKENS=" ${VARIANT//-/ } "
+has_token() { case "$TOKENS" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+want=""
+for token in $TOKENS; do
+  case "$token" in
+  cuda*) want="${token#cuda}" ;;
+  esac
+done
+if [ -n "$want" ]; then
   command -v nvcc >/dev/null 2>&1 || {
     echo "error: JAN_ENGINE_VARIANT=$VARIANT needs nvcc on PATH" >&2
     exit 1
   }
-  want="${VARIANT#cuda}"
   got=$(nvcc --version | sed -n 's/.*release \([0-9]*\)\..*/\1/p' | head -1)
   if [ "$got" != "$want" ]; then
     echo "error: JAN_ENGINE_VARIANT=$VARIANT but nvcc reports CUDA $got" >&2
@@ -26,15 +35,15 @@ cuda12 | cuda13)
     exit 1
   fi
   echo "engine toolchain: CUDA $got matches $VARIANT"
-  ;;
-rocm)
+fi
+
+if has_token hip || has_token rocm; then
   command -v hipcc >/dev/null 2>&1 || {
-    echo "error: JAN_ENGINE_VARIANT=rocm needs hipcc on PATH (install ROCm)" >&2
+    echo "error: JAN_ENGINE_VARIANT=$VARIANT needs hipcc on PATH (install ROCm)" >&2
     exit 1
   }
   echo "engine toolchain: hipcc found"
-  ;;
-esac
+fi
 
 command -v cmake >/dev/null 2>&1 || {
   echo "error: building the engine needs cmake on PATH" >&2

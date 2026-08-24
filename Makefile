@@ -279,10 +279,17 @@ endif
 # variant ships the full set of x86-64/ARM microarchitecture modules and ggml
 # scores them at load time. That is what "common CPUs" means here.
 #
+# The variant is a `-` separated list of backends, so a shipping build names
+# every backend it carries and one worker covers the machine it lands on:
+#
 #   vulkan  (default)  vulkan
 #   cuda13             cuda + vulkan   (needs CUDA 13 toolkit on PATH)
 #   cuda12             cuda + vulkan   (needs CUDA 12 toolkit on PATH)
 #   rocm               hip  + vulkan   (needs ROCm/HIP)
+#   cuda13-hip-vulkan  all three       (needs the CUDA and the HIP toolkit)
+#
+# cuda12 and cuda13 cannot be combined: the CUDA major is whichever nvcc is on
+# PATH, one toolkit per configure, and both emit libggml-cuda.so.
 #
 # CUDA 12 vs 13 is not a cmake flag -- it is whichever nvcc is found, and
 # llama.cpp adapts CMAKE_CUDA_ARCHITECTURES to it on its own (ggml-cuda's
@@ -291,6 +298,7 @@ endif
 # check-engine-toolchain asserts the toolkit matches the variant name rather
 # than letting a cuda13 build ship labelled cuda12.
 COMMA := ,
+SPACE := $(subst ,, )
 JAN_ENGINE_VARIANT ?= vulkan
 
 # Shipping builds pair Vulkan with CUDA/ROCm so the app still offloads when the
@@ -308,21 +316,33 @@ JAN_ENGINE_VULKAN_FALLBACK ?= 1
 JAN_ENGINE_CUDA_ARCHS ?=
 export JAN_ENGINE_CUDA_ARCHS
 
-ifeq ($(JAN_ENGINE_VARIANT),vulkan)
-    ENGINE_FEATURES := engine-vulkan
-else ifeq ($(JAN_ENGINE_VARIANT),cuda13)
-    ENGINE_FEATURES := engine-cuda$(if $(filter 1,$(JAN_ENGINE_VULKAN_FALLBACK)),$(COMMA)engine-vulkan,)
-else ifeq ($(JAN_ENGINE_VARIANT),cuda12)
-    ENGINE_FEATURES := engine-cuda$(if $(filter 1,$(JAN_ENGINE_VULKAN_FALLBACK)),$(COMMA)engine-vulkan,)
-else ifeq ($(JAN_ENGINE_VARIANT),rocm)
-    ENGINE_FEATURES := engine-hip$(if $(filter 1,$(JAN_ENGINE_VULKAN_FALLBACK)),$(COMMA)engine-vulkan,)
-else ifeq ($(JAN_ENGINE_VARIANT),metal)
-    ENGINE_FEATURES := engine-metal
-else ifeq ($(JAN_ENGINE_VARIANT),cpu)
-    ENGINE_FEATURES := engine
-else
-    $(error Unknown JAN_ENGINE_VARIANT '$(JAN_ENGINE_VARIANT)'. Use vulkan, cuda12, cuda13, rocm, metal or cpu)
+# One token to one cargo feature. `engine` alone is the CPU-only worker, and it
+# is implied by every other feature, so `cpu` maps to it and the GPU tokens do
+# not have to name it.
+ENGINE_TOKENS := $(subst -, ,$(JAN_ENGINE_VARIANT))
+ENGINE_FEATURE_cpu := engine
+ENGINE_FEATURE_vulkan := engine-vulkan
+ENGINE_FEATURE_metal := engine-metal
+ENGINE_FEATURE_cuda12 := engine-cuda
+ENGINE_FEATURE_cuda13 := engine-cuda
+ENGINE_FEATURE_hip := engine-hip
+ENGINE_FEATURE_rocm := engine-hip
+
+ENGINE_UNKNOWN_TOKENS := $(strip $(foreach t,$(ENGINE_TOKENS),$(if $(ENGINE_FEATURE_$(t)),,$(t))))
+ifneq ($(ENGINE_UNKNOWN_TOKENS),)
+    $(error Unknown JAN_ENGINE_VARIANT '$(JAN_ENGINE_VARIANT)': no backend named '$(ENGINE_UNKNOWN_TOKENS)'. Tokens are cpu, vulkan, metal, cuda12, cuda13, hip/rocm, joined by '-')
 endif
+ifneq ($(word 2,$(filter cuda12 cuda13,$(ENGINE_TOKENS))),)
+    $(error JAN_ENGINE_VARIANT '$(JAN_ENGINE_VARIANT)' names more than one CUDA major, which one build cannot carry)
+endif
+
+# The fallback adds vulkan whenever a vendor runtime is in play and the variant
+# did not already ask for it. $(sort) dedupes, so naming vulkan twice is
+# harmless and the feature list is deterministic.
+ENGINE_VENDOR_FEATURES := $(filter engine-cuda engine-hip,$(foreach t,$(ENGINE_TOKENS),$(ENGINE_FEATURE_$(t))))
+ENGINE_FEATURE_LIST := $(sort $(foreach t,$(ENGINE_TOKENS),$(ENGINE_FEATURE_$(t))) \
+    $(if $(ENGINE_VENDOR_FEATURES),$(if $(filter 1,$(JAN_ENGINE_VULKAN_FALLBACK)),engine-vulkan,),))
+ENGINE_FEATURES := $(subst $(SPACE),$(COMMA),$(ENGINE_FEATURE_LIST))
 
 ENGINE_PLUGIN_DIR := src-tauri/plugins/tauri-plugin-llamacpp
 ENGINE_BIN_DIR := src-tauri/resources/bin
@@ -458,22 +478,7 @@ else
 	$(call with_engine_log,cd $(ENGINE_PLUGIN_DIR) && $(ENGINE_CARGO_JOBS) cargo build --release --features $(ENGINE_FEATURES) --bin jan-llama-worker)
 	bash src-tauri/build-utils/stage-engine.sh release
 endif
-ifeq ($(DETECTED_OS),Darwin)
-	@echo "Checking for code signing identity..."; \
-	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
-	if [ -n "$$SIGNING_IDENTITY" ]; then \
-		echo "Signing the engine worker and ggml libraries with: $$SIGNING_IDENTITY"; \
-		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" \
-			$(ENGINE_BIN_DIR)/jan-llama-worker; \
-		for lib in $(ENGINE_BIN_DIR)/libggml*.dylib; do \
-			[ -e "$$lib" ] || continue; \
-			codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" "$$lib"; \
-		done; \
-		echo "Code signing completed successfully"; \
-	else \
-		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
-	fi
-endif
+	bash src-tauri/build-utils/sign-engine.sh
 
 # Debug worker for local dev. Same staging, so `make dev` behaves like a bundle.
 build-engine-dev: engine-source check-engine-toolchain

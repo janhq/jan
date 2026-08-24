@@ -15,9 +15,25 @@ on:
         type: string
         default: 'nightly'
         description: 'The channel to use for this job'
+      runner:
+        required: false
+        type: string
+        default: 'windows-latest'
+        description: >
+          Label of the runner to build on. A self-hosted label is what carries
+          the engine toolchain; the default keeps the GitHub-hosted image, which
+          only has enough for the vulkan variant.
+      engine_variant:
+        required: false
+        type: string
+        default: 'vulkan'
+        description: >
+          JAN_ENGINE_VARIANT for the bundled jan-llama-worker: a `-` joined
+          backend list, e.g. vulkan, cuda13-vulkan, rocm-vulkan. One CUDA major
+          per bundle, so cuda12 and cuda13 are separate builds.
 jobs:
   build-windows-x64-external:
-    runs-on: windows-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -162,7 +178,7 @@ jobs:
       - name: Set up the llama.cpp engine toolchain
         uses: ./.github/actions/setup-engine-toolchain
         with:
-          variant: vulkan
+          variant: ${{ inputs.engine_variant }}
 
       - name: Build app
         shell: bash

@@ -28,6 +28,22 @@ on:
         type: string
         default: 'nightly'
         description: 'The channel to use for this job'
+      runner:
+        required: false
+        type: string
+        default: 'windows-latest'
+        description: >
+          Label of the runner to build on. A self-hosted label is what carries
+          the engine toolchain; the default keeps the GitHub-hosted image, which
+          only has enough for the vulkan variant.
+      engine_variant:
+        required: false
+        type: string
+        default: 'vulkan'
+        description: >
+          JAN_ENGINE_VARIANT for the bundled jan-llama-worker: a `-` joined
+          backend list, e.g. vulkan, cuda13-vulkan, rocm-vulkan. One CUDA major
+          per bundle, so cuda12 and cuda13 are separate builds.
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
@@ -63,7 +79,7 @@ on:
 
 jobs:
   build-windows-x64:
-    runs-on: windows-latest
+    runs-on: ${{ inputs.runner }}
     outputs:
       WIN_SIG: ${{ steps.metadata.outputs.WIN_SIG }}
       FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
@@ -225,12 +241,13 @@ jobs:
           yarn config set -H enableImmutableInstalls false
 
       # `make build` compiles jan-llama-worker, which the NSIS and MSI bundles
-      # both carry. Vulkan covers AMD, Intel and NVIDIA here through one
-      # driver-provided backend; a CUDA variant needs a toolkit on the runner.
+      # both carry. The default variant is vulkan, which covers AMD, Intel and
+      # NVIDIA through one driver-provided backend; a cuda variant needs a
+      # caller-supplied runner that carries the toolkit.
       - name: Set up the llama.cpp engine toolchain
         uses: ./.github/actions/setup-engine-toolchain
         with:
-          variant: vulkan
+          variant: ${{ inputs.engine_variant }}
 
       - name: Build app
         shell: bash
@@ -238,6 +255,7 @@ jobs:
           make build
         env:
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          JAN_ENGINE_REQUIRE_SIGNING: '1'
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}

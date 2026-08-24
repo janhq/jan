@@ -28,6 +28,21 @@ on:
         type: string
         default: 'nightly'
         description: 'The channel to use for this job'
+      runner:
+        required: false
+        type: string
+        default: 'macos-latest'
+        description: >
+          Label of the runner to build on. A self-hosted arm64 label is what
+          carries the engine toolchain; the default keeps the GitHub-hosted
+          image, where Xcode alone is enough for the metal variant.
+      engine_variant:
+        required: false
+        type: string
+        default: 'metal'
+        description: >
+          JAN_ENGINE_VARIANT for the bundled jan-llama-worker. Metal is the only
+          backend worth shipping on macOS.
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
@@ -63,7 +78,7 @@ on:
 
 jobs:
   build-macos:
-    runs-on: macos-latest
+    runs-on: ${{ inputs.runner }}
     outputs:
       MAC_UNIVERSAL_SIG: ${{ steps.metadata.outputs.MAC_UNIVERSAL_SIG }}
       FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
@@ -182,17 +197,19 @@ jobs:
 
       # `make build` compiles jan-llama-worker, which the dmg bundles. Metal is
       # the only backend worth shipping on macOS, and it needs nothing beyond
-      # Xcode.
+      # Xcode, so this runs on the GitHub-hosted image unless a caller says
+      # otherwise.
       - name: Set up the llama.cpp engine toolchain
         uses: ./.github/actions/setup-engine-toolchain
         with:
-          variant: metal
+          variant: ${{ inputs.engine_variant }}
 
       - name: Build app
         run: |
           make build
         env:
           NODE_OPTIONS: "--max-old-space-size=4196"
+          JAN_ENGINE_REQUIRE_SIGNING: '1'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APP_PATH: '.'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
@@ -219,6 +236,25 @@ jobs:
               *) echo "::warning::jan-llama-worker has no $want slice, so local inference will not start on $want Macs" ;;
             esac
           done
+
+      # Tauri signs the .app and notarizes the dmg, but nothing in that path
+      # would notice an unsigned nested binary until a user's Gatekeeper did.
+      - name: Verify the signed and notarized bundle
+        shell: bash
+        run: |
+          bundle=$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)
+          echo "Verifying $bundle"
+          codesign --verify --deep --strict --verbose=2 "$bundle"
+          worker=$(find "$bundle/Contents/Resources" -name jan-llama-worker | head -1)
+          if [ -z "$worker" ]; then
+            echo "error: no jan-llama-worker inside $bundle" >&2
+            exit 1
+          fi
+          codesign --verify --strict "$worker"
+          dmg=$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' | head -1)
+          # A notarized dmg has a stapled ticket; spctl is what Gatekeeper runs.
+          xcrun stapler validate "$dmg"
+          spctl --assess --type install --verbose=2 "$dmg"
 
       # Publish app
 
