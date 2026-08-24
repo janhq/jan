@@ -2,6 +2,11 @@
 APPIMAGETOOL="./.cache/build-tools/appimagetool"
 RELEASE_CHANNEL=${RELEASE_CHANNEL:-"stable"}
 
+# appimagetool is itself an AppImage, so it mounts itself through FUSE, which
+# the hosted runners no longer provide. This runs outside shim-linuxdeploy.sh,
+# so it needs its own copy of the fallback.
+export APPIMAGE_EXTRACT_AND_RUN=1
+
 mkdir -p ./.cache/build-tools
 wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O "${APPIMAGETOOL}" || { echo "Failed to download appimagetool."; exit 1; }
 chmod +x "${APPIMAGETOOL}"

@@ -109,6 +109,22 @@ mod engine {
             return;
         }
         cmd.args(["-G", "Ninja"]);
+        windows_compiler_env(cmd);
+    }
+
+    /// Names the compiler for a cmake step, including the *build* steps.
+    ///
+    /// The vulkan-shaders-gen child configures itself during the parent's
+    /// build, not during its configure, so a `CC` set only on the configure
+    /// command never reaches it: it then picks whatever it finds on PATH, which
+    /// on the hosted image is a GNU-driver `clang`. That builds the tool with
+    /// GNU-style dependency flags and dies on its own `.obj.d` file, and the
+    /// two sides are visible in the log by their diagnostics -- `file(line,col)`
+    /// from the parent's clang-cl against `file:line:col` from the child.
+    fn windows_compiler_env(cmd: &mut Command) {
+        if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() != "windows" {
+            return;
+        }
         if on_path("clang-cl") {
             cmd.env("CC", "clang-cl").env("CXX", "clang-cl");
         }
@@ -264,6 +280,22 @@ mod engine {
             // ggml picks up ccache or sccache, whichever it finds.
             "-DGGML_CCACHE=ON",
         ]);
+        // Every ggml library is staged into one directory, so each can find
+        // its siblings from its own location. cmake otherwise strips the rpath
+        // on install ("Set non-toolchain portion of runtime path to ''"),
+        // leaving each backend module declaring a bare `libggml-base.so.0` that
+        // nothing can resolve on its own: at runtime the worker has already
+        // loaded it, but AppImage bundling reads these files cold and fails the
+        // whole build on `Could not find dependency: libggml-base.so.0`.
+        //
+        // ELF only. macOS resolves this today through the worker's own
+        // @loader_path and is left alone.
+        if !matches!(
+            env::var("CARGO_CFG_TARGET_OS").unwrap_or_default().as_str(),
+            "macos" | "ios" | "windows"
+        ) {
+            cfg.arg("-DCMAKE_INSTALL_RPATH=$ORIGIN");
+        }
         if cpu_all_variants_supported() {
             cfg.arg("-DGGML_CPU_ALL_VARIANTS=ON");
         }
@@ -298,6 +330,7 @@ mod engine {
         run(&mut cfg, "cmake configure (ggml)");
 
         let mut bld = Command::new("cmake");
+        windows_compiler_env(&mut bld);
         bld.arg("--build").arg(&build).args(["--config", CONFIG]);
         if let Ok(jobs) = env::var("NUM_JOBS") {
             bld.arg("-j").arg(jobs);
@@ -305,6 +338,7 @@ mod engine {
         run(&mut bld, "cmake build (ggml)");
 
         let mut inst = Command::new("cmake");
+        windows_compiler_env(&mut inst);
         inst.arg("--install").arg(&build).args(["--config", CONFIG]);
         run(&mut inst, "cmake install (ggml)");
 
@@ -366,6 +400,7 @@ mod engine {
         run(&mut cfg, "cmake configure (llama)");
 
         let mut bld = Command::new("cmake");
+        windows_compiler_env(&mut bld);
         bld.arg("--build")
             .arg(&out)
             .args(["--config", CONFIG])
