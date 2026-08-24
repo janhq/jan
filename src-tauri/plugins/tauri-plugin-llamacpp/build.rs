@@ -111,8 +111,14 @@ mod engine {
         cmd.args(["-G", WINDOWS_GENERATOR]);
         cmd.arg(format!(
             "-DCMAKE_TOOLCHAIN_FILE={}",
-            src.join("cmake/x64-windows-llvm.cmake").display()
+            cmake_path(&src.join("cmake/x64-windows-llvm.cmake"))
         ));
+    }
+
+    /// cmake takes forward slashes on every platform and treats a backslash as
+    /// an escape in some contexts, so paths handed to `-D` go through here.
+    fn cmake_path(p: &Path) -> String {
+        p.display().to_string().replace('\\', "/")
     }
 
     fn on_path(exe: &str) -> bool {
@@ -262,6 +268,30 @@ mod engine {
         // value would silently keep building the old tree, so key off that.
         discard_stale_ggml_cache(&build, &src.join("ggml"));
 
+        // ggml builds vulkan-shaders-gen as an ExternalProject and, when
+        // cross-compiling -- which the Windows toolchain file makes true --
+        // hands it a host toolchain. Left to itself it runs `find_program(NAMES
+        // cl gcc clang)`, and with no developer environment there is no `cl`,
+        // so it settles on the GNU-driver clang: cmake then asks for a GNU
+        // depfile, whose directory Ninja Multi-Config has not created, and the
+        // child dies on `opening dependency file ...obj.d`. Naming an
+        // MSVC-frontend compiler instead puts it back on /showIncludes, which
+        // needs no such file -- and needs no vcvars either, since clang-cl
+        // finds the MSVC headers and libraries by itself.
+        let host_toolchain = out.join("vulkan-shaders-gen-host.cmake");
+        if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() == "windows" {
+            fs::write(
+                &host_toolchain,
+                "set(CMAKE_BUILD_TYPE Release)\n\
+                 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)\n\
+                 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER)\n\
+                 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER)\n\
+                 set(CMAKE_C_COMPILER clang-cl)\n\
+                 set(CMAKE_CXX_COMPILER clang-cl)\n",
+            )
+            .expect("could not write the shader-generator host toolchain");
+        }
+
         let mut cfg = Command::new("cmake");
         windows_generator(&mut cfg, src);
         cfg.arg("-S").arg(&wrapper).arg("-B").arg(&build);
@@ -299,6 +329,12 @@ mod engine {
             "macos" | "ios" | "windows"
         ) {
             cfg.arg("-DCMAKE_INSTALL_RPATH=$ORIGIN");
+        }
+        if host_toolchain.is_file() {
+            cfg.arg(format!(
+                "-DGGML_VULKAN_SHADERS_GEN_TOOLCHAIN={}",
+                cmake_path(&host_toolchain)
+            ));
         }
         if cpu_all_variants_supported() {
             cfg.arg("-DGGML_CPU_ALL_VARIANTS=ON");
