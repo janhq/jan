@@ -294,6 +294,13 @@ mod engine {
             "-DLLAMA_SUBPROCESS=OFF",
             // mtmd's video path fork/execs ffmpeg.
             "-DMTMD_VIDEO=OFF",
+            // cpp-httplib's TLS, which only serves llama.cpp's own HTTPS model
+            // downloads -- Jan fetches models in Rust and the worker listens on
+            // loopback. On by default, and it puts OpenSSL symbols in an
+            // archive nothing links an OpenSSL into: on Linux they resolve by
+            // accident against the one reqwest already pulls in, on macOS,
+            // where reqwest uses Security.framework, the link fails outright.
+            "-DLLAMA_OPENSSL=OFF",
             "-DGGML_NATIVE=OFF",
             "-DLLAMA_BUILD_IS_DEV=OFF",
         ]);
@@ -505,15 +512,29 @@ mod engine {
     fn run(cmd: &mut Command, what: &str) {
         let log_path = env::var_os("JAN_ENGINE_BUILD_LOG").map(PathBuf::from);
 
-        let status = match &log_path {
-            Some(path) => {
-                let file = fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(path)
-                    .unwrap_or_else(|e| {
-                        panic!("could not open {} for the build log: {e}", path.display())
-                    });
+        // The directory is the caller's to name and need not exist yet -- the
+        // Makefile points this at src-tauri/target, which the plugin's own
+        // cargo build never creates. A log that cannot be opened costs progress
+        // reporting, not the build, so fall back to inheriting stdio.
+        let log = log_path.as_ref().and_then(|path| {
+            if let Some(dir) = path.parent() {
+                let _ = fs::create_dir_all(dir);
+            }
+            fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .map_err(|e| {
+                    println!(
+                        "cargo:warning=could not open {} for the build log: {e}",
+                        path.display()
+                    );
+                })
+                .ok()
+        });
+
+        let status = match log {
+            Some(file) => {
                 let err = file
                     .try_clone()
                     .expect("could not duplicate the build log handle");
