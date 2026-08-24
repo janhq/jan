@@ -17,6 +17,10 @@ import { getProviderTitle } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { getModelCapabilities } from '@/lib/models'
 import { toast } from 'sonner'
+import {
+  isLocalEngineProvider,
+  withRemoteCtxLen,
+} from '@/lib/model-context-size'
 
 type DialogAddModelProps = {
   provider: ModelProvider
@@ -46,7 +50,8 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
       return // Don't submit if model ID already exists
     }
 
-    // Create the new model
+    // Create the new model. Remote/OpenAI-compatible models get a ctx_len
+    // setting so Context Size is editable and the overflow banner can persist it.
     const newModel = {
       id: modelId,
       model: modelId,
@@ -54,9 +59,12 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
       capabilities: getModelCapabilities(provider.provider, modelId),
       version: '1.0',
     }
+    const seededModel = isLocalEngineProvider(provider.provider)
+      ? newModel
+      : withRemoteCtxLen(newModel)
 
     // Update the provider with the new model
-    const updatedModels = [...provider.models, newModel]
+    const updatedModels = [...provider.models, seededModel]
     updateProvider(provider.provider, {
       ...provider,
       models: updatedModels,
