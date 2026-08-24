@@ -50,6 +50,25 @@ command -v cmake >/dev/null 2>&1 || {
   exit 1
 }
 
+# Windows only. ggml builds vulkan-shaders-gen as an ExternalProject that
+# reconfigures with the parent's generator and no compiler, and under the Visual
+# Studio generator that nested configure cannot identify one -- so build.rs asks
+# for Ninja there, and names clang-cl in the environment for both configures.
+case "$(uname -s)" in
+MINGW* | MSYS* | CYGWIN*)
+  command -v ninja >/dev/null 2>&1 || {
+    echo "error: the engine build needs ninja on PATH on Windows" >&2
+    echo "       (the Visual Studio generator cannot build vulkan-shaders-gen)" >&2
+    exit 1
+  }
+  command -v clang-cl >/dev/null 2>&1 || {
+    echo "error: the engine build needs clang-cl on PATH on Windows (install LLVM)" >&2
+    exit 1
+  }
+  echo "engine toolchain: ninja and clang-cl found"
+  ;;
+esac
+
 if command -v ccache >/dev/null 2>&1; then
   max=$(ccache -s 2>/dev/null | awk -F': *' '/[Mm]ax cache size/ {print $2; exit}')
   echo "engine toolchain: ccache found${max:+ (max $max)}"

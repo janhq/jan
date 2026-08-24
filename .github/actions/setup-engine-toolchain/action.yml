@@ -78,6 +78,22 @@ runs:
           ;;
         esac
 
+    # ggml builds vulkan-shaders-gen as an ExternalProject, which reconfigures
+    # itself with the parent's generator and no compiler at all; under the
+    # Visual Studio generator that nested configure cannot identify one, so
+    # build.rs asks for Ninja on Windows. The hosted image carries LLVM (for
+    # clang-cl) but ninja is not dependable on PATH, so install it when missing.
+    - name: Provision Ninja
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        if command -v ninja >/dev/null 2>&1; then
+          echo "engine toolchain: ninja already on the image"
+          exit 0
+        fi
+        choco install ninja -y --no-progress
+        echo "C:\ProgramData\chocolatey\bin" >> "$GITHUB_PATH"
+
     # Asserts the image, not the steps above: a mis-provisioned runner fails
     # here in seconds instead of five minutes into `make build`.
     - name: Verify the toolchain

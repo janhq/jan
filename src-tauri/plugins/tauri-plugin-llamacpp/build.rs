@@ -80,6 +80,49 @@ mod engine {
         "vendor-hash",
     ];
 
+    /// Windows needs a generator that is not Visual Studio, and a compiler
+    /// named in the environment rather than found by one.
+    ///
+    /// ggml builds `vulkan-shaders-gen` as an `ExternalProject`, which
+    /// reconfigures itself with the parent's generator *and nothing else* --
+    /// verified from a generated `-cfgcmd.txt`, whose whole command line is the
+    /// cache args the caller listed plus `-G<parent generator>`. Under the
+    /// Visual Studio generator that child configure runs inside MSBuild, where
+    /// it cannot identify a compiler at all ("The C compiler identification is
+    /// unknown", then "No CMAKE_C_COMPILER could be found") and the engine
+    /// build dies. Ninja keeps both configures flat and non-recursive, and
+    /// `CC`/`CXX` reach the child because it inherits this environment -- the
+    /// one channel ExternalProject cannot strip. clang-cl rather than cl
+    /// because it locates the MSVC toolchain and Windows SDK itself, so no
+    /// developer prompt is needed, while staying an MSVC-ABI, MSVC-naming
+    /// compiler: the archives here link into a Rust `*-pc-windows-msvc` binary,
+    /// which a GNU-driver clang would break by emitting `libllama.a`.
+    fn windows_generator(cmd: &mut Command) {
+        if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() != "windows" {
+            return;
+        }
+        if !on_path("ninja") {
+            println!(
+                "cargo:warning=ninja is not on PATH, so cmake will pick the Visual Studio \
+                 generator, whose nested vulkan-shaders-gen configure cannot find a compiler"
+            );
+            return;
+        }
+        cmd.args(["-G", "Ninja"]);
+        if on_path("clang-cl") {
+            cmd.env("CC", "clang-cl").env("CXX", "clang-cl");
+        }
+    }
+
+    fn on_path(exe: &str) -> bool {
+        let Some(path) = env::var_os("PATH") else {
+            return false;
+        };
+        env::split_paths(&path).any(|dir| {
+            dir.join(exe).is_file() || dir.join(format!("{exe}.exe")).is_file()
+        })
+    }
+
     /// The cmake configuration. Named on every build and install step, not
     /// just at configure time: a multi-config generator (Visual Studio, which
     /// is cmake's default on Windows) ignores CMAKE_BUILD_TYPE entirely and
@@ -200,6 +243,7 @@ mod engine {
         discard_stale_ggml_cache(&build, &src.join("ggml"));
 
         let mut cfg = Command::new("cmake");
+        windows_generator(&mut cfg);
         cfg.arg("-S").arg(&wrapper).arg("-B").arg(&build);
         cfg.arg(format!(
             "-DJAN_GGML_SRC={}",
@@ -274,6 +318,7 @@ mod engine {
         fs::create_dir_all(&out).expect("could not create the cmake build dir");
 
         let mut cfg = Command::new("cmake");
+        windows_generator(&mut cfg);
         cfg.arg("-S").arg(src).arg("-B").arg(&out);
         cfg.arg(format!(
             "-DCMAKE_PREFIX_PATH={}",
@@ -342,7 +387,36 @@ mod engine {
     /// pointing at the old tree, and cmake then hard-fails with "does not match
     /// the source used to generate cache". Wiping is safe: everything in there
     /// is derived.
+    /// A build tree carries the generator it was configured with, and cmake
+    /// refuses to reuse it under another one. Switching to Ninja on Windows
+    /// would otherwise hard-fail on any tree an earlier Visual Studio configure
+    /// left behind, which is every local Windows checkout built before that
+    /// change.
+    fn discard_other_generator(build_dir: &Path) {
+        if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() != "windows" {
+            return;
+        }
+        let Ok(text) = fs::read_to_string(build_dir.join("CMakeCache.txt")) else {
+            return;
+        };
+        let Some(cached) = text
+            .lines()
+            .find_map(|l| l.strip_prefix("CMAKE_GENERATOR:INTERNAL="))
+            .map(str::trim)
+        else {
+            return;
+        };
+        let want = if on_path("ninja") { "Ninja" } else { return };
+        if cached != want {
+            println!(
+                "cargo:warning=cmake generator changed ({cached} -> {want}); discarding the cache"
+            );
+            let _ = fs::remove_dir_all(build_dir);
+        }
+    }
+
     fn discard_foreign_cache(build_dir: &Path, src: &Path) {
+        discard_other_generator(build_dir);
         let cache = build_dir.join("CMakeCache.txt");
         let Ok(text) = fs::read_to_string(&cache) else {
             return;
@@ -373,6 +447,7 @@ mod engine {
     /// generated wrapper (whose path is stable), so the value that identifies
     /// the source is the cached `JAN_GGML_SRC`.
     fn discard_stale_ggml_cache(build_dir: &Path, ggml_src: &Path) {
+        discard_other_generator(build_dir);
         let cache = build_dir.join("CMakeCache.txt");
         let Ok(text) = fs::read_to_string(&cache) else {
             return;

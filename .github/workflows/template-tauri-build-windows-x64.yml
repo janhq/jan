@@ -36,12 +36,10 @@ on:
           Label of the runner to build on. A self-hosted label is what carries
           the engine toolchain; the default keeps a GitHub-hosted image, which
           has enough for the vulkan variant. Pinned rather than
-          `windows-latest`, which now resolves to `windows-2025-vs2026`: under
-          Visual Studio 18 the nested cmake configure that ggml's
-          vulkan-shaders-gen runs as an ExternalProject finds no compiler
-          ("The C compiler identification is unknown"), failing the engine
-          build. windows-2025 is also the image upstream llama.cpp tests its
-          Windows Vulkan build on.
+          `windows-latest` for reproducibility only -- it does not choose a
+          Visual Studio version: this label resolves to `windows-2025-vs2026`
+          too, which is why the engine build asks for Ninja rather than trying
+          to make the Visual Studio generator work.
       engine_variant:
         required: false
         type: string

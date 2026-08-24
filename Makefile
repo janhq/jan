@@ -162,9 +162,19 @@ test: test-prepare install-rust-targets
 # but it only checks existence, and no test executes them. Guarded with -e so
 # we never clobber a real local build or churn the cargo:rerun-if-changed
 # stamps these paths emit.
+#
+# The PowerShell arm is for cmd.exe only. CI runs make from a bash step, where
+# sh expands `$f`/`$p` to nothing before PowerShell ever sees them; the `-`
+# prefix then swallowed the syntax error and the stubs were silently never
+# created, so the app's build script failed on a missing resource instead.
 stub-resources:
-ifeq ($(DETECTED_OS),Windows)
+ifeq ($(RECIPE_SHELL_IS_CMD),yes)
 	-powershell -Command "New-Item -ItemType Directory -Force -Path src-tauri/resources/bin | Out-Null; foreach ($$f in @('jan-cli.exe','jan-llama-worker.exe','ggml-base.dll')) { $$p = Join-Path 'src-tauri/resources/bin' $$f; if (-not (Test-Path $$p)) { New-Item -ItemType File -Path $$p | Out-Null } }"
+else ifeq ($(DETECTED_OS),Windows)
+	@mkdir -p src-tauri/resources/bin
+	@[ -e src-tauri/resources/bin/jan-cli.exe ] || touch src-tauri/resources/bin/jan-cli.exe
+	@[ -e src-tauri/resources/bin/jan-llama-worker.exe ] || touch src-tauri/resources/bin/jan-llama-worker.exe
+	@ls src-tauri/resources/bin/ggml*.dll >/dev/null 2>&1 || touch src-tauri/resources/bin/ggml-base.dll
 else ifeq ($(DETECTED_OS),Darwin)
 	@mkdir -p src-tauri/resources/bin
 	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
