@@ -67,8 +67,8 @@ mod engine {
 
     /// Static archives from stage 2, in the order the linker group needs them
     /// declared. server-context <-> llama-common <-> mtmd have circular
-    /// references, so they go inside one --start-group rather than being
-    /// ordered by hand. No ggml here: stage 1 builds it shared.
+    /// references, so on GNU ld they go inside one --start-group rather than
+    /// being ordered by hand. No ggml here: stage 1 builds it shared.
     const ARCHIVES: &[&str] = &[
         "jan_llama_shim",
         "server-context",
@@ -436,19 +436,30 @@ mod engine {
         for d in dirs {
             println!("cargo:rustc-link-search=native={}", d.display());
         }
-        // One group: the archives reference each other cyclically.
-        println!("cargo:rustc-link-arg=-Wl,--start-group");
-        for a in ARCHIVES {
-            println!("cargo:rustc-link-arg=-l{a}");
+        let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+        let gnu_ld = !matches!(target_os.as_str(), "macos" | "ios" | "windows");
+
+        if gnu_ld {
+            // One group: the archives reference each other cyclically.
+            println!("cargo:rustc-link-arg=-Wl,--start-group");
+            for a in ARCHIVES {
+                println!("cargo:rustc-link-arg=-l{a}");
+            }
+            println!("cargo:rustc-link-arg=-Wl,--end-group");
+        } else {
+            // ld64 and link.exe re-scan archives until no undefined symbol is
+            // left, so they resolve the cycle themselves and reject the group
+            // flags outright.
+            for a in ARCHIVES {
+                println!("cargo:rustc-link-lib=static={a}");
+            }
         }
-        println!("cargo:rustc-link-arg=-Wl,--end-group");
 
         // ggml is shared now, so it links normally rather than into the group.
         for l in SHARED_LIBS {
             println!("cargo:rustc-link-lib=dylib={l}");
         }
 
-        let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
         match target_os.as_str() {
             "macos" | "ios" => {
                 println!("cargo:rustc-link-lib=dylib=c++");
@@ -473,9 +484,11 @@ mod engine {
         // The build-tree ggml, so `cargo test` and `cargo run` link and run
         // without a copy step. Packaging overrides this by placing the real
         // libraries next to the executable, which $ORIGIN/@loader_path finds
-        // first.
-        for d in dirs {
-            println!("cargo:rustc-link-arg=-Wl,-rpath,{}", d.display());
+        // first. Windows has no rpath at all.
+        if target_os != "windows" {
+            for d in dirs {
+                println!("cargo:rustc-link-arg=-Wl,-rpath,{}", d.display());
+            }
         }
     }
 

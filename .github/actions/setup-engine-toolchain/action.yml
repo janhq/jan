@@ -2,9 +2,10 @@ name: Setup engine toolchain
 description: >
   Selects a JAN_ENGINE_VARIANT and asserts the runner can build it. The engine
   jobs run on self-hosted runners whose images carry cmake, ccache and the
-  vendor toolkits, so this installs nothing -- it points ccache at the runner's
-  persistent cache and fails fast when the image cannot produce the variant it
-  was handed.
+  vendor toolkits, so this installs nothing for them -- it points ccache at the
+  runner's persistent cache and fails fast when the image cannot produce the
+  variant it was handed. The one exception is the Vulkan SDK, which the
+  GitHub-hosted images the desktop builds default to do not carry.
 
 inputs:
   variant:
@@ -38,6 +39,44 @@ runs:
           echo "CCACHE_DIR=${HOME}/.ccache" >> "$GITHUB_ENV"
         fi
         echo "CCACHE_MAXSIZE=${{ inputs.ccache-max }}" >> "$GITHUB_ENV"
+
+    # No GitHub-hosted image ships a Vulkan shader compiler, and the desktop
+    # templates default to the vulkan variant on one. Guarded on glslc rather
+    # than on the runner label so a self-hosted image that carries the SDK does
+    # no apt or installer work at all.
+    - name: Provision the Vulkan SDK
+      if: contains(format('-{0}-', inputs.variant), '-vulkan-')
+      shell: bash
+      run: |
+        if command -v glslc >/dev/null 2>&1; then
+          echo "engine toolchain: glslc already on the image"
+          exit 0
+        fi
+        case "$RUNNER_OS" in
+        Linux)
+          # LunarG rather than the distro packages: jammy ships Vulkan headers
+          # 1.3.204, older than the extensions ggml-vulkan compiles against.
+          codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
+          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc \
+            | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc >/dev/null
+          sudo wget -qO "/etc/apt/sources.list.d/lunarg-vulkan-$codename.list" \
+            "https://packages.lunarg.com/vulkan/lunarg-vulkan-$codename.list"
+          sudo apt-get update
+          sudo apt-get install -y vulkan-sdk
+          ;;
+        Windows)
+          curl -fL -o "$RUNNER_TEMP/vulkan-sdk.exe" \
+            https://sdk.lunarg.com/sdk/download/latest/windows/vulkan_sdk.exe
+          "$RUNNER_TEMP/vulkan-sdk.exe" --root 'C:\VulkanSDK' \
+            --accept-licenses --default-answer --confirm-command install
+          echo 'VULKAN_SDK=C:\VulkanSDK' >> "$GITHUB_ENV"
+          echo 'C:\VulkanSDK\Bin' >> "$GITHUB_PATH"
+          ;;
+        *)
+          echo "error: no Vulkan SDK provisioning for $RUNNER_OS" >&2
+          exit 1
+          ;;
+        esac
 
     # Asserts the image, not the steps above: a mis-provisioned runner fails
     # here in seconds instead of five minutes into `make build`.
