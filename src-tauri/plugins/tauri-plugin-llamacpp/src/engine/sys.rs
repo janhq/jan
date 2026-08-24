@@ -206,10 +206,23 @@ mod imp {
             let r = CString::new(route).unwrap_or_default();
             let q = CString::new(query).unwrap_or_default();
             let b = CString::new(body).unwrap_or_default();
+            // The length must describe the buffer being passed, not the string
+            // it came from: the shim does `std::string(body, body_len)`, and a
+            // body with an interior NUL leaves `b` empty while `body.len()`
+            // still counts every byte -- an out-of-bounds read of a one-byte
+            // buffer. Taking both from `b` keeps them consistent by
+            // construction; such a body reaches the engine empty and comes back
+            // as an ordinary parse error.
             // SAFETY: the shim never returns null -- transport failures come
             // back as a 5xx response object -- and copies the body.
             let handle = unsafe {
-                jan_llama_engine_request(self.handle, r.as_ptr(), q.as_ptr(), b.as_ptr(), body.len())
+                jan_llama_engine_request(
+                    self.handle,
+                    r.as_ptr(),
+                    q.as_ptr(),
+                    b.as_ptr(),
+                    b.as_bytes().len(),
+                )
             };
             Response(handle)
         }
