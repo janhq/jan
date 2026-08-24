@@ -494,9 +494,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               </Tooltip>
               <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
             </button>
-          {currentModel?.settings &&
-            provider &&
-            provider.provider === 'llamacpp' && (
+          {currentModel && provider && (
               <div onClick={(e) => e.stopPropagation()}>
                 <ModelSetting
                   model={currentModel as Model}
