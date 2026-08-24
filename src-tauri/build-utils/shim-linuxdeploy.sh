@@ -24,17 +24,13 @@ if [ ! -f "$LINUXDEPLOY" ]; then
   chmod a+x "$LINUXDEPLOY"
 fi
 
-# A wrapper rather than a symlink: tauri discards linuxdeploy's output, so a
-# failure reaches CI as `failed to run linuxdeploy` and nothing else. The copy
-# is what the build job uploads when it fails.
-LINUXDEPLOY_LOG="$XDG_CACHE_HOME/tauri/linuxdeploy.log"
-rm -f "$SYMLINK" "$LINUXDEPLOY_LOG"
-cat > "$SYMLINK" <<EOF
-#!/usr/bin/env bash
-set -o pipefail
-"$LINUXDEPLOY" "\$@" 2>&1 | tee -a "$LINUXDEPLOY_LOG"
-exit \${PIPESTATUS[0]}
-EOF
-chmod +x "$SYMLINK"
+rm -f "$SYMLINK"
+ln -s "$LINUXDEPLOY" "$SYMLINK"
+
+# linuxdeploy, its plugins and appimagetool are all AppImages, which mount
+# themselves through FUSE and fail with no output at all where it is missing --
+# and the GitHub-hosted images no longer ship libfuse2. Extracting instead is
+# the documented fallback and costs a little disk on a host that has FUSE.
+export APPIMAGE_EXTRACT_AND_RUN=1
 
 "$@"

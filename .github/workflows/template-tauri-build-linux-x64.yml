@@ -228,18 +228,35 @@ jobs:
           TAURI_TRAY: libappindicator3
       # Publish app
 
+      # tauri reports a linuxdeploy failure as `failed to run linuxdeploy` and
+      # discards its output, so ask the tool itself. `--version` alone separates
+      # the two candidates: a tool that cannot run at all is an AppImage that
+      # could not mount, anything else is the AppDir it was handed.
+      - name: Diagnose the AppImage bundler
+        if: failure()
+        run: |
+          tool=$(ls .cache/tauri/linuxdeploy-*-x86_64.AppImage 2>/dev/null | head -1)
+          [ -n "$tool" ] || { echo "linuxdeploy was never downloaded"; exit 0; }
+          echo "--- does linuxdeploy run at all?"
+          "$tool" --version || echo "it does not: an AppImage that cannot mount is the usual reason"
+          appdir=$(ls -d src-tauri/target/release/bundle/appimage/*.AppDir 2>/dev/null | head -1)
+          [ -n "$appdir" ] || { echo "no AppDir left behind; the build failed before bundling"; exit 0; }
+          echo "--- engine binaries tauri staged into the AppDir"
+          find "$appdir" \( -name '*.so*' -o -name 'jan-llama-worker' \) | head -40
+          echo "--- linuxdeploy over that AppDir"
+          "$tool" --appdir "$appdir" || true
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+
       # The engine build is fifteen minutes of cmake whose output cargo only
-      # surfaces as a tail, and tauri reports a linuxdeploy failure without its
-      # output at all. When a build fails, those logs are the artifact worth
+      # surfaces as a tail. When it fails, the whole log is the artifact worth
       # having.
-      - name: Upload the build logs
+      - name: Upload the engine build log
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: build-logs-linux-x64
-          path: |
-            src-tauri/target/engine-build.log
-            .cache/tauri/linuxdeploy.log
+          name: engine-build-log-linux-x64
+          path: src-tauri/target/engine-build.log
           if-no-files-found: ignore
 
       ## Artifacts, for dev and test

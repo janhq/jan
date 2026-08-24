@@ -218,13 +218,13 @@ mod tests {
         assert_eq!(PINNED_COMMIT.len(), 40, "commit should be a full sha");
     }
 
-    /// build.rs is the single source of the pin: `make engine-source` greps TAG
-    /// and COMMIT out of it, clones the tag, and refuses to build if HEAD is not
-    /// COMMIT. So the constants compiled in here must match the ones that file
-    /// declares, or the Makefile would fetch one llama.cpp and we would claim
-    /// another.
+    /// build.rs is the single source of the pin: `make engine-source` runs
+    /// fetch-engine-source.sh, which greps TAG and COMMIT out of it, clones the
+    /// tag, and refuses to build if HEAD is not COMMIT. So the constants
+    /// compiled in here must match the ones that file declares, or the fetch
+    /// would clone one llama.cpp and we would claim another.
     #[test]
-    fn the_pin_matches_what_the_makefile_will_fetch() {
+    fn the_pin_matches_what_the_fetch_script_will_clone() {
         let build_rs = include_str!("../../build.rs");
         for (name, value) in [
             ("LLAMA_CPP_TAG", PINNED_TAG),
@@ -237,18 +237,22 @@ mod tests {
             );
         }
 
-        // The Makefile's sed patterns only match at line start with this exact
-        // shape; a reformat that still compiles would silently break the fetch.
-        let makefile = include_str!("../../../../../Makefile");
+        // The script's sed only matches at line start with this exact shape, so
+        // a reformat of build.rs that still compiles would silently break the
+        // fetch. It takes the constant's name as a parameter, hence the `$1`.
+        let fetch = include_str!("../../../../build-utils/fetch-engine-source.sh");
+        assert!(
+            fetch.contains("s/^pub const $1: &str = "),
+            "fetch-engine-source.sh no longer greps the pin out of build.rs"
+        );
         for name in ["LLAMA_CPP_TAG", "LLAMA_CPP_COMMIT"] {
-            let pattern = format!("s/^pub const {name}: &str = ");
             assert!(
-                makefile.contains(&pattern),
-                "Makefile no longer greps {name} out of build.rs"
+                fetch.contains(&format!("pin {name}")),
+                "fetch-engine-source.sh no longer reads {name}"
             );
             assert!(
                 build_rs.contains(&format!("pub const {name}: &str = ")),
-                "build.rs no longer declares {name} in the shape the Makefile greps"
+                "build.rs no longer declares {name} in the shape the fetch script greps"
             );
         }
     }
