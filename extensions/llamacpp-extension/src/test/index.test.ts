@@ -568,6 +568,58 @@ describe('llamacpp_extension', () => {
 
 })
 
+// The worker is a separate process precisely so a GGML_ASSERT or an OOM kill
+// costs the model rather than the app, which only pays off if Jan notices the
+// death and respawns. get_engine_info is where that is noticed.
+describe('a dead worker is noticed rather than cached', () => {
+  let extension: llamacpp_extension
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    extension = new llamacpp_extension()
+  })
+
+  it('re-asks the command even after a successful answer', async () => {
+    const { getEngineInfo } = await import('@janhq/tauri-plugin-llamacpp-api')
+    vi.mocked(getEngineInfo).mockResolvedValue({
+      port: 39271,
+      api_key: 'k',
+      pid: 1234,
+      models: [],
+    })
+    expect(await extension.getEngineInfo()).toEqual({
+      port: 39271,
+      apiKey: 'k',
+    })
+
+    // The worker died: the command reaps the handle and reports nothing.
+    vi.mocked(getEngineInfo).mockResolvedValue(null as never)
+    expect(await extension.getEngineInfo()).toBeNull()
+    expect(vi.mocked(getEngineInfo)).toHaveBeenCalledTimes(2)
+  })
+
+  it('respawns instead of handing out the closed port', async () => {
+    const { getEngineInfo } = await import('@janhq/tauri-plugin-llamacpp-api')
+    vi.mocked(getEngineInfo).mockResolvedValue({
+      port: 39271,
+      api_key: 'k',
+      pid: 1234,
+      models: [],
+    })
+    await extension.getEngineInfo()
+
+    vi.mocked(getEngineInfo).mockResolvedValue(null as never)
+    vi.spyOn(extension as never, 'ensureProvisioned' as never).mockResolvedValue(
+      undefined as never
+    )
+    const spawn = vi
+      .spyOn(extension as never, 'startEngine' as never)
+      .mockResolvedValue(undefined as never)
+    await extension['ensureEngineReady']()
+    expect(spawn).toHaveBeenCalled()
+  })
+})
+
 describe('refreshEnginePreset embedding slot reservation', () => {
   let extension: llamacpp_extension
 
@@ -576,10 +628,18 @@ describe('refreshEnginePreset embedding slot reservation', () => {
     embeddingCount: number
   }) => {
     extension = new llamacpp_extension()
-    extension['enginePort'] = 12345
-    extension['engineApiKey'] = 'key'
     extension['config'] = { models_max: opts.userModelsMax } as never
     return (async () => {
+      // A running worker is what get_engine_info reports, not what the
+      // extension last cached: that command is where a worker that died is
+      // noticed, so getEngineInfo() always asks it.
+      const { getEngineInfo } = await import('@janhq/tauri-plugin-llamacpp-api')
+      vi.mocked(getEngineInfo).mockResolvedValue({
+        port: 12345,
+        api_key: 'key',
+        pid: 1234,
+        models: [],
+      })
       const { generatePreset } = await import('../preset')
       vi.mocked(generatePreset).mockResolvedValue({
         path: '/p/router.preset.ini',

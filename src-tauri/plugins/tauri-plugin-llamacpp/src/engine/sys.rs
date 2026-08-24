@@ -384,6 +384,14 @@ mod imp {
         ) -> Result<Self, EngineError> {
             Err(EngineError::Unavailable)
         }
+        /// A resident model that never serves a request, so the registry's
+        /// bookkeeping -- eviction order, and which ids a drop path records --
+        /// can be tested in the default feature config, where `start` always
+        /// fails and nothing can otherwise reach `loaded`.
+        #[cfg(test)]
+        pub fn stub() -> Self {
+            Engine(())
+        }
         pub fn request(&self, _route: &str, _body: &str) -> Response {
             Response(())
         }

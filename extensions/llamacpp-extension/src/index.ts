@@ -974,9 +974,12 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    * worker hasn't started successfully yet.
    */
   async getEngineInfo(): Promise<{ port: number; apiKey: string } | null> {
-    if (this.enginePort != null && this.engineApiKey) {
-      return { port: this.enginePort, apiKey: this.engineApiKey }
-    }
+    // Deliberately not answered from the cached port: get_engine_info is the
+    // one place a worker that died is noticed -- it reaps the handle and
+    // reports nothing running -- and every caller here uses this as the
+    // liveness probe before deciding whether to respawn. Answering from
+    // enginePort would keep handing out a closed port for the rest of the
+    // session, which is exactly the crash the worker process exists to survive.
     try {
       const info = await pluginGetEngineInfo()
       if (info) {
@@ -984,6 +987,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
         this.engineApiKey = info.api_key
         return { port: info.port, apiKey: info.api_key }
       }
+      this.enginePort = undefined
+      this.engineApiKey = undefined
     } catch (e) {
       logger.warn('get_engine_info failed:', e)
     }

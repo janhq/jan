@@ -236,7 +236,26 @@ impl EngineServer {
         hint: &SlotHint,
     ) {
         let Some(state) = &self.slots else { return };
-        let Some(identity) = self.registry.lock().await.state_identity(model) else {
+        let identity = {
+            let mut reg = self.registry.lock().await;
+            // A model the registry dropped took its slots' KV cache with it, so
+            // the occupancy it left behind names a thread whose state is no
+            // longer in any slot. Claiming against that returns `Evicted(prev)`
+            // and would save this slot -- empty, or another thread's -- over
+            // prev's file. Every drop path records itself; this is where the
+            // record is spent, because it is the only place a claim is made.
+            let dropped = reg.take_dropped();
+            let identity = reg.state_identity(model);
+            drop(reg);
+            if !dropped.is_empty() {
+                let mut occ = state.occupancy.lock().await;
+                for model in dropped {
+                    occ.release_model(&model);
+                }
+            }
+            identity
+        };
+        let Some(identity) = identity else {
             return;
         };
 
@@ -266,8 +285,24 @@ impl EngineServer {
     /// discards exactly the cache the feature exists to keep, since nothing
     /// else evicts that slot.
     pub async fn save_resident_slots(&self) {
+        self.save_slots(None).await
+    }
+
+    /// The same pass for one model, before it stops being resident.
+    async fn save_model_slots(&self, model: &str) {
+        self.save_slots(Some(model)).await
+    }
+
+    async fn save_slots(&self, only: Option<&str>) {
         let Some(state) = &self.slots else { return };
-        let resident = state.occupancy.lock().await.all();
+        let resident: Vec<_> = state
+            .occupancy
+            .lock()
+            .await
+            .all()
+            .into_iter()
+            .filter(|(m, _, _)| only.map_or(true, |want| m == want))
+            .collect();
         for (model, slot, thread) in resident {
             // One lock for the residency check, the identity and the acquire:
             // taking three would let the model be evicted between them, and
@@ -573,12 +608,18 @@ impl EngineServer {
     /// Refuses while requests are in flight rather than cancelling them, which
     /// is what upstream's router does.
     async fn unload_model(&self, model: &str) -> HttpResponse<Body> {
-        let mut reg = self.registry.lock().await;
-        if !reg.is_loaded(model) {
+        if !self.registry.lock().await.is_loaded(model) {
             return json_ok(&serde_json::json!({
                 "status": "already unloaded", "model": model
             }));
         }
+        // Before the drop, not after: `unload` takes the engine and the slot's
+        // KV cache with it. This is the path Jan switches models on -- with
+        // `models_max` at 1 the extension unloads the outgoing model before
+        // loading the next -- so without this the thread being left behind
+        // loses exactly the cache this feature exists to keep.
+        self.save_model_slots(model).await;
+        let mut reg = self.registry.lock().await;
         if reg.unload(model) {
             json_ok(&serde_json::json!({ "status": "unloaded", "model": model }))
         } else {
@@ -824,6 +865,12 @@ async fn run(
         let _ = tx.send(Ok(Frame::data(Bytes::from(first)))).await;
     }
     tokio::task::spawn_blocking(move || {
+        // `res` is a bare handle into the engine's server context, and
+        // `dispatch` releases its registry reference the moment `run` returns
+        // -- which is now, while this is still draining. Without an owning
+        // clone here the model looks idle, eviction or an unload drops the last
+        // Arc, and `next_chunk` reads a deleted server_context.
+        let _engine = engine;
         loop {
             match res.next_chunk() {
                 Ok(Some(chunk)) => {

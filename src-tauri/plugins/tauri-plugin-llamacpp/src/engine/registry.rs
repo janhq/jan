@@ -108,6 +108,12 @@ pub struct Registry {
     /// `failed: true`: without it a failed load looks merely "unloaded" and the
     /// caller's poll loop waits out its full timeout instead of erroring.
     failures: HashMap<String, String>,
+    /// Models the registry has stopped hosting since the last drain, whatever
+    /// dropped them. Their slots died with the engine, so the occupancy map --
+    /// which lives a module over and cannot be reached from these `&mut self`
+    /// methods -- has to forget them before it hands one of their slot ids to
+    /// another thread. `take_dropped` is drained where occupancy is claimed.
+    dropped: Vec<String>,
     /// 0 means unlimited, matching llama.cpp's `--models-max`.
     models_max: usize,
     /// Where every transition below is published for `/models/sse`.
@@ -121,6 +127,7 @@ impl Registry {
             specs: HashMap::new(),
             stale: HashSet::new(),
             failures: HashMap::new(),
+            dropped: Vec::new(),
             models_max,
             events: EventBus::new(),
         }
@@ -365,6 +372,7 @@ impl Registry {
         match self.loaded.get(model_id) {
             Some(m) if m.inflight == 0 => {
                 self.loaded.remove(model_id);
+                self.dropped.push(model_id.to_string());
                 self.events
                     .emit(model_id, Transition::Unloaded { exit_code: 0 });
             }
@@ -382,12 +390,20 @@ impl Registry {
             Some(m) if m.inflight == 0 => {
                 self.loaded.remove(model_id);
                 self.stale.remove(model_id);
+                self.dropped.push(model_id.to_string());
                 self.events
                     .emit(model_id, Transition::Unloaded { exit_code: 0 });
                 true
             }
             _ => false,
         }
+    }
+
+    /// Ids dropped since the last call, for the caller that owns the slot
+    /// occupancy map. Draining is the caller's job precisely because the fix
+    /// belongs on the other side of an async lock this struct cannot take.
+    pub fn take_dropped(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.dropped)
     }
 
     /// Drops every resident model, ignoring in-flight requests.
@@ -401,6 +417,7 @@ impl Registry {
         ids.sort();
         self.loaded.clear();
         self.stale.clear();
+        self.dropped.extend(ids.iter().cloned());
         ids
     }
 
@@ -415,6 +432,7 @@ impl Registry {
                 });
             };
             self.loaded.remove(&victim);
+            self.dropped.push(victim.clone());
             self.events
                 .emit(&victim, Transition::Unloaded { exit_code: 0 });
         }
@@ -478,6 +496,70 @@ mod tests {
             r.register(*m, spec(m));
         }
         r
+    }
+
+    /// Puts a model in `loaded` without a load, which the default feature
+    /// config cannot do: `acquire` always fails there.
+    #[cfg(not(feature = "engine"))]
+    fn resident(r: &mut Registry, models: &[&str]) {
+        for m in models {
+            r.register(*m, spec(m));
+            r.loaded.insert(
+                (*m).to_string(),
+                LoadedModel {
+                    engine: Arc::new(Engine::stub()),
+                    inflight: 0,
+                    last_used: next_tick(),
+                },
+            );
+        }
+    }
+
+    /// Every path that stops hosting a model has to say so: the slot occupancy
+    /// map lives behind an async lock this struct cannot take, and a model
+    /// missing from this list keeps its stale claim on a slot id that another
+    /// thread will later be handed.
+    #[cfg(not(feature = "engine"))]
+    #[test]
+    fn each_drop_path_records_the_model_it_dropped() {
+        let mut r = Registry::new(2);
+        resident(&mut r, &["a"]);
+        assert!(r.unload("a"));
+        assert_eq!(r.take_dropped(), vec!["a".to_string()]);
+        assert!(r.take_dropped().is_empty(), "draining is not repeatable");
+
+        resident(&mut r, &["b"]);
+        r.retire("b");
+        assert_eq!(r.take_dropped(), vec!["b".to_string()]);
+
+        // Eviction under models_max: the victim is dropped by make_room rather
+        // than by a caller, which is the path with no async context at all.
+        let mut r = Registry::new(1);
+        resident(&mut r, &["c"]);
+        assert!(r.make_room().is_ok());
+        assert_eq!(r.take_dropped(), vec!["c".to_string()]);
+
+        let mut r = Registry::new(2);
+        resident(&mut r, &["d", "e"]);
+        let mut ids = r.shutdown();
+        ids.sort();
+        assert_eq!(ids, vec!["d".to_string(), "e".to_string()]);
+        let mut dropped = r.take_dropped();
+        dropped.sort();
+        assert_eq!(dropped, vec!["d".to_string(), "e".to_string()]);
+    }
+
+    /// A busy model is not dropped, so it must not be recorded as dropped
+    /// either -- releasing its occupancy would discard a live slot's claim.
+    #[cfg(not(feature = "engine"))]
+    #[test]
+    fn a_busy_model_is_neither_dropped_nor_recorded() {
+        let mut r = Registry::new(2);
+        resident(&mut r, &["a"]);
+        r.loaded.get_mut("a").unwrap().inflight = 1;
+        assert!(!r.unload("a"), "unload must refuse a busy model");
+        r.retire("a");
+        assert!(r.take_dropped().is_empty());
     }
 
     #[test]
