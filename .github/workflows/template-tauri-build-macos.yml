@@ -262,10 +262,22 @@ jobs:
             exit 1
           fi
           codesign --verify --strict "$worker"
+
+          # tauri notarizes and staples the .app, then builds the dmg around it,
+          # so the dmg carries no ticket of its own -- requiring one there
+          # failed a build whose app was notarized and Accepted. Either side
+          # having a ticket proves the submission happened; neither does not.
           dmg=$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' | head -1)
-          # A notarized dmg has a stapled ticket; spctl is what Gatekeeper runs.
-          xcrun stapler validate "$dmg"
-          spctl --assess --type install --verbose=2 "$dmg"
+          if xcrun stapler validate "$bundle"; then
+            echo "the .app carries its notarization ticket"
+          elif [ -n "$dmg" ] && xcrun stapler validate "$dmg"; then
+            echo "the .dmg carries its notarization ticket"
+          else
+            echo "error: neither the .app nor the dmg has a stapled ticket" >&2
+            exit 1
+          fi
+          # What Gatekeeper actually runs against the app the user launches.
+          spctl --assess --type exec --verbose=2 "$bundle"
 
       # Publish app
 
