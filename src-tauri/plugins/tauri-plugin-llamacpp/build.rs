@@ -80,6 +80,13 @@ mod engine {
         "vendor-hash",
     ];
 
+    /// The cmake configuration. Named on every build and install step, not
+    /// just at configure time: a multi-config generator (Visual Studio, which
+    /// is cmake's default on Windows) ignores CMAKE_BUILD_TYPE entirely and
+    /// silently builds Debug, which links the non-redistributable debug CRT.
+    /// The single-config generators accept the flag and ignore it.
+    const CONFIG: &str = "Release";
+
     /// Where each archive lands under the stage 2 cmake build tree.
     const ARCHIVE_DIRS: &[&str] = &[
         "src",
@@ -139,6 +146,11 @@ mod engine {
                     .iter()
                     .map(|d| llama.join(d))
                     .collect::<Vec<_>>();
+                // Visual Studio writes each target under its config; the
+                // single-config generators write it where cmake was pointed.
+                if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() == "windows" {
+                    dirs.extend(ARCHIVE_DIRS.iter().map(|d| llama.join(d).join(CONFIG)));
+                }
                 dirs.push(ggml.join("lib"));
                 (dirs, llama, ggml.join("bin"))
             };
@@ -242,14 +254,14 @@ mod engine {
         run(&mut cfg, "cmake configure (ggml)");
 
         let mut bld = Command::new("cmake");
-        bld.arg("--build").arg(&build);
+        bld.arg("--build").arg(&build).args(["--config", CONFIG]);
         if let Ok(jobs) = env::var("NUM_JOBS") {
             bld.arg("-j").arg(jobs);
         }
         run(&mut bld, "cmake build (ggml)");
 
         let mut inst = Command::new("cmake");
-        inst.arg("--install").arg(&build);
+        inst.arg("--install").arg(&build).args(["--config", CONFIG]);
         run(&mut inst, "cmake install (ggml)");
 
         prefix
@@ -309,7 +321,11 @@ mod engine {
         run(&mut cfg, "cmake configure (llama)");
 
         let mut bld = Command::new("cmake");
-        bld.arg("--build").arg(&out).arg("--target").arg("server-context");
+        bld.arg("--build")
+            .arg(&out)
+            .args(["--config", CONFIG])
+            .arg("--target")
+            .arg("server-context");
         if let Ok(jobs) = env::var("NUM_JOBS") {
             bld.arg("-j").arg(jobs);
         }
@@ -548,24 +564,43 @@ mod engine {
             return;
         }
         if let Some(path) = &log_path {
+            let text = fs::read_to_string(path).unwrap_or_default();
+            // MSBuild interleaves the output of parallel targets, so the cause
+            // is usually nowhere near the end the way it is under make.
+            let errors = last_matching(&text, "error", 40);
+            if !errors.is_empty() {
+                eprintln!("--- error lines from {} ---", path.display());
+                for line in errors {
+                    eprintln!("{line}");
+                }
+            }
             eprintln!("--- tail of {} ---", path.display());
-            for line in tail(path, 60) {
+            for line in tail(&text, 60) {
                 eprintln!("{line}");
             }
         }
         panic!("{what} failed with {status}");
     }
 
-    /// The last `n` lines of a file, for a failure message. Reads the whole file
-    /// because a cmake log is small next to what it took to produce.
-    fn tail(path: &Path, n: usize) -> Vec<String> {
-        let Ok(text) = fs::read_to_string(path) else {
-            return Vec::new();
-        };
+    /// The last `n` lines, for a failure message.
+    fn tail(text: &str, n: usize) -> Vec<String> {
         let lines: Vec<&str> = text.lines().collect();
         lines[lines.len().saturating_sub(n)..]
             .iter()
             .map(|s| s.to_string())
             .collect()
+    }
+
+    /// The last `n` lines containing `needle`, case-insensitively. A cmake log
+    /// is small next to what it took to produce, so this reads all of it.
+    fn last_matching(text: &str, needle: &str, n: usize) -> Vec<String> {
+        let mut hits: Vec<String> = text
+            .lines()
+            .filter(|l| l.to_ascii_lowercase().contains(needle))
+            .map(|s| s.to_string())
+            .collect();
+        let drop = hits.len().saturating_sub(n);
+        hits.drain(..drop);
+        hits
     }
 }

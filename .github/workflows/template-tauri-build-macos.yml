@@ -223,6 +223,17 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
 
+      # The engine build is fifteen minutes of cmake whose output cargo only
+      # surfaces as a tail. When it fails, the whole log is the artifact worth
+      # having.
+      - name: Upload the engine build log
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: engine-build-log-macos
+          path: src-tauri/target/engine-build.log
+          if-no-files-found: ignore
+
       # The bundle is universal but the engine build is host-arch, so name the
       # slice that is actually covered instead of shipping the gap silently.
       - name: Report the engine's architecture coverage
