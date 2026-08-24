@@ -2564,6 +2564,26 @@ impl App {
             && self.reasoning_open()
     }
 
+    /// The open dock that owns the keyboard, phrased as what the user has to do
+    /// in it. `None` when the composer is live.
+    ///
+    /// Must mirror the guard list at the top of `handle_key`: a dock that takes
+    /// every keystroke but leaves a cursor blinking in the composer promises a
+    /// field that is not there.
+    fn blocking_dock(&self) -> Option<&'static str> {
+        if self.login.is_some() {
+            Some("sign in in the dock above")
+        } else if self.browser_confirm.is_some() {
+            Some("answer the question above")
+        } else if self.settings_prompt.is_some() {
+            Some("edit the setting above")
+        } else if self.mcp_prompt.is_some() || self.provider_prompt.is_some() {
+            Some("finish the wizard above")
+        } else {
+            None
+        }
+    }
+
     /// True while the model is mid-reasoning: either a `<think>` block is live
     /// in the answer buffer (inline-tag providers) or the newest native segment
     /// is still at the tail, i.e. no content token has arrived since
@@ -12104,7 +12124,10 @@ fn draw(f: &mut Frame, app: &mut App) {
     app.row_index = row_index;
 
     // Keep the cursor row visible when the input outgrows the box.
-    let input_scroll = if app.status == Status::Idle && app.picker.is_none() {
+    let input_scroll = if app.status == Status::Idle
+        && app.picker.is_none()
+        && app.blocking_dock().is_none()
+    {
         let visible = chunks[2].height.saturating_sub(1);
         let total = Paragraph::new(input_content_lines(&app.input, app.cursor))
             .wrap(Wrap { trim: false })
@@ -13610,7 +13633,10 @@ const MAX_INPUT_ROWS: u16 = 8;
 /// editing, plus one row of air above the dock. The box is borderless, so the
 /// two rows this used to add on top of its content were simply blank.
 fn input_box_height(app: &App, width: u16) -> u16 {
-    let content = if app.picker.is_none() && !(app.status == Status::Running && app.input.is_empty()) {
+    let content = if app.picker.is_none()
+        && app.blocking_dock().is_none()
+        && !(app.status == Status::Running && app.input.is_empty())
+    {
         let inner = width.saturating_sub(2).max(1);
         let rows = Paragraph::new(input_content_lines(&app.input, app.cursor))
             .wrap(Wrap { trim: false })
@@ -13749,11 +13775,11 @@ fn input_box(app: &App) -> Paragraph<'static> {
             ]))
             .block(block)
         }
-    } else if app.login.is_some() {
+    } else if let Some(what) = app.blocking_dock() {
         // The dock owns the keyboard while it is open, so this field takes
         // nothing: say so instead of showing a cursor that will never move.
         Paragraph::new(Line::styled(
-            "sign in in the dock above - the field is inactive",
+            format!("{what} - the field is inactive"),
             Style::new().dim().italic(),
         ))
         .block(block)
@@ -17111,21 +17137,83 @@ mod tests {
         assert!(!prompt.editable());
     }
 
-    /// The dock owns the keyboard while open, so the input row must read
-    /// inactive: a live cursor under an app that is not signed in promises a
-    /// field that is not there.
+    fn blank_mcp_prompt() -> super::McpPrompt {
+        super::McpPrompt {
+            editing: None,
+            field: super::McpField::Name,
+            name: String::new(),
+            transport: "stdio".to_string(),
+            command: String::new(),
+            args: String::new(),
+            env: String::new(),
+            url: String::new(),
+            headers: String::new(),
+            active: false,
+            error: None,
+        }
+    }
+
+    /// A named way to open one keyboard-owning dock, for the table below.
+    type DockSetup = (&'static str, fn(&mut App));
+
+    /// Every dock that takes the keyboard in `handle_key` must also blank the
+    /// input row: a live cursor under a dock that swallows every keystroke
+    /// promises a field that is not there. One case per guard in that list, so
+    /// the next dock added cannot quietly regress only the rendering half.
     #[test]
-    fn the_login_dock_marks_the_input_row_inactive() {
-        for prompt in [super::LoginPrompt::connecting(), confirmed_paste_prompt()] {
+    fn every_blocking_dock_marks_the_input_row_inactive() {
+        let setups: [DockSetup; 6] = [
+            ("login/connecting", |app| {
+                app.login = Some(super::LoginPrompt::connecting())
+            }),
+            ("login/paste", |app| {
+                app.login = Some(confirmed_paste_prompt())
+            }),
+            ("browser_confirm", |app| {
+                app.browser_confirm = Some(super::BrowserConfirm {
+                    url: "https://example.com/authorize".into(),
+                    purpose: "authorize 'github'".into(),
+                })
+            }),
+            ("settings_prompt", |app| {
+                let def = AGENT_SETTINGS
+                    .iter()
+                    .find(|d| d.key == "max_parallel_subagents")
+                    .unwrap();
+                app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+            }),
+            ("mcp_prompt", |app| {
+                app.mcp_prompt = Some(blank_mcp_prompt())
+            }),
+            ("provider_prompt", |app| {
+                app.provider_prompt = Some(super::ProviderPrompt::new())
+            }),
+        ];
+        for (name, open) in setups {
             let mut app = test_app();
-            app.login = Some(prompt);
+            open(&mut app);
+            assert!(app.blocking_dock().is_some(), "{name} must block the field");
             let screen = render_rows(&mut app, 80, 24).join("\n");
-            assert!(screen.contains("the field is inactive"), "{screen}");
+            assert!(
+                screen.contains("the field is inactive"),
+                "{name}: {screen}"
+            );
             assert!(
                 !screen.contains("Type here to chat with agent"),
-                "a live field must not show while the dock is open: {screen}"
+                "{name}: a live field must not show while the dock is open: {screen}"
             );
         }
+    }
+
+    /// The composer is only dead while a dock is up -- an idle app with no dock
+    /// must still offer a field, or the guard above has over-reached.
+    #[test]
+    fn no_dock_leaves_the_input_row_live() {
+        let mut app = test_app();
+        assert!(app.blocking_dock().is_none());
+        let screen = render_rows(&mut app, 80, 24).join("\n");
+        assert!(screen.contains("Type here to chat with agent"), "{screen}");
+        assert!(!screen.contains("the field is inactive"), "{screen}");
     }
 
     /// The approval stage shows the code and the URL, and takes no input -- the
