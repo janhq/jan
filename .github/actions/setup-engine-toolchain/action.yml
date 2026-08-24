@@ -79,9 +79,10 @@ runs:
         esac
 
     # Windows builds the engine the way upstream llama.cpp builds this exact
-    # configuration: Ninja plus its own clang toolchain file, from a Visual
-    # Studio developer environment. The image carries LLVM; ninja is not
-    # dependable on PATH, and vcvars only ever exports into its own session.
+    # configuration: Ninja plus its own clang toolchain file. No developer
+    # environment is set up for it -- clang locates the MSVC headers and
+    # libraries itself, which an earlier run demonstrated by compiling all of
+    # ggml without one. The image carries LLVM; ninja is not dependable.
     - name: Provision the Windows engine toolchain
       if: runner.os == 'Windows'
       shell: bash
@@ -101,30 +102,6 @@ runs:
           echo "C:\Program Files\LLVM\bin" >> "$GITHUB_PATH"
         fi
 
-        if command -v cl >/dev/null 2>&1; then
-          echo "engine toolchain: the MSVC environment is already set"
-          exit 0
-        fi
-        vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
-        vs=$("$vswhere" -latest -products '*' \
-              -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
-              -property installationPath | tr -d '\r')
-        [ -n "$vs" ] || {
-          echo "error: vswhere found no MSVC toolchain on this image" >&2
-          exit 1
-        }
-        # Take the environment vcvars produces and hand the parts that matter to
-        # the steps that follow; the PATH it prints already carries whatever
-        # earlier steps added, so replacing PATH here loses nothing.
-        cmd //c "call \"$vs\VC\Auxiliary\Build\vcvars64.bat\" >nul && set" \
-          | tr -d '\r' \
-          | while IFS='=' read -r k v; do
-              case "$k" in
-              PATH | INCLUDE | LIB | LIBPATH | VCINSTALLDIR | VCToolsInstallDir | WindowsSdkDir | WindowsSDKVersion | UCRTVersion)
-                echo "$k=$v" >> "$GITHUB_ENV"
-                ;;
-              esac
-            done
 
     # Asserts the image, not the steps above: a mis-provisioned runner fails
     # here in seconds instead of five minutes into `make build`.
