@@ -83,6 +83,7 @@ dependencies = [
  "tokio-util",
  "toml 0.8.2",
  "toml_edit 0.23.10+spec-1.0.0",
+ "unicode-segmentation",
  "unicode-width 0.2.2",
  "url",
  "uuid",

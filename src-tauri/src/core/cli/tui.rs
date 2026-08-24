@@ -392,8 +392,8 @@ enum PickerKind {
     RewindScope,
     /// Read-only view of `~/.jan/config.toml` providers (`/config`). Enter closes.
     ViewConfig,
-    /// `/settings`: browse editable `[agent]` keys from agent.toml; Enter opens
-    /// a docked edit prompt for the selected row.
+    /// `/settings`: browse editable keys from agent.toml and `~/.jan/config.toml`;
+    /// Enter opens a docked edit prompt for the selected row.
     AgentSettings,
     /// `/settings > providers`: manage `~/.jan/config.toml` providers via a
     /// docked add/edit wizard (`a`/`e`) or deletion (`d`).
@@ -1631,6 +1631,85 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 
 /// Milliseconds per spinner frame, decoupled from the 50ms render tick.
 const SPINNER_ADVANCE_MS: u64 = 80;
+
+/// Sweep the configured glyph back and forth along `message`, replacing the
+/// characters it covers rather than displacing them.
+///
+/// The first cut of this (#8726) inserted the glyph in place of exactly one
+/// `char`. An emoji is two cells wide, so every frame made the row one cell
+/// wider than the text it was drawn from: the tail shifted right, and at the
+/// frame's own width the last character fell off the edge. That is the
+/// "letters vanish" bug the feature was reverted for.
+///
+/// The fix is to spend the glyph's *display width* out of the message: a
+/// 2-cell glyph covers two 1-cell characters, so the composed line is always
+/// exactly as wide as `message`. Whatever the user configured is measured, so a
+/// 1-cell `"~"` covers one character and a 3-cell `"<o>"` covers three.
+///
+/// The glyph is clamped to the message rather than allowed to overhang, so the
+/// last frames of a sweep do not grow the row either.
+fn wave_sweep_line(message: &str, glyph: &str, frame: usize, text_style: Style) -> Line<'static> {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+    let glyph_width = glyph.width().max(1);
+    let chars: Vec<char> = message.chars().collect();
+    // Character offsets the glyph can start at without overhanging the end.
+    let mut stops: Vec<usize> = Vec::new();
+    for i in 0..chars.len() {
+        let mut width = 0usize;
+        for c in &chars[i..] {
+            width += c.width().unwrap_or(0);
+            if width >= glyph_width {
+                break;
+            }
+        }
+        if width >= glyph_width {
+            stops.push(i);
+        }
+    }
+    if stops.is_empty() {
+        return Line::from(vec![Span::styled(message.to_string(), text_style)]);
+    }
+
+    // Ping-pong across the stops: forward to the end, then back, so the glyph
+    // reverses instead of jumping back to the start.
+    let cycle = stops.len().saturating_mul(2).saturating_sub(2).max(1);
+    let step = frame % cycle;
+    let index = if step < stops.len() {
+        step
+    } else {
+        cycle - step
+    };
+    let start = stops[index];
+
+    // Spend the glyph's width out of the message, so the row's total width is
+    // unchanged no matter how wide the glyph is.
+    let mut end = start;
+    let mut spent = 0usize;
+    while end < chars.len() && spent < glyph_width {
+        spent += chars[end].width().unwrap_or(0);
+        end += 1;
+    }
+
+    let head: String = chars[..start].iter().collect();
+    let tail: String = chars[end..].iter().collect();
+    // A glyph landing on a wider character than itself leaves a gap; pad it so
+    // the tail does not slide left under the glyph.
+    let pad = " ".repeat(spent.saturating_sub(glyph_width));
+
+    let mut spans = Vec::with_capacity(4);
+    if !head.is_empty() {
+        spans.push(Span::styled(head, text_style));
+    }
+    spans.push(Span::styled(glyph.to_string(), Style::new().cyan()));
+    if !pad.is_empty() {
+        spans.push(Span::styled(pad, text_style));
+    }
+    if !tail.is_empty() {
+        spans.push(Span::styled(tail, text_style));
+    }
+    Line::from(spans)
+}
 
 /// Rotating action words for the running input placeholder, replacing a static
 /// "working…" so a long turn does not read as a hung UI.
@@ -5566,6 +5645,65 @@ fn think_tags_parsed() -> bool {
     PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// The glyph swept along the working row, or `None` for the static throbber.
+/// Process-wide for the same reason as `PARSE_THINK_TAGS`: `input_box` is a free
+/// function with no session in hand. Resolved from the config on first use
+/// rather than per frame, since the row redraws every 50ms and this would
+/// otherwise be a file read on each one.
+///
+/// Behind a lock rather than a `LazyLock` value because `/settings` edits it
+/// live: a glyph you have to restart the console to see is not a toggle.
+static WAVE_GLYPH: std::sync::LazyLock<std::sync::RwLock<Option<String>>> =
+    std::sync::LazyLock::new(|| {
+        std::sync::RwLock::new(crate::core::agent::global_config::wave_glyph())
+    });
+
+/// Apply a new wave glyph to the process, as `/settings` does on save.
+///
+/// `None` means the key was removed, so the default sweep comes back -- not
+/// that the sweep is off. Off is `Some("")`, which resolves to no glyph here
+/// for the reason `wave_glyph` gives: an all-whitespace traveller reads as
+/// letters going missing.
+pub(crate) fn set_wave_glyph(glyph: Option<&str>) {
+    let value = match glyph {
+        None => Some(crate::core::agent::global_config::WAVE_DEFAULT.to_string()),
+        Some(g) if g.trim().is_empty() => None,
+        Some(g) => Some(g.to_string()),
+    };
+    if let Ok(mut slot) = WAVE_GLYPH.write() {
+        *slot = value;
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Per-test override, for the same reason as `PARSE_THINK_TAGS_OVERRIDE`: a
+    /// test sets its own thread's glyph rather than the shared cell, which is
+    /// resolved once per process and reads the real `~/.jan/config.toml`.
+    static WAVE_GLYPH_OVERRIDE: std::cell::RefCell<Option<Option<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn wave_glyph() -> Option<String> {
+    #[cfg(test)]
+    {
+        if let Some(over) = WAVE_GLYPH_OVERRIDE.with(|c| c.borrow().clone()) {
+            return over;
+        }
+    }
+    WAVE_GLYPH.read().ok().and_then(|g| g.clone())
+}
+
+/// Run `f` with `glyph` as this thread's wave setting.
+#[cfg(test)]
+fn with_wave_glyph<T>(glyph: Option<&str>, f: impl FnOnce() -> T) -> T {
+    let value = glyph.map(str::to_string);
+    WAVE_GLYPH_OVERRIDE.with(|c| *c.borrow_mut() = Some(value));
+    let out = f();
+    WAVE_GLYPH_OVERRIDE.with(|c| *c.borrow_mut() = None);
+    out
+}
+
 /// Run `f` with `<think>` parsing off on this thread only.
 #[cfg(test)]
 fn without_think_tags<T>(f: impl FnOnce() -> T) -> T {
@@ -7180,24 +7318,36 @@ async fn handle_key(
                 }
             }
             // `/settings` picker: `x` restores the selected key to its default
-            // by removing it from agent.toml - same write as clearing the
-            // field in the edit dock, one keypress instead of two.
+            // by removing it from the file its scope names - same write as
+            // clearing the field in the edit dock, one keypress instead of two.
             KeyCode::Char('x') if picker.kind == PickerKind::AgentSettings => {
                 let key = picker.items[picker.selected].value.clone();
                 // (picker borrow ends here; nothing below reads it before rebuild)
                 let toml_path = app.agent_dir.join("agent.toml");
-                match crate::core::agent::project::set_agent_key(&toml_path, &key, None) {
+                let Some(def) = AGENT_SETTINGS.iter().find(|d| d.key == key) else {
+                    // The leading "providers" row has no key to unset.
+                    return;
+                };
+                match write_setting(def, &toml_path, None) {
                     Ok(()) => {
-                        app.note(&format!(
-                            "{key} unset (default applies); takes effect on the next run"
-                        ));
+                        // `None`, not `""`: this removed the key, so a `Glyph`
+                        // goes back to its default rather than to off, which
+                        // is what a cleared edit field means.
+                        let when = if apply_live_unset(def) {
+                            "in effect now"
+                        } else {
+                            "takes effect on the next run"
+                        };
+                        app.note(&format!("{key} unset (default applies); {when}"));
                         if let Some(picker) = app.picker.as_mut() {
                             picker.items = build_agent_settings_items(&toml_path);
                             picker.selected =
                                 picker.selected.min(picker.items.len().saturating_sub(1));
                         }
                     }
-                    Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
+                    Err(e) => {
+                        app.note(&format!("failed to write {}: {e}", setting_path(def, &toml_path)))
+                    }
                 }
             }
             // Collection picker: Space toggles the selected plugin, Enter hands
@@ -7259,7 +7409,7 @@ async fn handle_key(
                             AGENT_SETTINGS.iter().find(|d| d.key == value)
                         {
                             let toml_path = app.agent_dir.join("agent.toml");
-                            let current = current_agent_value(&toml_path, def.key);
+                            let current = current_setting_value(def, &toml_path);
                             app.settings_prompt =
                                 Some(SettingsPrompt::new(def, current.as_deref()));
                         }
@@ -7858,7 +8008,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/settings",
         hint: "[max_parallel_subagents N]",
-        description: "Edit [agent] settings from agent.toml (menu); takes effect next run",
+        description: "Edit agent.toml and ~/.jan settings (menu); most apply next run",
     },
     SlashCommand {
         name: "/update",
@@ -8258,18 +8408,37 @@ fn goal_command(app: &mut App, arg: &str) {
     }
 }
 
-/// One editable `[agent]` key surfaced by `/settings`. Mirrors the template's
-/// knobs; defaults match `load_agent_config`. `model` is deliberately absent:
-/// it has its own `/model` picker.
+/// One editable key surfaced by `/settings`. Mirrors the templates' knobs;
+/// defaults match `load_agent_config` for project keys and the
+/// `global_config` accessors for user-wide ones. `model` is deliberately
+/// absent: it has its own `/model` picker.
 struct AgentSettingDef {
     key: &'static str,
     label: &'static str,
     desc: &'static str,
     kind: AgentSettingKind,
+    scope: SettingScope,
+}
+
+/// Which file a `/settings` row reads and writes. Both are surfaced by the one
+/// menu because the distinction is an implementation detail to the person
+/// looking for a knob: they want the setting, not the file it lives in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SettingScope {
+    /// This project's `.jan/agent/agent.toml`, under `[agent]` unless the key
+    /// names its own section.
+    Project,
+    /// The user-wide `~/.jan/config.toml`, at the document root.
+    Global,
 }
 
 enum AgentSettingKind {
     Int { default: Option<u64>, min: u64 },
+    /// Short display glyph with a grapheme cap, and the one kind where an
+    /// empty field is a *value* rather than an unset: `""` is the deliberate
+    /// "off", distinct from the key being absent, which takes the default.
+    /// `x` on the row still removes the key.
+    Glyph { default: &'static str, max: usize },
     Text { default: &'static str },
     /// Exact-match choice: Enter writes one of `options`, cleared field
     /// unsets. Covers the `read-only | deny | allow` and `always | relevance`
@@ -8290,18 +8459,21 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         label: "context_window",
         desc: "context limit in tokens",
         kind: AgentSettingKind::Int { default: Some(128000), min: 1 },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "compaction_reserve_tokens",
         label: "compaction_reserve_tokens",
         desc: "headroom kept free before compaction",
         kind: AgentSettingKind::Int { default: Some(16384), min: 0 },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "max_tokens",
         label: "max_tokens",
         desc: "cap on tokens generated per response (omitted when unset)",
         kind: AgentSettingKind::Int { default: None, min: 1 },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "max_parallel_subagents",
@@ -8311,6 +8483,7 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
             default: Some(10),
             min: 1,
         },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "instructions_file",
@@ -8319,12 +8492,14 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         kind: AgentSettingKind::Text {
             default: "AGENT.md",
         },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "budget.max_tokens",
         label: "budget.max_tokens",
         desc: "token-spend ceiling per run; the only cap on run length",
         kind: AgentSettingKind::Int { default: Some(128000), min: 0 },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "tools.default",
@@ -8334,6 +8509,7 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
             options: &["read-only", "deny", "allow"],
             default: "read-only",
         },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "skills.inject",
@@ -8343,18 +8519,31 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
             options: &["always", "relevance"],
             default: "always",
         },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "show_reasoning",
         label: "show_reasoning",
         desc: "expand  reasoning in the transcript (Ctrl-O still toggles)",
         kind: AgentSettingKind::Bool { default: false },
+        scope: SettingScope::Project,
     },
     AgentSettingDef {
         key: "send_reasoning",
         label: "send_reasoning",
         desc: "resend prior reasoning to the model (false drops it from requests)",
         kind: AgentSettingKind::Bool { default: true },
+        scope: SettingScope::Project,
+    },
+    AgentSettingDef {
+        key: "wave",
+        label: "wave",
+        desc: "glyph swept along the working row (up to 3 chars; empty = throbber)",
+        kind: AgentSettingKind::Glyph {
+            default: crate::core::agent::global_config::WAVE_DEFAULT,
+            max: crate::core::agent::global_config::WAVE_MAX_GRAPHEMES,
+        },
+        scope: SettingScope::Global,
     },
 ];
 
@@ -8789,12 +8978,79 @@ fn current_agent_value(toml_path: &std::path::Path, key: &str) -> Option<String>
     })
 }
 
+/// Current on-disk value of a `/settings` row, from whichever file its scope
+/// names. `None` when unset or the file is unreadable.
+fn current_setting_value(def: &AgentSettingDef, toml_path: &std::path::Path) -> Option<String> {
+    match def.scope {
+        SettingScope::Project => current_agent_value(toml_path, def.key),
+        SettingScope::Global => crate::core::agent::global_config::global_value(def.key),
+    }
+}
+
+/// Write a `/settings` row to whichever file its scope names. `None` removes
+/// the key so its default applies again.
+fn write_setting(
+    def: &AgentSettingDef,
+    toml_path: &std::path::Path,
+    value: Option<toml_edit::Item>,
+) -> Result<(), String> {
+    match def.scope {
+        SettingScope::Project => {
+            crate::core::agent::project::set_agent_key(toml_path, def.key, value)
+        }
+        SettingScope::Global => {
+            crate::core::agent::global_config::set_global_key(def.key, value).map(|_| ())
+        }
+    }
+}
+
+/// The file a `/settings` row writes, for the error message when a write fails.
+fn setting_path(def: &AgentSettingDef, toml_path: &std::path::Path) -> String {
+    match def.scope {
+        SettingScope::Project => toml_path.display().to_string(),
+        SettingScope::Global => crate::core::agent::global_config::global_config_path()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "~/.jan/config.toml".to_string()),
+    }
+}
+
+/// Apply a just-saved setting to the running process where that is possible,
+/// returning whether it took. Most keys are snapshotted at session start and
+/// genuinely need a restart; a purely cosmetic one like `wave` does not, and
+/// telling someone to restart to see a glyph they just picked would be a lie
+/// the code does not have to tell. `entered` is the trimmed field; empty is an
+/// unset for most kinds and a written "off" for a `Glyph`, which is why this
+/// passes `Some` either way and lets the setter read it.
+fn apply_live_setting(def: &AgentSettingDef, entered: &str) -> bool {
+    match def.key {
+        "wave" => {
+            set_wave_glyph(Some(entered));
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Apply a just-removed setting to the running process, returning whether it
+/// took. Separate from `apply_live_setting` because removing a key and saving
+/// an empty one are different outcomes for a `Glyph`: the first restores the
+/// default, the second is the off switch.
+fn apply_live_unset(def: &AgentSettingDef) -> bool {
+    match def.key {
+        "wave" => {
+            set_wave_glyph(None);
+            true
+        }
+        _ => false,
+    }
+}
+
 /// `/settings` dispatcher: bare opens the interactive settings menu (an
-/// `AgentSettings` picker over the `[agent]` keys; Enter on a row docks an edit
-/// prompt); `max_parallel_subagents <N>` still works as a one-shot shortcut.
-/// Writes are format-preserving and take effect on the next run (the current
-/// run snapshotted its config at start). Runs only while idle, like every
-/// command.
+/// `AgentSettings` picker over every def, project-scoped or user-wide; Enter on
+/// a row docks an edit prompt); `max_parallel_subagents <N>` still works as a
+/// one-shot shortcut. Writes are format-preserving and take effect on the next
+/// run (the current run snapshotted its config at start), except the cosmetic
+/// ones `apply_live_setting` handles. Runs only while idle, like every command.
 fn settings_command(app: &mut App, arg: &str) {
     let toml_path = app.agent_dir.join("agent.toml");
     let arg = arg.trim();
@@ -8827,11 +9083,11 @@ fn settings_command(app: &mut App, arg: &str) {
     }
 }
 
-/// One picker row per `[agent]` def, plus a leading "providers" entry that
-/// opens the provider-management screen (see `open_provider_settings`). The
-/// hint carries the current on-disk value (`= 400`) or `(unset)` when the
-/// default applies. `value` is the key so the edit dock and the `x` unset
-/// shortcut can act on it.
+/// One picker row per setting def, whatever file its scope names, plus a
+/// leading "providers" entry that opens the provider-management screen (see
+/// `open_provider_settings`). The hint carries the current on-disk value
+/// (`= 400`) or `(unset)` when the default applies. `value` is the key so the
+/// edit dock and the `x` unset shortcut can act on it.
 fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
     let mut items = vec![PickerItem {
         value: PROVIDERS_SETTINGS_ROW.to_string(),
@@ -8843,7 +9099,7 @@ fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
         AGENT_SETTINGS
             .iter()
             .map(|def| {
-                let current = current_agent_value(toml_path, def.key);
+                let current = current_setting_value(def, toml_path);
                 PickerItem {
                     value: def.key.to_string(),
                     label: def.label.to_string(),
@@ -8859,7 +9115,7 @@ fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
     items
 }
 
-/// Open the `/settings` menu: a picker row per `[agent]` key, hint showing the
+/// Open the `/settings` menu: a picker row per setting key, hint showing the
 /// current value (or `unset`), Enter docking the edit prompt for that row, `x`
 /// removing the key so its default applies again.
 fn open_settings_screen(app: &mut App) {
@@ -8915,8 +9171,16 @@ fn open_provider_settings(app: &mut App) {
     });
 }
 
+/// Truncate to the first `n` grapheme clusters. Slicing by byte or `char`
+/// would split an emoji mid-sequence and leave a different glyph on screen.
+fn grapheme_prefix(s: &str, n: usize) -> String {
+    use unicode_segmentation::UnicodeSegmentation;
+    s.graphemes(true).take(n).collect()
+}
+
 /// Keyboard for the `/settings` edit dock: chars/backspace edit the field,
-/// Enter validates and writes (empty clears the key), Esc cancels. Mirrors
+/// Enter validates and writes (an empty field clears the key, except for a
+/// `Glyph`, where it writes the off value), Esc cancels. Mirrors
 /// `handle_login_key`, minus the secret/verify machinery.
 fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c'))) && app.settings_prompt.is_some()
     {
@@ -8952,6 +9216,17 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.co
                         }
                     }
                 }
+                AgentSettingKind::Glyph { .. } => {
+                    // Not trimmed to empty-means-unset like `Text`: a cleared
+                    // field writes `""`, which is the off switch. `x` on the
+                    // row is how you get back to the default.
+                    let input = prompt.input.trim();
+                    if let Some(err) = crate::core::agent::global_config::wave_error(input) {
+                        prompt.error = Some(err);
+                        return;
+                    }
+                    Some(toml_edit::value(input.to_string()))
+                }
                 AgentSettingKind::Text { .. } => {
                     (!prompt.input.trim().is_empty())
                         .then(|| toml_edit::value(prompt.input.trim().to_string()))
@@ -8984,25 +9259,55 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {    if (key.co
                     }
                 }
             };
-            match crate::core::agent::project::set_agent_key(&toml_path, prompt.key, value) {
+            match write_setting(prompt.def(), &toml_path, value) {
                 Ok(()) => {
-                    let what = if prompt.input.trim().is_empty() {
-                        format!("{} unset (default applies)", prompt.key)
-                    } else {
-                        format!("{} = {} written", prompt.key, prompt.input.trim())
+                    let entered = prompt.input.trim().to_string();
+                    let glyph_kind = matches!(prompt.def().kind, AgentSettingKind::Glyph { .. });
+                    let what = match (entered.is_empty(), glyph_kind) {
+                        // A cleared glyph is a written value, not an unset, so
+                        // saying "default applies" would be a lie.
+                        (true, true) => format!("{} off (throbber)", prompt.key),
+                        (true, false) => format!("{} unset (default applies)", prompt.key),
+                        (false, _) => format!("{} = {entered} written", prompt.key),
                     };
-                    app.note(&format!("{what}; takes effect on the next run"));
+                    let when = if apply_live_setting(prompt.def(), &entered) {
+                        "in effect now"
+                    } else {
+                        "takes effect on the next run"
+                    };
+                    app.note(&format!("{what}; {when}"));
                     app.settings_prompt = None;
                 }
                 Err(e) => {
-                    prompt.error = Some(format!("failed to write {}: {e}", toml_path.display()));
+                    let path = setting_path(prompt.def(), &toml_path);
+                    prompt.error = Some(format!("failed to write {path}: {e}"));
                 }
             }
         }
         KeyCode::Backspace => {
-            prompt.input.pop();
+            // Whole cluster for a glyph field: popping one `char` off `👁️`
+            // leaves `👁`, so the row looks unchanged and the key reads as
+            // broken. Other kinds keep the plain char pop.
+            if matches!(prompt.def().kind, AgentSettingKind::Glyph { .. }) {
+                let keep = crate::core::agent::global_config::wave_len(&prompt.input)
+                    .saturating_sub(1);
+                prompt.input = grapheme_prefix(&prompt.input, keep);
+            } else {
+                prompt.input.pop();
+            }
         }
-        KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
+        KeyCode::Char(ch) if !ctrl => {
+            prompt.input.push(ch);
+            // Checked on the result rather than by counting up: a skin-tone
+            // modifier or ZWJ joins the cluster before it, so the string can
+            // grow by a `char` without growing by a grapheme, and that must
+            // still be allowed at the cap.
+            if let AgentSettingKind::Glyph { max, .. } = prompt.def().kind {
+                if crate::core::agent::global_config::wave_len(&prompt.input) > max {
+                    prompt.input.pop();
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -11853,6 +12158,9 @@ fn settings_prompt_lines(
                 .unwrap_or_else(|| "unset".to_string());
             format!("default: {d} · valid: >= {min}")
         }
+        AgentSettingKind::Glyph { default, max } => {
+            format!("default: {default} · valid: up to {max} chars, empty = off")
+        }
         AgentSettingKind::Text { default } => format!("default: {default}"),
         AgentSettingKind::Enum { options, default } => {
             format!("default: {default} · valid: {}", options.join(" | "))
@@ -12253,6 +12561,11 @@ fn draw_picker(
                         .map(|d| d.to_string())
                         .unwrap_or_else(|| "unset".to_string());
                     format!("default: {d} · valid: >= {min} · current: {current}")
+                }
+                AgentSettingKind::Glyph { default, max } => {
+                    format!(
+                        "default: {default} · valid: up to {max} chars, empty = off · current: {current}"
+                    )
                 }
                 AgentSettingKind::Text { default } => {
                     format!("default: {default} · current: {current}")
@@ -12987,15 +13300,27 @@ fn input_box(app: &App) -> Paragraph<'static> {
                     Style::new().dim().italic(),
                 )
             };
-            Paragraph::new(Line::from(vec![
-                Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
-                Span::styled(format!("{word}…"), style),
-                Span::styled(
-                    " (Esc to cancel, type to queue next message)",
-                    Style::new().dim().italic(),
+            // With `wave` set, the glyph travels along the action word in place
+            // of the leading throbber: one moving thing per row, not two.
+            let message = format!("{word}…");
+            let mut spans = Vec::with_capacity(6);
+            match wave_glyph() {
+                Some(glyph) => spans.extend(
+                    wave_sweep_line(&message, &glyph, app.spinner_frame, style).spans,
                 ),
-            ]))
-            .block(block)
+                None => {
+                    spans.push(Span::styled(
+                        format!("{} ", app.spinner()),
+                        Style::new().cyan(),
+                    ));
+                    spans.push(Span::styled(message, style));
+                }
+            }
+            spans.push(Span::styled(
+                " (Esc to cancel, type to queue next message)",
+                Style::new().dim().italic(),
+            ));
+            Paragraph::new(Line::from(spans)).block(block)
         } else {
             let n = app.message_queue.len();
             Paragraph::new(Line::from(vec![
@@ -13215,8 +13540,9 @@ mod tests {
         DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
         KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER, PROVIDERS_SETTINGS_ROW,
         SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
-        alt_scroll_restore, alt_scroll_save_off,
+        alt_scroll_restore, alt_scroll_save_off, spans_width, wave_sweep_line, with_wave_glyph,
     };
+    use unicode_width::UnicodeWidthStr;
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
     use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
@@ -16694,6 +17020,122 @@ mod tests {
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
+    /// `wave` lives in `~/.jan/config.toml`, not the project's agent.toml, so
+    /// the row has to write across scopes. It is also the one setting that
+    /// applies live: a cosmetic glyph you must restart to see is not a toggle,
+    /// and the note must not claim a restart is needed.
+    #[test]
+    fn settings_prompt_writes_a_global_scope_key_and_applies_it_live() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            let mut app = test_app();
+            std::fs::create_dir_all(&app.agent_dir).unwrap();
+            let toml_path = app.agent_dir.join("agent.toml");
+            std::fs::write(&toml_path, "[agent]\n").unwrap();
+
+            let def = AGENT_SETTINGS.iter().find(|d| d.key == "wave").unwrap();
+            app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+            super::handle_settings_key(&mut app, key(KeyCode::Char('~')), false);
+            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+
+            assert!(app.settings_prompt.is_none(), "Enter closes the dock");
+            let global = std::fs::read_to_string(home.join(".jan").join("config.toml")).unwrap();
+            assert!(global.contains("wave = \"~\""), "written globally: {global}");
+            let project = std::fs::read_to_string(&toml_path).unwrap();
+            assert!(
+                !project.contains("wave"),
+                "a global key must not land in agent.toml: {project}"
+            );
+            assert_eq!(super::wave_glyph().as_deref(), Some("~"), "applied live");
+            let note = transcript_text(&app);
+            assert!(note.contains("wave = ~ written"), "{note}");
+            assert!(note.contains("in effect now"), "no restart is needed: {note}");
+
+            // Clearing the field writes the off value, live. It does *not*
+            // remove the key: absent means the default 👋 comes back, which is
+            // the opposite of what someone clearing the glyph asked for.
+            app.settings_prompt = Some(super::SettingsPrompt::new(def, Some("~")));
+            super::handle_settings_key(&mut app, key(KeyCode::Backspace), false);
+            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+            assert_eq!(super::wave_glyph(), None, "off applied live");
+            // Asserted through the reader, not the raw text: the scaffolded
+            // template carries a commented `# wave = ...` example line that a
+            // substring check would match forever.
+            assert_eq!(
+                crate::core::agent::global_config::global_value("wave").as_deref(),
+                Some(""),
+                "cleared field persists as the off value"
+            );
+            let note = transcript_text(&app);
+            assert!(note.contains("wave off (throbber)"), "off, not unset: {note}");
+
+            // Removing the key is the other path, and it restores the default
+            // rather than leaving the sweep off.
+            crate::core::agent::global_config::set_global_key("wave", None).expect("unset");
+            super::set_wave_glyph(None);
+            assert_eq!(
+                crate::core::agent::global_config::global_value("wave"),
+                None,
+                "key removed from the file"
+            );
+            assert_eq!(
+                super::wave_glyph().as_deref(),
+                Some(crate::core::agent::global_config::WAVE_DEFAULT),
+                "a removed key brings the default sweep back"
+            );
+
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+        });
+    }
+
+    /// The picker hint for a global row must read the global file, or every
+    /// user-wide key would show `(unset)` however it is configured.
+    /// Sync, with a local runtime for the one keypress: `with_temp_home` swaps
+    /// the process `HOME`, so the guard must not be held across an await.
+    #[test]
+    fn settings_picker_reads_and_unsets_a_global_scope_key() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime");
+            let mut app = test_app();
+            std::fs::create_dir_all(&app.agent_dir).unwrap();
+            std::fs::write(app.agent_dir.join("agent.toml"), "[agent]\n").unwrap();
+            std::fs::create_dir_all(home.join(".jan")).unwrap();
+            let global_path = home.join(".jan").join("config.toml");
+            std::fs::write(&global_path, "wave = \"🍌\"\n").unwrap();
+
+            super::settings_command(&mut app, "");
+            let picker = app.picker.as_ref().expect("picker opens");
+            let row = picker
+                .items
+                .iter()
+                .find(|i| i.value == "wave")
+                .expect("wave row present");
+            assert_eq!(row.hint.as_deref(), Some("= 🍌"), "hint reads ~/.jan");
+
+            let idx = picker.items.iter().position(|i| i.value == "wave").unwrap();
+            app.picker.as_mut().unwrap().selected = idx;
+            rt.block_on(press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE));
+            assert_eq!(
+                crate::core::agent::global_config::global_value("wave"),
+                None,
+                "x unsets globally"
+            );
+            let row = app
+                .picker
+                .as_ref()
+                .expect("picker stays open")
+                .items
+                .iter()
+                .find(|i| i.value == "wave")
+                .expect("wave row present");
+            assert_eq!(row.hint.as_deref(), Some("(unset)"));
+
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+        });
+    }
+
     #[test]
     fn settings_prompt_esc_cancels_without_writing() {
         let mut app = test_app();
@@ -16712,6 +17154,60 @@ mod tests {
         let doc = std::fs::read_to_string(&toml_path).unwrap();
         assert!(doc.contains("max_parallel_subagents = 7"), "unchanged: {doc}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// The glyph field stops accepting input at the cap rather than letting a
+    /// long string be typed and rejected on Enter, and it counts what the eye
+    /// counts: `👁️👄👁️` is three characters, not five.
+    #[test]
+    fn settings_glyph_field_caps_at_three_graphemes() {
+        let mut app = test_app();
+        let def = AGENT_SETTINGS.iter().find(|d| d.key == "wave").unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+
+        for ch in "👁️👄👁️".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        fn input(app: &App) -> String {
+            app.settings_prompt.as_ref().unwrap().input.clone()
+        }
+        assert_eq!(input(&app), "👁️👄👁️", "three clusters of five chars all fit");
+
+        // One past the cap is dropped, and the field is left exactly as it was
+        // rather than half-appended.
+        super::handle_settings_key(&mut app, key(KeyCode::Char('x')), false);
+        assert_eq!(input(&app), "👁️👄👁️", "a fourth cluster is refused");
+
+        // Backspace removes a whole cluster: popping one `char` off `👁️` would
+        // leave `👁`, which looks like nothing happened.
+        super::handle_settings_key(&mut app, key(KeyCode::Backspace), false);
+        assert_eq!(input(&app), "👁️👄", "backspace drops the whole cluster");
+    }
+
+    /// A hand-typed over-long glyph is rejected inline with a reason, not
+    /// silently truncated: truncation would save something the user did not
+    /// type.
+    #[test]
+    fn settings_glyph_rejects_an_over_long_paste() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            let def = AGENT_SETTINGS.iter().find(|d| d.key == "wave").unwrap();
+            let mut prompt = super::SettingsPrompt::new(def, None);
+            // Set directly: the key handler caps typing, so an over-long value
+            // can only arrive from a paste or a hand-edited file.
+            prompt.input = "abcd".to_string();
+            app.settings_prompt = Some(prompt);
+
+            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+            let prompt = app.settings_prompt.as_ref().expect("dock stays open");
+            let error = prompt.error.as_deref().expect("inline error");
+            assert!(error.contains('3'), "names the cap: {error}");
+            assert_eq!(
+                crate::core::agent::global_config::global_value("wave"),
+                None,
+                "nothing written on a rejected value"
+            );
+        });
     }
 
     #[test]
@@ -20475,11 +20971,17 @@ mod tests {
         app.submit_user("go".into());
         assert_eq!(app.status, Status::Running);
 
+        // Pinned off: these assert on the spinner glyph and the intact action
+        // word, both of which the sweep overwrites a cell of. `wave` is on by
+        // default now, so the sweep has its own tests and these keep testing
+        // the row underneath it.
         let frame_of = |app: &mut App| {
-            render_rows(app, 80, 12)
-                .into_iter()
-                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
-                .expect("running placeholder present")
+            with_wave_glyph(None, || {
+                render_rows(app, 80, 12)
+                    .into_iter()
+                    .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                    .expect("running placeholder present")
+            })
         };
 
         app.spinner_frame = 0;
@@ -20510,10 +21012,14 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: "<think>ponder the plan".into(),
         });
-        let row = render_rows(&mut app, 80, 12)
-            .into_iter()
-            .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
-            .expect("running placeholder present");
+        // Pinned off for the same reason as `working_placeholder_animates`:
+        // the sweep replaces a letter of the word being matched.
+        let row = with_wave_glyph(None, || {
+            render_rows(&mut app, 80, 12)
+                .into_iter()
+                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                .expect("running placeholder present")
+        });
         assert!(
             THINKING_WORDS.iter().any(|w| row.contains(w)),
             "expected a thinking synonym in: {row:?}"
@@ -20535,7 +21041,11 @@ mod tests {
             text: "<think>ponder the plan".into(),
         });
         let mut terminal = Terminal::new(TestBackend::new(80, 12)).unwrap();
-        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        // Pinned off: the row is located by matching the intact word, which
+        // the sweep breaks.
+        with_wave_glyph(None, || {
+            terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        });
         let buf = terminal.backend().buffer().clone();
         // Locate the placeholder row, then assert the action word's cells are
         // orange (the trailing hint stays dim, so only the word carries it).
@@ -20557,10 +21067,14 @@ mod tests {
         app.submit_user("go".into());
         let mut word_at = |frame: usize| {
             app.spinner_frame = frame;
-            let row = render_rows(&mut app, 80, 12)
-                .into_iter()
-                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
-                .expect("running placeholder present");
+            // Pinned off: the sweep would eat a letter of the very word this
+            // looks up.
+            let row = with_wave_glyph(None, || {
+                render_rows(&mut app, 80, 12)
+                    .into_iter()
+                    .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                    .expect("running placeholder present")
+            });
             WORKING_WORDS
                 .iter()
                 .find(|w| row.contains(*w))
@@ -20596,11 +21110,16 @@ mod tests {
         app.apply(StreamEvent::Reasoning {
             text: "ponder the plan".into(),
         });
-        // Orange thinking synonyms while reasoning streams.
-        let row = render_rows(&mut app, 80, 12)
-            .into_iter()
-            .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
-            .expect("running placeholder present");
+        // Pinned off: this asserts on the *word*, and the sweep overwrites a
+        // letter of it with the travelling glyph. `wave` is on by default now,
+        // so leaving it to the process state makes this test depend on
+        // whichever config the shared cell resolved first.
+        let row = with_wave_glyph(None, || {
+            render_rows(&mut app, 80, 12)
+                .into_iter()
+                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                .expect("running placeholder present")
+        });
         assert!(
             THINKING_WORDS.iter().any(|w| row.contains(w)),
             "expected a thinking synonym while reasoning: {row:?}"
@@ -24594,6 +25113,119 @@ mod tests {
             .unwrap()
             .content
             .ends_with('\u{2026}'));
+    }
+
+    /// The bug #8726 was reverted for: a 2-cell emoji stood in for a 1-cell
+    /// character, so every frame was a cell wider than the text and the tail
+    /// slid right until the last character fell off the row. The sweep must
+    /// occupy exactly the width of the message it travels along, at every frame.
+    #[test]
+    fn a_wide_glyph_never_changes_the_row_width() {
+        let message = "working…";
+        let plain = message.width();
+        for glyph in ["👋", "🍌", "~", "<o>"] {
+            for frame in 0..40 {
+                let line = wave_sweep_line(message, glyph, frame, Style::default());
+                assert_eq!(
+                    spans_width(&line.spans),
+                    plain,
+                    "glyph {glyph:?} frame {frame} changed the row width"
+                );
+            }
+        }
+    }
+
+    /// The glyph covers characters instead of deleting them: every frame keeps
+    /// the message's own width, and the characters it is not standing on are
+    /// still there in order.
+    #[test]
+    fn the_sweep_covers_characters_without_dropping_the_rest() {
+        let line = wave_sweep_line("working…", "👋", 0, Style::default());
+        let text = line_text(&line);
+        assert!(text.starts_with('👋'), "{text}");
+        // "👋" is two cells, so it stands on "wo" and the rest survives.
+        assert!(text.ends_with("rking…"), "{text}");
+    }
+
+    /// A 1-cell glyph spends one character, so a narrow ASCII wave is exact
+    /// rather than padded.
+    #[test]
+    fn a_narrow_glyph_covers_exactly_one_character() {
+        let line = wave_sweep_line("abc", "~", 0, Style::default());
+        assert_eq!(line_text(&line), "~bc");
+    }
+
+    /// The sweep reverses at both ends instead of jumping back to the start,
+    /// and never runs off the message.
+    #[test]
+    fn the_sweep_reverses_at_both_ends() {
+        let seen: Vec<String> = (0..8)
+            .map(|frame| line_text(&wave_sweep_line("abcd", "~", frame, Style::default())))
+            .collect();
+        assert_eq!(
+            seen,
+            vec!["~bcd", "a~cd", "ab~d", "abc~", "ab~d", "a~cd", "~bcd", "a~cd"]
+        );
+    }
+
+    /// Multi-byte characters are covered on character boundaries, so a sweep
+    /// over non-ASCII text cannot slice a `char` in half and panic.
+    #[test]
+    fn the_sweep_respects_character_boundaries() {
+        for frame in 0..12 {
+            let line = wave_sweep_line("éxé…", "~", frame, Style::default());
+            assert_eq!(spans_width(&line.spans), "éxé…".width());
+        }
+    }
+
+    /// A message narrower than the glyph has nowhere to sweep, so it is left
+    /// alone rather than being overwritten by a glyph wider than itself.
+    #[test]
+    fn a_message_narrower_than_the_glyph_is_left_alone() {
+        let line = wave_sweep_line("a", "👋", 0, Style::default());
+        assert_eq!(line_text(&line), "a");
+    }
+
+    /// Unset `wave` leaves the Braille throbber in place: the sweep is opt-in,
+    /// so a terminal with no emoji font is unaffected by default.
+    ///
+    /// Anchored on "Esc to cancel", which only the input row carries: the header
+    /// also shows `[working]` and the brand wave, and matching those would test
+    /// the wrong row.
+    #[test]
+    fn the_working_row_keeps_its_throbber_until_a_wave_is_configured() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        let rows = with_wave_glyph(None, || render_rows(&mut app, 80, 12));
+        let row = rows
+            .iter()
+            .find(|r| r.contains("Esc to cancel"))
+            .expect("working row")
+            .clone();
+        assert!(
+            SPINNER.iter().any(|s| row.contains(s)),
+            "expected a throbber in {row:?}"
+        );
+        assert!(!row.contains('👋'), "{row}");
+    }
+
+    /// With `wave` set the glyph replaces the throbber rather than joining it:
+    /// two moving things on one row read as jitter.
+    #[test]
+    fn a_configured_wave_replaces_the_throbber() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        let rows = with_wave_glyph(Some("🍌"), || render_rows(&mut app, 80, 12));
+        let row = rows
+            .iter()
+            .find(|r| r.contains("Esc to cancel"))
+            .expect("working row")
+            .clone();
+        assert!(row.contains('🍌'), "expected the wave in {row:?}");
+        assert!(
+            !SPINNER.iter().any(|s| row.contains(s)),
+            "throbber still present in {row:?}"
+        );
     }
 
 }

@@ -60,6 +60,29 @@ in, so you can see what's being produced before it lands. <kbd>Esc</kbd> cancels
 Type while it's working and your message queues rather than being dropped - see
 [Sessions](/docs/agent/sessions#queueing).
 
+### The working row
+
+While a turn runs, the input row shows an action word that turns over every few seconds, with a 👋
+sweeping back and forth along it, so a long turn does not read as a hung UI.
+
+Pick a different glyph from `/settings > wave`, or set it in `~/.jan/config.toml` directly:
+
+```toml
+wave = "👋"
+```
+
+Any string of up to three characters works - `"🍌"`, `"~"`, `"<o>"`, `"👁️👄👁️"`. The limit counts
+what you see, so a single emoji built from several code points still counts as one. The glyph
+replaces the Braille throbber rather than joining it, and covers the characters it passes over
+instead of pushing them along, so the row never changes width no matter how wide the glyph is.
+
+Unlike most settings, this one applies the moment you save it, with no restart.
+
+To go back to the plain Braille throbber - if your terminal lacks the font and draws a
+missing-character box - clear the field in `/settings` and save. That writes `wave = ""`, which is
+the off switch. Pressing <kbd>x</kbd> on the row is the other direction: it removes the key, so the
+default 👋 comes back.
+
 ## Reasoning
 
 While a model works it may emit a chain of thought before it lands on an answer. By default the
