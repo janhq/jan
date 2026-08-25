@@ -12524,7 +12524,7 @@ fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) 
         .borders(Borders::ALL)
         .border_style(Style::new().cyan())
         .title(Span::styled(
-            " tokamak sign-in ",
+            " sign in to Jan ",
             Style::new().on_cyan().black().bold(),
         ));
 
@@ -16810,7 +16810,7 @@ mod tests {
 
         let rows = render_rows(&mut app, 80, 24);
         let screen = rows.join("\n");
-        assert!(screen.contains("tokamak sign-in"), "{screen}");
+        assert!(screen.contains("sign in to Jan"), "{screen}");
         assert!(
             !screen.contains("tk-secret"),
             "the key must never be rendered:\n{screen}"
