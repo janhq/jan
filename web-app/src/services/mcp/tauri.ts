@@ -83,6 +83,7 @@ export class TauriMCPService extends DefaultMCPService {
     toolName: string
     serverName?: string
     arguments: object
+    maxOutputChars?: number
   }): Promise<{ error: string; content: { text: string }[] }> {
     return window.core?.api?.callTool(args)
   }

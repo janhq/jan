@@ -43,7 +43,11 @@ export class DefaultMCPService implements MCPService {
     return []
   }
 
-  async callTool(args: { toolName: string; arguments: object }): Promise<MCPToolCallResult> {
+  async callTool(args: {
+    toolName: string
+    arguments: object
+    maxOutputChars?: number
+  }): Promise<MCPToolCallResult> {
     console.log('callTool called with args:', args)
     return {
       error: '',
