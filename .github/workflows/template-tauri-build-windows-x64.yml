@@ -28,6 +28,26 @@ on:
         type: string
         default: 'nightly'
         description: 'The channel to use for this job'
+      runner:
+        required: false
+        type: string
+        default: 'windows-2025'
+        description: >
+          Label of the runner to build on. A self-hosted label is what carries
+          the engine toolchain; the default keeps a GitHub-hosted image, which
+          has enough for the vulkan variant. Pinned rather than
+          `windows-latest` for reproducibility only -- it does not choose a
+          Visual Studio version: this label resolves to `windows-2025-vs2026`
+          too, which is why the engine build asks for Ninja rather than trying
+          to make the Visual Studio generator work.
+      engine_variant:
+        required: false
+        type: string
+        default: 'vulkan'
+        description: >
+          JAN_ENGINE_VARIANT for the bundled jan-llama-worker: a `-` joined
+          backend list, e.g. vulkan, cuda13-vulkan, rocm-vulkan. One CUDA major
+          per bundle, so cuda12 and cuda13 are separate builds.
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
@@ -63,7 +83,7 @@ on:
 
 jobs:
   build-windows-x64:
-    runs-on: windows-latest
+    runs-on: ${{ inputs.runner }}
     outputs:
       WIN_SIG: ${{ steps.metadata.outputs.WIN_SIG }}
       FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
@@ -224,12 +244,22 @@ jobs:
           yarn --version
           yarn config set -H enableImmutableInstalls false
 
+      # `make build` compiles jan-llama-worker, which the NSIS and MSI bundles
+      # both carry. The default variant is vulkan, which covers AMD, Intel and
+      # NVIDIA through one driver-provided backend; a cuda variant needs a
+      # caller-supplied runner that carries the toolkit.
+      - name: Set up the llama.cpp engine toolchain
+        uses: ./.github/actions/setup-engine-toolchain
+        with:
+          variant: ${{ inputs.engine_variant }}
+
       - name: Build app
         shell: bash
         run: |
           make build
         env:
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          JAN_ENGINE_REQUIRE_SIGNING: '1'
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -244,6 +274,17 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
+
+      # The engine build is fifteen minutes of cmake whose output cargo only
+      # surfaces as a tail. When it fails, the whole log is the artifact worth
+      # having.
+      - name: Upload the engine build log
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: engine-build-log-windows-x64
+          path: src-tauri/target/engine-build.log
+          if-no-files-found: ignore
 
       - name: Upload NSIS Installer Artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

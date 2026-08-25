@@ -29,6 +29,22 @@ on:
         type: boolean
         default: false
         description: 'If true, builds both .deb and .appimage but disables auto-updater'
+      runner:
+        required: false
+        type: string
+        default: 'ubuntu-22.04'
+        description: >
+          Label of the runner to build on. A self-hosted label is what carries
+          the engine toolchain; the default keeps the GitHub-hosted image, which
+          only has enough for the vulkan variant.
+      engine_variant:
+        required: false
+        type: string
+        default: 'vulkan'
+        description: >
+          JAN_ENGINE_VARIANT for the bundled jan-llama-worker: a `-` joined
+          backend list, e.g. vulkan, cuda13-vulkan, rocm-vulkan. One CUDA major
+          per bundle, so cuda12 and cuda13 are separate builds.
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
@@ -44,7 +60,7 @@ on:
         required: false
 jobs:
   build-linux-x64:
-    runs-on: ubuntu-22.04
+    runs-on: ${{ inputs.runner }}
     permissions:
       contents: write
     steps:
@@ -83,6 +99,14 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 libappindicator3-dev
+
+      # `make build` compiles jan-llama-worker into the deb this job produces.
+      # Vulkan is also the only backend Flathub's own builders can produce, so
+      # the two Linux paths ship the same engine.
+      - name: Set up the llama.cpp engine toolchain
+        uses: ./.github/actions/setup-engine-toolchain
+        with:
+          variant: ${{ inputs.engine_variant }}
 
       - name: Update app version base public_provider
         run: |

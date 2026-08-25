@@ -19,9 +19,19 @@
     ]
   },
   "bundle": {
-    "targets": ["deb", "appimage"],
-    "resources": ["resources/LICENSE", "resources/bin/jan-cli"],
-    "externalBin": ["resources/bin/uv"],
+    "targets": [
+      "deb",
+      "appimage"
+    ],
+    "resources": [
+      "resources/LICENSE",
+      "resources/bin/jan-cli",
+      "resources/bin/jan-llama-worker",
+      "resources/bin/libggml*.so*"
+    ],
+    "externalBin": [
+      "resources/bin/uv"
+    ],
     "linux": {
       "appimage": {
         "bundleMediaFramework": false,

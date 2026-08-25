@@ -1,0 +1,186 @@
+name: Engine Build
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/engine-build.yml
+      - .github/actions/setup-engine-toolchain/action.yml
+      - Makefile
+      - src-tauri/build-utils/*engine*.sh
+      - src-tauri/plugins/tauri-plugin-llamacpp/build.rs
+      - src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
+      - src-tauri/plugins/tauri-plugin-llamacpp/src/engine/**
+      - src-tauri/plugins/tauri-plugin-llamacpp/shim/**
+      - src-tauri/plugins/tauri-plugin-llamacpp/src/bin/**
+
+concurrency:
+  group: engine-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # rust-check.yml compiles this plugin with default features, which leave the
+  # engine OFF -- so nothing there links llama.cpp, and a broken shim or build.rs
+  # would first surface in a nightly desktop build. A PR gets the one cheapest
+  # variant that still links the shim; the full per-vendor matrix is for a tag or
+  # a manual run, where the wall clock of a CUDA plus HIP build is affordable.
+  variants:
+    name: Select variants
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.select.outputs.include }}
+    steps:
+      - id: select
+        shell: bash
+        run: |
+          pr='[
+            {"name":"linux-x64-vulkan","variant":"vulkan","runs-on":"ubuntu-22-04"}
+          ]'
+          full='[
+            {"name":"linux-x64-cuda13","variant":"cuda13-vulkan","runs-on":"ubuntu-22-04-cuda-13-0"},
+            {"name":"linux-x64-cuda12","variant":"cuda12-vulkan","runs-on":"ubuntu-22-04-cuda-12-4"},
+            {"name":"linux-x64-rocm","variant":"rocm-vulkan","runs-on":"ubuntu-22-04","rocm":true},
+            {"name":"windows-x64-cuda13","variant":"cuda13-vulkan","runs-on":"windows-cuda-13-0"},
+            {"name":"windows-x64-cuda12","variant":"cuda12-vulkan","runs-on":"windows-cuda-12-0"},
+            {"name":"macos-arm64-metal","variant":"metal","runs-on":"macos-selfhosted-14-arm64"}
+          ]'
+          # Not in `full`, and each for a reason rather than an oversight:
+          #   linux-arm64-cuda13   no arm64 CUDA runner in the pool yet (sbsa
+          #                        works, the label does not exist)
+          #   linux-arm64-vulkan   same pool gap; nothing self-hosted is arm64
+          #   windows-arm64-vulkan windows-11-arm has no engine toolchain image
+          #   windows-x64-rocm     no Windows HIP SDK image; ROCm on Windows is
+          #                        an installer run, not an apt line
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "include=$(echo "$pr" | jq -c .)" >> "$GITHUB_OUTPUT"
+          else
+            echo "include=$(echo "$full" | jq -c .)" >> "$GITHUB_OUTPUT"
+          fi
+
+  worker:
+    name: jan-llama-worker (${{ matrix.name }})
+    needs: variants
+    # Fork PRs must not reach this job: every runner label in the matrix is
+    # self-hosted and persistent, and the job compiles `build.rs`, `shim/**`
+    # and `engine/**` from the PR tip, then runs `sudo apt-get install`. A
+    # build script is arbitrary code execution by construction, so a fork PR
+    # touching this workflow's paths filter would get root on a box that later
+    # hosts tag-time release builds. Same guard as
+    # jan-tauri-build-nightly.yaml; `workflow_dispatch` and tag pushes are
+    # unaffected because they are not `pull_request` events.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.variants.outputs.include) }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # The plugin depends on tauri, so building its binary needs the GUI
+      # headers even though the worker itself has no window. Idempotent, and
+      # a no-op on an image that already carries them.
+      - name: Install Tauri dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
+
+      # The CUDA images carry their own toolkit; no image in the pool carries
+      # ROCm, so the one HIP job provisions it, guarded so a reprovisioned image
+      # skips the apt work entirely. Mirrors llama.cpp's own menlo-build.yml.
+      - name: Provision ROCm
+        if: matrix.rocm && runner.os == 'Linux'
+        run: |
+          if command -v hipcc >/dev/null 2>&1; then
+            echo "hipcc already on the image"
+          else
+            sudo mkdir --parents --mode=0755 /etc/apt/keyrings
+            wget -qO- https://repo.radeon.com/rocm/rocm.gpg.key \
+              | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg >/dev/null
+            echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/${ROCM_VERSION} jammy main" \
+              | sudo tee /etc/apt/sources.list.d/rocm.list
+            printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
+              | sudo tee /etc/apt/preferences.d/rocm-pin-600
+            sudo apt-get update
+            sudo apt-get install -y rocm-hip-sdk rocwmma-dev
+          fi
+          echo "HIPCXX=$(hipconfig -l)/clang" >> "$GITHUB_ENV"
+          echo "HIP_PATH=$(hipconfig -R)" >> "$GITHUB_ENV"
+          echo "/opt/rocm/bin" >> "$GITHUB_PATH"
+        env:
+          ROCM_VERSION: '7.2.1'
+
+      - name: Set up the llama.cpp engine toolchain
+        uses: ./.github/actions/setup-engine-toolchain
+        with:
+          variant: ${{ matrix.variant }}
+
+      - name: Build and stage the engine
+        run: make build-engine
+
+      # The only place the engine-gated code is type-checked at all. Every
+      # suite under tests/ is `#![cfg(feature = "engine")]`, and both
+      # rust-check.yml and `cargo test --lib` run with the feature off, so all
+      # three currently report "0 passed; ok" -- three green suites that assert
+      # nothing, over the whole FFI boundary in sys.rs. `--no-run` compiles
+      # them without needing a model: the runtime half still wants
+      # JAN_TEST_GGUF, but a suite that no longer builds now fails here instead
+      # of passing vacuously. Cheap because `make build-engine` above already
+      # built llama.cpp into the same target dir with the same features.
+      - name: Compile the engine-gated test suites
+        run: make check-engine-tests
+
+      # --version proves the worker starts and resolves libggml through the
+      # rpath; --list-devices additionally exercises the shim and the pinned
+      # llama.cpp assert. Device enumeration is best-effort because a headless
+      # runner has no ICD to report, and a CUDA runner may have no GPU at all.
+      - name: Smoke-test the worker
+        shell: bash
+        run: |
+          bin=src-tauri/resources/bin/jan-llama-worker
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            bin="$bin.exe"
+          fi
+          ls -l src-tauri/resources/bin
+          "./$bin" --version
+          "./$bin" --list-devices || true
+
+      # The bundle is universal but the engine build is host-arch, so name the
+      # slice that is actually covered instead of shipping the gap silently.
+      - name: Report the engine's architecture coverage
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          archs=$(lipo -archs src-tauri/resources/bin/jan-llama-worker)
+          echo "jan-llama-worker: $archs"
+          for want in x86_64 arm64; do
+            case " $archs " in
+              *" $want "*) ;;
+              *) echo "::warning::jan-llama-worker has no $want slice, so local inference will not start on $want Macs" ;;
+            esac
+          done
+
+      - name: Upload the engine
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: jan-llama-worker-${{ matrix.name }}
+          path: src-tauri/resources/bin
+          if-no-files-found: error
+
+      - name: Upload the engine build log
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: engine-build-log-${{ matrix.name }}
+          path: src-tauri/target/engine-build.log
+          if-no-files-found: ignore

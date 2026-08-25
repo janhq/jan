@@ -1,6 +1,7 @@
 import { generateText } from 'ai'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { BACKGROUND_SLOT_ID } from '@/constants/models'
 
 const MAX_TITLE_WORDS = 10
 const MAX_PROMPT_LENGTH = 1500
@@ -80,21 +81,16 @@ export async function generateThreadTitle(
     }
 
     console.log('[ThreadTitle] Creating model:', selectedModel.id, 'provider:', selectedProvider)
-    // Pin to the reserved background slot (RESERVED_BACKGROUND_SLOTS in
-    // preset.ts) — one index past the user-visible "Parallel Sequences"
-    // count — so this call can never evict a chat request's KV cache.
-    // "Parallel Sequences" = 0 means auto (llama.cpp picks its own slot
-    // count); we can't safely reserve a slot in that case, so skip pinning.
+    // Pin to the reserved background slot so this call can never evict a chat
+    // request's KV cache. It is a fixed index, not one derived from the
+    // "Parallel Sequences" setting: upstream wraps an out-of-range id_slot
+    // modulo the slot count instead of rejecting it, so a pin computed from the
+    // provider-level value silently landed back on slot 0 whenever the emitted
+    // count disagreed -- which a per-model `parallel` override does.
     const params: Record<string, unknown> = {}
     if (selectedProvider === 'llamacpp') {
       params.chat_template_kwargs = { enable_thinking: false }
-      const userParallel = Number(
-        provider.settings?.find((s) => s.key === 'parallel')?.controller_props
-          ?.value ?? 1
-      )
-      if (Number.isFinite(userParallel) && userParallel > 0) {
-        params.id_slot = userParallel
-      }
+      params.id_slot = BACKGROUND_SLOT_ID
     }
     const model = await ModelFactory.createModel(
       selectedModel.id,

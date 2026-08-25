@@ -829,11 +829,13 @@ fn mcp_call_result_to_string(result: &CallToolResult) -> String {
     }
 }
 
-async fn router_upstream(
+/// The loopback endpoint local-model requests are forwarded to: the engine
+/// worker's `/v1` surface, or None when no engine is running.
+async fn engine_upstream(
     llama_state: &LlamacppState,
     destination_path: &str,
 ) -> Option<(String, String)> {
-    let guard = llama_state.router.lock().await;
+    let guard = llama_state.engine.lock().await;
     guard.as_ref().map(|h| {
         (
             format!("http://127.0.0.1:{}/v1{}", h.port, destination_path),
@@ -842,16 +844,10 @@ async fn router_upstream(
     })
 }
 
-async fn router_list_models(llama_state: &LlamacppState, client: &Client) -> Vec<String> {
-    let (url, key) = {
-        let guard = llama_state.router.lock().await;
-        match guard.as_ref() {
-            Some(h) => (
-                format!("http://127.0.0.1:{}/v1/models", h.port),
-                h.api_key.clone(),
-            ),
-            None => return Vec::new(),
-        }
+async fn engine_list_models(llama_state: &LlamacppState, client: &Client) -> Vec<String> {
+    let (url, key) = match engine_upstream(llama_state, "/models").await {
+        Some(v) => v,
+        None => return Vec::new(),
     };
     let resp = match client
         .get(&url)
@@ -861,7 +857,7 @@ async fn router_list_models(llama_state: &LlamacppState, client: &Client) -> Vec
     {
         Ok(r) => r,
         Err(e) => {
-            log::warn!("Failed to query router /v1/models: {e}");
+            log::warn!("Failed to query the engine's /v1/models: {e}");
             return Vec::new();
         }
     };
@@ -883,7 +879,7 @@ async fn router_list_models(llama_state: &LlamacppState, client: &Client) -> Vec
 }
 
 async fn router_first_model(llama_state: &LlamacppState, client: &Client) -> Option<String> {
-    router_list_models(llama_state, client).await.into_iter().next()
+    engine_list_models(llama_state, client).await.into_iter().next()
 }
 
 async fn resolve_upstream_for_model(
@@ -932,7 +928,7 @@ async fn resolve_upstream_for_model(
     }
     drop(mlx_guard);
 
-    if let Some((url, key)) = router_upstream(&llama_state, destination_path).await {
+    if let Some((url, key)) = engine_upstream(&llama_state, destination_path).await {
         return Ok((url, vec![key]));
     }
 
@@ -1718,7 +1714,7 @@ async fn proxy_request(
                                 target_base_url =
                                     Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
                             } else if let Some((url, key)) =
-                                router_upstream(&llama_state, "/messages").await
+                                engine_upstream(&llama_state, "/messages").await
                             {
                                 session_api_keys = vec![key];
                                 target_base_url = Some(url);
@@ -2261,7 +2257,7 @@ async fn proxy_request(
                             };
 
                             let router_up =
-                                router_upstream(&llama_state, &destination_path).await;
+                                engine_upstream(&llama_state, &destination_path).await;
 
                             if mlx_session_info.is_none() && router_up.is_none() {
                                 log::warn!(
@@ -2342,7 +2338,7 @@ async fn proxy_request(
         (hyper::Method::GET, "/models") => {
             log::debug!("Handling GET /v1/models request");
 
-            let local_models: Vec<_> = router_list_models(&llama_state, &client)
+            let local_models: Vec<_> = engine_list_models(&llama_state, &client)
                 .await
                 .into_iter()
                 .map(|id| {

@@ -17,6 +17,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { engineSlotsIdle } from '@janhq/tauri-plugin-llamacpp-api'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { renderInstructions } from '@/lib/instructionTemplate'
 import {
@@ -24,7 +25,6 @@ import {
   ConversationContent,
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation'
-import { invoke } from '@tauri-apps/api/core'
 import { generateId, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
@@ -627,10 +627,7 @@ function ThreadDetail() {
                 let idle = false
                 for (let attempt = 0; attempt < 6; attempt++) {
                   try {
-                    idle = await invoke<boolean>(
-                      'plugin:llamacpp|router_slots_idle',
-                      { modelId }
-                    )
+                    idle = await engineSlotsIdle(modelId)
                   } catch {
                     idle = true
                     break

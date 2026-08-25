@@ -6,11 +6,6 @@
   "noUpdateAvailable": "最新バージョンを実行しています",
   "devVersion": "開発バージョンが検出されました",
   "updateError": "アップデートの確認に失敗しました",
-  "checkForBackendUpdates": "Llamacppのアップデートを確認",
-  "checkForBackendUpdatesDesc": "Llamacppバックエンドの新しいバージョンが利用可能かどうかを確認します。",
-  "checkingForBackendUpdates": "Llamacppのアップデートを確認中...",
-  "noBackendUpdateAvailable": "最新のLlamacppバージョンを実行しています",
-  "backendUpdateError": "Llamacppのアップデートの確認に失敗しました",
   "changeLocation": "場所を変更",
   "copied": "コピーしました",
   "copyPath": "パスをコピー",
@@ -331,20 +326,6 @@
       "changeLocation": "場所を変更"
     }
   },
-  "backendUpdater": {
-    "newBackendVersion": "新しいLlamacppバージョン {{version}}",
-    "backendUpdateAvailable": "Llamacppのアップデートが利用可能です",
-    "remindMeLater": "後で通知",
-    "updating": "更新中...",
-    "updateNow": "今すぐ更新",
-    "updateSuccess": "Llamacppは正常に更新されました",
-    "updateError": "Llamacppの更新に失敗しました"
-  },
   "backendInstallSuccess": "バックエンドは正常にインストールされました",
-  "backendInstallError": "バックエンドのインストールに失敗しました",
-  "installBackendFromFile": "ファイルからバックエンドをインストール",
-  "installingBackend": "バックエンドをインストール中...",
-  "installCudaRuntime": "CUDAランタイムをインストール",
-  "installingCudaRuntime": "CUDAランタイムをインストール中...",
-  "cudaRuntimeInstalled": "CUDAランタイムをインストールしました"
+  "backendInstallError": "バックエンドのインストールに失敗しました"
 }

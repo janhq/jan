@@ -1289,6 +1289,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
+name = "httpdate"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
 name = "hyper"
 version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1302,6 +1308,7 @@ dependencies = [
  "http",
  "http-body",
  "httparse",
+ "httpdate",
  "itoa",
  "pin-project-lite",
  "smallvec",
@@ -3000,19 +3007,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_yaml"
-version = "0.9.34+deprecated"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
-dependencies = [
- "indexmap 2.14.0",
- "itoa",
- "ryu",
- "serde",
- "unsafe-libyaml",
-]
-
-[[package]]
 name = "serialize-to-javascript"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3427,31 +3421,32 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-llamacpp"
-version = "0.8.3"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
+ "bytes",
+ "cc",
  "futures-util",
  "hmac",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "jan-utils",
  "lddtree",
- "libloading 0.8.9",
  "log",
  "nix",
  "rand 0.8.6",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
- "sysinfo",
  "tauri",
  "tauri-plugin",
  "tauri-plugin-hardware",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
- "walkdir",
 ]
 
 [[package]]
@@ -3968,12 +3963,6 @@ name = "unicode-segmentation"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
-
-[[package]]
-name = "unsafe-libyaml"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"

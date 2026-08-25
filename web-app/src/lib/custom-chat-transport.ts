@@ -29,8 +29,7 @@ import {
 } from '@/lib/webSearchTool'
 import { useAppState } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
-import { describeEngineError } from '@/lib/engineError'
-import { i18n } from '@/i18n/react-i18next-compat'
+import { engineFailure } from '@/lib/engineError'
 import { ExtensionManager } from '@/lib/extension'
 import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
 import {
@@ -55,6 +54,7 @@ import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
 import { encodeVideoSentinel, parseVideoDataUrl } from '@/lib/video-sentinel'
 import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
 import { paramsSettings } from '@/lib/predefinedParams'
+import { CHAT_SLOT_ID } from '@/constants/models'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -100,10 +100,11 @@ const SCHEMA_PRIMITIVE_TYPES = new Set([
 const SCHEMA_NODE_MAP_KEYS = new Set(['properties', 'patternProperties', 'definitions', '$defs'])
 const SCHEMA_NODE_LIST_KEYS = new Set(['anyOf', 'oneOf', 'allOf', 'prefixItems'])
 
-// Per-model sidebar keys whose values should be forwarded into each chat-
-// completion request body as defaults. In router mode these can't be CLI args
-// — the router is one process serving every model — so they have to ride
-// along on each call. Assistant `parameters` override these in the merge.
+// Per-model sidebar keys forwarded into each chat-completion request body as
+// defaults. These *are* also written into the model's own preset section, so
+// this is not the only path -- it exists so a sidebar change applies without
+// regenerating the preset and reloading the engine. Assistant `parameters`
+// override these in the merge.
 const MODEL_SAMPLING_SETTING_KEYS = [
   'temperature',
   'top_k',
@@ -115,6 +116,26 @@ const MODEL_SAMPLING_SETTING_KEYS = [
   'frequency_penalty',
 ] as const
 
+/** Keys whose upstream handler throws on a negative value. */
+const NON_NEGATIVE_SAMPLING_KEYS = new Set<string>([
+  'repeat_last_n',
+  'dry_penalty_last_n',
+])
+
+/**
+ * llama.cpp's own defaults for the sampling keys that set the
+ * suppress-the-GGUF-recommendation bit. Keys absent here set no bit and are
+ * always forwarded.
+ */
+const UPSTREAM_SAMPLING_DEFAULTS: Record<string, number> = {
+  temperature: 0.8,
+  top_k: 40,
+  top_p: 0.95,
+  min_p: 0.05,
+  repeat_last_n: 64,
+  repeat_penalty: 1.0,
+}
+
 function extractModelSamplingDefaults(
   model: Model | null | undefined
 ): Record<string, unknown> {
@@ -125,13 +146,28 @@ function extractModelSamplingDefaults(
     if (raw === undefined || raw === null || raw === '') continue
     // Sidebar inputs are string-typed even when controller_props.type is
     // 'number'; coerce so the request body matches the OpenAI schema.
+    let value: unknown = raw
     if (typeof raw === 'string') {
       const n = Number(raw)
       if (!Number.isFinite(n)) continue
-      out[key] = n
-    } else {
-      out[key] = raw
+      value = n
     }
+    // The server rejects a negative window outright rather than clamping, so a
+    // value left over from the old "-1 = full context" UI would 400 every
+    // request. Dropping it lets the server's own default apply.
+    if (
+      NON_NEGATIVE_SAMPLING_KEYS.has(key) &&
+      typeof value === 'number' &&
+      value < 0
+    ) {
+      continue
+    }
+    // Forwarding a value equal to llama.cpp's default is not a no-op: it sets a
+    // bit that suppresses the GGUF's own recommended sampling, so an
+    // untouched-looking default would silently override what the model asked
+    // for. Same rule preset.ts applies.
+    if (UPSTREAM_SAMPLING_DEFAULTS[key] === value) continue
+    out[key] = value
   }
   return out
 }
@@ -1181,11 +1217,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       if (isPredefinedRemoteProvider(effectiveProviderName)) {
         for (const key of Object.keys(paramsSettings)) delete mergedParams[key]
       }
-      // Pin chat to slot 0 so llama-server reuses this thread's cached KV
-      // prefix across turns; title generation uses the reserved background
-      // slot (RESERVED_BACKGROUND_SLOTS) and can't evict it.
+      // Pin chat to the chat slot so llama-server reuses this thread's cached
+      // KV prefix across turns; background tasks use BACKGROUND_SLOT_ID and
+      // can't evict it.
+      //
+      // thread_id names whose cache that is, which is what lets the engine
+      // park it when another thread takes the slot and pick it back up later,
+      // including in a later session. It is stripped before the request
+      // reaches llama.cpp.
       if (providerId === 'llamacpp') {
-        mergedParams.id_slot = 0
+        mergedParams.id_slot = CHAT_SLOT_ID
+        mergedParams.thread_id = threadId
       }
       this.model = await this.createModelOrAbort(
         modelId,
@@ -1207,11 +1249,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Preserve AbortError identity so callers/UI can tell a user-initiated
       // Stop from an actual model-load failure.
       if (error instanceof Error && error.name === 'AbortError') throw error
-      throw new Error(
-        i18n.t('model-errors:createModelFailed', {
-          reason: describeEngineError(error),
-        })
-      )
+      throw engineFailure('model-errors:createModelFailed', error)
     }
 
     await this.refreshTools(options.abortSignal)

@@ -703,6 +703,16 @@ Section Install
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\pre-install\"
     SetOutPath "$INSTDIR\resources\bin"
     File /a "/oname=jan-cli.exe" "D:\a\jan\jan\src-tauri\resources\bin\jan-cli.exe"
+    ; The engine. This block is a hand-maintained snapshot of
+    ; tauri.windows.conf.json's `bundle.resources`, which the NSIS bundler does
+    ; not read once CI points it at this template, so anything added there has
+    ; to be repeated here or it silently ships only in the MSI. Deliberately
+    ; fatal rather than /nonfatal: an installer with no worker leaves local
+    ; inference permanently unavailable, since there is no runtime backend
+    ; download to fall back on, so a build that staged nothing must fail loudly
+    ; here the way stage-engine.sh already does.
+    File /a "/oname=jan-llama-worker.exe" "D:\a\jan\jan\src-tauri\resources\bin\jan-llama-worker.exe"
+    File /a "D:\a\jan\jan\src-tauri\resources\bin\ggml*.dll"
     SetOutPath $INSTDIR
 
   ; Copy external binaries

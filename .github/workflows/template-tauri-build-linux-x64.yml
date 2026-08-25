@@ -33,6 +33,22 @@ on:
         type: boolean
         default: false
         description: 'If true, builds both .deb and .appimage but disables auto-updater'
+      runner:
+        required: false
+        type: string
+        default: 'ubuntu-22.04'
+        description: >
+          Label of the runner to build on. A self-hosted label is what carries
+          the engine toolchain; the default keeps the GitHub-hosted image, which
+          only has enough for the vulkan variant.
+      engine_variant:
+        required: false
+        type: string
+        default: 'vulkan'
+        description: >
+          JAN_ENGINE_VARIANT for the bundled jan-llama-worker: a `-` joined
+          backend list, e.g. vulkan, cuda13-vulkan, rocm-vulkan. One CUDA major
+          per bundle, so cuda12 and cuda13 are separate builds.
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
@@ -55,7 +71,7 @@ on:
         value: ${{ jobs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}
 jobs:
   build-linux-x64:
-    runs-on: ubuntu-22.04
+    runs-on: ${{ inputs.runner }}
     outputs:
       DEB_SIG: ${{ steps.packageinfo.outputs.DEB_SIG }}
       APPIMAGE_SIG: ${{ steps.packageinfo.outputs.APPIMAGE_SIG }}
@@ -104,6 +120,15 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 libappindicator3-dev
+
+      # `make build` compiles jan-llama-worker, which the deb and the AppImage
+      # both bundle. The default variant is vulkan because it covers AMD, Intel
+      # and NVIDIA through one driver-provided backend; a cuda or rocm variant
+      # needs a caller-supplied runner that carries that toolkit.
+      - name: Set up the llama.cpp engine toolchain
+        uses: ./.github/actions/setup-engine-toolchain
+        with:
+          variant: ${{ inputs.engine_variant }}
 
       - name: Update app version base public_provider
         run: |
@@ -202,6 +227,37 @@ jobs:
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
           TAURI_TRAY: libappindicator3
       # Publish app
+
+      # tauri reports a linuxdeploy failure as `failed to run linuxdeploy` and
+      # discards its output, so ask the tool itself. `--version` alone separates
+      # the two candidates: a tool that cannot run at all is an AppImage that
+      # could not mount, anything else is the AppDir it was handed.
+      - name: Diagnose the AppImage bundler
+        if: failure()
+        run: |
+          tool=$(ls .cache/tauri/linuxdeploy-*-x86_64.AppImage 2>/dev/null | head -1)
+          [ -n "$tool" ] || { echo "linuxdeploy was never downloaded"; exit 0; }
+          echo "--- does linuxdeploy run at all?"
+          "$tool" --version || echo "it does not: an AppImage that cannot mount is the usual reason"
+          appdir=$(ls -d src-tauri/target/release/bundle/appimage/*.AppDir 2>/dev/null | head -1)
+          [ -n "$appdir" ] || { echo "no AppDir left behind; the build failed before bundling"; exit 0; }
+          echo "--- engine binaries tauri staged into the AppDir"
+          find "$appdir" \( -name '*.so*' -o -name 'jan-llama-worker' \) | head -40
+          echo "--- linuxdeploy over that AppDir"
+          "$tool" --appdir "$appdir" || true
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+
+      # The engine build is fifteen minutes of cmake whose output cargo only
+      # surfaces as a tail. When it fails, the whole log is the artifact worth
+      # having.
+      - name: Upload the engine build log
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: engine-build-log-linux-x64
+          path: src-tauri/target/engine-build.log
+          if-no-files-found: ignore
 
       ## Artifacts, for dev and test
       - name: Upload Artifact

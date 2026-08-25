@@ -21,6 +21,7 @@ import {
   IconCodeCircle2,
   IconBolt,
 } from '@tabler/icons-react'
+import { readGgufMetadata } from '@janhq/tauri-plugin-llamacpp-api'
 
 type DetectedModalities = { vision: boolean; audio: boolean }
 
@@ -239,19 +240,8 @@ export const ImportLlamacppModelDialog = ({
         } else if (fileType === 'mmproj') {
           // For mmproj files, we need to manually validate since validateGgufFile rejects CLIP models
           try {
-            // Import the readGgufMetadata function directly from Tauri
-            const { invoke } = await import('@tauri-apps/api/core')
-
-            const metadata = await invoke(
-              'plugin:llamacpp|read_gguf_metadata',
-              {
-                path: filePath,
-              }
-            )
-
-            const meta = (
-              metadata as { metadata?: Record<string, string> }
-            ).metadata
+            const metadata = await readGgufMetadata(filePath)
+            const meta = metadata.metadata
             const architecture = meta?.['general.architecture']
 
             if (architecture !== 'clip') {

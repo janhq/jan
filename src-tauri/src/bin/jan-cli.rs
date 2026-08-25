@@ -14,7 +14,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::{
     cli_delete_thread, cli_get_data_folder, cli_get_thread,
-    cli_list_messages, cli_list_threads, discover_llamacpp_binary,
+    cli_list_messages, cli_list_threads,
     download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
     list_models, looks_like_hf_repo, resolve_model_engine, HfFileInfo,
 };
@@ -23,9 +23,9 @@ use app_lib::core::cli::{
 use app_lib::core::cli::{
     discover_mlx_binary, init_mlx_state, load_mlx_model_impl, resolve_model_by_id, MlxConfig,
 };
-use tauri_plugin_llamacpp::router as llamacpp_router;
+use tauri_plugin_llamacpp::engine::worker as llamacpp_worker;
 use tauri_plugin_llamacpp::state::LlamacppState;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // ── Top-level CLI ──────────────────────────────────────────────────────────
 
@@ -934,34 +934,29 @@ async fn handle_serve(args: ServeArgs) {
         }
     } else {
         // LlamaCPP path
-        let bin_path = match bin {
-            Some(b) => b,
-            None => match discover_llamacpp_binary() {
-                Some(p) => p.to_string_lossy().into_owned(),
-                None => {
-                    finish_progress(pb, "✗ llama-server binary not found");
-                    eprintln!("Install a backend from Jan's settings or pass --bin <path>.");
-                    std::process::exit(1);
-                }
-            },
+        let worker_exe = match bin.map(std::path::PathBuf::from).or_else(llamacpp_worker::sidecar_path) {
+            Some(p) => p,
+            None => {
+                finish_progress(pb, "✗ jan-llama-worker not found");
+                eprintln!("Reinstall Jan from https://jan.ai or pass --bin <path to jan-llama-worker>.");
+                std::process::exit(1);
+            }
         };
 
-        let _ = (n_gpu_layers, ctx_size, fit, threads, resolved_model_path, resolved_mmproj);
+        let _ = (n_gpu_layers, ctx_size, fit, threads, resolved_model_path, resolved_mmproj, embedding, timeout);
         let llama_state = Arc::new(init_llamacpp_state());
         let mut envs: HashMap<String, String> = HashMap::new();
         if !api_key.is_empty() {
             envs.insert("LLAMA_API_KEY".to_string(), api_key.clone());
         }
 
-        match ensure_router_and_load(
+        match ensure_worker_and_load(
             &llama_state,
-            &bin_path,
+            &worker_exe,
             &model_id,
             port,
             api_key,
-            embedding,
             envs,
-            timeout,
         )
         .await
         {
@@ -982,86 +977,74 @@ async fn handle_serve(args: ServeArgs) {
     }
 }
 
-struct RouterServeInfo {
+struct WorkerServeInfo {
     pid: i32,
     port: u16,
     #[allow(dead_code)]
     api_key: String,
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn ensure_router_and_load(
+/// Spawns `jan-llama-worker` and loads one model into it.
+///
+/// The worker owns the engine in its own process and is discovered as a
+/// sidecar, so there is no downloaded `llama-server` to locate. `models_max`
+/// and the KV-cache budget are 0: a `jan cli serve` run holds one model and
+/// has no thread store to persist slots for.
+async fn ensure_worker_and_load(
     llama_state: &std::sync::Arc<LlamacppState>,
-    bin_path: &str,
+    worker_exe: &Path,
     model_id: &str,
     port: u16,
     api_key: String,
-    is_embedding: bool,
     envs: HashMap<String, String>,
-    timeout: u64,
-) -> Result<RouterServeInfo, String> {
-    if is_embedding {
-        return Err(
-            "--embedding on the llamacpp engine requires router preset support; \
-             use the desktop UI to load embedding models for now."
-                .to_string(),
-        );
-    }
-
+) -> Result<WorkerServeInfo, String> {
     let preset_path = cli_get_data_folder()
         .join("llamacpp")
         .join("router.preset.ini");
     if !preset_path.exists() {
         return Err(format!(
-            "Router preset not found at {}; run the desktop app once to generate it, \
-             or implement a Rust preset generator.",
+            "Engine preset not found at {}; run the desktop app once to generate it.",
             preset_path.display()
         ));
     }
 
-    let already_running = { llama_state.router.lock().await.is_some() };
+    let already_running = { llama_state.engine.lock().await.is_some() };
     if !already_running {
-        let router_api_key = if api_key.is_empty() {
+        let worker_key = if api_key.is_empty() {
             uuid::Uuid::new_v4().to_string()
         } else {
             api_key.clone()
         };
-        let mut router_envs = envs.clone();
-        router_envs
-            .entry("LLAMA_ARG_TIMEOUT".to_string())
-            .or_insert_with(|| timeout.to_string());
-
-        let log_dir = cli_get_data_folder().join("logs");
-
-        let handle = llamacpp_router::start_router(
-            std::path::PathBuf::from(bin_path),
-            preset_path,
-            log_dir,
+        let handle = llamacpp_worker::spawn(
+            worker_exe,
+            &preset_path,
             port,
-            router_api_key,
+            &worker_key,
             0,
-            Vec::new(),
-            router_envs,
+            0,
+            envs,
+            // No window to raise a dialog in: a fault lands in the log the
+            // user is already reading on the terminal.
             None,
         )
         .await
-        .map_err(|e| format!("{e:?}"))?;
-        let mut guard = llama_state.router.lock().await;
+        .map_err(|e| e.to_string())?;
+        let mut guard = llama_state.engine.lock().await;
         *guard = Some(handle);
     }
 
-    let (router_port, router_key, router_pid) = {
-        let guard = llama_state.router.lock().await;
+    let (worker_port, worker_key, worker_pid) = {
+        let guard = llama_state.engine.lock().await;
         let h = guard
             .as_ref()
-            .ok_or_else(|| "Router unexpectedly missing after start".to_string())?;
+            .ok_or_else(|| "Engine worker unexpectedly missing after start".to_string())?;
         (h.port, h.api_key.clone(), h.pid)
     };
 
-    let url = format!("http://127.0.0.1:{router_port}/models/load");
+    let url = format!("http://127.0.0.1:{worker_port}/models/load");
     let resp = reqwest::Client::new()
         .post(&url)
-        .header("Authorization", format!("Bearer {router_key}"))
+        .header("Authorization", format!("Bearer {worker_key}"))
         .json(&serde_json::json!({ "model": model_id }))
         .send()
         .await
@@ -1069,13 +1052,13 @@ async fn ensure_router_and_load(
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Router /models/load returned {status}: {body}"));
+        return Err(format!("Engine /models/load returned {status}: {body}"));
     }
 
-    Ok(RouterServeInfo {
-        pid: router_pid as i32,
-        port: router_port,
-        api_key: router_key,
+    Ok(WorkerServeInfo {
+        pid: worker_pid as i32,
+        port: worker_port,
+        api_key: worker_key,
     })
 }
 
@@ -1375,11 +1358,11 @@ async fn start_model_server(
         (info.pid, info.port as u16)
         }
     } else {
-        let bin_path = match bin.or_else(|| discover_llamacpp_binary().map(|p| p.to_string_lossy().into_owned())) {
+        let worker_exe = match bin.map(std::path::PathBuf::from).or_else(llamacpp_worker::sidecar_path) {
             Some(p) => p,
             None => {
-                finish_progress(pb, "✗ llama-server binary not found");
-                eprintln!("Install a backend from Jan's settings or pass --bin <path>.");
+                finish_progress(pb, "✗ jan-llama-worker not found");
+                eprintln!("Reinstall Jan from https://jan.ai or pass --bin <path to jan-llama-worker>.");
                 std::process::exit(1);
             }
         };
@@ -1387,15 +1370,13 @@ async fn start_model_server(
         let llama_state = Arc::new(init_llamacpp_state());
         let mut envs: HashMap<String, String> = HashMap::new();
         if !api_key.is_empty() { envs.insert("LLAMA_API_KEY".to_string(), api_key.clone()); }
-        let info = match ensure_router_and_load(
+        let info = match ensure_worker_and_load(
             &llama_state,
-            &bin_path,
+            &worker_exe,
             model_id,
             port,
             api_key,
-            false,
             envs,
-            120,
         ).await {
             Ok(info) => info,
             Err(e) => {

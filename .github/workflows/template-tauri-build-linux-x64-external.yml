@@ -20,9 +20,25 @@ on:
         type: boolean
         default: false
         description: 'If true, builds both .deb and .appimage but disables auto-updater'
+      runner:
+        required: false
+        type: string
+        default: 'ubuntu-22.04'
+        description: >
+          Label of the runner to build on. A self-hosted label is what carries
+          the engine toolchain; the default keeps the GitHub-hosted image, which
+          only has enough for the vulkan variant.
+      engine_variant:
+        required: false
+        type: string
+        default: 'vulkan'
+        description: >
+          JAN_ENGINE_VARIANT for the bundled jan-llama-worker: a `-` joined
+          backend list, e.g. vulkan, cuda13-vulkan, rocm-vulkan. One CUDA major
+          per bundle, so cuda12 and cuda13 are separate builds.
 jobs:
   build-linux-x64-external:
-    runs-on: ubuntu-22.04
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -65,6 +81,15 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 libappindicator3-dev
+
+      # `make build` compiles jan-llama-worker, which the deb and the AppImage
+      # both bundle. The default variant is vulkan because it covers AMD, Intel
+      # and NVIDIA through one driver-provided backend; a cuda or rocm variant
+      # needs a caller-supplied runner that carries that toolkit.
+      - name: Set up the llama.cpp engine toolchain
+        uses: ./.github/actions/setup-engine-toolchain
+        with:
+          variant: ${{ inputs.engine_variant }}
 
       - name: Update app version
         run: |

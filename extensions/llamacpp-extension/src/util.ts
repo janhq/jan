@@ -1,29 +1,10 @@
 import { logger } from '@janhq/core'
+import type { SpecDraftKind } from '@janhq/core'
 import type {
   TemplateKwarg,
   TemplateKwargType,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getBackendSetting, setBackendSetting } from './backend-settings'
-
-// File path utilities
-export function basenameNoExt(filePath: string): string {
-  const VALID_EXTENSIONS = [".tar.gz", ".zip"];
-  
-  // handle VALID extensions first
-  for (const ext of VALID_EXTENSIONS) {
-    if (filePath.toLowerCase().endsWith(ext)) {
-      return filePath.slice(0, -ext.length);
-    }
-  }
-  
-  // fallback: remove only the last extension
-  const lastDotIndex = filePath.lastIndexOf('.');
-  if (lastDotIndex > 0) {
-    return filePath.slice(0, lastDotIndex);
-  }
-  
-  return filePath;
-}
 
 // Zustand proxy state structure
 interface ProxyState {
@@ -172,7 +153,7 @@ export type EmbedBatchResult = {
 const DEFAULT_CHARS_PER_TOKEN = 3
 const UBATCH_SAFETY_MARGIN = 0.5
 
-export const EMBEDDING_GGUF_ARCHS = new Set([
+const EMBEDDING_GGUF_ARCHS = new Set([
   'bert',
   'nomic-bert',
   'nomic-bert-moe',
@@ -182,10 +163,6 @@ export const EMBEDDING_GGUF_ARCHS = new Set([
   'mpnet',
   't5encoder',
 ])
-
-export function isEmbeddingArchitecture(arch: unknown): boolean {
-  return typeof arch === 'string' && EMBEDDING_GGUF_ARCHS.has(arch)
-}
 
 export function detectEmbeddingFromGgufMeta(
   meta: Record<string, unknown> | undefined
@@ -203,6 +180,28 @@ export function detectEmbeddingFromGgufMeta(
         ? Number(raw)
         : NaN
   return Number.isFinite(n) && n > 0
+}
+
+/**
+ * Which speculative-decoding flavour a draft gguf implements.
+ *
+ * `general.architecture` is authoritative -- llama.cpp registers `eagle3` and
+ * `dflash` as their own architectures (llama-arch.cpp), and a draft with any
+ * other architecture is an MTP head. DSpark is DFlash plus a Markov head, so
+ * only `hasMarkovHead` separates those two; `hint` (the catalog's file naming)
+ * is the fallback for when the tensor could not be read at all.
+ */
+export function resolveSpecDraftKind(
+  meta: Record<string, unknown> | undefined,
+  opts: { hasMarkovHead?: boolean; hint?: SpecDraftKind } = {}
+): SpecDraftKind {
+  const arch = meta?.['general.architecture']
+  if (arch === 'eagle3') return 'eagle3'
+  if (arch === 'dflash') {
+    const isDspark = opts.hasMarkovHead ?? opts.hint === 'dspark'
+    return isDspark ? 'dspark' : 'dflash'
+  }
+  return 'mtp'
 }
 
 export function detectMtpLayersFromGgufMeta(

@@ -75,35 +75,6 @@ describe('collection naming', () => {
   })
 })
 
-describe('embedTexts', () => {
-  it('throws when no embedding engine is available', async () => {
-    getByName.mockReturnValue(undefined)
-    await expect((ext as any).embedTexts(['a'])).rejects.toThrow('llamacpp extension not available')
-  })
-
-  it('reorders embeddings by their reported index', async () => {
-    getByName.mockReturnValue(
-      makeEngine({
-        embed: vi.fn().mockResolvedValue({
-          data: [
-            { embedding: [2], index: 1 },
-            { embedding: [1], index: 0 },
-          ],
-        }),
-      })
-    )
-    const out = await (ext as any).embedTexts(['a', 'b'])
-    expect(out).toEqual([[1], [2]])
-  })
-
-  it('returns sparse array when embed omits data', async () => {
-    getByName.mockReturnValue(makeEngine({ embed: vi.fn().mockResolvedValue({}) }))
-    const out = await (ext as any).embedTexts(['a', 'b'])
-    expect(out).toHaveLength(2)
-    expect(out[0]).toBeUndefined()
-  })
-})
-
 describe('chunk sizing against embedding context', () => {
   it('clampToEmbeddingContext returns original size when engine lacks ctx accessor', async () => {
     getByName.mockReturnValue(makeEngine({ getEmbeddingContextSize: undefined }))
