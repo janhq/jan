@@ -308,6 +308,21 @@ mod engine {
             // Deterministic across machines: the per-microarchitecture choice
             // is made at runtime by ggml_backend_score, not at compile time.
             "-DGGML_NATIVE=OFF",
+            // Upstream defaults are GGML_OPENMP=ON with GGML_OPENMP_FETCH=OFF,
+            // and that pair links OpenMP into ggml-base and every CPU variant
+            // while installing no runtime: the sole `install(FILES
+            // ${GGML_OPENMP_RUNTIME})` rule sits inside the FETCH branch. On
+            // Windows that shipped a hard import on a libomp.dll we never
+            // staged, so every CPU backend failed to load on a machine without
+            // LLVM -- silently, since release loading is silent=true. CI missed
+            // it because the toolchain action puts LLVM's own libomp.dll on
+            // PATH. FETCH=ON would fix it by downloading an LLVM installer and
+            // extracting it with 7-Zip at configure time, which trades a silent
+            // runtime break for a network dependency in the build; dropping
+            // OpenMP costs some CPU threading throughput and nothing else.
+            // Passed explicitly so a future upstream default cannot flip it
+            // back unnoticed.
+            "-DGGML_OPENMP=OFF",
             // Default is already ON, but passed explicitly so a value cached by
             // an earlier configure cannot silently disable caching -- the
             // difference on a CUDA rebuild is minutes versus tens of minutes.
@@ -431,6 +446,10 @@ mod engine {
             // where reqwest uses Security.framework, the link fails outright.
             "-DLLAMA_OPENSSL=OFF",
             "-DGGML_NATIVE=OFF",
+            // Stage 1 owns the ggml libraries, but this tree still evaluates
+            // ggml's option set, so the value is pinned on both sides rather
+            // than left to depend on which branch runs here.
+            "-DGGML_OPENMP=OFF",
             "-DLLAMA_BUILD_IS_DEV=OFF",
         ]);
         cfg.arg(format!("-DLLAMA_BUILD_NUMBER={LLAMA_CPP_BUILD_NUMBER}"));
