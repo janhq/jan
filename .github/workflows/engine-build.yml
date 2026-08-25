@@ -67,6 +67,15 @@ jobs:
   worker:
     name: jan-llama-worker (${{ matrix.name }})
     needs: variants
+    # Fork PRs must not reach this job: every runner label in the matrix is
+    # self-hosted and persistent, and the job compiles `build.rs`, `shim/**`
+    # and `engine/**` from the PR tip, then runs `sudo apt-get install`. A
+    # build script is arbitrary code execution by construction, so a fork PR
+    # touching this workflow's paths filter would get root on a box that later
+    # hosts tag-time release builds. Same guard as
+    # jan-tauri-build-nightly.yaml; `workflow_dispatch` and tag pushes are
+    # unaffected because they are not `pull_request` events.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -118,6 +127,18 @@ jobs:
 
       - name: Build and stage the engine
         run: make build-engine
+
+      # The only place the engine-gated code is type-checked at all. Every
+      # suite under tests/ is `#![cfg(feature = "engine")]`, and both
+      # rust-check.yml and `cargo test --lib` run with the feature off, so all
+      # three currently report "0 passed; ok" -- three green suites that assert
+      # nothing, over the whole FFI boundary in sys.rs. `--no-run` compiles
+      # them without needing a model: the runtime half still wants
+      # JAN_TEST_GGUF, but a suite that no longer builds now fails here instead
+      # of passing vacuously. Cheap because `make build-engine` above already
+      # built llama.cpp into the same target dir with the same features.
+      - name: Compile the engine-gated test suites
+        run: make check-engine-tests
 
       # --version proves the worker starts and resolves libggml through the
       # rpath; --list-devices additionally exercises the shim and the pinned
