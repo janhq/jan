@@ -5,7 +5,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(target_os = "macos")]
+use std::path::Path;
 #[cfg(not(target_os = "macos"))]
 use std::process::{Command, Stdio};
 #[cfg(target_os = "macos")]
@@ -547,7 +549,7 @@ mod tests {
             .unwrap();
         assert!(compile_exe.status.success(), "exe compile failed");
 
-        let out = analyze_out_of_process(&[bin.clone()], &[exe]);
+        let out = analyze_out_of_process(std::slice::from_ref(&bin), &[exe]);
 
         // The Homebrew-path dylib must be reported missing even though it is
         // only reachable through the absolute-path bundled wrapper.
