@@ -421,6 +421,20 @@ impl Registry {
         ids
     }
 
+    /// Evicts LRU-idle models until one more fits under `models_max`.
+    ///
+    /// Deliberately does *not* persist the victim's KV cache: `save_model_slots`
+    /// is called only from `unload_model`, which is the path Jan actually takes
+    /// when switching models (`models_max` is 1, so the extension unloads before
+    /// it loads). The victim's slot occupancy is still released here via
+    /// `dropped`, so the residual is a lost cache and a re-prefill, not a
+    /// cross-thread overwrite.
+    ///
+    /// It becomes reachable as soon as a user raises `models_max` above 1, or
+    /// when an embedding model loads alongside a chat model on a tight budget.
+    /// Saving here needs the same await-and-persist that `unload_model` does,
+    /// which the registry cannot do while holding its own lock -- so it belongs
+    /// with the caller, as a follow-up. `retire` has the same omission.
     fn make_room(&mut self) -> Result<(), RegistryError> {
         if self.models_max == 0 {
             return Ok(());
