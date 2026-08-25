@@ -117,6 +117,20 @@ fn startup_modes(mouse: bool) -> String {
     modes
 }
 
+/// Whether to wrap each repaint in synchronized output (`\x1b[?2026h/l`).
+/// kitty honors DEC 2026 but can drop the resize-triggered full clear + repaint
+/// while a synchronized frame is held, leaving a persistent black screen on
+/// resize (konsole ignores 2026, so it never shows this). Skipping the wrapper
+/// under kitty trades tearing for a reliable resize; every other terminal that
+/// supports 2026 keeps the anti-tearing frame.
+fn sync_output_for(kind: super::terminal_setup::Kind) -> bool {
+    !matches!(kind, super::terminal_setup::Kind::Kitty)
+}
+
+fn use_synchronized_output() -> bool {
+    sync_output_for(super::terminal_setup::identify(|k| std::env::var(k).ok()))
+}
+
 /// How long the dock advertises a finished copy.
 const COPY_NOTICE: Duration = Duration::from_millis(1500);
 /// Terminals cap the OSC 52 payload they will accept; past this the sequence is
@@ -6580,6 +6594,10 @@ async fn chat_loop<B: Backend>(
         app.submit_user(task.trim().to_string());
     }
 
+    // kitty drops the resize repaint behind a held synchronized frame, so it is
+    // gated off there; see `use_synchronized_output`.
+    let sync_output = use_synchronized_output();
+
     while !app.should_quit {
         // Drive the snapshot queue: run one job off-loop at a time. A job whose
         // inputs no longer resolve (snapshots disabled) is dropped.
@@ -6745,10 +6763,16 @@ async fn chat_loop<B: Backend>(
         // tearing. Written straight to stdout (not the generic `Backend`) for the
         // same reason the clipboard write below is: `chat_loop` is generic over
         // B for TestBackend, which isn't `io::Write`. ratatui already diffs the
-        // buffer and emits ANSI only for changed cells.
-        let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
+        // buffer and emits ANSI only for changed cells. Skipped under kitty,
+        // whose resize handling drops the frame behind a held synchronized
+        // frame (see `use_synchronized_output`).
+        if sync_output {
+            let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
+        }
         let draw_result = terminal.draw(|f| draw(f, app)).map_err(|e| e.to_string());
-        let _ = execute!(io::stdout(), EndSynchronizedUpdate);
+        if sync_output {
+            let _ = execute!(io::stdout(), EndSynchronizedUpdate);
+        }
         draw_result?;
         // Outside the synchronized block: `draw` only extracts the text, so the
         // OSC 52 write can't land in the middle of a frame.
@@ -14092,7 +14116,7 @@ mod tests {
         McpPrompt, McpField, pairs_to_str,
         ProviderField,
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
-        startup_modes, KITTY_KEYS_OFF, KITTY_KEYS_ON,
+        startup_modes, sync_output_for, KITTY_KEYS_OFF, KITTY_KEYS_ON,
         backgrounded_job_id, drain_stream_events, run_command, starting_call_lines,
         unescape_partial_json_string,
         running_group_rows, split_reasoning, strip_system_xml_tags, subagent_activity,
@@ -21470,6 +21494,31 @@ mod tests {
             );
             assert!(modes.starts_with(alt_scroll_save_off()));
         }
+    }
+
+    /// kitty's `?2026` handling can drop the resize repaint, so synchronized
+    /// output is skipped there; every other identity keeps it. (Konsole, the
+    /// whole reason kitty looks broken by contrast, is not the one gated.)
+    #[test]
+    fn synchronized_output_is_off_only_for_kitty() {
+        use super::super::terminal_setup::Kind;
+        for kind in [
+            Kind::Ghostty,
+            Kind::WezTerm,
+            Kind::Foot,
+            Kind::Rio,
+            Kind::Konsole,
+            Kind::ITerm2,
+            Kind::AppleTerminal,
+            Kind::VsCode,
+            Kind::WindowsTerminal,
+            Kind::Alacritty,
+            Kind::Vte,
+            Kind::Unknown,
+        ] {
+            assert!(sync_output_for(kind), "{kind:?} must keep synchronized output");
+        }
+        assert!(!sync_output_for(Kind::Kitty), "kitty must skip it");
     }
 
     #[test]
