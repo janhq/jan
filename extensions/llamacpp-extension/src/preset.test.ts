@@ -212,6 +212,27 @@ describe('generatePreset parallel reservation', () => {
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).toContain('parallel = 3')
   })
+
+  // The frontend pins background work to a fixed slot index 1
+  // (BACKGROUND_SLOT_ID), and upstream wraps an out-of-range id_slot modulo the
+  // slot count rather than rejecting it. So the reservation has to be
+  // unconditional: every emitted `parallel` must be at least 2, or the pin
+  // silently lands back on the chat slot 0.
+  it('reserves the background slot by default, so slot 1 always exists', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { parallel: 1 } as any)
+    expect(writtenFiles['/p/router.preset.ini']).toContain('parallel = 2')
+  })
+
+  it('reserves it in the per-model section too, which overrides [*]', async () => {
+    setupModel('llama', { parallel: 1 })
+    await generatePreset('/p', '/jan', { parallel: 4 } as any)
+    const ini = writtenFiles['/p/router.preset.ini']
+    // The provider-level value is what the old pin was computed from; the
+    // section's own value is what llama.cpp actually applies.
+    expect(ini).toContain('parallel = 5')
+    expect(ini).toContain('parallel = 2')
+  })
 })
 
 describe('generatePreset kv-unified', () => {
@@ -620,6 +641,20 @@ describe('generatePreset upstream-default skipping', () => {
     const g = globalSection()
     expect(g).not.toContain('ctx-checkpoints')
     expect(g).not.toContain('checkpoint-min-step')
+  })
+
+  // Upstream documents 0 as "no minimum" and only rejects negatives
+  // (common/arg.cpp), and settings.json puts no `min` on the field, so 0 is
+  // reachable from the UI and has to reach the preset.
+  it('emits an explicit checkpoint-min-step of 0, which means no minimum', async () => {
+    await generatePreset(
+      '/p',
+      '/jan',
+      { ctx_checkpoints: 0, checkpoint_min_step: 0 } as any,
+    )
+    const g = globalSection()
+    expect(g).toContain('checkpoint-min-step = 0')
+    expect(g).toContain('ctx-checkpoints = 0')
   })
 })
 

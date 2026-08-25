@@ -56,7 +56,15 @@ type ModelYaml = ModelConfig & {
 // One extra llama-server slot beyond the user-visible "Parallel Sequences"
 // count, reserved for background requests (e.g. thread auto-titling) that
 // must never be able to evict the user's own chat KV cache from its slot.
-// Hidden from the setting's UI value; see reservedSlotId in thread-title-summarizer.ts.
+// Hidden from the setting's UI value.
+//
+// Added unconditionally, and that is load-bearing. The emitted `parallel` is
+// therefore always 2 or more, which is what lets the frontend pin background
+// work to a fixed BACKGROUND_SLOT_ID (web-app/src/constants/models.ts) instead
+// of computing an index here that the two sides then have to keep in sync.
+// Upstream wraps an out-of-range id_slot modulo the slot count rather than
+// rejecting it, so any such desync is silent: the background request lands back
+// on the chat slot and overwrites the cache it was meant to protect.
 export const RESERVED_BACKGROUND_SLOTS = 1
 
 /**
@@ -124,8 +132,10 @@ export async function generatePreset(
   config: LlamacppConfig,
   opts: { reservedBackgroundSlots?: number } = {}
 ): Promise<{ path: string; embeddingCount: number }> {
-  // Reserved background slot count (thread auto-titling). Disabling that
-  // feature drops it to 0 so no extra parallel slot is provisioned.
+  // Overridable for tests only. Production callers take the default: gating it
+  // on the auto-title setting made the reservation appear and disappear behind
+  // a toggle that regenerates no preset, so the frontend's pin outlived the
+  // slot it named.
   const reservedBackgroundSlots =
     typeof opts.reservedBackgroundSlots === 'number'
       ? opts.reservedBackgroundSlots
@@ -332,7 +342,7 @@ export async function generatePreset(
   if (
     typeof config.checkpoint_min_step === 'number' &&
     Number.isFinite(config.checkpoint_min_step) &&
-    config.checkpoint_min_step > 0 &&
+    config.checkpoint_min_step >= 0 &&
     config.checkpoint_min_step !== 8192
   ) {
     lines.push(`checkpoint-min-step = ${Math.floor(config.checkpoint_min_step)}`)

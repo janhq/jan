@@ -145,3 +145,20 @@ export const providerModels = {
     supportsN: true,
   },
 } as const
+
+/**
+ * llama.cpp slot pins. Jan sends every chat turn to slot 0 so a thread reuses
+ * its cached KV prefix across turns, and every background task (title
+ * generation) to slot 1 so it can never overwrite that cache.
+ *
+ * Both are fixed indices rather than values derived from the "Parallel
+ * Sequences" setting, because upstream *wraps* an out-of-range `id_slot`
+ * instead of rejecting it (`get_slot_by_id`: `id_slot = id_slot % slots.size()`)
+ * -- so a pin computed from a stale or differently-resolved slot count silently
+ * lands back on slot 0. The extension's RESERVED_BACKGROUND_SLOTS keeps the
+ * emitted `parallel` at 2 or more unconditionally, which is what guarantees
+ * slot 1 exists; nothing else pins to it, so it is free even when the user
+ * raised the sequence count.
+ */
+export const CHAT_SLOT_ID = 0
+export const BACKGROUND_SLOT_ID = 1

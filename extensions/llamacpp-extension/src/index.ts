@@ -167,7 +167,6 @@ type PersistedModelState = {
 }
 
 const MODEL_PROVIDER_STORE_KEY = 'model-provider'
-const INTERFACE_SETTINGS_STORE_KEY = 'setting-appearance'
 const EMBEDDER_BOOTSTRAP_KEY = 'llamacpp-embedder-bootstrapped'
 /** Set once the user has agreed to the first-run download. */
 const SETUP_CONSENT_KEY = 'llamacpp-first-run-setup-started'
@@ -336,22 +335,6 @@ async function readPersistedLlamacppModels(): Promise<PersistedModelState[]> {
   } catch (error) {
     logger.warn('Failed to read persisted llamacpp model settings:', error)
     return []
-  }
-}
-
-// Interface settings persist to the Rust settings store (settings.json), not
-// webview localStorage — see web-app/src/lib/backendStorage.ts. The value is
-// the Zustand-persisted blob `{ state: {...} }`. Defaults to true (feature on).
-async function readAutoGenerateTitleSetting(): Promise<boolean> {
-  try {
-    const raw = await getBackendSetting(INTERFACE_SETTINGS_STORE_KEY)
-    if (!raw) return true
-    const parsed = JSON.parse(raw)
-    const value = parsed?.state?.autoGenerateTitle
-    return typeof value === 'boolean' ? value : true
-  } catch (error) {
-    logger.warn('Failed to read autoGenerateTitle setting:', error)
-    return true
   }
 }
 
@@ -840,10 +823,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     const { path: presetPath, embeddingCount } = await generatePreset(
       providerPath,
       janDataFolderPath,
-      this.config,
-      {
-        reservedBackgroundSlots: (await readAutoGenerateTitleSetting()) ? 1 : 0,
-      }
+      this.config
     )
 
     const modelsMax = this.resolveModelsMax(embeddingCount)
@@ -947,10 +927,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     const { path: presetPath, embeddingCount } = await generatePreset(
       providerPath,
       janDataFolderPath,
-      this.config,
-      {
-        reservedBackgroundSlots: (await readAutoGenerateTitleSetting()) ? 1 : 0,
-      }
+      this.config
     )
     this.presetPath = presetPath
 

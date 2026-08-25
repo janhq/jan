@@ -54,6 +54,7 @@ import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
 import { encodeVideoSentinel, parseVideoDataUrl } from '@/lib/video-sentinel'
 import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
 import { paramsSettings } from '@/lib/predefinedParams'
+import { CHAT_SLOT_ID } from '@/constants/models'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -1216,16 +1217,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       if (isPredefinedRemoteProvider(effectiveProviderName)) {
         for (const key of Object.keys(paramsSettings)) delete mergedParams[key]
       }
-      // Pin chat to slot 0 so llama-server reuses this thread's cached KV
-      // prefix across turns; title generation uses the reserved background
-      // slot (RESERVED_BACKGROUND_SLOTS) and can't evict it.
+      // Pin chat to the chat slot so llama-server reuses this thread's cached
+      // KV prefix across turns; background tasks use BACKGROUND_SLOT_ID and
+      // can't evict it.
       //
       // thread_id names whose cache that is, which is what lets the engine
       // park it when another thread takes the slot and pick it back up later,
       // including in a later session. It is stripped before the request
       // reaches llama.cpp.
       if (providerId === 'llamacpp') {
-        mergedParams.id_slot = 0
+        mergedParams.id_slot = CHAT_SLOT_ID
         mergedParams.thread_id = threadId
       }
       this.model = await this.createModelOrAbort(
