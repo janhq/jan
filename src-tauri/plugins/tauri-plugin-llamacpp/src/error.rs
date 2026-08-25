@@ -76,20 +76,28 @@ impl LlamacppError {
         let lower = stderr.to_lowercase();
 
         // --- Native library / dynamic-loader failures ---
-        // macOS dyld: "dyld: Library not loaded: ...", "code signature ... not
-        // valid"; Linux: "error while loading shared libraries: ...";
-        // Windows: missing-DLL. This is the issue #8476 case.
+        // macOS dyld: "Library not loaded: ...", "code signature ... not valid";
+        // Linux ld.so: "error while loading shared libraries: ...";
+        // Windows: missing DLL. This is the issue #8476 case.
+        //
+        // These must key off loader-specific wording, NOT a bare "lib"
+        // substring: llama.cpp always logs its backend paths on startup
+        // ("load_backend: loaded Metal backend from .../libggml-metal.dylib")
+        // and every macOS home path contains "Library", so pairing "lib" with
+        // "not found" would swallow any later, unrelated "... not found".
         let is_missing_library = lower.contains("library not loaded")
             || lower.contains("code signature")
             || lower.contains("image not found")
             || lower.contains("symbol not found")
+            || lower.contains("not in dyld cache")
             || lower.contains("error while loading shared libraries")
             || lower.contains("cannot open shared object file")
             || lower.contains("the specified module could not be found")
-            || lower.contains("not found in dyld cache")
-            || lower.contains("not loaded")
-            || (lower.contains(".dll") && lower.contains("not found"))
-            || (lower.contains("lib") && lower.contains("not found"));
+            || lower.contains("dll not found")
+            || (lower.contains(".dll") && lower.contains("was not found"))
+            || lower.contains("dyld:")
+            || lower.contains("dyld[")
+            || lower.contains("ld.so:");
 
         if is_missing_library {
             return Self::new(
@@ -100,16 +108,23 @@ impl LlamacppError {
         }
 
         // --- Out of memory ---
-        // Dense form strips underscores/spaces so every spelling is caught:
-        // "out of memory", "VK_ERROR_OUT_OF_DEVICE_MEMORY",
-        // "MTLCommandBufferErrorOutOfMemory", "cuda_error_out_of_memory".
+        // Dense form strips separators so every vendor spelling is caught:
+        // "VK_ERROR_OUT_OF_DEVICE_MEMORY", "MTLCommandBufferErrorOutOfMemory",
+        // "cuda_error_out_of_memory". The plain-text arms cover ggml's own
+        // allocator wording, which says "unable to allocate" as often as
+        // "failed to allocate" (e.g. "error loading model: unable to allocate
+        // CUDA0 buffer" for VRAM exhaustion).
         let dense = lower
             .chars()
             .filter(|c| c.is_ascii_alphanumeric())
             .collect::<String>();
         let is_out_of_memory = lower.contains("out of memory")
             || lower.contains("failed to allocate")
+            || lower.contains("unable to allocate")
+            || lower.contains("cannot allocate")
             || lower.contains("insufficient memory")
+            || lower.contains("not enough space in the buffer")
+            || lower.contains("std::bad_alloc")
             || dense.contains("outofmemory")
             || dense.contains("outofdevicememory")
             || dense.contains("outofhostmemory");
@@ -123,47 +138,67 @@ impl LlamacppError {
         }
 
         // --- Unsupported model architecture ---
-        if lower.contains("error loading model architecture") {
+        // Upstream throws "unknown model architecture: '<arch>'" /
+        // "unsupported model architecture: '<arch>'" (src/llama-model.cpp),
+        // which llama.cpp then prints as "error loading model: <that text>".
+        // The two fragments never concatenate into "error loading model
+        // architecture", so match the thrown wording itself.
+        let is_bad_arch = lower.contains("unknown model architecture")
+            || lower.contains("unsupported model architecture")
+            || lower.contains("error loading model architecture")
+            || lower.contains("unknown architecture")
+            || lower.contains("not implemented for architecture");
+
+        if is_bad_arch {
             return Self::new(
                 ErrorCode::ModelArchNotSupported,
-                "The model's architecture is not supported by this version of the backend. Update the llama.cpp backend or use a compatible model.".into(),
+                "The model's architecture is not supported by this version of the backend. Update the llama.cpp backend (Settings -> Model Providers -> llama.cpp) or use a compatible model.".into(),
                 Some(stderr.into()),
             );
         }
 
         // --- Device / driver initialization failures (CUDA, Vulkan, Metal, ROCm) ---
-        // Checked after OOM/arch because GPU initialization errors frequently
-        // reuse those words ("CUDA error: out of memory", "... not supported").
+        // Checked after OOM/arch because GPU failures reuse those words
+        // ("CUDA error: out of memory", "... not supported"), and the more
+        // specific cause gives better advice.
+        //
+        // Strings verified against upstream ggml backends: ggml-cuda.cu,
+        // ggml-vulkan.cpp, ggml-metal-context.m.
         let names_backend = lower.contains("cuda")
             || lower.contains("vulkan")
             || lower.contains("metal")
             || lower.contains("rocm")
-            || lower.contains("hip")
+            || lower.contains("hip ")
             || lower.contains("cublas")
             || lower.contains("cudnn")
-            || lower.contains("device");
-        let is_device_init = names_backend
-            && (lower.contains("no suitable device")
-                || lower.contains("no available")
-                || lower.contains("no physical device")
-                || lower.contains("no supported")
-                || lower.contains("failed to initialize")
-                || lower.contains("failed to init")
-                || lower.contains("initialization failed")
-                || lower.contains("unable to initialize")
-                || lower.contains("unable to create")
-                || lower.contains("device error")
-                || lower.contains("driver error")
-                || lower.contains("vk_error")
-                || lower.contains("vulkan_error")
-                || lower.contains("hip_error")
-                || lower.contains("rock_error")
-                || lower.contains("cudaerror")
-                || lower.contains("cuda error")
-                || lower.contains("non zero exit code")
-                || lower.contains("cannot allocate")
-                || lower.contains("not available")
-                || lower.contains("returned nil"));
+            || lower.contains("ggml_backend")
+            || lower.contains("gpu");
+        let is_device_init = lower.contains("no cuda-capable device")
+            || lower.contains("driver version is insufficient")
+            || lower.contains("is not supported on this system")
+            || (names_backend
+                && (lower.contains("no suitable device")
+                    || lower.contains("no devices found")
+                    || lower.contains("no available device")
+                    || lower.contains("no available physical device")
+                    || lower.contains("no physical device")
+                    || lower.contains("no compatible device")
+                    || lower.contains("invalid device index")
+                    || lower.contains("does not support")
+                    || lower.contains("required.")
+                    || lower.contains("failed to initialize")
+                    || lower.contains("failed to init")
+                    || lower.contains("initialization failed")
+                    || lower.contains("unable to initialize")
+                    || lower.contains("failed to create")
+                    || lower.contains("unable to create")
+                    || lower.contains("device error")
+                    || lower.contains("driver error")
+                    || lower.contains("vk_error")
+                    || lower.contains("hip_error")
+                    || lower.contains("cudaerror")
+                    || lower.contains("cuda error")
+                    || lower.contains("device not available")));
 
         if is_device_init {
             return Self::new(
@@ -174,14 +209,27 @@ impl LlamacppError {
         }
 
         // --- Port bind / permission failures ---
+        // Upstream llama-server logs "couldn't bind HTTP server socket,
+        // hostname: %s, port: %d" (tools/server/server-http.cpp).
+        //
+        // A bare "permission denied" only counts when it is about the socket:
+        // the same phrase appears for an unreadable model file, where telling
+        // the user to free a port would be wrong.
+        let mentions_socket = lower.contains("bind")
+            || lower.contains("socket")
+            || lower.contains("port")
+            || lower.contains("listen");
         let is_port_bind = lower.contains("address already in use")
             || lower.contains("address in use")
+            || lower.contains("couldn't bind")
+            || lower.contains("could not bind")
             || lower.contains("failed to bind")
             || lower.contains("cannot assign requested address")
-            || lower.contains("permission denied")
-            || lower.contains("access denied")
-            || lower.contains("operation not permitted")
-            || lower.contains("eacces");
+            || (mentions_socket
+                && (lower.contains("permission denied")
+                    || lower.contains("access denied")
+                    || lower.contains("operation not permitted")
+                    || lower.contains("eacces")));
 
         if is_port_bind {
             return Self::new(
@@ -191,36 +239,77 @@ impl LlamacppError {
             );
         }
 
-        // --- Unsupported quantization ---
+        // --- Unsupported quantization / tensor type ---
+        // Upstream validates tensor types in gguf.cpp ("has invalid ggml
+        // type") and reports unknown ftypes from the model loader. A bare
+        // "k-quants" is deliberately NOT a signal: llama.cpp prints
+        // informational k-quant lines during a normal, successful load.
         let is_bad_quant = lower.contains("unsupported quantization")
             || lower.contains("unknown quantization")
             || lower.contains("quantization not supported")
             || lower.contains("unimplemented quantization")
-            || lower.contains("failed to quantize")
-            || lower.contains("k-quants");
+            || lower.contains("invalid ggml type")
+            || lower.contains("unknown ggml type")
+            || lower.contains("unknown ftype")
+            || lower.contains("failed to quantize");
 
         if is_bad_quant {
             return Self::new(
                 ErrorCode::UnsupportedQuantization,
-                "The model uses a quantization this backend does not support. Try a different quantization (e.g. Q4_K_M) or a different model, then re-download it.".into(),
+                "The model uses a quantization this backend does not support. Try a different quantization (e.g. Q4_K_M) or update the llama.cpp backend.".into(),
+                Some(stderr.into()),
+            );
+        }
+
+        // --- Model file unreadable (missing path / permissions) ---
+        // Distinct from corruption: the bytes may be fine and we simply cannot
+        // open them, so "delete and re-download" would be wrong advice.
+        let mentions_model_file = lower.contains(".gguf")
+            || lower.contains("model file")
+            || lower.contains("failed to open model")
+            || lower.contains("load_model");
+        let is_file_unreadable = mentions_model_file
+            && (lower.contains("permission denied")
+                || lower.contains("no such file")
+                || lower.contains("not a directory")
+                || lower.contains("is a directory")
+                || lower.contains("operation not permitted")
+                || lower.contains("access is denied"));
+
+        if is_file_unreadable {
+            return Self::new(
+                ErrorCode::ModelFileNotFound,
+                "The model file could not be opened. Check that the file still exists and that Jan has permission to read it, then re-select or re-download the model.".into(),
                 Some(stderr.into()),
             );
         }
 
         // --- Model file corruption / truncation ---
+        // Only true integrity signals belong here. The trailing
+        // "failed to load model" summary line is deliberately excluded: llama.cpp
+        // appends it after almost any load failure, so treating it as a
+        // corruption signal turns this bucket into a second fallback and tells
+        // users to re-download a perfectly good file.
         let is_file_corrupt = lower.contains("unexpected end")
-            || lower.contains("unterminated")
+            || lower.contains("invalid magic")
+            || lower.contains("failed to read magic")
             || lower.contains("magic not found")
             || lower.contains("corrupt")
             || lower.contains("truncated")
             || lower.contains("invalid gguf")
             || lower.contains("not a valid gguf")
-            || lower.contains("invalid model")
-            || lower.contains("attempting to deserialize")
+            || lower.contains("bad gguf version")
+            || lower.contains("gguf file is version")
+            || lower.contains("ggufv1 is no longer supported")
+            || lower.contains("failed to read header")
+            || lower.contains("failed to read key-value pairs")
+            || lower.contains("failed to read tensor info")
+            || lower.contains("failed to read tensor data")
+            || lower.contains("failed to seek to beginning of data section")
             || lower.contains("no tensors in model")
             || lower.contains("model file is empty")
-            || lower.contains("failed to open model")
-            || lower.contains("failed to load model");
+            || lower.contains("failed to open gguf file")
+            || lower.contains("failed to open model");
 
         if is_file_corrupt {
             return Self::new(
@@ -290,30 +379,46 @@ pub type ServerResult<T> = Result<T, ServerError>;
 mod tests {
     use super::{ErrorCode, LlamacppError};
 
-    struct Case {
-        name: &'static str,
-        stderr: &'static str,
+    struct Case<'a> {
+        name: &'a str,
+        stderr: &'a str,
         expected: ErrorCode,
     }
 
+    /// Asserts the whole table, collecting every mismatch so one regression
+    /// does not hide the rest.
     fn assert_classifies(cases: &[Case]) {
+        let mut failures = Vec::new();
         for case in cases {
             let err = LlamacppError::from_stderr(case.stderr);
+            if err.code != case.expected {
+                failures.push(format!(
+                    "  {:?}: expected {:?}, got {:?}\n    stderr: {:?}",
+                    case.name, case.expected, err.code, case.stderr
+                ));
+            }
+            // The raw stderr must survive verbatim in `details`; comparing
+            // against the input catches a bucket that drops or truncates it.
             assert_eq!(
-                err.code,
-                case.expected,
-                "case {:?} misclassified stderr: {:?}",
-                case.name,
-                case.stderr
-            );
-            // The raw stderr must always survive in `details`.
-            assert!(
-                err.details.as_deref().is_some(),
-                "case {:?} dropped details",
+                err.details.as_deref(),
+                Some(case.stderr),
+                "case {:?} must carry the raw stderr in details",
                 case.name
             );
         }
+        assert!(
+            failures.is_empty(),
+            "{} of {} cases misclassified:\n{}",
+            failures.len(),
+            cases.len(),
+            failures.join("\n")
+        );
     }
+
+    /// Real llama.cpp startup banner. Present on every macOS launch, it names
+    /// backend dylib paths, and the Jan data dir contains "Library" - which is
+    /// why library detection must not key off a bare "lib" substring.
+    const MACOS_BANNER: &str = "load_backend: loaded Metal backend from /Users/g/Library/Application Support/Jan/data/llamacpp/backends/b8892/macos-x64/build/bin/libggml-metal.dylib\nload_backend: loaded CPU backend from /Users/g/Library/Application Support/Jan/data/llamacpp/backends/b8892/macos-x64/build/bin/libggml-cpu.dylib\n";
 
     #[test]
     fn classifies_dyld_code_signature_from_issue_8476() {
@@ -351,6 +456,19 @@ Reason: tried: '/usr/local/opt/openssl@3/lib/libssl.3.dylib' (code signature in 
                 stderr: "The code execution cannot proceed because cudart64_12.dll was not found. Reinstalling the program may fix this problem.",
                 expected: ErrorCode::MissingNativeLibrary,
             },
+            // Isolates the code-signature rule: no "Library not loaded"
+            // header, so only the Team-ID mismatch can classify this.
+            Case {
+                name: "code signature only (no loader header)",
+                stderr: "code signature in <B8FB4D89-43C0-36DC-88AF-C97B69B75031> '/usr/local/Cellar/openssl@3/3.6.3/lib/libssl.3.dylib' not valid for use in process: mapping process and mapped file (non-platform) have different Team IDs",
+                expected: ErrorCode::MissingNativeLibrary,
+            },
+            // Isolates the dyld-cache rule with upstream's real wording.
+            Case {
+                name: "dyld cache miss only",
+                stderr: "Reason: tried: '/usr/lib/libssl.3.dylib' (no such file, not in dyld cache)",
+                expected: ErrorCode::MissingNativeLibrary,
+            },
         ];
         assert_classifies(&cases);
     }
@@ -378,6 +496,24 @@ Reason: tried: '/usr/local/opt/openssl@3/lib/libssl.3.dylib' (code signature in 
                 stderr: "Metal command buffer error: MTLCommandBufferErrorOutOfMemory",
                 expected: ErrorCode::OutOfMemory,
             },
+            // The common real GPU-OOM report: ggml says "unable to allocate",
+            // and the trailing summary line must not steal this for the
+            // corruption bucket.
+            Case {
+                name: "CUDA VRAM exhaustion (real blob)",
+                stderr: "ggml_backend_cuda_buffer_type_alloc_buffer: allocating 7168.00 MiB on device 0 failed\nllama_model_load: error loading model: unable to allocate CUDA0 buffer\nllama_load_model_from_file: failed to load model",
+                expected: ErrorCode::OutOfMemory,
+            },
+            Case {
+                name: "host OOM via std::bad_alloc",
+                stderr: "terminate called after throwing an instance of 'std::bad_alloc'\n  what():  std::bad_alloc",
+                expected: ErrorCode::OutOfMemory,
+            },
+            Case {
+                name: "ggml allocator buffer exhaustion",
+                stderr: "ggml_tallocr_alloc: not enough space in the buffer to allocate 1024 bytes",
+                expected: ErrorCode::OutOfMemory,
+            },
         ];
         assert_classifies(&cases);
     }
@@ -385,9 +521,18 @@ Reason: tried: '/usr/local/opt/openssl@3/lib/libssl.3.dylib' (code signature in 
     #[test]
     fn classifies_model_architecture_not_supported() {
         let cases = [
+            // Upstream throws "unknown model architecture: '<arch>'" and
+            // llama.cpp prints it as "error loading model: <text>". The literal
+            // "error loading model architecture" never appears, and the
+            // trailing summary line must not divert this to ModelFileCorrupted.
             Case {
-                name: "arch not supported",
-                stderr: "error loading model architecture: 'llama' from ... supported architectures are: gpt2",
+                name: "unknown arch (real blob)",
+                stderr: "llama_model_load: error loading model: unknown model architecture: 'gemma3n'\nllama_load_model_from_file: failed to load model '/models/gemma3n.gguf'\nmain: error: unable to load model",
+                expected: ErrorCode::ModelArchNotSupported,
+            },
+            Case {
+                name: "unsupported arch (real thrown text)",
+                stderr: "llama_model_load: error loading model: unsupported model architecture: 'qwen3next'",
                 expected: ErrorCode::ModelArchNotSupported,
             },
         ];
@@ -417,6 +562,38 @@ Reason: tried: '/usr/local/opt/openssl@3/lib/libssl.3.dylib' (code signature in 
                 stderr: "ggml_rocm: hipErrorNoDevice: no HIP-compatible device found; failed to initialize ROCm",
                 expected: ErrorCode::DeviceInitFailed,
             },
+            // Real upstream strings: cudaErrorNoDevice / cudaErrorInsufficientDriver
+            // (ggml-cuda.cu) and the Metal-unsupported path (ggml-metal).
+            Case {
+                name: "no CUDA-capable device (real)",
+                stderr: "ggml_cuda_init: no CUDA-capable device is detected",
+                expected: ErrorCode::DeviceInitFailed,
+            },
+            Case {
+                name: "insufficient CUDA driver (real)",
+                stderr: "ggml_cuda_init: CUDA driver version is insufficient for CUDA runtime version",
+                expected: ErrorCode::DeviceInitFailed,
+            },
+            Case {
+                name: "Metal unsupported on system (real)",
+                stderr: "ggml_metal_init: error: Metal is not supported on this system",
+                expected: ErrorCode::DeviceInitFailed,
+            },
+            Case {
+                name: "Vulkan no devices found (real)",
+                stderr: "ggml_vulkan: No devices found.",
+                expected: ErrorCode::DeviceInitFailed,
+            },
+            Case {
+                name: "Vulkan version too old (real)",
+                stderr: "ggml_vulkan: Error: Vulkan 1.2 required.",
+                expected: ErrorCode::DeviceInitFailed,
+            },
+            Case {
+                name: "Metal command queue creation (real)",
+                stderr: "ggml_metal_init: error: failed to create command queue",
+                expected: ErrorCode::DeviceInitFailed,
+            },
         ];
         assert_classifies(&cases);
     }
@@ -432,6 +609,17 @@ Reason: tried: '/usr/local/opt/openssl@3/lib/libssl.3.dylib' (code signature in 
             Case {
                 name: "unknown quantization",
                 stderr: "ggml: unknown quantization type 17 in model",
+                expected: ErrorCode::UnsupportedQuantization,
+            },
+            // Real upstream tensor-type validation (ggml/src/gguf.cpp).
+            Case {
+                name: "invalid ggml type (real)",
+                stderr: "gguf_init_from_reader: tensor 'blk.0.ffn_down.weight' has invalid ggml type 39 (should be in [0, 39))",
+                expected: ErrorCode::UnsupportedQuantization,
+            },
+            Case {
+                name: "failed to quantize",
+                stderr: "llama_model_quantize: failed to quantize tensor output.weight",
                 expected: ErrorCode::UnsupportedQuantization,
             },
         ];
@@ -451,15 +639,28 @@ Reason: tried: '/usr/local/opt/openssl@3/lib/libssl.3.dylib' (code signature in 
                 stderr: "error: not a valid GGUF file: magic header mismatch",
                 expected: ErrorCode::ModelFileCorrupted,
             },
+            // Real upstream gguf.cpp integrity errors.
             Case {
-                name: "corrupt model file",
-                stderr: "llama_model_load_from_file: failed to load model: file appears truncated or corrupt",
+                name: "invalid magic characters (real)",
+                stderr: "gguf_init_from_reader: invalid magic characters: 'abcd', expected 'GGUF'",
                 expected: ErrorCode::ModelFileCorrupted,
             },
             Case {
-                name: "failed to open model",
-                stderr: "error: failed to open model file /models/foo.gguf: No such file or directory",
+                name: "failed to read tensor data (real)",
+                stderr: "gguf_init_from_reader: failed to read tensor data\ngguf_init_from_file: failed to read GGUF data",
                 expected: ErrorCode::ModelFileCorrupted,
+            },
+            Case {
+                name: "unsupported GGUF version (real)",
+                stderr: "gguf_init_from_reader: this GGUF file is version 4 but this software only supports up to version 3",
+                expected: ErrorCode::ModelFileCorrupted,
+            },
+            // A path that cannot be opened is reported as unreadable, not
+            // corrupt: the bytes may be fine, so re-downloading is wrong advice.
+            Case {
+                name: "failed to open GGUF file (real, missing path)",
+                stderr: "gguf_init_from_file: failed to open GGUF file '/models/foo.gguf' (No such file or directory)",
+                expected: ErrorCode::ModelFileNotFound,
             },
         ];
         assert_classifies(&cases);
@@ -471,6 +672,12 @@ Reason: tried: '/usr/local/opt/openssl@3/lib/libssl.3.dylib' (code signature in 
             Case {
                 name: "port already in use",
                 stderr: "llama-server: error: couldn't listen on socket: address already in use",
+                expected: ErrorCode::PortBindFailed,
+            },
+            // Upstream llama-server wording (tools/server/server-http.cpp).
+            Case {
+                name: "couldn't bind HTTP socket (real)",
+                stderr: "srv    start: couldn't bind HTTP server socket, hostname: 127.0.0.1, port: 8080",
                 expected: ErrorCode::PortBindFailed,
             },
             Case {
@@ -497,6 +704,80 @@ Reason: tried: '/usr/local/opt/openssl@3/lib/libssl.3.dylib' (code signature in 
             },
         ];
         assert_classifies(&cases);
+    }
+
+    /// Guards against over-eager matching. Production hands `from_stderr` the
+    /// whole accumulated stderr buffer, which on macOS always opens with the
+    /// `load_backend:` banner naming `.dylib` paths under `.../Library/...`.
+    /// A benign or unrelated tail must NOT be dressed up as a specific cause,
+    /// because wrong remediation advice is worse than none.
+    #[test]
+    fn does_not_misclassify_benign_or_unrelated_output() {
+        let template_miss = format!("{MACOS_BANNER}srv    load_model: chat template 'chatml' not found, falling back to default");
+        let unknown_tail =
+            format!("{MACOS_BANNER}srv    start: something entirely unexpected happened");
+        let cases = [
+            Case {
+                name: "macOS banner + benign template miss",
+                stderr: &template_miss,
+                expected: ErrorCode::LlamaCppProcessError,
+            },
+            Case {
+                name: "macOS banner + unclassified tail",
+                stderr: &unknown_tail,
+                expected: ErrorCode::LlamaCppProcessError,
+            },
+            Case {
+                name: "empty stderr",
+                stderr: "",
+                expected: ErrorCode::LlamaCppProcessError,
+            },
+            Case {
+                name: "whitespace-only stderr",
+                stderr: "   \n\t\n",
+                expected: ErrorCode::LlamaCppProcessError,
+            },
+            // A model file we cannot read is neither a port nor a corruption
+            // problem - it must not tell the user to free a port or re-download.
+            Case {
+                name: "model file permission denied",
+                stderr: "llama_model_load: failed to open '/models/m.gguf': Permission denied",
+                expected: ErrorCode::ModelFileNotFound,
+            },
+            // Informational k-quant lines appear during healthy loads.
+            Case {
+                name: "informational k-quant line is not a quantization failure",
+                stderr: "llama_model_loader: using k-quants for output.weight\nsrv    start: unexpected internal state",
+                expected: ErrorCode::LlamaCppProcessError,
+            },
+        ];
+        assert_classifies(&cases);
+    }
+
+    /// `details` must reach the frontend through the `Result<_, String>` IPC
+    /// path, which stringifies the error via `Display`. Locks the multi-line
+    /// case, since `{details:?}` escapes newlines.
+    #[test]
+    fn display_carries_multiline_details_and_none() {
+        let multi = LlamacppError::from_stderr(
+            "dyld[1]: Library not loaded: /x/libssl.dylib\nReason: code signature not valid",
+        );
+        let shown = multi.to_string();
+        assert!(
+            shown.contains("Library not loaded") && shown.contains("code signature not valid"),
+            "both stderr lines must survive Display, got: {shown}"
+        );
+        assert!(
+            shown.contains("\\n"),
+            "newlines are Debug-escaped by {{details:?}}, got: {shown}"
+        );
+
+        let none = LlamacppError::new(ErrorCode::InternalError, "boom".into(), None);
+        assert!(
+            none.to_string().contains("details: None"),
+            "the None branch must still render, got: {}",
+            none.to_string()
+        );
     }
 
     #[test]
