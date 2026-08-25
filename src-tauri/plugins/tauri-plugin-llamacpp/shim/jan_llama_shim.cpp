@@ -1,6 +1,7 @@
 #include "jan_llama_shim.h"
 
 #include "server-context.h"
+#include "server-common.h"
 #include "server-http.h"
 
 #include "arg.h"
@@ -29,6 +30,29 @@
 struct jan_llama_engine;
 
 namespace {
+
+/// Mirrors upstream's `ex_wrapper` (tools/server/server.cpp), which every route
+/// is registered behind. `build_table` captures the *unwrapped* handler members,
+/// so the two things that wrapper does have to be done here instead: map
+/// `std::invalid_argument` to 400 rather than 500, and build the body with the
+/// JSON library. Upstream's own messages quote the offending field
+/// (`response_format type must be one of "text" or "json_object"`), and a
+/// nlohmann parse error echoes the caller's bytes, so concatenating `e.what()`
+/// into a string literal produced unparseable JSON and let a client inject
+/// quotes into the response.
+server_http_res_ptr error_response(const std::string & message, error_type type) {
+    auto res = std::make_unique<server_http_res>();
+    res->status = 500;
+    try {
+        json error_data = format_error_response(message, type);
+        res->status = json_value(error_data, "code", 500);
+        res->data   = safe_json_to_str({{ "error", error_data }});
+    } catch (const std::exception & e) {
+        LOG_ERR("failed to format an error response: %s | for: %s\n", e.what(), message.c_str());
+        res->data = R"({"error":{"message":"internal server error","type":"server_error","code":500}})";
+    }
+    return res;
+}
 
 void set_err(char * err, size_t err_len, const std::string & msg) {
     if (err == nullptr || err_len == 0) {
@@ -452,9 +476,9 @@ jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
 
 } // namespace
 
-void jan_llama_engine_stop(jan_llama_engine * engine) {
+int jan_llama_engine_stop(jan_llama_engine * engine) {
     if (engine == nullptr) {
-        return;
+        return 0;
     }
     // Re-issue terminate until the loop actually exits: a single call can be
     // lost to the `running = true` at the top of server_queue::start_loop.
@@ -478,13 +502,20 @@ void jan_llama_engine_stop(jan_llama_engine * engine) {
         // The engine is deliberately not deleted: the detached loop still
         // references it. Leaking one object on a shutdown path we already
         // failed is better than a use-after-free.
-        return;
+        //
+        // Reported to the caller so it applies the same policy to the state
+        // callback it owns: the lambda installed in `ctx` captured that raw
+        // pointer by value, and the detached loop still reaches it through
+        // `handle_sleeping_state`, so freeing it here would be the
+        // use-after-free this branch exists to avoid.
+        return 1;
     }
     if (engine->loop.joinable()) {
         engine->loop.join();
     }
     delete engine;
     llama_backend_free();
+    return 0;
 }
 
 jan_llama_response * jan_llama_engine_request(jan_llama_engine * engine,
@@ -495,17 +526,14 @@ jan_llama_response * jan_llama_engine_request(jan_llama_engine * engine,
     auto out = new jan_llama_response();
     try {
         if (engine == nullptr || route == nullptr) {
-            out->res = std::make_unique<server_http_res>();
-            out->res->status = 500;
-            out->res->data = R"({"error":{"message":"engine or route is null"}})";
+            out->res = error_response("engine or route is null", ERROR_TYPE_SERVER);
             return out;
         }
 
         auto it = engine->table.find(route);
         if (it == engine->table.end()) {
-            out->res = std::make_unique<server_http_res>();
-            out->res->status = 404;
-            out->res->data = std::string(R"({"error":{"message":"unknown route: )") + route + "\"}}";
+            out->res = error_response(std::string("unknown route: ") + route,
+                                      ERROR_TYPE_NOT_FOUND);
             return out;
         }
 
@@ -522,20 +550,21 @@ jan_llama_response * jan_llama_engine_request(jan_llama_engine * engine,
 
         out->res = (*it->second)(*out->req);
         if (!out->res) {
-            out->res = std::make_unique<server_http_res>();
-            out->res->status = 500;
-            out->res->data = R"({"error":{"message":"handler returned no response"}})";
+            out->res = error_response("handler returned no response", ERROR_TYPE_SERVER);
         }
         return out;
+    } catch (const std::invalid_argument & e) {
+        // Upstream's own mapping: a malformed request is the client's to fix, so
+        // it must not look retryable. server-common.cpp throws this from 16
+        // sites (missing `messages`, bad `content` type, `top_logprobs` without
+        // `logprobs`, ...), all of which reached Jan's API as 500 before.
+        out->res = error_response(e.what(), ERROR_TYPE_INVALID_REQUEST);
+        return out;
     } catch (const std::exception & e) {
-        out->res = std::make_unique<server_http_res>();
-        out->res->status = 500;
-        out->res->data = std::string(R"({"error":{"message":")") + e.what() + "\"}}";
+        out->res = error_response(e.what(), ERROR_TYPE_SERVER);
         return out;
     } catch (...) {
-        out->res = std::make_unique<server_http_res>();
-        out->res->status = 500;
-        out->res->data = R"({"error":{"message":"unknown exception in handler"}})";
+        out->res = error_response("unknown error", ERROR_TYPE_SERVER);
         return out;
     }
 }
