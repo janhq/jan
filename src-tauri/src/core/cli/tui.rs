@@ -22452,6 +22452,30 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn help_lists_effort_aliases_and_marks_effort_canonical() {
+        let mut app = test_app();
+        run_command(&mut app, "help", &no_mcp()).await;
+        let text: String = app.transcript.iter().map(row_text).collect();
+        // `/effort` desc has no alias prefix; each alias row derives from
+        // `alias_of` and must read as an alias of `/effort`. Signatures are
+        // wider than the 18-char pad, so assert on the embedded parts rather
+        // than exact column alignment.
+        assert!(text.contains("alias of /effort"), "alias annotation missing: {text}");
+        assert!(
+            text.contains("/think [low|medium|high] alias of /effort"),
+            "think row: {text}"
+        );
+        assert!(
+            text.contains("/reasoning [low|medium|high] alias of /effort"),
+            "reasoning row: {text}"
+        );
+        assert!(
+            text.contains("/effort [low|medium|high] Set reasoning effort"),
+            "canonical effort row must not be an alias: {text}"
+        );
+    }
+
     #[test]
     fn partial_json_field_reads_a_truncated_value() {
         // Closed value.
