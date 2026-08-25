@@ -3,46 +3,68 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { backendStorage } from '@/lib/backendStorage'
 
+export interface FavoriteEntry {
+  modelId: string
+  provider: string
+}
+
 interface FavoriteModelState {
-  favoriteModels: Model[]
-  addFavorite: (model: Model) => void
-  removeFavorite: (modelId: string) => void
-  isFavorite: (modelId: string) => boolean
-  toggleFavorite: (model: Model) => void
+  favoriteModels: FavoriteEntry[]
+  addFavorite: (modelId: string, provider: string) => void
+  removeFavorite: (modelId: string, provider: string) => void
+  removeFavoritesForProvider: (provider: string) => void
+  isFavorite: (modelId: string, provider: string) => boolean
+  toggleFavorite: (modelId: string, provider: string) => void
 }
 
 export const useFavoriteModel = create<FavoriteModelState>()(
   persist(
     (set, get) => ({
       favoriteModels: [],
-      
-      addFavorite: (model: Model) => {
+
+      addFavorite: (modelId: string, provider: string) => {
         set((state) => {
-          if (!state.favoriteModels.some((fav) => fav.id === model.id)) {
+          if (
+            !state.favoriteModels.some(
+              (fav) => fav.modelId === modelId && fav.provider === provider
+            )
+          ) {
             return {
-              favoriteModels: [...state.favoriteModels, model],
+              favoriteModels: [...state.favoriteModels, { modelId, provider }],
             }
           }
           return state
         })
       },
-      
-      removeFavorite: (modelId: string) => {
+
+      removeFavorite: (modelId: string, provider: string) => {
         set((state) => ({
-          favoriteModels: state.favoriteModels.filter((model) => model.id !== modelId),
+          favoriteModels: state.favoriteModels.filter(
+            (fav) => !(fav.modelId === modelId && fav.provider === provider)
+          ),
         }))
       },
-      
-      isFavorite: (modelId: string) => {
-        return get().favoriteModels.some((model) => model.id === modelId)
+
+      removeFavoritesForProvider: (provider: string) => {
+        set((state) => ({
+          favoriteModels: state.favoriteModels.filter(
+            (fav) => fav.provider !== provider
+          ),
+        }))
       },
-      
-      toggleFavorite: (model: Model) => {
+
+      isFavorite: (modelId: string, provider: string) => {
+        return get().favoriteModels.some(
+          (fav) => fav.modelId === modelId && fav.provider === provider
+        )
+      },
+
+      toggleFavorite: (modelId: string, provider: string) => {
         const { isFavorite, addFavorite, removeFavorite } = get()
-        if (isFavorite(model.id)) {
-          removeFavorite(model.id)
+        if (isFavorite(modelId, provider)) {
+          removeFavorite(modelId, provider)
         } else {
-          addFavorite(model)
+          addFavorite(modelId, provider)
         }
       },
     }),
@@ -50,6 +72,16 @@ export const useFavoriteModel = create<FavoriteModelState>()(
       name: localStorageKey.favoriteModels,
       storage: createJSONStorage(() => backendStorage),
       skipHydration: true,
+      version: 1,
+      migrate: (persistedState: unknown, version: number) => {
+        if (version === 0 || version === undefined) {
+          // Migrate from old Model[] format to FavoriteEntry[] format.
+          // Old entries had an 'id' field (Model.id); we drop provider info
+          // since it was not stored — the favorites list will be cleared.
+          return { favoriteModels: [] }
+        }
+        return persistedState as FavoriteModelState
+      },
     }
   )
 )

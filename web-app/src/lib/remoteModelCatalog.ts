@@ -27,7 +27,7 @@ const ANTHROPIC_BROWSER_ACCESS_HEADER =
 /// Whether a provider fronts Anthropic's API. The `api_type` discriminant is
 /// authoritative (matches the inference dispatch in model-factory); provider
 /// name and host are fallbacks for configs predating that field.
-function isAnthropicProvider(provider: {
+export function isAnthropicProvider(provider: {
   provider?: string
   base_url?: string
   api_type?: string
@@ -163,8 +163,11 @@ function inferAnthropicCapabilities(id: string): string[] | null {
 function buildHeaders(p: ProviderLike, key: string | undefined): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (key) {
-    headers['x-api-key'] = key
-    headers['Authorization'] = `Bearer ${key}`
+    if (isAnthropicProvider(p)) {
+      headers['x-api-key'] = key
+    } else {
+      headers['Authorization'] = `Bearer ${key}`
+    }
   }
   if (p.custom_header) {
     for (const h of p.custom_header) headers[h.header] = h.value

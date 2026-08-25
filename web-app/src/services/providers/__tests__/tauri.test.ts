@@ -338,7 +338,7 @@ describe('TauriProvidersService', () => {
       )
     })
 
-    it('adds auth headers when api key is available', async () => {
+    it('adds only Authorization bearer header for OpenAI-compatible providers', async () => {
       vi.mocked(providerRemoteApiKeyChain).mockReturnValue(['sk-test'])
       vi.mocked(fetchTauri).mockResolvedValueOnce({
         ok: true,
@@ -347,15 +347,10 @@ describe('TauriProvidersService', () => {
       } as any)
 
       await svc.fetchModelsFromProvider(baseProvider)
-      expect(fetchTauri).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            'x-api-key': 'sk-test',
-            Authorization: 'Bearer sk-test',
-          }),
-        })
-      )
+      const callArgs = vi.mocked(fetchTauri).mock.calls[0][1] as RequestInit
+      const headers = callArgs.headers as Record<string, string>
+      expect(headers['Authorization']).toBe('Bearer sk-test')
+      expect(headers['x-api-key']).toBeUndefined()
     })
 
     it('adds default anthropic-version header for anthropic-shaped custom providers', async () => {

@@ -47,6 +47,8 @@ import {
 import {
   supportsRemoteCatalog,
   fetchTopRemoteModels,
+  isAnthropicProvider,
+  ensureAnthropicHeaders,
 } from '@/lib/remoteModelCatalog'
 
 // as route.threadsDetail
@@ -426,8 +428,14 @@ function ProviderDetail() {
         if (!key) continue
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
-          'x-api-key': key,
-          Authorization: `Bearer ${key}`,
+        }
+        if (provider && isAnthropicProvider(provider)) {
+          headers['x-api-key'] = key
+        } else {
+          headers['Authorization'] = `Bearer ${key}`
+        }
+        if (provider) {
+          ensureAnthropicHeaders(provider, headers)
         }
         if (
           provider.base_url.includes('localhost:') ||
@@ -468,7 +476,7 @@ function ProviderDetail() {
     } finally {
       setIsTestingKeys(false)
     }
-  }, [apiKeysDraft, maskApiKey, provider?.base_url, serviceHub, t])
+  }, [apiKeysDraft, maskApiKey, provider, serviceHub, t])
 
   // Note: settingsChanged event is now handled globally in GlobalEventHandler
   // This ensures all screens receive the event intermediately
@@ -1125,7 +1133,7 @@ function ProviderDetail() {
                                   (p) => p.provider === provider.provider
                                 ) &&
                                 providerHasRemoteApiKeys(provider))) && (
-                              <FavoriteModelAction model={model} />
+                              <FavoriteModelAction model={model} provider={provider.provider} />
                             )}
                             <DialogDeleteModel
                               provider={provider}
