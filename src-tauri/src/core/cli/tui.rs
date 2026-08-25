@@ -7083,7 +7083,11 @@ async fn handle_ask_key(
     key: KeyEvent,
     registry: &crate::core::agent::interaction::AskRegistry,
 ) -> bool {
-    if app.ask_queue.is_empty() {
+    // A docked prompt owns the keyboard, and `handle_ask_key` runs before
+    // `handle_key` -- without this an ask queued by the running agent would
+    // swallow the secret being typed into `/login` and echo it into a custom
+    // answer that is then submitted to the model.
+    if app.ask_queue.is_empty() || app.blocking_dock().is_some() {
         return false;
     }
     if key.kind == KeyEventKind::Release {
@@ -7173,6 +7177,9 @@ async fn handle_ask_mouse(
     mouse: MouseEvent,
     registry: &crate::core::agent::interaction::AskRegistry,
 ) -> bool {
+    if app.blocking_dock().is_some() {
+        return false;
+    }
     let Some(ask) = app.ask_queue.front_mut() else {
         return false;
     };
@@ -10638,6 +10645,13 @@ fn clamp_line(line: Line<'static>, width: u16) -> Line<'static> {
 /// `/login [--paste-token]`: the browser flow, or the legacy paste field when
 /// the user asks for it explicitly (the same escape hatch `jan login` has).
 fn login_command(app: &mut App, arg: &str) {
+    // One sign-in at a time: the dock is open for the whole flow, and switching
+    // it under an in-flight session would either drop the new request (the
+    // browser flow) or have the arriving session clobber the paste field.
+    if app.login.is_some() {
+        app.note("a sign-in is already in progress - press Esc to cancel it first");
+        return;
+    }
     match arg.split_whitespace().next() {
         Some("--paste-token" | "--paste") => open_login_prompt(app),
         Some(other) => app.note(&format!("/login: unknown option {other} (try --paste-token)")),
@@ -10774,7 +10788,10 @@ fn finish_login(app: &mut App, result: Result<super::tokamak::Login, String>) {
 
 /// Point the session at a Tokamak model when the current one is not runnable.
 /// A model that already resolves is left alone: `/login` is also used to refresh
-/// an expired key, which must not silently switch models.
+/// an expired key, which must not silently switch models. "Runnable" is the
+/// CLI's own reachability (`is_cli_reachable`), so a local-engine model -- which
+/// this build can never resolve an upstream for -- is adopted away from rather
+/// than left as a session that cannot answer.
 fn adopt_login_model(app: &mut App, login: &super::tokamak::Login) {
     let runnable = super::providers::list_provider_models(Some(&app.project_root));
     if runnable.iter().any(|(_, m)| *m == app.model) {
@@ -17135,6 +17152,51 @@ mod tests {
         assert!(app.login_device_request, "the loop must be asked to begin");
         // No field yet, so nothing may be typed into one.
         assert!(!prompt.editable());
+    }
+
+    /// A second `/login` while a session is being created must not switch the
+    /// dock: the browser session would land on top of the new one.
+    #[tokio::test]
+    async fn login_refuses_while_a_sign_in_is_already_in_progress() {
+        let mut app = test_app();
+        run_command(&mut app, "login", &no_mcp()).await;
+        app.login_device_request = false;
+
+        run_command(&mut app, "login --paste-token", &no_mcp()).await;
+        let prompt = app.login.as_ref().expect("the first dock stays open");
+        assert!(matches!(prompt.stage, super::LoginStage::Connecting));
+        assert!(!app.login_device_request);
+        let transcript = transcript_text(&app);
+        assert!(transcript.contains("already in progress"), "{transcript}");
+    }
+
+    /// The ask layer is consulted before `handle_key`, so an ask queued by the
+    /// running agent must not swallow the secret being typed into `/login` --
+    /// a custom answer is submitted to the model.
+    #[tokio::test]
+    async fn a_queued_ask_never_captures_login_keystrokes() {
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
+        open_paste_field(&mut app).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+        });
+        app.ask_queue.front_mut().unwrap().editing_custom = true;
+
+        for ch in "tk-secret".chars() {
+            let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
+            assert!(
+                !handle_ask_key(&mut app, key, &registry).await,
+                "the login dock owns the keyboard"
+            );
+            press(&mut app, KeyCode::Char(ch), KeyModifiers::NONE).await;
+        }
+
+        assert_eq!(app.login.as_ref().unwrap().input, "tk-secret");
+        assert_eq!(app.ask_queue.front().unwrap().custom_input, "");
+        assert!(app.input.is_empty(), "the composer must not see the key");
     }
 
     fn blank_mcp_prompt() -> super::McpPrompt {

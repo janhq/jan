@@ -314,7 +314,9 @@ impl PendingAuth {
 
         let deadline = tokio::time::Instant::now() + Duration::from_secs(session.expires_in);
         let mut interval = Duration::from_secs(session.interval);
-        let mut last_transient: Option<String> = None;
+        // The last reachability blip, and whether it landed on the final poll:
+        // then it, not the clock, is why the sign-in is being abandoned.
+        let mut last_transient: Option<(String, bool)> = None;
         loop {
             // The local deadline is only a bound on waiting: one last poll runs
             // on the way out so the server's own `expired`/`approved` gets the
@@ -353,7 +355,7 @@ impl PendingAuth {
                 // A reachability blip is one bad tick, not the session settling:
                 // the user may have just approved and the key is live server
                 // side. Keep polling and let the deadline bound the wait.
-                Err(e) if e.retryable => last_transient = Some(e.message),
+                Err(e) if e.retryable => last_transient = Some((e.message, last_round)),
                 Err(e) => return Err(e.message),
             }
             if last_round {
@@ -361,7 +363,13 @@ impl PendingAuth {
             }
         }
         Err(match last_transient {
-            Some(e) => format!(
+            // The last word came from a failed poll, not from the clock running
+            // out on a silent server -- saying "timed out" would contradict a
+            // reason like "approved but no API key".
+            Some((e, true)) => format!(
+                "could not confirm the sign-in before the window closed: {e} Run `jan login` again."
+            ),
+            Some((e, _)) => format!(
                 "timed out waiting for browser approval (last poll error: {e}). Run `jan login` \
                  again."
             ),
@@ -924,6 +932,71 @@ mod tests {
             let minted = pending.claim().await.expect("claim survives one bad tick");
             assert_eq!(minted.api_key, "sk_live_x");
             assert_eq!(requests.lock().unwrap().len(), 3);
+        });
+    }
+
+    /// The deadline only bounds waiting: one last poll runs on the way out, and
+    /// a server that is still `pending` then yields the timeout message.
+    #[test]
+    fn a_session_that_is_never_approved_times_out_after_a_final_poll() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let (host, requests) = mock_server(vec![
+                (
+                    200,
+                    r#"{"session_id":"s","user_code":"A-1","expires_in":1,"interval":1}"#,
+                ),
+                (200, r#"{"status":"pending","interval":1}"#),
+                (200, r#"{"status":"pending","interval":1}"#),
+            ])
+            .await;
+            let pending = begin(&format!("{host}/v1")).await.expect("begin");
+            let err = pending
+                .claim()
+                .await
+                .expect_err("an unapproved session times out");
+            assert_eq!(
+                err,
+                "timed out waiting for browser approval. Run `jan login` again."
+            );
+            assert_eq!(
+                requests.lock().unwrap().len(),
+                3,
+                "create + one tick + the final poll after the deadline"
+            );
+        });
+    }
+
+    /// When the final poll is the one that fails, the reason is that failure --
+    /// "timed out ... (approved but no API key)" would contradict itself.
+    #[test]
+    fn a_blip_on_the_final_poll_is_reported_instead_of_a_timeout() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let (host, _) = mock_server(vec![
+                (
+                    200,
+                    r#"{"session_id":"s","user_code":"A-1","expires_in":1,"interval":1}"#,
+                ),
+                (200, r#"{"status":"approved"}"#),
+                (200, r#"{"status":"approved"}"#),
+            ])
+            .await;
+            let pending = begin(&format!("{host}/v1")).await.expect("begin");
+            let err = pending.claim().await.expect_err("no key is not a claim");
+            assert_eq!(
+                err,
+                "could not confirm the sign-in before the window closed: the sign-in was approved \
+                 but Tokamak returned no API key. Run `jan login` again."
+            );
         });
     }
 
