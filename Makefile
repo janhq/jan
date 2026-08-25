@@ -502,6 +502,20 @@ else
 endif
 	bash src-tauri/build-utils/sign-engine.sh
 
+# Type-checks and links the engine-gated test suites without running them.
+#
+# Every suite under tests/ is `#![cfg(feature = "engine")]`, and both
+# rust-check.yml and a plain `cargo test --lib` run with the feature off, so all
+# three report "0 passed; ok" -- green suites that assert nothing, over the whole
+# FFI boundary. `--no-run` is the part that needs no model: the runtime half
+# still wants JAN_TEST_GGUF, but a suite that stops compiling now fails loudly
+# instead of passing vacuously. Depends on the same toolchain check as
+# build-engine, and reuses ENGINE_FEATURES so it cannot drift from what the
+# worker is built with.
+check-engine-tests: engine-source check-engine-toolchain
+	@echo "Compiling engine test suites (variant: $(JAN_ENGINE_VARIANT), features: $(ENGINE_FEATURES))"
+	cd $(ENGINE_PLUGIN_DIR) && cargo test --features $(ENGINE_FEATURES) --no-run
+
 # Debug worker for local dev. Same staging, so `make dev` behaves like a bundle.
 build-engine-dev: engine-source check-engine-toolchain
 	@echo "Building llama.cpp engine worker (dev, variant: $(JAN_ENGINE_VARIANT), jobs: $(if $(JAN_ENGINE_JOBS),$(JAN_ENGINE_JOBS),all cores))"
