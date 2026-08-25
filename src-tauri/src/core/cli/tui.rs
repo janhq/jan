@@ -7947,6 +7947,10 @@ struct SlashCommand {
     /// Argument hint (`[id]`) or empty when the command takes none.
     hint: &'static str,
     description: &'static str,
+    /// Name of the canonical command this row is an alias of; `None` for the
+    /// command itself. `/think` and `/reasoning` alias `/effort`, so all three
+    /// share one dispatch and one session-scoped effort state.
+    alias_of: Option<&'static str>,
 }
 
 /// Slash popup metadata is intentionally loaded outside the render path.
@@ -8163,106 +8167,139 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "/help",
         hint: "",
         description: "Show available commands",
+        alias_of: None,
     },
     SlashCommand {
         name: "/new",
         hint: "",
         description: "Start a new session",
+        alias_of: None,
     },
     SlashCommand {
         name: "/clear",
         hint: "",
         description: "Clear the conversation",
+        alias_of: None,
     },
     SlashCommand {
         name: "/init",
         hint: "",
         description: "Study the project, then write JAN.md, skills, and memory",
+        alias_of: None,
     },
     SlashCommand {
         name: "/compact",
         hint: "",
         description: "Summarize older turns to free up context",
+        alias_of: None,
     },
     SlashCommand {
         name: "/goal",
         hint: "[condition|clear]",
         description: "Keep working until a condition is met (bare: status)",
+        alias_of: None,
     },
     SlashCommand {
         name: "/plan",
         hint: "[exit|text]",
         description: "Enter read-only plan mode, optionally seeding it with a message; /plan exit to leave",
+        alias_of: None,
     },
     SlashCommand {
         name: "/todo",
         hint: "[add [phase|] text | clear]",
         description: "Open the todo editor (bare), /todo add ... to append, /todo clear to drop all",
+        alias_of: None,
     },
     SlashCommand {
         name: "/threads",
         hint: "",
         description: "List saved threads for this project",
+        alias_of: None,
     },
     SlashCommand {
         name: "/resume",
         hint: "[id]",
         description: "Resume a thread (bare: pick interactively)",
+        alias_of: None,
     },
     SlashCommand {
         name: "/model",
         hint: "[id]",
         description: "Switch model (bare: pick interactively)",
+        alias_of: None,
     },
     SlashCommand {
         name: "/effort",
         hint: "[low|medium|high]",
         description: "Set reasoning effort (bare: show current; low: faster, high: deeper thinking)",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/think",
+        hint: "[low|medium|high]",
+        description: "Alias of /effort: set reasoning effort (bare: show current)",
+        alias_of: Some("/effort"),
+    },
+    SlashCommand {
+        name: "/reasoning",
+        hint: "[low|medium|high]",
+        description: "Alias of /effort: set reasoning effort (bare: show current)",
+        alias_of: Some("/effort"),
     },
     SlashCommand {
         name: "/terminal-setup",
         hint: "",
         description: "Configure this terminal so Shift+Enter inserts a newline",
+        alias_of: None,
     },
     SlashCommand {
         name: "/mcp",
         hint: "",
         description: "List, add, edit, remove, or toggle MCP servers",
+        alias_of: None,
     },
     SlashCommand {
         name: "/plugin",
         hint: "[list|install <spec>|remove <name>|search [query]]",
         description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace",
+        alias_of: None,
     },
     SlashCommand {
         name: "/cancel",
         hint: "[N]",
         description: "Cancel queued messages (bare: all, or index)",
+        alias_of: None,
     },
     SlashCommand {
         name: "/login",
         hint: "[--paste-token]",
         description: "Sign in to Tokamak in a browser, or --paste-token to paste an API key",
+        alias_of: None,
     },
     SlashCommand {
         name: "/config",
         hint: "",
         description: "View provider config (~/.jan/config.toml)",
+        alias_of: None,
     },
     SlashCommand {
         name: "/settings",
         hint: "[max_parallel_subagents N]",
         description: "Edit agent.toml and ~/.jan settings (menu); most apply next run",
+        alias_of: None,
     },
     SlashCommand {
         name: "/update",
         hint: "",
         description: "Install the latest published build (takes effect on restart)",
+        alias_of: None,
     },
     SlashCommand {
         name: "/quit",
         hint: "",
         description: "Exit the TUI",
+        alias_of: None,
     },
 ];
 
@@ -8374,7 +8411,13 @@ async fn run_command(
                 } else {
                     format!("{} {}", c.name, c.hint)
                 };
-                app.system_detail_text(&format!("{sig:18} {}", c.description));
+                let desc = match c.alias_of {
+                    Some(canonical) => {
+                        format!("alias of {canonical}; {}", c.description)
+                    }
+                    None => c.description.to_string(),
+                };
+                app.system_detail_text(&format!("{sig:18} {desc}"));
             }
             app.note("keys:");
             for (keys, description) in KEY_BINDINGS {
@@ -8440,7 +8483,7 @@ async fn run_command(
         "goal" => goal_command(app, arg),
         "init" => init_command(app),
         "plan" => plan_command(app, arg),
-        "effort" => effort_command(app, arg),
+        "effort" | "think" | "reasoning" => effort_command(app, arg),
         "todo" => todo_command(app, arg).await,
         "cancel" => cancel_command(app, arg),
         "quit" | "exit" => app.should_quit = true,
@@ -12812,12 +12855,16 @@ fn draw_slash_hints(
         .iter()
         .map(|m| match m {
             SlashMatch::Command(c) => {
-            let mut spans = vec![Span::styled(c.name, Style::new().cyan().bold())];
-            if !c.hint.is_empty() {
-                spans.push(Span::styled(format!(" {}", c.hint), dim));
-            }
-            spans.push(Span::styled(format!("  {}", c.description), dim));
-            ListItem::new(Line::from(spans))
+                let mut spans = vec![Span::styled(c.name, Style::new().cyan().bold())];
+                if !c.hint.is_empty() {
+                    spans.push(Span::styled(format!(" {}", c.hint), dim));
+                }
+                let desc = match c.alias_of {
+                    Some(canonical) => format!("alias of {canonical}; {}", c.description),
+                    None => c.description.to_string(),
+                };
+                spans.push(Span::styled(format!("  {desc}"), dim));
+                ListItem::new(Line::from(spans))
             }
             SlashMatch::PluginCommand {
                 name,
@@ -22389,6 +22436,21 @@ mod tests {
     fn compact_is_a_registered_command() {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/compact"));
     }
+    #[test]
+    fn effort_aliases_are_registered_as_aliases_of_effort() {
+        let effort = SLASH_COMMANDS
+            .iter()
+            .find(|c| c.name == "/effort")
+            .expect("/effort is canonical");
+        assert_eq!(effort.alias_of, None, "/effort is not an alias");
+        for alias in ["/think", "/reasoning"] {
+            let row = SLASH_COMMANDS
+                .iter()
+                .find(|c| c.name == alias)
+                .unwrap_or_else(|| panic!("{alias} must be registered"));
+            assert_eq!(row.alias_of, Some("/effort"), "{alias} alias target");
+        }
+    }
 
     #[test]
     fn partial_json_field_reads_a_truncated_value() {
@@ -22940,6 +23002,60 @@ mod tests {
     async fn effort_command_rejects_unknown_level() {
         let mut app = test_app();
         run_command(&mut app, "effort turbo", &no_mcp()).await;
+        assert_eq!(app.reasoning_effort, "medium", "invalid level must not apply");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("unknown effort level"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn think_alias_reports_current_level() {
+        let mut app = test_app();
+        run_command(&mut app, "think", &no_mcp()).await;
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("medium"), "default level not reported: {text}");
+    }
+
+    #[tokio::test]
+    async fn think_alias_sets_valid_level() {
+        let mut app = test_app();
+        run_command(&mut app, "think high", &no_mcp()).await;
+        assert_eq!(app.reasoning_effort, "high");
+        assert_eq!(app.last_non_low_effort, "high");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("set to high"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn think_alias_rejects_unknown_level() {
+        let mut app = test_app();
+        run_command(&mut app, "think turbo", &no_mcp()).await;
+        assert_eq!(app.reasoning_effort, "medium", "invalid level must not apply");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("unknown effort level"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn reasoning_alias_reports_current_level() {
+        let mut app = test_app();
+        run_command(&mut app, "reasoning", &no_mcp()).await;
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("medium"), "default level not reported: {text}");
+    }
+
+    #[tokio::test]
+    async fn reasoning_alias_sets_valid_level() {
+        let mut app = test_app();
+        run_command(&mut app, "reasoning high", &no_mcp()).await;
+        assert_eq!(app.reasoning_effort, "high");
+        assert_eq!(app.last_non_low_effort, "high");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("set to high"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn reasoning_alias_rejects_unknown_level() {
+        let mut app = test_app();
+        run_command(&mut app, "reasoning turbo", &no_mcp()).await;
         assert_eq!(app.reasoning_effort, "medium", "invalid level must not apply");
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("unknown effort level"), "missing note: {text}");
@@ -24081,7 +24197,12 @@ mod tests {
     fn slash_prefix_narrows_and_unmatched_hides() {
         let mut app = test_app();
         app.input = "/re".into();
-        assert_eq!(names(&app), vec!["/resume".to_string()]);
+        // Both `/resume` and `/reasoning` start with `re`; catalog order
+        // (stable sort on equal prefix score) keeps resume first.
+        assert_eq!(
+            names(&app),
+            vec!["/resume".to_string(), "/reasoning".to_string()]
+        );
         app.input = "/xyz".into();
         assert!(app.slash_matches().is_empty());
     }
@@ -24166,7 +24287,11 @@ mod tests {
         app.input_insert('s');
         assert_eq!(
             names(&app),
-            vec!["/resume".to_string(), "/threads".to_string()]
+            vec![
+                "/resume".to_string(),
+                "/reasoning".to_string(),
+                "/threads".to_string(),
+            ]
         );
     }
 
@@ -24394,11 +24519,15 @@ mod tests {
         app.input = "/res".into();
         let all = names(&app);
         // Built-in wins the `/resume` collision: no `/command:x:resume` row and
-        // no skill row. `/threads` is a separate fuzzy hit (res is a
-        // subsequence of its name), not a collision.
+        // no skill row. `/reasoning` and `/threads` are separate fuzzy hits
+        // (res is a subsequence of both names), not collisions.
         assert_eq!(
             all,
-            vec!["/resume".to_string(), "/threads".to_string()],
+            vec![
+                "/resume".to_string(),
+                "/reasoning".to_string(),
+                "/threads".to_string(),
+            ],
             "built-in only"
         );
         // The command is still reachable explicitly.
