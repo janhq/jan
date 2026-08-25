@@ -839,7 +839,18 @@ async fn run(
     let engine2 = Arc::clone(&engine);
     let head = tokio::task::spawn_blocking(move || {
         let res = engine2.request(name, &body);
-        (res.status(), res.content_type(), res.body(), res.is_stream(), res)
+        let is_stream = res.is_stream();
+        // Not read on a stream. Upstream prefills `res->data` with the first SSE
+        // event and then has its own generator flush that same buffer as chunk
+        // one (server-context.cpp: `if (!res_this->data.empty()) { output =
+        // std::move(res_this->data); ... }`), so taking the body *and* draining
+        // would put that event on the wire twice. Upstream's own HTTP layer
+        // treats the two as strictly either/or; so does this. Jan sets
+        // `return_progress` on every stream, which makes the prefilled event a
+        // real 0% partial instead of an empty one, so the duplicate fired on
+        // every streaming completion rather than being latent.
+        let first = if is_stream { String::new() } else { res.body() };
+        (res.status(), res.content_type(), first, is_stream, res)
     })
     .await;
 
@@ -861,9 +872,6 @@ async fn run(
     // channel. Dropping the receiver (client gone) makes the send fail, which
     // cancels generation instead of running it to completion for nobody.
     let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, Infallible>>(buffer);
-    if !first.is_empty() {
-        let _ = tx.send(Ok(Frame::data(Bytes::from(first)))).await;
-    }
     tokio::task::spawn_blocking(move || {
         // `res` is a bare handle into the engine's server context, and
         // `dispatch` releases its registry reference the moment `run` returns
