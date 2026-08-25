@@ -295,6 +295,7 @@ pub async fn fetch_missing_models(
                 base_url: None,
                 models: Some(models),
                 api_type: None,
+                ..Default::default()
             },
         )?;
         populated = true;
@@ -922,6 +923,7 @@ mod tests {
                     base_url: Some(format!("http://{addr}/v1")),
                     models: Some(vec![]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();
@@ -949,6 +951,7 @@ mod tests {
                     base_url: Some("http://127.0.0.1:9/v1".into()), // would refuse
                     models: Some(vec!["my-model".into()]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();
@@ -977,6 +980,7 @@ mod tests {
                     base_url: Some(format!("http://{addr}/v1")),
                     models: Some(vec![]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();
@@ -1026,6 +1030,7 @@ mod tests {
                         base_url: Some(format!("http://{addr}/v1")),
                         models: Some(vec![]),
                         api_type: None,
+                                            ..Default::default()
                     },
                 )
                 .unwrap();
@@ -1053,6 +1058,7 @@ mod tests {
                     base_url: Some("http://127.0.0.1:9/v1".into()), // refuses instantly
                     models: Some(vec![]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();

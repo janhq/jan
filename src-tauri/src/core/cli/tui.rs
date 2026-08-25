@@ -529,15 +529,75 @@ enum McpJobDone {
     },
 }
 
-/// `/login` key entry: a docked prompt that collects a Tokamak API key without
-/// echoing it. Verification runs off the render loop (see `login_task` in
-/// `chat_loop`), so `verifying` marks the window where the prompt is read-only.
+/// A browser launch held back for confirmation, for flows with no dock of their
+/// own to ask in (currently `/mcp` authorization).
+struct BrowserConfirm {
+    url: String,
+    /// What the page is for, e.g. `authorize 'github'`.
+    purpose: String,
+}
+
+/// Which sign-in the `/login` dock is running. The browser flow is the default;
+/// the paste field is what a server predating it (or a failure) falls back to.
+enum LoginStage {
+    /// Creating the session -- one round trip before there is a code to show.
+    Connecting,
+    /// Waiting on the browser. The code is displayed so the user can check it
+    /// against the approve page before clicking Approve.
+    ///
+    /// While `confirm_open` is set the user has not yet said whether to launch a
+    /// browser here. The poll runs regardless, so approving from a phone still
+    /// completes the sign-in without ever answering.
+    Approving {
+        user_code: String,
+        authorize_url: String,
+        confirm_open: bool,
+    },
+    /// Legacy paste-a-key entry. `confirm_open` gates sending the user to the
+    /// API-keys page; the field only accepts a key once that is answered.
+    Paste { confirm_open: bool },
+}
+
+impl LoginStage {
+    /// The page this stage would send the user to, while that is still unasked.
+    fn unconfirmed_url(&self) -> Option<&str> {
+        match self {
+            Self::Approving {
+                authorize_url,
+                confirm_open: true,
+                ..
+            } => Some(authorize_url),
+            Self::Paste { confirm_open: true } => Some(super::tokamak::API_KEYS_URL),
+            _ => None,
+        }
+    }
+
+    /// Mark the browser question answered, whichever stage asked it.
+    fn mark_confirmed(&mut self) {
+        match self {
+            Self::Approving { confirm_open, .. } | Self::Paste { confirm_open } => {
+                *confirm_open = false
+            }
+            Self::Connecting => {}
+        }
+    }
+}
+
+/// `/login`: a docked prompt that runs the browser-approval sign-in and, when
+/// that is unavailable, collects a Tokamak API key without echoing it. The
+/// network work runs off the render loop (see `login_*_task` in `chat_loop`), so
+/// `verifying` marks the window where the paste field is read-only.
+///
+/// The dock stays open for the whole flow, which is also what makes Esc a
+/// reliable cancel: `chat_loop` drops every in-flight sign-in task the moment
+/// `app.login` goes to `None`.
 struct LoginPrompt {
     /// The key as typed/pasted. Never rendered verbatim -- see `masked`.
     input: String,
     /// Why the previous attempt failed, shown above the field.
     error: Option<String>,
     verifying: bool,
+    stage: LoginStage,
 }
 
 impl LoginPrompt {
@@ -546,7 +606,22 @@ impl LoginPrompt {
             input: String::new(),
             error: None,
             verifying: false,
+            stage: LoginStage::Paste { confirm_open: true },
         }
+    }
+
+    /// The dock as `/login` opens it, before the session exists.
+    fn connecting() -> Self {
+        Self {
+            stage: LoginStage::Connecting,
+            ..Self::new()
+        }
+    }
+
+    /// Only the paste field accepts input, and only once the browser question is
+    /// answered; the approval stages are display-only throughout.
+    fn editable(&self) -> bool {
+        matches!(self.stage, LoginStage::Paste { confirm_open: false }) && !self.verifying
     }
 
     fn masked(&self) -> String {
@@ -554,7 +629,7 @@ impl LoginPrompt {
     }
 
     fn paste(&mut self, text: &str) {
-        if !self.verifying {
+        if self.editable() {
             self.input.push_str(super::secret_input::pasted(text));
         }
     }
@@ -1480,6 +1555,12 @@ struct App {
     probed_models: std::collections::HashSet<String>,
     /// Key handed off to the loop to verify off the render loop. Taken once.
     login_submit: Option<String>,
+    /// `/login` asked for the browser flow: `chat_loop` creates the session.
+    login_device_request: bool,
+    /// A `/mcp` authorization waiting on the user's yes/no before a browser is
+    /// launched. Holds only the URL and what it is for -- never the bound
+    /// loopback listener, which stays on the task awaiting the redirect.
+    browser_confirm: Option<BrowserConfirm>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
     update_requested: bool,
     /// `/plugin install` handed off to the loop, which runs the git clone off
@@ -1935,6 +2016,8 @@ impl App {
             provider_prompt: None,
             probed_models: std::collections::HashSet::new(),
             login_submit: None,
+            login_device_request: false,
+            browser_confirm: None,
             update_requested: false,
             plugin_install_request: None,
             plugin_select_request: None,
@@ -2479,6 +2562,26 @@ impl App {
             && !self.show_reasoning
             && !self.stream_reasoning
             && self.reasoning_open()
+    }
+
+    /// The open dock that owns the keyboard, phrased as what the user has to do
+    /// in it. `None` when the composer is live.
+    ///
+    /// Must mirror the guard list at the top of `handle_key`: a dock that takes
+    /// every keystroke but leaves a cursor blinking in the composer promises a
+    /// field that is not there.
+    fn blocking_dock(&self) -> Option<&'static str> {
+        if self.login.is_some() {
+            Some("sign in in the dock above")
+        } else if self.browser_confirm.is_some() {
+            Some("answer the question above")
+        } else if self.settings_prompt.is_some() {
+            Some("edit the setting above")
+        } else if self.mcp_prompt.is_some() || self.provider_prompt.is_some() {
+            Some("finish the wizard above")
+        } else {
+            None
+        }
     }
 
     /// True while the model is mid-reasoning: either a `<think>` block is live
@@ -5920,6 +6023,28 @@ async fn await_login(
     }
 }
 
+/// Await the session-creation half of the browser sign-in, parking forever when
+/// none is running so this can sit in the loop's `select!` unconditionally.
+async fn await_login_begin(
+    task: &mut Option<
+        tokio::task::JoinHandle<
+            Result<super::device_auth::PendingAuth, super::device_auth::BeginError>,
+        >,
+    >,
+) -> Result<super::device_auth::PendingAuth, super::device_auth::BeginError> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    match joined {
+        Ok(inner) => inner,
+        Err(e) => Err(super::device_auth::BeginError::Failed(format!(
+            "sign-in task failed: {e}"
+        ))),
+    }
+}
+
 /// How often the dock's branch indicator re-reads `HEAD`, so a checkout made
 /// outside the TUI (another terminal, an editor) shows up without needing a
 /// restart. Cheap (`rev-parse --abbrev-ref HEAD`) but still shells out, so this
@@ -6180,6 +6305,10 @@ pub async fn run(
     app.push_session_banner(!seeded);
     if app.model.is_empty() {
         app.note("not signed in — run /login to sign in to Tokamak, or `jan config set` to configure a provider manually");
+    } else if let Some(warning) = super::tokamak::expiry_warning() {
+        // Say it at launch rather than letting the key expire into a 401 in the
+        // middle of a run.
+        app.note(&warning);
     }
     // Only when there is nothing to load: a project that already has JAN.md needs
     // no invitation, and the splash hint covers re-running /init deliberately.
@@ -6366,6 +6495,18 @@ async fn chat_loop<B: Backend>(
         tokio::task::JoinHandle<Result<super::tokamak::Login, String>>,
     > = None;
 
+    // The browser-approval sign-in, in two off-loop halves: `begin` creates the
+    // session (one round trip), then the claim polls until the user approves --
+    // which can take minutes, so it must never touch the render loop.
+    let mut login_begin_task: Option<
+        tokio::task::JoinHandle<
+            Result<super::device_auth::PendingAuth, super::device_auth::BeginError>,
+        >,
+    > = None;
+    let mut login_claim_task: Option<
+        tokio::task::JoinHandle<Result<super::tokamak::Login, String>>,
+    > = None;
+
     // `/mcp` work that must not run on the render loop: a tool listing is a
     // round trip to the peer, and an authorization waits on a browser for up to
     // five minutes. One at a time -- the detail screen only ever asks for one.
@@ -6427,12 +6568,23 @@ async fn chat_loop<B: Backend>(
             }
         }
 
-        // Esc closed the prompt while a verification was in flight: drop it, so a
-        // late reply can't report a sign-in the user walked away from.
+        // Esc closed the dock while sign-in work was in flight: drop all of it,
+        // so a late reply can't report a sign-in the user walked away from. The
+        // dock stays open for the whole flow, so this is the one cancel path.
         if app.login.is_none() {
-            if let Some(task) = login_task.take() {
+            for task in [
+                login_task.take(),
+                login_claim_task.take(),
+            ]
+            .into_iter()
+            .flatten()
+            {
                 task.abort();
             }
+            if let Some(task) = login_begin_task.take() {
+                task.abort();
+            }
+            app.login_device_request = false;
         }
 
         // The detail screen asked for something off-loop. One job at a time, and
@@ -6458,6 +6610,20 @@ async fn chat_loop<B: Backend>(
                     async move { super::tokamak::login(&key).await },
                 ));
             }
+        }
+
+        // `/login` asked for the browser flow: create the session off-loop. Only
+        // when nothing else sign-in shaped is already running, so a repeated
+        // `/login` cannot open two sessions.
+        if app.login_device_request
+            && login_begin_task.is_none()
+            && login_claim_task.is_none()
+            && login_task.is_none()
+        {
+            app.login_device_request = false;
+            login_begin_task = Some(tokio::spawn(async move {
+                super::device_auth::begin(&super::tokamak::base_url()).await
+            }));
         }
 
         // `/update` was typed: install off-loop. The flag is only honored when
@@ -6627,6 +6793,35 @@ async fn chat_loop<B: Backend>(
             login_res = await_login(&mut login_task) => {
                 let login_ok = login_res.is_ok();
                 finish_login(app, login_res);
+                if login_ok {
+                    reload_provider_configs(app).await;
+                }
+            }
+            begun = await_login_begin(&mut login_begin_task) => {
+                match begun {
+                    Ok(pending) => {
+                        show_login_approval(app, pending.session());
+                        login_claim_task =
+                            Some(tokio::spawn(super::tokamak::device_login(pending)));
+                    }
+                    // Not a failure, but say it: an unexplained paste field
+                    // reads as the browser sign-in having silently broken.
+                    Err(super::device_auth::BeginError::Unsupported) => {
+                        app.note("this Tokamak deployment does not support browser sign-in yet");
+                        open_login_prompt(app);
+                    }
+                    Err(e) => {
+                        app.note(&format!(
+                            "browser sign-in unavailable: {}",
+                            e.message(&super::tokamak::base_url())
+                        ));
+                        open_login_prompt(app);
+                    }
+                }
+            }
+            claimed = await_login(&mut login_claim_task) => {
+                let login_ok = claimed.is_ok();
+                finish_login(app, claimed);
                 if login_ok {
                     reload_provider_configs(app).await;
                 }
@@ -6888,7 +7083,11 @@ async fn handle_ask_key(
     key: KeyEvent,
     registry: &crate::core::agent::interaction::AskRegistry,
 ) -> bool {
-    if app.ask_queue.is_empty() {
+    // A docked prompt owns the keyboard, and `handle_ask_key` runs before
+    // `handle_key` -- without this an ask queued by the running agent would
+    // swallow the secret being typed into `/login` and echo it into a custom
+    // answer that is then submitted to the model.
+    if app.ask_queue.is_empty() || app.blocking_dock().is_some() {
         return false;
     }
     if key.kind == KeyEventKind::Release {
@@ -6978,6 +7177,9 @@ async fn handle_ask_mouse(
     mouse: MouseEvent,
     registry: &crate::core::agent::interaction::AskRegistry,
 ) -> bool {
+    if app.blocking_dock().is_some() {
+        return false;
+    }
     let Some(ask) = app.ask_queue.front_mut() else {
         return false;
     };
@@ -7021,9 +7223,32 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         app.note("sign-in cancelled (run /login again any time)");
         return;
     }
+    // The browser question owns the keyboard until it is answered, so a
+    // keystroke meant for it can never fall through into the key field.
+    if app
+        .login
+        .as_ref()
+        .is_some_and(|p| p.stage.unconfirmed_url().is_some())
+    {
+        if ctrl {
+            return;
+        }
+        match key.code {
+            KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                resolve_login_browser(app, true)
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') => resolve_login_browser(app, false),
+            _ => {}
+        }
+        return;
+    }
+
     // Ctrl-V: terminals deliver a normal paste as `Event::Paste`, but some send
     // Ctrl-V through as a key, so read the clipboard directly for those.
     if ctrl && key.code == KeyCode::Char('v') {
+        if !app.login.as_ref().is_some_and(LoginPrompt::editable) {
+            return;
+        }
         match super::secret_input::clipboard_text() {
             Ok(text) => {
                 if let Some(prompt) = app.login.as_mut() {
@@ -7042,7 +7267,9 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     let Some(prompt) = app.login.as_mut() else {
         return;
     };
-    if prompt.verifying {
+    // The browser stages have no field to edit -- only Esc, handled above, does
+    // anything. Same for a paste being verified.
+    if !prompt.editable() {
         return;
     }
     match key.code {
@@ -7090,6 +7317,23 @@ async fn handle_key(
     // transcript shortcuts.
     if app.login.is_some() {
         handle_login_key(app, key, ctrl);
+        return;
+    }
+
+    // A pending browser question owns the keyboard the same way, so a `y`/`n`
+    // meant for it can never reach the input box or a transcript shortcut.
+    if app.browser_confirm.is_some() {
+        if !ctrl {
+            match key.code {
+                KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    resolve_mcp_browser(app, true)
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    resolve_mcp_browser(app, false)
+                }
+                _ => {}
+            }
+        }
         return;
     }
 
@@ -7997,8 +8241,8 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/login",
-        hint: "",
-        description: "Sign in to Tokamak and save the API key",
+        hint: "[--paste-token]",
+        description: "Sign in to Tokamak in a browser, or --paste-token to paste an API key",
     },
     SlashCommand {
         name: "/config",
@@ -8188,7 +8432,7 @@ async fn run_command(
         }
         "mcp" => open_mcp_picker(app, mcp_servers).await,
         "plugin" => plugin_command(app, arg).await,
-        "login" => open_login_prompt(app),
+        "login" => login_command(app, arg),
         "update" => update_command(app),
         "config" => open_config_screen(app),
         "terminal-setup" => terminal_setup_command(app),
@@ -10398,21 +10642,106 @@ fn clamp_line(line: Line<'static>, width: u16) -> Line<'static> {
     Line::from(spans)
 }
 
-/// Open the `/login` prompt: send the user to Tokamak's API-keys page and wait
-/// for the key they paste back. The URL is always written to the transcript, not
-/// just handed to the browser, so a headless or remote session can still be
-/// completed by hand.
+/// `/login [--paste-token]`: the browser flow, or the legacy paste field when
+/// the user asks for it explicitly (the same escape hatch `jan login` has).
+fn login_command(app: &mut App, arg: &str) {
+    // One sign-in at a time: the dock is open for the whole flow, and switching
+    // it under an in-flight session would either drop the new request (the
+    // browser flow) or have the arriving session clobber the paste field.
+    if app.login.is_some() {
+        app.note("a sign-in is already in progress - press Esc to cancel it first");
+        return;
+    }
+    match arg.split_whitespace().next() {
+        Some("--paste-token" | "--paste") => open_login_prompt(app),
+        Some(other) => app.note(&format!("/login: unknown option {other} (try --paste-token)")),
+        None => open_login(app),
+    }
+}
+
+/// Start `/login`: the browser-approval flow. The dock opens immediately, so
+/// there is something to Esc out of while the session is being created, and
+/// `chat_loop` picks the request up off the render loop.
+fn open_login(app: &mut App) {
+    app.login = Some(LoginPrompt::connecting());
+    app.login_device_request = true;
+}
+
+/// The session exists: show the code to check and the page to approve on, and
+/// open the browser. The URL goes to the transcript as well as the dock, so a
+/// remote or headless session can still be finished by hand -- or from a phone.
+fn show_login_approval(app: &mut App, session: &super::device_auth::Session) {
+    app.note("sign in to Tokamak in your browser - confirm this code matches:");
+    app.system_detail(vec![Span::styled(
+        session.user_code.clone(),
+        Style::new().cyan().bold(),
+    )]);
+    app.system_detail(vec![Span::styled(
+        session.authorize_url.clone(),
+        Style::new().cyan(),
+    )]);
+    app.login = Some(LoginPrompt {
+        stage: LoginStage::Approving {
+            user_code: session.user_code.clone(),
+            authorize_url: session.authorize_url.clone(),
+            confirm_open: true,
+        },
+        ..LoginPrompt::new()
+    });
+}
+
+/// Act on an answered "open a browser?" question: launch it, or say we didn't.
+/// Either way the URL is already in the transcript, so declining is a valid way
+/// to finish the flow on another device rather than a way to abandon it. Shared
+/// by `/login` and `/mcp`, which ask the same question in different docks.
+fn open_browser_reporting(app: &mut App, url: &str, open: bool) {
+    if !open {
+        app.system_detail_text("not opening a browser - use the URL above on any device");
+        return;
+    }
+    match super::browser::open(url) {
+        Ok(()) => app.system_detail_text("opening that page in your browser"),
+        Err(e) => app.system_detail_text(&format!("could not open a browser ({e})")),
+    }
+}
+
+/// Answer the question the `/login` dock is holding. The dock moves on either
+/// way, so the sign-in is never blocked on a browser.
+fn resolve_login_browser(app: &mut App, open: bool) {
+    let Some(url) = app
+        .login
+        .as_ref()
+        .and_then(|p| p.stage.unconfirmed_url())
+        .map(str::to_string)
+    else {
+        return;
+    };
+    open_browser_reporting(app, &url, open);
+    if let Some(prompt) = app.login.as_mut() {
+        prompt.stage.mark_confirmed();
+    }
+}
+
+/// Answer the standalone `/mcp` question. The authorization is already waiting on
+/// its loopback listener, so declining just means the user opens the URL
+/// themselves -- the redirect still completes the sign-in.
+fn resolve_mcp_browser(app: &mut App, open: bool) {
+    let Some(confirm) = app.browser_confirm.take() else {
+        return;
+    };
+    open_browser_reporting(app, &confirm.url, open);
+}
+
+/// Fall back to the paste field: send the user to Tokamak's API-keys page and
+/// wait for the key they paste back. The URL is always written to the
+/// transcript, not just handed to the browser, so a headless or remote session
+/// can still be completed by hand.
 fn open_login_prompt(app: &mut App) {
     app.note("sign in to Tokamak and create an API key:");
     app.system_detail(vec![Span::styled(
         super::tokamak::API_KEYS_URL,
         Style::new().cyan(),
     )]);
-    let browser = match super::tokamak::open_api_keys_page() {
-        Ok(()) => "opening that page in your browser".to_string(),
-        Err(e) => format!("open that URL yourself ({e})"),
-    };
-    app.system_detail_text(&browser);
     app.login = Some(LoginPrompt::new());
 }
 
@@ -10423,22 +10752,35 @@ fn finish_login(app: &mut App, result: Result<super::tokamak::Login, String>) {
     match result {
         Ok(login) => {
             app.login = None;
+            let who = match &login.account {
+                Some(account) => format!(" as {account}"),
+                None => String::new(),
+            };
             app.note(&format!(
-                "signed in to Tokamak - {} model(s) available, key saved to {}",
+                "signed in to Tokamak{who} - {} model(s) available, key saved to {}",
                 login.models.len(),
                 login.config_path.display()
             ));
+            if let Some(warning) = super::tokamak::expiry_warning() {
+                app.note(&warning);
+            }
             adopt_login_model(app, &login);
         }
         Err(e) => {
-            // Keep the prompt open with the reason: a rejected key is usually a
-            // partial paste, and reopening from scratch loses that context.
-            if let Some(prompt) = app.login.as_mut() {
-                prompt.verifying = false;
-                prompt.input.clear();
-                prompt.error = Some(e);
-            } else {
-                app.note(&format!("sign-in failed: {e}"));
+            // Keep the paste field open with the reason: a rejected key is
+            // usually a partial paste, and reopening from scratch loses that
+            // context. A browser approval that was denied or expired has no
+            // field to correct, so the dock closes and the reason is noted.
+            match app.login.as_mut() {
+                Some(prompt) if prompt.editable() || prompt.verifying => {
+                    prompt.verifying = false;
+                    prompt.input.clear();
+                    prompt.error = Some(e);
+                }
+                _ => {
+                    app.login = None;
+                    app.note(&format!("sign-in failed: {e}"));
+                }
             }
         }
     }
@@ -10446,7 +10788,10 @@ fn finish_login(app: &mut App, result: Result<super::tokamak::Login, String>) {
 
 /// Point the session at a Tokamak model when the current one is not runnable.
 /// A model that already resolves is left alone: `/login` is also used to refresh
-/// an expired key, which must not silently switch models.
+/// an expired key, which must not silently switch models. "Runnable" is the
+/// CLI's own reachability (`is_cli_reachable`), so a local-engine model -- which
+/// this build can never resolve an upstream for -- is adopted away from rather
+/// than left as a session that cannot answer.
 fn adopt_login_model(app: &mut App, login: &super::tokamak::Login) {
     let runnable = super::providers::list_provider_models(Some(&app.project_root));
     if runnable.iter().any(|(_, m)| *m == app.model) {
@@ -10618,12 +10963,14 @@ async fn finish_mcp_job(
                     pending.authorization_url.clone(),
                     Style::new().cyan(),
                 )]);
-                match super::browser::open(&pending.authorization_url) {
-                    Ok(()) => app.system_detail_text("opening that page in your browser"),
-                    Err(e) => {
-                        app.system_detail_text(&format!("open that URL yourself ({e})"))
-                    }
-                }
+                // Ask before launching anything. The authorization is spawned
+                // regardless: its listener is already bound, so the redirect
+                // completes the sign-in whether the page is opened here or by
+                // hand somewhere else.
+                app.browser_confirm = Some(BrowserConfirm {
+                    url: pending.authorization_url.clone(),
+                    purpose: format!("authorize '{server}'"),
+                });
                 let servers = mcp_servers.clone();
                 *job = Some(tokio::spawn(run_mcp_job(
                     McpJob::Authorize { server, pending },
@@ -10634,6 +10981,8 @@ async fn finish_mcp_job(
         },
         McpJobDone::Authorized { server, result } => match result {
             Ok(()) => {
+                // Answered or not, there is nothing left to open.
+                app.browser_confirm = None;
                 app.note(&format!("authorized '{server}' - reconnecting..."));
                 // The live connection (if any) predates the token, so it is
                 // replaced rather than left unauthorized.
@@ -10641,7 +10990,10 @@ async fn finish_mcp_job(
                 let servers = mcp_servers.clone();
                 *job = Some(tokio::spawn(run_mcp_job(McpJob::Connect(server), servers)));
             }
-            Err(e) => app.note(&format!("sign-in for '{server}' failed: {e}")),
+            Err(e) => {
+                app.browser_confirm = None;
+                app.note(&format!("sign-in for '{server}' failed: {e}"));
+            }
         },
         McpJobDone::Connected { server, result } => {
             match result {
@@ -11789,7 +12141,10 @@ fn draw(f: &mut Frame, app: &mut App) {
     app.row_index = row_index;
 
     // Keep the cursor row visible when the input outgrows the box.
-    let input_scroll = if app.status == Status::Idle && app.picker.is_none() {
+    let input_scroll = if app.status == Status::Idle
+        && app.picker.is_none()
+        && app.blocking_dock().is_none()
+    {
         let visible = chunks[2].height.saturating_sub(1);
         let total = Paragraph::new(input_content_lines(&app.input, app.cursor))
             .wrap(Wrap { trim: false })
@@ -11819,6 +12174,18 @@ fn draw(f: &mut Frame, app: &mut App) {
             height,
         };
         draw_login(f, rect, prompt);
+    } else if let Some(confirm) = &app.browser_confirm {
+        let height = (browser_confirm_lines(confirm, chunks[2].width.saturating_sub(2)).len() as u16
+            + 2)
+        .min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        draw_browser_confirm(f, rect, confirm);
     } else if let Some(prompt) = &app.settings_prompt {
         let toml_path = app.agent_dir.join("agent.toml");
         let height = (settings_prompt_lines(prompt, &toml_path, chunks[2].width.saturating_sub(2))
@@ -12020,16 +12387,29 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
 fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
     let dim = Style::new().dark_gray();
     let max = width.max(1) as usize;
-    let mut lines: Vec<Line<'static>> = wrap_spans_hard(
-        vec![
+    let lead = match &prompt.stage {
+        LoginStage::Connecting => vec![Span::styled("starting browser sign-in...", dim)],
+        LoginStage::Approving { authorize_url, .. } => vec![
+            Span::styled("approve at ", dim),
+            Span::styled(authorize_url.clone(), Style::new().cyan()),
+        ],
+        LoginStage::Paste { .. } => vec![
             Span::styled("get a key at ", dim),
             Span::styled(super::tokamak::API_KEYS_URL, Style::new().cyan()),
         ],
-        max,
-    )
-    .into_iter()
-    .map(Line::from)
-    .collect();
+    };
+    let mut lines: Vec<Line<'static>> = wrap_spans_hard(lead, max)
+        .into_iter()
+        .map(Line::from)
+        .collect();
+    // The code is the one thing the user must compare against the browser, so
+    // it gets its own bright line rather than riding the URL's wrap.
+    if let LoginStage::Approving { user_code, .. } = &prompt.stage {
+        lines.push(Line::from(vec![
+            Span::styled("code: ", dim),
+            Span::styled(user_code.clone(), Style::new().cyan().bold()),
+        ]));
+    }
     if let Some(error) = &prompt.error {
         lines.extend(
             wrap_text(error, Style::new().red(), max)
@@ -12037,23 +12417,49 @@ fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
                 .map(Line::from),
         );
     }
-    if prompt.verifying {
+    // The browser question, whichever stage is asking it, reads the same.
+    if prompt.stage.unconfirmed_url().is_some() {
         lines.push(Line::styled(
-            "verifying...".to_string(),
+            "open this page in your browser?".to_string(),
             Style::new().yellow(),
         ));
-        lines.push(Line::styled("Esc cancel".to_string(), dim));
-    } else {
-        lines.extend(field_lines(
-            vec![Span::styled("API key: ", Style::new().bold())],
-            &prompt.masked(),
-            Style::new(),
-            max,
-        ));
         lines.push(Line::styled(
-            "paste the key · Enter verify · Esc cancel".to_string(),
+            "Enter open · n skip · Esc cancel".to_string(),
             dim,
         ));
+        return lines;
+    }
+    match &prompt.stage {
+        LoginStage::Connecting => lines.push(Line::styled("Esc cancel".to_string(), dim)),
+        LoginStage::Approving { .. } => {
+            lines.push(Line::styled(
+                "waiting for approval...".to_string(),
+                Style::new().yellow(),
+            ));
+            lines.push(Line::styled(
+                "approve from any device · Esc cancel".to_string(),
+                dim,
+            ));
+        }
+        LoginStage::Paste { .. } if prompt.verifying => {
+            lines.push(Line::styled(
+                "verifying...".to_string(),
+                Style::new().yellow(),
+            ));
+            lines.push(Line::styled("Esc cancel".to_string(), dim));
+        }
+        LoginStage::Paste { .. } => {
+            lines.extend(field_lines(
+                vec![Span::styled("API key: ", Style::new().bold())],
+                &prompt.masked(),
+                Style::new(),
+                max,
+            ));
+            lines.push(Line::styled(
+                "paste the key · Enter verify · Esc cancel".to_string(),
+                dim,
+            ));
+        }
     }
     lines
 }
@@ -12077,6 +12483,57 @@ fn field_lines(
     gutter_lines(rows, lead, vec![Span::raw(" ".repeat(lead_w))])
 }
 
+/// The pending-browser box's contents at `width`, sized by the caller the same
+/// way as `login_prompt_lines` -- the URL is the long line that has to be
+/// readable, since declining means opening it by hand.
+fn browser_confirm_lines(confirm: &BrowserConfirm, width: u16) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let max = width.max(1) as usize;
+    let mut lines: Vec<Line<'static>> = wrap_spans_hard(
+        vec![
+            Span::styled(format!("{} at ", confirm.purpose), dim),
+            Span::styled(confirm.url.clone(), Style::new().cyan()),
+        ],
+        max,
+    )
+    .into_iter()
+    .map(Line::from)
+    .collect();
+    lines.push(Line::styled(
+        "open this page in your browser?".to_string(),
+        Style::new().yellow(),
+    ));
+    lines.push(Line::styled(
+        "Enter open · n skip · Esc skip".to_string(),
+        dim,
+    ));
+    lines
+}
+
+fn draw_browser_confirm(
+    f: &mut Frame,
+    area: ratatui::layout::Rect,
+    confirm: &BrowserConfirm,
+) {
+    use ratatui::widgets::Clear;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            " open a browser? ",
+            Style::new().on_cyan().black().bold(),
+        ));
+
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(
+        Paragraph::new(browser_confirm_lines(confirm, inner.width)),
+        inner,
+    );
+}
+
 fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) {
     use ratatui::widgets::Clear;
 
@@ -12084,7 +12541,7 @@ fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) 
         .borders(Borders::ALL)
         .border_style(Style::new().cyan())
         .title(Span::styled(
-            " tokamak sign-in ",
+            " sign in to Jan ",
             Style::new().on_cyan().black().bold(),
         ));
 
@@ -13193,7 +13650,10 @@ const MAX_INPUT_ROWS: u16 = 8;
 /// editing, plus one row of air above the dock. The box is borderless, so the
 /// two rows this used to add on top of its content were simply blank.
 fn input_box_height(app: &App, width: u16) -> u16 {
-    let content = if app.picker.is_none() && !(app.status == Status::Running && app.input.is_empty()) {
+    let content = if app.picker.is_none()
+        && app.blocking_dock().is_none()
+        && !(app.status == Status::Running && app.input.is_empty())
+    {
         let inner = width.saturating_sub(2).max(1);
         let rows = Paragraph::new(input_content_lines(&app.input, app.cursor))
             .wrap(Wrap { trim: false })
@@ -13332,6 +13792,14 @@ fn input_box(app: &App) -> Paragraph<'static> {
             ]))
             .block(block)
         }
+    } else if let Some(what) = app.blocking_dock() {
+        // The dock owns the keyboard while it is open, so this field takes
+        // nothing: say so instead of showing a cursor that will never move.
+        Paragraph::new(Line::styled(
+            format!("{what} - the field is inactive"),
+            Style::new().dim().italic(),
+        ))
+        .block(block)
     } else if app.input.is_empty() {
         // Same `> ` prompt as the typing view, then a fixed (non-blinking)
         // block cursor in front of the placeholder.
@@ -14253,9 +14721,8 @@ mod tests {
         let error = "verification failed: the upstream returned 502 Bad Gateway \
                      from https://api.tokamak.sh/v1/models after three attempts";
         app.login = Some(super::LoginPrompt {
-            input: String::new(),
             error: Some(error.to_string()),
-            verifying: false,
+            ..super::LoginPrompt::new()
         });
         let rows = render_rows(&mut app, 56, 24);
         let joined = rows.join(" ");
@@ -14600,7 +15067,7 @@ mod tests {
         press_ask(&mut app, &registry, KeyCode::Down).await;
         press_ask(&mut app, &registry, KeyCode::Enter).await;
         assert!(app.ask_queue.front().unwrap().editing_custom);
-        app.login = Some(super::LoginPrompt::new());
+        app.login = Some(confirmed_paste_prompt());
 
         route_paste_event(&mut app, Event::Paste("tokamak-api-key".into()));
 
@@ -16348,8 +16815,8 @@ mod tests {
     #[tokio::test]
     async fn login_prompt_captures_keys_and_never_renders_the_key() {
         let mut app = test_app();
-        run_command(&mut app, "login", &no_mcp()).await;
-        assert!(app.login.is_some(), "/login must open the prompt");
+        open_paste_field(&mut app).await;
+        assert!(app.login.is_some(), "the paste prompt must be open");
 
         type_key_chars(&mut app, "tk-secret").await;
         // Keystrokes are the key, not chat input.
@@ -16360,7 +16827,7 @@ mod tests {
 
         let rows = render_rows(&mut app, 80, 24);
         let screen = rows.join("\n");
-        assert!(screen.contains("tokamak sign-in"), "{screen}");
+        assert!(screen.contains("sign in to Jan"), "{screen}");
         assert!(
             !screen.contains("tk-secret"),
             "the key must never be rendered:\n{screen}"
@@ -16370,7 +16837,7 @@ mod tests {
     #[tokio::test]
     async fn login_enter_hands_a_trimmed_key_to_the_loop() {
         let mut app = test_app();
-        run_command(&mut app, "login", &no_mcp()).await;
+        open_paste_field(&mut app).await;
         app.login.as_mut().unwrap().paste("  tk-abc\n");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
 
@@ -16381,7 +16848,7 @@ mod tests {
     #[tokio::test]
     async fn login_rejects_a_mispasted_key_before_any_request() {
         let mut app = test_app();
-        run_command(&mut app, "login", &no_mcp()).await;
+        open_paste_field(&mut app).await;
         type_key_chars(&mut app, "tk-abc def").await;
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
 
@@ -16399,7 +16866,7 @@ mod tests {
     #[tokio::test]
     async fn login_backspace_edits_and_esc_cancels() {
         let mut app = test_app();
-        run_command(&mut app, "login", &no_mcp()).await;
+        open_paste_field(&mut app).await;
         type_key_chars(&mut app, "tk-ab").await;
         press(&mut app, KeyCode::Backspace, KeyModifiers::NONE).await;
         assert_eq!(app.login.as_ref().unwrap().input, "tk-a");
@@ -16412,7 +16879,7 @@ mod tests {
     #[tokio::test]
     async fn login_stays_cancellable_while_verifying() {
         let mut app = test_app();
-        run_command(&mut app, "login", &no_mcp()).await;
+        open_paste_field(&mut app).await;
         app.login.as_mut().unwrap().paste("tk-abc");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
         app.login_submit.take();
@@ -16431,7 +16898,7 @@ mod tests {
     #[tokio::test]
     async fn failed_verification_keeps_the_prompt_open_with_the_reason() {
         let mut app = test_app();
-        run_command(&mut app, "login", &no_mcp()).await;
+        open_paste_field(&mut app).await;
         app.login.as_mut().unwrap().paste("tk-abc");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
         app.login_submit.take();
@@ -16441,6 +16908,458 @@ mod tests {
         assert!(!prompt.verifying);
         assert!(prompt.input.is_empty());
         assert_eq!(prompt.error.as_deref(), Some("Tokamak rejected that API key."));
+    }
+
+    /// `/login --paste-token` skips straight to the legacy field, the same
+    /// escape hatch `jan login --paste-token` gives, and never asks the loop for
+    /// a browser session.
+    #[tokio::test]
+    async fn login_paste_token_forces_the_legacy_field() {
+        let mut app = test_app();
+        run_command(&mut app, "login --paste-token", &no_mcp()).await;
+        let prompt = app.login.as_ref().expect("dock open");
+        assert!(matches!(
+            prompt.stage,
+            super::LoginStage::Paste { confirm_open: true }
+        ));
+        assert!(!app.login_device_request, "no browser session may be started");
+
+        // The field opens only once the browser question is answered.
+        assert!(!prompt.editable(), "no key entry before the browser question");
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).await;
+        assert!(app.login.as_ref().unwrap().editable());
+    }
+
+    /// Nothing may reach a browser until the user says so -- in either flow.
+    #[tokio::test]
+    async fn the_browser_is_never_opened_without_an_answer() {
+        // Paste fallback.
+        let mut app = test_app();
+        super::open_login_prompt(&mut app);
+        let prompt = app.login.as_ref().unwrap();
+        assert_eq!(
+            prompt.stage.unconfirmed_url(),
+            Some(crate::core::cli::tokamak::API_KEYS_URL)
+        );
+        let screen = render_rows(&mut app, 80, 24).join("\n");
+        assert!(screen.contains("open this page in your browser?"), "{screen}");
+
+        // Browser approval.
+        let mut app = test_app();
+        super::show_login_approval(&mut app, &test_session());
+        assert_eq!(
+            app.login.as_ref().unwrap().stage.unconfirmed_url(),
+            Some("https://tokamak.sh/cli/authorize?code=ABCD-2345")
+        );
+        let screen = render_rows(&mut app, 80, 24).join("\n");
+        assert!(screen.contains("open this page in your browser?"), "{screen}");
+        // The code is still shown while the question is up: the user may prefer
+        // to approve on a phone and never open a browser here at all.
+        assert!(screen.contains("ABCD-2345"), "{screen}");
+    }
+
+    /// Declining does not abandon the sign-in: the poll is already running, so
+    /// the dock moves on to waiting and a phone can still approve it.
+    #[tokio::test]
+    async fn declining_the_browser_still_waits_for_approval() {
+        let mut app = test_app();
+        super::show_login_approval(&mut app, &test_session());
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).await;
+
+        let prompt = app.login.as_ref().expect("dock stays open");
+        assert!(prompt.stage.unconfirmed_url().is_none(), "question answered");
+        assert!(matches!(
+            prompt.stage,
+            super::LoginStage::Approving {
+                confirm_open: false,
+                ..
+            }
+        ));
+        let screen = render_rows(&mut app, 80, 24).join("\n");
+        assert!(screen.contains("waiting for approval"), "{screen}");
+    }
+
+    /// Esc at the browser question cancels the whole sign-in rather than
+    /// answering it, so the question can never wedge the dock.
+    #[tokio::test]
+    async fn esc_at_the_browser_question_cancels() {
+        for open_paste in [true, false] {
+            let mut app = test_app();
+            if open_paste {
+                super::open_login_prompt(&mut app);
+            } else {
+                super::show_login_approval(&mut app, &test_session());
+            }
+            press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+            assert!(app.login.is_none(), "Esc must close the dock");
+        }
+    }
+
+    fn pending_browser(app: &mut App) {
+        app.browser_confirm = Some(super::BrowserConfirm {
+            url: "https://github.com/login/oauth/authorize?client_id=x".into(),
+            purpose: "authorize 'github'".into(),
+        });
+    }
+
+    /// The `/mcp` question shows what it is for and the URL to open, so
+    /// declining still leaves a way to finish.
+    #[tokio::test]
+    async fn the_mcp_browser_question_shows_the_purpose_and_url() {
+        let mut app = test_app();
+        pending_browser(&mut app);
+        let screen = render_rows(&mut app, 90, 24).join("\n");
+        assert!(screen.contains("open a browser?"), "{screen}");
+        assert!(screen.contains("authorize 'github'"), "{screen}");
+        assert!(screen.contains("open this page in your browser?"), "{screen}");
+        assert!(screen.contains("github.com/login/oauth/authorize"), "{screen}");
+    }
+
+    /// Every answer dismisses the question. `browser::open` is disabled under
+    /// `cfg(test)`, so the accept path is exercised without a real browser.
+    #[tokio::test]
+    async fn every_answer_dismisses_the_mcp_browser_question() {
+        for key in [
+            KeyCode::Enter,
+            KeyCode::Char('y'),
+            KeyCode::Char('n'),
+            KeyCode::Esc,
+        ] {
+            let mut app = test_app();
+            pending_browser(&mut app);
+            press(&mut app, key, KeyModifiers::NONE).await;
+            assert!(
+                app.browser_confirm.is_none(),
+                "{key:?} must dismiss the question"
+            );
+        }
+    }
+
+    /// The question owns the keyboard while it is up: a keystroke meant for it
+    /// must not land in the chat input.
+    #[tokio::test]
+    async fn the_mcp_browser_question_owns_the_keyboard() {
+        let mut app = test_app();
+        pending_browser(&mut app);
+        type_key_chars(&mut app, "hello").await;
+        assert!(app.browser_confirm.is_some(), "stray keys are not answers");
+        assert!(app.input.is_empty(), "nothing may reach the chat input");
+    }
+
+    /// An authorization that settles before the user answers takes the stale
+    /// question away with it, rather than leaving a dock pointing at a spent URL.
+    #[tokio::test]
+    async fn a_settled_authorization_clears_a_pending_question() {
+        for result in [Ok(()), Err("nope".to_string())] {
+            let mut app = test_app();
+            pending_browser(&mut app);
+            let mut job = None;
+            super::finish_mcp_job(
+                &mut app,
+                super::McpJobDone::Authorized {
+                    server: "github".into(),
+                    result,
+                },
+                &no_mcp(),
+                &mut job,
+            )
+            .await;
+            assert!(app.browser_confirm.is_none(), "stale question must go");
+        }
+    }
+
+    /// The paste field with the browser question already answered -- what most
+    /// key-entry tests are actually about.
+    /// Accepting launches the opener and moves on. `browser::open` is disabled
+    /// under `cfg(test)`, so this exercises the accept path (and its "could not
+    /// open" reporting) without hijacking a real browser.
+    #[tokio::test]
+    async fn accepting_the_browser_question_moves_on_either_way() {
+        for accept in [KeyCode::Enter, KeyCode::Char('y')] {
+            let mut app = test_app();
+            super::show_login_approval(&mut app, &test_session());
+            press(&mut app, accept, KeyModifiers::NONE).await;
+
+            let prompt = app.login.as_ref().expect("dock stays open");
+            assert!(
+                prompt.stage.unconfirmed_url().is_none(),
+                "{accept:?} must answer the question"
+            );
+            let screen = render_rows(&mut app, 80, 24).join("\n");
+            assert!(screen.contains("waiting for approval"), "{screen}");
+        }
+
+        // Same for the paste fallback: accepting opens the field.
+        let mut app = test_app();
+        super::open_login_prompt(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(app.login.as_ref().unwrap().editable());
+    }
+
+    /// A keystroke that is neither an answer nor a cancel is swallowed, so it
+    /// cannot leak into the key field or the chat input.
+    #[tokio::test]
+    async fn stray_keys_at_the_browser_question_do_nothing() {
+        let mut app = test_app();
+        super::open_login_prompt(&mut app);
+        type_key_chars(&mut app, "tk-secret").await;
+
+        let prompt = app.login.as_ref().expect("dock stays open");
+        assert!(prompt.stage.unconfirmed_url().is_some(), "still unanswered");
+        assert!(prompt.input.is_empty(), "no key may be collected yet");
+        assert!(app.input.is_empty(), "and nothing may reach the chat input");
+    }
+
+    fn confirmed_paste_prompt() -> super::LoginPrompt {
+        super::LoginPrompt {
+            stage: super::LoginStage::Paste { confirm_open: false },
+            ..super::LoginPrompt::new()
+        }
+    }
+
+    /// Open the paste fallback and decline the browser, leaving an editable field.
+    async fn open_paste_field(app: &mut App) {
+        super::open_login_prompt(app);
+        press(app, KeyCode::Char('n'), KeyModifiers::NONE).await;
+    }
+
+    fn test_session() -> crate::core::cli::device_auth::Session {
+        crate::core::cli::device_auth::Session {
+            session_id: "sess-1".into(),
+            user_code: "ABCD-2345".into(),
+            authorize_url: "https://tokamak.sh/cli/authorize?code=ABCD-2345".into(),
+            expires_in: 300,
+            interval: 5,
+        }
+    }
+
+    #[tokio::test]
+    async fn login_rejects_an_unknown_option_without_opening_a_dock() {
+        let mut app = test_app();
+        run_command(&mut app, "login --nope", &no_mcp()).await;
+        assert!(app.login.is_none());
+        assert!(!app.login_device_request);
+    }
+
+    /// `/login` starts the browser flow: the dock opens straight away (so Esc
+    /// has something to cancel) and the loop is asked for a session.
+    #[tokio::test]
+    async fn login_starts_the_browser_flow_and_opens_the_dock() {
+        let mut app = test_app();
+        run_command(&mut app, "login", &no_mcp()).await;
+        let prompt = app.login.as_ref().expect("/login must open the dock");
+        assert!(matches!(prompt.stage, super::LoginStage::Connecting));
+        assert!(app.login_device_request, "the loop must be asked to begin");
+        // No field yet, so nothing may be typed into one.
+        assert!(!prompt.editable());
+    }
+
+    /// A second `/login` while a session is being created must not switch the
+    /// dock: the browser session would land on top of the new one.
+    #[tokio::test]
+    async fn login_refuses_while_a_sign_in_is_already_in_progress() {
+        let mut app = test_app();
+        run_command(&mut app, "login", &no_mcp()).await;
+        app.login_device_request = false;
+
+        run_command(&mut app, "login --paste-token", &no_mcp()).await;
+        let prompt = app.login.as_ref().expect("the first dock stays open");
+        assert!(matches!(prompt.stage, super::LoginStage::Connecting));
+        assert!(!app.login_device_request);
+        let transcript = transcript_text(&app);
+        assert!(transcript.contains("already in progress"), "{transcript}");
+    }
+
+    /// The ask layer is consulted before `handle_key`, so an ask queued by the
+    /// running agent must not swallow the secret being typed into `/login` --
+    /// a custom answer is submitted to the model.
+    #[tokio::test]
+    async fn a_queued_ask_never_captures_login_keystrokes() {
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
+        open_paste_field(&mut app).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+        });
+        app.ask_queue.front_mut().unwrap().editing_custom = true;
+
+        for ch in "tk-secret".chars() {
+            let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
+            assert!(
+                !handle_ask_key(&mut app, key, &registry).await,
+                "the login dock owns the keyboard"
+            );
+            press(&mut app, KeyCode::Char(ch), KeyModifiers::NONE).await;
+        }
+
+        assert_eq!(app.login.as_ref().unwrap().input, "tk-secret");
+        assert_eq!(app.ask_queue.front().unwrap().custom_input, "");
+        assert!(app.input.is_empty(), "the composer must not see the key");
+    }
+
+    fn blank_mcp_prompt() -> super::McpPrompt {
+        super::McpPrompt {
+            editing: None,
+            field: super::McpField::Name,
+            name: String::new(),
+            transport: "stdio".to_string(),
+            command: String::new(),
+            args: String::new(),
+            env: String::new(),
+            url: String::new(),
+            headers: String::new(),
+            active: false,
+            error: None,
+        }
+    }
+
+    /// A named way to open one keyboard-owning dock, for the table below.
+    type DockSetup = (&'static str, fn(&mut App));
+
+    /// Every dock that takes the keyboard in `handle_key` must also blank the
+    /// input row: a live cursor under a dock that swallows every keystroke
+    /// promises a field that is not there. One case per guard in that list, so
+    /// the next dock added cannot quietly regress only the rendering half.
+    #[test]
+    fn every_blocking_dock_marks_the_input_row_inactive() {
+        let setups: [DockSetup; 6] = [
+            ("login/connecting", |app| {
+                app.login = Some(super::LoginPrompt::connecting())
+            }),
+            ("login/paste", |app| {
+                app.login = Some(confirmed_paste_prompt())
+            }),
+            ("browser_confirm", |app| {
+                app.browser_confirm = Some(super::BrowserConfirm {
+                    url: "https://example.com/authorize".into(),
+                    purpose: "authorize 'github'".into(),
+                })
+            }),
+            ("settings_prompt", |app| {
+                let def = AGENT_SETTINGS
+                    .iter()
+                    .find(|d| d.key == "max_parallel_subagents")
+                    .unwrap();
+                app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+            }),
+            ("mcp_prompt", |app| {
+                app.mcp_prompt = Some(blank_mcp_prompt())
+            }),
+            ("provider_prompt", |app| {
+                app.provider_prompt = Some(super::ProviderPrompt::new())
+            }),
+        ];
+        for (name, open) in setups {
+            let mut app = test_app();
+            open(&mut app);
+            assert!(app.blocking_dock().is_some(), "{name} must block the field");
+            let screen = render_rows(&mut app, 80, 24).join("\n");
+            assert!(
+                screen.contains("the field is inactive"),
+                "{name}: {screen}"
+            );
+            assert!(
+                !screen.contains("Type here to chat with agent"),
+                "{name}: a live field must not show while the dock is open: {screen}"
+            );
+        }
+    }
+
+    /// The composer is only dead while a dock is up -- an idle app with no dock
+    /// must still offer a field, or the guard above has over-reached.
+    #[test]
+    fn no_dock_leaves_the_input_row_live() {
+        let mut app = test_app();
+        assert!(app.blocking_dock().is_none());
+        let screen = render_rows(&mut app, 80, 24).join("\n");
+        assert!(screen.contains("Type here to chat with agent"), "{screen}");
+        assert!(!screen.contains("the field is inactive"), "{screen}");
+    }
+
+    /// The approval stage shows the code and the URL, and takes no input -- the
+    /// code is the one thing the user has to compare against the browser.
+    #[tokio::test]
+    async fn login_approval_stage_shows_the_code_and_ignores_typing() {
+        let mut app = test_app();
+        super::show_login_approval(
+            &mut app,
+            &crate::core::cli::device_auth::Session {
+                session_id: "sess-1".into(),
+                user_code: "ABCD-2345".into(),
+                authorize_url: "https://tokamak.sh/cli/authorize?code=ABCD-2345".into(),
+                expires_in: 300,
+                interval: 5,
+            },
+        );
+        let prompt = app.login.as_ref().expect("dock open");
+        assert!(matches!(prompt.stage, super::LoginStage::Approving { .. }));
+        assert!(!prompt.editable());
+
+        type_key_chars(&mut app, "xyz").await;
+        assert!(app.login.as_ref().unwrap().input.is_empty(), "no field to type into");
+        assert!(app.login_submit.is_none());
+
+        let screen = render_rows(&mut app, 80, 24).join("\n");
+        assert!(screen.contains("ABCD-2345"), "{screen}");
+        assert!(screen.contains("waiting for approval"), "{screen}");
+    }
+
+    /// Esc during a browser approval closes the dock, which is what makes
+    /// `chat_loop` drop the in-flight poll.
+    #[tokio::test]
+    async fn esc_cancels_a_browser_approval() {
+        let mut app = test_app();
+        run_command(&mut app, "login", &no_mcp()).await;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.login.is_none(), "Esc must close the dock");
+    }
+
+    /// A denied or expired approval has no field to correct, so the dock closes
+    /// with the reason rather than sitting there uneditable.
+    #[tokio::test]
+    async fn a_failed_approval_closes_the_dock_with_the_reason() {
+        let mut app = test_app();
+        super::show_login_approval(
+            &mut app,
+            &crate::core::cli::device_auth::Session {
+                session_id: "s".into(),
+                user_code: "A-1".into(),
+                authorize_url: "https://tokamak.sh/cli/authorize?code=A-1".into(),
+                expires_in: 300,
+                interval: 5,
+            },
+        );
+        finish_login(&mut app, Err("the sign-in was denied in the browser.".to_string()));
+        assert!(app.login.is_none(), "an uneditable dock must not stay open");
+        let text: String = row_lines(&app.transcript)
+            .iter()
+            .flat_map(|l| l.spans.clone())
+            .map(|s| s.content.to_string())
+            .collect();
+        assert!(text.contains("denied in the browser"), "{text}");
+    }
+
+    /// A successful browser sign-in names the account it signed in as.
+    #[test]
+    fn a_browser_login_reports_the_account() {
+        let mut app = test_app();
+        finish_login(
+            &mut app,
+            Ok(crate::core::cli::tokamak::Login {
+                models: vec!["tokamak-1-preview".into()],
+                config_path: std::path::PathBuf::from("/tmp/config.toml"),
+                default_model: None,
+                account: Some("a@b.c".into()),
+            }),
+        );
+        let text: String = row_lines(&app.transcript)
+            .iter()
+            .flat_map(|l| l.spans.clone())
+            .map(|s| s.content.to_string())
+            .collect();
+        assert!(text.contains("as a@b.c"), "{text}");
     }
 
     #[test]
@@ -16509,13 +17428,14 @@ mod tests {
     fn successful_login_closes_the_prompt_and_adopts_a_runnable_model() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let mut app = test_app();
-            app.login = Some(super::LoginPrompt::new());
+            app.login = Some(confirmed_paste_prompt());
             finish_login(
                 &mut app,
                 Ok(crate::core::cli::tokamak::Login {
                     models: vec!["tokamak-1-preview".into(), "tokamak-1-mini".into()],
                     config_path: std::path::PathBuf::from("/tmp/config.toml"),
                     default_model: Some("tokamak-1-preview".into()),
+                    account: None,
                 }),
             );
             assert!(app.login.is_none());
@@ -16535,18 +17455,20 @@ mod tests {
                     base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
                     models: Some(vec!["m".into()]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .expect("seed provider");
 
             let mut app = test_app();
-            app.login = Some(super::LoginPrompt::new());
+            app.login = Some(confirmed_paste_prompt());
             finish_login(
                 &mut app,
                 Ok(crate::core::cli::tokamak::Login {
                     models: vec!["tokamak-1-preview".into()],
                     config_path: std::path::PathBuf::from("/tmp/config.toml"),
                     default_model: None,
+                    account: None,
                 }),
             );
             assert_eq!(app.model, "m", "a working model must survive a re-login");
@@ -16568,6 +17490,7 @@ mod tests {
                     base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
                     models: Some(vec!["tokamak-1-preview".into()]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .expect("seed provider");
@@ -16630,7 +17553,7 @@ mod tests {
 
     #[test]
     fn masked_key_is_bounded() {
-        let mut prompt = super::LoginPrompt::new();
+        let mut prompt = confirmed_paste_prompt();
         prompt.paste(&"k".repeat(200));
         assert_eq!(prompt.masked().chars().count(), 32);
         prompt.verifying = true;
@@ -17547,6 +18470,7 @@ mod tests {
                     base_url: Some("https://api.example/v1".into()),
                     models: Some(vec!["m1".into()]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();
@@ -17586,6 +18510,7 @@ mod tests {
                         base_url: Some("https://api.example/v1".into()),
                         models: Some(vec!["m1".into()]),
                         api_type: None,
+                                            ..Default::default()
                     },
                 )
                 .unwrap();
@@ -17743,6 +18668,7 @@ mod tests {
                     base_url: Some("https://my.example/v1".into()),
                     models: Some(vec!["m1".into()]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();
@@ -17771,6 +18697,7 @@ mod tests {
                     base_url: Some("https://my.example/v1".into()),
                     models: Some(vec![]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();
@@ -17828,6 +18755,7 @@ mod tests {
                         base_url: Some("https://my.example/v1".into()),
                         models: Some(vec![]),
                         api_type: None,
+                                            ..Default::default()
                     },
                 )
                 .unwrap();
@@ -17906,6 +18834,7 @@ mod tests {
                     base_url: Some("https://my.example/v1".into()),
                     models: Some(vec!["m1".into(), "m2".into()]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();
@@ -18023,6 +18952,7 @@ mod tests {
                     base_url: Some(format!("http://{addr}/v1")),
                     models: Some(vec![]), // no models configured
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .expect("seed provider");
@@ -18057,6 +18987,7 @@ mod tests {
                     base_url: Some("http://127.0.0.1:9/v1".into()),
                     models: Some(vec![]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();

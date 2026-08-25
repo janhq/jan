@@ -4,6 +4,7 @@
 
 pub mod brand;
 pub mod browser;
+pub mod device_auth;
 pub mod journal;
 pub mod login;
 pub mod mcp;
@@ -567,6 +568,7 @@ pub fn cli_agent_config_set(
             base_url,
             models,
             api_type,
+            ..Default::default()
         },
     )
 }
@@ -1801,6 +1803,7 @@ mod tests {
                     base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
                     models: Some(vec!["tokamak-1-preview".into()]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();
