@@ -314,32 +314,59 @@ impl PendingAuth {
 
         let deadline = tokio::time::Instant::now() + Duration::from_secs(session.expires_in);
         let mut interval = Duration::from_secs(session.interval);
-        while tokio::time::Instant::now() < deadline {
-            // Wait before the first poll: the session was created a moment ago,
-            // so an immediate poll can only come back pending. The wake is
-            // one-shot -- once it fires, later ticks are plain sleeps, else an
-            // already-signalled listener would spin the loop.
-            match wake.take() {
-                Some(listener) => {
-                    if !listener.wait(interval).await {
-                        wake = Some(listener);
+        let mut last_transient: Option<String> = None;
+        loop {
+            // The local deadline is only a bound on waiting: one last poll runs
+            // on the way out so the server's own `expired`/`approved` gets the
+            // final word rather than the generic timeout below.
+            let last_round = tokio::time::Instant::now() >= deadline;
+            if !last_round {
+                // Wait before the first poll: the session was created a moment
+                // ago, so an immediate poll can only come back pending. The wake
+                // is one-shot -- once it fires, later ticks are plain sleeps,
+                // else an already-signalled listener would spin the loop.
+                match wake.take() {
+                    Some(listener) => {
+                        if !listener.wait(interval).await {
+                            wake = Some(listener);
+                        }
                     }
+                    None => tokio::time::sleep(interval).await,
                 }
-                None => tokio::time::sleep(interval).await,
             }
-            match poll_once(&api_root, &session.session_id, &verifier).await? {
-                Poll::Approved(minted) => return Ok(*minted),
-                Poll::Pending(next) => interval = next,
-                Poll::Denied => return Err("the sign-in was denied in the browser.".to_string()),
-                Poll::Expired => {
+            match poll_once(&api_root, &session.session_id, &verifier).await {
+                Ok(Poll::Approved(minted)) => return Ok(*minted),
+                Ok(Poll::Pending(next)) => {
+                    interval = next;
+                    // A live tick clears any earlier blip from the timeout message.
+                    last_transient.take();
+                }
+                Ok(Poll::Denied) => {
+                    return Err("the sign-in was denied in the browser.".to_string())
+                }
+                Ok(Poll::Expired) => {
                     return Err(
                         "the sign-in expired before it was approved. Run `jan login` again."
                             .to_string(),
                     )
                 }
+                // A reachability blip is one bad tick, not the session settling:
+                // the user may have just approved and the key is live server
+                // side. Keep polling and let the deadline bound the wait.
+                Err(e) if e.retryable => last_transient = Some(e.message),
+                Err(e) => return Err(e.message),
+            }
+            if last_round {
+                break;
             }
         }
-        Err("timed out waiting for browser approval. Run `jan login` again.".to_string())
+        Err(match last_transient {
+            Some(e) => format!(
+                "timed out waiting for browser approval (last poll error: {e}). Run `jan login` \
+                 again."
+            ),
+            None => "timed out waiting for browser approval. Run `jan login` again.".to_string(),
+        })
     }
 }
 
@@ -351,21 +378,56 @@ enum Poll {
     Approved(Box<Minted>),
 }
 
+/// Why a single poll failed. `retryable` marks the failures that say nothing
+/// about the session itself -- the loop spends a tick on those instead of
+/// abandoning a sign-in the user may have just approved.
+struct PollError {
+    message: String,
+    retryable: bool,
+}
+
+impl PollError {
+    fn transient(message: String) -> Self {
+        Self {
+            message,
+            retryable: true,
+        }
+    }
+
+    fn terminal(message: String) -> Self {
+        Self {
+            message,
+            retryable: false,
+        }
+    }
+}
+
+/// A status the session cannot recover from: the server has judged this exact
+/// session id or verifier, so re-polling it will keep failing.
+fn poll_status_is_terminal(status: u16) -> bool {
+    !matches!(status, 408 | 425 | 429 | 500..=599)
+}
+
 /// One poll of the token endpoint. `Err` is a transport or protocol failure;
 /// everything the server models as an outcome comes back as a [`Poll`].
-async fn poll_once(api_root: &str, session_id: &str, verifier: &str) -> Result<Poll, String> {
+async fn poll_once(api_root: &str, session_id: &str, verifier: &str) -> Result<Poll, PollError> {
     let body = serde_json::json!({ "session_id": session_id, "code_verifier": verifier });
     let response = http()
         .post(format!("{api_root}{SESSIONS_PATH}/token"))
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("could not reach {api_root}: {e}"))?;
+        .map_err(|e| PollError::transient(format!("could not reach {api_root}: {e}")))?;
 
     let status = response.status().as_u16();
     let payload: PollPayload = response.json().await.unwrap_or_default();
     if !(200..300).contains(&status) {
-        return Err(describe_poll_failure(status, payload.error.as_deref()));
+        let message = describe_poll_failure(status, payload.error.as_deref());
+        return Err(if poll_status_is_terminal(status) {
+            PollError::terminal(message)
+        } else {
+            PollError::transient(message)
+        });
     }
 
     Ok(match payload.status.as_deref() {
@@ -374,7 +436,11 @@ async fn poll_once(api_root: &str, session_id: &str, verifier: &str) -> Result<P
                 .api_key
                 .filter(|k| !k.key.is_empty())
                 .ok_or_else(|| {
-                    "the sign-in was approved but Tokamak returned no API key.".to_string()
+                    // Approved without a key is a malformed body, not a verdict:
+                    // the next poll of the same approved session should carry it.
+                    PollError::transient(
+                        "the sign-in was approved but Tokamak returned no API key.".to_string(),
+                    )
                 })?;
             Poll::Approved(Box::new(Minted {
                 api_key: key.key,
@@ -829,6 +895,64 @@ mod tests {
             let pending = begin(&format!("{host}/v1")).await.expect("begin");
             let err = pending.claim().await.expect_err("denied must fail");
             assert!(err.contains("denied in the browser"), "{err}");
+        });
+    }
+
+    /// A gateway blip mid-poll must cost one tick, not the whole sign-in: the
+    /// approval may already have happened server side.
+    #[test]
+    fn a_transient_poll_failure_keeps_polling() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let (host, requests) = mock_server(vec![
+                (
+                    200,
+                    r#"{"session_id":"s","user_code":"A-1","expires_in":300,"interval":1}"#,
+                ),
+                (502, r#"{"error":"bad gateway"}"#),
+                (
+                    200,
+                    r#"{"status":"approved","api_key":{"key":"sk_live_x"}}"#,
+                ),
+            ])
+            .await;
+            let pending = begin(&format!("{host}/v1")).await.expect("begin");
+            let minted = pending.claim().await.expect("claim survives one bad tick");
+            assert_eq!(minted.api_key, "sk_live_x");
+            assert_eq!(requests.lock().unwrap().len(), 3);
+        });
+    }
+
+    /// A rejected verifier is the server judging this session, so re-polling it
+    /// can only fail the same way -- fail now instead of at the deadline.
+    #[test]
+    fn a_rejected_session_fails_without_retrying() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let (host, requests) = mock_server(vec![
+                (
+                    200,
+                    r#"{"session_id":"s","user_code":"A-1","expires_in":300,"interval":1}"#,
+                ),
+                (401, r#"{"error":"bad verifier"}"#),
+                (
+                    200,
+                    r#"{"status":"approved","api_key":{"key":"sk_live_x"}}"#,
+                ),
+            ])
+            .await;
+            let pending = begin(&format!("{host}/v1")).await.expect("begin");
+            let err = pending.claim().await.expect_err("401 must fail");
+            assert!(err.contains("could not be verified"), "{err}");
+            assert_eq!(requests.lock().unwrap().len(), 2, "no poll after the 401");
         });
     }
 
