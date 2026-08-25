@@ -76,7 +76,9 @@ import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
-import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
+import { executeWebTool } from '@/lib/webSearchTool'
+import { isNativeWebTool } from '@/lib/webToolRouting'
+import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
@@ -487,10 +489,13 @@ function ThreadDetail() {
 
           try {
             const toolName = toolCall.toolName
+            const isWebTool = isNativeWebTool(
+              toolName,
+              useWebSearchConfig.getState().webSearchEnabled
+            )
 
             // Built-in RAG and native web tools are internal and auto-allowed.
-            const approved = ragToolNames.has(toolName) ||
-              WEB_TOOL_NAMES.has(toolName)
+            const approved = ragToolNames.has(toolName) || isWebTool
               ? true
               : await (toolApprovalPromises.current.get(toolCall.toolCallId) ??
                   useToolApprovalRequests
@@ -519,7 +524,7 @@ function ThreadDetail() {
 
             let result
 
-            if (WEB_TOOL_NAMES.has(toolName)) {
+            if (isWebTool) {
               result = await executeWebTool(toolName, toolCall.input)
             } else if (ragToolNames.has(toolName)) {
               result = await serviceHub.rag().callTool({
@@ -663,7 +668,10 @@ function ThreadDetail() {
       const ragToolNames = useAppState.getState().ragToolNames
       if (
         !ragToolNames.has(toolCall.toolName) &&
-        !WEB_TOOL_NAMES.has(toolCall.toolName) &&
+        !isNativeWebTool(
+          toolCall.toolName,
+          useWebSearchConfig.getState().webSearchEnabled
+        ) &&
         !toolApprovalPromises.current.has(toolCall.toolCallId)
       ) {
         toolApprovalPromises.current.set(
