@@ -1538,6 +1538,10 @@ struct App {
     view_width: u16,
     last_kind: Kind,
     should_quit: bool,
+    /// A blank idle composer has armed the exit: the first Ctrl-C only warns,
+    /// so leaving the TUI always takes a deliberate second one. Cleared by any
+    /// key that resumes composing.
+    exit_armed: bool,
     /// Live panels for background subagents currently streaming, one per run.
     /// Several may be active at once; each renders its own rolling window.
     subagents: Vec<SubagentPanel>,
@@ -1954,6 +1958,7 @@ impl App {
             view_width: 0,
             last_kind: Kind::None,
             should_quit: false,
+            exit_armed: false,
             subagents: Vec::new(),
             subagent_blocks: Vec::new(),
             awaiting: Vec::new(),
@@ -2578,6 +2583,18 @@ impl App {
             self.input_history.push(text.to_string());
         }
         self.reset_recall();
+    }
+
+    /// Record a typed-but-never-submitted draft into recall history, so a
+    /// Ctrl-C that wipes the composer is recoverable with Up. Same dedupe and
+    /// recall-reset rules as `record_submitted`; a blank draft is not worth a
+    /// history slot.
+    fn record_draft(&mut self) {
+        if self.input.trim().is_empty() {
+            return;
+        }
+        let text = self.input.clone();
+        self.record_submitted(&text);
     }
 
     /// Replace the buffer with a recalled entry, caret at the end.
@@ -6245,6 +6262,14 @@ pub async fn run(
     );
     let _ = terminal.show_cursor();
     log::set_max_level(prev_log_level);
+    // The session is closed: leave a copyable continuation command on the real
+    // terminal, the same line the non-interactive path prints after a save.
+    // Only a persisted thread can be resumed, so an empty session stays quiet.
+    if let Some(id) = app.thread_id.as_deref() {
+        if !app.history.is_empty() {
+            eprintln!("{}", resume_hint(id));
+        }
+    }
     // Quitting cancels an in-flight `/update` (the runtime drops the task), so
     // say so on the real terminal now that the alternate screen is gone -- a
     // transcript note would vanish with it.
@@ -7065,6 +7090,15 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     }
 }
 
+/// The copyable continuation command shown when a session closes, mirroring
+/// the non-interactive resume line in `cli`/`mod.rs`. The id is the same
+/// short thread id `--resume` accepts, taken from the thread the session
+/// persists to rather than a separately minted one.
+fn resume_hint(thread_id: &str) -> String {
+    let id: String = thread_id.chars().take(8).collect();
+    format!("\x1b[2m[session {id} - resume with `jan --resume={id}`]\x1b[0m")
+}
+
 async fn handle_key(
     app: &mut App,
     key: KeyEvent,
@@ -7165,7 +7199,8 @@ async fn handle_key(
         return;
     }
 
-    // Ctrl-D quits from anywhere; Ctrl-C cancels a run or quits when idle.
+    // Ctrl-D quits from anywhere; Ctrl-C cancels a run, clears a draft, or (on
+    // a blank idle composer, and only on a second press) quits.
     if ctrl_d {
         abort_run(current);
         app.should_quit = true;
@@ -7455,10 +7490,23 @@ async fn handle_key(
     }
     if ctrl_c {
         if app.status == Status::Running {
+            // Cancel-first: an in-flight task is what Ctrl-C interrupts, and
+            // the session stays open with the partial turn intact.
             abort_run(current);
             app.cancel_run();
-        } else {
+            app.exit_armed = false;
+        } else if !app.input.trim().is_empty() {
+            // Idle with something typed: clear the draft rather than quit, and
+            // keep it in recall history so Up brings it back.
+            app.record_draft();
+            app.input_clear();
+            app.exit_armed = false;
+        } else if app.exit_armed {
             app.should_quit = true;
+        } else {
+            // Blank and idle: leaving takes a deliberate second Ctrl-C.
+            app.exit_armed = true;
+            app.system(Level::Warn, "press Ctrl-C again to quit");
         }
         return;
     }
@@ -7522,6 +7570,10 @@ async fn handle_key(
             _ => {}
         }
     }
+
+    // Any composer key that isn't the blank-idle Ctrl-C means composing has
+    // resumed, so it disarms a pending second-Ctrl-C exit.
+    app.exit_armed = false;
 
     match key.code {
         KeyCode::Esc => {
@@ -8094,16 +8146,16 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("Ctrl-A/E, Alt+B/F", "Start/end of line, word left/right"),
     ("Ctrl-W, Alt+Backspace", "Delete the word before the caret"),
     ("Ctrl-U / Ctrl-K", "Delete to the start / end of the line"),
-    ("Esc / Ctrl-C", "Cancel the running turn"),
+    ("Esc / Ctrl-C", "Cancel the running turn, or clear the input"),
     ("Esc Esc", "Rewind to an earlier message"),
-    ("↑/↓", "Recall sent messages (scrolls while the input has text)"),
+    ("↑/↓", "Recall sent messages and drafts (scrolls while typing)"),
     ("PgUp/PgDn", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
     ("Shift+Tab", "Cycle reasoning effort (low/medium/high)"),
     ("Alt+T", "Toggle reasoning effort (low / last)"),
     ("Drag", "Select text, copied on release (Alt+drag for a block)"),
-    ("Ctrl-D", "Quit"),
+    ("Ctrl-D, or Ctrl-C twice", "Quit"),
 ];
 
 /// Split a command line into `(name, arg)`, UTF-8 safe (no byte slicing).
@@ -13515,7 +13567,7 @@ mod tests {
         clipboard_path,
         diff_lines, Row, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
-        route_paste_event,
+        route_paste_event, resume_hint,
         compact_tokens, finish_compaction, finish_login, finish_update_install,
         image_mime_of, load_first_file_image, load_image_file, MAX_IMAGE_BYTES,
         message_text, CompactKind, MAX_OVERFLOW_RETRIES,
@@ -16299,6 +16351,69 @@ mod tests {
         // No longer recalling, so Down scrolls again.
         press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
         assert_eq!(app.scrollback, 0);
+    }
+
+    /// Ctrl-C is cancel-first: with a task in flight it interrupts the run and
+    /// leaves the session open, never quitting out from under the user.
+    #[tokio::test]
+    async fn ctrl_c_cancels_a_run_before_it_can_ever_quit() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert_eq!(app.status, Status::Idle, "the run must be cancelled");
+        assert!(!app.should_quit, "cancelling a run must not quit the TUI");
+    }
+
+    /// Idle with something typed, Ctrl-C wipes the draft instead of exiting.
+    #[tokio::test]
+    async fn ctrl_c_clears_a_draft_without_exiting() {
+        let mut app = test_app();
+        type_key_chars(&mut app, "unsubmitted draft").await;
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(app.input.is_empty(), "the draft must be cleared");
+        assert!(!app.should_quit, "clearing a draft must not quit the TUI");
+    }
+
+    /// A draft wiped by Ctrl-C was never submitted, but it is still in local
+    /// prompt history, so Up brings it straight back.
+    #[tokio::test]
+    async fn a_draft_cleared_by_ctrl_c_is_recoverable_with_up() {
+        let mut app = test_app();
+        type_key_chars(&mut app, "never submitted").await;
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(app.input.is_empty());
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "never submitted", "the draft must be recallable");
+    }
+
+    /// Leaving a blank idle TUI takes a deliberate second Ctrl-C; the first
+    /// only arms the exit, and typing again disarms it.
+    #[tokio::test]
+    async fn quitting_a_blank_idle_tui_takes_a_second_ctrl_c() {
+        let mut app = test_app();
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(!app.should_quit, "the first Ctrl-C only arms the exit");
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(app.should_quit, "the second Ctrl-C quits");
+
+        // Composing again disarms a pending exit, so a later lone Ctrl-C on a
+        // blank composer still needs its own second press.
+        let mut app = test_app();
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        type_key_chars(&mut app, "x").await;
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(!app.should_quit, "typing must disarm the pending exit");
+    }
+
+    /// The closing hint is copyable as-is and names the same short thread id
+    /// `--resume` takes, matching the non-interactive wording.
+    #[test]
+    fn the_resume_hint_offers_a_copyable_continuation_command() {
+        assert_eq!(
+            resume_hint("0123456789abcdef"),
+            "\x1b[2m[session 01234567 - resume with `jan --resume=01234567`]\x1b[0m"
+        );
     }
 
     #[tokio::test]
