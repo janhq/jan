@@ -304,6 +304,25 @@ pub async fn spawn(
     // Without this the worker flashes a console window on Windows, the way
     // every other spawn in this plugin already avoids.
     jan_utils::system::setup_windows_process_flags(&mut cmd);
+    // ggml's backend scan puts `fs::current_path()` in its search paths and
+    // calls dl_load_library on every `ggml-*` filename match *before* reading
+    // its score, so a planted module in an inherited cwd runs its DllMain /
+    // constructor even if it is never selected -- and `best_score` is one
+    // accumulator across all search paths, so a higher-scoring plant wins
+    // outright rather than losing to path order. Pinning the cwd to the
+    // worker's own directory, which is where the bundled modules already live,
+    // removes the attacker-writable entry from that list.
+    //
+    // Absolute only: `current_dir` also changes how the OS resolves a *relative*
+    // program path, so doing this unconditionally would make a dev's
+    // `--bin build/jan-llama-worker` be looked up inside `build/`. Every shipped
+    // path is absolute (`resource_dir()`, or `sidecar_path` off
+    // `current_exe`), so the hardening lands exactly where it matters.
+    if exe.is_absolute() {
+        if let Some(dir) = exe.parent() {
+            cmd.current_dir(dir);
+        }
+    }
     cmd.args(&args)
         .envs(envs)
         .env(API_KEY_ENV, api_key)
