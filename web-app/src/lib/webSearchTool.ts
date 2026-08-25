@@ -1,8 +1,6 @@
 import { webSearch, webFetch } from '@janhq/tauri-plugin-websearch-api'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 
-export const WEB_TOOL_NAMES = new Set(['web_search', 'web_fetch'])
-
 export const WEB_SEARCH_DESCRIPTION =
   'Search the web and return a ranked list of results (title, URL, snippet, and optional publish date). Use this to find current information, documentation, or sources you can then read with web_fetch. Cite the URLs you rely on.'
 

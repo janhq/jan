@@ -1,3 +1,9 @@
+import {
+  isNativeWebTool,
+  WEB_FETCH_TOOL,
+  WEB_SEARCH_TOOL,
+} from './webToolRouting'
+
 /**
  * Where a tool call came from. Jan runs three families of tools -- the native
  * web tools, the built-in RAG tools, and MCP server tools -- and a collapsed
@@ -13,12 +19,11 @@ export type ToolOriginContext = {
   /** MCP server owning this tool, when it is an MCP tool. */
   mcpServer?: string
   isRagTool: boolean
+  /** Whether Jan's native web-search tools are currently advertised. */
+  nativeWebSearchEnabled: boolean
   /** Display name of the configured web search provider, e.g. "Exa". */
   webSearchProviderLabel: string
 }
-
-export const WEB_SEARCH_TOOL = 'web_search'
-export const WEB_FETCH_TOOL = 'web_fetch'
 
 /**
  * Resolution order mirrors the execution order in the thread route: native web
@@ -27,12 +32,20 @@ export const WEB_FETCH_TOOL = 'web_fetch'
  */
 export function resolveToolOrigin(
   toolName: string,
-  { mcpServer, isRagTool, webSearchProviderLabel }: ToolOriginContext
+  {
+    mcpServer,
+    isRagTool,
+    nativeWebSearchEnabled,
+    webSearchProviderLabel,
+  }: ToolOriginContext
 ): ToolOrigin | undefined {
-  if (toolName === WEB_SEARCH_TOOL) {
+  const isNativeWeb = isNativeWebTool(toolName, nativeWebSearchEnabled)
+  if (isNativeWeb && toolName === WEB_SEARCH_TOOL) {
     return { kind: 'web-search', detail: webSearchProviderLabel }
   }
-  if (toolName === WEB_FETCH_TOOL) return { kind: 'web-fetch' }
+  if (isNativeWeb && toolName === WEB_FETCH_TOOL) {
+    return { kind: 'web-fetch' }
+  }
   if (isRagTool) return { kind: 'rag' }
   if (mcpServer) return { kind: 'mcp', detail: mcpServer }
   return undefined

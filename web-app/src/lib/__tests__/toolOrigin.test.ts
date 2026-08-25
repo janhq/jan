@@ -3,6 +3,7 @@ import { resolveToolOrigin } from '../toolOrigin'
 
 const context = {
   isRagTool: false,
+  nativeWebSearchEnabled: true,
   webSearchProviderLabel: 'Exa',
 }
 
@@ -47,6 +48,16 @@ describe('resolveToolOrigin', () => {
     expect(
       resolveToolOrigin('web_search', { ...context, mcpServer: 'someserver' })
     ).toEqual({ kind: 'web-search', detail: 'Exa' })
+  })
+
+  it('attributes a same-named tool to MCP when native web search is disabled', () => {
+    expect(
+      resolveToolOrigin('web_search', {
+        ...context,
+        mcpServer: 'donsetch',
+        nativeWebSearchEnabled: false,
+      })
+    ).toEqual({ kind: 'mcp', detail: 'donsetch' })
   })
 
   it('prefers RAG over MCP when both somehow match', () => {
