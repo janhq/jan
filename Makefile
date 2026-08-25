@@ -134,18 +134,22 @@ lint: install-and-build
 
 # Testing
 #
-# `test` is the full local suite and is unchanged: it still builds the real MLX
-# server and CLI binary. `test-ci` runs the same suites without those release
-# builds -- neither is a declared Tauri resource or externalBin (bundle.resources
-# is only resources/LICENSE) and no test executes them, so in CI they were just
+# `test` is the full local suite: it also builds the real MLX server and CLI
+# binary. `test-ci` runs the same suites without those release builds -- neither
+# is a declared Tauri resource or externalBin (bundle.resources is only
+# resources/LICENSE) and no test executes them, so in CI they were just
 # duplicating what `make build` already does on the release path.
+#
+# Both go through `test-rust`, which owns `stub-resources`: the app's build
+# script fails on any missing bundle.resources path, and neither entry point
+# builds the engine worker or the ggml backends.
 test-prepare: lint
 	yarn download:bin
 	yarn test
 	yarn copy:assets:tauri
 	yarn build:icon
 
-test-rust:
+test-rust: stub-resources
 	cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
@@ -156,40 +160,26 @@ test: test-prepare install-rust-targets
 	$(MAKE) build-cli
 	$(MAKE) test-rust
 
-# Placeholders for the binaries test-ci no longer builds. Each platform's
+# Placeholders for the binaries no test target builds. Each platform's
 # tauri.<os>.conf.json declares these under bundle.resources, and
 # generate_context!() fails the build script if a declared path is missing --
-# but it only checks existence, and no test executes them. Guarded with -e so
-# we never clobber a real local build or churn the cargo:rerun-if-changed
+# but it only checks existence, and no test executes them. Every stub is guarded
+# so we never clobber a real local build or churn the cargo:rerun-if-changed
 # stamps these paths emit.
 #
-# The PowerShell arm is for cmd.exe only. CI runs make from a bash step, where
-# sh expands `$f`/`$p` to nothing before PowerShell ever sees them; the `-`
-# prefix then swallowed the syntax error and the stubs were silently never
-# created, so the app's build script failed on a missing resource instead.
+# scripts/stub-tauri-resources.sh is the one implementation, shared with the
+# coverage and rust-check workflows; keeping a second copy here is how the
+# engine worker ended up stubbed in one place and not the other. The PowerShell
+# arm exists only because cmd.exe cannot run it: CI runs make from a shell where
+# sh.exe is on PATH, so it takes the script.
 stub-resources:
 ifeq ($(RECIPE_SHELL_IS_CMD),yes)
 	-powershell -Command "New-Item -ItemType Directory -Force -Path src-tauri/resources/bin | Out-Null; foreach ($$f in @('jan-cli.exe','jan-llama-worker.exe','ggml-base.dll')) { $$p = Join-Path 'src-tauri/resources/bin' $$f; if (-not (Test-Path $$p)) { New-Item -ItemType File -Path $$p | Out-Null } }"
-else ifeq ($(DETECTED_OS),Windows)
-	@mkdir -p src-tauri/resources/bin
-	@[ -e src-tauri/resources/bin/jan-cli.exe ] || touch src-tauri/resources/bin/jan-cli.exe
-	@[ -e src-tauri/resources/bin/jan-llama-worker.exe ] || touch src-tauri/resources/bin/jan-llama-worker.exe
-	@ls src-tauri/resources/bin/ggml*.dll >/dev/null 2>&1 || touch src-tauri/resources/bin/ggml-base.dll
-else ifeq ($(DETECTED_OS),Darwin)
-	@mkdir -p src-tauri/resources/bin
-	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
-	@[ -e src-tauri/resources/bin/mlx-server ] || touch src-tauri/resources/bin/mlx-server
-	@[ -e src-tauri/resources/bin/mlx-swift_Cmlx.bundle ] || mkdir -p src-tauri/resources/bin/mlx-swift_Cmlx.bundle
-	@[ -e src-tauri/resources/bin/jan-llama-worker ] || touch src-tauri/resources/bin/jan-llama-worker
-	@ls src-tauri/resources/bin/libggml*.dylib >/dev/null 2>&1 || touch src-tauri/resources/bin/libggml-base.dylib
 else
-	@mkdir -p src-tauri/resources/bin
-	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
-	@[ -e src-tauri/resources/bin/jan-llama-worker ] || touch src-tauri/resources/bin/jan-llama-worker
-	@ls src-tauri/resources/bin/libggml*.so* >/dev/null 2>&1 || touch src-tauri/resources/bin/libggml-base.so
+	@./scripts/stub-tauri-resources.sh
 endif
 
-test-ci: test-prepare stub-resources
+test-ci: test-prepare
 	$(MAKE) test-rust
 
 # Cheap compile guard for the CLI feature set, covering what test-ci no longer
