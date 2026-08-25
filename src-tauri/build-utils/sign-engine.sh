@@ -32,7 +32,10 @@ Darwin)
   [ -n "$identity" ] || give_up "no 'Developer ID Application' identity in the keychain."
   echo "Signing the engine with: $identity"
   signed=0
-  for target in "$DEST/jan-llama-worker" "$DEST"/libggml*.dylib; do
+  # The backend modules are `.so` even on macOS (CMake MODULE libraries), and
+  # ggml dlopens them without checking a signature, so leaving them out here
+  # fails notarization rather than anything at run time.
+  for target in "$DEST/jan-llama-worker" "$DEST"/libggml*.dylib "$DEST"/libggml*.so; do
     [ -f "$target" ] || continue
     # cmake stages the soname chain as symlinks. codesign follows them, so
     # signing every name would sign the same file three times.

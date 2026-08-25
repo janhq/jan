@@ -45,7 +45,8 @@
       "resources/bin/mlx-swift_Cmlx.bundle",
       "resources/bin/jan-cli",
       "resources/bin/jan-llama-worker",
-      "resources/bin/libggml*.dylib"
+      "resources/bin/libggml*.dylib",
+      "resources/bin/libggml*.so"
     ],
     "externalBin": [
       "resources/bin/bun",
