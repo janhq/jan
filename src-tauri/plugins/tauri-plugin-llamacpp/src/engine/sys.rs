@@ -42,7 +42,7 @@ mod imp {
             err: *mut u8,
             err_len: usize,
         ) -> EngineHandle;
-        fn jan_llama_engine_stop(engine: EngineHandle);
+        fn jan_llama_engine_stop(engine: EngineHandle) -> c_int;
         fn jan_llama_engine_request(
             engine: EngineHandle,
             route: *const c_char,
@@ -77,8 +77,8 @@ mod imp {
         handle: EngineHandle,
         /// Kept alive for exactly as long as the engine: the C++ side holds a
         /// `std::function` wrapping this pointer and can call it from its loop
-        /// thread, so it is freed only after `jan_llama_engine_stop` has
-        /// joined that thread.
+        /// thread, so it is freed only after `jan_llama_engine_stop` reports
+        /// that it joined that thread. On the detach path it is leaked instead.
         state_cb: Option<*mut StateCallback>,
     }
     unsafe impl Send for Engine {}
@@ -278,13 +278,28 @@ mod imp {
 
     impl Drop for Engine {
         fn drop(&mut self) {
-            // SAFETY: called once, from Drop, on a handle we own. `stop` joins
-            // the loop thread, so no callback can be in flight afterwards --
-            // which is what makes freeing the boxed closure next safe.
-            unsafe { jan_llama_engine_stop(self.handle) }
+            // SAFETY: called once, from Drop, on a handle we own.
+            let detached = unsafe { jan_llama_engine_stop(self.handle) } != 0;
             if let Some(p) = self.state_cb.take() {
-                // SAFETY: leaked by `start`/`start_from_preset` for this engine.
-                unsafe { drop(Box::from_raw(p)) };
+                if detached {
+                    // The loop thread outlived the stop timeout and was
+                    // detached rather than joined, so it is still running and
+                    // its `handle_sleeping_state` can still call the trampoline
+                    // with this pointer. The shim leaks the engine for exactly
+                    // this reason; matching it here is what keeps the two sides
+                    // agreeing. Clearing the callback instead would race the
+                    // live loop, so the leak is the sound option.
+                    log::error!(
+                        "llama.cpp server loop was detached, not joined; \
+                         leaking its state callback rather than freeing a \
+                         pointer the loop can still call"
+                    );
+                } else {
+                    // SAFETY: `stop` joined the loop thread, so no callback can
+                    // be in flight; the box was leaked by `start` /
+                    // `start_from_preset` for this engine.
+                    unsafe { drop(Box::from_raw(p)) };
+                }
             }
         }
     }

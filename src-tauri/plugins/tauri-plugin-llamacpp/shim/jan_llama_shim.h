@@ -42,7 +42,12 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
                                                      char *             err,
                                                      size_t             err_len);
 
-void jan_llama_engine_stop(jan_llama_engine * engine);
+// Returns 1 when the server loop did not stop in time and was detached, so the
+// engine (and the state callback the detached loop can still reach) is leaked
+// rather than freed; 0 on the clean join. The caller owns the `user_data` it
+// passed to start, and must leak it too on a 1 -- freeing it would leave the
+// detached loop calling into freed memory.
+int jan_llama_engine_stop(jan_llama_engine * engine);
 
 // route names match server_routes members, e.g. "post_chat_completions".
 // Never returns NULL: transport failures come back as a 5xx response.
