@@ -944,6 +944,7 @@ fn gpu_backend_keyword(backend: &str) -> Option<&'static str> {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn is_shared_lib_name(name: &str) -> bool {
     let lower = name.to_lowercase();
     if cfg!(target_os = "windows") {
@@ -953,6 +954,7 @@ fn is_shared_lib_name(name: &str) -> bool {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn find_gpu_libs(bin_dir: &Path, keyword: &str) -> Vec<PathBuf> {
     let entries = match std::fs::read_dir(bin_dir) {
         Ok(e) => e,
@@ -992,13 +994,19 @@ fn verify_backend_dependencies(
     let start = std::time::Instant::now();
     let mut missing: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    let paths: Vec<PathBuf> = if cfg!(target_os = "macos") {
-        Vec::new()
-    } else {
-        match gpu_backend_keyword(backend) {
-            Some(kw) => find_gpu_libs(bin_dir, kw),
-            None => Vec::new(),
-        }
+    #[cfg(target_os = "macos")]
+    let paths: Vec<PathBuf> = {
+        // macOS backends ship a single signed executable (llama-server). Its
+        // transitive dylib closure is resolved by the otool-based analyzer so
+        // an unbundled Homebrew dependency (e.g. openssl) is detected here
+        // instead of only failing when the router starts.
+        vec![exe_path.to_path_buf()]
+    };
+
+    #[cfg(not(target_os = "macos"))]
+    let paths: Vec<PathBuf> = match gpu_backend_keyword(backend) {
+        Some(kw) => find_gpu_libs(bin_dir, kw),
+        None => Vec::new(),
     };
 
     let _ = exe_path;

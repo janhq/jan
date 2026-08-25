@@ -64,6 +64,23 @@ impl LlamacppError {
             );
         }
 
+        // macOS dyld failures. The most common and hardest to diagnose is a
+        // backend that links a Homebrew dylib which the hardened, signed app
+        // rejects at load time (code signature / Team ID mismatch). The
+        // backend process aborts before the router reaches readiness, so this
+        // reaches the user as a generic process error unless we classify it.
+        if lower_stderr.contains("code signature")
+            && (lower_stderr.contains("not valid for use in process")
+                || lower_stderr.contains("different team ids")
+                || lower_stderr.contains("team id"))
+        {
+            return Self::new(
+                ErrorCode::LlamaCppProcessError,
+                "The model backend cannot start because it links a library that is not bundled with Jan and is rejected by macOS's code-signature check. This usually means the backend was built against a Homebrew dependency (for example OpenSSL) and that dylib is missing from the backend package. Reinstall or update the backend to a build that bundles its own libraries.".into(),
+                Some(stderr.into()),
+            );
+        }
+
         if lower_stderr.contains("error loading model architecture") {
             return Self::new(
                 ErrorCode::ModelArchNotSupported,
@@ -124,3 +141,34 @@ impl serde::Serialize for ServerError {
 }
 
 pub type ServerResult<T> = Result<T, ServerError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_stderr_classifies_dyld_code_signature_rejection() {
+        // Regression test for #8476: the dyld "code signature ... not valid
+        // for use in process ... different Team IDs" message printed when a
+        // signed backend links an unbundled Homebrew dylib must surface an
+        // actionable message, not the generic process error.
+        let err = LlamacppError::from_stderr(
+            "dyld[123]: Library not loaded: /usr/local/opt/openssl@3/lib/libssl.3.dylib\n\
+             Referenced from: /path/to/llama-server\n\
+             Reason: tried: '/usr/local/opt/openssl@3/lib/libssl.3.dylib' (code signature \
+             not valid for use in process: mapping process and mapped file (non-platform) \
+             have different Team IDs)",
+        );
+        assert!(matches!(err.code, ErrorCode::LlamaCppProcessError));
+        let msg = err.message.to_lowercase();
+        assert!(msg.contains("code-signature"), "message: {}", err.message);
+        assert!(msg.contains("not bundled"), "message: {}", err.message);
+        assert!(msg.contains("homebrew"), "message: {}", err.message);
+    }
+
+    #[test]
+    fn from_stderr_preserves_generic_error_for_unrelated_stderr() {
+        let err = LlamacppError::from_stderr("ggml: something unrelated happened");
+        assert!(matches!(err.code, ErrorCode::LlamaCppProcessError));
+    }
+}
