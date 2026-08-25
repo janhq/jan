@@ -60,7 +60,17 @@ export interface MCPService {
   /** Return name/capabilities/description for all connected servers. */
   getServerSummaries(): Promise<ServerSummary[]>
   getConnectedServers(): Promise<string[]>
-  callTool(args: { toolName: string; serverName?: string; arguments: object }): Promise<MCPToolCallResult>
+  /**
+   * `maxOutputChars` is a per-result character budget derived from the active
+   * model's context window; the backend narrows its own configured cap to it so
+   * one oversized result cannot exhaust the context.
+   */
+  callTool(args: {
+    toolName: string
+    serverName?: string
+    arguments: object
+    maxOutputChars?: number
+  }): Promise<MCPToolCallResult>
   callToolWithCancellation(args: {
     toolName: string
     serverName?: string

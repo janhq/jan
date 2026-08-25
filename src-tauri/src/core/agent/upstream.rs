@@ -26,6 +26,7 @@ use crate::core::server::proxy::router_upstream;
 use crate::core::server::MlxBackendSession;
 use crate::core::{
     mcp::models::McpSettings,
+    mcp::truncate::truncate_tool_result,
     state::{ProviderConfig, SharedMcpServers},
 };
 
@@ -506,7 +507,13 @@ pub(crate) async fn execute_mcp_tool_calls(
     mcp_servers: &SharedMcpServers,
     mcp_settings: &Arc<Mutex<McpSettings>>,
 ) -> Vec<(String, String)> {
-    let timeout_duration = mcp_settings.lock().await.tool_call_timeout_duration();
+    let (timeout_duration, tool_output_cap) = {
+        let settings = mcp_settings.lock().await;
+        (
+            settings.tool_call_timeout_duration(),
+            settings.tool_output_cap(None),
+        )
+    };
     let servers = mcp_servers.lock().await;
 
     let mut results = Vec::with_capacity(tool_calls.len());
@@ -570,7 +577,9 @@ pub(crate) async fn execute_mcp_tool_calls(
         };
 
         let tool_result_string = match result {
-            Ok(res) => mcp_call_result_to_string(&res),
+            // Same cap as the desktop path: this string is appended to the agent's
+            // message history, so an unbounded result would blow the context here too.
+            Ok(res) => mcp_call_result_to_string(&truncate_tool_result(&res, tool_output_cap)),
             Err(e) => format!("ERROR: {e}"),
         };
 
