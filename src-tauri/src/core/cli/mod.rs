@@ -1298,6 +1298,12 @@ pub fn agent_dir_for(project_root: &std::path::Path) -> PathBuf {
 /// run can be piped; progress/diagnostics go to stderr. `PermissionRequest` is
 /// resolved via the terminal (deny when non-interactive).
 async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
+    if crate::core::cli::auth::account::take_claude_alias_engaged() {
+        eprintln!(
+            "\x1b[33m[warning] {}\x1b[0m",
+            crate::core::cli::auth::account::CLAUDE_ALIAS_NOTICE
+        );
+    }
     match ev {
         StreamEvent::Token { text } => {
             print!("{text}");

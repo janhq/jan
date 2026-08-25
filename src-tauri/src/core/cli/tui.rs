@@ -6551,14 +6551,24 @@ pub async fn run(
     res
 }
 
+const CLAUDE_ALIAS_NOTICE: &str =
+    crate::core::cli::auth::account::CLAUDE_ALIAS_NOTICE;
+
+fn note_claude_alias_if_engaged(app: &mut App) {
+    if crate::core::cli::auth::account::take_claude_alias_engaged() {
+        app.system(Level::Warn, CLAUDE_ALIAS_NOTICE);
+    }
+}
 /// Apply one event from the active run's stream, clearing `current` on a
 /// terminal one. `None` is a stream that closed without a terminal event (an
 /// aborted task).
+
 async fn apply_stream_event(
     app: &mut App,
     ev: Option<StreamEvent>,
     current: &mut Option<CurrentRun>,
 ) {
+    note_claude_alias_if_engaged(app);
     match ev {
         Some(StreamEvent::Done { stop_reason, usage }) => {
             app.on_done(stop_reason, usage);
@@ -9157,6 +9167,13 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         desc: "resend prior reasoning to the model (false drops it from requests)",
         kind: AgentSettingKind::Bool { default: true },
         scope: SettingScope::Project,
+    },
+    AgentSettingDef {
+        key: "claude_code_alias",
+        label: "claude_code_alias",
+        desc: "reuse and refresh Claude Code's keychain login for Claude requests",
+        kind: AgentSettingKind::Bool { default: true },
+        scope: SettingScope::Global,
     },
     AgentSettingDef {
         key: "wave",
@@ -14688,7 +14705,11 @@ mod tests {
         ProviderField,
         autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
         startup_modes, KITTY_KEYS_OFF, KITTY_KEYS_ON,
-        backgrounded_job_id, drain_stream_events, run_command, starting_call_lines,
+        backgrounded_job_id,
+        apply_stream_event,
+        drain_stream_events,
+        run_command,
+        starting_call_lines,
         unescape_partial_json_string,
         running_group_rows, split_reasoning, strip_system_xml_tags, subagent_activity,
         answer_without_reasoning, assistant_runs, replay_display_log, thinking_open,
@@ -14921,6 +14942,30 @@ mod tests {
         assert_eq!(app.transcript.len(), before);
     }
 
+    #[tokio::test]
+    async fn claude_alias_notice_is_rendered_once() {
+        crate::core::cli::auth::account::mark_claude_alias_engaged_for_test();
+        let mut app = test_app();
+        let mut current = None;
+
+        apply_stream_event(
+            &mut app,
+            Some(StreamEvent::Step { index: 1, max: 0 }),
+            &mut current,
+        )
+        .await;
+        let first = transcript_text(&app);
+        assert!(first.contains("Claude Code keychain"));
+
+        apply_stream_event(
+            &mut app,
+            Some(StreamEvent::Step { index: 2, max: 0 }),
+            &mut current,
+        )
+        .await;
+        let second = transcript_text(&app);
+        assert_eq!(second.matches("Claude Code keychain").count(), 1);
+    }
     fn transcript_text(app: &App) -> String {
         app.transcript.iter().map(message_text_of).collect()
     }

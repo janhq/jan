@@ -679,6 +679,9 @@ fn claude_code_keychain_entry() -> Option<keyring::Entry> {
 /// momentarily exhausted is not misreported as a free personal plan. Best-effort:
 /// returns `None` when the keychain entry is absent or the field is missing.
 fn claude_code_subscription_type() -> Option<String> {
+    if !claude_alias_enabled() {
+        return None;
+    }
     claude_code_keychain_entry()?
         .get_password()
         .ok()
@@ -691,6 +694,12 @@ fn claude_code_subscription_type() -> Option<String> {
         })
 }
 
+pub(crate) const CLAUDE_ALIAS_NOTICE: &str =
+    "Claude Code keychain login is active: Jan may use and refresh that credential for Claude requests. Disable with `claude_code_alias = false` in ~/.jan/config.toml or `/settings`. Jan is a third-party client; review Anthropic's Terms of Service.";
+
+static CLAUDE_ALIAS_ENGAGED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 #[cfg(test)]
 static CLAUDE_ALIAS_ENABLED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -702,7 +711,7 @@ fn claude_alias_enabled() -> bool {
 
 #[cfg(not(test))]
 fn claude_alias_enabled() -> bool {
-    true
+    crate::core::agent::global_config::claude_code_alias_enabled()
 }
 
 /// Test-only: flip whether the Claude Code alias is consulted in production
@@ -712,6 +721,16 @@ fn claude_alias_enabled() -> bool {
 pub(crate) fn set_claude_alias(enabled: bool) {
     CLAUDE_ALIAS_ENABLED.store(enabled, std::sync::atomic::Ordering::Relaxed);
 }
+
+pub(crate) fn take_claude_alias_engaged() -> bool {
+    CLAUDE_ALIAS_ENGAGED.swap(false, std::sync::atomic::Ordering::Relaxed)
+}
+
+#[cfg(test)]
+pub(crate) fn mark_claude_alias_engaged_for_test() {
+    CLAUDE_ALIAS_ENGAGED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Resolve a working access token from Claude Code's keychain entry, refreshing
 /// it and writing the rotated token back into the same keychain entry (the
 /// single source of truth omp also reads) when it has expired. This keeps Jan
@@ -729,7 +748,7 @@ async fn claude_code_access_token() -> Option<String> {
         .duration_since(std::time::UNIX_EPOCH)
         .ok()?
         .as_secs() as i64;
-    if oauth.expires_at.is_some_and(|expires_at| expires_at <= now + 300) {
+    if oauth.expires_at.is_some_and(|expires_at| expires_at <= now) {
         match refresh(AccountProvider::Claude, &oauth).await {
             Ok(fresh) => {
                 // Write the rotated token back into omp's keychain entry so the
@@ -739,6 +758,8 @@ async fn claude_code_access_token() -> Option<String> {
                 if write_claude_code_keychain(&entry, &raw, &fresh).is_err() {
                     debug_log("claude alias: refreshed but could not write back to the Claude Code keychain");
                 }
+                #[cfg(not(test))]
+                CLAUDE_ALIAS_ENGAGED.store(true, std::sync::atomic::Ordering::Relaxed);
                 return Some(fresh.access_token);
             }
             Err(error) => {
@@ -749,6 +770,8 @@ async fn claude_code_access_token() -> Option<String> {
             }
         }
     }
+    #[cfg(not(test))]
+    CLAUDE_ALIAS_ENGAGED.store(true, std::sync::atomic::Ordering::Relaxed);
     Some(oauth.access_token)
 }
 
@@ -2032,6 +2055,13 @@ mod tests {
         set_claude_alias(false);
         assert!(!claude_alias_enabled());
         assert_eq!(claude_code_access_token().await, None);
+    }
+
+    #[test]
+    fn claude_alias_engagement_latch_is_one_shot() {
+        CLAUDE_ALIAS_ENGAGED.store(true, std::sync::atomic::Ordering::Relaxed);
+        assert!(take_claude_alias_engaged());
+        assert!(!take_claude_alias_engaged());
     }
 
     #[tokio::test(flavor = "current_thread")]

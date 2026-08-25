@@ -33,6 +33,8 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # /terminal-setup when this terminal is
 #                                     # dropping Shift+Enter or Option+Delete.
 #                                     # On by default
+# claude_code_alias = false             # allow Jan to reuse Claude Code's
+#                                     # keychain login; on by default
 # wave = "👋"                          # sweep this glyph along the working row
 #                                     # instead of the static throbber. Up to
 #                                     # 3 characters ("🍌", "~", "👁️👄👁️").
@@ -81,6 +83,10 @@ struct GlobalConfigToml {
     /// for the check to know it was answered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     terminal_hint: Option<bool>,
+    /// Allow Jan to reuse Claude Code's keychain login. `None` = the default,
+    /// on; set false to keep Jan from reading or refreshing that credential.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    claude_code_alias: Option<bool>,
     /// Glyph swept along the working row while a turn runs, in place of the
     /// static Braille throbber. Absent = `WAVE_DEFAULT`; `""` = off, the
     /// throbber. See `wave_glyph` for why those are two different things.
@@ -213,6 +219,17 @@ pub(crate) fn terminal_hint_enabled() -> bool {
     load_raw()
         .ok()
         .and_then(|config| config.terminal_hint)
+        .unwrap_or(true)
+}
+
+/// Whether Jan may reuse Claude Code's keychain login
+/// (`claude_code_alias` in `~/.jan/config.toml`), defaulting to on. This
+/// setting is deliberately opt-out to preserve existing behavior while making
+/// the cross-tool credential reuse explicit and reversible.
+pub(crate) fn claude_code_alias_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.claude_code_alias)
         .unwrap_or(true)
 }
 
@@ -540,6 +557,26 @@ mod tests {
             std::fs::write(&path, "not valid toml [[[").unwrap();
             assert!(
                 terminal_hint_enabled(),
+                "an unreadable config keeps the default"
+            );
+        });
+    }
+
+    #[test]
+    fn claude_code_alias_defaults_on_and_reads_the_toml_key() {
+        with_temp_home(|_| {
+            assert!(claude_code_alias_enabled(), "missing file -> alias on");
+            let path = ensure_global_config().expect("ensure");
+            assert!(claude_code_alias_enabled(), "scaffolded file -> alias on");
+
+            std::fs::write(&path, "claude_code_alias = false\n").unwrap();
+            assert!(!claude_code_alias_enabled());
+            std::fs::write(&path, "claude_code_alias = true\n").unwrap();
+            assert!(claude_code_alias_enabled());
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert!(
+                claude_code_alias_enabled(),
                 "an unreadable config keeps the default"
             );
         });
