@@ -830,8 +830,11 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
     // Idempotent in the plugin: a second start returns the running worker
     // rather than orphaning it, so a redundant call is a no-op instead of a
-    // cold restart. That is also why there is no adoption dance here -- the
-    // worker is a child of this process and dies with it.
+    // cold restart. That is also why there is no adoption dance here: the
+    // worker exits on stdin EOF, which the OS delivers when this process dies
+    // by any means -- including SIGKILL, where kill_on_drop never runs -- so
+    // there is nothing to adopt or reap. Not because a child dies with its
+    // parent; it does not, it gets reparented.
     const envs: Record<string, string> = {}
     envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
