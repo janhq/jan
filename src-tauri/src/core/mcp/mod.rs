@@ -13,6 +13,7 @@ pub mod models;
 pub mod oauth;
 #[cfg(not(feature = "cli"))]
 pub mod progress;
+pub mod truncate;
 
 #[cfg(test)]
 #[cfg(not(feature = "cli"))]

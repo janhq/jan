@@ -8,6 +8,7 @@ use tokio::time::timeout;
 use super::{
     constants::DEFAULT_MCP_CONFIG,
     helpers::{restart_active_mcp_servers, start_mcp_server, terminate_browser_mcp},
+    truncate::truncate_tool_result,
 };
 use crate::core::{
     app::commands::get_jan_data_folder_path,
@@ -389,6 +390,9 @@ pub async fn get_server_summaries(
 /// * `server_name` - Optional name of the server to call the tool from (for disambiguation)
 /// * `arguments` - Optional map of argument names to values
 /// * `cancellation_token` - Optional token to allow cancellation from JS side
+/// * `max_output_chars` - Optional caller-derived per-result character budget
+///   (the desktop chat derives one from the active model's context window);
+///   combined with the `maxToolOutputChars` setting, tighter wins
 ///
 /// # Returns
 /// * `Result<CallToolResult, String>` - Result of the tool call if successful, or error message if failed
@@ -407,8 +411,15 @@ pub async fn call_tool(
     server_name: Option<String>,
     arguments: Option<Map<String, Value>>,
     cancellation_token: Option<String>,
+    max_output_chars: Option<u64>,
 ) -> Result<CallToolResult, String> {
-    let timeout_duration = tool_call_timeout(&state).await;
+    let (timeout_duration, tool_output_cap) = {
+        let settings = state.mcp_settings.lock().await;
+        (
+            settings.tool_call_timeout_duration(),
+            settings.tool_output_cap(max_output_chars),
+        )
+    };
     // Set up cancellation if token is provided
     let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
 
@@ -508,7 +519,10 @@ pub async fn call_tool(
         }
 
         cleanup_cancellation_token(&state, &cancellation_token).await;
-        return result;
+        // Cap here rather than at each caller: this is the single point every
+        // desktop MCP tool result passes through on its way into conversation
+        // history, so an unbounded result can never reach the model.
+        return result.map(|res| truncate_tool_result(&res, tool_output_cap));
     }
 
     // No server had the tool — check if it's because of transport errors
