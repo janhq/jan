@@ -6562,7 +6562,6 @@ fn note_claude_alias_if_engaged(app: &mut App) {
 /// Apply one event from the active run's stream, clearing `current` on a
 /// terminal one. `None` is a stream that closed without a terminal event (an
 /// aborted task).
-
 async fn apply_stream_event(
     app: &mut App,
     ev: Option<StreamEvent>,
