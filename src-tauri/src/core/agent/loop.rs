@@ -9,7 +9,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use reqwest::Client;
+// Agent upstream traffic runs on `genai`, which is built against reqwest 0.13;
+// the rest of the app is still on 0.12, so the two `Client` types differ.
+use reqwest13::Client;
 #[cfg(not(feature = "cli"))]
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
@@ -162,6 +164,9 @@ impl ModelInvoker for HttpModelInvoker {
             &self.client,
             &self.upstream_url,
             &self.api_keys,
+            // The agent speaks OpenAI chat/completions to every provider; see
+            // the note on `stream_openai_chat_completions`.
+            None,
             request,
             events,
         )
@@ -1448,7 +1453,12 @@ async fn orchestrate_inner(
     #[cfg(not(feature = "cli"))]
     {
         if model_id.is_none() {
-            if let Some(first) = router_first_model(llama_state, client).await {
+            // The llama.cpp router is a desktop-only listing call on the app's
+            // reqwest 0.12 stack, not agent upstream traffic, so it does not use
+            // the genai client threaded through `OrchestrationArgs`.
+            static ROUTER_CLIENT: std::sync::LazyLock<reqwest::Client> =
+                std::sync::LazyLock::new(reqwest::Client::new);
+            if let Some(first) = router_first_model(llama_state, &ROUTER_CLIENT).await {
                 model_id = Some(first);
             }
         }

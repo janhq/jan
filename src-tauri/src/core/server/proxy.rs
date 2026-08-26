@@ -981,7 +981,9 @@ async fn proxy_request(
 
                         match run_server_side_openai_orchestration(
                             &openai_body,
-                            &client,
+                            // The agent loop runs on genai (reqwest 0.13); the
+                            // proxy's own passthrough stays on 0.12.
+                            &crate::core::agent::upstream::agent_http_client(),
                             provider_configs.clone(),
                             llama_state.clone(),
                             mlx_sessions.clone(),
@@ -1498,7 +1500,7 @@ async fn proxy_request(
                     {
                         match run_server_side_openai_orchestration(
                             &json_body,
-                            &client,
+                            &crate::core::agent::upstream::agent_http_client(),
                             provider_configs.clone(),
                             llama_state.clone(),
                             mlx_sessions.clone(),
