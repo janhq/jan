@@ -102,6 +102,12 @@ pub enum StreamEvent {
         request_id: String,
         request: crate::core::agent::interaction::AskRequest,
     },
+    /// An `ask` request the loop resolved without a user answer (it timed out
+    /// and auto-selected). Tells a client showing the live prompt for
+    /// `request_id` to dismiss it, since no `respond` from that client is
+    /// coming. User-driven answers never emit this: the client clears its own
+    /// prompt as it responds.
+    AskResolved { request_id: String },
     /// The canonical todo list changed (tool mutation or user edit in the
     /// TUI). Carries the full resulting snapshot for reconstruction.
     TodoUpdate {

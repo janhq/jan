@@ -1350,6 +1350,8 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::AskRequest { .. } => {
             eprintln!("\n\x1b[31m[error] interactive ask requires `jan agent ui`\x1b[0m")
         }
+        // Headless never renders an ask prompt, so there is nothing to dismiss.
+        StreamEvent::AskResolved { .. } => {}
         // The non-interactive CLI doesn't persist session state; a todo update
         // is silently dropped here (mirrors MessagesUpdated below).
         StreamEvent::TodoUpdate { .. } => {}

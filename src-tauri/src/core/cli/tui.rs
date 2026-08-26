@@ -3998,6 +3998,12 @@ impl App {
             } => self
                 .ask_queue
                 .push_back(PendingAsk::new(request_id, request)),
+            // The loop auto-answered a timed-out ask; drop its now-dead prompt.
+            // A user answer clears the queue in `resolve_front_ask` instead, so
+            // this only fires for the timeout path.
+            StreamEvent::AskResolved { request_id } => {
+                self.ask_queue.retain(|ask| ask.request_id != request_id);
+            }
             StreamEvent::SubagentStart { run_id, name, task } => {
                 // A queued dispatch already opened a panel for this run; promote
                 // it to running instead of pushing a duplicate. Otherwise open a
@@ -8906,6 +8912,13 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
             default: crate::core::agent::global_config::WAVE_DEFAULT,
             max: crate::core::agent::global_config::WAVE_MAX_GRAPHEMES,
         },
+        scope: SettingScope::Global,
+    },
+    AgentSettingDef {
+        key: "ask_timeout_secs",
+        label: "ask_timeout_secs",
+        desc: "auto-answer an unanswered ask after N seconds with the recommended option (0 = wait forever)",
+        kind: AgentSettingKind::Int { default: Some(0), min: 0 },
         scope: SettingScope::Global,
     },
 ];
@@ -15065,6 +15078,26 @@ mod tests {
         assert_eq!(answers[0].selected, vec!["Small"]);
         assert_eq!(answers[1].selected, vec!["Careful"]);
         assert!(app.ask_queue.is_empty());
+    }
+
+    #[test]
+    fn ask_resolved_dismisses_only_the_matching_prompt() {
+        let mut app = test_app();
+        app.apply(StreamEvent::AskRequest {
+            request_id: "keep".into(),
+            request: ask_request(false, false),
+        });
+        app.apply(StreamEvent::AskRequest {
+            request_id: "gone".into(),
+            request: ask_request(false, false),
+        });
+        assert_eq!(app.ask_queue.len(), 2);
+
+        app.apply(StreamEvent::AskResolved {
+            request_id: "gone".into(),
+        });
+        assert_eq!(app.ask_queue.len(), 1, "only the timed-out prompt is dropped");
+        assert_eq!(app.ask_queue.front().unwrap().request_id, "keep");
     }
 
     #[tokio::test]

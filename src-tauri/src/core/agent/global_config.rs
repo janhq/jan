@@ -29,6 +29,11 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # stream_reasoning = false            # stop streaming reasoning into the TUI
 #                                     # live tail while it folds; only the
 #                                     # [thinking] badge shows it. On by default
+# ask_timeout_secs = 60             # auto-answer an unanswered `ask` prompt
+#                                     # after this many seconds, choosing each
+#                                     # question's recommended option (else its
+#                                     # first). 0 or unset waits forever, the
+#                                     # default
 # terminal_hint = false               # stop the startup note that offers
 #                                     # /terminal-setup when this terminal is
 #                                     # dropping Shift+Enter or Option+Delete.
@@ -74,6 +79,12 @@ struct GlobalConfigToml {
     /// reasoning for good.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stream_reasoning: Option<bool>,
+    /// Auto-answer an unanswered `ask` tool prompt after this many seconds,
+    /// selecting each question's recommended option (or its first option when
+    /// none is recommended). `None` = the default, and `0` is treated the same:
+    /// wait forever, blocking the run on the ask exactly as it does today.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ask_timeout_secs: Option<u64>,
     /// Offer `/terminal-setup` at startup when a config file proves this
     /// terminal is dropping a modified key. `None` = the default, on. For the
     /// user who has read the note and decided to keep `Option` composing
@@ -270,6 +281,22 @@ pub(crate) fn stream_reasoning_enabled() -> bool {
         .ok()
         .and_then(|config| config.stream_reasoning)
         .unwrap_or(true)
+}
+
+/// How long an unanswered `ask` prompt waits before it auto-answers with each
+/// question's recommended option (`ask_timeout_secs` in `~/.jan/config.toml`).
+/// `None` -- the default -- means wait forever, preserving today's blocking
+/// behavior until the user answers; `0` is treated the same as unset so the
+/// disabling value and the absent key agree.
+///
+/// A malformed config yields `None` (wait forever) rather than an error: an
+/// unreadable preference must never be the thing that changes how a run blocks.
+pub(crate) fn ask_timeout() -> Option<std::time::Duration> {
+    load_raw()
+        .ok()
+        .and_then(|config| config.ask_timeout_secs)
+        .filter(|secs| *secs > 0)
+        .map(std::time::Duration::from_secs)
 }
 
 /// The default glyph swept along the working row when `wave` is absent.
@@ -766,6 +793,23 @@ mod tests {
                 stream_reasoning_enabled(),
                 "an unreadable config keeps the default"
             );
+        });
+    }
+
+    #[test]
+    fn ask_timeout_defaults_off_and_treats_zero_as_unset() {
+        with_temp_home(|_| {
+            assert_eq!(ask_timeout(), None, "missing file -> wait forever");
+            let path = ensure_global_config().expect("ensure");
+            assert_eq!(ask_timeout(), None, "scaffolded file -> wait forever");
+
+            std::fs::write(&path, "ask_timeout_secs = 0\n").unwrap();
+            assert_eq!(ask_timeout(), None, "0 is the disabling value, not 0s");
+            std::fs::write(&path, "ask_timeout_secs = 30\n").unwrap();
+            assert_eq!(ask_timeout(), Some(std::time::Duration::from_secs(30)));
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert_eq!(ask_timeout(), None, "an unreadable config waits forever");
         });
     }
 

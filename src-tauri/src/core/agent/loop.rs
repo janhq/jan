@@ -322,6 +322,20 @@ fn resolve_sandbox(_flag: Option<bool>, _configured: Option<bool>) -> bool {
     DEFAULT_SANDBOX
 }
 
+/// The configured `ask` auto-answer timeout. The setting lives in the
+/// CLI-only `global_config` module (the desktop `ask` surface is not wired up
+/// yet), so the desktop build has no timeout and blocks on an ask forever,
+/// exactly as it does today.
+#[cfg(feature = "cli")]
+fn ask_timeout_setting() -> Option<std::time::Duration> {
+    crate::core::agent::global_config::ask_timeout()
+}
+
+#[cfg(not(feature = "cli"))]
+fn ask_timeout_setting() -> Option<std::time::Duration> {
+    None
+}
+
 /// Whether `bash` would be confined in `project_root` with no `--sandbox` flag
 /// passed: the answer `jan cli agent status` reports and the TUI notices on.
 pub fn effective_sandbox(project_root: &std::path::Path) -> bool {
@@ -536,7 +550,34 @@ impl CompositeToolInvoker {
             .await;
             return "ERROR [ask_cancelled]: interactive UI disconnected".to_string();
         }
-        match receiver.await {
+        let outcome = match ask_timeout_setting() {
+            Some(duration) => match tokio::time::timeout(duration, receiver).await {
+                Ok(received) => received,
+                Err(_elapsed) => {
+                    // No answer in time: auto-select each question's recommended
+                    // (else first) option. Deregister so a late user answer is
+                    // rejected, and tell the UI to drop the now-dead prompt. This
+                    // is a distinct resolution from a user cancel, so it never
+                    // returns the `ask_cancelled` error below.
+                    let results = request.auto_selected_results();
+                    let _ = crate::core::agent::interaction::respond(
+                        registry,
+                        &request_id,
+                        Ok(results.clone()),
+                    )
+                    .await;
+                    let _ = self.events.send(StreamEvent::AskResolved {
+                        request_id: request_id.clone(),
+                    });
+                    return format!(
+                        "NOTE [ask_timeout]: no answer within the configured ask timeout; auto-selected the recommended option(s).\n{}",
+                        request.render_results(&results)
+                    );
+                }
+            },
+            None => receiver.await,
+        };
+        match outcome {
             Ok(Ok(results)) => match request.validate_results(&results) {
                 Ok(()) => request.render_results(&results),
                 Err(error) => format!("ERROR: invalid ask response: {error}"),
@@ -3967,6 +4008,53 @@ mod tests {
         let out = task.await.unwrap();
         assert_eq!(out[0].content, "User response for \"scope\": custom answer");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // An unanswered ask with `ask_timeout_secs` set resolves to the
+    // auto-selected recommended option (here the first, since `ask_call` sets
+    // no recommended index), NOT to `ask_cancelled`. `with_temp_home` points
+    // HOME at the config it writes; a nested current-thread runtime runs the
+    // invoke because that helper is synchronous.
+    // `global_config` (the timeout source) is CLI-only, so this test is too.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn ask_auto_selects_on_timeout_instead_of_cancelling() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let path = crate::core::agent::global_config::ensure_global_config().unwrap();
+            std::fs::write(&path, "ask_timeout_secs = 1\n").unwrap();
+
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let root = unique_project_root();
+                let (tx, _rx) = mpsc::unbounded_channel();
+                let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+                let asks = crate::core::agent::interaction::new_registry();
+                let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+                invoker.ask_requests = Some(asks.clone());
+
+                // No one answers: handle_ask_tool self-resolves after the timeout.
+                let out = invoker.invoke(&[ask_call()]).await.unwrap();
+                assert_eq!(out.len(), 1);
+                assert!(
+                    !out[0].content.contains("ask_cancelled"),
+                    "timeout is not a cancel: {}",
+                    out[0].content
+                );
+                assert!(
+                    out[0].content.contains("User response for \"scope\": Small"),
+                    "auto-selected the first option: {}",
+                    out[0].content
+                );
+                assert!(
+                    asks.lock().await.is_empty(),
+                    "the timed-out ask must be deregistered"
+                );
+                let _ = std::fs::remove_dir_all(&root);
+            });
+        });
     }
 
     fn todo_call(id: &str, args: serde_json::Value) -> serde_json::Value {
