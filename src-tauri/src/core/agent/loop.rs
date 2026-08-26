@@ -1911,6 +1911,10 @@ async fn run_turn_cycle(
     // fixed turn cap.
     let unlimited = max_turns == 0;
     let mut turn: usize = 0;
+    // The budget notice is announced once, on the turn that crosses the
+    // ceiling. Without the latch every later turn would push another copy and
+    // the notice would crowd out the conversation it is annotating.
+    let mut budget_notice_recorded = false;
     // Mid-run todo upkeep: after a long uninterrupted run of mutating tool
     // calls with no todo touch, nudge the model once to keep the list honest
     // rather than only ever reminding it at a full stop -- a task that never
@@ -2055,36 +2059,29 @@ async fn run_turn_cycle(
             return Ok(completion);
         }
 
-        // The session budget is exhausted. This is a soft stop, not an error:
-        // a subagent that inherits the parent's remaining budget must hand back
-        // its partial progress (as an assistant message) so the parent can act
-        // on it, instead of the run hard-failing and losing the work. Tool
-        // calls are not executed; nothing further is spent against the ceiling.
-        if budget.exhausted() {
-            let partial = extract_choice_message(&completion)
-                .and_then(|m| m.get("content").and_then(|c| c.as_str()))
-                .unwrap_or("")
-                .to_string();
-            let stop_note = format!(
-                "[session token budget exhausted ({} tokens)] Partial progress so far:\n\
-                 {}",
-                budget.spent(),
-                if partial.is_empty() {
-                    "(none yet reported)".to_string()
-                } else {
-                    partial
-                }
-            );
+        // Crossing the session budget is advisory: it is recorded and the run
+        // carries on, tool calls included. Note what this costs -- `max_turns
+        // == 0` is the normal case (see above), so with the budget no longer
+        // stopping anything, user cancellation is the only remaining bound on a
+        // run's spend.
+        //
+        // Recorded as a system note rather than an assistant turn: the model
+        // never wrote it, and putting a bracketed status marker in the
+        // assistant's voice hands it an example of itself emitting one, which
+        // is the shape a model will imitate unprompted on later turns.
+        if budget.exhausted() && !budget_notice_recorded {
+            budget_notice_recorded = true;
             conversation_messages.push(serde_json::json!({
-                "role": "assistant",
-                "content": stop_note,
+                "role": "system",
+                "content": format!(
+                    "[session token budget exhausted ({} tokens)] The configured \
+                     ceiling has been passed; this run is continuing past it.",
+                    budget.spent()
+                ),
             }));
             let _ = events.send(StreamEvent::MessagesUpdated {
                 messages: conversation_messages.clone(),
             });
-            return Ok(serde_json::json!({
-                "choices": [{ "message": { "content": stop_note }, "finish_reason": "stop" }]
-            }));
         }
 
         for tc in &tool_calls {
@@ -3202,12 +3199,21 @@ mod tests {
         assert!(!bash_result_is_error_flag("ok\n[exit 0]").await);
     }
 
+    /// Crossing the session token budget is advisory: it is announced once, as
+    /// a system note, and the run carries on -- tool calls included.
     #[tokio::test]
-    async fn turn_cycle_soft_stops_when_budget_exhausted() {
+    async fn an_exhausted_budget_is_announced_once_and_the_run_continues() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut over_budget = tool_call_completion();
         over_budget["usage"] = json!({ "total_tokens": 100 });
-        let model = MockModel::new(vec![over_budget]);
+        let done = json!({
+            "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
+        });
+        // A second tool-calling turn after the ceiling is crossed, so the
+        // once-only latch is actually exercised rather than assumed.
+        let mut still_over = tool_call_completion();
+        still_over["usage"] = json!({ "total_tokens": 200 });
+        let model = MockModel::new(vec![over_budget, still_over, done]);
         let tool = MockTool::default();
         let mut budget = SessionBudget::new(Some(50));
         let convo = vec![json!({ "role": "user", "content": "hi" })];
@@ -3227,28 +3233,56 @@ mod tests {
             None,
         )
         .await
-        .expect("budget exhaustion is a soft stop, not an error");
+        .expect("passing the ceiling is not an error");
 
-        let final_text = extract_choice_message(&result)
-            .and_then(|m| m.get("content").and_then(|c| c.as_str()))
-            .unwrap_or_default();
-        let spent = budget.spent();
         assert!(
-            final_text.contains("budget")
-                && final_text.contains(&spent.to_string()),
-            "soft stop should describe the exhausted budget ({spent} tokens): {final_text}",
+            budget.exhausted(),
+            "precondition: the run really did cross the ceiling"
         );
         assert!(
-            tool.calls.lock().unwrap().is_empty(),
-            "tool must not run once budget is exhausted"
+            !tool.calls.lock().unwrap().is_empty(),
+            "tool calls still run once the ceiling is passed"
         );
-        // A MessagesUpdated is published so live surfaces (and the replay
-        // session) see the partial conversation before the soft stop.
+        assert_eq!(
+            extract_choice_message(&result)
+                .and_then(|m| m.get("content").and_then(|c| c.as_str()))
+                .unwrap_or_default(),
+            "all done",
+            "the run finishes on the model's own answer, not a stop notice"
+        );
+
+        // Announced exactly once, in the system voice -- never as an assistant
+        // turn the model could later imitate.
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 3, "the run kept taking turns");
+        // The last request is two turns past the ceiling: if the latch were
+        // missing, the note would appear once per turn here.
+        let messages = requests[2]["messages"].as_array().unwrap();
+        let notes: Vec<&serde_json::Value> = messages
+            .iter()
+            .filter(|m| {
+                m.get("content")
+                    .and_then(|c| c.as_str())
+                    .is_some_and(|c| c.contains("budget exhausted"))
+            })
+            .collect();
+        assert_eq!(notes.len(), 1, "announced once, not per turn: {messages:#?}");
+        assert_eq!(notes[0]["role"], "system", "system voice, not assistant");
         assert!(
-            std::iter::from_fn(|| rx.try_recv().ok()).any(
-                |ev| matches!(ev, StreamEvent::MessagesUpdated { .. })
-            ),
-            "expected a MessagesUpdated event on soft stop"
+            messages
+                .iter()
+                .all(|m| m.get("role").and_then(|v| v.as_str()) != Some("assistant")
+                    || !m["content"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .contains("budget exhausted")),
+            "no assistant turn carries the marker"
+        );
+
+        assert!(
+            std::iter::from_fn(|| rx.try_recv().ok())
+                .any(|ev| matches!(ev, StreamEvent::MessagesUpdated { .. })),
+            "live surfaces see the annotated conversation"
         );
     }
 
