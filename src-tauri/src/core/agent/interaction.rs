@@ -156,6 +156,26 @@ impl AskRequest {
             .collect::<Vec<_>>()
             .join("\n")
     }
+
+    /// The results the loop falls back to when an `ask` times out with no user
+    /// answer: each question resolved to its `recommended` option, or its first
+    /// option when none is recommended. A multi-select question collapses to a
+    /// single selected label. `parse` guarantees the index is in range and that
+    /// no real option carries `OTHER_LABEL` (it is appended only for the user's
+    /// UI), so every label here is one `validate_results` accepts.
+    pub(crate) fn auto_selected_results(&self) -> Vec<QuestionResult> {
+        self.questions
+            .iter()
+            .map(|question| {
+                let index = question.recommended.unwrap_or(0);
+                QuestionResult {
+                    id: question.id.clone(),
+                    selected: vec![question.options[index].label.clone()],
+                    custom_input: None,
+                }
+            })
+            .collect()
+    }
 }
 
 pub(crate) fn ask_tool_schema() -> Value {
@@ -306,6 +326,43 @@ mod tests {
             custom_input: Some("custom".into()),
         }];
         assert!(req.validate_results(&both).is_err());
+    }
+
+    #[test]
+    fn auto_selection_follows_recommended_then_first_and_validates() {
+        // Recommended present -> that option; multi-select collapses to one.
+        let recommended = AskRequest::parse(&json!({
+            "questions": [{
+                "id": "scope",
+                "question": "Which scope?",
+                "options": [{"label": "Small"}, {"label": "Large"}, {"label": "Huge"}],
+                "multi": true,
+                "recommended": 1
+            }]
+        }))
+        .unwrap();
+        let results = recommended.auto_selected_results();
+        assert_eq!(results[0].selected, vec!["Large"]);
+        assert!(recommended.validate_results(&results).is_ok());
+
+        // No recommended -> first option.
+        let first = AskRequest::parse(&json!({
+            "questions": [{
+                "id": "scope",
+                "question": "Which scope?",
+                "options": [{"label": "Alpha"}, {"label": "Beta"}]
+            }]
+        }))
+        .unwrap();
+        let results = first.auto_selected_results();
+        assert_eq!(results[0].selected, vec!["Alpha"]);
+        assert!(first.validate_results(&results).is_ok());
+
+        // Every auto-selected label is a real option, never the UI-only OTHER.
+        for question in first.questions.iter().chain(recommended.questions.iter()) {
+            let picked = &question.options[question.recommended.unwrap_or(0)].label;
+            assert_ne!(picked, OTHER_LABEL);
+        }
     }
 
     #[tokio::test]

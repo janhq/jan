@@ -29,6 +29,11 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # stream_reasoning = false            # stop streaming reasoning into the TUI
 #                                     # live tail while it folds; only the
 #                                     # [thinking] badge shows it. On by default
+# ask_timeout_secs = 60             # auto-answer an unanswered `ask` prompt
+#                                     # after this many seconds, choosing each
+#                                     # question's recommended option (else its
+#                                     # first). 0 or unset waits forever, the
+#                                     # default
 # terminal_hint = false               # stop the startup note that offers
 #                                     # /terminal-setup when this terminal is
 #                                     # dropping Shift+Enter or Option+Delete.
@@ -74,6 +79,12 @@ struct GlobalConfigToml {
     /// reasoning for good.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stream_reasoning: Option<bool>,
+    /// Auto-answer an unanswered `ask` tool prompt after this many seconds,
+    /// selecting each question's recommended option (or its first option when
+    /// none is recommended). `None` = the default, and `0` is treated the same:
+    /// wait forever, blocking the run on the ask exactly as it does today.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ask_timeout_secs: Option<u64>,
     /// Offer `/terminal-setup` at startup when a config file proves this
     /// terminal is dropping a modified key. `None` = the default, on. For the
     /// user who has read the note and decided to keep `Option` composing
@@ -165,7 +176,7 @@ pub(crate) fn load_global_config() -> Result<HashMap<String, ProviderConfig>, St
         Err(_) => return Ok(HashMap::new()),
     };
     let parsed: GlobalConfigToml =
-        toml::from_str(&raw).map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+        toml::from_str(&raw).map_err(|e| parse_error(&path, &e, e.message()))?;
 
     Ok(parsed
         .providers
@@ -272,6 +283,22 @@ pub(crate) fn stream_reasoning_enabled() -> bool {
         .unwrap_or(true)
 }
 
+/// How long an unanswered `ask` prompt waits before it auto-answers with each
+/// question's recommended option (`ask_timeout_secs` in `~/.jan/config.toml`).
+/// `None` -- the default -- means wait forever, preserving today's blocking
+/// behavior until the user answers; `0` is treated the same as unset so the
+/// disabling value and the absent key agree.
+///
+/// A malformed config yields `None` (wait forever) rather than an error: an
+/// unreadable preference must never be the thing that changes how a run blocks.
+pub(crate) fn ask_timeout() -> Option<std::time::Duration> {
+    load_raw()
+        .ok()
+        .and_then(|config| config.ask_timeout_secs)
+        .filter(|secs| *secs > 0)
+        .map(std::time::Duration::from_secs)
+}
+
 /// The default glyph swept along the working row when `wave` is absent.
 pub(crate) const WAVE_DEFAULT: &str = "👋";
 
@@ -327,6 +354,46 @@ pub(crate) fn wave_glyph() -> Option<String> {
     }
 }
 
+/// Root-level (non-`[providers.*]`) keys of `~/.jan/config.toml`, used to spot
+/// the one mistake this file invites: appending a top-level key to the end of
+/// the file, where it silently lands inside whichever `[providers.*]` table
+/// happens to be last.
+const ROOT_KEYS: &[&str] = &[
+    "default_model",
+    "smol_model",
+    "mouse",
+    "sandbox",
+    "think_tags",
+    "stream_reasoning",
+    "ask_timeout_secs",
+    "terminal_hint",
+    "wave",
+];
+
+/// Render a TOML parse failure with a fix, not just a location. `toml`'s own
+/// message points at the offending line and stops there, which is useless for
+/// the common case: `echo 'key = v' >> ~/.jan/config.toml` appends *after* the
+/// last `[providers.*]` header, so the key parses as a provider field and
+/// collides on a second append. Naming the root key and the remedy turns a
+/// dead end into a one-step fix.
+fn parse_error(path: &std::path::Path, err: &impl std::fmt::Display, message: &str) -> String {
+    let base = format!("Failed to parse {}: {err}", path.display());
+    let Some(key) = ROOT_KEYS
+        .iter()
+        .find(|key| message.contains(&format!("`{key}`")))
+    else {
+        return base;
+    };
+    format!(
+        "{base}\n\
+         hint: `{key}` is a top-level key, but it landed inside a `[providers.*]` \
+         table - appending to the end of the file puts it under whichever provider \
+         is last.\n\
+         hint: move `{key}` above the first `[providers.*]` header, or set it with \
+         `/settings` in the console, which writes it to the right place."
+    )
+}
+
 /// Read `~/.jan/config.toml` into the raw TOML struct for editing. Missing file
 /// -> default (empty); malformed file -> error, so a set never silently drops an
 /// unparseable file's contents.
@@ -336,7 +403,7 @@ fn load_raw() -> Result<GlobalConfigToml, String> {
         Ok(raw) => raw,
         Err(_) => return Ok(GlobalConfigToml::default()),
     };
-    toml::from_str(&raw).map_err(|e| format!("Failed to parse {}: {e}", path.display()))
+    toml::from_str(&raw).map_err(|e| parse_error(&path, &e, e.message()))
 }
 
 /// Serialize the config back to `~/.jan/config.toml`, creating `~/.jan` if
@@ -487,7 +554,7 @@ pub(crate) fn set_global_key(key: &str, value: Option<toml_edit::Item>) -> Resul
         .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
     let mut doc = raw
         .parse::<toml_edit::DocumentMut>()
-        .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+        .map_err(|e| parse_error(&path, &e, e.message()))?;
 
     match value {
         // `toml_edit` renders a root table's scalars ahead of its sub-tables,
@@ -694,6 +761,42 @@ mod tests {
         );
     }
 
+    /// A root key appended to the end of the file lands inside the last
+    /// `[providers.*]` table, and `toml`'s own error says only "duplicate key
+    /// ... in table `providers.opencode`" - true, but it never says the key
+    /// belongs at the root or how to get it there. The hint carries the fix,
+    /// so assert it fires for a misplaced root key and stays quiet otherwise.
+    #[test]
+    fn parse_error_explains_a_root_key_captured_by_a_provider_table() {
+        with_temp_home(|_| {
+            let path = ensure_global_config().expect("ensure");
+            std::fs::write(
+                &path,
+                "[providers.opencode]\napi_key = \"sk-x\"\nask_timeout_secs = 15\nask_timeout_secs = 15\n",
+            )
+            .unwrap();
+
+            let err = load_global_config().expect_err("duplicate key must fail");
+            assert!(
+                err.contains("`ask_timeout_secs` is a top-level key"),
+                "hint must name the misplaced key: {err}"
+            );
+            assert!(
+                err.contains("/settings"),
+                "hint must point at the writer that gets it right: {err}"
+            );
+
+            // Syntax errors that have nothing to do with key placement must not
+            // acquire a hint about it.
+            std::fs::write(&path, "not = = toml\n").unwrap();
+            let err = load_global_config().expect_err("syntax error must fail");
+            assert!(
+                !err.contains("top-level key"),
+                "unrelated parse errors must stay unadorned: {err}"
+            );
+        });
+    }
+
     /// The `/settings` write path. Two properties matter and neither is
     /// obvious: the commented template survives a write (the typed round-trip
     /// `write_raw` does would throw every example line away), and a key added
@@ -766,6 +869,23 @@ mod tests {
                 stream_reasoning_enabled(),
                 "an unreadable config keeps the default"
             );
+        });
+    }
+
+    #[test]
+    fn ask_timeout_defaults_off_and_treats_zero_as_unset() {
+        with_temp_home(|_| {
+            assert_eq!(ask_timeout(), None, "missing file -> wait forever");
+            let path = ensure_global_config().expect("ensure");
+            assert_eq!(ask_timeout(), None, "scaffolded file -> wait forever");
+
+            std::fs::write(&path, "ask_timeout_secs = 0\n").unwrap();
+            assert_eq!(ask_timeout(), None, "0 is the disabling value, not 0s");
+            std::fs::write(&path, "ask_timeout_secs = 30\n").unwrap();
+            assert_eq!(ask_timeout(), Some(std::time::Duration::from_secs(30)));
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert_eq!(ask_timeout(), None, "an unreadable config waits forever");
         });
     }
 
