@@ -85,8 +85,8 @@ export const DEFAULT_EMBEDDING_UBATCH = 2048
  * onto, so the two must not compute it differently -- this function is the one
  * definition.
  */
-export function threadCacheDir(providerPath: string): string {
-  return `${providerPath}/thread-cache`
+export async function threadCacheDir(providerPath: string): Promise<string> {
+  return joinPath([providerPath, 'thread-cache'])
 }
 
 // Fallback context size when the user hasn't set one, to avoid loading a
@@ -426,7 +426,9 @@ export async function generatePreset(
   // knows which directory to keep clear and can still erase a deleted thread's
   // state; the *budget* is what decides whether anything is written. The C++ arg
   // handler throws if the directory is missing -- the worker creates it first.
-  lines.push(`slot-save-path = ${escapeIniValue(threadCacheDir(providerPath))}`)
+  lines.push(
+    `slot-save-path = ${escapeIniValue(await threadCacheDir(providerPath))}`
+  )
   // cache-reuse default = 0 (disabled)
   if (
     typeof config.cache_reuse === 'number' &&

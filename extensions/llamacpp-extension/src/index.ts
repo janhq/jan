@@ -864,7 +864,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     try {
       return await eraseThreadSlotState({
         threadId,
-        cacheDir: threadCacheDir(await this.getProviderPath()),
+        cacheDir: await threadCacheDir(await this.getProviderPath()),
       })
     } catch (e) {
       logger.warn(`could not drop the saved cache for thread ${threadId}: ${e}`)
