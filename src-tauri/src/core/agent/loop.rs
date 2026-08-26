@@ -3049,6 +3049,10 @@ async fn orchestrate_inner(
     )
     .await?;
 
+    log::info!(
+        "agent: run started model={model_id} upstream={}",
+        crate::core::agent::upstream::log_safe_upstream_url(&upstream_url)
+    );
     let max_turns = body_turn_cap(json_body);
 
     let http_model = HttpModelInvoker {
@@ -4292,6 +4296,23 @@ async fn run_turn_cycle(
                 ToolOutcome::plain(id.to_string(), reason.to_string())
             })
             .collect();
+        // Tool-dispatch breadcrumb: the turn, how many calls, and the names,
+        // so a retry or a call that blocks the render loop is visible in the
+        // log afterwards. Names only -- args are redacted by the TUI render.
+        let tool_names: Vec<&str> = executable
+            .iter()
+            .filter_map(|tc| {
+                tc.get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|v| v.as_str())
+            })
+            .collect();
+        log::info!(
+            "agent: turn {} dispatching {} tool call(s): {}",
+            turn + 1,
+            executable.len(),
+            tool_names.join(", ")
+        );
         let mut tool_results: Vec<ToolOutcome> = if executable.is_empty() {
             Vec::new()
         } else {

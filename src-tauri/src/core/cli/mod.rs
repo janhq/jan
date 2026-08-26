@@ -9,6 +9,8 @@ pub mod browser;
 #[cfg(test)]
 mod contract_conformance;
 pub mod device_auth;
+pub mod doctor;
+pub mod file_log;
 pub mod journal;
 pub mod login;
 pub mod mcp;
