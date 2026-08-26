@@ -5,6 +5,13 @@
 //! `JAN_CLI_BUILD_VERSION` (the actual nightly version, since `Cargo.toml`'s
 //! `version` stays pinned). A local `cargo build --features cli` has neither,
 //! so both the check and `jan update` are no-ops there.
+//!
+//! The check is routed through the analytics proxy
+//! (`apps-nightly.jan.ai/agent/update-check`), which serves the same manifest
+//! as the CDN and records the request -- so usage is counted by the update
+//! check itself, exactly as it is for the desktop app, rather than by a
+//! separate ping. The CDN stays as an unsigned fallback, so analytics being
+//! down, misconfigured, or rejecting our signature can never block an update.
 
 use std::cmp::Ordering;
 use std::fs::{self, File};
@@ -14,6 +21,9 @@ use std::time::Duration;
 
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+
+use crate::core::updater::custom_updater::SECRET_KEY;
+use crate::core::updater::hmac_client::SignedRequestHeaders;
 
 const CHECK_TIMEOUT: Duration = Duration::from_millis(1500);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
@@ -103,14 +113,80 @@ fn compare_versions(a: &str, b: &str) -> Ordering {
     Ordering::Equal
 }
 
+/// The analytics-proxied manifest for this build's channel: same content as
+/// the CDN, but the request is recorded. `None` for a local build (no channel)
+/// or when the user opted out, in which case the CDN is read directly and
+/// nothing identifying is sent anywhere.
+fn tracked_manifest_url() -> Option<&'static str> {
+    if std::env::var_os("JAN_CLI_NO_UPDATE_CHECK").is_some() {
+        return None;
+    }
+    tracked_url_for(update_channel())
+}
+
+/// Channel -> proxy URL, split out from `tracked_manifest_url` because the
+/// channel is a compile-time `option_env!` and so is always `None` under
+/// `cargo test`, which would make the mapping untestable in place.
+fn tracked_url_for(channel: Option<&str>) -> Option<&'static str> {
+    match channel {
+        Some("agent-nightly") => Some("https://apps-nightly.jan.ai/agent/update-check"),
+        _ => None,
+    }
+}
+
+/// Fetch the manifest, preferring the proxy so the check is counted against
+/// this install rather than an IP hash. Any proxy failure -- unreachable, 403
+/// on a signing-key mismatch, garbled body -- silently falls through to the
+/// CDN, so update checks are never gated on analytics being healthy.
 async fn fetch_manifest(channel: &str, timeout: Duration) -> Result<UpdateManifest, String> {
-    let url = format!("https://delta.jan.ai/{channel}/manifest.json");
+    let tracked = tracked_manifest_url();
+
+    // `check_for_update` caps the whole call at `timeout`, so a fallback only
+    // gets a turn if the first attempt is bounded to a share of it.
+    let attempts = if tracked.is_some() { 2 } else { 1 };
     let client = reqwest::Client::builder()
-        .timeout(timeout)
+        .timeout(timeout / attempts)
         .build()
         .map_err(|e| e.to_string())?;
-    client
+
+    if let Some(url) = tracked {
+        if let Ok(manifest) = fetch_one(&client, url, true).await {
+            return Ok(manifest);
+        }
+    }
+
+    fetch_one(
+        &client,
+        &format!("https://delta.jan.ai/{channel}/manifest.json"),
+        false,
+    )
+    .await
+}
+
+/// One manifest GET. `signed` attaches the HMAC headers the analytics service
+/// verifies (`hmac_client::SignedRequestHeaders`) plus the `Jan-Agent` user
+/// agent, which is what lets the backend attribute the request to this install
+/// instead of falling back to hashing the source IP.
+async fn fetch_one(
+    client: &reqwest::Client,
+    url: &str,
+    signed: bool,
+) -> Result<UpdateManifest, String> {
+    let mut request = client
         .get(url)
+        .header("Accept", "application/json")
+        .header("User-Agent", super::telemetry::user_agent(build_version()));
+
+    if signed {
+        let install_id =
+            super::telemetry::install_id().ok_or("no home directory to persist an install id")?;
+        let headers = SignedRequestHeaders::new(SECRET_KEY, &install_id, build_version());
+        for (key, value) in headers.to_header_pairs() {
+            request = request.header(key, value);
+        }
+    }
+
+    request
         .send()
         .await
         .map_err(|e| e.to_string())?
@@ -147,7 +223,7 @@ pub async fn check_for_update(timeout: Duration) -> Result<AvailableUpdate, Stri
     })?;
     let manifest = tokio::time::timeout(timeout, fetch_manifest(channel, timeout))
         .await
-        .map_err(|_| format!("timed out contacting https://delta.jan.ai/{channel}"))??;
+        .map_err(|_| format!("timed out fetching the {channel} manifest"))??;
     Ok(read_update(&manifest, channel))
 }
 
@@ -461,6 +537,19 @@ fn archive_suffix(url: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_known_channels_are_routed_through_the_proxy() {
+        // The nightly channel is proxied so the check is counted...
+        assert_eq!(
+            tracked_url_for(Some("agent-nightly")),
+            Some("https://apps-nightly.jan.ai/agent/update-check")
+        );
+        // ...and anything else reads the CDN directly rather than guessing a
+        // host, which would 404 every update check on that channel.
+        assert_eq!(tracked_url_for(Some("agent-stable")), None);
+        assert_eq!(tracked_url_for(None), None);
+    }
     use std::io::Cursor;
 
     #[test]

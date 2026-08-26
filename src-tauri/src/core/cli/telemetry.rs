@@ -1,33 +1,24 @@
-//! Anonymous usage ping for the headless `jan` CLI.
+//! Analytics identity for the headless `jan` CLI.
 //!
-//! Reuses the desktop's HMAC-signed update-check endpoint purely as a usage
-//! counter: once per 24h, fires a signed request carrying the CLI version,
-//! OS/arch, and a persisted anonymous install id (analogous to the desktop's
-//! `nonce_seed` session, see `core::updater::session`). The `User-Agent` is
-//! `Jan-Agent/...`, not `Jan/...`, so this is distinguishable server-side from
-//! a desktop update check. Shares the update check's opt-out
-//! (`JAN_CLI_NO_UPDATE_CHECK`) and its silent-failure philosophy: a dropped
-//! ping must never print anything or affect startup.
+//! Holds the persisted anonymous install id (analogous to the desktop's
+//! `nonce_seed` session, see `core::updater::session`) and the `Jan-Agent/...`
+//! user agent. Both are consumed by `updater::fetch_manifest`, which checks for
+//! updates through the analytics proxy so that the check itself is the usage
+//! record -- the same way a desktop update check is recorded. Nothing here
+//! sends a request of its own.
+//!
+//! `JAN_CLI_NO_UPDATE_CHECK` opts out: `updater` then skips the proxy entirely
+//! and reads the manifest straight from the CDN, so no identity is sent.
 
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-
-use crate::core::updater::custom_updater::SECRET_KEY;
-use crate::core::updater::hmac_client::SignedRequestHeaders;
-
-const PING_ENDPOINT: &str = "https://apps.jan.ai/update-check";
-const PING_INTERVAL_SECS: u64 = 24 * 60 * 60;
-const PING_TIMEOUT: Duration = Duration::from_millis(1500);
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct TelemetryState {
     #[serde(default)]
     install_id: Option<String>,
-    #[serde(default)]
-    last_ping_unix: Option<u64>,
 }
 
 fn state_path() -> Option<PathBuf> {
@@ -50,69 +41,34 @@ fn save_state(path: &Path, state: &TelemetryState) {
     }
 }
 
-fn unix_now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+/// The stable per-install id used as the analytics distinct id, generated on
+/// first use and persisted to `~/.jan/cli_telemetry.json`. `None` when there is
+/// no home directory to persist to -- the caller then skips the proxy rather
+/// than inventing a fresh id per run, which would count one install as many.
+pub(super) fn install_id() -> Option<String> {
+    let path = state_path()?;
+    let mut state = load_state(&path);
+    if let Some(id) = state.install_id.clone() {
+        return Some(id);
+    }
+
+    let id = Uuid::new_v4().to_string();
+    state.install_id = Some(id.clone());
+    save_state(&path, &state);
+    Some(id)
 }
 
-// "Jan Agent", not "Jan": lets the analytics backend tell this ping apart
-// from a desktop client, which sends "Jan/{version} (...)" (see
+// "Jan Agent", not "Jan": lets the analytics backend tell this apart from a
+// desktop client, which sends "Jan/{version} (...)" (see
 // `custom_updater::build_user_agent`) -- both share the same version number,
 // so the client name is the only distinguishing signal in the request.
-fn build_user_agent(version: &str) -> String {
+pub(super) fn user_agent(version: &str) -> String {
     format!(
         "Jan-Agent/{} ({}; {})",
         version,
         std::env::consts::OS,
         std::env::consts::ARCH
     )
-}
-
-/// Send the anonymous usage ping if 24h have elapsed since the last one (or
-/// none was ever sent). Best-effort by design: a missing home directory, an
-/// unreachable endpoint, or an unwritable state file all silently no-op, the
-/// same as `updater::available_update`.
-pub async fn ping_if_due() {
-    if std::env::var_os("JAN_CLI_NO_UPDATE_CHECK").is_some() {
-        return;
-    }
-    let Some(path) = state_path() else {
-        return;
-    };
-    let mut state = load_state(&path);
-    let now = unix_now();
-    if state
-        .last_ping_unix
-        .is_some_and(|last| now.saturating_sub(last) < PING_INTERVAL_SECS)
-    {
-        return;
-    }
-
-    let install_id = state
-        .install_id
-        .clone()
-        .unwrap_or_else(|| Uuid::new_v4().to_string());
-    state.install_id = Some(install_id.clone());
-
-    let version = env!("CARGO_PKG_VERSION");
-    let headers = SignedRequestHeaders::new(SECRET_KEY, &install_id, version);
-    if let Ok(client) = reqwest::Client::builder().timeout(PING_TIMEOUT).build() {
-        let mut request = client.get(PING_ENDPOINT);
-        for (key, value) in headers.to_header_pairs() {
-            request = request.header(key, value);
-        }
-        request = request
-            .header("Accept", "application/json")
-            .header("User-Agent", build_user_agent(version));
-        let _ = tokio::time::timeout(PING_TIMEOUT, request.send()).await;
-    }
-
-    // Recorded regardless of the request's outcome: a down endpoint must not
-    // turn into a retry storm on every subsequent invocation.
-    state.last_ping_unix = Some(now);
-    save_state(&path, &state);
 }
 
 #[cfg(test)]
@@ -125,7 +81,6 @@ mod tests {
         let path = dir.path().join("cli_telemetry.json");
         let state = load_state(&path);
         assert!(state.install_id.is_none());
-        assert!(state.last_ping_unix.is_none());
     }
 
     #[test]
@@ -134,26 +89,29 @@ mod tests {
         let path = dir.path().join("cli_telemetry.json");
         let state = TelemetryState {
             install_id: Some("abc-123".to_string()),
-            last_ping_unix: Some(42),
         };
         save_state(&path, &state);
-        let loaded = load_state(&path);
-        assert_eq!(loaded.install_id.as_deref(), Some("abc-123"));
-        assert_eq!(loaded.last_ping_unix, Some(42));
+        assert_eq!(load_state(&path).install_id.as_deref(), Some("abc-123"));
     }
 
     #[test]
-    fn opt_out_env_var_skips_everything() {
-        // Guard against parallel test races on the process-wide env var.
-        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    fn existing_install_ids_survive_the_ping_field_going_away() {
+        // Files written by the previous ping-based telemetry carry an extra
+        // `last_ping_unix`. Dropping the field must not orphan the install id,
+        // or every existing install would be counted as new.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cli_telemetry.json");
+        std::fs::write(
+            &path,
+            r#"{"install_id":"legacy-id","last_ping_unix":1787720989}"#,
+        )
+        .unwrap();
+        assert_eq!(load_state(&path).install_id.as_deref(), Some("legacy-id"));
+    }
 
-        std::env::set_var("JAN_CLI_NO_UPDATE_CHECK", "1");
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(ping_if_due());
-        std::env::remove_var("JAN_CLI_NO_UPDATE_CHECK");
+    #[test]
+    fn user_agent_names_the_agent_not_the_desktop() {
+        let ua = user_agent("0.8.4-37");
+        assert!(ua.starts_with("Jan-Agent/0.8.4-37 ("), "{ua}");
     }
 }
