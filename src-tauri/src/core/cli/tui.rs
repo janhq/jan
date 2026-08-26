@@ -1441,6 +1441,10 @@ struct App {
     /// [`LIVE_OUTPUT_MAX_BYTES`] from the end. This is what turns a running
     /// command from a spinner into a terminal.
     live_output: HashMap<String, String>,
+    /// When each call's first output arrived, gating the panel by
+    /// [`LIVE_OUTPUT_GRACE`] so a command that finishes quickly never flashes a
+    /// box on its way to the group summary.
+    live_since: HashMap<String, Instant>,
     /// Maps the call that *collects* a backgrounded job to the call that
     /// *started* it. The job keeps streaming under the original id, so without
     /// this the collecting call -- the one the user is actually waiting on --
@@ -2016,6 +2020,7 @@ impl App {
             bash_commands: HashMap::new(),
             bash_jobs: HashMap::new(),
             live_output: HashMap::new(),
+            live_since: HashMap::new(),
             live_alias: HashMap::new(),
             job_origin: HashMap::new(),
             base_snapshot: None,
@@ -2492,22 +2497,42 @@ impl App {
         self.awaiting.clear();
     }
 
-    /// The live shell panel for `group`'s newest unresolved call, or no rows when
-    /// that call is not a command or has printed nothing yet.
+    /// The live shell panel for `group`'s newest unresolved *command*, or no rows
+    /// when nothing in the group is streaming yet.
+    ///
+    /// Picks the newest call that has output rather than the newest call
+    /// outright: a group runs its calls in parallel, so a `read` issued after a
+    /// `bash` must not blank the panel until it lands and then let it pop back.
     ///
     /// Follows the job alias, so a call *waiting on* a backgrounded job shows the
     /// output the detached job is still producing under the id of the call that
     /// started it.
     fn live_shell_panel(&self, group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
-        let Some(call) = group.calls.iter().rev().find(|c| c.content.is_none()) else {
+        let Some((command, output)) = group
+            .calls
+            .iter()
+            .rev()
+            .filter(|c| c.content.is_none())
+            .find_map(|c| self.live_view(&c.id))
+        else {
             return Vec::new();
         };
-        let Some(command) = self.bash_commands.get(&call.id) else {
-            return Vec::new();
-        };
-        let key = self.live_alias.get(&call.id).unwrap_or(&call.id);
-        let output = self.live_output.get(key).map_or("", String::as_str);
         shell_panel_lines(command, output, width, SHELL_PANEL_GUTTER)
+    }
+
+    /// A call's command and the output it has streamed, once both exist and the
+    /// command has been running long enough to be worth a box.
+    fn live_view(&self, id: &str) -> Option<(&str, &str)> {
+        let command = self.bash_commands.get(id)?;
+        let key = self.live_alias.get(id).map_or(id, String::as_str);
+        let output = self.live_output.get(key)?;
+        // A command that prints and exits inside the grace period renders no box
+        // at all, so its output never appears only to be yanked away a frame
+        // later by the group summary.
+        if self.live_since.get(key)?.elapsed() < LIVE_OUTPUT_GRACE {
+            return None;
+        }
+        Some((command, output))
     }
 
     /// Pair a `bash` call with the backgrounded command it is about.
@@ -3908,6 +3933,9 @@ impl App {
                 // grow the TUI's memory. The tool keeps the authoritative full
                 // output (spilling to disk past its own cap) and hands it over
                 // with the result; this buffer only has to feed the live view.
+                self.live_since
+                    .entry(id.clone())
+                    .or_insert_with(Instant::now);
                 let buf = self.live_output.entry(id).or_default();
                 buf.push_str(&delta);
                 if buf.len() > LIVE_OUTPUT_MAX_BYTES {
@@ -4016,6 +4044,7 @@ impl App {
                 if backgrounded_job_id(&content).is_none() {
                     let key = self.live_alias.remove(&id).unwrap_or_else(|| id.clone());
                     self.live_output.remove(&key);
+                    self.live_since.remove(&key);
                 }
                 let resolved = self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
@@ -5704,6 +5733,11 @@ const LIVE_OUTPUT_MAX_BYTES: usize = 64 * 1024;
 /// Rendered rows of live command output, so a long-running command fills at most
 /// this much of the viewport.
 const LIVE_OUTPUT_TAIL_LINES: usize = 12;
+
+/// How long a command must have been printing before its output gets a box. The
+/// panel is transient -- it gives way to the group summary when the call
+/// resolves -- so anything short-lived is better shown as no box than as a flash.
+const LIVE_OUTPUT_GRACE: Duration = Duration::from_millis(400);
 
 /// Indent of the live shell panel, matching a single-call group's detail box so
 /// the running command and its expanded result sit on the same column.
@@ -16212,6 +16246,13 @@ mod tests {
         );
     }
 
+    /// Backdate a call's first-output stamp past [`LIVE_OUTPUT_GRACE`], so a test
+    /// renders the panel a long-running command would have without sleeping.
+    fn age_live_output(app: &mut App, id: &str) {
+        let since = app.live_since.get_mut(id).expect("call has streamed");
+        *since -= super::LIVE_OUTPUT_GRACE;
+    }
+
     /// A running command is a terminal, not a spinner: its output appears under
     /// the activity row as it is produced, framed and prefixed by the command.
     #[test]
@@ -16235,8 +16276,16 @@ mod tests {
             id: "t1".into(),
             delta: "compiling bar\n".into(),
         });
+        // Still inside the grace window: a command this brief would only flash.
+        let brief = render_rows(&mut app, 70, 16).join("\n");
+        assert!(!brief.contains("$ make"), "no box while brief: {brief}");
+
+        age_live_output(&mut app, "t1");
         let live = render_rows(&mut app, 70, 16).join("\n");
-        assert!(live.contains("$ make"), "command on the prompt line: {live}");
+        assert!(
+            live.contains("$ make"),
+            "command on the prompt line: {live}"
+        );
         assert!(live.contains("compiling foo"), "first chunk: {live}");
         assert!(live.contains("compiling bar"), "and the next: {live}");
         assert!(live.contains('\u{250c}'), "framed: {live}");
@@ -16265,6 +16314,34 @@ mod tests {
         assert!(
             !app.live_output.contains_key("t1"),
             "the finished call still holds its buffer"
+        );
+    }
+
+    /// A group runs its calls in parallel, so the panel follows the call that is
+    /// actually printing. Keying it to the newest unresolved call instead made a
+    /// `read` issued after a long `bash` blank the box until the read landed.
+    #[test]
+    fn a_later_call_does_not_blank_the_live_panel() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "make" }),
+        });
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "compiling foo\n".into(),
+        });
+        age_live_output(&mut app, "t1");
+        app.apply(StreamEvent::ToolCall {
+            id: "t2".into(),
+            name: "read".into(),
+            args: json!({ "path": "src/main.rs" }),
+        });
+        let live = render_rows(&mut app, 70, 18).join("\n");
+        assert!(
+            live.contains("compiling foo"),
+            "the streaming call keeps the panel: {live}"
         );
     }
 
@@ -16306,6 +16383,7 @@ mod tests {
             id: "t1".into(),
             delta: "test tui::folds ... ok\n".into(),
         });
+        age_live_output(&mut app, "t1");
         let live = render_rows(&mut app, 74, 20).join("\n");
         assert!(
             live.contains("test tui::folds ... ok"),
