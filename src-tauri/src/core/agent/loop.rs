@@ -2053,6 +2053,34 @@ async fn run_turn_cycle(
                     continue;
                 }
             }
+            // Every turn is finished and the run passed its token ceiling, so
+            // the conversation is both complete and oversized. Compact it here,
+            // while nothing is waiting on the result: the ceiling no longer
+            // stops a run, so without this the thread only grows, and the next
+            // run resumes it by sending the whole oversized history upstream.
+            // The reactive path above cannot help with that -- it only fires
+            // once an upstream has already rejected a request.
+            //
+            // Only when it actually shrinks: `compact_conversation` returns the
+            // input untouched when there is too little to drop, and publishing
+            // an unchanged history would spend a summarizer call for nothing.
+            if budget.exhausted() {
+                let compacted = crate::core::agent::compaction::compact_conversation(
+                    &conversation_messages,
+                    model_id,
+                    model,
+                    crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
+                )
+                .await;
+                if compacted.len() < conversation_messages.len() {
+                    log::info!(
+                        "agent: budget exhausted at end of run, compacted {} -> {} messages",
+                        conversation_messages.len(),
+                        compacted.len()
+                    );
+                    conversation_messages = compacted;
+                }
+            }
             let _ = events.send(StreamEvent::MessagesUpdated {
                 messages: conversation_messages.clone(),
             });
@@ -3284,6 +3312,136 @@ mod tests {
                 .any(|ev| matches!(ev, StreamEvent::MessagesUpdated { .. })),
             "live surfaces see the annotated conversation"
         );
+    }
+
+    /// Passing the ceiling no longer stops a run, so a long thread only grows.
+    /// Once every turn is finished, the oversized conversation is compacted
+    /// before it is published -- otherwise the next run resumes this thread by
+    /// sending the whole thing upstream.
+    #[tokio::test]
+    async fn an_exhausted_budget_compacts_the_conversation_once_turns_are_done() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        // Comfortably longer than DEFAULT_KEEP_RECENT so there is a middle to drop.
+        let convo: Vec<serde_json::Value> = (0..24)
+            .map(|i| {
+                json!({
+                    "role": if i % 2 == 0 { "user" } else { "assistant" },
+                    "content": format!("message {i}"),
+                })
+            })
+            .collect();
+        let original_len = convo.len();
+
+        let mut over_budget = json!({
+            "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
+        });
+        over_budget["usage"] = json!({ "total_tokens": 100 });
+        let summary = json!({
+            "choices": [{ "message": { "content": "SUMMARY OF THE EARLIER WORK" } }]
+        });
+        // Second response is consumed by the summarizer inside compaction.
+        let model = MockModel::new(vec![over_budget, summary]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(Some(50));
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        assert!(budget.exhausted(), "precondition: the ceiling was passed");
+        assert_eq!(
+            model.requests.lock().unwrap().len(),
+            2,
+            "one turn, plus the summarizer call compaction makes"
+        );
+
+        // The published history is the compacted one: shorter, and carrying the
+        // summary in place of the dropped middle.
+        let published = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|ev| match ev {
+                StreamEvent::MessagesUpdated { messages } => Some(messages),
+                _ => None,
+            })
+            .last()
+            .expect("a MessagesUpdated is published");
+        assert!(
+            published.len() < original_len,
+            "history was compacted: {} -> {}",
+            original_len,
+            published.len()
+        );
+        assert!(
+            published.iter().any(|m| m["content"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("SUMMARY OF THE EARLIER WORK")),
+            "the summary replaced the dropped middle: {published:#?}"
+        );
+    }
+
+    /// A run that stayed inside its ceiling is left alone -- no summarizer call,
+    /// no compaction, history published as-is.
+    #[tokio::test]
+    async fn a_run_within_budget_is_not_compacted() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let convo: Vec<serde_json::Value> = (0..24)
+            .map(|i| json!({ "role": "user", "content": format!("message {i}") }))
+            .collect();
+        let original_len = convo.len();
+
+        let mut under_budget = json!({
+            "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
+        });
+        under_budget["usage"] = json!({ "total_tokens": 10 });
+        let model = MockModel::new(vec![under_budget]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(Some(50_000));
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        assert!(!budget.exhausted());
+        assert_eq!(
+            model.requests.lock().unwrap().len(),
+            1,
+            "no summarizer call: compaction never ran"
+        );
+        let published = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|ev| match ev {
+                StreamEvent::MessagesUpdated { messages } => Some(messages),
+                _ => None,
+            })
+            .last()
+            .expect("a MessagesUpdated is published");
+        assert_eq!(published.len(), original_len, "history untouched");
     }
 
     struct ResultQueueModel {
