@@ -12,6 +12,7 @@ pub mod commands;
 pub mod compaction;
 pub mod context;
 pub mod events;
+pub mod genai_bridge;
 pub mod git;
 #[cfg(feature = "cli")]
 pub mod global_config;

@@ -773,13 +773,16 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // reap its whole process tree if it is still running.
     let (tx, mut rx) = oneshot::channel();
     let spill_scratch = ctx.scratch_root.map(Path::to_path_buf);
+    // Cloned into the detached task, which is what keeps a backgrounded command
+    // reporting after this call has already returned its `job_id`.
+    let sink = ctx.on_output.clone();
     let sandboxed = ctx.sandbox;
     // The model writes POSIX commands by default, which `cmd` rejects. Surface
     // the resolved shell so it can adapt when the only shell on a Windows box
     // is cmd, instead of the tool silently presenting cmd as bash.
     let shell_description = shell.description;
     tokio::spawn(async move {
-        let mut out = collect_and_format(child, spill_scratch).await;
+        let mut out = collect_and_format(child, spill_scratch, sink).await;
         // Appended inside the task so a backgrounded job carries the hint too.
         // `Permission denied` on its own tells the model nothing about *why*;
         // without this it retries the same command until it gives up. Only when
@@ -834,7 +837,11 @@ async fn await_bash_job(job_id: &str) -> String {
 /// combined chronologically and spilled to a temp file once it outgrows the
 /// in-memory window, so the full text stays readable even though only a bounded
 /// tail is kept in RAM.
-async fn collect_and_format(mut child: tokio::process::Child, scratch: Option<PathBuf>) -> String {
+async fn collect_and_format(
+    mut child: tokio::process::Child,
+    scratch: Option<PathBuf>,
+    sink: Option<crate::tools::OutputSink>,
+) -> String {
     use tokio::io::AsyncReadExt;
     let mut stdout = child.stdout.take();
     let mut stderr = child.stderr.take();
@@ -843,16 +850,40 @@ async fn collect_and_format(mut child: tokio::process::Child, scratch: Option<Pa
     let mut be = vec![0u8; 8192];
     let mut out_open = stdout.is_some();
     let mut err_open = stderr.is_some();
+    // A read boundary can land mid-character, so decoding each chunk on its own
+    // would emit a replacement character for any multi-byte sequence unlucky
+    // enough to straddle one. Hold the incomplete tail back for the next chunk.
+    let mut carry: Vec<u8> = Vec::new();
+    let tee = |bytes: &[u8], carry: &mut Vec<u8>| {
+        let Some(sink) = sink.as_ref() else { return };
+        carry.extend_from_slice(bytes);
+        let text = match std::str::from_utf8(carry) {
+            Ok(_) => std::mem::take(carry),
+            // Everything before the first bad byte is complete; the rest is
+            // either a split character or genuinely invalid, and waiting one
+            // more chunk tells us which.
+            Err(e) => carry.drain(..e.valid_up_to()).collect(),
+        };
+        if !text.is_empty() {
+            sink(String::from_utf8_lossy(&text).into_owned());
+        }
+    };
     while out_open || err_open {
         tokio::select! {
             r = stdout.as_mut().unwrap().read(&mut bo), if out_open => match r {
                 Ok(0) | Err(_) => out_open = false,
-                Ok(n) => cap.push(&bo[..n]),
+                Ok(n) => { cap.push(&bo[..n]); tee(&bo[..n], &mut carry); }
             },
             r = stderr.as_mut().unwrap().read(&mut be), if err_open => match r {
                 Ok(0) | Err(_) => err_open = false,
-                Ok(n) => cap.push(&be[..n]),
+                Ok(n) => { cap.push(&be[..n]); tee(&be[..n], &mut carry); }
             },
+        }
+    }
+    // Whatever is left was never completed: emit it lossily rather than losing it.
+    if !carry.is_empty() {
+        if let Some(sink) = sink.as_ref() {
+            sink(String::from_utf8_lossy(&carry).into_owned());
         }
     }
     match child.wait().await {
@@ -2471,6 +2502,77 @@ mod tests {
         assert!(
             out.starts_with("ERROR: invalid pattern"),
             "unexpected: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A command's output reaches the sink as it is produced, not just in the
+    /// returned string -- this is what makes a long command visible while it runs.
+    #[tokio::test]
+    async fn bash_streams_output_to_the_sink() {
+        let root = unique_root();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let sink = {
+            let seen = seen.clone();
+            std::sync::Arc::new(move |chunk: String| {
+                seen.lock().unwrap().push_str(&chunk);
+            }) as crate::tools::OutputSink
+        };
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[])
+            .with_sandbox(false)
+            .with_output_sink(sink);
+        let out = super::execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "printf 'one\ntwo\n'"}),
+            &ctx,
+        )
+        .await
+        .0;
+        let streamed = seen.lock().unwrap().clone();
+        assert!(streamed.contains("one"), "sink saw nothing: {streamed:?}");
+        assert!(streamed.contains("two"), "sink missed a chunk: {streamed:?}");
+        // The return value still carries it, so the model's view is unchanged.
+        assert!(out.contains("one") && out.contains("two"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A backgrounded command keeps streaming after the call has returned its
+    /// `job_id`: the sink lives in the detached task, which is the whole reason
+    /// waiting on a long job can show progress.
+    #[tokio::test]
+    async fn a_backgrounded_command_keeps_streaming() {
+        let root = unique_root();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let sink = {
+            let seen = seen.clone();
+            std::sync::Arc::new(move |chunk: String| {
+                seen.lock().unwrap().push_str(&chunk);
+            }) as crate::tools::OutputSink
+        };
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[])
+            .with_sandbox(false)
+            .with_output_sink(sink);
+        // timeout 0 => backgrounds immediately, before the command prints.
+        let out = super::execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "sleep 0.2; printf 'late\n'", "timeout": 0}),
+            &ctx,
+        )
+        .await
+        .0;
+        assert!(out.contains("job_id=bash-"), "should background: {out}");
+        assert!(
+            seen.lock().unwrap().is_empty(),
+            "nothing printed yet at hand-off"
+        );
+        // The detached task is still running and still holds the sink.
+        tokio::time::sleep(std::time::Duration::from_millis(900)).await;
+        let streamed = seen.lock().unwrap().clone();
+        assert!(
+            streamed.contains("late"),
+            "a backgrounded job must keep reporting: {streamed:?}"
         );
         let _ = std::fs::remove_dir_all(&root);
     }

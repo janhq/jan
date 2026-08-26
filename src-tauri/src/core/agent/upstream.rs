@@ -9,7 +9,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use futures_util::StreamExt;
+#[cfg(not(feature = "cli"))]
 use reqwest::Client;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 #[cfg(not(feature = "cli"))]
@@ -17,9 +17,9 @@ use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
 
 use crate::core::agent::events::StreamEvent;
-use crate::core::openai_schema::{
-    http_status_indicates_api_key_retry, normalize_openai_tool_parameters_schema,
-};
+use crate::core::openai_schema::normalize_openai_tool_parameters_schema;
+#[cfg(not(feature = "cli"))]
+use crate::core::openai_schema::http_status_indicates_api_key_retry;
 #[cfg(not(feature = "cli"))]
 use crate::core::server::proxy::router_upstream;
 #[cfg(not(feature = "cli"))]
@@ -389,6 +389,15 @@ pub(crate) async fn resolve_upstream_for_model(
             // the MLX session / llama-server router resolution below.
             if let Some(api_url) = provider_cfg.base_url.clone().filter(|u| !u.is_empty()) {
                 let url = format!("{}{}", api_url, destination_path);
+                // Desktop-inherited providers arrive keyless in this build; the
+                // OS secret store is read here, for the one provider the run
+                // resolved to, rather than for every provider at load time.
+                #[cfg(feature = "cli")]
+                let provider_cfg = {
+                    let mut cfg = provider_cfg;
+                    crate::core::cli::providers::hydrate_provider_keys(&mut cfg);
+                    cfg
+                };
                 return Ok((url, provider_cfg.bearer_key_chain()));
             }
         }
@@ -701,6 +710,7 @@ pub(crate) fn is_reasoning_field_error(err: &str) -> bool {
         .any(|phrase| e.contains(phrase))
 }
 
+#[cfg(not(feature = "cli"))]
 /// Every message in an error's `source()` chain, outermost cause first.
 /// `reqwest::Error` prints only its own layer -- `error sending request for url
 /// (...)` -- so the reason the request never left (DNS failure, refused
@@ -720,6 +730,7 @@ fn error_source_chain(err: &dyn std::error::Error) -> Vec<String> {
     chain
 }
 
+#[cfg(not(feature = "cli"))]
 /// True when a failed send can be retried safely: the connection died before any
 /// response arrived, so nothing has been streamed to the caller and no side
 /// effect on the upstream is implied. Covers a refused/failed connect and the
@@ -734,6 +745,7 @@ fn is_retryable_send_error(err: &reqwest::Error) -> bool {
     err.is_connect() || chain_indicates_dropped_connection(&error_source_chain(err))
 }
 
+#[cfg(not(feature = "cli"))]
 /// Whether an error's cause chain names a connection the peer dropped. Matched
 /// on text because the io error is several opaque layers down (hyper's
 /// `SendRequest` -> `connection error` -> `std::io::Error`) and its `ErrorKind`
@@ -754,11 +766,13 @@ fn chain_indicates_dropped_connection(chain: &[String]) -> bool {
         })
 }
 
+#[cfg(not(feature = "cli"))]
 /// How long to wait before the one retry of a dropped connection. Long enough
 /// for a load balancer that just recycled a backend to finish, short enough that
 /// the user does not read it as a hang.
 const SEND_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(250);
 
+#[cfg(not(feature = "cli"))]
 /// Send a request, retrying it once when the connection dropped before any
 /// response arrived. This is the failure a long turn invites: while tools run
 /// locally no bytes flow, an idle keep-alive connection is reclaimed by the peer
@@ -793,22 +807,15 @@ async fn send_with_one_retry(req: reqwest::RequestBuilder) -> Result<reqwest::Re
     })
 }
 
-/// The HTTP client every agent turn goes through. `Client::new()`'s defaults are
-/// wrong for this traffic in one specific way: connections idle for up to 90s
-/// stay in the pool, but a turn spends far longer than that running tools, and
-/// the peer (or its load balancer) closes an idle connection well before then.
-/// Reusing one is the `Connection reset by peer` a long session eventually hits,
-/// so the pool is kept shorter-lived than any plausible upstream idle timeout.
-/// No overall request timeout: a streamed answer legitimately runs for minutes.
-pub(crate) fn agent_http_client() -> Client {
-    Client::builder()
-        .pool_idle_timeout(std::time::Duration::from_secs(15))
-        .tcp_keepalive(std::time::Duration::from_secs(30))
-        .connect_timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_else(|_| Client::new())
+/// The HTTP client every agent turn goes through. Agent traffic now runs on
+/// `genai`, which is built against reqwest 0.13, so this is the aliased crate
+/// rather than the 0.12 `Client` the rest of the app (and the API server below)
+/// uses. Pool tuning lives with the builder in [`super::genai_bridge`].
+pub(crate) fn agent_http_client() -> reqwest13::Client {
+    super::genai_bridge::shared_http_client()
 }
 
+#[cfg(not(feature = "cli"))]
 /// Names the proxy environment variables in force, without their values (they
 /// routinely carry credentials). A proxy set in the environment is a common
 /// reason a request fails for Jan and for nothing else, and it is invisible in
@@ -834,6 +841,7 @@ fn proxy_env_hint() -> Option<String> {
     (!set.is_empty()).then(|| format!("proxy env set: {}", set.join(", ")))
 }
 
+#[cfg(not(feature = "cli"))]
 /// A failed HTTP request described well enough to act on: what stage failed, the
 /// `reqwest` message, its whole cause chain, and -- for a connect or timeout
 /// failure, where the environment is usually the culprit -- which proxy
@@ -868,365 +876,36 @@ pub(crate) fn describe_request_error(err: &reqwest::Error) -> String {
     msg
 }
 
+/// Stream a chat completion for the agent loop.
+///
+/// A thin delegate to [`super::genai_bridge`], which owns the wire format, SSE
+/// handling, provider field-name variance, and the retry policy. Every provider
+/// the agent talks to comes through here -- cloud, a Jan desktop API server, a
+/// local llama.cpp router, an MLX session -- so there is exactly one upstream
+/// implementation to reason about.
+///
+/// `api_type` selects the `genai` adapter. It is `None` for every caller today:
+/// the agent has always spoken OpenAI `/chat/completions` regardless of a
+/// provider's configured `api_type`, and honoring it here would silently change
+/// the wire format for an existing config. The API server's own converters
+/// (`core::server::converters`) remain the only consumer of that field.
 pub(crate) async fn stream_openai_chat_completions(
-    client: &Client,
+    client: &reqwest13::Client,
     upstream_url: &str,
     api_keys: &[String],
+    api_type: Option<&str>,
     body: &serde_json::Value,
     events: &mpsc::UnboundedSender<StreamEvent>,
 ) -> Result<serde_json::Value, String> {
-    let mut req_body = body.clone();
-    if let Some(obj) = req_body.as_object_mut() {
-        obj.insert("stream".to_string(), serde_json::json!(true));
-        obj.insert(
-            "stream_options".to_string(),
-            serde_json::json!({ "include_usage": true }),
-        );
-    }
-
-    let attempts: Vec<Option<&str>> = if api_keys.is_empty() {
-        vec![None]
-    } else {
-        api_keys.iter().map(|s| Some(s.as_str())).collect()
-    };
-
-    let mut last_err = String::new();
-    for (i, key_ref) in attempts.iter().enumerate() {
-        let mut req = client
-            .post(upstream_url)
-            .header("Content-Type", "application/json")
-            .header("Accept", "text/event-stream")
-            .header("Accept-Encoding", "identity");
-
-        if let Some(key) = key_ref {
-            req = req.header("Authorization", format!("Bearer {key}"));
-        }
-
-        let resp = send_with_one_retry(req.body(req_body.to_string())).await?;
-
-        let status = resp.status();
-        if status.is_success() {
-            return consume_openai_sse(resp, events).await;
-        }
-
-        let text = resp.text().await.unwrap_or_default();
-        last_err = format!("Upstream returned HTTP {status}: {text}");
-        if is_context_overflow_body(&text) {
-            last_err = format!("[{CONTEXT_OVERFLOW_MARKER}] {last_err}");
-        }
-        if http_status_indicates_api_key_retry(status) && i + 1 < attempts.len() {
-            log::warn!("OpenAI stream: HTTP {status} with API key index {i}, trying next key");
-            continue;
-        }
-
-        return Err(last_err);
-    }
-
-    Err(last_err)
-}
-
-#[derive(Default)]
-struct ToolCallAccum {
-    id: String,
-    name: String,
-    arguments: String,
-    /// A `ToolCallStarted` was already emitted for this call; guards the
-    /// once-per-call in-progress signal against later argument deltas.
-    started_emitted: bool,
-    /// Bytes of `arguments` already forwarded as `ToolCallArgsDelta`. Zero
-    /// until the first forward, which replays whatever arrived before the call
-    /// could be announced.
-    args_forwarded: usize,
-}
-
-/// Accumulates OpenAI SSE deltas into a single reconstructed completion. Kept
-/// separate from the byte-stream reader so it is unit-testable without a live
-/// HTTP response.
-#[derive(Default)]
-struct SseAccumulator {
-    content: String,
-    /// Natively streamed reasoning (`reasoning_content` deltas), accumulated so
-    /// the reconstructed completion carries it back on the assistant message.
-    /// Kept apart from `content`: reasoning is never part of the answer prose,
-    /// but a caller resending assistant turns may forward it to the model.
-    reasoning: String,
-    tool_calls: Vec<ToolCallAccum>,
-    finish_reason: Option<String>,
-    usage: Option<serde_json::Value>,
-    /// An error object delivered inside the stream (`data: {"error": {...}}`).
-    /// OpenAI-compatible upstreams can fail mid-stream after a `200 OK`; without
-    /// capturing it the run would end as a silent "no answer" instead of
-    /// surfacing the failure. Propagated as an `Err` by `consume_openai_sse`.
-    error: Option<String>,
-}
-
-impl SseAccumulator {
-    /// Parse one raw SSE line (`data: {...}`); non-`data:`/blank lines are ignored.
-    fn ingest_line(&mut self, line: &str, events: &mpsc::UnboundedSender<StreamEvent>) {
-        if let Some(rest) = line.trim_end_matches('\r').strip_prefix("data:") {
-            let data = rest.trim();
-            if !data.is_empty() {
-                self.ingest(data, events);
-            }
-        }
-    }
-
-    fn ingest(&mut self, data: &str, events: &mpsc::UnboundedSender<StreamEvent>) {
-        if data == "[DONE]" {
-            return;
-        }
-        let json: serde_json::Value = match serde_json::from_str(data) {
-            Ok(v) => v,
-            Err(_) => return,
-        };
-
-        if let Some(err) = json.get("error").filter(|e| !e.is_null()) {
-            let message = err
-                .get("message")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| err.to_string());
-            let kind = err.get("type").and_then(|v| v.as_str());
-            self.error = Some(match kind {
-                Some(t) if !t.is_empty() => format!("{t}: {message}"),
-                _ => message,
-            });
-            return;
-        }
-
-        if let Some(u) = json.get("usage") {
-            if !u.is_null() {
-                self.usage = Some(u.clone());
-            }
-        }
-
-        let Some(choice) = json
-            .get("choices")
-            .and_then(|c| c.as_array())
-            .and_then(|a| a.first())
-        else {
-            return;
-        };
-
-        if let Some(fr) = choice.get("finish_reason").and_then(|v| v.as_str()) {
-            self.finish_reason = Some(fr.to_string());
-        }
-
-        let Some(delta) = choice.get("delta") else {
-            return;
-        };
-
-        // Native reasoning: providers exposing a dedicated `reasoning_content`
-        // field stream it as `Reasoning` events, never as content tokens, so
-        // consumers get the boundary for free instead of re-parsing synthetic
-        // `<think>` tags. Providers that inline tags in `content` still flow
-        // through `Token`; consumers keep the tag-stripping fallback for them.
-        if let Some(text) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
-            if !text.is_empty() {
-                self.reasoning.push_str(text);
-                let _ = events.send(StreamEvent::Reasoning {
-                    text: text.to_string(),
-                });
-            }
-        }
-
-        if let Some(text) = delta.get("content").and_then(|v| v.as_str()) {
-            if !text.is_empty() {
-                self.content.push_str(text);
-                let _ = events.send(StreamEvent::Token {
-                    text: text.to_string(),
-                });
-            }
-        }
-
-        if let Some(tcs) = delta.get("tool_calls").and_then(|v| v.as_array()) {
-            for tc in tcs {
-                let idx = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                while self.tool_calls.len() <= idx {
-                    self.tool_calls.push(ToolCallAccum::default());
-                }
-                let slot = &mut self.tool_calls[idx];
-                if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
-                    if !id.is_empty() {
-                        slot.id = id.to_string();
-                    }
-                }
-                let func = tc.get("function");
-                if let Some(name) = func
-                    .and_then(|f| f.get("name"))
-                    .and_then(|v| v.as_str())
-                    .filter(|n| !n.is_empty())
-                {
-                    slot.name = name.to_string();
-                }
-                let arg_delta = func
-                    .and_then(|f| f.get("arguments"))
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty());
-                if let Some(arg) = arg_delta {
-                    slot.arguments.push_str(arg);
-                }
-
-                // Signal the in-progress tool call the instant both id and name
-                // are known, so consumers can show activity while arguments are
-                // still streaming (a long window for large write/edit calls).
-                if !slot.started_emitted && !slot.id.is_empty() && !slot.name.is_empty() {
-                    slot.started_emitted = true;
-                    let _ = events.send(StreamEvent::ToolCallStarted {
-                        id: slot.id.clone(),
-                        name: slot.name.clone(),
-                    });
-                }
-
-                // Forward the argument text itself, but only once the call has
-                // been announced -- a delta with no preceding `ToolCallStarted`
-                // has no call for the consumer to attach it to. Providers that
-                // send arguments before the id/name are covered by the replay
-                // below, which flushes what was buffered before the announce.
-                if slot.started_emitted {
-                    if let Some(arg) = arg_delta {
-                        let delta = if slot.args_forwarded == 0 {
-                            // First forward after the announce: ship everything
-                            // accumulated so far, including any chunks that
-                            // arrived before id/name were known.
-                            slot.arguments.clone()
-                        } else {
-                            arg.to_string()
-                        };
-                        slot.args_forwarded = slot.arguments.len();
-                        let _ = events.send(StreamEvent::ToolCallArgsDelta {
-                            id: slot.id.clone(),
-                            delta,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    fn into_completion(self) -> serde_json::Value {
-        let tool_calls: Vec<serde_json::Value> = self
-            .tool_calls
-            .into_iter()
-            .filter(|t| !t.id.is_empty() || !t.name.is_empty() || !t.arguments.is_empty())
-            .map(|t| {
-                serde_json::json!({
-                    "id": t.id,
-                    "type": "function",
-                    "function": { "name": t.name, "arguments": t.arguments }
-                })
-            })
-            .collect();
-
-        let mut message = serde_json::Map::new();
-        message.insert("role".to_string(), serde_json::json!("assistant"));
-        message.insert(
-            "content".to_string(),
-            if self.content.is_empty() {
-                serde_json::Value::Null
-            } else {
-                serde_json::json!(self.content)
-            },
-        );
-        // Reasoning stays out of `content` but is carried on the message so a
-        // caller that resends assistant turns to the model can forward it (and
-        // so a turn that only reasoned still surfaces its reasoning). Empty is
-        // omitted so non-reasoning providers produce an unchanged shape.
-        if !self.reasoning.is_empty() {
-            message.insert("reasoning_content".to_string(), serde_json::json!(self.reasoning));
-        }
-        if !tool_calls.is_empty() {
-            message.insert(
-                "tool_calls".to_string(),
-                serde_json::Value::Array(tool_calls),
-            );
-        }
-
-        let mut choice = serde_json::Map::new();
-        choice.insert("index".to_string(), serde_json::json!(0));
-        choice.insert("message".to_string(), serde_json::Value::Object(message));
-        choice.insert(
-            "finish_reason".to_string(),
-            self.finish_reason
-                .map(|s| serde_json::json!(s))
-                .unwrap_or(serde_json::Value::Null),
-        );
-
-        let mut completion = serde_json::Map::new();
-        completion.insert(
-            "choices".to_string(),
-            serde_json::Value::Array(vec![serde_json::Value::Object(choice)]),
-        );
-        if let Some(u) = self.usage {
-            completion.insert("usage".to_string(), u);
-        }
-
-        serde_json::Value::Object(completion)
-    }
-}
-
-/// Drain every complete (newline-terminated) line from `buf` into `acc`,
-/// leaving any trailing partial line buffered for the next chunk.
-fn drain_complete_lines(
-    buf: &mut String,
-    acc: &mut SseAccumulator,
-    events: &mpsc::UnboundedSender<StreamEvent>,
-) {
-    while let Some(nl) = buf.find('\n') {
-        let line = buf[..nl].to_string();
-        buf.drain(..=nl);
-        acc.ingest_line(&line, events);
-    }
-}
-
-/// Ingest a final, non-newline-terminated line left after the stream closes.
-/// Providers may end with `data: {...}` and no trailing blank line / `[DONE]`;
-/// without this the last chunk's finish_reason and tool-call args are dropped.
-fn flush_trailing_line(
-    buf: &str,
-    acc: &mut SseAccumulator,
-    events: &mpsc::UnboundedSender<StreamEvent>,
-) {
-    if !buf.trim().is_empty() {
-        acc.ingest_line(buf, events);
-    }
-}
-
-async fn consume_openai_sse(
-    resp: reqwest::Response,
-    events: &mpsc::UnboundedSender<StreamEvent>,
-) -> Result<serde_json::Value, String> {
-    let url = resp.url().to_string();
-    let mut stream = resp.bytes_stream();
-    let mut buf = String::new();
-    let mut acc = SseAccumulator::default();
-    let mut bytes = 0usize;
-
-    while let Some(chunk) = stream.next().await {
-        // A stream that dies mid-response is the hardest case to tell apart from
-        // an empty answer, so the byte count so far goes in the message.
-        let chunk = chunk.map_err(|e| {
-            format!(
-                "Upstream stream error ({url}) after {bytes} bytes: {}",
-                describe_request_error(&e)
-            )
-        })?;
-        bytes += chunk.len();
-        buf.push_str(&String::from_utf8_lossy(&chunk));
-        drain_complete_lines(&mut buf, &mut acc, events);
-    }
-    flush_trailing_line(&buf, &mut acc, events);
-
-    if let Some(err) = acc.error.take() {
-        let msg = format!("Upstream stream error: {err}");
-        return Err(if is_context_overflow_body(&err) {
-            format!("[{CONTEXT_OVERFLOW_MARKER}] {msg}")
-        } else {
-            msg
-        });
-    }
-
-    Ok(acc.into_completion())
+    super::genai_bridge::stream_chat_completions(
+        client,
+        upstream_url,
+        api_keys,
+        api_type,
+        body,
+        events,
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -1234,13 +913,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn sink() -> (
-        mpsc::UnboundedSender<StreamEvent>,
-        mpsc::UnboundedReceiver<StreamEvent>,
-    ) {
-        mpsc::unbounded_channel()
-    }
-
+    #[cfg(not(feature = "cli"))]
     /// `reqwest` prints only its own layer, so the cause chain is where the
     /// actual failure lives -- the whole point of `describe_request_error`.
     #[test]
@@ -1278,6 +951,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "cli"))]
     /// The reported error must name the stage and carry the OS-level reason, not
     /// just the URL. Port 1 on loopback refuses without touching the network.
     #[tokio::test]
@@ -1297,6 +971,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "cli"))]
     #[test]
     fn dropped_connection_is_recognised_from_the_cause_chain() {
         assert!(chain_indicates_dropped_connection(&[
@@ -1317,6 +992,7 @@ mod tests {
         assert!(!chain_indicates_dropped_connection(&[]));
     }
 
+    #[cfg(not(feature = "cli"))]
     /// A refused connect never reached the peer, so retrying it is safe; a
     /// timeout is excluded on purpose (retrying one doubles the wait).
     #[tokio::test]
@@ -1345,65 +1021,7 @@ mod tests {
         }
     }
 
-    /// The failure a long turn invites: the peer reclaims a keep-alive
-    /// connection while tools run, and the next request is written into a socket
-    /// that is already gone. One retry must carry the turn through, transparently
-    /// -- the caller sees a normal completion, not an error.
-    #[tokio::test]
-    async fn a_dropped_first_connection_is_retried_and_the_turn_succeeds() {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind");
-        let addr = listener.local_addr().expect("addr");
-        let server = tokio::spawn(async move {
-            // First connection: read the request, then hang up without a byte of
-            // response -- exactly what a reclaimed pooled connection looks like.
-            let (mut first, _) = listener.accept().await.expect("first accept");
-            let mut scratch = [0u8; 1024];
-            let _ = first.read(&mut scratch).await;
-            drop(first);
-
-            // Second connection: a normal one-token SSE answer.
-            let (mut second, _) = listener.accept().await.expect("second accept");
-            let _ = second.read(&mut scratch).await;
-            let sse = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n\
-                       data: [DONE]\n\n";
-            let resp = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{sse}",
-                sse.len()
-            );
-            let _ = second.write_all(resp.as_bytes()).await;
-            let _ = second.flush().await;
-        });
-
-        let (tx, mut rx) = sink();
-        let url = format!("http://{addr}/v1/chat/completions");
-        let completion = stream_openai_chat_completions(
-            &Client::new(),
-            &url,
-            &[],
-            &json!({ "model": "m", "messages": [] }),
-            &tx,
-        )
-        .await
-        .expect("the retry carries the turn");
-
-        assert_eq!(
-            completion["choices"][0]["message"]["content"], "hi",
-            "answer from the second connection: {completion}"
-        );
-        let mut tokens = Vec::new();
-        while let Ok(ev) = rx.try_recv() {
-            if let StreamEvent::Token { text } = ev {
-                tokens.push(text);
-            }
-        }
-        assert_eq!(tokens, vec!["hi".to_string()], "streamed once, not twice");
-        server.await.expect("server task");
-    }
-
+    #[cfg(not(feature = "cli"))]
     /// A proxy in the environment breaks Jan and nothing else, and never shows up
     /// in the error. Names only: the values carry credentials.
     #[test]
@@ -1776,163 +1394,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn accumulates_content_and_emits_token_per_delta() {
-        let (tx, mut rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "content": "Hel" } }] }).to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "content": "lo" } }] }).to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": {}, "finish_reason": "stop" }] }).to_string(),
-            &tx,
-        );
-
-        let completion = acc.into_completion();
-        assert_eq!(completion["choices"][0]["message"]["content"], "Hello");
-        assert_eq!(completion["choices"][0]["finish_reason"], "stop");
-        assert!(completion["choices"][0]["message"]
-            .get("tool_calls")
-            .is_none());
-
-        drop(tx);
-        let mut tokens = Vec::new();
-        while let Ok(ev) = rx.try_recv() {
-            if let StreamEvent::Token { text } = ev {
-                tokens.push(text);
-            }
-        }
-        assert_eq!(tokens, vec!["Hel", "lo"]);
-    }
-
-    #[test]
-    fn reasoning_content_streams_as_native_reasoning_events_and_stays_out_of_content() {
-        let (tx, mut rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "reasoning_content": "let me " } }] }).to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "reasoning_content": "think" } }] }).to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "content": "answer" } }] }).to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": {}, "finish_reason": "stop" }] }).to_string(),
-            &tx,
-        );
-
-        // Reasoning stays out of the answer prose, but is preserved on the
-        // reconstructed message so a caller can resend it as history.
-        let completion = acc.into_completion();
-        assert_eq!(completion["choices"][0]["message"]["content"], "answer");
-        assert_eq!(
-            completion["choices"][0]["message"]["reasoning_content"],
-            "let me think"
-        );
-
-        drop(tx);
-        let mut reasoning = Vec::new();
-        let mut tokens = Vec::new();
-        while let Ok(ev) = rx.try_recv() {
-            match ev {
-                StreamEvent::Reasoning { text } => reasoning.push(text),
-                StreamEvent::Token { text } => tokens.push(text),
-                _ => {}
-            }
-        }
-        // Native events: no synthetic <think> wrapper tokens on the content
-        // stream, so a consumer never has to re-parse tags it did not receive.
-        assert_eq!(reasoning, vec!["let me ", "think"]);
-        assert_eq!(tokens, vec!["answer"]);
-    }
-
-    #[test]
-    fn reasoning_only_completion_emits_reasoning_and_no_tokens() {
-        let (tx, mut rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "reasoning_content": "hmm" } }] }).to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": {}, "finish_reason": "stop" }] }).to_string(),
-            &tx,
-        );
-
-        let completion = acc.into_completion();
-        assert!(completion["choices"][0]["message"]["content"].is_null());
-
-        drop(tx);
-        let mut reasoning = Vec::new();
-        let mut tokens = Vec::new();
-        while let Ok(ev) = rx.try_recv() {
-            match ev {
-                StreamEvent::Reasoning { text } => reasoning.push(text),
-                StreamEvent::Token { text } => tokens.push(text),
-                _ => {}
-            }
-        }
-        assert_eq!(reasoning, vec!["hmm"]);
-        assert!(tokens.is_empty(), "no content tokens for a reasoning-only turn: {tokens:?}");
-    }
-
-    /// A completion with no `reasoning_content` deltas must keep exactly the
-    /// shape it always had: the field is omitted, not emitted empty, so a
-    /// provider that rejects unknown assistant keys is unaffected.
-    #[test]
-    fn a_turn_without_reasoning_omits_the_field_entirely() {
-        let (tx, _rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "content": "answer" } }] }).to_string(),
-            &tx,
-        );
-        let completion = acc.into_completion();
-        let message = &completion["choices"][0]["message"];
-        assert_eq!(message["content"], "answer");
-        assert!(
-            message.get("reasoning_content").is_none(),
-            "no reasoning streamed, so the key must be absent: {message}"
-        );
-    }
-
-    /// A tool-call turn's reasoning is preserved too: the model reasons about
-    /// which tool to call, and that reasoning has to survive onto the assistant
-    /// turn the loop resends with its `tool_calls`.
-    #[test]
-    fn reasoning_is_preserved_on_a_tool_call_turn() {
-        let (tx, _rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "reasoning_content": "need to grep" } }] })
-                .to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "tool_calls": [{
-                "index": 0,
-                "id": "c1",
-                "function": { "name": "bash", "arguments": "{}" }
-            }] } }] })
-            .to_string(),
-            &tx,
-        );
-        let completion = acc.into_completion();
-        let message = &completion["choices"][0]["message"];
-        assert_eq!(message["reasoning_content"], "need to grep");
-        assert_eq!(message["tool_calls"][0]["id"], "c1");
-    }
-
     /// A resent assistant turn keeps its `reasoning_content` through the message
     /// normalizer. Local llama.cpp templates with `preserve_thinking` re-emit
     /// prior reasoning from this field; dropping it would shrink earlier turns
@@ -1963,209 +1424,5 @@ mod tests {
             out[1].get("reasoning_content").is_none(),
             "an assistant turn with no reasoning stays unchanged"
         );
-    }
-
-    /// Providers that inline `<think>` tags in `content` (no reasoning_content
-    /// field) keep streaming through Token untouched: the tag-stripping
-    /// fallback lives in the consumers.
-    #[test]
-    fn inline_think_tags_in_content_pass_through_as_tokens() {
-        let (tx, mut rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "content": "<think>hmm</think>answer" } }] })
-                .to_string(),
-            &tx,
-        );
-        drop(tx);
-        let mut tokens = Vec::new();
-        while let Ok(ev) = rx.try_recv() {
-            match ev {
-                StreamEvent::Token { text } => tokens.push(text),
-                StreamEvent::Reasoning { .. } => panic!("no native reasoning here"),
-                _ => {}
-            }
-        }
-        assert_eq!(tokens, vec!["<think>hmm</think>answer"]);
-    }
-
-    #[test]
-    fn reassembles_tool_call_arguments_split_across_deltas() {
-        let (tx, _rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "tool_calls": [
-                { "index": 0, "id": "call_1", "function": { "name": "search", "arguments": "{\"q\":" } }
-            ] } }] })
-            .to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "tool_calls": [
-                { "index": 0, "function": { "arguments": "\"rust\"}" } }
-            ] } }] })
-            .to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": {}, "finish_reason": "tool_calls" }],
-                     "usage": { "total_tokens": 12 } })
-            .to_string(),
-            &tx,
-        );
-
-        let completion = acc.into_completion();
-        let tc = &completion["choices"][0]["message"]["tool_calls"][0];
-        assert_eq!(tc["id"], "call_1");
-        assert_eq!(tc["function"]["name"], "search");
-        assert_eq!(tc["function"]["arguments"], "{\"q\":\"rust\"}");
-        assert_eq!(completion["choices"][0]["finish_reason"], "tool_calls");
-        assert_eq!(completion["usage"]["total_tokens"], 12);
-    }
-
-    #[test]
-    fn emits_tool_call_started_once_when_id_and_name_first_known() {
-        let (tx, mut rx) = sink();
-        let mut acc = SseAccumulator::default();
-        // First delta carries id + name; arguments arrive later, split across
-        // deltas -- the in-progress signal must fire on this first delta only.
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "tool_calls": [
-                { "index": 0, "id": "call_1", "function": { "name": "write", "arguments": "{\"path\":" } }
-            ] } }] })
-            .to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "tool_calls": [
-                { "index": 0, "function": { "arguments": "\"a.txt\"}" } }
-            ] } }] })
-            .to_string(),
-            &tx,
-        );
-
-        drop(tx);
-        let started: Vec<(String, String)> = std::iter::from_fn(|| rx.try_recv().ok())
-            .filter_map(|ev| match ev {
-                StreamEvent::ToolCallStarted { id, name } => Some((id, name)),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(started, vec![("call_1".to_string(), "write".to_string())]);
-    }
-
-    #[test]
-    fn emits_tool_call_started_per_parallel_call() {
-        let (tx, mut rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "tool_calls": [
-                { "index": 0, "id": "call_a", "function": { "name": "read", "arguments": "" } },
-                { "index": 1, "id": "call_b", "function": { "name": "grep", "arguments": "" } }
-            ] } }] })
-            .to_string(),
-            &tx,
-        );
-
-        drop(tx);
-        let mut names: Vec<String> = std::iter::from_fn(|| rx.try_recv().ok())
-            .filter_map(|ev| match ev {
-                StreamEvent::ToolCallStarted { name, .. } => Some(name),
-                _ => None,
-            })
-            .collect();
-        names.sort();
-        assert_eq!(names, vec!["grep".to_string(), "read".to_string()]);
-    }
-
-    #[test]
-    fn captures_mid_stream_error_object_with_type_prefix() {
-        let (tx, _rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "content": "partial" } }] }).to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "error": { "message": "upstream exploded", "type": "server_error" } })
-                .to_string(),
-            &tx,
-        );
-        assert_eq!(
-            acc.error.as_deref(),
-            Some("server_error: upstream exploded")
-        );
-    }
-
-    #[test]
-    fn mid_stream_error_falls_back_to_message_without_type() {
-        let (tx, _rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "error": { "message": "boom" } }).to_string(),
-            &tx,
-        );
-        assert_eq!(acc.error.as_deref(), Some("boom"));
-    }
-
-    #[test]
-    fn ignores_done_sentinel_and_malformed_lines() {
-        let (tx, _rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest("[DONE]", &tx);
-        acc.ingest("not json", &tx);
-        let completion = acc.into_completion();
-        assert!(completion["choices"][0]["message"]["content"].is_null());
-    }
-
-    /// Feed arbitrary byte chunks through the real buffering path, then close.
-    fn feed_and_close(
-        chunks: &[&str],
-        events: &mpsc::UnboundedSender<StreamEvent>,
-    ) -> serde_json::Value {
-        let mut buf = String::new();
-        let mut acc = SseAccumulator::default();
-        for c in chunks {
-            buf.push_str(c);
-            drain_complete_lines(&mut buf, &mut acc, events);
-        }
-        flush_trailing_line(&buf, &mut acc, events);
-        acc.into_completion()
-    }
-
-    #[test]
-    fn flushes_final_line_without_trailing_newline() {
-        let (tx, _rx) = sink();
-        // Provider closes right after the final data line: no `\n`, no `[DONE]`.
-        let final_chunk = json!({ "choices": [{ "delta": {}, "finish_reason": "tool_calls" }] });
-        let completion = feed_and_close(
-            &[
-                "data: ",
-                &json!({ "choices": [{ "delta": { "content": "hi" } }] }).to_string(),
-                "\n\ndata: ",
-                &final_chunk.to_string(),
-            ],
-            &tx,
-        );
-
-        assert_eq!(completion["choices"][0]["message"]["content"], "hi");
-        assert_eq!(completion["choices"][0]["finish_reason"], "tool_calls");
-    }
-
-    #[test]
-    fn newline_terminated_stream_still_parses() {
-        let (tx, _rx) = sink();
-        let completion = feed_and_close(
-            &[
-                &format!(
-                    "data: {}\n\n",
-                    json!({ "choices": [{ "delta": { "content": "ok" }, "finish_reason": "stop" }] })
-                ),
-                "data: [DONE]\n\n",
-            ],
-            &tx,
-        );
-        assert_eq!(completion["choices"][0]["message"]["content"], "ok");
-        assert_eq!(completion["choices"][0]["finish_reason"], "stop");
     }
 }

@@ -15,13 +15,32 @@ pub(super) fn format_assistant_lines(
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     for (reasoning, seg) in super::assistant_runs(prose, segs) {
-        if reasoning {
-            lines.extend(reasoning_detail_lines(&seg));
+        let next = if reasoning {
+            reasoning_detail_lines(&seg)
         } else {
-            lines.extend(format_markdown_lines(&seg, width));
-        }
+            format_markdown_lines(&seg, width)
+        };
+        append_band(&mut lines, next);
     }
     lines
+}
+
+/// Append `next` under `lines`, separated by the blank row the committed path
+/// puts between bands (`gap(Kind::Reasoning)` / `gap(Kind::Prose)` in
+/// `push_assistant_blocks`). Reasoning and answer are different bands, so
+/// without this the streaming answer sits flush against the summary above it and
+/// then drops a row the moment the turn commits and the real gap goes in.
+///
+/// A run that rendered nothing appends nothing, so a hidden block leaves no
+/// stray separator behind.
+fn append_band(lines: &mut Vec<Line<'static>>, next: Vec<Line<'static>>) {
+    if next.is_empty() {
+        return;
+    }
+    if !lines.is_empty() {
+        lines.push(Line::raw(""));
+    }
+    lines.extend(next);
 }
 
 /// Lines of an open reasoning block kept in the live tail: enough to see the
@@ -52,7 +71,7 @@ pub(super) fn live_assistant_lines(
     let last = runs.len().saturating_sub(1);
     let mut lines = Vec::new();
     for (i, (reasoning, seg)) in runs.into_iter().enumerate() {
-        if reasoning {
+        let next = if reasoning {
             // Only the trailing run can still be open; anything a later run
             // follows has ended and folds to its summary row.
             let body: Vec<&str> = seg.lines().filter(|l| !l.trim().is_empty()).collect();
@@ -60,15 +79,18 @@ pub(super) fn live_assistant_lines(
                 continue;
             }
             if i < last {
-                lines.push(reasoning_summary_row(body.len()));
+                vec![reasoning_summary_row(body.len())]
             } else if stream_reasoning {
-                lines.extend(live_reasoning_tail(&body, width));
+                live_reasoning_tail(&body, width)
+            } else {
+                continue;
             }
+        } else if seg.trim().is_empty() {
             continue;
-        }
-        if !seg.trim().is_empty() {
-            lines.extend(format_markdown_lines(&seg, width));
-        }
+        } else {
+            format_markdown_lines(&seg, width)
+        };
+        append_band(&mut lines, next);
     }
     lines
 }

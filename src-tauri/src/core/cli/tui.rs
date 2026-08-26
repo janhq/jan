@@ -817,11 +817,10 @@ fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
     let indent = " ".repeat(BANNER_INDENT as usize);
     let mut out: Vec<Line<'static>> = Vec::new();
 
-    // A clipped logo reads as breakage, so a narrow terminal gets the name
-    // as text instead. The lockup (hand beside the wordmark) is the widest
-    // splash element, so it sets the threshold that gates the whole block.
-    if width >= brand::LOCKUP_WIDTH + BANNER_INDENT * 2 {
-        for art in brand::lockup() {
+    // A clipped wordmark reads as breakage, so a narrow terminal gets the name
+    // as text instead.
+    if width >= brand::LOGO_WIDTH + BANNER_INDENT * 2 {
+        for art in brand::LOGO {
             out.push(Line::styled(format!("{indent}{art}"), accent));
         }
         out.push(Line::raw(""));
@@ -1438,6 +1437,21 @@ struct App {
     /// until the command finishes, so without this its row -- live for as long
     /// as the command runs -- has nothing to name.
     bash_jobs: HashMap<String, String>,
+    /// Output streamed by each `bash` call so far, keyed by call id, bounded to
+    /// [`LIVE_OUTPUT_MAX_BYTES`] from the end. This is what turns a running
+    /// command from a spinner into a terminal.
+    live_output: HashMap<String, String>,
+    /// When each call's first output arrived, gating the panel by
+    /// [`LIVE_OUTPUT_GRACE`] so a command that finishes quickly never flashes a
+    /// box on its way to the group summary.
+    live_since: HashMap<String, Instant>,
+    /// Maps the call that *collects* a backgrounded job to the call that
+    /// *started* it. The job keeps streaming under the original id, so without
+    /// this the collecting call -- the one the user is actually waiting on --
+    /// would show an empty box while the output piled up out of sight.
+    live_alias: HashMap<String, String>,
+    /// Call id that started each backgrounded job, keyed by `job_id`.
+    job_origin: HashMap<String, String>,
     /// Base snapshot (working-tree state before the first turn) for the active
     /// thread. `Some` once snapshotting is armed; `None` = no workspace restore.
     base_snapshot: Option<String>,
@@ -2005,6 +2019,10 @@ impl App {
             diff_paths: HashMap::new(),
             bash_commands: HashMap::new(),
             bash_jobs: HashMap::new(),
+            live_output: HashMap::new(),
+            live_since: HashMap::new(),
+            live_alias: HashMap::new(),
+            job_origin: HashMap::new(),
             base_snapshot: None,
             checkpoints: Vec::new(),
             snap_queue: std::collections::VecDeque::new(),
@@ -2479,6 +2497,44 @@ impl App {
         self.awaiting.clear();
     }
 
+    /// The live shell panel for `group`'s newest unresolved *command*, or no rows
+    /// when nothing in the group is streaming yet.
+    ///
+    /// Picks the newest call that has output rather than the newest call
+    /// outright: a group runs its calls in parallel, so a `read` issued after a
+    /// `bash` must not blank the panel until it lands and then let it pop back.
+    ///
+    /// Follows the job alias, so a call *waiting on* a backgrounded job shows the
+    /// output the detached job is still producing under the id of the call that
+    /// started it.
+    fn live_shell_panel(&self, group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
+        let Some((command, output)) = group
+            .calls
+            .iter()
+            .rev()
+            .filter(|c| c.content.is_none())
+            .find_map(|c| self.live_view(&c.id))
+        else {
+            return Vec::new();
+        };
+        shell_panel_lines(command, output, width, SHELL_PANEL_GUTTER)
+    }
+
+    /// A call's command and the output it has streamed, once both exist and the
+    /// command has been running long enough to be worth a box.
+    fn live_view(&self, id: &str) -> Option<(&str, &str)> {
+        let command = self.bash_commands.get(id)?;
+        let key = self.live_alias.get(id).map_or(id, String::as_str);
+        let output = self.live_output.get(key)?;
+        // A command that prints and exits inside the grace period renders no box
+        // at all, so its output never appears only to be yanked away a frame
+        // later by the group summary.
+        if self.live_since.get(key)?.elapsed() < LIVE_OUTPUT_GRACE {
+            return None;
+        }
+        Some((command, output))
+    }
+
     /// Pair a `bash` call with the backgrounded command it is about.
     ///
     /// Both directions run off the same maps: a call carrying a `command` is
@@ -2507,10 +2563,17 @@ impl App {
             self.bash_commands.insert(id.to_string(), cmd);
             return args;
         }
+        // Collecting a backgrounded job: the detached command still streams under
+        // the id of the call that started it, so point this call at that buffer.
+        // Without the alias the row the user is waiting on shows an empty box.
+        if let Some(origin) = bash_job_id(&args).and_then(|job| self.job_origin.get(job)) {
+            self.live_alias.insert(id.to_string(), origin.clone());
+        }
         let remembered = bash_job_id(&args)
             .and_then(|job| self.bash_jobs.get(job))
             .cloned();
         if let (Some(cmd), Some(obj)) = (remembered, args.as_object_mut()) {
+            self.bash_commands.insert(id.to_string(), cmd.clone());
             obj.insert("command".to_string(), serde_json::Value::String(cmd));
         }
         args
@@ -3865,6 +3928,25 @@ impl App {
                     call.args.push_str(&delta);
                 }
             }
+            StreamEvent::ToolOutputDelta { id, delta } => {
+                // Bounded from the end: a runaway command must not be able to
+                // grow the TUI's memory. The tool keeps the authoritative full
+                // output (spilling to disk past its own cap) and hands it over
+                // with the result; this buffer only has to feed the live view.
+                self.live_since
+                    .entry(id.clone())
+                    .or_insert_with(Instant::now);
+                let buf = self.live_output.entry(id).or_default();
+                buf.push_str(&delta);
+                if buf.len() > LIVE_OUTPUT_MAX_BYTES {
+                    // Trim on a char boundary so the buffer stays valid UTF-8.
+                    let cut = buf.len() - LIVE_OUTPUT_MAX_BYTES;
+                    let at = (cut..buf.len())
+                        .find(|i| buf.is_char_boundary(*i))
+                        .unwrap_or(buf.len());
+                    buf.drain(..at);
+                }
+            }
             StreamEvent::ToolCall { id, name, args } => {
                 // The full call (with parsed args) supersedes its in-progress
                 // throbber.
@@ -3952,7 +4034,17 @@ impl App {
                 if let Some(cmd) = self.bash_commands.remove(&id) {
                     if let Some(job) = backgrounded_job_id(&content) {
                         self.bash_jobs.insert(job.to_string(), cmd);
+                        self.job_origin.insert(job.to_string(), id.clone());
                     }
+                }
+                // The command is over, so its live buffer is dead weight: the
+                // authoritative output is in this result. A call that backgrounded
+                // itself keeps its buffer -- the detached job is still writing to
+                // it, under this same id.
+                if backgrounded_job_id(&content).is_none() {
+                    let key = self.live_alias.remove(&id).unwrap_or_else(|| id.clone());
+                    self.live_output.remove(&key);
+                    self.live_since.remove(&key);
                 }
                 let resolved = self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
@@ -4194,8 +4286,12 @@ impl App {
                     panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
                 }
             }
-            // Token/ToolResult and any nested bracket are internal to the child
-            // run and not surfaced in the parent transcript.
+            // Token/ToolResult, a child's live tool output (`ToolOutputDelta`)
+            // and any nested bracket are internal to the child run and not
+            // surfaced in the parent transcript: a subagent panel is a one-line
+            // activity summary, so a child's shell output would have nowhere to
+            // go and would push the parent's own live panel off screen. Deliberate
+            // -- the child's output still reaches its `ToolResult`.
             _ => {}
         }
     }
@@ -5631,6 +5727,70 @@ fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Ve
         width,
         Some((format!("({elapsed}s)"), Style::new().dark_gray())),
     )
+}
+
+/// Live output kept per running command. Past this the front is dropped: the
+/// view shows a tail, and the tool hands over the authoritative full output when
+/// the call finishes.
+const LIVE_OUTPUT_MAX_BYTES: usize = 64 * 1024;
+
+/// Rendered rows of live command output, so a long-running command fills at most
+/// this much of the viewport.
+const LIVE_OUTPUT_TAIL_LINES: usize = 12;
+
+/// How long a command must have been printing before its output gets a box. The
+/// panel is transient -- it gives way to the group summary when the call
+/// resolves -- so anything short-lived is better shown as no box than as a flash.
+const LIVE_OUTPUT_GRACE: Duration = Duration::from_millis(400);
+
+/// Indent of the live shell panel, matching a single-call group's detail box so
+/// the running command and its expanded result sit on the same column.
+const SHELL_PANEL_GUTTER: &str = "│   ";
+
+/// A running command and its output so far, framed like a terminal. No rows
+/// until the first chunk arrives, so a command that has printed nothing shows
+/// only its activity row rather than an empty box.
+fn shell_panel_lines(
+    command: &str,
+    output: &str,
+    width: u16,
+    gutter: &'static str,
+) -> Vec<Line<'static>> {
+    if output.is_empty() {
+        return Vec::new();
+    }
+    let max = panel_inner(width as usize, gutter);
+    // The command is the session's first line, as a prompt, so the box reads as
+    // a terminal rather than as a detached wall of output.
+    let mut rows: Vec<Line<'static>> =
+        wrap_text(command, Style::new().bold(), max.saturating_sub(2))
+            .into_iter()
+            .enumerate()
+            .map(|(i, chunk)| {
+                let mut spans = vec![Span::styled(
+                    if i == 0 { "$ " } else { "  " },
+                    Style::new().cyan().bold(),
+                )];
+                spans.extend(chunk);
+                Line::from(spans)
+            })
+            .collect();
+    let all: Vec<&str> = output.lines().collect();
+    let skipped = all.len().saturating_sub(LIVE_OUTPUT_TAIL_LINES);
+    if skipped > 0 {
+        rows.push(Line::styled(
+            format!("… ({})", pluralize("earlier line", skipped)),
+            Style::new().dark_gray(),
+        ));
+    }
+    for line in &all[skipped..] {
+        rows.extend(
+            wrap_text(line, Style::new().dim(), max)
+                .into_iter()
+                .map(Line::from),
+        );
+    }
+    boxed_panel(rows, width as usize, gutter)
 }
 
 /// Bucket `nouns` into read-style and run-style clauses (first-seen order,
@@ -12017,7 +12177,8 @@ fn trailing_blank(tail: &[Line<'static>], transcript: &[Row], width: u16) -> boo
 /// `MIN_TRANSCRIPT_ROWS`, capped at `PANEL_MAX_ROWS`, and disappears entirely
 /// on a frame with nothing to spare.
 fn panel_budget(frame_h: u16, input_h: u16) -> usize {
-    let fixed = 1 + 1 + input_h + 1; // header, rule, input, dock
+    // header, transcript air, rule, input, dock
+    let fixed = 1 + TRANSCRIPT_BOTTOM_PAD + 1 + input_h + 1;
     frame_h
         .saturating_sub(fixed + MIN_TRANSCRIPT_ROWS)
         .min(PANEL_MAX_ROWS as u16) as usize
@@ -12062,20 +12223,21 @@ fn draw(f: &mut Frame, app: &mut App) {
     // between the rule and the prompt. A zero-length slot collapses away, so a
     // session with neither todos nor subagents renders exactly as before.
     let raw = Layout::vertical([
-        Constraint::Length(1),                 // 0: header
-        Constraint::Min(1),                    // 1: body
-        Constraint::Length(panel_h),           // 2: status panel
-        Constraint::Length(1),                 // 3: separator rule
-        Constraint::Length(input_h),           // 4: input
-        Constraint::Length(1),                 // 5: path + key hints
+        Constraint::Length(1),                     // 0: header
+        Constraint::Min(1),                        // 1: body
+        Constraint::Length(TRANSCRIPT_BOTTOM_PAD), // 2: air
+        Constraint::Length(panel_h),               // 3: status panel
+        Constraint::Length(1),                     // 4: separator rule
+        Constraint::Length(input_h),               // 5: input
+        Constraint::Length(1),                     // 6: path + key hints
     ])
     .split(f.area());
-    let panel_area = raw[2];
-    let chunks = [raw[0], raw[1], raw[4], raw[5]];
+    let panel_area = raw[3];
+    let chunks = [raw[0], raw[1], raw[5], raw[6]];
 
     f.render_widget(header(app), chunks[0]);
     // Drawn for every path (picker included) so the dock always reads the same.
-    f.render_widget(Block::default().borders(Borders::TOP), raw[3]);
+    f.render_widget(Block::default().borders(Borders::TOP), raw[4]);
 
     // Top border only, so wrapping uses the full width; the border row reduces
     // the vertical viewport.
@@ -12113,11 +12275,13 @@ fn draw(f: &mut Frame, app: &mut App) {
             .as_ref()
             .filter(|g| g.idx == i && g.is_running())
         {
-            Some(g) => Segment::eager(
-                Some(i),
-                running_group_rows(g, app.spinner_frame, width),
-                width,
-            ),
+            Some(g) => {
+                // The running row plus, when the call is a command that has
+                // started printing, its output live under it.
+                let mut rows = running_group_rows(g, app.spinner_frame, width);
+                rows.extend(app.live_shell_panel(g, width));
+                Segment::eager(Some(i), rows, width)
+            }
             None => Segment {
                 idx: Some(i),
                 height: row.height(width),
@@ -13266,6 +13430,13 @@ const PANEL_MAX_ROWS: usize = 8;
 /// Conversation rows the panel may never eat into. Below this the panel gives
 /// up its own rows first: the transcript is the point of the screen.
 const MIN_TRANSCRIPT_ROWS: u16 = 4;
+
+/// Blank rows between the last transcript row and the dock below it. The body is
+/// bottom-pinned, so without this the model's closing line sits flush against the
+/// panel -- or, with no panel, against the separator rule over the input -- and
+/// the conversation and the dock read as one block. Unconditional: air that
+/// appears only on some frames is a layout that jumps.
+const TRANSCRIPT_BOTTOM_PAD: u16 = 1;
 
 /// Narrowest terminal that still gets two side-by-side columns. Under it they
 /// stack, plan first, because a 30-column half fits neither a task nor an agent.
@@ -16077,6 +16248,184 @@ mod tests {
             text.contains("Waiting for: cargo build --release"),
             "the poll row does not name its command: {text}"
         );
+    }
+
+    /// Backdate a call's first-output stamp past [`LIVE_OUTPUT_GRACE`], so a test
+    /// renders the panel a long-running command would have without sleeping.
+    fn age_live_output(app: &mut App, id: &str) {
+        let since = app.live_since.get_mut(id).expect("call has streamed");
+        *since -= super::LIVE_OUTPUT_GRACE;
+    }
+
+    /// A running command is a terminal, not a spinner: its output appears under
+    /// the activity row as it is produced, framed and prefixed by the command.
+    #[test]
+    fn a_running_command_shows_its_output_live() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "make" }),
+        });
+        // Nothing printed yet: the activity row stands alone rather than opening
+        // an empty box.
+        let quiet = render_rows(&mut app, 70, 16).join("\n");
+        assert!(!quiet.contains("$ make"), "no box before output: {quiet}");
+
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "compiling foo\n".into(),
+        });
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "compiling bar\n".into(),
+        });
+        // Still inside the grace window: a command this brief would only flash.
+        let brief = render_rows(&mut app, 70, 16).join("\n");
+        assert!(!brief.contains("$ make"), "no box while brief: {brief}");
+
+        age_live_output(&mut app, "t1");
+        let live = render_rows(&mut app, 70, 16).join("\n");
+        assert!(
+            live.contains("$ make"),
+            "command on the prompt line: {live}"
+        );
+        assert!(live.contains("compiling foo"), "first chunk: {live}");
+        assert!(live.contains("compiling bar"), "and the next: {live}");
+        assert!(live.contains('\u{250c}'), "framed: {live}");
+    }
+
+    /// The result is the authoritative output, so the live buffer is released
+    /// with it -- a long session must not accumulate every command it ran.
+    #[test]
+    fn a_finished_command_releases_its_live_buffer() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "make" }),
+        });
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "compiling foo\n".into(),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "compiling foo\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        assert!(
+            !app.live_output.contains_key("t1"),
+            "the finished call still holds its buffer"
+        );
+    }
+
+    /// A group runs its calls in parallel, so the panel follows the call that is
+    /// actually printing. Keying it to the newest unresolved call instead made a
+    /// `read` issued after a long `bash` blank the box until the read landed.
+    #[test]
+    fn a_later_call_does_not_blank_the_live_panel() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "make" }),
+        });
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "compiling foo\n".into(),
+        });
+        age_live_output(&mut app, "t1");
+        app.apply(StreamEvent::ToolCall {
+            id: "t2".into(),
+            name: "read".into(),
+            args: json!({ "path": "src/main.rs" }),
+        });
+        let live = render_rows(&mut app, 70, 18).join("\n");
+        assert!(
+            live.contains("compiling foo"),
+            "the streaming call keeps the panel: {live}"
+        );
+    }
+
+    /// The wait on a backgrounded job is the case the live view matters most for.
+    /// The job streams under the id of the call that *started* it while the user
+    /// watches the later call that *collects* it, so the two are aliased.
+    #[test]
+    fn waiting_on_a_backgrounded_job_shows_its_live_output() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cargo test" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "Command exceeded 30s and is continuing in the background \
+                      (job_id=bash-7)."
+                .into(),
+            is_error: false,
+            diff: None,
+        });
+        // Backgrounded, so the buffer survives its own result.
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "test tui::rolls ... ok\n".into(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "t2".into(),
+            name: "bash".into(),
+            args: json!({ "job_id": "bash-7" }),
+        });
+        assert_eq!(
+            app.live_alias.get("t2").map(String::as_str),
+            Some("t1"),
+            "the collecting call is aliased to the job's origin"
+        );
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "test tui::folds ... ok\n".into(),
+        });
+        age_live_output(&mut app, "t1");
+        let live = render_rows(&mut app, 74, 20).join("\n");
+        assert!(
+            live.contains("test tui::folds ... ok"),
+            "the waiting row reports the job's progress: {live}"
+        );
+    }
+
+    /// A runaway command must not grow the TUI's memory without bound.
+    #[test]
+    fn live_output_is_bounded() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "x".repeat(super::LIVE_OUTPUT_MAX_BYTES * 2),
+        });
+        let held = app.live_output.get("t1").expect("buffered").len();
+        assert!(held <= super::LIVE_OUTPUT_MAX_BYTES, "kept {held} bytes");
+    }
+
+    /// Only a bounded tail is rendered, so a chatty command cannot push the
+    /// conversation off the screen.
+    #[test]
+    fn the_live_panel_renders_only_a_bounded_tail() {
+        let many: String = (0..60).map(|i| format!("line {i}\n")).collect();
+        let rows = super::shell_panel_lines("make", &many, 70, "\u{2502}   ");
+        assert!(
+            rows.len() <= super::LIVE_OUTPUT_TAIL_LINES + 4,
+            "unbounded panel: {} rows",
+            rows.len()
+        );
+        let text = rows
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("line 59"), "the newest line shows: {text}");
+        assert!(!text.contains("line 0\n"), "the oldest is elided: {text}");
+        assert!(text.contains("earlier lines"), "elision is reported: {text}");
     }
 
     #[test]
@@ -24204,6 +24553,84 @@ mod tests {
         assert!(todos < agents, "plan first when stacked: {rows:?}");
     }
 
+    /// The dock is one unit and the conversation is another:
+    /// `TRANSCRIPT_BOTTOM_PAD` keeps the model's closing line off the rule that
+    /// separates the transcript from the input.
+    #[test]
+    fn the_transcript_keeps_its_air_above_the_dock() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "an answer".into(),
+        });
+        app.flush_assistant();
+        let rows = render_rows(&mut app, 60, 20);
+
+        let rule = rows
+            .iter()
+            .rposition(|r| r.trim_end().chars().filter(|c| *c == '─').count() > 20)
+            .expect("the separator rule is on screen");
+        let last_prose = rows[..rule]
+            .iter()
+            .rposition(|r| r.trim() == "an answer")
+            .expect("the answer is on screen");
+        // Literal, not derived from the constant: the point is the geometry on
+        // screen, and reading the expectation back off `TRANSCRIPT_BOTTOM_PAD`
+        // would make the test pass at any value including zero.
+        assert_eq!(
+            rule - last_prose,
+            2,
+            "exactly one blank row between the transcript and the dock: {rows:#?}"
+        );
+        assert!(
+            rows[rule - 1].trim().is_empty(),
+            "the row above the rule is the air, not content: {rows:#?}"
+        );
+    }
+
+    /// Reasoning and answer are different bands, and the committed path gaps
+    /// between them. The live tail packed them together, so a native-reasoning
+    /// model's answer streamed flush against the reasoning above it and then
+    /// dropped a row when the commit put the real separator in.
+    #[test]
+    fn the_live_tail_gaps_between_reasoning_and_the_answer() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Reasoning {
+            text: "musing".into(),
+        });
+        app.apply(StreamEvent::Token {
+            text: "Here is the ".into(),
+        });
+
+        // The `┊` gutter marks the reasoning band in both forms: folded to a
+        // summary row while it streams, and as dimmed detail once committed.
+        let gap = |rows: &[String]| -> usize {
+            let reasoning = rows
+                .iter()
+                .rposition(|r| r.contains('┊'))
+                .unwrap_or_else(|| panic!("the reasoning band is on screen: {rows:#?}"));
+            let prose = rows
+                .iter()
+                .position(|r| r.contains("Here is the"))
+                .unwrap_or_else(|| panic!("the answer is on screen: {rows:#?}"));
+            prose - reasoning
+        };
+        let live = render_rows(&mut app, 60, 16);
+        assert_eq!(
+            gap(&live),
+            2,
+            "one blank row between the reasoning and the answer: {live:#?}"
+        );
+
+        // Committing it moves nothing: the live gap is the one the commit puts in.
+        app.flush_assistant();
+        let flushed = render_rows(&mut app, 60, 16);
+        assert_eq!(
+            gap(&flushed),
+            2,
+            "the commit must not change the gap: {flushed:#?}"
+        );
+    }
+
     /// A short terminal spends its rows on the conversation: the panel shrinks
     /// first, eliding its own tail, and disappears before the transcript does.
     #[test]
@@ -24216,8 +24643,9 @@ mod tests {
         // Roomy: capped at the panel ceiling, never more.
         assert_eq!(super::panel_budget(40, 2), super::PANEL_MAX_ROWS);
         // Squeezed: only what is left after the fixed rows and the transcript
-        // floor, and nothing at all once even that is gone.
-        assert_eq!(super::panel_budget(12, 2), 3);
+        // floor, less the row `TRANSCRIPT_BOTTOM_PAD` holds open above the dock,
+        // and nothing at all once even that is gone.
+        assert_eq!(super::panel_budget(12, 2), 2);
         assert_eq!(super::panel_budget(9, 2), 0);
 
         let rows = render_rows(&mut app, 80, 12);
@@ -24225,9 +24653,9 @@ mod tests {
             .iter()
             .filter(|r| r.contains("Todos") || r.contains("a task") || r.contains("more"))
             .collect();
-        assert!(panel.len() <= 3, "panel clamped to its budget: {rows:?}");
+        assert!(panel.len() <= 2, "panel clamped to its budget: {rows:?}");
         assert!(
-            rows.iter().any(|r| r.contains("+11 more")),
+            rows.iter().any(|r| r.contains("+12 more")),
             "the tail is elided, not dropped silently: {rows:?}"
         );
 
@@ -24473,8 +24901,8 @@ mod tests {
             "transcript not reset: {text}"
         );
         assert!(
-            text.contains(brand::HAND[0].trim()),
-            "hand logo missing after /clear: {text}"
+            text.contains(brand::LOGO[0].trim()),
+            "wordmark missing after /clear: {text}"
         );
         assert!(
             text.contains("--safe: approval needed"),
@@ -25803,32 +26231,30 @@ mod tests {
         );
     }
 
-    /// The mark and the name are one lockup, so they share rows instead of
-    /// stacking: the wordmark's first row also carries part of the hand.
+    /// The splash opens on the wordmark alone. The hand-wave block art that used
+    /// to sit beside it spent 15 rows of a fresh screen on decoration and forced
+    /// a 61-column floor before the splash would render at all.
     #[test]
-    fn banner_opens_with_the_hand_logo_beside_the_wordmark() {
+    fn banner_opens_with_the_wordmark() {
         let mut app = test_app();
         app.push_banner("--safe", true);
 
         let text = banner_text(&app, 90);
         let joined = text.join("\n");
-        let row = text
-            .iter()
-            .find(|l| l.contains(brand::LOGO[0].trim()))
-            .unwrap_or_else(|| panic!("wordmark missing:\n{joined}"));
-        let hand_row = brand::HAND
-            .iter()
-            .find(|h| row.contains(h.trim()))
-            .unwrap_or_else(|| panic!("the wordmark's row carries no hand: {row}"));
         assert!(
-            row.find(hand_row.trim()).unwrap() < row.find(brand::LOGO[0].trim()).unwrap(),
-            "the hand should sit left of the wordmark: {row}"
+            text.iter().any(|l| l.contains(brand::LOGO[0].trim())),
+            "wordmark missing:\n{joined}"
         );
         assert!(joined.contains('█'), "{joined}");
+        // The wordmark is six rows; the hand was fifteen more.
+        assert!(
+            text.iter().filter(|l| l.contains('█')).count() <= brand::LOGO.len(),
+            "the splash carries block art beyond the wordmark:\n{joined}"
+        );
     }
 
     #[test]
-    fn a_24_column_terminal_drops_the_hand_logo_too() {
+    fn a_24_column_terminal_drops_the_wordmark() {
         let mut app = test_app();
         app.push_banner("--safe", true);
         let narrow = banner_text(&app, 24);

@@ -517,7 +517,7 @@ pub fn cli_agent_status(
             serde_json::json!({
                 "provider": c.provider,
                 "base_url": c.base_url,
-                "has_api_key": c.api_key.is_some() || !c.api_keys.is_empty(),
+                "has_api_key": crate::core::cli::providers::has_credential(c),
                 "models": c.models.len(),
             })
         })
@@ -829,6 +829,17 @@ pub struct SessionFlags {
     pub sandbox: Option<bool>,
 }
 
+/// The desktop app's currently-selected model, adopted only when signed in to
+/// Tokamak. Split out from the resolution chain so the rule is testable without
+/// a `settings.json` on disk; see the note at the call site for why the sign-in
+/// gates it.
+fn inherit_desktop_model(
+    signed_in: bool,
+    selection: crate::core::cli::providers::DesktopSelection,
+) -> Option<String> {
+    signed_in.then_some(selection.model).flatten()
+}
+
 /// Resolve project config + credentials into a ready-to-run engine handle.
 /// Shared by `run_agent_loop` (plain CLI) and `cli_agent_ui` (TUI).
 fn prepare_agent_session(
@@ -850,11 +861,24 @@ fn prepare_agent_session(
     // model), then the desktop app's currently-selected model (settings.json
     // inherit). Global config outranks desktop so a standalone agent is
     // self-sufficient without a desktop install.
+    //
+    // The desktop inherit is the last resort and applies only when signed in to
+    // Tokamak. Without a sign-in, silently adopting whatever model the desktop
+    // app last had selected starts the session on a provider the user never
+    // chose here -- and hides the sign-in notice that would otherwise fire,
+    // because a non-empty model reads as "configured". Leaving it unset surfaces
+    // the notice instead. An explicit --model, agent.toml, or ~/.jan default is
+    // unaffected: all three outrank this.
     let explicit = model_override.is_some() || overrides.api_key.is_some();
     let model = model_override
         .or_else(|| cfg.agent.model.clone())
         .or_else(|| crate::core::agent::global_config::default_model().ok().flatten())
-        .or_else(|| crate::core::cli::providers::desktop_selection().model);
+        .or_else(|| {
+            inherit_desktop_model(
+                crate::core::cli::tokamak::auth_status().signed_in,
+                crate::core::cli::providers::desktop_selection(),
+            )
+        });
     // A project or global default can name a model with nobody around to serve
     // it (e.g. this repo's own agent.toml pins one, but a fresh `~/.jan` has no
     // credentials for anything). Trust it only when the user was explicit
@@ -1292,6 +1316,14 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
             print!("{text}");
             let _ = std::io::stdout().flush();
         }
+        // A command's live output is progress, not answer: it goes to stderr so a
+        // piped stdout still holds only the model's completion. The full output
+        // arrives again with the tool result, which is what the model sees; this
+        // is purely so a long command is not silent in a headless run.
+        StreamEvent::ToolOutputDelta { delta, .. } => {
+            eprint!("\x1b[2m{delta}\x1b[0m");
+            let _ = std::io::stderr().flush();
+        }
         // Reasoning is progress, not answer: dimmed on stderr so piping stdout
         // yields only the real completion.
         StreamEvent::Reasoning { text } => {
@@ -1414,6 +1446,36 @@ async fn prompt_permission(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Signing in to Tokamak is what unlocks the desktop inherit. Without it the
+    /// model stays unset so the TUI's sign-in notice fires, instead of the
+    /// session silently starting on whatever the desktop app last had selected.
+    #[test]
+    fn desktop_model_is_inherited_only_when_signed_in() {
+        let selection = crate::core::cli::providers::DesktopSelection {
+            provider: Some("llamacpp".into()),
+            model: Some("gemma-4-E2B-it-IQ4_XS".into()),
+        };
+        assert_eq!(
+            inherit_desktop_model(true, selection.clone()).as_deref(),
+            Some("gemma-4-E2B-it-IQ4_XS"),
+        );
+        assert_eq!(
+            inherit_desktop_model(false, selection),
+            None,
+            "a signed-out session does not adopt the desktop's selection"
+        );
+    }
+
+    /// Signed in but the desktop has no selection (or no desktop at all) is not
+    /// an error -- it just contributes nothing to the chain.
+    #[test]
+    fn an_empty_desktop_selection_contributes_nothing() {
+        assert_eq!(
+            inherit_desktop_model(true, crate::core::cli::providers::DesktopSelection::default()),
+            None
+        );
+    }
 
     // ── resume ─────────────────────────────────────────────────────────────
 
@@ -1790,6 +1852,59 @@ mod tests {
             )
             .expect("TUI session prep must not fail with nothing configured");
             assert_eq!(session.model, "");
+        });
+    }
+
+    /// End-to-end for the sign-in gate, arranged so the pre-existing
+    /// "nothing usable is configured" guard cannot mask it: a usable non-Tokamak
+    /// provider is present (so the guard passes) but names no models (so
+    /// `default_model` contributes nothing), leaving the desktop inherit as the
+    /// only thing that could supply a model. Signed out, it must not.
+    #[test]
+    fn a_signed_out_session_does_not_adopt_the_desktop_model() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            crate::core::agent::global_config::set_provider(
+                "openai",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("sk-test".into()),
+                    base_url: Some("https://api.openai.com/v1".into()),
+                    models: Some(vec![]),
+                    ..Default::default()
+                },
+            )
+            .expect("seed provider");
+
+            let data = home.join("jan-data");
+            std::fs::create_dir_all(&data).unwrap();
+            std::fs::write(
+                data.join("settings.json"),
+                r#"{"model-provider":"{\"state\":{\"selectedProvider\":\"llamacpp\",\"selectedModel\":{\"id\":\"gemma-4-E2B-it-IQ4_XS\"}}}"}"#,
+            )
+            .unwrap();
+            std::env::set_var("JAN_DATA_FOLDER", &data);
+
+            // Sanity: the desktop selection really is readable, so a passing
+            // assertion below means the gate fired, not that the fixture is dead.
+            assert_eq!(
+                crate::core::cli::providers::desktop_selection().model.as_deref(),
+                Some("gemma-4-E2B-it-IQ4_XS")
+            );
+            assert!(!crate::core::cli::tokamak::auth_status().signed_in);
+
+            let dir = tempfile::tempdir().unwrap();
+            let session = prepare_agent_session(
+                dir.path().to_str().unwrap(),
+                None,
+                ProviderOverrides::default(),
+                SessionFlags::default(),
+            )
+            .expect("session prep");
+            std::env::remove_var("JAN_DATA_FOLDER");
+
+            assert_eq!(
+                session.model, "",
+                "signed out, the desktop's last selection must not become the session model"
+            );
         });
     }
 

@@ -9,7 +9,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use reqwest::Client;
+// Agent upstream traffic runs on `genai`, which is built against reqwest 0.13;
+// the rest of the app is still on 0.12, so the two `Client` types differ.
+use reqwest13::Client;
 #[cfg(not(feature = "cli"))]
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
@@ -162,6 +164,9 @@ impl ModelInvoker for HttpModelInvoker {
             &self.client,
             &self.upstream_url,
             &self.api_keys,
+            // The agent speaks OpenAI chat/completions to every provider; see
+            // the note on `stream_openai_chat_completions`.
+            None,
             request,
             events,
         )
@@ -367,6 +372,32 @@ fn resolve_run_settings(
     }
 }
 
+/// Build a tool output sink that streams deltas to the run's event channel.
+///
+/// The sender is downgraded: `bash` hands its child to a detached task that
+/// keeps the sink alive after the call returns (that is what makes a
+/// backgrounded job keep reporting), and a strong clone in there would hold the
+/// run's channel open forever -- every consumer waits on channel closure, so the
+/// desktop's `invoke`, the headless printer and a subagent's forwarder would all
+/// hang once the turn was logically done. A weak sender still resolves for as
+/// long as the run holds its own sender, so live output is unaffected; once the
+/// run ends, a straggler's output is dropped, which is what it is worth.
+fn output_sink(
+    events: &mpsc::UnboundedSender<StreamEvent>,
+    id: &str,
+) -> tauri_plugin_agent_tools::tools::OutputSink {
+    let events = events.downgrade();
+    let id = id.to_string();
+    std::sync::Arc::new(move |delta: String| {
+        if let Some(events) = events.upgrade() {
+            let _ = events.send(StreamEvent::ToolOutputDelta {
+                id: id.clone(),
+                delta,
+            });
+        }
+    })
+}
+
 impl CompositeToolInvoker {
     fn tool_context(&self) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
         tauri_plugin_agent_tools::tools::ToolContext::new(
@@ -378,6 +409,18 @@ impl CompositeToolInvoker {
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
         .with_scratch_root(&self.scratch_root)
+    }
+
+    /// A tool context whose output streams to the run's event channel as
+    /// [`StreamEvent::ToolOutputDelta`], tagged with the call's `id`.
+    ///
+    /// Only exec-capable tools produce anything here: `bash` tees its child's
+    /// combined stdout/stderr through the sink as it reads. A send failure is
+    /// ignored -- the receiver is gone only when the run is over, and a dead
+    /// display must not stop the command.
+    fn streaming_tool_context(&self, id: &str) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
+        self.tool_context()
+            .with_output_sink(output_sink(&self.events, id))
     }
 
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
@@ -904,7 +947,7 @@ impl ToolInvoker for CompositeToolInvoker {
             }
             let (text, diff, images) = match decision {
                 Decision::Allow => {
-                    execute_builtin_with_diff(tool, &args, &self.tool_context()).await
+                    execute_builtin_with_diff(tool, &args, &self.streaming_tool_context(&id)).await
                 }
                 Decision::HardDeny(reason) => {
                     (hard_deny_msg(name, reason, &self.project_root), None, None)
@@ -958,7 +1001,12 @@ impl ToolInvoker for CompositeToolInvoker {
                     self.permission_requests.lock().await.remove(&request_id);
                     match decision {
                         PermissionDecision::AllowOnce => {
-                            execute_builtin_with_diff(tool, &args, &self.tool_context()).await
+                            execute_builtin_with_diff(
+                                tool,
+                                &args,
+                                &self.streaming_tool_context(&id),
+                            )
+                            .await
                         }
                         PermissionDecision::AllowAlways => {
                             // Thread-scoped only; never persisted to agent.toml.
@@ -972,7 +1020,12 @@ impl ToolInvoker for CompositeToolInvoker {
                             } else {
                                 self.grants.lock().unwrap().grant(kind);
                             }
-                            execute_builtin_with_diff(tool, &args, &self.tool_context()).await
+                            execute_builtin_with_diff(
+                                tool,
+                                &args,
+                                &self.streaming_tool_context(&id),
+                            )
+                            .await
                         }
                         PermissionDecision::Deny => {
                             (format!("ERROR: tool '{name}' denied by user"), None, None)
@@ -1419,7 +1472,12 @@ async fn orchestrate_inner(
     #[cfg(not(feature = "cli"))]
     {
         if model_id.is_none() {
-            if let Some(first) = router_first_model(llama_state, client).await {
+            // The llama.cpp router is a desktop-only listing call on the app's
+            // reqwest 0.12 stack, not agent upstream traffic, so it does not use
+            // the genai client threaded through `OrchestrationArgs`.
+            static ROUTER_CLIENT: std::sync::LazyLock<reqwest::Client> =
+                std::sync::LazyLock::new(reqwest::Client::new);
+            if let Some(first) = router_first_model(llama_state, &ROUTER_CLIENT).await {
                 model_id = Some(first);
             }
         }
@@ -1872,6 +1930,10 @@ async fn run_turn_cycle(
     // fixed turn cap.
     let unlimited = max_turns == 0;
     let mut turn: usize = 0;
+    // The budget notice is announced once, on the turn that crosses the
+    // ceiling. Without the latch every later turn would push another copy and
+    // the notice would crowd out the conversation it is annotating.
+    let mut budget_notice_recorded = false;
     // Mid-run todo upkeep: after a long uninterrupted run of mutating tool
     // calls with no todo touch, nudge the model once to keep the list honest
     // rather than only ever reminding it at a full stop -- a task that never
@@ -2010,42 +2072,63 @@ async fn run_turn_cycle(
                     continue;
                 }
             }
+            // Every turn is finished and the run passed its token ceiling, so
+            // the conversation is both complete and oversized. Compact it here,
+            // while nothing is waiting on the result: the ceiling no longer
+            // stops a run, so without this the thread only grows, and the next
+            // run resumes it by sending the whole oversized history upstream.
+            // The reactive path above cannot help with that -- it only fires
+            // once an upstream has already rejected a request.
+            //
+            // Only when it actually shrinks: `compact_conversation` returns the
+            // input untouched when there is too little to drop, and publishing
+            // an unchanged history would spend a summarizer call for nothing.
+            if budget.exhausted() {
+                let compacted = crate::core::agent::compaction::compact_conversation(
+                    &conversation_messages,
+                    model_id,
+                    model,
+                    crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
+                )
+                .await;
+                if compacted.len() < conversation_messages.len() {
+                    log::info!(
+                        "agent: budget exhausted at end of run, compacted {} -> {} messages",
+                        conversation_messages.len(),
+                        compacted.len()
+                    );
+                    conversation_messages = compacted;
+                }
+            }
             let _ = events.send(StreamEvent::MessagesUpdated {
                 messages: conversation_messages.clone(),
             });
             return Ok(completion);
         }
 
-        // The session budget is exhausted. This is a soft stop, not an error:
-        // a subagent that inherits the parent's remaining budget must hand back
-        // its partial progress (as an assistant message) so the parent can act
-        // on it, instead of the run hard-failing and losing the work. Tool
-        // calls are not executed; nothing further is spent against the ceiling.
-        if budget.exhausted() {
-            let partial = extract_choice_message(&completion)
-                .and_then(|m| m.get("content").and_then(|c| c.as_str()))
-                .unwrap_or("")
-                .to_string();
-            let stop_note = format!(
-                "[session token budget exhausted ({} tokens)] Partial progress so far:\n\
-                 {}",
-                budget.spent(),
-                if partial.is_empty() {
-                    "(none yet reported)".to_string()
-                } else {
-                    partial
-                }
-            );
+        // Crossing the session budget is advisory: it is recorded and the run
+        // carries on, tool calls included. Note what this costs -- `max_turns
+        // == 0` is the normal case (see above), so with the budget no longer
+        // stopping anything, user cancellation is the only remaining bound on a
+        // run's spend.
+        //
+        // Recorded as a system note rather than an assistant turn: the model
+        // never wrote it, and putting a bracketed status marker in the
+        // assistant's voice hands it an example of itself emitting one, which
+        // is the shape a model will imitate unprompted on later turns.
+        if budget.exhausted() && !budget_notice_recorded {
+            budget_notice_recorded = true;
             conversation_messages.push(serde_json::json!({
-                "role": "assistant",
-                "content": stop_note,
+                "role": "system",
+                "content": format!(
+                    "[session token budget exhausted ({} tokens)] The configured \
+                     ceiling has been passed; this run is continuing past it.",
+                    budget.spent()
+                ),
             }));
             let _ = events.send(StreamEvent::MessagesUpdated {
                 messages: conversation_messages.clone(),
             });
-            return Ok(serde_json::json!({
-                "choices": [{ "message": { "content": stop_note }, "finish_reason": "stop" }]
-            }));
         }
 
         for tc in &tool_calls {
@@ -3163,12 +3246,21 @@ mod tests {
         assert!(!bash_result_is_error_flag("ok\n[exit 0]").await);
     }
 
+    /// Crossing the session token budget is advisory: it is announced once, as
+    /// a system note, and the run carries on -- tool calls included.
     #[tokio::test]
-    async fn turn_cycle_soft_stops_when_budget_exhausted() {
+    async fn an_exhausted_budget_is_announced_once_and_the_run_continues() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut over_budget = tool_call_completion();
         over_budget["usage"] = json!({ "total_tokens": 100 });
-        let model = MockModel::new(vec![over_budget]);
+        let done = json!({
+            "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
+        });
+        // A second tool-calling turn after the ceiling is crossed, so the
+        // once-only latch is actually exercised rather than assumed.
+        let mut still_over = tool_call_completion();
+        still_over["usage"] = json!({ "total_tokens": 200 });
+        let model = MockModel::new(vec![over_budget, still_over, done]);
         let tool = MockTool::default();
         let mut budget = SessionBudget::new(Some(50));
         let convo = vec![json!({ "role": "user", "content": "hi" })];
@@ -3188,29 +3280,187 @@ mod tests {
             None,
         )
         .await
-        .expect("budget exhaustion is a soft stop, not an error");
+        .expect("passing the ceiling is not an error");
 
-        let final_text = extract_choice_message(&result)
-            .and_then(|m| m.get("content").and_then(|c| c.as_str()))
-            .unwrap_or_default();
-        let spent = budget.spent();
         assert!(
-            final_text.contains("budget")
-                && final_text.contains(&spent.to_string()),
-            "soft stop should describe the exhausted budget ({spent} tokens): {final_text}",
+            budget.exhausted(),
+            "precondition: the run really did cross the ceiling"
         );
         assert!(
-            tool.calls.lock().unwrap().is_empty(),
-            "tool must not run once budget is exhausted"
+            !tool.calls.lock().unwrap().is_empty(),
+            "tool calls still run once the ceiling is passed"
         );
-        // A MessagesUpdated is published so live surfaces (and the replay
-        // session) see the partial conversation before the soft stop.
+        assert_eq!(
+            extract_choice_message(&result)
+                .and_then(|m| m.get("content").and_then(|c| c.as_str()))
+                .unwrap_or_default(),
+            "all done",
+            "the run finishes on the model's own answer, not a stop notice"
+        );
+
+        // Announced exactly once, in the system voice -- never as an assistant
+        // turn the model could later imitate.
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 3, "the run kept taking turns");
+        // The last request is two turns past the ceiling: if the latch were
+        // missing, the note would appear once per turn here.
+        let messages = requests[2]["messages"].as_array().unwrap();
+        let notes: Vec<&serde_json::Value> = messages
+            .iter()
+            .filter(|m| {
+                m.get("content")
+                    .and_then(|c| c.as_str())
+                    .is_some_and(|c| c.contains("budget exhausted"))
+            })
+            .collect();
+        assert_eq!(notes.len(), 1, "announced once, not per turn: {messages:#?}");
+        assert_eq!(notes[0]["role"], "system", "system voice, not assistant");
         assert!(
-            std::iter::from_fn(|| rx.try_recv().ok()).any(
-                |ev| matches!(ev, StreamEvent::MessagesUpdated { .. })
-            ),
-            "expected a MessagesUpdated event on soft stop"
+            messages
+                .iter()
+                .all(|m| m.get("role").and_then(|v| v.as_str()) != Some("assistant")
+                    || !m["content"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .contains("budget exhausted")),
+            "no assistant turn carries the marker"
         );
+
+        assert!(
+            std::iter::from_fn(|| rx.try_recv().ok())
+                .any(|ev| matches!(ev, StreamEvent::MessagesUpdated { .. })),
+            "live surfaces see the annotated conversation"
+        );
+    }
+
+    /// Passing the ceiling no longer stops a run, so a long thread only grows.
+    /// Once every turn is finished, the oversized conversation is compacted
+    /// before it is published -- otherwise the next run resumes this thread by
+    /// sending the whole thing upstream.
+    #[tokio::test]
+    async fn an_exhausted_budget_compacts_the_conversation_once_turns_are_done() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        // Comfortably longer than DEFAULT_KEEP_RECENT so there is a middle to drop.
+        let convo: Vec<serde_json::Value> = (0..24)
+            .map(|i| {
+                json!({
+                    "role": if i % 2 == 0 { "user" } else { "assistant" },
+                    "content": format!("message {i}"),
+                })
+            })
+            .collect();
+        let original_len = convo.len();
+
+        let mut over_budget = json!({
+            "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
+        });
+        over_budget["usage"] = json!({ "total_tokens": 100 });
+        let summary = json!({
+            "choices": [{ "message": { "content": "SUMMARY OF THE EARLIER WORK" } }]
+        });
+        // Second response is consumed by the summarizer inside compaction.
+        let model = MockModel::new(vec![over_budget, summary]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(Some(50));
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        assert!(budget.exhausted(), "precondition: the ceiling was passed");
+        assert_eq!(
+            model.requests.lock().unwrap().len(),
+            2,
+            "one turn, plus the summarizer call compaction makes"
+        );
+
+        // The published history is the compacted one: shorter, and carrying the
+        // summary in place of the dropped middle.
+        let published = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|ev| match ev {
+                StreamEvent::MessagesUpdated { messages } => Some(messages),
+                _ => None,
+            })
+            .last()
+            .expect("a MessagesUpdated is published");
+        assert!(
+            published.len() < original_len,
+            "history was compacted: {} -> {}",
+            original_len,
+            published.len()
+        );
+        assert!(
+            published.iter().any(|m| m["content"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("SUMMARY OF THE EARLIER WORK")),
+            "the summary replaced the dropped middle: {published:#?}"
+        );
+    }
+
+    /// A run that stayed inside its ceiling is left alone -- no summarizer call,
+    /// no compaction, history published as-is.
+    #[tokio::test]
+    async fn a_run_within_budget_is_not_compacted() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let convo: Vec<serde_json::Value> = (0..24)
+            .map(|i| json!({ "role": "user", "content": format!("message {i}") }))
+            .collect();
+        let original_len = convo.len();
+
+        let mut under_budget = json!({
+            "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
+        });
+        under_budget["usage"] = json!({ "total_tokens": 10 });
+        let model = MockModel::new(vec![under_budget]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(Some(50_000));
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        assert!(!budget.exhausted());
+        assert_eq!(
+            model.requests.lock().unwrap().len(),
+            1,
+            "no summarizer call: compaction never ran"
+        );
+        let published = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|ev| match ev {
+                StreamEvent::MessagesUpdated { messages } => Some(messages),
+                _ => None,
+            })
+            .last()
+            .expect("a MessagesUpdated is published");
+        assert_eq!(published.len(), original_len, "history untouched");
     }
 
     struct ResultQueueModel {
@@ -4646,5 +4896,43 @@ mod tests {
 
         assert!(tools.is_empty(), "default=deny must lock down MCP advertisement");
         assert!(map.is_empty());
+    }
+
+    /// `bash` hands its child to a detached task that keeps the output sink
+    /// alive after the call has returned its `job_id`. The sink must not keep
+    /// the run's event channel open with it: every consumer of that channel --
+    /// the desktop forwarder, the headless printer, a subagent's forwarder --
+    /// finishes only when the channel closes.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_backgrounded_job_does_not_hold_the_event_channel_open() {
+        use tauri_plugin_agent_tools::tools::{handlers::execute_builtin, lookup, ToolContext};
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
+        let skills: Vec<String> = Vec::new();
+        let ctx = ToolContext::new(dir.path(), dir.path(), &skills)
+            .with_sandbox(false)
+            .with_output_sink(output_sink(&tx, "call-1"));
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "sleep 3; printf 'late\\n'", "timeout": 0}),
+            &ctx,
+        )
+        .await
+        .0;
+        assert!(out.contains("job_id=bash-"), "expected a backgrounded job, got: {out}");
+
+        // The run is over: the orchestration future has returned and dropped its
+        // sender, so the receiver must observe closure without waiting for the
+        // straggling command (which outlives this assertion by seconds).
+        drop(tx);
+        let closed = tokio::time::timeout(std::time::Duration::from_millis(1500), async {
+            while rx.recv().await.is_some() {}
+        })
+        .await;
+        assert!(
+            closed.is_ok(),
+            "the event channel never closed while a backgrounded bash job was still running"
+        );
     }
 }
