@@ -3995,6 +3995,7 @@ impl App {
             StreamEvent::AskRequest {
                 request_id,
                 request,
+                ..
             } => self
                 .ask_queue
                 .push_back(PendingAsk::new(request_id, request)),
@@ -14767,6 +14768,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id: "r1".into(),
             request,
+            timeout_secs: None,
         });
         let rows = render_rows(&mut app, 50, 30);
         let joined = rows.join("\n");
@@ -15056,6 +15058,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, true),
+            timeout_secs: None,
         });
 
         press_ask(&mut app, &registry, KeyCode::Enter).await;
@@ -15086,10 +15089,12 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id: "keep".into(),
             request: ask_request(false, false),
+            timeout_secs: None,
         });
         app.apply(StreamEvent::AskRequest {
             request_id: "gone".into(),
             request: ask_request(false, false),
+            timeout_secs: None,
         });
         assert_eq!(app.ask_queue.len(), 2);
 
@@ -15108,6 +15113,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
 
         let mut key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
@@ -15127,6 +15133,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(true, false),
+            timeout_secs: None,
         });
 
         press_ask(&mut app, &registry, KeyCode::Char(' ')).await;
@@ -15146,6 +15153,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
         press_ask(&mut app, &registry, KeyCode::Esc).await;
         assert!(matches!(
@@ -15164,6 +15172,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
         let mut terminal = Terminal::new(TestBackend::new(36, 24)).unwrap();
         terminal.draw(|frame| super::draw(frame, &mut app)).unwrap();
@@ -15217,6 +15226,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
 
         press_ask(&mut app, &registry, KeyCode::Down).await;
@@ -15240,6 +15250,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
 
         press_ask(&mut app, &registry, KeyCode::Down).await;
@@ -15269,6 +15280,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
 
         route_paste_event(&mut app, Event::Paste("must not become chat".into()));
@@ -17401,6 +17413,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
         app.ask_queue.front_mut().unwrap().editing_custom = true;
 
@@ -23570,6 +23583,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
         finish_clean_turn(&mut app);
         assert!(!app.want_start, "a pending ask blocks the reminder boundary");
@@ -24204,6 +24218,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: plan_review_request(),
+            timeout_secs: None,
         });
         // Default selection 0 = "Execute plan"; Enter submits.
         press_ask(&mut app, &registry, KeyCode::Enter).await;
@@ -24232,6 +24247,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: plan_review_request(),
+            timeout_secs: None,
         });
         press_ask(&mut app, &registry, KeyCode::Enter).await;
         // Atomic handoff: no staged plan => stay in Plan, no continuation.
@@ -24253,6 +24269,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: plan_review_request(),
+            timeout_secs: None,
         });
         press_ask(&mut app, &registry, KeyCode::Down).await; // -> Keep planning
         press_ask(&mut app, &registry, KeyCode::Enter).await;
@@ -24272,6 +24289,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: plan_review_request(),
+            timeout_secs: None,
         });
         press_ask(&mut app, &registry, KeyCode::Down).await;
         press_ask(&mut app, &registry, KeyCode::Down).await; // -> Exit plan mode
@@ -24291,6 +24309,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: plan_review_request(),
+            timeout_secs: None,
         });
         press_ask(&mut app, &registry, KeyCode::Esc).await; // cancel the review
         assert!(app.ask_queue.is_empty(), "review wait must be cleared");

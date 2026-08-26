@@ -534,11 +534,17 @@ impl CompositeToolInvoker {
             Err(error) => return format!("ERROR: {error}"),
         };
         let (request_id, receiver) = register(registry).await;
+        // Resolve the configured timeout once, before sending the event: the
+        // same value both arms the timer below and rides on the event so the
+        // TUI can render a countdown without re-reading config (and so the
+        // displayed deadline never disagrees with actual enforcement).
+        let timeout = ask_timeout_setting();
         if self
             .events
             .send(StreamEvent::AskRequest {
                 request_id: request_id.clone(),
                 request: request.clone(),
+                timeout_secs: timeout.map(|d| d.as_secs()),
             })
             .is_err()
         {
@@ -550,7 +556,7 @@ impl CompositeToolInvoker {
             .await;
             return "ERROR [ask_cancelled]: interactive UI disconnected".to_string();
         }
-        let outcome = match ask_timeout_setting() {
+        let outcome = match timeout {
             Some(duration) => match tokio::time::timeout(duration, receiver).await {
                 Ok(received) => received,
                 Err(_elapsed) => {
@@ -3922,6 +3928,7 @@ mod tests {
             StreamEvent::AskRequest {
                 request_id,
                 request,
+                ..
             } => {
                 assert_eq!(request.questions[0].id, "scope");
                 request_id

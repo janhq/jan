@@ -97,10 +97,16 @@ pub enum StreamEvent {
     MessagesUpdated {
         messages: Vec<serde_json::Value>,
     },
-    /// The `ask` tool is waiting for structured interactive input.
+    /// The `ask` tool is waiting for structured interactive input. Carries the
+    /// `ask_timeout_secs` deadline (seconds until the loop auto-selects the
+    /// recommended option) as `timeout_secs`, or `None` when no timeout is
+    /// configured. It travels on the event so a client can render a countdown
+    /// without re-reading config: the same value both arms the loop's timer and
+    /// drives the display, keeping the two in agreement.
     AskRequest {
         request_id: String,
         request: crate::core::agent::interaction::AskRequest,
+        timeout_secs: Option<u64>,
     },
     /// An `ask` request the loop resolved without a user answer (it timed out
     /// and auto-selected). Tells a client showing the live prompt for
