@@ -3,9 +3,6 @@
   "description": "How can I help you today?",
   "temporaryChat": "Temporary Chat",
   "temporaryChatDescription": "Start a temporary conversation that won't be saved to your chat history.",
-  "status": {
-    "empty": "No Chats Found"
-  },
   "sendMessage": "Send Message",
   "newConversation": "New Conversation",
   "clearHistory": "Clear History",
@@ -15,7 +12,9 @@
   },
   "actions": {
     "regenerate": "Regenerate response",
-    "continue": "Continue generating"
+    "continue": "Continue generating",
+    "reload": "Reload",
+    "increaseContextSize": "Increase Context Size"
   },
   "done": "Done",
   "webSources": "{{count}} source(s)",
@@ -29,5 +28,81 @@
     "thoughtFor": "Thought for {{duration}}",
     "workedForAWhile": "Worked for a few seconds",
     "workedFor": "Worked for {{duration}}"
+  },
+  "input": {
+    "addDocuments": "Add documents or files",
+    "indexingDocuments": "Indexing documents…",
+    "starting": "Starting...",
+    "browse": "Browse",
+    "browseActive": "Browse (Active)",
+    "agentModeActive": "Agent mode active",
+    "enableAgentMode": "Enable agent mode",
+    "default": "Default",
+    "on": "On",
+    "off": "Off",
+    "auto": "Auto",
+    "reasoningEffort": "Reasoning Effort",
+    "reasoning": "Reasoning",
+    "reasoningForced": "Reasoning forced on for every request.",
+    "reasoningDisabled": "Reasoning disabled for every request.",
+    "reasoningDefault": "Reasoning uses the model's default.",
+    "thinkingBudget": "Thinking Budget",
+    "stopGenerating": "Stop generating",
+    "clearQueued": "Clear {{count}} queued message(s)"
+  },
+  "errors": {
+    "pleaseSelectModel": "Please select a model to start chatting.",
+    "pleaseWaitAttachments": "Please wait for attachments to finish processing",
+    "attachmentsDisabled": "Attachments are disabled in Settings",
+    "fileTooLarge": "File too large",
+    "fileSizeLimit": "One or more files exceed the {{limit}}MB limit",
+    "filesAlreadyAttached": "Files already attached",
+    "duplicateInList": "{{files}} already in the list",
+    "failedAttachDocuments": "Failed to attach documents",
+    "failedRemoveAttachment": "Failed to remove attachment",
+    "someImagesAlreadyAttached": "Some images already attached",
+    "someAudioAlreadyAttached": "Some audio files already attached",
+    "failedReadAudio": "Failed to read audio file",
+    "someVideoAlreadyAttached": "Some video files already attached",
+    "failedReadVideo": "Failed to read video file",
+    "failedReadFile": "Failed to read file",
+    "failedToIngest": "Failed to ingest {{name}}",
+    "filesTooLarge": "File(s) too large (max {{limit}}): {{files}}",
+    "invalidFileType": "Invalid file type(s) (only JPEG, JPG, PNG allowed): {{files}}",
+    "audioTooLarge": "Audio file(s) too large (max 25MB): {{files}}",
+    "invalidAudioType": "Invalid audio type(s) (only WAV, MP3 allowed): {{files}}",
+    "videoTooLarge": "Video file(s) too large (max 100MB): {{files}}",
+    "invalidVideoType": "Invalid video type(s): {{files}}"
+  },
+  "status": {
+    "empty": "No Chats Found",
+    "growingTheMind": "Growing the Mind...",
+    "outOfMemory": "llama.cpp ran out of memory",
+    "backendError": "GGML backend encountered an error",
+    "contextLimit": "Model ran out of context size"
+  },
+  "oom": {
+    "reduceCtxSize": "Reduce context size (ctx-size)",
+    "disableMtp": "Disable MTP (Multi-Token Prediction)",
+    "lowerGpuLayers": "Lower n-gpu-layers or switch to a CPU backend",
+    "useSmallerModel": "Use a smaller / more quantized model"
+  },
+  "sampling": {
+    "resetAll": "Reset all",
+    "addParameter": "Add parameter",
+    "noOverrides": "No overrides — using model defaults.",
+    "noTunableParams": "No tunable parameters for this provider.",
+    "unrecognizedParams": "{{count}} unrecognized parameter(s) hidden",
+    "notSupportedStripped": "Not supported — will be stripped on send",
+    "notSupportedSkipped": "Not supported — will be skipped.",
+    "mayBeIgnored": "May be ignored by this provider",
+    "removeParam": "Remove {{name}}",
+    "removeGroup": "Remove {{name}}",
+    "loadingAssistant": "Loading assistant…",
+    "sampling": "Sampling",
+    "samplingWith": "Sampling — {{name}}",
+    "samplingParameters": "Sampling parameters",
+    "openAssistantSettings": "Open assistant settings",
+    "pickAssistant": "Pick an assistant above to configure sampling."
   }
 }

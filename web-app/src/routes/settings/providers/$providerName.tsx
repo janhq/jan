@@ -62,6 +62,11 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
 
 function ProviderDetail() {
   const { t } = useTranslation()
+  // 扩展设置(如 llamacpp settings.json)的 title/description 走 i18n,未知 key 回落原文
+  const trySettingKey = (key: string, fallback: string): string => {
+    const v = t(key)
+    return v === key ? fallback : v
+  }
   const serviceHub = useServiceHub()
   const { setModelLoadError } = useModelLoad()
   const [activeModels, setActiveModels] = useAppState(
@@ -758,7 +763,10 @@ function ProviderDetail() {
                   return (
                     <CardItem
                       key={settingIndex}
-                      title={setting.title}
+                      title={trySettingKey(
+                        `providers:llamacppSettings.${setting.key}.title`,
+                        setting.title
+                      )}
                       className={cn(setting.key === 'device' && 'hidden')}
                       column={
                         setting.controller_type === 'input' &&
@@ -770,7 +778,10 @@ function ProviderDetail() {
                         <>
                           <RenderMarkdown
                             className="![>p]:text-muted-foreground select-none"
-                            content={setting.description}
+                            content={trySettingKey(
+                              `providers:llamacppSettings.${setting.key}.description`,
+                              setting.description ?? ''
+                            )}
                             components={{
                               // Make links open in a new tab
                               a: ({ ...props }) => {

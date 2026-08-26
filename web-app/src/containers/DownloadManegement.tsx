@@ -5,6 +5,7 @@ import {
 } from '@/components/ui/popover'
 import { Progress } from '@/components/ui/progress'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { isModelscopeUrl } from '@/lib/modelDownloads'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { events, AppEvent } from '@janhq/core'
@@ -93,6 +94,7 @@ export function DownloadManagement() {
       current: download.current,
       total: download.total,
       paused: download.paused ?? false,
+      speed: download.speed,
     }))
 
     // Add local downloading models that don't have progress data yet
@@ -105,6 +107,7 @@ export function DownloadManagement() {
         current: 0,
         total: 0,
         paused: false,
+        speed: undefined,
       }))
 
     return [...downloadsWithProgress, ...localDownloadsWithoutProgress]
@@ -177,7 +180,9 @@ export function DownloadManagement() {
             id,
             params.modelPath,
             params.mmprojPath,
-            params.hfToken
+            params.hfToken,
+            // 魔搭任务恢复时继续附带官方 sha256 校验
+            !isModelscopeUrl(params.modelPath)
           )
       } catch (e) {
         console.error('Failed to resume download:', id, e)
@@ -372,32 +377,44 @@ export function DownloadManagement() {
                           <p className="text-xs">
                             {download.paused
                               ? download.total > 0
-                                ? `Paused · ${Math.round(download.progress * 100)}%`
-                                : 'Paused'
+                                ? t('pausedProgress', {
+                                    percent: Math.round(download.progress * 100),
+                                  })
+                                : t('paused')
                               : download.total > 0
                                 ? `${Math.round(download.progress * 100)}%`
                                 : download.current > 0
-                                  ? 'Downloading...'
-                                  : 'Initializing download...'}
+                                  ? t('downloadingEllipsis')
+                                  : t('initializingDownload')}
                           </p>
                           <p className="text-xs">
                             {download.total > 0
-                              ? `${formatBytes(download.current, {
-                                hideUnit: true,
-                                minUnit: 'GB',
-                                decimals: 2,
-                              })} / ${formatBytes(download.total, {
-                                hideUnit: true,
-                                minUnit: 'GB',
-                                decimals: 2,
-                              })} GB`
-                              : download.current > 0 ?
-                                `${formatBytes(download.current, {
-                                  hideUnit: true,
-                                  minUnit: 'GB',
-                                  decimals: 2,
-                                })} GB` : ''
-                            }
+                              ? t('downloadSize', {
+                                  current: formatBytes(download.current, {
+                                    hideUnit: true,
+                                    minUnit: 'GB',
+                                    decimals: 2,
+                                  }),
+                                  total: formatBytes(download.total, {
+                                    hideUnit: true,
+                                    minUnit: 'GB',
+                                    decimals: 2,
+                                  }),
+                                })
+                              : download.current > 0
+                                ? t('downloadSizeCurrent', {
+                                    current: formatBytes(download.current, {
+                                      hideUnit: true,
+                                      minUnit: 'GB',
+                                      decimals: 2,
+                                    }),
+                                  })
+                                : ''}
+                            {download.speed != null && !download.paused
+                              ? t('downloadSpeed', {
+                                  speed: formatBytes(download.speed),
+                                })
+                              : ''}
                           </p>
                         </div>
                       </div>
@@ -409,7 +426,7 @@ export function DownloadManagement() {
               <div className="px-3 py-8 flex flex-col items-center justify-center text-center space-y-2">
                 <DownloadIcon className="text-muted-foreground/50 size-6" />
                 <p className="text-muted-foreground leading-normal">
-                  Your download progress <br /> will appear here
+                  {t('hub:downloadPlaceholder')}
                 </p>
               </div>
             )}

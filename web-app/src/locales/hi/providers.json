@@ -58,5 +58,15 @@
   },
   "addProvider": "प्रदाता जोड़ें",
   "addOpenAIProvider": "OpenAI प्रदाता जोड़ें",
-  "enterNameForProvider": "कृपया प्रदाता का नाम दर्ज करें"
+  "enterNameForProvider": "कृपया प्रदाता का नाम दर्ज करें",
+  "option": {
+    "auto": "Auto",
+    "layer": "Layer",
+    "yarn": "YaRN",
+    "off": "Off",
+    "full": "Full",
+    "none": "None",
+    "linear": "Linear",
+    "on": "On"
+  }
 }

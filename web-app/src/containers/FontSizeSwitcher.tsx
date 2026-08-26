@@ -37,7 +37,7 @@ export function FontSizeSwitcher({
             <Card className="w-full border transition-colors shadow-none">
               <CardContent className="flex flex-row items-center justify-start gap-4 p-4">
                 <RadioGroupItem value={item.value} id={item.value} />
-                <span className="text-sm font-medium">{item.label}</span>
+                <span className="text-sm font-medium">{t(item.labelKey ?? item.label)}</span>
               </CardContent>
             </Card>
           </Label>
@@ -50,14 +50,17 @@ export function FontSizeSwitcher({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className="w-full justify-between" title={t('common:adjustFontSize')}>
-          {fontSizeOptions.find(
-            (item: { value: string; label: string }) => item.value === fontSize
-          )?.label || t('common:medium')}
+          {t(
+            fontSizeOptions.find(
+              (item: { value: string; label: string }) =>
+                item.value === fontSize
+            )?.labelKey ?? t('common:medium')
+          )}
           <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {fontSizeOptions.map((item: { value: string; label: string }) => (
+        {fontSizeOptions.map((item) => (
           <DropdownMenuItem
             key={item.value}
             className={cn(
@@ -66,7 +69,7 @@ export function FontSizeSwitcher({
             )}
             onClick={() => setFontSize(item.value as FontSize)}
           >
-            {item.label}
+            {t(item.labelKey ?? item.label)}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

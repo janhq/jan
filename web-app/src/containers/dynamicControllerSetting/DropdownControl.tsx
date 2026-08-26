@@ -30,16 +30,33 @@ export function DropdownControl({
   onChange,
 }: DropdownControlProps) {
   const { t } = useTranslation()
-  const isSelected =
-    options.find((option) => option.value === value)?.name || value
+  const selected =
+    options.find((option) => option.value === value)?.name || String(value)
+  const translateOptionName = (name: string): string => {
+    const key: Record<string, string> = {
+      Auto: 'auto',
+      On: 'on',
+      Off: 'off',
+      None: 'none',
+      Layer: 'layer',
+      Full: 'full',
+      Linear: 'linear',
+      YaRN: 'yarn',
+    }
+    const mapped = key[name]
+    return mapped
+      ? t(`providers:option.${mapped}`, { defaultValue: name })
+      : name
+  }
+  const displaySelected = translateOptionName(selected)
 
   if (options.length <= 1) {
     return (
       <div
         className="text-sm text-muted-foreground px-3 py-1.5 max-w-full truncate"
-        title={String(isSelected)}
+        title={displaySelected}
       >
-        {isSelected}
+        {displaySelected}
       </div>
     )
   }
@@ -47,8 +64,8 @@ export function DropdownControl({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="w-full justify-between" title={isSelected}>
-          <span className='max-w-42 line-clamp-1'>{isSelected}</span>
+        <Button variant="outline" size="sm" className="w-full justify-between" title={displaySelected}>
+          <span className='max-w-42 line-clamp-1'>{displaySelected}</span>
           <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
         </Button>
       </DropdownMenuTrigger>
@@ -59,12 +76,12 @@ export function DropdownControl({
             onClick={() => onChange(option.value)}
             className={cn(
               'flex items-center justify-between my-1',
-              isSelected === option.name
+              String(option.value) === String(value)
                 ? 'bg-secondary/60 hover:bg-secondary/40'
                 : ''
             )}
           >
-            <span>{option.name}</span>
+            <span>{translateOptionName(option.name)}</span>
             {option.installed && (
               <span className="ml-2 shrink-0 text-xs text-muted-foreground">
                 {t('providers:backendInstalled')}

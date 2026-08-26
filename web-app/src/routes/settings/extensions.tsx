@@ -35,7 +35,7 @@ function ExtensionsContent() {
                     {t('settings:extensions.title')}
                   </h1>
                   {/* <div className="flex items-center gap-2">
-                    <Button size="sm">Install Extension</Button>
+                    <Button size="sm">{t('settings:extensions.installExtension')}</Button>
                   </div> */}
                 </div>
               }

@@ -132,7 +132,7 @@ describe('AddEditMCPServer', () => {
       { target: { value: 'httpSrv' } }
     )
     fireEvent.click(screen.getByLabelText('HTTP'))
-    fireEvent.change(screen.getByPlaceholderText('Enter URL'), {
+    fireEvent.change(screen.getByPlaceholderText('mcpServers:enterUrlPlaceholder'), {
       target: { value: 'https://api.example.com' },
     })
     fireEvent.click(screen.getByText('mcp-servers:save'))

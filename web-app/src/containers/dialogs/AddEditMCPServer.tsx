@@ -505,7 +505,7 @@ export default function AddEditMCPServer({
                 <Input
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  placeholder="Enter URL"
+                  placeholder={t('mcpServers:enterUrlPlaceholder')}
                 />
               </div>
             )}
@@ -624,7 +624,7 @@ export default function AddEditMCPServer({
                         onChange={(e) =>
                           handleHeaderKeyChange(index, e.target.value)
                         }
-                        placeholder="Header name"
+                        placeholder={t('mcpServers:headerNamePlaceholder')}
                         className="flex-1"
                       />
                       <Input
@@ -632,7 +632,7 @@ export default function AddEditMCPServer({
                         onChange={(e) =>
                           handleHeaderValueChange(index, e.target.value)
                         }
-                        placeholder="Header value"
+                        placeholder={t('mcpServers:headerValuePlaceholder')}
                         className="flex-1"
                       />
                       {headerKeys.length > 1 && (
@@ -654,7 +654,7 @@ export default function AddEditMCPServer({
                   <Input
                     value={timeout}
                     onChange={(e) => setTimeout(e.target.value)}
-                    placeholder="Enter timeout in seconds"
+                    placeholder={t('mcpServers:timeoutPlaceholder')}
                     type="number"
                   />
                 </div>

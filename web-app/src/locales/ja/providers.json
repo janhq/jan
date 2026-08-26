@@ -106,5 +106,15 @@
     "oneKeyHint": "任意のフォールバックキーは詳細設定で構成します。",
     "addKey": "キーを追加",
     "removeKey": "キーを削除"
+  },
+  "option": {
+    "auto": "Auto",
+    "layer": "Layer",
+    "yarn": "YaRN",
+    "off": "Off",
+    "full": "Full",
+    "none": "None",
+    "linear": "Linear",
+    "on": "On"
   }
 }

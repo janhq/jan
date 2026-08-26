@@ -109,7 +109,7 @@ export function DownloadButtonPlaceholder({
           target="_blank"
           rel="noopener noreferrer"
         >
-          <Button size="sm">View on HuggingFace</Button>
+          <Button size="sm">{t('hub:viewOnHuggingFace')}</Button>
         </a>
       </div>
     )

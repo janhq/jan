@@ -250,8 +250,8 @@ describe('DefaultModelsService - additional coverage', () => {
       const storageData = {
         state: { providers: [{ provider: 'llamacpp', models: [{ id: 'm1', settings: {} }] }] },
       }
-      const getItemSpy = vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(JSON.stringify(storageData))
-      const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {})
+      const getItemSpy = vi.spyOn(localStorage, 'getItem').mockReturnValue(JSON.stringify(storageData))
+      const setItemSpy = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {})
       const result = await svc.checkMmprojExistsAndUpdateOffloadMMprojSetting('m1')
       expect(result).toEqual({ exists: true, settingsUpdated: true })
       expect(setItemSpy).toHaveBeenCalled()

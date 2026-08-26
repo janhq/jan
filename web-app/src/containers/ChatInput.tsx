@@ -364,14 +364,14 @@ const ChatInput = memo(function ChatInput({
 
   const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
-      setMessage('Please select a model to start chatting.')
+      setMessage(t('chat:errors.pleaseSelectModel'))
       return
     }
     if (!prompt.trim() && !hasSendableMedia) {
       return
     }
     if (ingestingAny) {
-      toast.info('Please wait for attachments to finish processing')
+      toast.info(t('chat:errors.pleaseWaitAttachments'))
       return
     }
 
@@ -657,7 +657,7 @@ const ChatInput = memo(function ChatInput({
   const handleAttachDocsIngest = async () => {
     try {
       if (!attachmentsEnabled) {
-        toast.info('Attachments are disabled in Settings')
+        toast.info(t('chat:errors.attachmentsDisabled'))
         return
       }
       const selection = await serviceHub.dialog().open({
@@ -804,7 +804,7 @@ const ChatInput = memo(function ChatInput({
             ],
           },
           {
-            name: 'All Files',
+            name: t('common:allFiles'),
             extensions: ['*'],
           },
         ],
@@ -846,8 +846,10 @@ const ChatInput = memo(function ChatInput({
           (att) => typeof att.size === 'number' && att.size > maxFileSizeBytes
         )
         if (hasOversized) {
-          toast.error('File too large', {
-            description: `One or more files exceed the ${maxFileSizeMB}MB limit`,
+          toast.error(t('chat:errors.fileTooLarge'), {
+            description: t('chat:errors.fileSizeLimit', {
+              limit: maxFileSizeMB,
+            }),
           })
           return
         }
@@ -880,8 +882,10 @@ const ChatInput = memo(function ChatInput({
       })
 
       if (duplicates.length > 0) {
-        toast.warning('Files already attached', {
-          description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
+        toast.warning(t('chat:errors.filesAlreadyAttached'), {
+          description: t('chat:errors.duplicateInList', {
+            files: duplicates.join(', '),
+          }),
         })
       }
 
@@ -891,7 +895,7 @@ const ChatInput = memo(function ChatInput({
     } catch (e) {
       console.error('Failed to attach documents:', e)
       const desc = e instanceof Error ? e.message : JSON.stringify(e)
-      toast.error('Failed to attach documents', { description: desc })
+      toast.error(t('chat:errors.failedAttachDocuments'), { description: desc })
     }
   }
 
@@ -915,7 +919,7 @@ const ChatInput = memo(function ChatInput({
         }
       } catch (error) {
         console.error('Failed to delete attachment from backend:', error)
-        toast.error('Failed to remove attachment', {
+        toast.error(t('chat:errors.failedRemoveAttachment'), {
           description: error instanceof Error ? error.message : String(error),
         })
         return
@@ -1097,7 +1101,7 @@ const ChatInput = memo(function ChatInput({
               setAttachmentsForThread(attachmentsKey, (prev) =>
                 prev.filter((a) => !matchImg(a))
               )
-              toast.error(`Failed to ingest ${img.name}`, {
+              toast.error(t('chat:errors.failedToIngest', { name: img.name }), {
                 description:
                   error instanceof Error ? error.message : String(error),
               })
@@ -1116,7 +1120,7 @@ const ChatInput = memo(function ChatInput({
 
     // Display validation errors
     if (duplicates.length > 0) {
-      toast.warning('Some images already attached', {
+      toast.warning(t('chat:errors.someImagesAlreadyAttached'), {
         description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
       })
     }
@@ -1124,13 +1128,18 @@ const ChatInput = memo(function ChatInput({
     const errors: string[] = []
     if (oversizedFiles.length > 0) {
       errors.push(
-        `File${oversizedFiles.length > 1 ? 's' : ''} too large (max 10MB): ${oversizedFiles.join(', ')}`
+        t('chat:errors.filesTooLarge', {
+          limit: 10,
+          files: oversizedFiles.join(', '),
+        })
       )
     }
 
     if (invalidTypeFiles.length > 0) {
       errors.push(
-        `Invalid file type${invalidTypeFiles.length > 1 ? 's' : ''} (only JPEG, JPG, PNG allowed): ${invalidTypeFiles.join(', ')}`
+        t('chat:errors.invalidFileType', {
+          files: invalidTypeFiles.join(', '),
+        })
       )
     }
 
@@ -1243,19 +1252,19 @@ const ChatInput = memo(function ChatInput({
       }
 
       if (duplicates.length > 0) {
-        toast.warning('Some audio files already attached', {
+        toast.warning(t('chat:errors.someAudioAlreadyAttached'), {
           description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
         })
       }
       const errors: string[] = []
       if (oversized.length > 0) {
         errors.push(
-          `Audio file${oversized.length > 1 ? 's' : ''} too large (max 25MB): ${oversized.join(', ')}`
+          t('chat:errors.audioTooLarge', { files: oversized.join(', ') })
         )
       }
       if (invalid.length > 0) {
         errors.push(
-          `Invalid audio type${invalid.length > 1 ? 's' : ''} (only WAV, MP3 allowed): ${invalid.join(', ')}`
+          t('chat:errors.invalidAudioType', { files: invalid.join(', ') })
         )
       }
       if (errors.length > 0) {
@@ -1298,7 +1307,7 @@ const ChatInput = memo(function ChatInput({
               files.push(new File([blob], fileName, { type: mimeType }))
             } catch (error) {
               console.error('Failed to read audio file:', error)
-              toast.error('Failed to read audio file', {
+              toast.error(t('chat:errors.failedReadAudio'), {
                 description: error instanceof Error ? error.message : String(error),
               })
             }
@@ -1377,19 +1386,19 @@ const ChatInput = memo(function ChatInput({
       }
 
       if (duplicates.length > 0) {
-        toast.warning('Some video files already attached', {
+        toast.warning(t('chat:errors.someVideoAlreadyAttached'), {
           description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
         })
       }
       const errors: string[] = []
       if (oversized.length > 0) {
         errors.push(
-          `Video file${oversized.length > 1 ? 's' : ''} too large (max 100MB): ${oversized.join(', ')}`
+          t('chat:errors.videoTooLarge', { files: oversized.join(', ') })
         )
       }
       if (invalid.length > 0) {
         errors.push(
-          `Invalid video type${invalid.length > 1 ? 's' : ''}: ${invalid.join(', ')}`
+          t('chat:errors.invalidVideoType', { files: invalid.join(', ') })
         )
       }
       if (errors.length > 0) {
@@ -1431,7 +1440,7 @@ const ChatInput = memo(function ChatInput({
               files.push(new File([blob], fileName, { type: videoMimeForExt(ext) }))
             } catch (error) {
               console.error('Failed to read video file:', error)
-              toast.error('Failed to read video file', {
+              toast.error(t('chat:errors.failedReadVideo'), {
                 description: error instanceof Error ? error.message : String(error),
               })
             }
@@ -1492,7 +1501,7 @@ const ChatInput = memo(function ChatInput({
               files.push(file)
             } catch (error) {
               console.error('Failed to read file:', error)
-              toast.error('Failed to read file', {
+              toast.error(t('chat:errors.failedReadFile'), {
                 description:
                   error instanceof Error ? error.message : String(error),
               })
@@ -1976,7 +1985,7 @@ const ChatInput = memo(function ChatInput({
                     {hasMmproj && (
                       <DropdownMenuItem onClick={() => void openImagePicker()}>
                         <IconPhoto size={18} className="text-muted-foreground" />
-                        <span>Add Images</span>
+                        <span>{t('common:addImages')}</span>
                         <input
                           type="file"
                           ref={fileInputRef}
@@ -1989,7 +1998,7 @@ const ChatInput = memo(function ChatInput({
                     {audioSupported && (
                       <DropdownMenuItem onClick={() => void openAudioPicker()}>
                         <IconMusic size={18} className="text-muted-foreground" />
-                        <span>Add Audio</span>
+                        <span>{t('common:addAudio')}</span>
                         <input
                           type="file"
                           ref={audioInputRef}
@@ -2003,7 +2012,7 @@ const ChatInput = memo(function ChatInput({
                     {videoSupported && (
                       <DropdownMenuItem onClick={() => void openVideoPicker()}>
                         <IconVideo size={18} className="text-muted-foreground" />
-                        <span>Add Video</span>
+                        <span>{t('common:addVideo')}</span>
                         <input
                           type="file"
                           ref={videoInputRef}
@@ -2032,8 +2041,8 @@ const ChatInput = memo(function ChatInput({
                       )}
                       <span>
                         {ingestingDocs
-                          ? 'Indexing documents…'
-                          : 'Add documents or files'}
+                          ? t('chat:input.indexingDocuments')
+                          : t('chat:input.addDocuments')}
                       </span>
                     </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -2098,10 +2107,10 @@ const ChatInput = memo(function ChatInput({
                     <TooltipContent>
                       <p>
                         {isJanBrowserMCPLoading
-                          ? 'Starting...'
+                          ? t('chat:input.starting')
                           : janBrowserMCPActive
-                            ? 'Browse (Active)'
-                            : 'Browse'}
+                            ? t('chat:input.browseActive')
+                            : t('chat:input.browse')}
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -2213,8 +2222,8 @@ const ChatInput = memo(function ChatInput({
                     <TooltipContent>
                       <p>
                         {isAgentMode
-                          ? 'Agent mode active'
-                          : 'Enable agent mode'}
+                          ? t('chat:input.agentModeActive')
+                          : t('chat:input.enableAgentMode')}
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -2356,7 +2365,7 @@ const ChatInput = memo(function ChatInput({
                                 <Button
                                   variant="ghost"
                                   size="icon-xs"
-                                  aria-label={`Reasoning effort: ${effortLabel}`}
+                                  aria-label={`${t('chat:input.reasoningEffort')}: ${effortLabel}`}
                                 >
                                   <IconBrain
                                     size={18}
@@ -2369,7 +2378,7 @@ const ChatInput = memo(function ChatInput({
                               </DropdownMenuTrigger>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p>Reasoning effort: {effortLabel}</p>
+                              <p>{t('chat:input.reasoningEffort')}: {effortLabel}</p>
                             </TooltipContent>
                           </Tooltip>
                           <DropdownMenuContent align="start">
@@ -2378,7 +2387,7 @@ const ChatInput = memo(function ChatInput({
                                 clearModelSetting('thinking_budget_tokens')
                               }
                             >
-                              Default
+                              {t('chat:input.default')}
                               {!currentEffort && (
                                 <span className="ml-auto text-xs text-muted-foreground">
                                   ✓
@@ -2422,16 +2431,16 @@ const ChatInput = memo(function ChatInput({
                       )
                     const label =
                       reasoningValue === 'on'
-                        ? 'On'
+                        ? t('chat:input.on')
                         : reasoningValue === 'off'
-                          ? 'Off'
-                          : 'Auto'
+                          ? t('chat:input.off')
+                          : t('chat:input.auto')
                     const tooltipText =
                       reasoningValue === 'on'
-                        ? 'Reasoning forced on for every request.'
+                        ? t('chat:input.reasoningForced')
                         : reasoningValue === 'off'
-                          ? 'Reasoning disabled for every request.'
-                          : "Reasoning uses the model's default."
+                          ? t('chat:input.reasoningDisabled')
+                          : t('chat:input.reasoningDefault')
 
                     // Stored as a symbolic level, not an absolute token count:
                     // the live context size (post auto-fit) is only known once
@@ -2456,6 +2465,11 @@ const ChatInput = memo(function ChatInput({
                     const currentBudgetLabel = THINKING_BUDGET_LEVELS.find(
                       (l) => l.key === currentBudgetLevel
                     )!.label
+                    // 思考预算档位显示名:中文界面用 param:level 翻译,缺省回退英文
+                    const currentBudgetLabelTranslated = t(
+                      `param:level.${currentBudgetLevel}`,
+                      { defaultValue: currentBudgetLabel }
+                    )
                     // Best-effort preview only; the request-time value may
                     // differ once the model is loaded and fit settles n_ctx.
                     const approxContextSize =
@@ -2469,7 +2483,7 @@ const ChatInput = memo(function ChatInput({
                               <Button
                                 variant="ghost"
                                 size="icon-xs"
-                                aria-label={`Reasoning: ${label}`}
+                                aria-label={`${t('chat:input.reasoning')}: ${label}`}
                               >
                                 <IconBrain
                                   size={18}
@@ -2488,7 +2502,7 @@ const ChatInput = memo(function ChatInput({
                         </Tooltip>
                         <DropdownMenuContent align="start">
                           <DropdownMenuItem onClick={() => setReasoning('auto')}>
-                            Auto
+                            {t('chat:input.auto')}
                             {reasoningValue === 'auto' && (
                               <span className="ml-auto text-xs text-muted-foreground">
                                 ✓
@@ -2496,7 +2510,7 @@ const ChatInput = memo(function ChatInput({
                             )}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setReasoning('on')}>
-                            On
+                            {t('chat:input.on')}
                             {reasoningValue === 'on' && (
                               <span className="ml-auto text-xs text-muted-foreground">
                                 ✓
@@ -2504,7 +2518,7 @@ const ChatInput = memo(function ChatInput({
                             )}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setReasoning('off')}>
-                            Off
+                            {t('chat:input.off')}
                             {reasoningValue === 'off' && (
                               <span className="ml-auto text-xs text-muted-foreground">
                                 ✓
@@ -2516,9 +2530,11 @@ const ChatInput = memo(function ChatInput({
                               <DropdownMenuSeparator />
                               <DropdownMenuSub>
                                 <DropdownMenuSubTrigger>
-                                  <span className="flex-1">Thinking Budget</span>
+                                  <span className="flex-1">
+                                    {t('chat:input.thinkingBudget')}
+                                  </span>
                                   <span className="text-xs text-muted-foreground">
-                                    {currentBudgetLabel}
+                                    {currentBudgetLabelTranslated}
                                   </span>
                                 </DropdownMenuSubTrigger>
                                 <DropdownMenuSubContent
@@ -2539,7 +2555,9 @@ const ChatInput = memo(function ChatInput({
                                         className="gap-2"
                                       >
                                         <span className="flex-1">
-                                          {level.label}
+                                          {t(`param:level.${level.key}`, {
+                                            defaultValue: level.label,
+                                          })}
                                         </span>
                                         <span className="w-14 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
                                           {approxTokens === -1
@@ -2593,7 +2611,7 @@ const ChatInput = memo(function ChatInput({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>{queueLength > 0 ? `Clear ${queueLength} queued message(s)` : 'Stop generating'}</p>
+                    <p>{queueLength > 0 ? t('chat:input.clearQueued', { count: queueLength }) : t('chat:input.stopGenerating')}</p>
                   </TooltipContent>
                 </Tooltip>
               ) : (

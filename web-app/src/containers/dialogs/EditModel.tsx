@@ -212,7 +212,7 @@ export const DialogEditModel = ({
             id="display-name"
             value={displayName}
             onChange={(e) => handleDisplayNameChange(e.target.value)}
-            placeholder="Enter display name"
+            placeholder={t('common:enterDisplayName')}
             className="w-full"
             disabled={isLoading}
           />

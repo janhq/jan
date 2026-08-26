@@ -578,7 +578,7 @@ describe('generatePreset upstream-default skipping', () => {
     // save/restore routes at all -- so the default (unset) must still emit it.
     await generatePreset('/p', '/jan', {} as any)
     expect(globalSection()).toContain(
-      `slot-save-path = ${threadCacheDir('/p')}`
+      `slot-save-path = ${await threadCacheDir('/p')}`
     )
 
     // Off, the worker still needs the directory: it prunes what an earlier
@@ -587,14 +587,14 @@ describe('generatePreset upstream-default skipping', () => {
     await generatePreset('/p', '/jan', { persist_thread_cache: false } as any, {
     })
     expect(globalSection()).toContain(
-      `slot-save-path = ${threadCacheDir('/p')}`
+      `slot-save-path = ${await threadCacheDir('/p')}`
     )
   })
 
   it('puts the thread cache under the provider directory, not a temp dir', async () => {
     // A cache the user paid prefill time for has to survive a reboot, which is
     // the entire point of persisting it.
-    expect(threadCacheDir('/p')).toBe('/p/thread-cache')
+    expect(await threadCacheDir('/p')).toBe('/p/thread-cache')
   })
 
   it('omits cont-batching when enabled and emits it only when turned off', async () => {

@@ -104,7 +104,8 @@ describe('useDownloadEvents', () => {
       0.5,
       'jan-q4',
       100,
-      200
+      200,
+      0
     )
   })
 
@@ -115,6 +116,7 @@ describe('useDownloadEvents', () => {
       'jan-q4',
       0,
       'jan-q4',
+      undefined,
       undefined,
       undefined
     )

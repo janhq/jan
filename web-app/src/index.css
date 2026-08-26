@@ -15,6 +15,10 @@
 }
 @import '@/styles/font.css';
 @import '@/styles/markdown.css';
+/* GitHub-markdown 样式:README 详情页复用 GitHub 的 markdown 排版。
+   light 默认 & dark 用 html.dark 作用域,遵循 app 主题(非系统偏好)。 */
+@import '@/styles/github-readme/github-readme-light.css';
+@import '@/styles/github-readme/github-readme-dark.css';
 @source '../node_modules/streamdown/dist/**/*.js';
 
 @custom-variant dark (&:is(.dark *));

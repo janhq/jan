@@ -58,5 +58,15 @@
   },
   "addProvider": "공급자 추가",
   "addOpenAIProvider": "OpenAI 공급자 추가",
-  "enterNameForProvider": "공급자 이름 입력"
+  "enterNameForProvider": "공급자 이름 입력",
+  "option": {
+    "auto": "Auto",
+    "layer": "Layer",
+    "yarn": "YaRN",
+    "off": "Off",
+    "full": "Full",
+    "none": "None",
+    "linear": "Linear",
+    "on": "On"
+  }
 }

@@ -270,7 +270,7 @@ function LocalAPIServerContent() {
             <PopoverTrigger asChild>
               <Button size="sm" variant="outline" className="relative z-50">
                 <IconSettings2 size={16} />
-                Configuration
+                {t('settings:localApiServer.configuration')}
               </Button>
             </PopoverTrigger>
             <PopoverContent
@@ -505,18 +505,18 @@ function LocalAPIServerContent() {
 
               <Card>
                 <CardItem
-                  title="Server Status"
+                  title={t('settings:localApiServer.serverStatus')}
                   description={
                     isServerRunning ? (
                       <div className="space-y-1">
-                        <div>The server is currently running.</div>
+                        <div>{t('settings:localApiServer.serverRunning')}</div>
                         <div className="text-xs font-mono">
                           http://{serverHost}:{serverPort}
                           {apiPrefix}
                         </div>
                       </div>
                     ) : (
-                      'The server is stopped.'
+                      t('settings:localApiServer.serverStopped')
                     )
                   }
                 />
@@ -554,7 +554,7 @@ function LocalAPIServerContent() {
                   <CollapsibleTrigger className="flex items-center gap-2 hover:no-underline data-[state=open]:[&>svg.chevron-down]:hidden data-[state=closed]:[&>svg.chevron-up]:hidden">
                     <IconChevronDown size={16} className="chevron-down" />
                     <IconChevronUp size={16} className="chevron-up" />
-                    <span className="font-medium text-sm">Server Log</span>
+                    <span className="font-medium text-sm">{t('settings:localApiServer.serverLogsTitle')}</span>
                   </CollapsibleTrigger>
                   <Button
                     variant="outline"
@@ -563,7 +563,7 @@ function LocalAPIServerContent() {
                     className="text-muted-foreground hover:text-foreground"
                   >
                     <IconExternalLink size={14} className="mr-1" />
-                    Open in New Window
+                    {t('settings:localApiServer.openInNewWindow')}
                   </Button>
                 </div>
                 <CollapsibleContent>

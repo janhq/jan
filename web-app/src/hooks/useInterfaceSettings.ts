@@ -165,11 +165,16 @@ type InterfaceSettingsPersistedSlice = Omit<
   | 'setAutoGenerateTitle'
 >
 
-export const fontSizeOptions = [
-  { label: 'Small', value: '14px' as FontSize },
-  { label: 'Medium', value: '16px' as FontSize },
-  { label: 'Large', value: '18px' as FontSize },
-  { label: 'Extra Large', value: '20px' as FontSize },
+export type FontSizeOption = {
+  label: string
+  labelKey?: string
+  value: FontSize
+}
+export const fontSizeOptions: FontSizeOption[] = [
+  { label: 'Small', labelKey: 'settings:interface.fontSizeSmall', value: '14px' as FontSize },
+  { label: 'Medium', labelKey: 'settings:interface.fontSizeMedium', value: '16px' as FontSize },
+  { label: 'Large', labelKey: 'settings:interface.fontSizeLarge', value: '18px' as FontSize },
+  { label: 'Extra Large', labelKey: 'settings:interface.fontSizeExtraLarge', value: '20px' as FontSize },
 ]
 
 // Default interface settings

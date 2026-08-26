@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Default)]
@@ -9,6 +9,9 @@ pub struct DownloadManagerState {
     pub cancel_tokens: HashMap<String, CancellationToken>,
     // Paused tasks keep their partial .tmp/.url instead of being deleted on cancel.
     pub paused_tasks: HashSet<String>,
+    // 任务完成信号:取消/暂停后等待任务真正收尾(子进程退出、句柄释放),
+    // 避免前端随即删目录/恢复时撞上文件锁(os error 32)。
+    pub task_done: HashMap<String, Arc<Notify>>,
 }
 
 #[derive(serde::Deserialize, Clone, Debug)]

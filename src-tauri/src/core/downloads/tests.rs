@@ -571,6 +571,57 @@ fn test_get_client_for_item_invalid_proxy_url() {
     assert!(_get_client_for_item(&item, &HeaderMap::new()).is_err());
 }
 
+#[test]
+fn test_effective_headers_adds_user_agent_for_modelscope() {
+    // 魔搭直连下载会走 Tengine CDN;未带 UA 时必须补上 friendly UA,否则 403 "UA ACL blacklist"
+    let item = DownloadItem {
+        url: "https://modelscope.cn/api/v1/models/unsloth/Qwen3-8B/repo?Revision=master&FilePath=x.gguf".to_string(),
+        save_path: "x".to_string(),
+        proxy: None,
+        sha256: None,
+        size: None,
+        model_id: None,
+    };
+    let effective = effective_download_headers(&item, &HeaderMap::new());
+    assert_eq!(
+        effective.get("user-agent").unwrap(),
+        "Jan/1.0",
+        "modelscope 下载必须携带 friendly User-Agent"
+    );
+}
+
+#[test]
+fn test_effective_headers_keeps_user_supplied_user_agent() {
+    // 调用方显式传入 UA 时,不得覆盖
+    let item = DownloadItem {
+        url: "https://modelscope.cn/api/v1/models/a/b/repo?FilePath=x.gguf".to_string(),
+        save_path: "x".to_string(),
+        proxy: None,
+        sha256: None,
+        size: None,
+        model_id: None,
+    };
+    let mut header_map = HeaderMap::new();
+    header_map.insert("user-agent", "my-custom-agent".parse().unwrap());
+    let effective = effective_download_headers(&item, &header_map);
+    assert_eq!(effective.get("user-agent").unwrap(), "my-custom-agent");
+}
+
+#[test]
+fn test_effective_headers_untouched_for_non_modelscope() {
+    // 非魔搭域名(如 HF)不加 UA,保持调用方语义
+    let item = DownloadItem {
+        url: "https://huggingface.co/a/b/resolve/main/x.gguf".to_string(),
+        save_path: "x".to_string(),
+        proxy: None,
+        sha256: None,
+        size: None,
+        model_id: None,
+    };
+    let effective = effective_download_headers(&item, &HeaderMap::new());
+    assert!(effective.get("user-agent").is_none());
+}
+
 // ===== ProgressTracker =====
 
 #[tokio::test]

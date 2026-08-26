@@ -45,17 +45,27 @@ export function SamplerDefaults({
         return (
           <div key={key} className="space-y-2">
             <div className="mb-1">
-              <span className="font-medium">{def.title}</span>
+              <span className="font-medium">
+                {t(`param:sample.title.${def.key}`, {
+                  defaultValue: def.title,
+                })}
+              </span>
             </div>
             <DynamicControllerSetting
-              title={def.title}
-              description={def.description}
+              title={t(`param:sample.title.${def.key}`, {
+                defaultValue: def.title,
+              })}
+              description={t(`param:sample.desc.${def.key}`, {
+                defaultValue: def.description,
+              })}
               controllerType={def.controllerType}
               controllerProps={{ ...(def.controllerProps ?? {}), value }}
               onChange={(newValue) => onChange(key, newValue)}
             />
             <p className="text-muted-foreground leading-normal text-xs">
-              {def.description}
+              {t(`param:sample.desc.${def.key}`, {
+                defaultValue: def.description,
+              })}
             </p>
           </div>
         )

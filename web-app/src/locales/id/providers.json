@@ -58,5 +58,15 @@
   },
   "addProvider": "Tambah Penyedia",
   "addOpenAIProvider": "Tambah Penyedia OpenAI",
-  "enterNameForProvider": "Masukkan nama untuk penyedia"
+  "enterNameForProvider": "Masukkan nama untuk penyedia",
+  "option": {
+    "auto": "Auto",
+    "layer": "Layer",
+    "yarn": "YaRN",
+    "off": "Off",
+    "full": "Full",
+    "none": "None",
+    "linear": "Linear",
+    "on": "On"
+  }
 }
