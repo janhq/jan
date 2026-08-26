@@ -6686,6 +6686,32 @@ fn finish_update_install(app: &mut App, result: Result<super::updater::UpdateOut
         Err(e) => app.note(&format!("update failed: {e}")),
     }
 }
+/// `/bug`: write a redacted diagnostics archive for this project's threads and
+/// tell the user where it landed and that secrets were stripped. Runs the same
+/// bundler as the headless `jan bug-report`, with threads from the TUI's own
+/// `.jan/agent` store. Never requires a running model, so it works even when
+/// the very bug being reported froze the session.
+fn bug_report_command(app: &mut App) {
+    let threads_base = app.agent_dir.clone();
+    let thread_id = app.thread_id.clone();
+    match super::doctor::run_bug_report(&threads_base, thread_id.as_deref()) {
+        Ok(report) => {
+            app.note(&format!("bug report written to {}", report.archive.display()));
+            if report.redacted_any {
+                app.note(&format!(
+                    "secrets stripped: {}",
+                    report.stripped.join(", ")
+                ));
+                app.system_detail_text("attach this file to the issue (secrets were removed)");
+            } else {
+                app.system_detail_text(
+                    "attach this file to the issue; best-effort scan found no known secrets",
+                );
+            }
+        }
+        Err(e) => app.note(&format!("bug report failed: {e}")),
+    }
+}
 
 /// Await an in-flight `/plugin install`, parking forever when none is running.
 /// Same cancel-safe borrow as `await_mcp`.
@@ -9188,6 +9214,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/bug",
+        hint: "",
+        description: "Write a redacted diagnostics archive for a bug report",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/quit",
         hint: "",
         description: "Exit the TUI",
@@ -9391,6 +9423,7 @@ async fn run_command(
         "effort" | "think" | "reasoning" => effort_command(app, arg),
         "todo" => todo_command(app, arg).await,
         "cancel" => cancel_command(app, arg),
+        "bug" => bug_report_command(app),
         "quit" | "exit" => app.should_quit = true,
         other => {
             // A `/name` that isn't a built-in is a plugin command or an
@@ -18893,6 +18926,7 @@ mod tests {
     #[test]
     fn slash_commands_include_login() {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/login"));
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/bug"));
     }
 
     #[tokio::test]
@@ -28538,6 +28572,31 @@ mod tests {
         run_command(&mut app, "warp_drive", &no_mcp()).await;
         assert!(transcript_text(&app).contains("unknown command '/warp_drive'"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+    #[tokio::test]
+    async fn run_command_bug_writes_an_archive() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        // Seed a thread in the app's agent store so /bug has something to bundle.
+        let data = std::env::temp_dir().join(format!("jan_bug_tui_{}", std::process::id()));
+        std::env::set_var("JAN_DATA_FOLDER", &data);
+        let thread_id = "bugthread";
+        let thread_dir = app.agent_dir.join("threads").join(thread_id);
+        std::fs::create_dir_all(&thread_dir).unwrap();
+        std::fs::write(thread_dir.join("thread.json"), serde_json::json!({
+            "id": thread_id,
+            "title": "t",
+            "model": { "id": "m", "provider": "openai" }
+        }).to_string()).unwrap();
+        std::fs::write(thread_dir.join("messages.jsonl"), "{\"role\":\"user\",\"content\":\"hi\"}\n").unwrap();
+        std::fs::write(thread_dir.join("display.jsonl"), "{\"kind\":\"note\"}\n").unwrap();
+
+        run_command(&mut app, "bug", &no_mcp()).await;
+        let text = transcript_text(&app);
+        assert!(text.contains("bug report"), "{text}");
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&data);
+        std::env::remove_var("JAN_DATA_FOLDER");
     }
 
     #[test]

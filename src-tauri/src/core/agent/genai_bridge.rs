@@ -636,6 +636,7 @@ pub(crate) async fn stream_chat_completions(
                     // compacts and retries the turn itself, so mark it and stop.
                     let overflow_text = err_body.unwrap_or(described.as_str());
                     if super::upstream::is_context_overflow_body(overflow_text) {
+                        log::warn!("stream: context overflow -- {last_err}");
                         return Err(format!(
                             "[{}] {last_err}",
                             super::upstream::CONTEXT_OVERFLOW_MARKER
@@ -645,6 +646,7 @@ pub(crate) async fn stream_chat_completions(
                     // Anything already streamed to the consumer makes a retry
                     // unsafe -- it would replay tokens the user has seen.
                     if progressed {
+                        log::warn!("stream: died mid-response, not retried -- {last_err}");
                         return Err(last_err);
                     }
 
@@ -657,7 +659,10 @@ pub(crate) async fn stream_chat_completions(
                     };
 
                     match disposition {
-                        Disposition::Fatal => return Err(last_err),
+                        Disposition::Fatal => {
+                            log::warn!("stream: fatal upstream error -- {last_err}");
+                            return Err(last_err);
+                        }
                         Disposition::NextKey => {
                             if key_index + 1 < keys.len() {
                                 log::warn!(

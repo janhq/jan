@@ -759,6 +759,8 @@ async fn run_subagent(
 
     let body = child_body(&resolved, &description, &parent);
 
+    log::info!("subagent: start name={name} run_id={run_id}");
+
     let _ = events.send(StreamEvent::SubagentStart {
         run_id: run_id.clone(),
         name: name.clone(),
@@ -788,8 +790,14 @@ async fn run_subagent(
     let _ = events.send(StreamEvent::SubagentEnd { run_id, name });
 
     match result {
-        Ok(completion) => Ok(final_assistant_text(&completion)),
-        Err(message) => Err(SubagentError::Upstream(message)),
+        Ok(completion) => {
+            log::info!("subagent: end outcome=ok");
+            Ok(final_assistant_text(&completion))
+        }
+        Err(message) => {
+            log::info!("subagent: end outcome=error");
+            Err(SubagentError::Upstream(message))
+        }
     }
 }
 

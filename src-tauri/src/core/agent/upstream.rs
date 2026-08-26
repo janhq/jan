@@ -1002,6 +1002,13 @@ pub(crate) fn describe_request_error(err: &reqwest::Error) -> String {
     msg
 }
 
+/// Best-effort safe URL for logs: strip anything after `?`, where upstream
+/// query credentials (api_key=, access_token=, key=) would live. The path is
+/// the only part of the endpoint that is never a credential.
+pub(crate) fn log_safe_upstream_url(url: &str) -> &str {
+    url.split('?').next().unwrap_or(url)
+}
+
 /// Stream a chat completion for the agent loop.
 ///
 /// A thin delegate to [`super::genai_bridge`], which owns the wire format, SSE
@@ -1023,6 +1030,14 @@ pub(crate) async fn stream_openai_chat_completions(
     body: &serde_json::Value,
     events: &mpsc::UnboundedSender<StreamEvent>,
 ) -> Result<serde_json::Value, String> {
+    // Breadcrumb for a stuck run: which model+endpoint the turn is talking to,
+    // written before any bytes flow so a hang is visible after the fact. The
+    // model id comes from the request body, never a credential.
+    let model = body.get("model").and_then(|v| v.as_str()).unwrap_or("?");
+    log::info!(
+        "stream: model={model} upstream={}",
+        log_safe_upstream_url(upstream_url)
+    );
     super::genai_bridge::stream_chat_completions(
         client,
         upstream_url,

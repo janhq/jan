@@ -6,6 +6,8 @@ pub mod auth;
 pub mod brand;
 pub mod browser;
 pub mod device_auth;
+pub mod doctor;
+pub mod file_log;
 pub mod journal;
 pub mod login;
 pub mod mcp;
