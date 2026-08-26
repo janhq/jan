@@ -6555,10 +6555,6 @@ async fn chat_loop<B: Backend>(
     // and notes itself whenever it lands rather than delaying the first frame.
     let mut update_task = Some(tokio::spawn(super::updater::available_update()));
 
-    // Anonymous usage ping (see `telemetry::ping_if_due`), same reasoning:
-    // detached so it never delays the first frame. Nothing is noted for it --
-    // it has no user-visible outcome.
-    tokio::spawn(super::telemetry::ping_if_due());
 
     // `/update` downloads tens of megabytes and rewrites the binary; off the
     // render loop for the same reason, and one at a time.

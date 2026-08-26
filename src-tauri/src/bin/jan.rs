@@ -548,14 +548,12 @@ async fn main() {
         return;
     };
 
-    // `jan update` reports the same thing itself, in more detail.
+    // `jan update` reports the same thing itself, in more detail. The check
+    // doubles as the usage record (see `updater::fetch_manifest`), so there is
+    // no separate ping to fire here; `JAN_CLI_NO_UPDATE_CHECK` opts out of both.
     if !matches!(command, Commands::Update { .. }) {
         app_lib::core::cli::updater::print_update_notice_if_available().await;
     }
-    // Awaited (not spawned): a short-lived `jan cli ...` invocation can exit
-    // before a detached background task gets to run. See `telemetry::ping_if_due`
-    // for what this sends and `JAN_CLI_NO_UPDATE_CHECK` to opt out.
-    app_lib::core::cli::telemetry::ping_if_due().await;
 
     match command {
         Commands::Cli { cmd } => handle_cli(cmd).await,
