@@ -176,7 +176,7 @@ pub(crate) fn load_global_config() -> Result<HashMap<String, ProviderConfig>, St
         Err(_) => return Ok(HashMap::new()),
     };
     let parsed: GlobalConfigToml =
-        toml::from_str(&raw).map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+        toml::from_str(&raw).map_err(|e| parse_error(&path, &e, e.message()))?;
 
     Ok(parsed
         .providers
@@ -354,6 +354,46 @@ pub(crate) fn wave_glyph() -> Option<String> {
     }
 }
 
+/// Root-level (non-`[providers.*]`) keys of `~/.jan/config.toml`, used to spot
+/// the one mistake this file invites: appending a top-level key to the end of
+/// the file, where it silently lands inside whichever `[providers.*]` table
+/// happens to be last.
+const ROOT_KEYS: &[&str] = &[
+    "default_model",
+    "smol_model",
+    "mouse",
+    "sandbox",
+    "think_tags",
+    "stream_reasoning",
+    "ask_timeout_secs",
+    "terminal_hint",
+    "wave",
+];
+
+/// Render a TOML parse failure with a fix, not just a location. `toml`'s own
+/// message points at the offending line and stops there, which is useless for
+/// the common case: `echo 'key = v' >> ~/.jan/config.toml` appends *after* the
+/// last `[providers.*]` header, so the key parses as a provider field and
+/// collides on a second append. Naming the root key and the remedy turns a
+/// dead end into a one-step fix.
+fn parse_error(path: &std::path::Path, err: &impl std::fmt::Display, message: &str) -> String {
+    let base = format!("Failed to parse {}: {err}", path.display());
+    let Some(key) = ROOT_KEYS
+        .iter()
+        .find(|key| message.contains(&format!("`{key}`")))
+    else {
+        return base;
+    };
+    format!(
+        "{base}\n\
+         hint: `{key}` is a top-level key, but it landed inside a `[providers.*]` \
+         table - appending to the end of the file puts it under whichever provider \
+         is last.\n\
+         hint: move `{key}` above the first `[providers.*]` header, or set it with \
+         `/settings` in the console, which writes it to the right place."
+    )
+}
+
 /// Read `~/.jan/config.toml` into the raw TOML struct for editing. Missing file
 /// -> default (empty); malformed file -> error, so a set never silently drops an
 /// unparseable file's contents.
@@ -363,7 +403,7 @@ fn load_raw() -> Result<GlobalConfigToml, String> {
         Ok(raw) => raw,
         Err(_) => return Ok(GlobalConfigToml::default()),
     };
-    toml::from_str(&raw).map_err(|e| format!("Failed to parse {}: {e}", path.display()))
+    toml::from_str(&raw).map_err(|e| parse_error(&path, &e, e.message()))
 }
 
 /// Serialize the config back to `~/.jan/config.toml`, creating `~/.jan` if
@@ -514,7 +554,7 @@ pub(crate) fn set_global_key(key: &str, value: Option<toml_edit::Item>) -> Resul
         .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
     let mut doc = raw
         .parse::<toml_edit::DocumentMut>()
-        .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+        .map_err(|e| parse_error(&path, &e, e.message()))?;
 
     match value {
         // `toml_edit` renders a root table's scalars ahead of its sub-tables,
@@ -719,6 +759,42 @@ mod tests {
             err.contains('3') && err.contains('4'),
             "names cap and actual: {err}"
         );
+    }
+
+    /// A root key appended to the end of the file lands inside the last
+    /// `[providers.*]` table, and `toml`'s own error says only "duplicate key
+    /// ... in table `providers.opencode`" - true, but it never says the key
+    /// belongs at the root or how to get it there. The hint carries the fix,
+    /// so assert it fires for a misplaced root key and stays quiet otherwise.
+    #[test]
+    fn parse_error_explains_a_root_key_captured_by_a_provider_table() {
+        with_temp_home(|_| {
+            let path = ensure_global_config().expect("ensure");
+            std::fs::write(
+                &path,
+                "[providers.opencode]\napi_key = \"sk-x\"\nask_timeout_secs = 15\nask_timeout_secs = 15\n",
+            )
+            .unwrap();
+
+            let err = load_global_config().expect_err("duplicate key must fail");
+            assert!(
+                err.contains("`ask_timeout_secs` is a top-level key"),
+                "hint must name the misplaced key: {err}"
+            );
+            assert!(
+                err.contains("/settings"),
+                "hint must point at the writer that gets it right: {err}"
+            );
+
+            // Syntax errors that have nothing to do with key placement must not
+            // acquire a hint about it.
+            std::fs::write(&path, "not = = toml\n").unwrap();
+            let err = load_global_config().expect_err("syntax error must fail");
+            assert!(
+                !err.contains("top-level key"),
+                "unrelated parse errors must stay unadorned: {err}"
+            );
+        });
     }
 
     /// The `/settings` write path. Two properties matter and neither is

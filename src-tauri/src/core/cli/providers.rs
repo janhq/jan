@@ -115,6 +115,16 @@ pub fn is_cli_reachable(config: &ProviderConfig) -> bool {
     config.base_url.as_deref().is_some_and(|u| !u.is_empty())
 }
 
+/// Log a provider-config load failure at most once per process. Startup probes
+/// this in two independent places (the headless sign-in guard and the model
+/// fallback), and a malformed `~/.jan/config.toml` fails both, so without this
+/// the same multi-line TOML error is printed twice before the fatal error
+/// prints it a third time.
+fn warn_load_failure_once(context: &str, err: &str) {
+    static LOGGED: std::sync::Once = std::sync::Once::new();
+    LOGGED.call_once(|| log::warn!("could not load provider configs{context}: {err}"));
+}
+
 /// Whether this install can run a turn at all: some provider is reachable and
 /// either credentialed or local (a self-hosted endpoint - typically the desktop
 /// app's API server - needs no key). `false` is the fresh-install state that
@@ -125,7 +135,7 @@ pub fn has_usable_provider(project_root: Option<&std::path::Path>) -> bool {
     match load_provider_configs(project_root, &overrides) {
         Ok(configs) => configs.values().any(is_usable),
         Err(e) => {
-            log::warn!("could not load provider configs: {e}");
+            warn_load_failure_once("", &e);
             false
         }
     }
@@ -206,7 +216,7 @@ pub fn list_provider_models(project_root: Option<&std::path::Path>) -> Vec<(Stri
     match load_provider_configs(project_root, &ProviderOverrides::default().with_env()) {
         Ok(configs) => reachable_models(&configs),
         Err(e) => {
-            log::warn!("could not load provider configs for the model picker: {e}");
+            warn_load_failure_once(" for the model picker", &e);
             Vec::new()
         }
     }
