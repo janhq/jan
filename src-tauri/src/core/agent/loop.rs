@@ -3793,6 +3793,34 @@ mod tests {
         })
     }
 
+    /// Like `ask_call`, but with three options and a non-zero `recommended`
+    /// index (2 -> "Huge"). The index is deliberately not 0 so that a silent
+    /// fallback to the first option is distinguishable from honoring the
+    /// recommended choice.
+    #[cfg(feature = "cli")]
+    fn ask_call_recommended() -> serde_json::Value {
+        json!({
+            "id": "ask-call",
+            "type": "function",
+            "function": {
+                "name": "ask",
+                "arguments": serde_json::to_string(&json!({
+                    "questions": [{
+                        "id": "scope",
+                        "question": "Which scope?",
+                        "options": [
+                            {"label": "Small"},
+                            {"label": "Large"},
+                            {"label": "Huge"}
+                        ],
+                        "recommended": 2
+                    }]
+                }))
+                .unwrap()
+            }
+        })
+    }
+
     /// A single tool call by name with empty JSON arguments.
     fn tool_call(id: &str, name: &str) -> serde_json::Value {
         json!({
@@ -4053,6 +4081,59 @@ mod tests {
                 assert!(
                     out[0].content.contains("User response for \"scope\": Small"),
                     "auto-selected the first option: {}",
+                    out[0].content
+                );
+                assert!(
+                    asks.lock().await.is_empty(),
+                    "the timed-out ask must be deregistered"
+                );
+                let _ = std::fs::remove_dir_all(&root);
+            });
+        });
+    }
+
+    // A timeout with a non-zero `recommended` index must select that option,
+    // never silently fall back to the first (index 0). `ask_call_recommended`
+    // asks for `scope` with options [Small, Large, Huge] and `recommended: 2`,
+    // so a correct result says "Huge" and an index-0 fallback says "Small".
+    #[cfg(feature = "cli")]
+    #[test]
+    fn ask_timeout_auto_selects_the_recommended_option_not_the_first() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let path = crate::core::agent::global_config::ensure_global_config().unwrap();
+            std::fs::write(&path, "ask_timeout_secs = 1\n").unwrap();
+
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let root = unique_project_root();
+                let (tx, _rx) = mpsc::unbounded_channel();
+                let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+                let asks = crate::core::agent::interaction::new_registry();
+                let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+                invoker.ask_requests = Some(asks.clone());
+
+                // No one answers: handle_ask_tool self-resolves after the timeout.
+                let out = invoker
+                    .invoke(&[ask_call_recommended()])
+                    .await
+                    .unwrap();
+                assert_eq!(out.len(), 1);
+                assert!(
+                    !out[0].content.contains("ask_cancelled"),
+                    "timeout is not a cancel: {}",
+                    out[0].content
+                );
+                assert!(
+                    out[0].content.contains("User response for \"scope\": Huge"),
+                    "must select the recommended option (Huge): {}",
+                    out[0].content
+                );
+                assert!(
+                    !out[0].content.contains("Small"),
+                    "must not fall back to the first option: {}",
                     out[0].content
                 );
                 assert!(
