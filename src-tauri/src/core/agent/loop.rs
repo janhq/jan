@@ -372,6 +372,32 @@ fn resolve_run_settings(
     }
 }
 
+/// Build a tool output sink that streams deltas to the run's event channel.
+///
+/// The sender is downgraded: `bash` hands its child to a detached task that
+/// keeps the sink alive after the call returns (that is what makes a
+/// backgrounded job keep reporting), and a strong clone in there would hold the
+/// run's channel open forever -- every consumer waits on channel closure, so the
+/// desktop's `invoke`, the headless printer and a subagent's forwarder would all
+/// hang once the turn was logically done. A weak sender still resolves for as
+/// long as the run holds its own sender, so live output is unaffected; once the
+/// run ends, a straggler's output is dropped, which is what it is worth.
+fn output_sink(
+    events: &mpsc::UnboundedSender<StreamEvent>,
+    id: &str,
+) -> tauri_plugin_agent_tools::tools::OutputSink {
+    let events = events.downgrade();
+    let id = id.to_string();
+    std::sync::Arc::new(move |delta: String| {
+        if let Some(events) = events.upgrade() {
+            let _ = events.send(StreamEvent::ToolOutputDelta {
+                id: id.clone(),
+                delta,
+            });
+        }
+    })
+}
+
 impl CompositeToolInvoker {
     fn tool_context(&self) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
         tauri_plugin_agent_tools::tools::ToolContext::new(
@@ -393,15 +419,8 @@ impl CompositeToolInvoker {
     /// ignored -- the receiver is gone only when the run is over, and a dead
     /// display must not stop the command.
     fn streaming_tool_context(&self, id: &str) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
-        let events = self.events.clone();
-        let id = id.to_string();
         self.tool_context()
-            .with_output_sink(std::sync::Arc::new(move |delta: String| {
-                let _ = events.send(StreamEvent::ToolOutputDelta {
-                    id: id.clone(),
-                    delta,
-                });
-            }))
+            .with_output_sink(output_sink(&self.events, id))
     }
 
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
@@ -4877,5 +4896,43 @@ mod tests {
 
         assert!(tools.is_empty(), "default=deny must lock down MCP advertisement");
         assert!(map.is_empty());
+    }
+
+    /// `bash` hands its child to a detached task that keeps the output sink
+    /// alive after the call has returned its `job_id`. The sink must not keep
+    /// the run's event channel open with it: every consumer of that channel --
+    /// the desktop forwarder, the headless printer, a subagent's forwarder --
+    /// finishes only when the channel closes.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_backgrounded_job_does_not_hold_the_event_channel_open() {
+        use tauri_plugin_agent_tools::tools::{handlers::execute_builtin, lookup, ToolContext};
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
+        let skills: Vec<String> = Vec::new();
+        let ctx = ToolContext::new(dir.path(), dir.path(), &skills)
+            .with_sandbox(false)
+            .with_output_sink(output_sink(&tx, "call-1"));
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "sleep 3; printf 'late\\n'", "timeout": 0}),
+            &ctx,
+        )
+        .await
+        .0;
+        assert!(out.contains("job_id=bash-"), "expected a backgrounded job, got: {out}");
+
+        // The run is over: the orchestration future has returned and dropped its
+        // sender, so the receiver must observe closure without waiting for the
+        // straggling command (which outlives this assertion by seconds).
+        drop(tx);
+        let closed = tokio::time::timeout(std::time::Duration::from_millis(1500), async {
+            while rx.recv().await.is_some() {}
+        })
+        .await;
+        assert!(
+            closed.is_ok(),
+            "the event channel never closed while a backgrounded bash job was still running"
+        );
     }
 }

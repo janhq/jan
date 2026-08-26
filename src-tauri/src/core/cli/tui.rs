@@ -4286,8 +4286,12 @@ impl App {
                     panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
                 }
             }
-            // Token/ToolResult and any nested bracket are internal to the child
-            // run and not surfaced in the parent transcript.
+            // Token/ToolResult, a child's live tool output (`ToolOutputDelta`)
+            // and any nested bracket are internal to the child run and not
+            // surfaced in the parent transcript: a subagent panel is a one-line
+            // activity summary, so a child's shell output would have nowhere to
+            // go and would push the parent's own live panel off screen. Deliberate
+            // -- the child's output still reaches its `ToolResult`.
             _ => {}
         }
     }
