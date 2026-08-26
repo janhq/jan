@@ -817,11 +817,10 @@ fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
     let indent = " ".repeat(BANNER_INDENT as usize);
     let mut out: Vec<Line<'static>> = Vec::new();
 
-    // A clipped logo reads as breakage, so a narrow terminal gets the name
-    // as text instead. The lockup (hand beside the wordmark) is the widest
-    // splash element, so it sets the threshold that gates the whole block.
-    if width >= brand::LOCKUP_WIDTH + BANNER_INDENT * 2 {
-        for art in brand::lockup() {
+    // A clipped wordmark reads as breakage, so a narrow terminal gets the name
+    // as text instead.
+    if width >= brand::LOGO_WIDTH + BANNER_INDENT * 2 {
+        for art in brand::LOGO {
             out.push(Line::styled(format!("{indent}{art}"), accent));
         }
         out.push(Line::raw(""));
@@ -24732,8 +24731,8 @@ mod tests {
             "transcript not reset: {text}"
         );
         assert!(
-            text.contains(brand::HAND[0].trim()),
-            "hand logo missing after /clear: {text}"
+            text.contains(brand::LOGO[0].trim()),
+            "wordmark missing after /clear: {text}"
         );
         assert!(
             text.contains("--safe: approval needed"),
@@ -26062,32 +26061,30 @@ mod tests {
         );
     }
 
-    /// The mark and the name are one lockup, so they share rows instead of
-    /// stacking: the wordmark's first row also carries part of the hand.
+    /// The splash opens on the wordmark alone. The hand-wave block art that used
+    /// to sit beside it spent 15 rows of a fresh screen on decoration and forced
+    /// a 61-column floor before the splash would render at all.
     #[test]
-    fn banner_opens_with_the_hand_logo_beside_the_wordmark() {
+    fn banner_opens_with_the_wordmark() {
         let mut app = test_app();
         app.push_banner("--safe", true);
 
         let text = banner_text(&app, 90);
         let joined = text.join("\n");
-        let row = text
-            .iter()
-            .find(|l| l.contains(brand::LOGO[0].trim()))
-            .unwrap_or_else(|| panic!("wordmark missing:\n{joined}"));
-        let hand_row = brand::HAND
-            .iter()
-            .find(|h| row.contains(h.trim()))
-            .unwrap_or_else(|| panic!("the wordmark's row carries no hand: {row}"));
         assert!(
-            row.find(hand_row.trim()).unwrap() < row.find(brand::LOGO[0].trim()).unwrap(),
-            "the hand should sit left of the wordmark: {row}"
+            text.iter().any(|l| l.contains(brand::LOGO[0].trim())),
+            "wordmark missing:\n{joined}"
         );
         assert!(joined.contains('█'), "{joined}");
+        // The wordmark is six rows; the hand was fifteen more.
+        assert!(
+            text.iter().filter(|l| l.contains('█')).count() <= brand::LOGO.len(),
+            "the splash carries block art beyond the wordmark:\n{joined}"
+        );
     }
 
     #[test]
-    fn a_24_column_terminal_drops_the_hand_logo_too() {
+    fn a_24_column_terminal_drops_the_wordmark() {
         let mut app = test_app();
         app.push_banner("--safe", true);
         let narrow = banner_text(&app, 24);
