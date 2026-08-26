@@ -950,7 +950,7 @@ async fn handle_models(cmd: ModelsCommands) {
                             "provider": c.provider,
                             "base_url": c.base_url,
                             "api_type": c.api_type,
-                            "has_api_key": !c.bearer_key_chain().is_empty(),
+                            "has_api_key": app_lib::core::cli::providers::has_credential(c),
                         })
                     })
                 })

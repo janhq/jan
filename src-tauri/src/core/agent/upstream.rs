@@ -389,6 +389,15 @@ pub(crate) async fn resolve_upstream_for_model(
             // the MLX session / llama-server router resolution below.
             if let Some(api_url) = provider_cfg.base_url.clone().filter(|u| !u.is_empty()) {
                 let url = format!("{}{}", api_url, destination_path);
+                // Desktop-inherited providers arrive keyless in this build; the
+                // OS secret store is read here, for the one provider the run
+                // resolved to, rather than for every provider at load time.
+                #[cfg(feature = "cli")]
+                let provider_cfg = {
+                    let mut cfg = provider_cfg;
+                    crate::core::cli::providers::hydrate_provider_keys(&mut cfg);
+                    cfg
+                };
                 return Ok((url, provider_cfg.bearer_key_chain()));
             }
         }

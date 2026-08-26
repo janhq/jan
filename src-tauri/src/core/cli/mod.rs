@@ -517,7 +517,7 @@ pub fn cli_agent_status(
             serde_json::json!({
                 "provider": c.provider,
                 "base_url": c.base_url,
-                "has_api_key": c.api_key.is_some() || !c.api_keys.is_empty(),
+                "has_api_key": crate::core::cli::providers::has_credential(c),
                 "models": c.models.len(),
             })
         })
