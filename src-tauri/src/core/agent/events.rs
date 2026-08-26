@@ -42,6 +42,18 @@ pub enum StreamEvent {
         name: String,
         args: serde_json::Value,
     },
+    /// A chunk of a tool's output, as it is produced. Emitted between
+    /// [`ToolCall`] and [`ToolResult`] so a consumer can show a command's output
+    /// while it runs instead of only once it exits.
+    ///
+    /// Deltas, not the accumulated buffer, for the same reason as
+    /// [`ToolCallArgsDelta`]: resending the prefix on every chunk is quadratic in
+    /// the output size. Chunks are raw fragments and may split a line.
+    ///
+    /// Keeps arriving after a `bash` call has backgrounded itself and returned a
+    /// `job_id`, so a long-running job reports progress under the id of the call
+    /// that started it.
+    ToolOutputDelta { id: String, delta: String },
     /// A tool finished. `is_error` reflects the upstream "ERROR" encoding.
     /// `diff` is display-only focused-change text (line-prefixed `-`/`+`) for
     /// `write`/`edit`; `None` for other tools.

@@ -1292,6 +1292,14 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
             print!("{text}");
             let _ = std::io::stdout().flush();
         }
+        // A command's live output is progress, not answer: it goes to stderr so a
+        // piped stdout still holds only the model's completion. The full output
+        // arrives again with the tool result, which is what the model sees; this
+        // is purely so a long command is not silent in a headless run.
+        StreamEvent::ToolOutputDelta { delta, .. } => {
+            eprint!("\x1b[2m{delta}\x1b[0m");
+            let _ = std::io::stderr().flush();
+        }
         // Reasoning is progress, not answer: dimmed on stderr so piping stdout
         // yields only the real completion.
         StreamEvent::Reasoning { text } => {

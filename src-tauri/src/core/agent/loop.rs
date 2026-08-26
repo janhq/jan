@@ -380,6 +380,25 @@ impl CompositeToolInvoker {
         .with_scratch_root(&self.scratch_root)
     }
 
+    /// A tool context whose output streams to the run's event channel as
+    /// [`StreamEvent::ToolOutputDelta`], tagged with the call's `id`.
+    ///
+    /// Only exec-capable tools produce anything here: `bash` tees its child's
+    /// combined stdout/stderr through the sink as it reads. A send failure is
+    /// ignored -- the receiver is gone only when the run is over, and a dead
+    /// display must not stop the command.
+    fn streaming_tool_context(&self, id: &str) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
+        let events = self.events.clone();
+        let id = id.to_string();
+        self.tool_context()
+            .with_output_sink(std::sync::Arc::new(move |delta: String| {
+                let _ = events.send(StreamEvent::ToolOutputDelta {
+                    id: id.clone(),
+                    delta,
+                });
+            }))
+    }
+
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
     /// A dropped responder (client gone / run cancelled) resolves to Deny.
     async fn prompt_mcp_permission(&self, tool_name: &str) -> PermissionDecision {
@@ -904,7 +923,7 @@ impl ToolInvoker for CompositeToolInvoker {
             }
             let (text, diff, images) = match decision {
                 Decision::Allow => {
-                    execute_builtin_with_diff(tool, &args, &self.tool_context()).await
+                    execute_builtin_with_diff(tool, &args, &self.streaming_tool_context(&id)).await
                 }
                 Decision::HardDeny(reason) => {
                     (hard_deny_msg(name, reason, &self.project_root), None, None)
@@ -958,7 +977,12 @@ impl ToolInvoker for CompositeToolInvoker {
                     self.permission_requests.lock().await.remove(&request_id);
                     match decision {
                         PermissionDecision::AllowOnce => {
-                            execute_builtin_with_diff(tool, &args, &self.tool_context()).await
+                            execute_builtin_with_diff(
+                                tool,
+                                &args,
+                                &self.streaming_tool_context(&id),
+                            )
+                            .await
                         }
                         PermissionDecision::AllowAlways => {
                             // Thread-scoped only; never persisted to agent.toml.
@@ -972,7 +996,12 @@ impl ToolInvoker for CompositeToolInvoker {
                             } else {
                                 self.grants.lock().unwrap().grant(kind);
                             }
-                            execute_builtin_with_diff(tool, &args, &self.tool_context()).await
+                            execute_builtin_with_diff(
+                                tool,
+                                &args,
+                                &self.streaming_tool_context(&id),
+                            )
+                            .await
                         }
                         PermissionDecision::Deny => {
                             (format!("ERROR: tool '{name}' denied by user"), None, None)
