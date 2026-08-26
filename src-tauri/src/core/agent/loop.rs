@@ -576,7 +576,7 @@ impl CompositeToolInvoker {
                         request_id: request_id.clone(),
                     });
                     return format!(
-                        "NOTE [ask_timeout]: no answer within the configured ask timeout; auto-selected the recommended option(s).\n{}",
+                        "NOTE [ask_timeout]: no answer within the configured ask timeout; auto-selected the recommended (else first) option(s).\n{}",
                         request.render_results(&results)
                     );
                 }
