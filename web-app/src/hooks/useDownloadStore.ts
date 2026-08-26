@@ -10,6 +10,8 @@ export interface DownloadProgressProps {
   current: number
   total: number
   paused?: boolean
+  /** 实时下载速度(字节/秒),由事件桥按字节差估算 */
+  speed?: number
 }
 
 // Params needed to re-issue a paused download's pull on resume.
@@ -30,7 +32,8 @@ export type DownloadState = {
     progress: number,
     name?: string,
     current?: number,
-    total?: number
+    total?: number,
+    speed?: number
   ) => void
   setPaused: (id: string, paused: boolean) => void
   setResumeParams: (id: string, params: DownloadResumeParams) => void
@@ -58,7 +61,7 @@ export const useDownloadStore = create<DownloadState>()(
           return { downloads: rest, resumeParams: restParams }
         }),
 
-      updateProgress: (id, progress, name, current, total) =>
+      updateProgress: (id, progress, name, current, total, speed) =>
         set((state) => ({
           downloads: {
             ...state.downloads,
@@ -68,6 +71,7 @@ export const useDownloadStore = create<DownloadState>()(
               progress,
               current: current || state.downloads[id]?.current || 0,
               total: total || state.downloads[id]?.total || 0,
+              speed: speed ?? state.downloads[id]?.speed,
             },
           },
         })),

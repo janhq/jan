@@ -299,13 +299,31 @@ pub fn should_bypass_proxy(url: &str, no_proxy: &[String]) -> bool {
     false
 }
 
+/// 魔搭 Tengine CDN 会对 reqwest 默认 UA 做 ACL 黑名单拦截(403 "denied by UA ACL = blacklist"。
+/// 由阿里 Tengine 返回)。前端搜索/详情接口用 "User-Agent: Jan/1.0" 可通过,唯独文件下载没带。
+/// 这里为 modelscope.cn 的下载补上同款 UA;未显式携带 User-Agent 的下载也一并补一个友好 UA。
+pub fn effective_download_headers(item: &DownloadItem, header_map: &HeaderMap) -> HeaderMap {
+    let mut effective = header_map.clone();
+    if item.url.contains("modelscope.cn")
+        && !effective.contains_key(HeaderName::from_static("user-agent"))
+    {
+        effective.insert(
+            HeaderName::from_static("user-agent"),
+            HeaderValue::from_static("Jan/1.0"),
+        );
+    }
+    effective
+}
+
 pub fn _get_client_for_item(
     item: &DownloadItem,
     header_map: &HeaderMap,
 ) -> Result<reqwest::Client, String> {
+    let effective_headers = effective_download_headers(item, header_map);
+
     let mut client_builder = reqwest::Client::builder()
         .http2_keep_alive_timeout(Duration::from_secs(15))
-        .default_headers(header_map.clone());
+        .default_headers(effective_headers);
 
     // Add proxy configuration if provided
     if let Some(proxy_config) = &item.proxy {

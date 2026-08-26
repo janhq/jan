@@ -289,14 +289,25 @@ export function ModelSetting({
             <div key="fit_ctx" className="space-y-2">
               <div className="flex items-start justify-between gap-8">
                 <div className="mb-1 truncate">
-                  <span title={fitCtxSetting.title} className="font-medium">
-                    {fitCtxSetting.title}
+                  <span
+                    title={t(`param:engine.title.${fitCtxSetting.key}`, {
+                      defaultValue: fitCtxSetting.title,
+                    })}
+                    className="font-medium"
+                  >
+                    {t(`param:engine.title.${fitCtxSetting.key}`, {
+                      defaultValue: fitCtxSetting.title,
+                    })}
                   </span>
                 </div>
                 <DynamicControllerSetting
                   key={fitCtxSetting.key}
-                  title={fitCtxSetting.title}
-                  description={fitCtxSetting.description}
+                  title={t(`param:engine.title.${fitCtxSetting.key}`, {
+                    defaultValue: fitCtxSetting.title,
+                  })}
+                  description={t(`param:engine.desc.${fitCtxSetting.key}`, {
+                    defaultValue: fitCtxSetting.description,
+                  })}
                   controllerType={fitCtxSetting.controller_type}
                   controllerProps={fitCtxSetting.controller_props}
                   onChange={(newValue) =>
@@ -305,7 +316,9 @@ export function ModelSetting({
                 />
               </div>
               <p className="text-muted-foreground leading-normal text-xs">
-                {fitCtxSetting.description}
+                {t(`param:engine.desc.${fitCtxSetting.key}`, {
+                  defaultValue: fitCtxSetting.description,
+                })}
               </p>
             </div>
           )}
@@ -333,6 +346,20 @@ export function ModelSetting({
           })
           .map(([key, value]) => {
             const config = value as ProviderSetting
+            const translatedTitle = t(`param:engine.title.${key}`, {
+              defaultValue: config.title,
+            })
+            const translatedDesc = t(`param:engine.desc.${key}`, {
+              defaultValue: config.description,
+            })
+            const translatedPlaceholder = t(
+              `param:engine.placeholder.${key}`,
+              {
+                defaultValue: config.controller_props?.placeholder as
+                  | string
+                  | undefined,
+              }
+            )
             return (
               <div key={key} className="space-y-2">
                 <div
@@ -345,12 +372,12 @@ export function ModelSetting({
                   )}
                 >
                   <div className="mb-1 truncate">
-                    <span title={config.title} className="font-medium">{config.title}</span>
+                    <span title={translatedTitle} className="font-medium">{translatedTitle}</span>
                   </div>
                   <DynamicControllerSetting
                     key={config.key}
-                    title={config.title}
-                    description={config.description}
+                    title={translatedTitle}
+                    description={translatedDesc}
                     controllerType={config.controller_type}
                     disabledReason={
                       fitEnabled && key === 'ngl'
@@ -360,12 +387,15 @@ export function ModelSetting({
                     controllerProps={{
                       ...config.controller_props,
                       value: config.controller_props?.value,
+                      ...(translatedPlaceholder
+                        ? { placeholder: translatedPlaceholder }
+                        : {}),
                     }}
                     onChange={(newValue) => handleSettingChange(key, newValue)}
                   />
                 </div>
                 <p className="text-muted-foreground leading-normal text-xs">
-                  {config.description}
+                  {translatedDesc}
                 </p>
               </div>
             )

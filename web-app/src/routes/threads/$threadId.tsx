@@ -1762,7 +1762,9 @@ function ThreadDetail() {
                 status === CHAT_STATUS.SUBMITTED && (
                 <div className="flex flex-row items-center gap-2">
                   {pendingContinueMessage && (
-                    <Shimmer duration={1}>Growing the Mind...</Shimmer>
+                    <Shimmer duration={1}>
+                      {t('chat:status.growingTheMind')}
+                    </Shimmer>
                   )}
                   {!pendingContinueMessage && !lastIsAssistant && (
                     <PromptProgress />
@@ -1776,10 +1778,10 @@ function ThreadDetail() {
                     <div className="flex-1">
                       <p className="text-sm font-medium text-destructive mb-1">
                         {oomError
-                          ? 'llama.cpp ran out of memory'
+                          ? t('chat:status.outOfMemory')
                           : backendError
-                            ? 'GGML backend encountered an error'
-                            : 'Model ran out of context size'}
+                            ? t('chat:status.backendError')
+                            : t('chat:status.contextLimit')}
                       </p>
                       <div className="table table-fixed w-full">
                         <span
@@ -1796,10 +1798,10 @@ function ThreadDetail() {
                       </div>
                       {oomError && (
                         <ul className="mt-2 list-disc pl-5 text-xs text-muted-foreground space-y-0.5">
-                          <li>Reduce context size (ctx-size)</li>
-                          <li>Disable MTP (Multi-Token Prediction)</li>
-                          <li>Lower n-gpu-layers or switch to a CPU backend</li>
-                          <li>Use a smaller / more quantized model</li>
+                          <li>{t('chat:oom.reduceCtxSize')}</li>
+                          <li>{t('chat:oom.disableMtp')}</li>
+                          <li>{t('chat:oom.lowerGpuLayers')}</li>
+                          <li>{t('chat:oom.useSmallerModel')}</li>
                         </ul>
                       )}
                       {((error ?? contextLimitError)?.message
@@ -1823,7 +1825,7 @@ function ThreadDetail() {
                           onClick={handleContextSizeIncrease}
                         >
                           <IconAlertCircle className="size-4 mr-2" />
-                          Increase Context Size
+                          {t('chat:actions.increaseContextSize')}
                         </Button>
                       ) : (
                         <Button
@@ -1833,7 +1835,7 @@ function ThreadDetail() {
                           onClick={() => handleRegenerate()}
                         >
                           <IconRefresh className="size-4 mr-2" />
-                          {oomError || backendError ? 'Reload' : 'Regenerate'}
+                          {oomError || backendError ? t('chat:actions.reload') : t('chat:actions.regenerate')}
                         </Button>
                       )}
                     </div>

@@ -14,6 +14,7 @@ import {
   IconTopologyStar3,
   IconLock,
   IconCpu,
+  IconDatabase,
   IconWorld,
   IconWorldSearch,
   IconPaperclip,
@@ -197,6 +198,11 @@ const SettingsMenu = () => {
       title: 'common:web_search',
       route: route.settings.web_search,
       icon: IconWorldSearch,
+    },
+    {
+      title: 'common:modelMarket',
+      route: route.settings.modelMarket,
+      icon: IconDatabase,
     },
     {
       title: 'common:keyboardShortcuts',

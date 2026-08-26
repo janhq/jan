@@ -1,0 +1,174 @@
+{
+  "sample": {
+    "title": {
+      "stream": "串流輸出",
+      "max_context_tokens": "最大內容 Token",
+      "max_output_tokens": "最大輸出 Token",
+      "auto_compact": "自動壓縮",
+      "temperature": "Temperature",
+      "top_p": "Top P",
+      "top_k": "Top K",
+      "min_p": "Min P",
+      "frequency_penalty": "Frequency Penalty",
+      "presence_penalty": "Presence Penalty",
+      "repeat_penalty": "Repeat Penalty",
+      "mirostat": "Mirostat",
+      "mirostat_tau": "Mirostat Tau",
+      "mirostat_eta": "Mirostat Eta",
+      "grammar": "文法 (GBNF)",
+      "json_schema": "JSON Schema",
+      "typical_p": "Typical P",
+      "top_n_sigma": "Top N Sigma",
+      "dynatemp_range": "動態溫度範圍",
+      "dynatemp_exp": "動態溫度指數",
+      "xtc_probability": "XTC 機率",
+      "xtc_threshold": "XTC 門檻",
+      "dry_multiplier": "DRY 係數",
+      "dry_base": "DRY 基數",
+      "dry_allowed_length": "DRY 允許長度",
+      "dry_penalty_last_n": "DRY 懲罰視窗",
+      "ignore_eos": "忽略 EOS",
+      "repeat_last_n": "Repeat Last N",
+      "samplers": "取樣器順序",
+      "backend_sampling": "後端取樣",
+      "thinking_budget_tokens": "思考預算"
+    },
+    "desc": {
+      "stream": "啟用即時回應串流輸出。",
+      "max_context_tokens": "總 Token 預算(輸入 + 輸出)。較舊的訊息會被裁切/壓縮以保持在此範圍內。0 表示停用裁切。",
+      "max_output_tokens": "模型單次回覆最多可產生的 Token 數。會以 max_tokens 傳送給相容 OpenAI 的 API。",
+      "auto_compact": "達到內容上限時,將較舊訊息總結而不是丟棄。需要設定最大內容 Token。",
+      "temperature": "控制回覆的隨機性。",
+      "top_p": "核取樣門檻。數值越高,允許更多樣化的詞語選擇。",
+      "top_k": "從機率最高的 K 個 Token 中取樣。0 = 停用。",
+      "min_p": "Token 被納入考量所需的最小相對機率。",
+      "frequency_penalty": "根據先前的出現頻率減少詞語重複。",
+      "presence_penalty": "鼓勵模型引入新主題。",
+      "repeat_penalty": "對重複 Token 施加 llama.cpp 風格的乘法懲罰。1.0 = 停用。",
+      "mirostat": "自適應困惑度目標取樣器。",
+      "mirostat_tau": "目標熵。數值越低越聚焦。",
+      "mirostat_eta": "Mirostat 學習率。",
+      "grammar": "用於約束產生內容的 GBNF 文法。",
+      "json_schema": "將輸出約束為合法 JSON 的 JSON Schema。",
+      "typical_p": "局部典型取樣。1.0 = 停用。",
+      "top_n_sigma": "按高於最大 logit 的標準差數量過濾。-1 = 關閉。",
+      "dynatemp_range": "有效溫度在 [temperature - range, temperature + range] 內取樣。0 = 關閉。",
+      "dynatemp_exp": "在範圍內塑造溫度分布。",
+      "xtc_probability": "啟動 Exclude-Top-Choices 取樣器的機率。",
+      "xtc_threshold": "有資格被 XTC 排除的 Token 的最小機率。",
+      "dry_multiplier": "Don't-Repeat-Yourself 懲罰係數。0 = 停用。",
+      "dry_base": "懲罰成長的指數基數。",
+      "dry_allowed_length": "DRY 生效前允許的最短重複序列長度。",
+      "dry_penalty_last_n": "DRY 掃描的近期 Token 視窗。-1 = 完整內容,0 = 關閉。",
+      "ignore_eos": "越過結束序列 Token 繼續產生。",
+      "repeat_last_n": "重複懲罰考慮的近期 Token 數。-1 = 完整內容,0 = 停用。",
+      "samplers": "取樣器套用順序,以逗號分隔(如 \"top_k,typ_p,top_p,min_p,xtc,temperature\")。留空 = 使用伺服器預設順序。",
+      "backend_sampling": "使用模型後端自身的取樣器,而非 llama.cpp 的。",
+      "thinking_budget_tokens": "模型在被強迫回答前可用於推理的最大 Token 數。-1 = 無限。"
+    },
+    "effect": {
+      "temperature": "Higher = more varied; 0 = deterministic.",
+      "mirostat": "When enabled, overrides Top K / Top P / Min P."
+    }
+  },
+  "engine": {
+    "title": {
+      "ctx_len": "內容長度",
+      "ngl": "GPU 層數",
+      "temperature": "Temperature",
+      "top_k": "Top K",
+      "top_p": "Top P",
+      "min_p": "Min P",
+      "repeat_last_n": "Repeat Last N",
+      "repeat_penalty": "Repeat Penalty",
+      "presence_penalty": "Presence Penalty",
+      "frequency_penalty": "Frequency Penalty",
+      "chat_template": "自訂 Jinja 聊天模板",
+      "cpu_moe": "將所有專家保留在 CPU",
+      "n_cpu_moe": "CPU 中的 MoE 層數",
+      "override_tensor_buffer_t": "覆寫張量緩衝區類型",
+      "no_kv_offload": "停用 KV 快取卸載",
+      "batch_size": "批次大小",
+      "tensor_split": "張量分割",
+      "no_op_offload": "停用算子卸載",
+      "persist_thread_cache": "跨工作階段保留對話",
+      "thread_cache_size": "對話快取磁碟限額 (MiB)",
+      "ctx_checkpoints": "上下文檢查點",
+      "checkpoint_min_step": "檢查點最小步長",
+      "reasoning": "推理",
+      "offload_mmproj": "卸載 MMProj"
+    },
+    "desc": {
+      "ctx_len": "提示內容的大小。留空可在 --fit 開啟時自動適配。",
+      "ngl": "卸載到 GPU 的模型層數(-1 = 全部層,0 = 僅 CPU)。",
+      "temperature": "取樣溫度(越高隨機性越大)。這是載入時的預設設定,可被助手設定覆寫。",
+      "top_k": "Top-K 取樣(0 = 停用)。這是載入時的預設設定,可被助手設定覆寫。",
+      "top_p": "Top-P 取樣(1.0 = 停用)。這是載入時的預設設定,可被助手設定覆寫。",
+      "min_p": "Min-P 取樣(0.0 = 停用)。這是載入時的預設設定,可被助手設定覆寫。",
+      "repeat_last_n": "重複懲罰考慮的 Token 數(0 = 停用,-1 = ctx_size)。這是載入時的預設設定,可被助手設定覆寫。",
+      "repeat_penalty": "懲罰重複 Token 序列(1.0 = 停用)。這是載入時的預設設定,可被助手設定覆寫。",
+      "presence_penalty": "重複 alpha 存在懲罰(0.0 = 停用)。這是載入時的預設設定,可被助手設定覆寫。",
+      "frequency_penalty": "重複 alpha 頻率懲罰(0.0 = 停用)。這是載入時的預設設定,可被助手設定覆寫。",
+      "chat_template": "用於該模型的自訂 Jinja chat_template",
+      "cpu_moe": "將全部混合專家(MoE)權重保留在 CPU 中(若使用 GPU)。",
+      "n_cpu_moe": "將混合專家（MoE）模型前 N 層的權重保留在 CPU 記憶體中。使大型 MoE 模型能在有限顯示記憶體中執行。0 為停用。",
+      "override_tensor_buffer_t": "覆寫模型的張量緩衝區類型",
+      "no_kv_offload": "將 KV 快取保留在系統記憶體中而非 GPU 顯示記憶體。在顯示記憶體不足時有用，但會降低速度。",
+      "batch_size": "處理提示的邏輯最大批次大小。",
+      "tensor_split": "以逗號分隔的比例將模型分配到多個裝置，例如 \"3,1\"。留空則平均分配。",
+      "no_op_offload": "將主機張量運算保留在 CPU 上，而不是卸載到加速器。",
+      "persist_thread_cache": "將每個對話的提示快取保留在磁碟上，這樣重新開啟時無需重新讀取整個對話。僅在模型、其設定和 llama.cpp 版本均與儲存時一致時才會還原。",
+      "thread_cache_size": "已儲存對話快取的磁碟配額（預設：8192）。超出時最早儲存的快取將被刪除。一次長對話可能占用數百 MiB。",
+      "ctx_checkpoints": "每個插槽保留的最大上下文檢查點數，允許在上下文偏移後還原而非重新處理。",
+      "checkpoint_min_step": "上下文檢查點之間的最小 Token 數。",
+      "reasoning": "在聊天中使用推理/思考。'auto' 會依聊天模板自動偵測。",
+      "offload_mmproj": "將多模態投影模型卸載到 GPU"
+    },
+    "placeholder": {
+      "chat_template": "例如 {% for message in messages %}...{% endfor %}(預設從 GGUF 讀取)",
+      "override_tensor_buffer_t": "例如 layers\\.\\d+\\.ffn_.*=CPU",
+      "cpu_moe": "",
+      "no_kv_offload": "",
+      "offload_mmproj": ""
+    }
+  },
+  "group": {
+    "mirostat": {
+      "title": "Mirostat",
+      "desc": "自適應困惑度目標取樣器。會覆寫 Top K / Top P / Min P。"
+    },
+    "dry": {
+      "title": "DRY",
+      "desc": "針對長重複序列的 Don't-Repeat-Yourself 懲罰。"
+    },
+    "xtc": {
+      "title": "XTC",
+      "desc": "Exclude-Top-Choices 取樣器——依機率移除高機率 Token。"
+    },
+    "dynatemp": {
+      "title": "動態溫度",
+      "desc": "在基礎溫度附近的範圍內對有效溫度進行取樣。"
+    }
+  },
+  "cat": {
+    "common": "常用",
+    "penalties": "懲罰",
+    "output": "輸出控制",
+    "advanced": "進階取樣器"
+  },
+  "level": {
+    "low": "低",
+    "medium": "中",
+    "high": "高",
+    "xhigh": "極高",
+    "unlimited": "無限"
+  },
+  "disabled": {
+    "ignoredWhenTemperatureIs0": "Temperature 為 0 時忽略",
+    "controlledByMirostat": "由 Mirostat 控制",
+    "enableMirostatToUse": "啟用 Mirostat 以使用",
+    "setDynatempRange": "將動態溫度範圍設為 > 0",
+    "setXtcProbability": "將 XTC 機率設為 > 0",
+    "setDryMultiplier": "將 DRY 係數設為 > 0"
+  }
+}

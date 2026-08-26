@@ -849,7 +849,13 @@ async fn engine_list_models(llama_state: &LlamacppState, client: &Client) -> Vec
         Some(v) => v,
         None => return Vec::new(),
     };
-    let resp = match client
+    // Loopback-only query: must not go through the env proxy, otherwise the
+    // local router answers 502 and the local API server can't list models.
+    let local_client = match reqwest::Client::builder().no_proxy().build() {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    let resp = match local_client
         .get(&url)
         .header("Authorization", format!("Bearer {key}"))
         .send()

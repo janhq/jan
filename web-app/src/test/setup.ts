@@ -5,6 +5,46 @@ import * as matchers from '@testing-library/jest-dom/matchers'
 // extends Vitest's expect method with methods from react-testing-library
 expect.extend(matchers)
 
+// Node 22+ ships an experimental global `localStorage` (webstorage) that is
+// unusable here — it returns an object with no working setItem/clear — and it
+// shadows jsdom's own localStorage. Provide a faithful in-memory Storage so
+// every test that touches `localStorage` behaves like a browser.
+const storageMap = new Map<string, string>()
+const localStorageMock: Storage = {
+  get length() {
+    return storageMap.size
+  },
+  clear: () => void storageMap.clear(),
+  getItem: (key: string) => (storageMap.has(key) ? storageMap.get(key)! : null),
+  key: (index: number) => [...storageMap.keys()][index] ?? null,
+  removeItem: (key: string) => void storageMap.delete(key),
+  setItem: (key: string, value: string) => void storageMap.set(key, String(value)),
+}
+// Prefer jsdom's real Storage instance so `Storage.prototype.setItem`-style
+// spies keep intercepting the methods tests rely on. Node 22+ shadows the
+// global with an unusable webstorage object, so when that is what `window`
+// exposes we fall back to the in-memory mock above.
+const jsdomStorage = typeof window !== 'undefined' ? window.localStorage : undefined
+const usable =
+  jsdomStorage &&
+  typeof (jsdomStorage as Storage).setItem === 'function' &&
+  typeof (jsdomStorage as Storage).clear === 'function'
+const chosen = usable ? (jsdomStorage as Storage) : localStorageMock
+try {
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: chosen,
+    configurable: true,
+    writable: true,
+  })
+  Object.defineProperty(window, 'localStorage', {
+    value: chosen,
+    configurable: true,
+    writable: true,
+  })
+} catch (error) {
+  console.warn('Could not stub localStorage:', error)
+}
+
 // Create a mock ServiceHub
 const mockServiceHub = {
   theme: () => ({

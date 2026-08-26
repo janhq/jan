@@ -3,6 +3,7 @@
  */
 
 import { sanitizeModelId } from '@/lib/utils'
+import { fetchModelscopeFileMeta } from '@/lib/searchSources'
 import {
   AIEngine,
   EngineManager,
@@ -19,7 +20,6 @@ import { Model as CoreModel } from '@janhq/core'
 import type { SpecDraftKind } from '@janhq/core'
 import type {
   ModelsService,
-  ModelCatalog,
   HuggingFaceRepo,
   CatalogModel,
   ModelValidationResult,
@@ -45,26 +45,6 @@ export class DefaultModelsService implements ModelsService {
 
   async fetchModels(): Promise<modelInfo[]> {
     return this.getEngine()?.list() ?? []
-  }
-
-  async fetchModelCatalog(): Promise<ModelCatalog> {
-    try {
-      const response = await fetch(MODEL_CATALOG_URL)
-
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch model catalog: ${response.status} ${response.statusText}`
-        )
-      }
-
-      const catalog: ModelCatalog = await response.json()
-      return catalog
-    } catch (error) {
-      console.error('Error fetching model catalog:', error)
-      throw new Error(
-        `Failed to fetch model catalog: ${error instanceof Error ? error.message : 'Unknown error'}`
-      )
-    }
   }
 
   async fetchLatestJanModel(): Promise<CatalogModel | null> {
@@ -314,6 +294,47 @@ export class DefaultModelsService implements ModelsService {
       }
     }
 
+    // ModelScope 直连 URL:https://modelscope.cn/api/v1/models/{repo}/repo?Revision=master&FilePath={file}
+    const modelscopeMatch = modelPath.match(
+      /https:\/\/modelscope\.cn\/api\/v1\/models\/([^/]+\/[^/]+)\/repo\?[^#]*FilePath=([^&#]+)/
+    )
+
+    if (modelscopeMatch && !skipVerification) {
+      const [, repoId, encodedFile] = modelscopeMatch
+      try {
+        const meta = await fetchModelscopeFileMeta(
+          repoId,
+          decodeURIComponent(encodedFile)
+        )
+        if (meta?.sha256) {
+          modelSha256 = meta.sha256
+          modelSize = meta.size
+        }
+
+        // If mmproj path provided, extract its metadata too
+        if (mmprojPath) {
+          const mmprojMatch = mmprojPath.match(
+            /https:\/\/modelscope\.cn\/api\/v1\/models\/([^/]+\/[^/]+)\/repo\?[^#]*FilePath=([^&#]+)/
+          )
+          if (mmprojMatch) {
+            const mmprojMeta = await fetchModelscopeFileMeta(
+              mmprojMatch[1],
+              decodeURIComponent(mmprojMatch[2])
+            )
+            if (mmprojMeta?.sha256) {
+              mmprojSha256 = mmprojMeta.sha256
+              mmprojSize = mmprojMeta.size
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(
+          'Failed to fetch ModelScope metadata, proceeding without hash verification:',
+          error
+        )
+      }
+    }
+
     // Call the original pullModel with the fetched metadata
     try {
       return await this.pullModel(
@@ -371,7 +392,13 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async getActiveModels(provider?: string): Promise<string[]> {
-    return this.getEngine(provider)?.getLoadedModels() ?? []
+    try {
+      return (await this.getEngine(provider)?.getLoadedModels()) ?? []
+    } catch (e) {
+      // 引擎路由器未就绪时 /models 可能返回 502,降级为空列表避免 Uncaught
+      console.warn('Failed to get active models:', e)
+      return []
+    }
   }
 
   async stopModel(

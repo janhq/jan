@@ -58,5 +58,15 @@
   },
   "addProvider": "Thêm nhà cung cấp",
   "addOpenAIProvider": "Thêm nhà cung cấp OpenAI",
-  "enterNameForProvider": "Nhập tên cho nhà cung cấp"
+  "enterNameForProvider": "Nhập tên cho nhà cung cấp",
+  "option": {
+    "auto": "Auto",
+    "layer": "Layer",
+    "yarn": "YaRN",
+    "off": "Off",
+    "full": "Full",
+    "none": "None",
+    "linear": "Linear",
+    "on": "On"
+  }
 }

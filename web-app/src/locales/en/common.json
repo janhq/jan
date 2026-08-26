@@ -96,6 +96,13 @@
   "noThreadsYetDesc": "Start a new conversation to see your thread history here.",
   "downloads": "Downloads",
   "downloading": "Downloading",
+  "downloadingEllipsis": "Downloading...",
+  "initializingDownload": "Initializing download...",
+  "paused": "Paused",
+  "pausedProgress": "Paused · {{percent}}%",
+  "downloadSize": "{{current}} / {{total}} GB",
+  "downloadSizeCurrent": "{{current}} GB",
+  "downloadSpeed": " · {{speed}}/s",
   "uploadingAttachments": "Uploading attachments…",
   "cancelDownload": "Cancel download",
   "downloadCancelled": "Download Cancelled",
@@ -325,6 +332,7 @@
     "createNewProject": "Create New Project",
     "editProject": "Edit Project",
     "deleteProject": "Delete Project",
+    "deleteProjectConfirm": "Are you sure you want to delete this project? This action cannot be undone.",
     "projectName": "Project Name",
     "enterProjectName": "Enter project name...",
     "noProjectsAvailable": "No projects available",
@@ -364,7 +372,8 @@
       "updateButton": "Update",
       "alreadyExists": "Project \"{{projectName}}\" already exists",
       "createSuccess": "Project \"{{projectName}}\" created successfully",
-      "updateSuccess": "Project \"{{projectName}}\" updated successfully"
+      "updateSuccess": "Project \"{{projectName}}\" updated successfully",
+      "renameSuccess": "Project renamed from \"{{oldName}}\" to \"{{newName}}\""
     },
     "noConversationsIn": "No Conversations in {{projectName}}",
     "startNewConversation": "Start a new conversation with {{projectName}} below",
@@ -555,5 +564,18 @@
     "seconds": "{{count}}s",
     "minutes": "{{count}}m",
     "hours": "{{count}}h"
-  }
+  },
+  "modelMarket": "Model Market",
+  "addImages": "Add Images",
+  "addAudio": "Add Audio",
+  "addVideo": "Add Video",
+  "environmentVariables": "Environment Variables",
+  "enterCliCommand": "Enter custom CLI command",
+  "keyPlaceholder": "Key",
+  "valuePlaceholder": "Value",
+  "enterDisplayName": "Enter display name",
+  "enterPassword": "Enter password",
+  "confirmPassword": "Confirm password",
+  "securitySettings": "Security Settings",
+  "allFiles": "All Files"
 }

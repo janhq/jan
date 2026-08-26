@@ -26,12 +26,6 @@ vi.mock('../tokenCountToolContext', () => ({
 }))
 
 global.fetch = vi.fn()
-
-Object.defineProperty(global, 'MODEL_CATALOG_URL', {
-  value: 'https://example.com/models',
-  writable: true,
-  configurable: true,
-})
 Object.defineProperty(global, 'LATEST_JAN_MODEL_URL', {
   value: 'https://example.com/latest',
   writable: true,
@@ -69,33 +63,6 @@ describe('DefaultModelsService - coverage supplement', () => {
     mockEngineManager.get.mockReturnValue(mockEngine)
   })
 
-  // ── fetchModelCatalog ──
-  describe('fetchModelCatalog', () => {
-    it('returns catalog on success', async () => {
-      const catalog = { models: [{ id: 'm1' }] }
-      ;(fetch as any).mockResolvedValue({
-        ok: true,
-        json: vi.fn().mockResolvedValue(catalog),
-      })
-      const result = await svc.fetchModelCatalog()
-      expect(result).toEqual(catalog)
-    })
-
-    it('throws on non-ok response', async () => {
-      ;(fetch as any).mockResolvedValue({ ok: false, status: 500, statusText: 'Server Error' })
-      await expect(svc.fetchModelCatalog()).rejects.toThrow('Failed to fetch model catalog')
-    })
-
-    it('throws on network error', async () => {
-      ;(fetch as any).mockRejectedValue(new Error('network down'))
-      await expect(svc.fetchModelCatalog()).rejects.toThrow('Failed to fetch model catalog: network down')
-    })
-
-    it('throws with Unknown error for non-Error', async () => {
-      ;(fetch as any).mockRejectedValue('string error')
-      await expect(svc.fetchModelCatalog()).rejects.toThrow('Unknown error')
-    })
-  })
 
   // ── fetchHuggingFaceRepo ──
   describe('fetchHuggingFaceRepo', () => {

@@ -109,7 +109,6 @@ export type PreflightReason =
 export interface ModelsService {
   getModel(modelId: string): Promise<modelInfo | undefined>
   fetchModels(): Promise<modelInfo[]>
-  fetchModelCatalog(): Promise<ModelCatalog>
   fetchLatestJanModel(): Promise<CatalogModel | null>
   fetchHuggingFaceRepo(
     repoId: string,

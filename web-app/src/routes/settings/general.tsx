@@ -92,7 +92,7 @@ function General() {
       const s = await invoke<{ installed: boolean; path: string | null }>('install_jan_cli')
       setCliInstalled(s.installed)
       setCliPath(s.path)
-      toast.success(`Jan CLI installed to ${s.path}`)
+      toast.success(t('settings:general.janCliInstallToast', { path: s.path }))
     } catch (e) {
       toast.error('Install failed', { description: String(e) })
     } finally {
@@ -106,7 +106,7 @@ function General() {
       await invoke('uninstall_jan_cli')
       setCliInstalled(false)
       setCliPath(null)
-      toast.success('Jan CLI uninstalled')
+      toast.success(t('settings:general.janCliUninstallToast'))
     } catch (e) {
       toast.error('Uninstall failed', { description: String(e) })
     } finally {
@@ -405,14 +405,14 @@ function General() {
             </Card>
 
             {/* Advanced - Desktop only */}
-            <Card title="Advanced">
+            <Card title={t('settings:general.advanced')}>
               {IS_TAURI && (
                 <CardItem
-                  title="Jan CLI"
+                  title={t('settings:general.janCli')}
                   description={
                     cliInstalled && cliPath
-                      ? `Installed at ${cliPath} — use jan from your terminal to serve models.`
-                      : 'Use jan from your terminal to serve models without opening the app.'
+                      ? t('settings:general.janCliInstalledAt', { path: cliPath ?? '' })
+                      : t('settings:general.janCliUse')
                   }
                   actions={
                     cliInstalled ? (
@@ -422,7 +422,7 @@ function General() {
                         onClick={handleUninstallCli}
                         disabled={isCliLoading || cliInstalled === null}
                       >
-                        {isCliLoading ? 'Uninstalling…' : 'Uninstall'}
+                        {isCliLoading ? t('settings:general.uninstalling') : t('settings:general.uninstall')}
                       </Button>
                     ) : (
                       <Button
@@ -431,7 +431,7 @@ function General() {
                         onClick={handleInstallCli}
                         disabled={isCliLoading || cliInstalled === null}
                       >
-                        {isCliLoading ? 'Installing…' : 'Install'}
+                        {isCliLoading ? t('settings:general.installing') : t('settings:general.install')}
                       </Button>
                     )
                   }
@@ -494,7 +494,9 @@ function General() {
                         const token = (huggingfaceToken || '').trim()
                         if (!token) {
                           toast.error(
-                            'Please enter a Hugging Face token to validate'
+                            t('settings:general.enterTokenToValidate', {
+                              ns: 'settings',
+                            })
                           )
                           return
                         }
@@ -514,28 +516,28 @@ function General() {
                           )
                           if (resp.ok) {
                             const data = await resp.json()
-                            toast.success('Token is valid', {
+                            toast.success(t('settings:general.tokenIsValid', { ns: 'settings' }), {
                               description: data?.name
-                                ? `Signed in as ${data.name}`
-                                : 'Your Hugging Face token is valid.',
+                                ? t('settings:general.signedInAs', {
+                                    ns: 'settings',
+                                    name: data.name,
+                                  })
+                                : t('settings:general.tokenIsValidDesc', { ns: 'settings' }),
                             })
                           } else {
-                            toast.error('Token invalid', {
-                              description:
-                                'The provided Hugging Face token is invalid. Please check your token and try again.',
+                            toast.error(t('settings:general.tokenInvalid', { ns: 'settings' }), {
+                              description: t('settings:general.tokenInvalidDesc', { ns: 'settings' }),
                             })
                           }
                         } catch (e) {
                           const name = (e as { name?: string })?.name
                           if (name === 'AbortError') {
-                            toast.error('Validation timed out', {
-                              description:
-                                'The validation request timed out. Please check your network connection and try again.',
+                            toast.error(t('settings:general.validationTimedOut', { ns: 'settings' }), {
+                              description: t('settings:general.validationTimedOutDesc', { ns: 'settings' }),
                             })
                           } else {
-                            toast.error('Validation failed', {
-                              description:
-                                'A network error occurred while validating the token. Please check your internet connection.',
+                            toast.error(t('settings:general.validationFailed', { ns: 'settings' }), {
+                              description: t('settings:general.validationFailedDesc', { ns: 'settings' }),
                             })
                           }
                         } finally {
@@ -544,7 +546,7 @@ function General() {
                         }
                       }}
                     >
-                      Verify
+                      {t('settings:general.verifyToken', { ns: 'settings' })}
                     </Button>
                   </div>
                 }

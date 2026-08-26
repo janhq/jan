@@ -18,6 +18,18 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 vi.mock('sonner', () => ({ toast: hoisted.toast }))
 
+// Resolve `t` from the real (en) locale so the component renders English and
+// the English-text assertions here pass. The default TranslationContext returns
+// the raw key, which is why these assertions were failing.
+vi.mock('@/i18n/react-i18next-compat', async () => {
+  const { default: i18n } = await import('@/i18n/setup')
+  return {
+    useTranslation: () => ({
+      t: (key: string, opts?: Record<string, unknown>) => i18n.t(key, opts),
+    }),
+  }
+})
+
 import { SecurityConfigDialog } from '../SecurityConfigDialog'
 
 const statusNone = {

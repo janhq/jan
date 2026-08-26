@@ -58,5 +58,15 @@
   },
   "addProvider": "Ajouter un fournisseur",
   "addOpenAIProvider": "Ajouter un fournisseur OpenAI",
-  "enterNameForProvider": "Entrez le nom du fournisseur"
+  "enterNameForProvider": "Entrez le nom du fournisseur",
+  "option": {
+    "auto": "Auto",
+    "layer": "Layer",
+    "yarn": "YaRN",
+    "off": "Off",
+    "full": "Full",
+    "none": "None",
+    "linear": "Linear",
+    "on": "On"
+  }
 }

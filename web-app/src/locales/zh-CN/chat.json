@@ -1,13 +1,108 @@
 {
   "welcome": "嗨，你好吗？",
   "description": "今天我能为您做些什么？",
-  "status": {
-    "empty": "未找到聊天"
-  },
   "sendMessage": "发送消息",
   "newConversation": "新对话",
   "clearHistory": "清除历史记录",
   "temporaryChat": "临时聊天",
   "temporaryChatDescription": "开始一个临时对话，不会保存到您的聊天历史记录中。",
-  "done": "Done"
+  "done": "Done",
+  "embeddings": {
+    "title": "正在准备文档",
+    "description": "正在为附件建立索引,以便搜索和引用。大文档可能需要一些时间。"
+  },
+  "actions": {
+    "regenerate": "重新生成回答",
+    "continue": "继续生成",
+    "reload": "重新加载",
+    "increaseContextSize": "增大上下文长度"
+  },
+  "webSources": "{{count}} 个来源",
+  "reasoning": {
+    "label": "推理中...",
+    "thinking": "思考中",
+    "usingTool": "正在使用 {{tool}}...",
+    "showFullTimeline": "显示完整时间线",
+    "showCurrentStep": "仅显示当前步骤",
+    "thoughtForAWhile": "思考了几秒钟",
+    "thoughtFor": "思考了 {{duration}}",
+    "workedForAWhile": "运行了几秒钟",
+    "workedFor": "运行了 {{duration}}"
+  },
+  "input": {
+    "addDocuments": "添加文档或文件",
+    "indexingDocuments": "正在为文档建立索引…",
+    "starting": "正在启动...",
+    "browse": "浏览",
+    "browseActive": "浏览(已启用)",
+    "agentModeActive": "代理模式已启用",
+    "enableAgentMode": "启用代理模式",
+    "default": "默认",
+    "on": "开",
+    "off": "关",
+    "auto": "自动",
+    "reasoningEffort": "推理强度",
+    "reasoning": "推理",
+    "reasoningForced": "每次请求都强制启用推理。",
+    "reasoningDisabled": "每次请求都禁用推理。",
+    "reasoningDefault": "推理使用模型的默认设置。",
+    "thinkingBudget": "思考预算",
+    "stopGenerating": "停止生成",
+    "clearQueued": "清除 {{count}} 条排队消息"
+  },
+  "errors": {
+    "pleaseSelectModel": "请选择模型以开始聊天。",
+    "pleaseWaitAttachments": "请等待附件处理完成",
+    "attachmentsDisabled": "附件已在设置中被禁用",
+    "fileTooLarge": "文件过大",
+    "fileSizeLimit": "有文件超过 {{limit}}MB 的大小限制",
+    "filesAlreadyAttached": "文件已添加",
+    "duplicateInList": "{{files}} 已在列表中",
+    "failedAttachDocuments": "添加文档失败",
+    "failedRemoveAttachment": "移除附件失败",
+    "someImagesAlreadyAttached": "部分图片已添加",
+    "someAudioAlreadyAttached": "部分音频文件已添加",
+    "failedReadAudio": "读取音频文件失败",
+    "someVideoAlreadyAttached": "部分视频文件已添加",
+    "failedReadVideo": "读取视频文件失败",
+    "failedReadFile": "读取文件失败",
+    "failedToIngest": "无法处理 {{name}}",
+    "filesTooLarge": "文件过大(最大 {{limit}}):{{files}}",
+    "invalidFileType": "文件类型无效(仅支持 JPEG、JPG、PNG):{{files}}",
+    "audioTooLarge": "音频文件过大(最大 25MB):{{files}}",
+    "invalidAudioType": "音频类型无效(仅支持 WAV、MP3):{{files}}",
+    "videoTooLarge": "视频文件过大(最大 100MB):{{files}}",
+    "invalidVideoType": "视频类型无效:{{files}}"
+  },
+  "status": {
+    "empty": "未找到聊天",
+    "growingTheMind": "正在扩展上下文...",
+    "outOfMemory": "llama.cpp 内存不足",
+    "backendError": "GGML 后端遇到错误",
+    "contextLimit": "模型超出上下文长度"
+  },
+  "oom": {
+    "reduceCtxSize": "减小上下文长度 (ctx-size)",
+    "disableMtp": "禁用 MTP(多 Token 预测)",
+    "lowerGpuLayers": "降低 n-gpu-layers 或切换为 CPU 后端",
+    "useSmallerModel": "使用更小 / 量化更高的模型"
+  },
+  "sampling": {
+    "resetAll": "全部重置",
+    "addParameter": "添加参数",
+    "noOverrides": "无覆盖 — 使用模型默认设置。",
+    "noTunableParams": "该提供商无可调参数。",
+    "unrecognizedParams": "已隐藏 {{count}} 个无法识别的参数",
+    "notSupportedStripped": "不支持 — 发送时将被移除",
+    "notSupportedSkipped": "不支持 — 将被跳过。",
+    "mayBeIgnored": "该提供商可能忽略此设置",
+    "removeParam": "移除 {{name}}",
+    "removeGroup": "移除 {{name}}",
+    "loadingAssistant": "正在加载助手…",
+    "sampling": "采样",
+    "samplingWith": "采样 — {{name}}",
+    "samplingParameters": "采样参数",
+    "openAssistantSettings": "打开助手设置",
+    "pickAssistant": "请在上方选择一个助手以配置采样。"
+  }
 }

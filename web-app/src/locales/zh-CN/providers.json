@@ -31,7 +31,9 @@
     "description": "您确定要删除此模型吗？此操作无法撤销。",
     "success": "模型 {{modelId}} 已被永久删除。",
     "cancel": "取消",
-    "delete": "删除"
+    "delete": "删除",
+    "importedDescription": "从 Jan 中移除此导入的模型?磁盘上的本地文件不会被删除。",
+    "removeFromJan": "从 Jan 中移除"
   },
   "deleteProvider": {
     "title": "删除提供商",
@@ -54,9 +56,254 @@
     "warning": {
       "title": "谨慎操作",
       "description": "修改模型功能可能会影响性能和功能。错误的设置可能导致意外行为或错误。"
-    }
+    },
+    "audio": "音频",
+    "video": "视频"
   },
   "addProvider": "添加提供商",
   "addOpenAIProvider": "添加 OpenAI 提供商",
-  "enterNameForProvider": "输入提供商名称"
+  "enterNameForProvider": "输入提供商名称",
+  "limitedSupport": "此提供商可能未得到完全支持。能力(工具、视觉、音频)不会自动检测——请手动添加模型并逐模型配置能力。",
+  "mlxExperimental": "MLX 支持处于实验阶段。嵌入不可用,推理开关尚未完全接通,一些较新的模型架构可能无法加载。请在 GitHub 上报告问题,以便我们确定优先级。",
+  "backendInstalled": "已安装",
+  "backendHistoryShow": "显示更新历史",
+  "backendHistoryHide": "隐藏更新历史",
+  "backendHistoryLoading": "正在加载更新历史...",
+  "backendHistoryEmpty": "尚无后端更新记录。",
+  "backendHistoryNone": "无",
+  "backendHistoryUpdated": "已更新",
+  "backendHistoryRolledBack": "已回滚",
+  "backendHistoryRollbackFailed": "回滚失败",
+  "backendHistoryFailed": "失败",
+  "chatModels": "对话模型",
+  "embeddingModels": "嵌入模型",
+  "embeddingModelsDesc": "用于 RAG 和向量搜索。所选模型将作为生成嵌入时的默认模型。",
+  "embeddingModelDefault": "默认",
+  "embeddingModelSetDefault": "设为默认嵌入模型",
+  "embeddingModelIsDefault": "默认嵌入模型",
+  "imported": "已导入",
+  "importedTooltip": "从本地文件导入。从 Jan 中移除它不会删除磁盘上的文件。",
+  "noModelFoundRemoteDesc": "可用模型将列在这里。使用上面的刷新按钮从提供商获取模型,或使用 + 按钮手动添加一个。",
+  "deleteAllModels": {
+    "button": "全部删除",
+    "title": "删除所有已下载的模型?",
+    "description": "这将从磁盘上永久移除 {{count}} 个模型。",
+    "sizeLabel": "将释放的磁盘空间:",
+    "calculating": "正在计算…",
+    "warning": "此操作无法撤销。",
+    "importedExcluded": "将保留 {{count}} 个导入的模型(其文件不是由 Jan 下载的)。",
+    "confirm": "删除 {{count}} 个模型",
+    "deleting": "正在删除…",
+    "success": "已删除 {{count}} 个模型。",
+    "partialFailure": "删除 {{count}} 个模型失败。请查看控制台了解详情。"
+  },
+  "baseUrl": {
+    "title": "Base URL",
+    "azureDescription": "您的 Azure OpenAI 端点。将 YOUR-RESOURCE-NAME 替换为您的 Azure 资源名称。"
+  },
+  "apiKeys": {
+    "title": "API 密钥",
+    "description": "输入您的 API 密钥。您可以在“高级”中添加更多密钥,某个密钥失败时 Jan 会自动尝试下一个。",
+    "placeholder": "sk-…\nsk-…",
+    "primaryPlaceholder": "输入主要 API 密钥",
+    "keyPlaceholder": "输入 API 密钥",
+    "primaryBadge": "主要",
+    "test": "测试密钥",
+    "testing": "正在测试...",
+    "testHint": "使用每个密钥检查 /models 并显示各密钥状态。",
+    "advanced": "高级",
+    "hideAdvanced": "隐藏高级",
+    "oneKeyHint": "可选的备用密钥在“高级”中配置。",
+    "addKey": "添加密钥",
+    "removeKey": "移除密钥"
+  },
+  "llamacppSettings": {
+    "llamacpp_version": {
+      "title": "版本",
+      "description": "llama.cpp 发布版本"
+    },
+    "llamacpp_backend": {
+      "title": "后端",
+      "description": "llama.cpp 硬件后端 (CUDA、HIP/ROCm、Vulkan、CPU 等)"
+    },
+    "llamacpp_env": {
+      "title": "环境变量",
+      "description": "llama.cpp 环境变量(KEY=VALUE),以 ';' 分隔"
+    },
+    "check_for_updates": {
+      "title": "检查更新",
+      "description": "获取远程 llama.cpp 发布列表。版本下拉框需要它来显示本地安装之外的版本,并用于更新通知。"
+    },
+    "auto_update_engine": {
+      "title": "自动更新引擎",
+      "description": "有可用更新时自动下载并切换到最新的 llamacpp 引擎。启动时需要网络访问。"
+    },
+    "verify_backend_deps": {
+      "title": "校验后端依赖",
+      "description": "启动时检查 GPU 后端共享库(CUDA、Vulkan 等)是否可用"
+    },
+    "models_max": {
+      "title": "最大并发加载模型数",
+      "description": "路由器同时保持加载的最大模型数。0 = 不限制。"
+    },
+    "timeout": {
+      "title": "llamacpp 超时",
+      "description": "llamacpp 连接与加载超时(秒)"
+    },
+    "fit": {
+      "title": "自动适配(设备内存)",
+      "description": "是否调整未设置的参数以适配设备内存('on' 或 'off')。"
+    },
+    "fit_target": {
+      "title": "每设备适配目标 (MiB)",
+      "description": "每个设备的适配目标余量,逗号分隔的 MiB 值列表。"
+    },
+    "fit_ctx": {
+      "title": "适配最小上下文大小",
+      "description": "自动适配选项可设置的最小上下文大小(token)。"
+    },
+    "threads": {
+      "title": "线程数",
+      "description": "生成时使用的线程数(-1 表示逻辑核心数)。"
+    },
+    "threads_batch": {
+      "title": "线程数(批处理)",
+      "description": "批处理与提示词处理的线程数。"
+    },
+    "ctx_shift": {
+      "title": "上下文偏移",
+      "description": "允许模型裁切开头文本,以便在内存中容纳新文本"
+    },
+    "n_predict": {
+      "title": "最大预测 Token 数",
+      "description": "最大生成 Token 数(-1 = 无限)。"
+    },
+    "ubatch_size": {
+      "title": "uBatch 大小",
+      "description": "处理提示词的物理最大批大小。"
+    },
+    "device": {
+      "title": "卸载设备",
+      "description": "用于卸载的设备列表,逗号分隔。"
+    },
+    "split_mode": {
+      "title": "GPU 拆分模式",
+      "description": "如何在多个 GPU 之间拆分模型。"
+    },
+    "main_gpu": {
+      "title": "主 GPU 索引",
+      "description": "用于模型(split-mode=none)或中间结果的 GPU。"
+    },
+    "flash_attn": {
+      "title": "Flash Attention",
+      "description": "启用 Flash Attention 以获得优化性能。"
+    },
+    "parallel": {
+      "title": "并行序列数",
+      "description": "为自己的聊天请求解码的并行序列数。"
+    },
+    "cont_batching": {
+      "title": "连续批处理",
+      "description": "为并发请求启用连续批处理。"
+    },
+    "no_mmap": {
+      "title": "禁用 mmap",
+      "description": "不对模型做内存映射(加载较慢,但未使用 mlock 时可能减少换页)"
+    },
+    "mlock": {
+      "title": "MLock",
+      "description": "强制系统将模型保留在内存中,防止交换/压缩。"
+    },
+    "cache_type_k": {
+      "title": "KV 缓存 K 类型",
+      "description": "键的 KV 缓存数据类型(默认 f16)。"
+    },
+    "cache_type_v": {
+      "title": "KV 缓存 V 类型",
+      "description": "值的 KV 缓存数据类型(默认 f16)。"
+    },
+    "rope_scaling": {
+      "title": "RoPE 缩放方法",
+      "description": "RoPE 频率缩放方法。"
+    },
+    "rope_scale": {
+      "title": "RoPE 缩放系数",
+      "description": "RoPE 上下文缩放系数。"
+    },
+    "rope_freq_base": {
+      "title": "RoPE 频率基数",
+      "description": "RoPE 基础频率(0 = 从模型加载)。"
+    },
+    "rope_freq_scale": {
+      "title": "RoPE 频率缩放系数",
+      "description": "RoPE 频率缩放系数。"
+    },
+    "cache_ram": {
+      "title": "提示词缓存 RAM (MiB)",
+      "description": "提示词缓存最大大小(MiB)。-1 = 不限制,0 = 禁用。"
+    },
+    "cache_reuse": {
+      "title": "缓存复用",
+      "description": "从缓存复用匹配前缀 token 的最小块大小。0 = 禁用。"
+    },
+    "swa_full": {
+      "title": "完整 SWA 缓存",
+      "description": "为滑动窗口注意力模型使用完整 KV 缓存。"
+    },
+    "kv_unified": {
+      "title": "统一 KV 缓存",
+      "description": "使用跨所有槽位共享的单个统一 KV 缓冲区。运行多个会话时可节省内存。"
+    },
+    "keep": {
+      "title": "保留前 N 个 Token",
+      "description": "上下文偏移时保留的初始提示词 Token 数。-1 = 全部保留。"
+    },
+    "batch_size": {
+      "title": "批处理大小",
+      "description": "处理提示的逻辑最大批处理大小。"
+    },
+    "n_cpu_moe": {
+      "title": "CPU 中的 MoE 层数",
+      "description": "将混合专家（MoE）模型前 N 层的权重保留在 CPU 内存中。使大型 MoE 模型能在有限显存中运行。0 为禁用。"
+    },
+    "no_kv_offload": {
+      "title": "禁用 KV 缓存卸载",
+      "description": "将 KV 缓存保留在系统内存中而非 GPU 显存。在显存不足时有用，但会降低速度。"
+    },
+    "tensor_split": {
+      "title": "张量分割",
+      "description": "以逗号分隔的比例将模型分配到多个设备，例如 \"3,1\"。留空则平均分配。"
+    },
+    "no_op_offload": {
+      "title": "禁用算子卸载",
+      "description": "将主机张量运算保留在 CPU 上，而不是卸载到加速器。"
+    },
+    "persist_thread_cache": {
+      "title": "跨会话保留对话",
+      "description": "将每个对话的提示缓存保留在磁盘上，这样重新打开时无需重新读取整个对话。仅在模型、其设置和 llama.cpp 版本均与保存时一致时才会恢复。"
+    },
+    "thread_cache_size": {
+      "title": "对话缓存磁盘限额 (MiB)",
+      "description": "已保存对话缓存的磁盘配额（默认：8192）。超出时最早保存的缓存将被删除。一次长对话可能占用数百 MiB。"
+    },
+    "ctx_checkpoints": {
+      "title": "上下文检查点",
+      "description": "每个插槽保留的最大上下文检查点数，允许在上下文偏移后恢复而非重新处理。"
+    },
+    "checkpoint_min_step": {
+      "title": "检查点最小步长",
+      "description": "上下文检查点之间的最小 Token 数。"
+    }
+  },
+  "option": {
+    "auto": "自动",
+    "on": "开启",
+    "off": "关闭",
+    "none": "无",
+    "layer": "按层",
+    "full": "完整",
+    "linear": "线性",
+    "yarn": "YaRN"
+  },
+  "backendArchives": "后端归档"
 }

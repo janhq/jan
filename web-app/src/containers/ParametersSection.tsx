@@ -25,6 +25,40 @@ import {
   isModelLevelRejected,
 } from '@/lib/providerCaps'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
+import { useTranslation } from '@/i18n/react-i18next-compat'
+
+/**
+ * 参数渲染层翻译:参数名/说明/提示在 lib 数据里是英文(持久化/兼容),显示时
+ * 统一走 z i18n(param namespace)取中文;缺翻译回退 defaultValue(英文原文)。
+ */
+const paramTitle = (t: (k: string, o?: Record<string, unknown>) => string, key: string, fallback: string) =>
+  t(`param:sample.title.${key}`, { defaultValue: fallback })
+const paramDesc = (t: (k: string, o?: Record<string, unknown>) => string, key: string, fallback: string) =>
+  t(`param:sample.desc.${key}`, { defaultValue: fallback })
+const paramEffect = (t: (k: string, o?: Record<string, unknown>) => string, key: string, fallback?: string) =>
+  fallback ? t(`param:sample.effect.${key}`, { defaultValue: fallback }) : undefined
+
+/** disabledBy 的返回提示 → param:disabled.<kind> 翻译;未知文案原样返回。 */
+const translateDisabledReason = (
+  t: (k: string, o?: Record<string, unknown>) => string,
+  reason: string
+): string => {
+  const kind =
+    reason === 'Ignored when Temperature is 0'
+      ? 'ignoredWhenTemperatureIs0'
+      : reason === 'Controlled by Mirostat'
+        ? 'controlledByMirostat'
+        : reason === 'Enable Mirostat to use'
+          ? 'enableMirostatToUse'
+          : reason === 'Set Dynamic Temperature Range > 0'
+            ? 'setDynatempRange'
+            : reason === 'Set XTC Probability > 0'
+              ? 'setXtcProbability'
+              : reason === 'Set DRY Multiplier > 0'
+                ? 'setDryMultiplier'
+                : null
+  return kind ? t(`param:disabled.${kind}`, { defaultValue: reason }) : reason
+}
 
 export interface ParametersSectionProps {
   params: Record<string, unknown>
@@ -54,6 +88,7 @@ export function ParametersSection({
   providerId,
   modelId,
 }: ParametersSectionProps) {
+  const { t } = useTranslation()
   const modelRejects = (key: string) =>
     !!(providerId && modelId && isModelLevelRejected(key, providerId, modelId))
   const supportIndex = useMemo(() => {
@@ -118,7 +153,7 @@ export function ParametersSection({
     <div className="space-y-3">
       {!hasAny && (
         <div className="text-xs text-muted-foreground py-2">
-          No overrides — using model defaults.
+          {t('chat:sampling.noOverrides')}
         </div>
       )}
 
@@ -146,8 +181,7 @@ export function ParametersSection({
 
       {unknownKeys.length > 0 && (
         <div className="text-xs text-muted-foreground">
-          {unknownKeys.length} unrecognized parameter
-          {unknownKeys.length === 1 ? '' : 's'} hidden:{' '}
+          {t('chat:sampling.unrecognizedParams', { count: unknownKeys.length })}:{' '}
           {unknownKeys.join(', ')}
         </div>
       )}
@@ -180,9 +214,13 @@ function StandaloneRow({
   onChange,
   onRemove,
 }: StandaloneRowProps) {
+  const { t } = useTranslation()
   const def = paramsSettings[paramKey]
   if (!def) return null
   const disabledReason = evaluateDisabled(def, params)
+  const disabledTranslated = disabledReason
+    ? translateDisabledReason(t, disabledReason)
+    : undefined
   const value = params[paramKey] ?? def.value
   const capUnsupported =
     support && def.capability !== 'core' && def.capability !== 'client_only' && !support.known
@@ -193,23 +231,25 @@ function StandaloneRow({
     support.known &&
     support.supportedBy.length === 0 &&
     support.maybeBy.length > 0
+  const title = paramTitle(t, def.key, def.title)
+  const effectHint = paramEffect(t, def.key, def.effectHint)
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-2 min-w-0">
         <div className="flex items-center gap-1 min-w-0 flex-1 text-sm">
-          <span className="truncate">{def.title}</span>
+          <span className="truncate">{title}</span>
           {unsupported && (
             <IconAlertTriangle
               size={12}
               className="text-destructive shrink-0"
-              aria-label="Not supported — will be stripped on send"
+              aria-label={t('chat:sampling.notSupportedStripped')}
             />
           )}
           {!unsupported && maybeOnly && (
             <IconAlertTriangle
               size={12}
               className="text-amber-500 shrink-0"
-              aria-label="May be ignored by this provider"
+              aria-label={t('chat:sampling.mayBeIgnored')}
             />
           )}
         </div>
@@ -218,7 +258,7 @@ function StandaloneRow({
           size="icon-sm"
           onClick={() => onRemove(paramKey)}
           className="shrink-0 h-7 w-7"
-          aria-label={`Remove ${def.title}`}
+          aria-label={t('chat:sampling.removeParam', { name: title })}
         >
           <IconTrash size={14} className="text-destructive" />
         </Button>
@@ -229,10 +269,10 @@ function StandaloneRow({
           value: value as string | number | boolean,
           ...(def.controllerProps ?? {}),
         }}
-        disabledReason={disabledReason ?? undefined}
+        disabledReason={disabledTranslated ?? undefined}
         onChange={(v) => onChange(paramKey, v)}
       />
-      {(unsupported || def.effectHint) && (
+      {(unsupported || effectHint) && (
         <div
           className={
             unsupported
@@ -240,7 +280,9 @@ function StandaloneRow({
               : 'text-xs text-muted-foreground'
           }
         >
-          {unsupported ? 'Not supported — will be skipped.' : def.effectHint}
+          {unsupported
+            ? t('chat:sampling.notSupportedSkipped')
+            : effectHint}
         </div>
       )}
     </div>
@@ -260,18 +302,25 @@ function GroupBlock({
   onChange,
   onRemoveGroup,
 }: GroupBlockProps) {
+  const { t } = useTranslation()
   return (
     <div className="rounded-md border border-border/60 p-3 space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-sm font-medium">{group.title}</div>
-          <div className="text-xs text-muted-foreground">{group.description}</div>
+          <div className="text-sm font-medium">
+            {t(`param:group.${group.id}.title`, { defaultValue: group.title })}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {t(`param:group.${group.id}.desc`, { defaultValue: group.description })}
+          </div>
         </div>
         <Button
           variant="ghost"
           size="icon-sm"
           onClick={onRemoveGroup}
-          aria-label={`Remove ${group.title}`}
+          aria-label={t('chat:sampling.removeGroup', {
+            name: t(`param:group.${group.id}.title`, { defaultValue: group.title }),
+          })}
         >
           <IconTrash size={16} className="text-destructive" />
         </Button>
@@ -283,17 +332,22 @@ function GroupBlock({
             const def = paramsSettings[memberKey]
             if (!def) return null
             const disabledReason = evaluateDisabled(def, params)
+            const disabledTranslated = disabledReason
+              ? translateDisabledReason(t, disabledReason)
+              : undefined
             const value = params[memberKey] ?? def.value
             return (
               <div key={memberKey} className="space-y-1">
-                <div className="text-xs text-muted-foreground">{def.title}</div>
+                <div className="text-xs text-muted-foreground">
+                  {paramTitle(t, def.key, def.title)}
+                </div>
                 <DynamicControllerSetting
                   controllerType={def.controllerType}
                   controllerProps={{
                     value: value as string | number | boolean,
                     ...(def.controllerProps ?? {}),
                   }}
-                  disabledReason={disabledReason ?? undefined}
+                  disabledReason={disabledTranslated ?? undefined}
                   onChange={(v) => onChange(memberKey, v)}
                 />
               </div>
@@ -348,10 +402,12 @@ function AddParameterMenu({
       .filter(({ entries }) => entries.length > 0)
   }, [params, providers, modelRejects])
 
+  const { t } = useTranslation()
+
   if (items.length === 0) {
     return (
       <div className="text-xs text-muted-foreground">
-        No tunable parameters for this provider.
+        {t('chat:sampling.noTunableParams')}
       </div>
     )
   }
@@ -361,7 +417,7 @@ function AddParameterMenu({
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className="w-full justify-start">
           <IconPlus size={14} className="mr-1" />
-          Add parameter
+          {t('chat:sampling.addParameter')}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72 max-h-[60vh] overflow-y-auto">
@@ -369,7 +425,7 @@ function AddParameterMenu({
           <div key={cat.id}>
             {catIdx > 0 && <DropdownMenuSeparator />}
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              {cat.title}
+              {t(`param:cat.${cat.id}`, { defaultValue: cat.title })}
             </DropdownMenuLabel>
             {entries.map((entry) =>
               entry.kind === 'param' ? (
@@ -380,7 +436,9 @@ function AddParameterMenu({
                   className="flex flex-col items-start gap-0.5 py-1.5"
                 >
                   <div className="flex items-center gap-1 w-full">
-                    <span className="text-sm">{entry.def.title}</span>
+                    <span className="text-sm">
+                      {paramTitle(t, entry.def.key, entry.def.title)}
+                    </span>
                     {entry.support.supportedBy.length === 0 &&
                       entry.support.maybeBy.length > 0 && (
                         <IconAlertTriangle
@@ -390,7 +448,8 @@ function AddParameterMenu({
                       )}
                   </div>
                   <span className="text-xs text-muted-foreground line-clamp-1">
-                    {entry.def.effectHint ?? entry.def.description}
+                    {paramEffect(t, entry.def.key, entry.def.effectHint) ??
+                      paramDesc(t, entry.def.key, entry.def.description)}
                   </span>
                 </DropdownMenuItem>
               ) : (
@@ -400,9 +459,15 @@ function AddParameterMenu({
                   onSelect={() => onAddGroup(entry.group)}
                   className="flex flex-col items-start gap-0.5 py-1.5"
                 >
-                  <span className="text-sm">{entry.group.title}</span>
+                  <span className="text-sm">
+                    {t(`param:group.${entry.group.id}.title`, {
+                      defaultValue: entry.group.title,
+                    })}
+                  </span>
                   <span className="text-xs text-muted-foreground line-clamp-1">
-                    {entry.group.description}
+                    {t(`param:group.${entry.group.id}.desc`, {
+                      defaultValue: entry.group.description,
+                    })}
                   </span>
                 </DropdownMenuItem>
               )

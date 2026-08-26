@@ -138,7 +138,7 @@ describe('DownloadManagement', () => {
 
   it('renders empty state when no downloads', () => {
     render(<DownloadManagement />)
-    expect(screen.getByText(/Your download progress/)).toBeInTheDocument()
+    expect(screen.getByText('hub:downloadPlaceholder')).toBeInTheDocument()
   })
 
   it('renders a download item with progress', () => {
@@ -159,7 +159,7 @@ describe('DownloadManagement', () => {
   it('shows initializing when total is 0 and current is 0', () => {
     hoisted.downloadStore.localDownloadingModels = new Set(['model-b'])
     render(<DownloadManagement />)
-    expect(screen.getByText('Initializing download...')).toBeInTheDocument()
+    expect(screen.getByText('initializingDownload')).toBeInTheDocument()
   })
 
   it('shows "Downloading..." when current > 0 but total = 0', () => {
@@ -167,7 +167,7 @@ describe('DownloadManagement', () => {
       'model-c': { name: 'model-c', progress: 0, current: 500, total: 0 },
     }
     render(<DownloadManagement />)
-    expect(screen.getByText('Downloading...')).toBeInTheDocument()
+    expect(screen.getByText('downloadingEllipsis')).toBeInTheDocument()
   })
 
   it('renders App Update progress when updater is downloading', () => {
@@ -282,7 +282,8 @@ describe('DownloadManagement', () => {
         'cloud-model',
         'https://hf/model.gguf',
         undefined,
-        'tok'
+        'tok',
+        true
       )
     )
   })

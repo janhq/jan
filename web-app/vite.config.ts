@@ -62,6 +62,8 @@ export default defineConfig(({ mode }) => {
       injectGoogleAnalytics(env.GA_MEASUREMENT_ID),
     ],
     resolve: {
+      // 防止依赖预构建/新增依赖后出现双 React 实例(useShallow 报 Invalid hook call)
+      dedupe: ['react', 'react-dom'],
       alias: {
         '@': path.resolve(__dirname, './src'),
         '@janhq/assistant-extension': path.resolve(__dirname, '../extensions/assistant-extension/dist/index.js'),

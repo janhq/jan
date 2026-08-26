@@ -38,8 +38,15 @@ async fn engine_endpoint<R: Runtime>(
 }
 
 async fn http_client() -> reqwest::Client {
+    // This client is used ONLY for the local llamacpp router on 127.0.0.1
+    // (/models, /models/load, /health, /slots ...). reqwest's default builder
+    // inherits HTTP(S)_PROXY from the environment, which would route these
+    // loopback calls through a proxy (e.g. Clash 127.0.0.1:7890) and get a
+    // 502 Bad Gateway in return — breaking model listing/load. .no_proxy()
+    // guarantees local router calls always stay on the loopback interface.
     reqwest::Client::builder()
         .timeout(Duration::from_secs(600))
+        .no_proxy()
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
 }

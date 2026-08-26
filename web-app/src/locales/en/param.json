@@ -1,0 +1,174 @@
+{
+  "sample": {
+    "title": {
+      "stream": "Streaming",
+      "max_context_tokens": "Max context tokens",
+      "max_output_tokens": "Max output tokens",
+      "auto_compact": "Auto compact",
+      "temperature": "Temperature",
+      "top_p": "Top P",
+      "top_k": "Top K",
+      "min_p": "Min P",
+      "frequency_penalty": "Frequency penalty",
+      "presence_penalty": "Presence penalty",
+      "repeat_penalty": "Repeat penalty",
+      "mirostat": "Mirostat",
+      "mirostat_tau": "Mirostat tau",
+      "mirostat_eta": "Mirostat eta",
+      "grammar": "Grammar (GBNF)",
+      "json_schema": "JSON schema",
+      "typical_p": "Typical P",
+      "top_n_sigma": "Top N sigma",
+      "dynatemp_range": "Dynamic temperature range",
+      "dynatemp_exp": "Dynamic temperature exponent",
+      "xtc_probability": "XTC probability",
+      "xtc_threshold": "XTC threshold",
+      "dry_multiplier": "DRY multiplier",
+      "dry_base": "DRY base",
+      "dry_allowed_length": "DRY allowed length",
+      "dry_penalty_last_n": "DRY penalty last N",
+      "ignore_eos": "Ignore EOS",
+      "repeat_last_n": "Repeat last N",
+      "samplers": "Sampler order",
+      "backend_sampling": "Backend sampling",
+      "thinking_budget_tokens": "Thinking budget"
+    },
+    "desc": {
+      "stream": "Stream the response in real time.",
+      "max_context_tokens": "Total token budget (input + output). Older messages are trimmed or compacted to stay within this range. 0 disables trimming.",
+      "max_output_tokens": "The maximum number of tokens the model can generate in a single reply. Sent as max_tokens to OpenAI-compatible APIs.",
+      "auto_compact": "When the context limit is reached, summarize older messages instead of dropping them. Requires setting max context tokens.",
+      "temperature": "Controls the randomness of the reply.",
+      "top_p": "Nucleus sampling threshold. Higher values allow more diverse word choices.",
+      "top_k": "Sample from the top K most likely tokens. 0 = disabled.",
+      "min_p": "Minimum relative probability for a token to be considered.",
+      "frequency_penalty": "Reduce word repetition based on how often it has appeared.",
+      "presence_penalty": "Encourage the model to introduce new topics.",
+      "repeat_penalty": "Apply a llama.cpp-style multiplicative penalty to repeated tokens. 1.0 = disabled.",
+      "mirostat": "Adaptive perplexity-targeting sampler.",
+      "mirostat_tau": "Target entropy. Lower values are more focused.",
+      "mirostat_eta": "Mirostat learning rate.",
+      "grammar": "GBNF grammar used to constrain the generated content.",
+      "json_schema": "JSON schema that constrains output to valid JSON.",
+      "typical_p": "Locally typical sampling. 1.0 = disabled.",
+      "top_n_sigma": "Filter by the number of standard deviations above the maximum logit. -1 = off.",
+      "dynatemp_range": "Sample the effective temperature within [temperature - range, temperature + range]. 0 = off.",
+      "dynatemp_exp": "Shape the temperature distribution across the range.",
+      "xtc_probability": "Probability of activating the Exclude-Top-Choices sampler.",
+      "xtc_threshold": "Minimum probability for a token to be eligible for XTC exclusion.",
+      "dry_multiplier": "Don't-Repeat-Yourself penalty multiplier. 0 = disabled.",
+      "dry_base": "Exponential base for penalty growth.",
+      "dry_allowed_length": "Shortest repeat sequence length allowed before DRY applies.",
+      "dry_penalty_last_n": "Recent token window scanned by DRY. -1 = full context, 0 = off.",
+      "ignore_eos": "Continue generating past the end-of-sequence token.",
+      "repeat_last_n": "Number of recent tokens considered for the repeat penalty. -1 = full context, 0 = disabled.",
+      "samplers": "Order in which samplers are applied, comma-separated (e.g. \"top_k,typ_p,top_p,min_p,xtc,temperature\"). Leave empty for the server default order.",
+      "backend_sampling": "Use the model backend's own samplers instead of llama.cpp's.",
+      "thinking_budget_tokens": "Maximum tokens the model can use for reasoning before being forced to answer. -1 = unlimited."
+    },
+    "effect": {
+      "temperature": "Higher = more varied; 0 = deterministic.",
+      "mirostat": "When enabled, overrides Top K / Top P / Min P."
+    }
+  },
+  "engine": {
+    "title": {
+      "ctx_len": "Context length",
+      "ngl": "GPU layers",
+      "temperature": "Temperature",
+      "top_k": "Top K",
+      "top_p": "Top P",
+      "min_p": "Min P",
+      "repeat_last_n": "Repeat last N",
+      "repeat_penalty": "Repeat penalty",
+      "presence_penalty": "Presence penalty",
+      "frequency_penalty": "Frequency penalty",
+      "chat_template": "Custom Jinja chat template",
+      "cpu_moe": "Keep all experts on CPU",
+      "n_cpu_moe": "MoE Layers on CPU",
+      "override_tensor_buffer_t": "Override tensor buffer type",
+      "no_kv_offload": "Disable KV Cache Offload",
+      "batch_size": "Batch Size",
+      "tensor_split": "Tensor Split",
+      "no_op_offload": "Disable Op Offload",
+      "persist_thread_cache": "Remember Conversations Between Sessions",
+      "thread_cache_size": "Conversation Cache Disk Limit (MiB)",
+      "ctx_checkpoints": "Context Checkpoints",
+      "checkpoint_min_step": "Checkpoint Minimum Step",
+      "reasoning": "Reasoning",
+      "offload_mmproj": "Offload MMProj"
+    },
+    "desc": {
+      "ctx_len": "The size of the prompt context. Leave empty to auto-adapt when --fit is on.",
+      "ngl": "Number of model layers offloaded to GPU (-1 = all layers, 0 = CPU only).",
+      "temperature": "Sampling temperature (higher = more random). Default at load, can be overridden by assistant settings.",
+      "top_k": "Top-K sampling (0 = disabled). Default at load, can be overridden by assistant settings.",
+      "top_p": "Top-P sampling (1.0 = disabled). Default at load, can be overridden by assistant settings.",
+      "min_p": "Min-P sampling (0.0 = disabled). Default at load, can be overridden by assistant settings.",
+      "repeat_last_n": "Tokens considered for the repeat penalty (0 = disabled, -1 = ctx_size). Default at load, can be overridden by assistant settings.",
+      "repeat_penalty": "Penalize repeating token sequences (1.0 = disabled). Default at load, can be overridden by assistant settings.",
+      "presence_penalty": "Repeat alpha presence penalty (0.0 = disabled). Default at load, can be overridden by assistant settings.",
+      "frequency_penalty": "Repeat alpha frequency penalty (0.0 = disabled). Default at load, can be overridden by assistant settings.",
+      "chat_template": "Custom Jinja chat_template for this model",
+      "cpu_moe": "Keep all mixture-of-experts (MoE) weights on CPU (if using a GPU).",
+      "n_cpu_moe": "Keep the Mixture-of-Experts weights of the first N layers in CPU memory. Lets a large MoE model fit in limited VRAM. 0 disables it.",
+      "override_tensor_buffer_t": "Override the model's tensor buffer type",
+      "no_kv_offload": "Keep the KV cache in system RAM instead of GPU memory. Useful when VRAM is scarce, at the cost of speed.",
+      "batch_size": "Logical maximum batch size for processing prompts.",
+      "tensor_split": "Comma-separated proportions for splitting the model across devices, e.g. \"3,1\". Leave empty for an even split.",
+      "no_op_offload": "Keep host tensor operations on the CPU instead of offloading them to the accelerator.",
+      "persist_thread_cache": "Keep each conversation's prompt cache on disk so reopening it does not re-read the whole conversation. Restored only when the model, its settings and the llama.cpp build all match what saved it.",
+      "thread_cache_size": "Disk budget for saved conversation caches (default: 8192). The oldest are dropped first once it is reached. One long conversation can take hundreds of MiB.",
+      "ctx_checkpoints": "Maximum context checkpoints kept per slot, which let a shifted context be restored instead of reprocessed.",
+      "checkpoint_min_step": "Minimum number of tokens between context checkpoints.",
+      "reasoning": "Enable reasoning/thinking in chat. 'auto' detects it from the chat template.",
+      "offload_mmproj": "Offload the multimodal projection model to GPU"
+    },
+    "placeholder": {
+      "chat_template": "e.g. {% for message in messages %}...{% endfor %} (default read from GGUF)",
+      "override_tensor_buffer_t": "e.g. layers\\.\\d+\\.ffn_.*=CPU",
+      "cpu_moe": "",
+      "no_kv_offload": "",
+      "offload_mmproj": ""
+    }
+  },
+  "group": {
+    "mirostat": {
+      "title": "Mirostat",
+      "desc": "Adaptive perplexity-targeting sampler. Overrides Top K / Top P / Min P."
+    },
+    "dry": {
+      "title": "DRY",
+      "desc": "Don't-Repeat-Yourself penalty against long repeated sequences."
+    },
+    "xtc": {
+      "title": "XTC",
+      "desc": "Exclude-Top-Choices sampler — removes high-probability tokens by probability."
+    },
+    "dynatemp": {
+      "title": "Dynamic temperature",
+      "desc": "Samples the effective temperature within a range around the base temperature."
+    }
+  },
+  "cat": {
+    "common": "Common",
+    "penalties": "Penalties",
+    "output": "Output control",
+    "advanced": "Advanced samplers"
+  },
+  "level": {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "xhigh": "Extra high",
+    "unlimited": "Unlimited"
+  },
+  "disabled": {
+    "ignoredWhenTemperatureIs0": "Ignored when Temperature is 0",
+    "controlledByMirostat": "Controlled by Mirostat",
+    "enableMirostatToUse": "Enable Mirostat to use",
+    "setDynatempRange": "Set dynamic temperature range > 0",
+    "setXtcProbability": "Set XTC probability > 0",
+    "setDryMultiplier": "Set DRY multiplier > 0"
+  }
+}

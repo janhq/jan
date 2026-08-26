@@ -1,0 +1,174 @@
+{
+  "sample": {
+    "title": {
+      "stream": "流式输出",
+      "max_context_tokens": "最大上下文 Token",
+      "max_output_tokens": "最大输出 Token",
+      "auto_compact": "自动压缩",
+      "temperature": "Temperature",
+      "top_p": "Top P",
+      "top_k": "Top K",
+      "min_p": "Min P",
+      "frequency_penalty": "Frequency Penalty",
+      "presence_penalty": "Presence Penalty",
+      "repeat_penalty": "Repeat Penalty",
+      "mirostat": "Mirostat",
+      "mirostat_tau": "Mirostat Tau",
+      "mirostat_eta": "Mirostat Eta",
+      "grammar": "文法 (GBNF)",
+      "json_schema": "JSON Schema",
+      "typical_p": "Typical P",
+      "top_n_sigma": "Top N Sigma",
+      "dynatemp_range": "动态温度范围",
+      "dynatemp_exp": "动态温度指数",
+      "xtc_probability": "XTC 概率",
+      "xtc_threshold": "XTC 阈值",
+      "dry_multiplier": "DRY 系数",
+      "dry_base": "DRY 基数",
+      "dry_allowed_length": "DRY 允许长度",
+      "dry_penalty_last_n": "DRY 惩罚窗口",
+      "ignore_eos": "忽略 EOS",
+      "repeat_last_n": "Repeat Last N",
+      "samplers": "采样器顺序",
+      "backend_sampling": "后端采样",
+      "thinking_budget_tokens": "思考预算"
+    },
+    "desc": {
+      "stream": "启用实时响应流式输出。",
+      "max_context_tokens": "总 Token 预算(输入 + 输出)。较旧的消息会被裁剪/压缩以保持在此范围内。0 表示禁用裁剪。",
+      "max_output_tokens": "模型单次回复最多可生成的 Token 数。会作为 max_tokens 发送给兼容 OpenAI 的 API。",
+      "auto_compact": "达到上下文上限时,将较旧消息总结而不是丢弃。需要设置最大上下文 Token。",
+      "temperature": "控制回复的随机性。",
+      "top_p": "核采样阈值。数值越高,允许更多样化的词语选择。",
+      "top_k": "从概率最高的 K 个 Token 中采样。0 = 禁用。",
+      "min_p": "Token 被纳入考虑所需的最小相对概率。",
+      "frequency_penalty": "根据之前的出现频率减少词语重复。",
+      "presence_penalty": "鼓励模型引入新话题。",
+      "repeat_penalty": "对重复 Token 施加 llama.cpp 风格的乘法惩罚。1.0 = 禁用。",
+      "mirostat": "自适应困惑度目标采样器。",
+      "mirostat_tau": "目标熵。数值越低越聚焦。",
+      "mirostat_eta": "Mirostat 学习率。",
+      "grammar": "用于约束生成内容的 GBNF 文法。",
+      "json_schema": "将输出约束为合法 JSON 的 JSON Schema。",
+      "typical_p": "局部典型采样。1.0 = 禁用。",
+      "top_n_sigma": "按高于最大 logit 的标准差数量过滤。-1 = 关闭。",
+      "dynatemp_range": "有效温度在 [temperature - range, temperature + range] 内采样。0 = 关闭。",
+      "dynatemp_exp": "在范围内塑造温度分布。",
+      "xtc_probability": "激活 Exclude-Top-Choices 采样器的概率。",
+      "xtc_threshold": "有资格被 XTC 排除的 Token 的最小概率。",
+      "dry_multiplier": "Don't-Repeat-Yourself 惩罚系数。0 = 禁用。",
+      "dry_base": "惩罚增长的指数基数。",
+      "dry_allowed_length": "DRY 生效前允许的最短重复序列长度。",
+      "dry_penalty_last_n": "DRY 扫描的近期 Token 窗口。-1 = 完整上下文,0 = 关闭。",
+      "ignore_eos": "越过结束序列 Token 继续生成。",
+      "repeat_last_n": "重复惩罚考虑的近期 Token 数。-1 = 完整上下文,0 = 禁用。",
+      "samplers": "采样器应用顺序,逗号分隔(如 \"top_k,typ_p,top_p,min_p,xtc,temperature\")。留空 = 使用服务器默认顺序。",
+      "backend_sampling": "使用模型后端自身的采样器,而非 llama.cpp 的。",
+      "thinking_budget_tokens": "模型在被迫回答前可用于推理的最大 Token 数。-1 = 无限。"
+    },
+    "effect": {
+      "temperature": "Higher = more varied; 0 = deterministic.",
+      "mirostat": "When enabled, overrides Top K / Top P / Min P."
+    }
+  },
+  "engine": {
+    "title": {
+      "ctx_len": "上下文长度",
+      "ngl": "GPU 层数",
+      "temperature": "Temperature",
+      "top_k": "Top K",
+      "top_p": "Top P",
+      "min_p": "Min P",
+      "repeat_last_n": "Repeat Last N",
+      "repeat_penalty": "Repeat Penalty",
+      "presence_penalty": "Presence Penalty",
+      "frequency_penalty": "Frequency Penalty",
+      "chat_template": "自定义 Jinja 聊天模板",
+      "cpu_moe": "将所有专家保留在 CPU",
+      "n_cpu_moe": "CPU 中的 MoE 层数",
+      "override_tensor_buffer_t": "覆盖张量缓冲区类型",
+      "no_kv_offload": "禁用 KV 缓存卸载",
+      "batch_size": "批处理大小",
+      "tensor_split": "张量分割",
+      "no_op_offload": "禁用算子卸载",
+      "persist_thread_cache": "跨会话保留对话",
+      "thread_cache_size": "对话缓存磁盘限额 (MiB)",
+      "ctx_checkpoints": "上下文检查点",
+      "checkpoint_min_step": "检查点最小步长",
+      "reasoning": "推理",
+      "offload_mmproj": "卸载 MMProj"
+    },
+    "desc": {
+      "ctx_len": "提示上下文的大小。留空可在 --fit 开启时自动适配。",
+      "ngl": "卸载到 GPU 的模型层数(-1 = 全部层,0 = 仅 CPU)。",
+      "temperature": "采样温度(越高随机性越大)。这是加载时的默认设置,可被助手设置覆盖。",
+      "top_k": "Top-K 采样(0 = 禁用)。这是加载时的默认设置,可被助手设置覆盖。",
+      "top_p": "Top-P 采样(1.0 = 禁用)。这是加载时的默认设置,可被助手设置覆盖。",
+      "min_p": "Min-P 采样(0.0 = 禁用)。这是加载时的默认设置,可被助手设置覆盖。",
+      "repeat_last_n": "重复惩罚考虑的 Token 数(0 = 禁用,-1 = ctx_size)。这是加载时的默认设置,可被助手设置覆盖。",
+      "repeat_penalty": "惩罚重复 Token 序列(1.0 = 禁用)。这是加载时的默认设置,可被助手设置覆盖。",
+      "presence_penalty": "重复 alpha 存在惩罚(0.0 = 禁用)。这是加载时的默认设置,可被助手设置覆盖。",
+      "frequency_penalty": "重复 alpha 频率惩罚(0.0 = 禁用)。这是加载时的默认设置,可被助手设置覆盖。",
+      "chat_template": "用于该模型的自定义 Jinja chat_template",
+      "cpu_moe": "将全部混合专家(MoE)权重保留在 CPU 中(若使用 GPU)。",
+      "n_cpu_moe": "将混合专家(MoE)模型前 N 层的权重保留在 CPU 内存中。使大型 MoE 模型能在有限显存中运行。0 为禁用。",
+      "override_tensor_buffer_t": "覆盖模型的张量缓冲区类型",
+      "no_kv_offload": "将 KV 缓存保留在系统内存中而非 GPU 显存。在显存不足时有用，但会降低速度。",
+      "batch_size": "处理提示的逻辑最大批处理大小。",
+      "tensor_split": "以逗号分隔的比例将模型分配到多个设备，例如 \"3,1\"。留空则平均分配。",
+      "no_op_offload": "将主机张量运算保留在 CPU 上，而不是卸载到加速器。",
+      "persist_thread_cache": "将每个对话的提示缓存保留在磁盘上，这样重新打开时无需重新读取整个对话。仅在模型、其设置和 llama.cpp 版本均与保存时一致时才会恢复。",
+      "thread_cache_size": "已保存对话缓存的磁盘配额（默认：8192）。超出时最早保存的缓存将被删除。一次长对话可能占用数百 MiB。",
+      "ctx_checkpoints": "每个插槽保留的最大上下文检查点数，允许在上下文偏移后恢复而非重新处理。",
+      "checkpoint_min_step": "上下文检查点之间的最小 Token 数。",
+      "reasoning": "在聊天中使用推理/思考。'auto' 会根据聊天模板自动检测。",
+      "offload_mmproj": "将多模态投影模型卸载到 GPU"
+    },
+    "placeholder": {
+      "chat_template": "例如 {% for message in messages %}...{% endfor %}(默认从 GGUF 读取)",
+      "override_tensor_buffer_t": "例如 layers\\.\\d+\\.ffn_.*=CPU",
+      "cpu_moe": "",
+      "no_kv_offload": "",
+      "offload_mmproj": ""
+    }
+  },
+  "group": {
+    "mirostat": {
+      "title": "Mirostat",
+      "desc": "自适应困惑度目标采样器。会覆盖 Top K / Top P / Min P。"
+    },
+    "dry": {
+      "title": "DRY",
+      "desc": "针对长重复序列的 Don't-Repeat-Yourself 惩罚。"
+    },
+    "xtc": {
+      "title": "XTC",
+      "desc": "Exclude-Top-Choices 采样器——按概率移除高概率 Token。"
+    },
+    "dynatemp": {
+      "title": "动态温度",
+      "desc": "在基础温度附近的范围内对有效温度进行采样。"
+    }
+  },
+  "cat": {
+    "common": "常用",
+    "penalties": "惩罚",
+    "output": "输出控制",
+    "advanced": "高级采样器"
+  },
+  "level": {
+    "low": "低",
+    "medium": "中",
+    "high": "高",
+    "xhigh": "极高",
+    "unlimited": "无限"
+  },
+  "disabled": {
+    "ignoredWhenTemperatureIs0": "Temperature 为 0 时忽略",
+    "controlledByMirostat": "由 Mirostat 控制",
+    "enableMirostatToUse": "启用 Mirostat 以使用",
+    "setDynatempRange": "将动态温度范围设为 > 0",
+    "setXtcProbability": "将 XTC 概率设为 > 0",
+    "setDryMultiplier": "将 DRY 系数设为 > 0"
+  }
+}

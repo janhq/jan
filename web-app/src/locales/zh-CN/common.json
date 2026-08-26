@@ -12,7 +12,7 @@
   "modelProviders": "模型提供商",
   "localProviders": "本地",
   "remoteProviders": "远程",
-  "manageProviders": "Manage providers",
+  "manageProviders": "管理提供商",
   "hiddenProviders": "{{count}} disabled",
   "interface": "外观",
   "appearance": "外观",
@@ -77,6 +77,13 @@
   "noThreadsYetDesc": "开始新的对话以在此处查看您的会话历史记录。",
   "downloads": "下载",
   "downloading": "下载中",
+  "downloadingEllipsis": "下载中...",
+  "initializingDownload": "正在初始化下载...",
+  "paused": "已暂停",
+  "pausedProgress": "已暂停 · {{percent}}%",
+  "downloadSize": "{{current}} / {{total}} GB",
+  "downloadSizeCurrent": "{{current}} GB",
+  "downloadSpeed": " · {{speed}}/s",
   "uploadingAttachments": "正在上传附件…",
   "cancelDownload": "取消下载",
   "downloadCancelled": "下载已取消",
@@ -222,9 +229,46 @@
     "delete": "删除"
   },
   "modelSettings": {
-    "nglDisabledByFit": "Auto-fit is choosing GPU layers. Turn off Auto-fit to set this manually.",
+    "nglDisabledByFit": "自动适配正在选择 GPU 层。关闭自动适配后可手动设置。",
     "title": "模型设置 - {{modelId}}",
-    "description": "配置模型设置以优化性能和行为。"
+    "description": "配置模型设置以优化性能和行为。",
+    "samplingDefaults": {
+      "title": "默认采样参数",
+      "description": "该模型的默认采样器设置。除非被按助手或按请求的值覆盖,否则均使用此设置。"
+    },
+    "mtp": {
+      "section": "多 Token 预测 (MTP)",
+      "enable": "启用 MTP",
+      "enableDescription": "使用模型内置的 MTP 头,每一步草拟多个 Token。当模型带有 MTP 权重时(DeepSeek-V3、GLM-4.5/4.6、MiMo v2.5 等)可加速生成。",
+      "needsUpgrade": "请将 llama.cpp 后端更新到 b9193 或更新版本以启用 MTP。",
+      "nMax": "最大草稿 Token 数",
+      "nMaxDescription": "每一步最多草拟的 Token 数。默认 16。",
+      "nMin": "最小草稿 Token 数",
+      "nMinDescription": "每一步最少草拟的 Token 数。默认 0。",
+      "pMin": "最小草稿概率",
+      "pMinDescription": "贪心草拟的最小概率(0–1)。默认 0.75。"
+    },
+    "specDraft": {
+      "section": "推测解码",
+      "enable": "启用推测解码",
+      "enableDescription": "每一步草拟多个 Token 并一次性验证,从而加速生成。使用模型内置的 MTP 头,或随模型下载的草稿模型(MTP、Eagle3、DFlash 或 DSpark)。",
+      "nMax": "最大草稿 Token 数",
+      "nMaxDescription": "每一步最多草拟的 Token 数。默认 16。",
+      "nMin": "最小草稿 Token 数",
+      "nMinDescription": "每一步最少草拟的 Token 数。默认 0。",
+      "pMin": "最小草稿概率",
+      "pMinDescription": "贪心草拟的最小概率(0–1)。默认 0.75。"
+    },
+    "templateKwargs": {
+      "section": "对话模板选项",
+      "description": "该模型对话模板接受的其他选项。每次请求都会作为 chat_template_kwargs 发送;保留默认值可让模板自行决定。",
+      "addCustom": "添加自定义选项",
+      "keyPlaceholder": "名称",
+      "valuePlaceholder": "值",
+      "add": "添加",
+      "cancel": "取消",
+      "remove": "移除"
+    }
   },
   "projects": {
     "title": "项目",
@@ -280,8 +324,22 @@
       "updateButton": "更新",
       "alreadyExists": "项目\"{{projectName}}\"已存在",
       "createSuccess": "项目\"{{projectName}}\"创建成功",
-      "renameSuccess": "项目从\"{{oldName}}\"重命名为\"{{newName}}\""
-    }
+      "renameSuccess": "项目从\"{{oldName}}\"重命名为\"{{newName}}\"",
+      "assistant": "助手",
+      "selectAssistant": "选择助手(可选)",
+      "noAssistant": "无助手",
+      "addAssistant": "添加助手",
+      "updateSuccess": "项目“{{projectName}}”更新成功"
+    },
+    "selectAssistant": "选择助手",
+    "noAssistantAssigned": "此项目未分配助手",
+    "files": "文件",
+    "filesDescription": "添加 PDF、文档或其他文本,供此项目参考。",
+    "conversation": "对话",
+    "instructions": "说明",
+    "setup": "设置",
+    "instructionsDescription": "自定义回答的语气和风格",
+    "manageInstructions": "管理说明"
   },
   "dialogs": {
     "changeDataFolder": {
@@ -304,6 +362,10 @@
     },
     "messageMetadata": {
       "title": "消息元数据"
+    },
+    "deleteAllThreadsInProject": {
+      "title": "删除全部对话",
+      "description": "将删除“{{projectName}}”中的 {{count}} 条对话。此操作无法撤销。"
     }
   },
   "errorDialog": {
@@ -398,13 +460,134 @@
     "threadRemovedFromProject": {
       "title": "线程已移除",
       "description": "线程已成功从\"{{projectName}}\"中移除"
+    },
+    "openSettings": "打开设置",
+    "downloadTokenRequired": {
+      "title": "需要 Hugging Face Token",
+      "description": "此模型需要 Hugging Face 访问令牌。请在设置中添加令牌后重试。"
+    },
+    "downloadLicenseRequired": {
+      "title": "请先在 Hugging Face 上接受模型许可",
+      "description": "下载之前,您必须在 Hugging Face 页面上接受该模型的许可。"
+    },
+    "downloadRateLimited": {
+      "title": "已被 Hugging Face 限流",
+      "description": "您已被限流。添加令牌可以提高速率限制。请稍后重试。"
+    },
+    "fileUploaded": {
+      "title": "文件已处理",
+      "description": "文件已成功处理并建立索引"
+    },
+    "uploadFailed": {
+      "title": "处理失败",
+      "description": "文件处理失败",
+      "subjectThisFile": "此文件",
+      "pdfMalformedXref": "{{subject}} 的 PDF 交叉引用表格式异常,无法解析。请尝试用 PDF 阅读器打开并重新保存(文件 → 打印 → 另存为 PDF),然后重新上传。",
+      "pdfScanned": "{{subject}} 似乎是扫描版或基于图片的 PDF。暂不支持 OCR,请上传文本型 PDF。",
+      "pdfEncrypted": "{{subject}} 受密码保护。请移除密码后重试。",
+      "pdfUnsupportedFeature": "{{subject}} 使用了 Jan 尚无法解析的 PDF 特性(例如 PostScript 颜色/着色函数)。请尝试重新保存(文件 → 打印 → 另存为 PDF)以将其扁平化,然后重新上传。",
+      "pdfGeneric": "无法将 {{subject}} 解析为 PDF。文件可能已损坏或使用了不支持的 PDF 特性。",
+      "fileTooLarge": "{{subject}} 太大。{{message}}。",
+      "unsupportedType": "不支持文件类型 “{{type}}”。",
+      "ioError": "无法读取 {{subject}}:{{message}}",
+      "parseGeneric": "无法解析 {{subject}}:{{message}}",
+      "fallback": "处理 {{subject}} 失败。"
+    },
+    "fileDeleted": {
+      "title": "文件已删除",
+      "description": "文件已从项目中移除"
+    },
+    "deleteFailed": {
+      "title": "删除失败",
+      "description": "删除文件失败"
+    },
+    "fileAlreadyExists": {
+      "title": "文件已存在",
+      "description": "文件已附加到此项目"
+    },
+    "unsupportedFileType": {
+      "title": "不支持的文件类型",
+      "description": "项目参考不支持文件扩展名 “.{{extension}}”。"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "附件已禁用",
+      "description": "附件已在设置中禁用"
     }
   },
   "llamacppBusyOnExit": {
-    "title": "llama.cpp is still busy",
-    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
-    "forceQuit": "Force quit",
+    "title": "llama.cpp 仍在运行",
+    "description": "一个或多个模型未能及时卸载。强制退出将终止这些任务。",
+    "forceQuit": "强制退出",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
-  }
+  },
+  "htmlArtifact": {
+    "code": "代码",
+    "preview": "预览",
+    "previewStreaming": "生成完成后可用"
+  },
+  "remote_access": "远程访问",
+  "integrations": "集成",
+  "claude_code": "Claude Code",
+  "web_search": "网页搜索",
+  "hideProvider": "隐藏提供商",
+  "showProvider": "显示提供商",
+  "analyticsConsentDetail": "我们会收集匿名数据以了解功能使用情况。您的对话和个人信息绝不会被跟踪。您可以随时在“设置 > 隐私”中更改。",
+  "analyticsConsentQuestion": "您愿意帮助我们改进 Jan 吗?",
+  "searchThreads": "搜索对话...",
+  "toNavigate": "导航",
+  "toSelect": "选择",
+  "toClose": "关闭",
+  "clearRecent": "清除",
+  "dismiss": "忽略",
+  "multimodal": "多模态",
+  "noAssistant": "无助手",
+  "settingUpJan": "正在启动 Jan…",
+  "registeringExtensions": "正在注册扩展…",
+  "loadingExtensions": "正在加载扩展… ({{done}}/{{total}})",
+  "continueAiResponse": "继续 AI 回答",
+  "missingDependenciesDialog": {
+    "title": "缺少系统库",
+    "description": "{{backend}} 已安装,但找不到部分必需的系统库。它可能回退到 CPU 运行或无法正常运行。",
+    "installLabel": "要修复此问题,请安装以下内容:",
+    "download": "下载",
+    "additionalLibraries": "其他缺失的库:",
+    "missingLibraries": "缺失的库:",
+    "showRawLibraries": "显示 {{count}} 个缺失库名称"
+  },
+  "attachmentsIngestion": {
+    "title": "选择附件的处理方式",
+    "description": "选择是直接在对话中包含这些文件,还是将它们作为嵌入向量建立索引。",
+    "inline": "注入到对话",
+    "embeddings": "使用嵌入"
+  },
+  "attachmentInjectedIndicator": "已注入对话",
+  "attachmentEmbeddedIndicator": "已嵌入用于 RAG",
+  "viewInjectedContent": "查看注入的内容",
+  "injectedContentTitle": "注入的文件内容",
+  "errors": {
+    "fileTooLarge": "文件太大",
+    "fileTooLargeDescription": "{{fileName}} 超过了 {{maxFileSizeMB}}MB 的限制"
+  },
+  "files": {
+    "chunksCount": "{{count}} 个块"
+  },
+  "duration": {
+    "seconds": "{{count}} 秒",
+    "minutes": "{{count}} 分钟",
+    "hours": "{{count}} 小时"
+  },
+  "modelMarket": "模型市场",
+  "addImages": "添加图片",
+  "addAudio": "添加音频",
+  "addVideo": "添加视频",
+  "environmentVariables": "环境变量",
+  "enterCliCommand": "输入自定义 CLI 命令",
+  "keyPlaceholder": "键",
+  "valuePlaceholder": "值",
+  "enterDisplayName": "输入显示名称",
+  "enterPassword": "输入密码",
+  "confirmPassword": "确认密码",
+  "securitySettings": "安全设置",
+  "allFiles": "全部文件"
 }

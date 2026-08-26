@@ -220,6 +220,22 @@ function AttachmentsSettings() {
                     : storeValue
 
                 // Convert to DynamicControllerSetting compatible props
+                // 选项文本本地化(扩展 settings.json 的 options.name 为英文)
+                const optionKeys: Record<string, string> = {
+                  'Auto (recommended)': 'settings:attachments.searchModeAuto',
+                  'ANN (sqlite-vec)': 'settings:attachments.searchModeAnn',
+                  Linear: 'settings:attachments.searchModeLinear',
+                  Auto: 'settings:attachments.parseModeAuto',
+                  'Include in chat': 'settings:attachments.parseModeInline',
+                  'Ingest as embeddings': 'settings:attachments.parseModeEmbeddings',
+                  'Ask every time': 'settings:attachments.parseModePrompt',
+                }
+                const localizedOptions = (d.controllerProps as {
+                  options?: Array<{ name: string; value: string }>
+                })?.options?.map((o) => {
+                  const key = optionKeys[o.name]
+                  return key ? { ...o, name: t(key) } : o
+                })
                 const baseProps = d.controllerProps
                 const normalizedValue: string | number | boolean = (() => {
                   if (Array.isArray(currentValue)) {
@@ -235,8 +251,7 @@ function AttachmentsSettings() {
                       ? baseProps.placeholder
                       : undefined,
                   type: 'type' in baseProps ? baseProps.type : undefined,
-                  options:
-                    'options' in baseProps ? baseProps.options : undefined,
+                  options: localizedOptions ?? ('options' in baseProps ? baseProps.options : undefined),
                   input_actions:
                     'inputActions' in baseProps
                       ? baseProps.inputActions
