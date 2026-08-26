@@ -8,6 +8,7 @@ import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
+import { getThreadSearchIndex } from '@/lib/search-index'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -189,6 +190,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       cleanupVectorDB(threadId)
       cleanupThreadCache(threadId)
       getServiceHub().threads().deleteThread(threadId)
+      getThreadSearchIndex().removeThread(threadId)
 
       return {
         threads: remainingThreads,
@@ -226,6 +228,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         cleanupVectorDB(threadId)
         cleanupThreadCache(threadId)
         getServiceHub().threads().deleteThread(threadId)
+        getThreadSearchIndex().removeThread(threadId)
       })
 
       // Keep favorite threads and threads with project metadata
@@ -263,6 +266,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         getServiceHub().threads().deleteThread(threadId)
       })
 
+      // Drop the entire search index — all threads are gone.
+      getThreadSearchIndex().invalidate()
+
       return {
         threads: {},
         currentThreadId: undefined,
@@ -288,6 +294,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         cleanupVectorDB(threadId)
         cleanupThreadCache(threadId)
         getServiceHub().threads().deleteThread(threadId)
+        getThreadSearchIndex().removeThread(threadId)
       })
 
       // Keep threads that don't belong to this project
@@ -440,6 +447,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         metadata: { ...thread.metadata, titleSetManually: true },
       }
       getServiceHub().threads().updateThread(updatedThread) // External call, order is fine
+      // Mark stale so the next search rebuilds this thread's index entry
+      // with the new title.
+      getThreadSearchIndex().invalidateThread(threadId)
       const newThreads = { ...state.threads, [threadId]: updatedThread }
       return {
         threads: newThreads,
