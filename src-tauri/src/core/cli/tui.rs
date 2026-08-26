@@ -12139,7 +12139,8 @@ fn trailing_blank(tail: &[Line<'static>], transcript: &[Row], width: u16) -> boo
 /// `MIN_TRANSCRIPT_ROWS`, capped at `PANEL_MAX_ROWS`, and disappears entirely
 /// on a frame with nothing to spare.
 fn panel_budget(frame_h: u16, input_h: u16) -> usize {
-    let fixed = 1 + 1 + input_h + 1; // header, rule, input, dock
+    // header, transcript air, rule, input, dock
+    let fixed = 1 + TRANSCRIPT_BOTTOM_PAD + 1 + input_h + 1;
     frame_h
         .saturating_sub(fixed + MIN_TRANSCRIPT_ROWS)
         .min(PANEL_MAX_ROWS as u16) as usize
@@ -12184,20 +12185,21 @@ fn draw(f: &mut Frame, app: &mut App) {
     // between the rule and the prompt. A zero-length slot collapses away, so a
     // session with neither todos nor subagents renders exactly as before.
     let raw = Layout::vertical([
-        Constraint::Length(1),                 // 0: header
-        Constraint::Min(1),                    // 1: body
-        Constraint::Length(panel_h),           // 2: status panel
-        Constraint::Length(1),                 // 3: separator rule
-        Constraint::Length(input_h),           // 4: input
-        Constraint::Length(1),                 // 5: path + key hints
+        Constraint::Length(1),                     // 0: header
+        Constraint::Min(1),                        // 1: body
+        Constraint::Length(TRANSCRIPT_BOTTOM_PAD), // 2: air
+        Constraint::Length(panel_h),               // 3: status panel
+        Constraint::Length(1),                     // 4: separator rule
+        Constraint::Length(input_h),               // 5: input
+        Constraint::Length(1),                     // 6: path + key hints
     ])
     .split(f.area());
-    let panel_area = raw[2];
-    let chunks = [raw[0], raw[1], raw[4], raw[5]];
+    let panel_area = raw[3];
+    let chunks = [raw[0], raw[1], raw[5], raw[6]];
 
     f.render_widget(header(app), chunks[0]);
     // Drawn for every path (picker included) so the dock always reads the same.
-    f.render_widget(Block::default().borders(Borders::TOP), raw[3]);
+    f.render_widget(Block::default().borders(Borders::TOP), raw[4]);
 
     // Top border only, so wrapping uses the full width; the border row reduces
     // the vertical viewport.
@@ -13390,6 +13392,13 @@ const PANEL_MAX_ROWS: usize = 8;
 /// Conversation rows the panel may never eat into. Below this the panel gives
 /// up its own rows first: the transcript is the point of the screen.
 const MIN_TRANSCRIPT_ROWS: u16 = 4;
+
+/// Blank rows between the last transcript row and the dock below it. The body is
+/// bottom-pinned, so without this the model's closing line sits flush against the
+/// panel -- or, with no panel, against the separator rule over the input -- and
+/// the conversation and the dock read as one block. Unconditional: air that
+/// appears only on some frames is a layout that jumps.
+const TRANSCRIPT_BOTTOM_PAD: u16 = 1;
 
 /// Narrowest terminal that still gets two side-by-side columns. Under it they
 /// stack, plan first, because a 30-column half fits neither a task nor an agent.
@@ -24462,6 +24471,84 @@ mod tests {
         assert!(todos < agents, "plan first when stacked: {rows:?}");
     }
 
+    /// The dock is one unit and the conversation is another:
+    /// `TRANSCRIPT_BOTTOM_PAD` keeps the model's closing line off the rule that
+    /// separates the transcript from the input.
+    #[test]
+    fn the_transcript_keeps_its_air_above_the_dock() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "an answer".into(),
+        });
+        app.flush_assistant();
+        let rows = render_rows(&mut app, 60, 20);
+
+        let rule = rows
+            .iter()
+            .rposition(|r| r.trim_end().chars().filter(|c| *c == '─').count() > 20)
+            .expect("the separator rule is on screen");
+        let last_prose = rows[..rule]
+            .iter()
+            .rposition(|r| r.trim() == "an answer")
+            .expect("the answer is on screen");
+        // Literal, not derived from the constant: the point is the geometry on
+        // screen, and reading the expectation back off `TRANSCRIPT_BOTTOM_PAD`
+        // would make the test pass at any value including zero.
+        assert_eq!(
+            rule - last_prose,
+            2,
+            "exactly one blank row between the transcript and the dock: {rows:#?}"
+        );
+        assert!(
+            rows[rule - 1].trim().is_empty(),
+            "the row above the rule is the air, not content: {rows:#?}"
+        );
+    }
+
+    /// Reasoning and answer are different bands, and the committed path gaps
+    /// between them. The live tail packed them together, so a native-reasoning
+    /// model's answer streamed flush against the reasoning above it and then
+    /// dropped a row when the commit put the real separator in.
+    #[test]
+    fn the_live_tail_gaps_between_reasoning_and_the_answer() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Reasoning {
+            text: "musing".into(),
+        });
+        app.apply(StreamEvent::Token {
+            text: "Here is the ".into(),
+        });
+
+        // The `┊` gutter marks the reasoning band in both forms: folded to a
+        // summary row while it streams, and as dimmed detail once committed.
+        let gap = |rows: &[String]| -> usize {
+            let reasoning = rows
+                .iter()
+                .rposition(|r| r.contains('┊'))
+                .unwrap_or_else(|| panic!("the reasoning band is on screen: {rows:#?}"));
+            let prose = rows
+                .iter()
+                .position(|r| r.contains("Here is the"))
+                .unwrap_or_else(|| panic!("the answer is on screen: {rows:#?}"));
+            prose - reasoning
+        };
+        let live = render_rows(&mut app, 60, 16);
+        assert_eq!(
+            gap(&live),
+            2,
+            "one blank row between the reasoning and the answer: {live:#?}"
+        );
+
+        // Committing it moves nothing: the live gap is the one the commit puts in.
+        app.flush_assistant();
+        let flushed = render_rows(&mut app, 60, 16);
+        assert_eq!(
+            gap(&flushed),
+            2,
+            "the commit must not change the gap: {flushed:#?}"
+        );
+    }
+
     /// A short terminal spends its rows on the conversation: the panel shrinks
     /// first, eliding its own tail, and disappears before the transcript does.
     #[test]
@@ -24474,8 +24561,9 @@ mod tests {
         // Roomy: capped at the panel ceiling, never more.
         assert_eq!(super::panel_budget(40, 2), super::PANEL_MAX_ROWS);
         // Squeezed: only what is left after the fixed rows and the transcript
-        // floor, and nothing at all once even that is gone.
-        assert_eq!(super::panel_budget(12, 2), 3);
+        // floor, less the row `TRANSCRIPT_BOTTOM_PAD` holds open above the dock,
+        // and nothing at all once even that is gone.
+        assert_eq!(super::panel_budget(12, 2), 2);
         assert_eq!(super::panel_budget(9, 2), 0);
 
         let rows = render_rows(&mut app, 80, 12);
@@ -24483,9 +24571,9 @@ mod tests {
             .iter()
             .filter(|r| r.contains("Todos") || r.contains("a task") || r.contains("more"))
             .collect();
-        assert!(panel.len() <= 3, "panel clamped to its budget: {rows:?}");
+        assert!(panel.len() <= 2, "panel clamped to its budget: {rows:?}");
         assert!(
-            rows.iter().any(|r| r.contains("+11 more")),
+            rows.iter().any(|r| r.contains("+12 more")),
             "the tail is elided, not dropped silently: {rows:?}"
         );
 
