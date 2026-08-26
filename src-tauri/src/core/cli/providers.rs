@@ -168,15 +168,31 @@ pub(crate) fn is_loopback_url(url: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "0.0.0.0" | "::1")
 }
 
-/// `(provider, model_id)` pairs the CLI can actually run, sorted by provider
-/// then model.
+/// `(provider, model_id)` pairs the CLI can actually run: Tokamak first, then
+/// every other provider by name, models sorted within each.
+///
+/// Tokamak leads because it is the provider the product signs users in to; a
+/// plain alphabetical sort buried it below whatever else happened to be
+/// configured. Ordering only -- nothing is filtered by provider, so a user who
+/// prefers another provider still sees it.
 pub fn reachable_models(configs: &HashMap<String, ProviderConfig>) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = configs
         .values()
         .filter(|c| is_cli_reachable(c))
         .flat_map(|c| c.models.iter().map(|m| (c.provider.clone(), m.clone())))
         .collect();
-    out.sort();
+    // `false < true`, so the Tokamak rows sort ahead of everything else while
+    // the rest stay alphabetical.
+    out.sort_by(|a, b| {
+        let key = |(provider, model): &(String, String)| {
+            (
+                provider != super::tokamak::PROVIDER,
+                provider.clone(),
+                model.clone(),
+            )
+        };
+        key(a).cmp(&key(b))
+    });
     out
 }
 
@@ -785,6 +801,51 @@ mod tests {
         assert!(!is_loopback_url("https://localhost.evil.com/v1"));
         assert!(!is_loopback_url("https://api.tokamak.sh/v1"));
         assert!(!is_loopback_url(""));
+    }
+
+    /// Tokamak leads the `/model` picker; everything else keeps its alphabetical
+    /// order behind it, and models stay sorted within each provider.
+    #[test]
+    fn reachable_models_lists_tokamak_first() {
+        let mut configs = HashMap::new();
+        configs.insert(
+            "anthropic".to_string(),
+            cfg("anthropic", Some("https://api.anthropic.com/v1"), &["claude-sonnet-5"]),
+        );
+        configs.insert(
+            "tokamak".to_string(),
+            cfg("tokamak", Some("https://api.tokamak.sh/v1"), &["tokamak-1-preview"]),
+        );
+        configs.insert(
+            "openai".to_string(),
+            cfg("openai", Some("https://api.openai.com/v1"), &["gpt-5", "gpt-4o"]),
+        );
+
+        assert_eq!(
+            reachable_models(&configs),
+            vec![
+                ("tokamak".to_string(), "tokamak-1-preview".to_string()),
+                ("anthropic".to_string(), "claude-sonnet-5".to_string()),
+                ("openai".to_string(), "gpt-4o".to_string()),
+                ("openai".to_string(), "gpt-5".to_string()),
+            ]
+        );
+    }
+
+    /// Ordering is the only change: with no Tokamak entry the list is exactly
+    /// the alphabetical order it always was.
+    #[test]
+    fn without_tokamak_the_order_is_unchanged() {
+        let mut configs = HashMap::new();
+        configs.insert("zeta".to_string(), cfg("zeta", Some("https://z.example/v1"), &["z1"]));
+        configs.insert("alpha".to_string(), cfg("alpha", Some("https://a.example/v1"), &["a1"]));
+        assert_eq!(
+            reachable_models(&configs),
+            vec![
+                ("alpha".to_string(), "a1".to_string()),
+                ("zeta".to_string(), "z1".to_string()),
+            ]
+        );
     }
 
     #[test]
