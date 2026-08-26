@@ -1159,10 +1159,21 @@ struct PendingAsk {
     custom_input: String,
     rect: Rect,
     row_hitboxes: Vec<(u16, usize)>,
+    /// When the `ask` loop auto-selects the recommended option if unanswered.
+    /// `Some` only when a timeout was configured; drives the live countdown in
+    /// the prompt title. Anchored here at event receipt, a hair before the
+    /// loop arms its timer, so the countdown reaches zero marginally before the
+    /// loop fires - the safe direction (never show "0s left" while still
+    /// waiting indefinitely).
+    deadline: Option<std::time::Instant>,
 }
 
 impl PendingAsk {
-    fn new(request_id: String, request: crate::core::agent::interaction::AskRequest) -> Self {
+    fn new(
+        request_id: String,
+        request: crate::core::agent::interaction::AskRequest,
+        timeout: Option<std::time::Duration>,
+    ) -> Self {
         let answers = request
             .questions
             .iter()
@@ -1182,12 +1193,29 @@ impl PendingAsk {
             custom_input: String::new(),
             rect: Rect::default(),
             row_hitboxes: Vec::new(),
+            deadline: timeout.map(|d| std::time::Instant::now() + d),
         }
     }
 
     fn question(&self) -> &crate::core::agent::interaction::Question {
         &self.request.questions[self.question_index]
     }
+
+    /// Whole seconds until `now` reaches `deadline`, rounded up (ceil): while
+    /// the prompt is genuinely still live this never reports `0s`. `None` when
+    /// no timeout was configured or the deadline has already passed.
+    fn remaining_secs(&self, now: std::time::Instant) -> Option<u64> {
+        let deadline = self.deadline?;
+        let remaining = deadline.checked_duration_since(now)?;
+        // `checked_duration_since` yields 0 exactly at the deadline; that is
+        // "no time left", not a live 0s, so fall through to `None`. A strictly
+        // positive remainder (however tiny) rounds up to at least 1s.
+        if remaining.is_zero() {
+            return None;
+        }
+        Some(remaining.as_millis().div_ceil(1000) as u64)
+    }
+
     fn row_count(&self) -> usize {
         self.question().options.len() + 1 + usize::from(self.question().multi)
     }
@@ -3995,10 +4023,13 @@ impl App {
             StreamEvent::AskRequest {
                 request_id,
                 request,
+                timeout_secs,
                 ..
-            } => self
-                .ask_queue
-                .push_back(PendingAsk::new(request_id, request)),
+            } => self.ask_queue.push_back(PendingAsk::new(
+                request_id,
+                request,
+                timeout_secs.map(std::time::Duration::from_secs),
+            )),
             // The loop auto-answered a timed-out ask; drop its now-dead prompt.
             // A user answer clears the queue in `resolve_front_ask` instead, so
             // this only fires for the timeout path.
@@ -12434,19 +12465,22 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
     let dim = Style::new().dark_gray();
-    let title = if queue_len > 1 {
-        format!(
-            " question {}/{} \u{b7} request 1/{queue_len} ",
-            ask.question_index + 1,
-            ask.request.questions.len()
-        )
-    } else {
-        format!(
-            " question {}/{} ",
-            ask.question_index + 1,
-            ask.request.questions.len()
-        )
-    };
+    // Whole seconds until the auto-select deadline, rounded up (ceil) so a
+    // still-live prompt reads `1s` rather than `0s`. `None` once the deadline
+    // has passed (the resolution event is imminent or already dropped this
+    // prompt) or when no timeout is configured.
+    let mut parts = vec![format!(
+        "question {}/{}",
+        ask.question_index + 1,
+        ask.request.questions.len()
+    )];
+    if queue_len > 1 {
+        parts.push(format!("request 1/{queue_len}"));
+    }
+    if let Some(secs) = ask.remaining_secs(std::time::Instant::now()) {
+        parts.push(format!("{secs}s"));
+    }
+    let title = format!(" {} ", parts.join(" \u{b7} "));
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::new().cyan())
@@ -15287,6 +15321,80 @@ mod tests {
 
         assert!(app.ask_queue.front().unwrap().custom_input.is_empty());
         assert!(app.input.is_empty(), "paste leaked into chat composer");
+    }
+
+    /// A `PendingAsk` built from a `timeout_secs: Some(n)` event carries a
+    /// deadline roughly `n` seconds out, and one with `None` carries none.
+    #[test]
+    fn pending_ask_deadline_tracks_configured_timeout() {
+        let req = ask_request(false, false);
+        let none = super::PendingAsk::new("r1".into(), req.clone(), None);
+        assert_eq!(none.deadline, None, "no timeout should mean no deadline");
+
+        let short = super::PendingAsk::new(
+            "r2".into(),
+            req.clone(),
+            Some(std::time::Duration::from_secs(30)),
+        );
+        let deadline = short.deadline.expect("a deadline should be set");
+        let now = std::time::Instant::now();
+        let slack = deadline.duration_since(now).as_secs_f64();
+        assert!(
+            (slack - 30.0).abs() < 1.0,
+            "deadline should be ~30s out, got {slack:.1}s"
+        );
+    }
+
+    /// `remaining_secs` rounds the leftover time UP (ceil): a sub-second
+    /// remainder still reads `1s`, never `0s`, so a still-live prompt never
+    /// claims it is out of time.
+    #[test]
+    fn pending_ask_remaining_seconds_rounds_up_and_stops_at_deadline() {
+        let req = ask_request(false, false);
+        let ask = super::PendingAsk::new(
+            "r1".into(),
+            req,
+            Some(std::time::Duration::from_secs(30)),
+        );
+        let deadline = ask.deadline.unwrap();
+        // 500ms before the deadline: ceil -> 1s.
+        let early = deadline - std::time::Duration::from_millis(500);
+        assert_eq!(ask.remaining_secs(early), Some(1), "ceil, not floor");
+        // Well before: whole seconds.
+        let far = deadline - std::time::Duration::from_secs(27);
+        assert_eq!(ask.remaining_secs(far), Some(27));
+        // At/after the deadline: no remaining time.
+        assert_eq!(ask.remaining_secs(deadline), None);
+        assert_eq!(ask.remaining_secs(deadline + std::time::Duration::from_secs(1)), None);
+    }
+
+    /// The ask box title carries the live countdown when a timeout is set, and
+    /// omits it when none is.
+    #[test]
+    fn ask_title_counts_down_the_configured_deadline() {
+        let mut app = test_app();
+        let req = ask_request(false, false);
+        app.ask_queue
+            .push_back(super::PendingAsk::new(
+                "r1".into(),
+                req,
+                Some(std::time::Duration::from_secs(120)),
+            ));
+        let join = render_rows(&mut app, 60, 24).join("\n");
+        assert!(
+            join.contains("question 1/1") && join.contains("120s"),
+            "title should show the countdown, got {join:?}"
+        );
+
+        // No timeout: no countdown segment at all.
+        let mut app = test_app();
+        app.ask_queue
+            .push_back(super::PendingAsk::new("r2".into(), ask_request(false, false), None));
+        let join = render_rows(&mut app, 60, 24).join("\n");
+        assert!(
+            join.contains("question 1/1") && !join.contains("120s") && !join.contains("s\u{b7}"),
+            "no-timeout title should omit the countdown, got {join:?}"
+        );
     }
 
     #[test]
