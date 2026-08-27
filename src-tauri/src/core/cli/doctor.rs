@@ -48,13 +48,32 @@ fn tail(path: &Path, max_lines: usize) -> Option<String> {
 
 /// Resolve the thread id to bundle: an explicit one when given, else the most
 /// recently updated thread under `<base>/threads/`.
+///
+/// An explicit id is checked for existence. Every read below degrades to empty
+/// on failure -- right for a thread missing one optional file, wrong for a
+/// misspelled `--thread`, which would otherwise produce an archive with no
+/// session in it and still report success. The user would attach that file and
+/// wait, so a typo has to fail loudly here instead.
 fn resolve_thread_id(base: &Path, explicit: Option<&str>) -> Result<String, String> {
     if let Some(id) = explicit {
-        let id = id.trim().to_string();
+        let id = id.trim();
         if id.is_empty() {
             return Err("empty thread id".to_string());
         }
-        return Ok(id);
+        // A thread id names one directory under `<base>/threads/`, and
+        // `get_thread_dir` joins it unchecked, so a value carrying a separator
+        // or `..` would resolve outside that tree and bundle whatever it found.
+        // Reject the shape rather than trying to normalize it.
+        if id.contains('/') || id.contains('\\') || id.contains("..") {
+            return Err(format!("invalid thread id '{id}'"));
+        }
+        if !get_thread_dir(base, id).is_dir() {
+            return Err(format!(
+                "thread '{id}' not found under {} - run `jan threads` to list ids",
+                base.join("threads").display()
+            ));
+        }
+        return Ok(id.to_string());
     }
     let mut threads = crate::core::cli::list_threads_in(base)?;
     if threads.is_empty() {
@@ -199,6 +218,48 @@ mod tests {
         let mut hits = vec![0usize; rules.rules.len()];
         let out = rules.redact(input, &mut hits);
         (out, hits)
+    }
+
+    /// A misspelled `--thread` used to be accepted: every read degraded to
+    /// empty and the command still reported success, so the user attached an
+    /// archive containing no session and waited for a reply.
+    #[test]
+    fn explicit_thread_must_exist() {
+        let base = std::env::temp_dir().join(format!("jan_doctor_id_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(base.join("threads").join("real-one")).unwrap();
+
+        assert_eq!(
+            resolve_thread_id(&base, Some("real-one")).unwrap(),
+            "real-one",
+            "an existing thread resolves"
+        );
+
+        let err = resolve_thread_id(&base, Some("typo-here")).expect_err("must not succeed");
+        assert!(err.contains("not found"), "names the problem: {err}");
+
+        assert!(resolve_thread_id(&base, Some("   ")).is_err(), "blank id rejected");
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// `get_thread_dir` joins the id unchecked, so a separator or `..` would
+    /// escape the threads directory and bundle files from outside it.
+    #[test]
+    fn explicit_thread_rejects_path_traversal() {
+        let base = std::env::temp_dir().join(format!("jan_doctor_trav_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(base.join("threads")).unwrap();
+
+        // A traversal id must be rejected on its shape, before any filesystem
+        // lookup: `/etc` exists, so an existence check alone would accept it.
+        for bad in ["../../../etc", "..", "a/b", "a\\b", "../threads"] {
+            let err = resolve_thread_id(&base, Some(bad))
+                .expect_err(&format!("accepted traversal id {bad:?}"));
+            assert!(err.contains("invalid thread id"), "wrong reason for {bad:?}: {err}");
+        }
+
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
