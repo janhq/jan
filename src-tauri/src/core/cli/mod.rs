@@ -15,6 +15,7 @@ mod model_capabilities;
 mod path_refs;
 pub mod run_report;
 pub mod providers;
+pub mod secrets;
 mod secret_input;
 pub mod telemetry;
 pub mod terminal_setup;

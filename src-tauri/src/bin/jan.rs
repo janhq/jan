@@ -614,7 +614,10 @@ fn print_bug_report(report: &app_lib::core::cli::doctor::BugReport) {
     println!("Bug report written to: {}", report.archive.display());
     println!("Attach this file to the issue. Contents: version, environment, thread, and log tail.");
     if report.redacted_any {
-        println!("Secrets stripped: {}", report.stripped.join(", "));
+        // "Known" is load-bearing: the scan is a regex pass over known key
+        // shapes, so claiming bare "secrets stripped" would promise more than
+        // it delivers. The no-match branch below is already honest about this.
+        println!("Known secrets stripped: {}", report.stripped.join(", "));
     } else {
         println!(
             "No known secret patterns matched (best-effort scan; please review before sharing)."
