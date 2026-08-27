@@ -109,7 +109,7 @@ Jan 致力于通过易于使用的产品，将开源 AI 的精华呈现给大众
 - (仅限 macOS Apple Silicon) MetalToolchain 命令：`xcodebuild -downloadComponent MetalToolchain`
 - (Linux / Ubuntu) 系统依赖：
   ```bash
-  sudo apt install -y libglib2.0-dev pkg-config libgdk-pixbuf-2.0-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libpango1.0-dev libatk1.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev
+  sudo apt install -y libglib2.0-dev pkg-config libgdk-pixbuf-2.0-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libpango1.0-dev libatk1.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev glslc spirv-headers
   ```
 
 ### 使用 Make 运行
