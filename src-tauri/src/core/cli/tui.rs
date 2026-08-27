@@ -1164,6 +1164,11 @@ enum RowKind {
         gutter: Style,
         body: Vec<Span<'static>>,
     },
+    /// The `/context` chart, re-laid out at the draw width. The grid's cells
+    /// carry meaning positionally (each is 0.5% of the window), so it must never
+    /// be wrapped mid-row: this row instead drops the right-hand column onto
+    /// its own lines, and then the grid itself, as the terminal narrows.
+    Context(Box<ContextReport>),
     /// A tool call/summary row, re-truncated to `width - reserve`.
     Tool {
         tag: String,
@@ -1238,6 +1243,7 @@ impl Row {
     fn render(&self, width: u16) -> Vec<Line<'static>> {
         match &self.kind {
             RowKind::Line(line) => vec![line.clone()],
+            RowKind::Context(report) => context_lines(report, width as usize),
             RowKind::Markdown(text) => format_markdown_lines(text, width),
             RowKind::Banner(banner) => banner_lines(banner, width),
             RowKind::System {
@@ -1785,6 +1791,12 @@ struct App {
     thought_for_since: Option<Instant>,
     turn: (u32, u32),
     tokens: u64,
+    /// Whether `tokens`/`turn_prompt_tokens` still describe a conversation the
+    /// provider actually measured. A compaction rewrites the history out from
+    /// under the last reported `usage`, so from that point the counts are the
+    /// local chars/4 estimate until a fresh response lands. `/context` reports
+    /// the difference rather than presenting a stale number as measured.
+    tokens_estimated: bool,
     detail: String,
     /// Outstanding permission requests, oldest first. Several subagents (or a
     /// subagent and the parent) can request approval concurrently; only the
@@ -2288,6 +2300,7 @@ impl App {
             thought_for_since: None,
             turn: (0, 0),
             tokens: 0,
+            tokens_estimated: false,
             detail: String::new(),
             pending_queue: std::collections::VecDeque::new(),
             ask_queue: std::collections::VecDeque::new(),
@@ -2421,6 +2434,9 @@ impl App {
         self.ask_queue.clear();
         self.pending_images.clear();
         self.tokens = 0;
+        // An empty history is exactly known, not an estimate of anything.
+        self.tokens_estimated = false;
+        self.turn_prompt_tokens = 0;
         self.tokens_per_sec = None;
         self.turn = (0, 0);
         self.detail.clear();
@@ -4130,6 +4146,150 @@ impl App {
         }
     }
 
+    /// Build the `/context` breakdown for the current session.
+    ///
+    /// The headline fill prefers the provider's number: `turn_prompt_tokens` is
+    /// the most recent request's `prompt_tokens`, which is by definition what
+    /// the window actually held. It is only authoritative while
+    /// `tokens_estimated` is false -- a compaction rewrites the history the
+    /// provider measured, so its last count describes a conversation that no
+    /// longer exists and the view falls back to the estimator, labelled.
+    ///
+    /// The per-category numbers are always estimates (chars/4 over each
+    /// segment's real serialized text, via the same [`estimate_token_count`]
+    /// path the compaction gauge uses), which is why the legend is headed
+    /// "Estimated usage by category" regardless of the headline's source.
+    async fn context_report(&self) -> ContextReport {
+        let mut segments = Vec::new();
+        let args = self.args.as_ref();
+        let root = args.and_then(|a| a.project_root.clone());
+
+        // The three system-prompt segments are carved out of one build of the
+        // real prompt: the whole thing, minus the JAN.md block, minus the
+        // skills/memory catalogs. Splitting a single build (rather than
+        // re-deriving each piece) is what keeps them summing to what is sent.
+        let (mut prompt_chars, mut context_chars, mut skills_chars) = (0usize, 0usize, 0usize);
+        if let (Some(args), Some(root)) = (args, root.as_deref()) {
+            let full = crate::core::agent::r#loop::context_system_prompt_preview(
+                args.system_prompt_override.as_deref(),
+                root,
+                args.session_id.as_deref(),
+                args.subagents_enabled,
+                args.sandbox,
+            )
+            .unwrap_or_default();
+            context_chars = crate::core::agent::context::load_context_files(root)
+                .map_or(0, |s| s.chars().count());
+            skills_chars = crate::core::agent::context::load_skills(root)
+                .map_or(0, |s| s.chars().count())
+                + crate::core::agent::context::load_memory_catalog(root)
+                    .map_or(0, |s| s.chars().count());
+            prompt_chars = full
+                .chars()
+                .count()
+                .saturating_sub(context_chars + skills_chars);
+        }
+
+        // Tool schemas as actually advertised, serialized the way they go on
+        // the wire.
+        let tools_chars = match args {
+            Some(args) => crate::core::agent::r#loop::context_advertised_tools(
+                &args.mcp_servers,
+                &args.mcp_settings,
+                &args.permissions,
+                root.as_deref(),
+                self.run_mode,
+                args.subagents_enabled,
+                args.max_parallel_subagents,
+                args.ask_requests.is_some(),
+                args.todo_registry.is_some(),
+            )
+            .await
+            .iter()
+            .map(|t| t.to_string().chars().count())
+            .sum(),
+            None => 0,
+        };
+
+        let chars_to_tokens = |chars: usize| (chars / 4) as u64;
+        segments.push(ContextSegment {
+            label: "System prompt",
+            glyph: CONTEXT_GLYPH_SYSTEM,
+            tokens: chars_to_tokens(prompt_chars),
+            always_show: true,
+            unit: " tokens",
+        });
+        segments.push(ContextSegment {
+            label: "System tools",
+            glyph: CONTEXT_GLYPH_SYSTEM,
+            tokens: chars_to_tokens(tools_chars),
+            always_show: true,
+            unit: " tokens",
+        });
+        segments.push(ContextSegment {
+            label: "System context",
+            glyph: CONTEXT_GLYPH_SYSTEM,
+            tokens: chars_to_tokens(context_chars),
+            always_show: false,
+            unit: " tokens",
+        });
+        segments.push(ContextSegment {
+            label: "Skills",
+            glyph: CONTEXT_GLYPH_SYSTEM,
+            tokens: chars_to_tokens(skills_chars),
+            always_show: false,
+            unit: " tokens",
+        });
+        let messages = if self.history.is_empty() {
+            0
+        } else {
+            estimate_token_count(&self.history)
+        };
+        segments.push(ContextSegment {
+            label: "Messages",
+            glyph: CONTEXT_GLYPH_MESSAGES,
+            tokens: messages,
+            always_show: true,
+            unit: " tokens",
+        });
+
+        // Free space is what is left after the estimated content and the
+        // reserved buffer, so the seven segments partition the window exactly
+        // and the percentages sum to 100.
+        let buffer = self.reserve_tokens.min(self.context_window);
+        let used: u64 = segments.iter().map(|s| s.tokens).sum();
+        let free = self.context_window.saturating_sub(used + buffer);
+        segments.push(ContextSegment {
+            label: "Free space",
+            glyph: CONTEXT_GLYPH_FREE,
+            tokens: free,
+            always_show: true,
+            unit: "",
+        });
+        segments.push(ContextSegment {
+            label: "Autocompact buffer",
+            glyph: CONTEXT_GLYPH_BUFFER,
+            tokens: buffer,
+            always_show: true,
+            unit: " tokens",
+        });
+
+        let reported = !self.tokens_estimated && self.turn_prompt_tokens > 0;
+        ContextReport {
+            model_label: self.header_model_label(),
+            model_id: self.model.clone(),
+            window_source: self.context_window_source.label(),
+            window: self.context_window,
+            fill: if reported {
+                self.turn_prompt_tokens
+            } else {
+                used
+            },
+            fill_reported: reported,
+            segments,
+        }
+    }
+
     /// Non-terminal stream events. `Done`/`Error` are handled by the loop since
     /// they mutate history and the run handle.
     fn apply(&mut self, ev: StreamEvent) {
@@ -4474,6 +4634,9 @@ impl App {
                     // Keep the header's context gauge live during the turn
                     // instead of jumping only when the run ends.
                     self.tokens = prompt + usage.completion_tokens.unwrap_or(0);
+                    // A fresh measurement of the *current* history supersedes
+                    // any post-compaction estimate.
+                    self.tokens_estimated = false;
                 }
             }
             StreamEvent::Done { .. } | StreamEvent::Error { .. } => {}
@@ -5105,6 +5268,312 @@ fn estimate_token_count(messages: &[serde_json::Value]) -> u64 {
     }
     let envelope = TOKENS_PER_MESSAGE * messages.len() as u64;
     ((total_chars / 4) as u64 + envelope).max(1)
+}
+
+/// One cell of the `/context` grid is 1/200th of the window (0.5%), so the grid
+/// is 10 rows of [`CONTEXT_GRID_COLS`].
+const CONTEXT_GRID_CELLS: u64 = 200;
+
+/// Cells per grid row, filled row-major.
+const CONTEXT_GRID_COLS: usize = 20;
+
+/// Grid glyphs. All four are single-width, non-combining, so a row is exactly
+/// `2 * CONTEXT_GRID_COLS` columns wide once each cell is space-separated.
+const CONTEXT_GLYPH_SYSTEM: char = '⛁';
+const CONTEXT_GLYPH_MESSAGES: char = '⛃';
+const CONTEXT_GLYPH_FREE: char = '⛶';
+const CONTEXT_GLYPH_BUFFER: char = '⛝';
+
+/// One row of the `/context` breakdown: a labelled slice of the context window
+/// with the glyph its grid cells are drawn with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ContextSegment {
+    label: &'static str,
+    glyph: char,
+    tokens: u64,
+    /// Suppressed from the legend when the segment is empty *and* optional
+    /// (a project with no JAN.md has no "System context" to report).
+    always_show: bool,
+    /// Unit written after the count. Every category is measured in tokens, but
+    /// the spec's free-space line states the bare number (`Free space: 79K
+    /// (33.5%)`) where the others spell the unit out, so it is per-segment
+    /// rather than a constant.
+    unit: &'static str,
+}
+
+/// The full `/context` model: the authoritative window fill, whether that fill
+/// is provider-reported or estimated, and the per-category breakdown.
+#[derive(Debug, Clone)]
+struct ContextReport {
+    /// Provider-qualified display name, e.g. `anthropic/claude-sonnet-4-6`.
+    model_label: String,
+    /// Bare model id as configured.
+    model_id: String,
+    /// Where `window` came from (configured override, catalog, or fallback),
+    /// mirroring the header gauge's own source label rather than inventing a
+    /// second convention for an inferred window.
+    window_source: &'static str,
+    window: u64,
+    /// Total window fill. Provider-reported when `fill_reported`, else the
+    /// chars/4 estimate over the same history.
+    fill: u64,
+    /// Whether `fill` came from the provider's `usage.prompt_tokens`. False
+    /// makes every number on the headline an estimate, and the view says so.
+    fill_reported: bool,
+    /// Content categories plus free space and the autocompact buffer, in grid
+    /// order. Always exactly the seven categories the spec names.
+    segments: Vec<ContextSegment>,
+}
+
+impl ContextReport {
+    /// Cells per segment, largest-remainder allocated so the total is exactly
+    /// [`CONTEXT_GRID_CELLS`] and a non-zero segment never rounds away to
+    /// nothing (it floors to one cell, taken from the largest allocation).
+    ///
+    /// Shares are taken over the sum of the segments rather than the window:
+    /// the segments already partition the window (content + free + buffer), and
+    /// normalizing keeps the grid exactly full when an estimate overshoots.
+    fn cells(&self) -> Vec<u64> {
+        let total: u64 = self.segments.iter().map(|s| s.tokens).sum();
+        if total == 0 || self.segments.is_empty() {
+            return vec![0; self.segments.len()];
+        }
+        // Floor each share, then hand the remaining cells to the largest
+        // fractional parts (largest remainder), so the total is exact.
+        let scaled: Vec<u128> = self
+            .segments
+            .iter()
+            .map(|s| s.tokens as u128 * CONTEXT_GRID_CELLS as u128)
+            .collect();
+        let mut cells: Vec<u64> = scaled.iter().map(|v| (v / total as u128) as u64).collect();
+        let mut order: Vec<usize> = (0..self.segments.len()).collect();
+        order.sort_by_key(|&i| std::cmp::Reverse(scaled[i] % total as u128));
+        let mut short = CONTEXT_GRID_CELLS.saturating_sub(cells.iter().sum::<u64>());
+        for &i in order.iter().cycle().take(order.len() * 2) {
+            if short == 0 {
+                break;
+            }
+            cells[i] += 1;
+            short -= 1;
+        }
+        // A real-but-tiny segment must not read as absent: give it one cell,
+        // funded by whichever allocation can most afford it.
+        for i in 0..cells.len() {
+            if self.segments[i].tokens > 0 && cells[i] == 0 {
+                let Some(donor) = (0..cells.len())
+                    .filter(|&j| cells[j] > 1)
+                    .max_by_key(|&j| cells[j])
+                else {
+                    break;
+                };
+                cells[donor] -= 1;
+                cells[i] += 1;
+            }
+        }
+        cells
+    }
+
+    /// Percentage of the *window* each segment occupies. Sums to 100 whenever
+    /// the segments partition the window, which is how they are built.
+    fn percents(&self) -> Vec<f64> {
+        let denom = self.window.max(1) as f64;
+        self.segments
+            .iter()
+            .map(|s| s.tokens as f64 / denom * 100.0)
+            .collect()
+    }
+}
+
+/// Compact token count for display: `6K`, `2.1K`, `950`. Sub-1K counts stay
+/// exact; 1K-10K keeps one decimal so a 2.1K segment is not flattened to `2K`.
+fn format_tokens(tokens: u64) -> String {
+    match tokens {
+        0..=999 => tokens.to_string(),
+        1_000..=9_999 => {
+            let k = tokens as f64 / 1000.0;
+            // 6.0K reads as noise; report it as 6K.
+            if (k * 10.0).round() as u64 % 10 == 0 {
+                format!("{}K", k.round() as u64)
+            } else {
+                format!("{k:.1}K")
+            }
+        }
+        _ => format!("{}K", (tokens as f64 / 1000.0).round() as u64),
+    }
+}
+
+/// The context window's own size. Lowercase `k`, matching the header gauge and
+/// the way model catalogs advertise a window (`234k`), which keeps it visually
+/// distinct from the uppercase `K` used for live token counts.
+fn format_window(tokens: u64) -> String {
+    format!("{}k", (tokens as f64 / 1000.0).round() as u64)
+}
+
+/// Style each grid glyph gets, so the chart is readable in colour and still
+/// distinguishable by glyph alone in a monochrome terminal.
+fn context_glyph_style(glyph: char) -> Style {
+    match glyph {
+        CONTEXT_GLYPH_MESSAGES => Style::new().cyan(),
+        CONTEXT_GLYPH_FREE => Style::new().dark_gray(),
+        CONTEXT_GLYPH_BUFFER => Style::new().magenta(),
+        _ => Style::new().yellow(),
+    }
+}
+
+/// Columns the grid occupies: a leading space, then one `glyph + space` per
+/// column. The trailing space doubles as the first of the gap to the right
+/// column.
+const CONTEXT_GRID_WIDTH: usize = 1 + CONTEXT_GRID_COLS * 2;
+
+/// The `/context` view at a given draw `width`: a 20-wide grid of the window
+/// filled row-major by category, with the model headline and per-category
+/// legend in a right column beside it.
+///
+/// Each cell is a fixed 0.5% of the window, so the grid cannot be narrowed
+/// without lying about the scale. Instead it degrades in two steps: the right
+/// column moves below the grid, then the grid is dropped entirely and only the
+/// legend (clipped) survives.
+fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
+    let cells = report.cells();
+    let percents = report.percents();
+    // Flatten the per-segment cell counts into one glyph stream, then deal it
+    // out row-major: a category boundary can land mid-row, which is what makes
+    // the chart read as one continuous window rather than a stacked bar.
+    let stream: Vec<char> = report
+        .segments
+        .iter()
+        .zip(&cells)
+        .flat_map(|(seg, &n)| std::iter::repeat_n(seg.glyph, n as usize))
+        .collect();
+
+    // Right column, one entry per grid row: model identity, the headline fill,
+    // a spacer, then the legend. An empty entry renders as a blank line.
+    let fill_pct = report.fill as f64 / report.window.max(1) as f64 * 100.0;
+    let window_k = format_window(report.window);
+    let mut right: Vec<Vec<Span<'static>>> = vec![
+        vec![Span::styled(
+            format!("{} ({window_k} context)", report.model_label),
+            Style::new().bold(),
+        )],
+        vec![Span::styled(
+            format!(
+                "{}[{window_k}] · {} window",
+                report.model_id, report.window_source
+            ),
+            Style::new().dim(),
+        )],
+        // The honesty marker rides on the number itself: a reported fill is
+        // stated plainly, an estimated one is never allowed to look measured.
+        vec![Span::styled(
+            if report.fill_reported {
+                format!(
+                    "{}/{window_k} tokens ({fill_pct:.1}%)",
+                    format_tokens(report.fill)
+                )
+            } else {
+                format!(
+                    "~{}/{window_k} tokens ({fill_pct:.1}%, estimated)",
+                    format_tokens(report.fill)
+                )
+            },
+            Style::new().bold(),
+        )],
+        Vec::new(),
+        vec![Span::styled(
+            "Estimated usage by category",
+            Style::new().dim(),
+        )],
+    ];
+    for (seg, pct) in report.segments.iter().zip(&percents) {
+        if seg.tokens == 0 && !seg.always_show {
+            continue;
+        }
+        right.push(vec![
+            Span::styled(seg.glyph.to_string(), context_glyph_style(seg.glyph)),
+            Span::raw(format!(
+                " {}: {}{} ({pct:.1}%)",
+                seg.label,
+                format_tokens(seg.tokens),
+                seg.unit,
+            )),
+        ]);
+    }
+
+    let grid_rows = CONTEXT_GRID_CELLS as usize / CONTEXT_GRID_COLS;
+    let widest_right = right
+        .iter()
+        .map(|e| e.iter().map(|s| s.content.chars().count()).sum::<usize>())
+        .max()
+        .unwrap_or(0);
+    let grid_row = |row: usize| -> Vec<Span<'static>> {
+        let mut spans: Vec<Span<'static>> = vec![Span::raw(" ")];
+        for col in 0..CONTEXT_GRID_COLS {
+            match stream.get(row * CONTEXT_GRID_COLS + col) {
+                Some(&g) => spans.push(Span::styled(format!("{g} "), context_glyph_style(g))),
+                None => spans.push(Span::raw("  ")),
+            }
+        }
+        spans
+    };
+
+    // Side by side when the grid and the longest legend line both fit.
+    if width >= CONTEXT_GRID_WIDTH + 1 + widest_right {
+        let mut lines = Vec::with_capacity(grid_rows.max(right.len()));
+        for row in 0..grid_rows.max(right.len()) {
+            let mut spans = if row < grid_rows {
+                grid_row(row)
+            } else {
+                vec![Span::raw(" ".repeat(CONTEXT_GRID_WIDTH))]
+            };
+            match right.get(row) {
+                Some(entry) if !entry.is_empty() => {
+                    spans.push(Span::raw(" "));
+                    spans.extend(entry.iter().cloned());
+                }
+                _ => {}
+            }
+            lines.push(Line::from(spans));
+        }
+        return lines;
+    }
+
+    // Too narrow to sit beside the grid, but the grid still fits: stack them.
+    let mut lines = Vec::with_capacity(grid_rows + right.len());
+    if width >= CONTEXT_GRID_WIDTH {
+        for row in 0..grid_rows {
+            lines.push(Line::from(grid_row(row)));
+        }
+    }
+    for entry in &right {
+        if entry.is_empty() {
+            lines.push(Line::default());
+        } else {
+            lines.push(Line::from(clip_spans(entry.clone(), width.max(1))));
+        }
+    }
+    lines
+}
+
+/// Truncate a styled row to `max` columns, counting characters (the grid glyphs
+/// are multi-byte, so byte lengths would cut mid-glyph and corrupt the row).
+fn clip_spans(spans: Vec<Span<'static>>, max: usize) -> Vec<Span<'static>> {
+    let mut out = Vec::with_capacity(spans.len());
+    let mut used = 0usize;
+    for span in spans {
+        let len = span.content.chars().count();
+        if used + len <= max {
+            used += len;
+            out.push(span);
+            continue;
+        }
+        let room = max.saturating_sub(used);
+        if room > 0 {
+            let kept: String = span.content.chars().take(room).collect();
+            out.push(Span::styled(kept, span.style));
+        }
+        break;
+    }
+    out
 }
 
 /// Summarize tool output to one transcript line: first non-empty line with its
@@ -9080,6 +9549,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/context",
+        hint: "",
+        description: "Show what is filling the context window, by category",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/goal",
         hint: "[condition|clear]",
         description: "Keep working until a condition is met (bare: status)",
@@ -9341,6 +9816,7 @@ async fn run_command(
             app.note("started a new session");
         }
         "compact" => compact_command(app),
+        "context" => context_command(app).await,
         "threads" | "list" => match super::list_threads_in(&app.agent_dir) {
             Ok(threads) if threads.is_empty() => {
                 app.note("no saved threads found");
@@ -9476,6 +9952,15 @@ fn compact_command(app: &mut App) {
     app.compact_request = Some(CompactKind::Manual);
 }
 
+/// Show the `/context` breakdown: what currently fills the window, by category.
+/// Read-only -- it inspects the live session state and the same prompt/tool
+/// builders a turn would use, and sends nothing to the provider.
+async fn context_command(app: &mut App) {
+    let report = app.context_report().await;
+    app.note("Context Usage");
+    app.push_row(RowKind::Context(Box::new(report)));
+}
+
 /// Compact-and-retry attempts allowed per user turn. The loop already retries
 /// within a single request (`MAX_COMPACTION_ATTEMPTS`); this bounds the outer
 /// recovery so a model that overflows at any size still hands control back.
@@ -9545,7 +10030,11 @@ fn finish_compaction(
             app.history = compacted;
             app.persist();
             // Estimate tokens from compacted message content (~4 chars ≈ 1 token).
+            // The provider's last `usage` measured the pre-compaction history,
+            // so it no longer describes this conversation: the count is an
+            // estimate until the next response reports a fresh one.
             app.tokens = estimate_token_count(&app.history);
+            app.tokens_estimated = true;
             app.note(&format!(
                 "{} {base_len} -> {} messages (ctx {}K/{}K)",
                 kind.done_label(),
@@ -15570,7 +16059,8 @@ mod tests {
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
         apply_resume, apply_stream_event, assistant_is_awaiting_user_answer, assistant_runs,
         autoscroll_selection, await_branch_poll, backgrounded_job_id, brand, build_user_message,
-        clipboard_path, compact_tokens, diff_lines, drain_stream_events, estimate_token_count,
+        clipboard_path, compact_tokens, context_lines, diff_lines, drain_stream_events,
+        estimate_token_count,
         finish_account_login, finish_compaction, finish_login, finish_plugin_install,
         finish_tokamak_login, finish_update_install, group_detail_lines, group_summary,
         handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, header_spans, image_mime,
@@ -15583,10 +16073,13 @@ mod tests {
         subagent_activity, subagent_name_from_run_id, summarize_result, sync_output_for,
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding, unescape_partial_json_string, user_content_parts, wave_sweep_line,
-        with_wave_glyph, without_think_tags, App, CompactKind, CurrentRun, McpField, McpPrompt,
+        with_wave_glyph, without_think_tags, App, CompactKind, ContextReport, ContextSegment,
+        CurrentRun, McpField, McpPrompt,
         Pending, PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeTarget, Row, RowKind,
         Selection, SelectionMode, SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE,
-        ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS,
+        ALT_SCROLL_SAVE_OFF, CONTEXT_GLYPH_BUFFER, CONTEXT_GLYPH_FREE, CONTEXT_GLYPH_MESSAGES,
+        CONTEXT_GLYPH_SYSTEM, CONTEXT_GRID_CELLS, CONTEXT_GRID_WIDTH, COPY_NOTICE, DIFF_ADD_BG,
+        DIFF_DEL_BG, DIFF_MAX_ROWS,
         DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF, KITTY_KEYS_ON, MAX_IMAGE_BYTES,
         MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER,
         SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
@@ -25615,6 +26108,227 @@ mod tests {
     #[test]
     fn compact_is_a_registered_command() {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/compact"));
+    }
+
+    #[test]
+    fn context_is_a_registered_command() {
+        let row = SLASH_COMMANDS
+            .iter()
+            .find(|c| c.name == "/context")
+            .expect("/context must be registered");
+        assert_eq!(row.alias_of, None, "/context is canonical");
+    }
+
+    /// Build a report with explicit per-category tokens, free space and buffer
+    /// derived the way [`App::context_report`] derives them, so the tests
+    /// exercise the real partition rather than a hand-balanced one.
+    fn context_report(window: u64, buffer: u64, content: [u64; 5]) -> ContextReport {
+        let labels = [
+            ("System prompt", CONTEXT_GLYPH_SYSTEM),
+            ("System tools", CONTEXT_GLYPH_SYSTEM),
+            ("System context", CONTEXT_GLYPH_SYSTEM),
+            ("Skills", CONTEXT_GLYPH_SYSTEM),
+            ("Messages", CONTEXT_GLYPH_MESSAGES),
+        ];
+        let mut segments: Vec<ContextSegment> = labels
+            .iter()
+            .zip(content)
+            .map(|(&(label, glyph), tokens)| ContextSegment {
+                label,
+                glyph,
+                tokens,
+                always_show: true,
+                unit: " tokens",
+            })
+            .collect();
+        let used: u64 = content.iter().sum();
+        segments.push(ContextSegment {
+            label: "Free space",
+            glyph: CONTEXT_GLYPH_FREE,
+            tokens: window.saturating_sub(used + buffer),
+            always_show: true,
+            unit: "",
+        });
+        segments.push(ContextSegment {
+            label: "Autocompact buffer",
+            glyph: CONTEXT_GLYPH_BUFFER,
+            tokens: buffer.min(window),
+            always_show: true,
+            unit: " tokens",
+        });
+        ContextReport {
+            model_label: "tokamak/tokamak-1-preview".into(),
+            model_id: "tokamak-1-preview".into(),
+            window_source: "catalog",
+            window,
+            fill: used,
+            fill_reported: false,
+            segments,
+        }
+    }
+
+    /// The grid is a fixed-scale instrument: every cell is 0.5% of the window,
+    /// so the allocation must total exactly 200 whatever the inputs round to.
+    #[test]
+    fn context_cells_always_total_the_grid() {
+        let cases: [(u64, u64, [u64; 5]); 6] = [
+            // The spec's own example.
+            (234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]),
+            // Thirds and sevenths: nothing divides evenly into 200.
+            (100_000, 33_333, [1, 1, 1, 1, 33_333]),
+            (128_000, 12_800, [7, 7, 7, 7, 7]),
+            // Awkward primes.
+            (99_991, 9_973, [1_009, 1_013, 1_019, 1_021, 1_031]),
+            // Content alone fills the window: free space collapses to zero.
+            (10_000, 1_000, [2_000, 2_000, 2_000, 2_000, 2_000]),
+            // Over-full: the estimate exceeds the window entirely.
+            (10_000, 1_000, [9_000, 9_000, 1, 1, 1]),
+        ];
+        for (window, buffer, content) in cases {
+            let report = context_report(window, buffer, content);
+            let cells = report.cells();
+            assert_eq!(
+                cells.iter().sum::<u64>(),
+                CONTEXT_GRID_CELLS,
+                "window {window} buffer {buffer} content {content:?} -> {cells:?}"
+            );
+        }
+    }
+
+    /// A small-but-real segment rendering as zero cells would read as "absent",
+    /// which is exactly the lie the chart must not tell.
+    #[test]
+    fn context_cells_never_round_a_real_segment_away() {
+        // 1 token out of a 234K window is ~0.0009 cells: it floors to zero and
+        // must be promoted.
+        let report = context_report(234_000, 35_000, [1, 1, 1, 1, 190_000]);
+        let cells = report.cells();
+        for (seg, &n) in report.segments.iter().zip(&cells) {
+            if seg.tokens > 0 {
+                assert!(n >= 1, "{} has {} tokens but 0 cells", seg.label, seg.tokens);
+            }
+        }
+        assert_eq!(cells.iter().sum::<u64>(), CONTEXT_GRID_CELLS);
+    }
+
+    /// An empty segment stays empty: promotion is for real content only.
+    #[test]
+    fn context_cells_leave_empty_segments_at_zero() {
+        let report = context_report(200_000, 20_000, [5_000, 5_000, 0, 0, 50_000]);
+        for (seg, n) in report.segments.iter().zip(report.cells()) {
+            if seg.tokens == 0 {
+                assert_eq!(n, 0, "{} is empty but got cells", seg.label);
+            }
+        }
+    }
+
+    /// Free space and the buffer are categories like any other, so the seven
+    /// percentages account for the whole window and nothing is unexplained.
+    #[test]
+    fn context_percentages_sum_to_the_whole_window() {
+        for (window, buffer, content) in [
+            (234_000u64, 35_000u64, [6_000u64, 9_000, 2_100, 8_000, 95_000]),
+            (128_000, 12_800, [1_000, 2_000, 3_000, 4_000, 5_000]),
+            (64_000, 6_400, [0, 0, 0, 0, 0]),
+        ] {
+            let report = context_report(window, buffer, content);
+            let total: f64 = report.percents().iter().sum();
+            assert!(
+                (total - 100.0).abs() < 1e-6,
+                "window {window} percentages sum to {total}, not 100"
+            );
+        }
+    }
+
+    /// The headline must never present a stale or derived number as measured.
+    #[test]
+    fn context_headline_labels_an_estimated_fill() {
+        let mut report = context_report(234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]);
+        let text = |r: &ContextReport| {
+            context_lines(r, 200)
+                .iter()
+                .map(|l| {
+                    l.spans
+                        .iter()
+                        .map(|s| s.content.as_ref())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        assert!(
+            text(&report).contains("estimated"),
+            "an estimated fill must say so"
+        );
+        report.fill_reported = true;
+        report.fill = 120_000;
+        let reported = text(&report);
+        assert!(
+            reported.contains("120K/234k tokens (51.3%)"),
+            "a reported fill is stated plainly: {reported}"
+        );
+        assert!(
+            !reported.contains("estimated)"),
+            "a reported fill must not be labelled an estimate: {reported}"
+        );
+    }
+
+    /// The chart's cells are positional, so it must degrade rather than wrap:
+    /// at every width it renders, and it never emits a line wider than asked.
+    #[test]
+    fn context_chart_degrades_instead_of_overflowing() {
+        let report = context_report(234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]);
+        for width in [1usize, 2, 8, 20, 41, 42, 60, 80, 200] {
+            let lines = context_lines(&report, width);
+            assert!(!lines.is_empty(), "width {width} rendered nothing");
+            for line in &lines {
+                let w = row_width(line);
+                assert!(
+                    w <= width.max(CONTEXT_GRID_WIDTH),
+                    "width {width}: line of {w} columns: {line:?}"
+                );
+            }
+        }
+    }
+
+    /// The `/context` row goes through the same frame sizes the rest of the
+    /// transcript survives.
+    #[test]
+    fn tiny_frames_render_the_context_chart_without_panicking() {
+        let mut app = test_app();
+        let report = context_report(234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]);
+        app.push_row(RowKind::Context(Box::new(report)));
+        for (w, h) in [(1u16, 1u16), (2, 3), (8, 4), (20, 6), (40, 2), (43, 12), (200, 80)] {
+            render_rows(&mut app, w, h);
+        }
+    }
+
+    /// A compaction invalidates the provider's last measurement: the count is
+    /// an estimate until a fresh response reports one.
+    #[tokio::test]
+    async fn context_fill_is_estimated_after_a_compaction() {
+        let mut app = test_app();
+        app.turn_prompt_tokens = 120_000;
+        assert!(
+            app.context_report().await.fill_reported,
+            "a fresh provider count is authoritative"
+        );
+        app.tokens_estimated = true;
+        assert!(
+            !app.context_report().await.fill_reported,
+            "a post-compaction count must not claim to be measured"
+        );
+        app.apply(StreamEvent::TurnUsage {
+            usage: Usage {
+                prompt_tokens: Some(90_000),
+                completion_tokens: Some(10),
+                total_tokens: Some(90_010),
+            },
+        });
+        assert!(
+            app.context_report().await.fill_reported,
+            "a fresh response restores the measured count"
+        );
     }
     #[test]
     fn effort_aliases_are_registered_as_aliases_of_effort() {
