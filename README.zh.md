@@ -125,6 +125,7 @@ make dev
 **可用的 make 命令：**
 - `make dev` - 完整的开发环境设置与启动
 - `make build` - 生产版本构建
+- `make build-engine-dev` - 为本地模型构建 llama.cpp 引擎 (`jan-llama-worker`)
 - `make test` - 运行测试和 lint 检查
 - `make clean` - 清除所有生成文件并重新开始
 
@@ -152,9 +153,10 @@ yarn dev
 
 如果运行出现问题：
 
-1. 查看我们的[故障排除文档](https://jan.ai/docs/desktop/troubleshooting)
-2. 复制您的错误日志和系统规格信息
-3. 在我们的 Discord `#🆘|jan-help` 频道寻求帮助：[Discord](https://discord.gg/FTk2MvZwJH)
+1. 如果本地模型运行失败或提示未找到 `jan-llama-worker`，请手动构建引擎：`make build-engine-dev`
+2. 查看我们的[故障排除文档](https://jan.ai/docs/desktop/troubleshooting)
+3. 复制您的错误日志和系统规格信息
+4. 在我们的 Discord `#🆘|jan-help` 频道寻求帮助：[Discord](https://discord.gg/FTk2MvZwJH)
 
 
 ## 贡献 (Contributing)
