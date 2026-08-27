@@ -6,7 +6,7 @@ const SRC = resolve(__dirname, '../..')
 const LOCALE_DIR = resolve(__dirname, '../en')
 
 /** Namespaces whose keys are asserted to exist. */
-const GUARDED_NAMESPACES = ['setup', 'model-errors']
+const GUARDED_NAMESPACES = ['setup', 'model-errors', 'common', 'chat']
 
 /**
  * Keys the code composes at runtime (`t(`setup:${stage.messageKey}`)`), which a

@@ -1,6 +1,6 @@
 import { useMemo, useEffect, useState, useRef, memo } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { cn } from '@/lib/utils'
+import { cn, formatTokenCount } from '@/lib/utils'
 import {
   Tooltip,
   TooltipContent,
@@ -31,12 +31,6 @@ interface TokenCounterProps {
 
 const WARN_PCT = 85
 const OVER_PCT = 100
-
-const formatNumber = (num: number) => {
-  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`
-  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`
-  return num.toString()
-}
 
 const formatExact = (num: number) => num.toLocaleString()
 
@@ -238,8 +232,8 @@ export const TokenCounter = memo(function TokenCounter({
                 {pct?.toFixed(1) ?? '0.0'}%
               </span>
               <span className="text-xs text-muted-foreground tabular-nums font-mono">
-                {formatNumber(totalTokens)} /{' '}
-                {formatNumber(tokenData.maxTokens)}
+                {formatTokenCount(totalTokens)} /{' '}
+                {formatTokenCount(tokenData.maxTokens)}
               </span>
             </div>
             <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
@@ -296,7 +290,7 @@ export const TokenCounter = memo(function TokenCounter({
                   title={`Configured ctx_len: ${formatExact(tokenData.configuredCtxLen!)}`}
                 >
                   <IconAdjustmentsAlt className="size-3" />
-                  Fitted to {formatNumber(tokenData.maxTokens)}
+                  Fitted to {formatTokenCount(tokenData.maxTokens)}
                 </span>
               )}
               {modelProps?.totalSlots !== undefined &&
@@ -353,7 +347,7 @@ function TokenCountOnly({
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-background border border-border">
               <IconSum className="size-3.5 text-muted-foreground shrink-0" />
               <span className="text-xs font-medium tabular-nums text-foreground">
-                {formatNumber(totalTokens)}
+                {formatTokenCount(totalTokens)}
               </span>
             </div>
           </div>
