@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { UIMessage } from 'ai'
-import type { CodeTurn } from '@/hooks/useCodeSessions'
+import type { CodeTurn } from '@/types/codeSession'
 import { reasoningPartsFromText } from '@/lib/messages'
 
 /**
