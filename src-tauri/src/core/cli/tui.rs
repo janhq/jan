@@ -5408,11 +5408,12 @@ impl ContextReport {
 /// Compact token count for display: `6K`, `2.1K`, `950`. Sub-1K counts stay
 /// exact; 1K-10K keeps one decimal so a 2.1K segment is not flattened to `2K`.
 ///
-/// Done in integer tenths rather than by formatting an `f64`: the decimal digit
-/// and the decision to print it have to come from the same rounding, and
-/// `{:.1}` rounds half-to-even while `f64::round` rounds half-away-from-zero.
-/// Straddling the two renders `2050` as `2.0K` -- the exact output the
-/// whole-number branch exists to avoid.
+/// Done in integer tenths rather than by formatting an `f64`: the branch and
+/// the displayed digit must come from the same value. The old branch inspected
+/// `k * 10.0`, while the decimal renderer formatted `k` itself. For 2050, `k`
+/// is slightly below 2.05 but `k * 10.0` lands on exactly 20.5, so the branch
+/// selected decimal output while the renderer produced the self-defeating
+/// `2.0K`. Integer math removes that representation mismatch.
 fn format_tokens(tokens: u64) -> String {
     if tokens < 1_000 {
         return tokens.to_string();
