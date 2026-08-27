@@ -6698,11 +6698,15 @@ fn bug_report_command(app: &mut App) {
         Ok(report) => {
             app.note(&format!("bug report written to {}", report.archive.display()));
             if report.redacted_any {
+                // "known" qualifies both lines: the scan matches known key
+                // shapes, so it cannot promise the archive is secret-free.
                 app.note(&format!(
-                    "secrets stripped: {}",
+                    "known secrets stripped: {}",
                     report.stripped.join(", ")
                 ));
-                app.system_detail_text("attach this file to the issue (secrets were removed)");
+                app.system_detail_text(
+                    "attach this file to the issue; review it first, the scan is best-effort",
+                );
             } else {
                 app.system_detail_text(
                     "attach this file to the issue; best-effort scan found no known secrets",
@@ -28576,30 +28580,29 @@ mod tests {
         assert!(transcript_text(&app).contains("unknown command '/warp_drive'"));
         let _ = std::fs::remove_dir_all(&root);
     }
+    /// `/bug` is wired to the bundler and reports back in the transcript.
+    ///
+    /// The archive directory comes from `resolve_jan_data_folder()`, a
+    /// process-global; this test deliberately does not redirect it. Mutating
+    /// `JAN_DATA_FOLDER` here raced every concurrent test that resolves it, and
+    /// taking the shared test lock from a blocking thread starved the async
+    /// tests that hold it across awaits. So this asserts only what the command
+    /// owns -- that an empty thread store produces the failure note rather than
+    /// a silent no-op. The archive contents are covered under
+    /// `doctor::tests::archive_respects_jan_data_folder_and_contains_no_secret`,
+    /// which redirects the folder safely via the shared helper.
     #[tokio::test]
-    async fn run_command_bug_writes_an_archive() {
+    async fn run_command_bug_reports_when_there_is_no_thread() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
-        // Seed a thread in the app's agent store so /bug has something to bundle.
-        let data = std::env::temp_dir().join(format!("jan_bug_tui_{}", std::process::id()));
-        std::env::set_var("JAN_DATA_FOLDER", &data);
-        let thread_id = "bugthread";
-        let thread_dir = app.agent_dir.join("threads").join(thread_id);
-        std::fs::create_dir_all(&thread_dir).unwrap();
-        std::fs::write(thread_dir.join("thread.json"), serde_json::json!({
-            "id": thread_id,
-            "title": "t",
-            "model": { "id": "m", "provider": "openai" }
-        }).to_string()).unwrap();
-        std::fs::write(thread_dir.join("messages.jsonl"), "{\"role\":\"user\",\"content\":\"hi\"}\n").unwrap();
-        std::fs::write(thread_dir.join("display.jsonl"), "{\"kind\":\"note\"}\n").unwrap();
-
+        // No thread seeded: the bundler has nothing to bundle and must say so.
         run_command(&mut app, "bug", &no_mcp()).await;
         let text = transcript_text(&app);
-        assert!(text.contains("bug report"), "{text}");
+        assert!(
+            text.contains("bug report failed"),
+            "expected the failure note, got: {text}"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
-        let _ = std::fs::remove_dir_all(&data);
-        std::env::remove_var("JAN_DATA_FOLDER");
     }
 
     #[test]
