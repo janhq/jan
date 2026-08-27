@@ -13,114 +13,12 @@ use std::path::{Path, PathBuf};
 
 use flate2::Compression;
 use flate2::write::GzEncoder;
-use regex::Regex;
 
 use crate::core::app::commands::resolve_jan_data_folder;
+use crate::core::cli::secrets::Redactor;
 use crate::core::cli::updater::build_version;
 use crate::core::threads::constants::{MESSAGES_FILE, THREADS_FILE};
 use crate::core::threads::utils::{get_thread_dir, get_thread_metadata_path};
-
-/// One redaction rule: a labelled regex. The regex matches the secret value
-/// region only (never the surrounding label), so the whole match is replaced.
-struct Rule {
-    label: &'static str,
-    re: Regex,
-}
-
-/// Strips secrets from free text and tallies how many of each kind it hit.
-struct Redactor {
-    rules: Vec<Rule>,
-}
-
-impl Redactor {
-    fn new() -> Self {
-        // Authorization headers first (they contain a bearer whose value other
-        // rules would also match), then explicit key-like config values, then
-        // well-known provider token prefixes, then long opaque tokens.
-        let rules = vec![
-            Rule {
-                label: "authorization header",
-                re: Regex::new(
-                    r#"(?i)(["']?authorization["']?\s*[:=]\s*["']?(?:bearer|basic)\s+)[A-Za-z0-9._~+/\-=]+"#,
-                )
-                .expect("auth header regex"),
-            },
-            Rule {
-                label: "api key / token value",
-                // Handles both `api_key="..."` and JSON `"api_key":"..."`
-                // (quotes are allowed around the key name and the value).
-                re: Regex::new(
-                    r#"(?i)["']?(?:api[_-]?key|apikey|secret|token|access[_-]?token|refresh[_-]?token)["']?\s*[:=]\s*["']?[A-Za-z0-9._~+/\-=]{12,}"#,
-                )
-                .expect("key regex"),
-            },
-            Rule {
-                label: "jwt",
-                re: Regex::new(
-                    r"(?i)eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}",
-                )
-                .expect("jwt regex"),
-            },
-            Rule {
-                label: "sk/pk provider key",
-                re: Regex::new(r"(?i)\b(?:sk|pk)-[A-Za-z0-9_\-]{16,}")
-                    .expect("sk key regex"),
-            },
-            Rule {
-                label: "google api key",
-                re: Regex::new(r"\bAIza[A-Za-z0-9_\-]{20,}").expect("google key regex"),
-            },
-            Rule {
-                label: "github token",
-                re: Regex::new(r"\b(?:ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,})")
-                    .expect("github token regex"),
-            },
-            Rule {
-                label: "slack token",
-                re: Regex::new(r"\bxox[baprs]-[A-Za-z0-9-]{16,}").expect("slack token regex"),
-            },
-            Rule {
-                label: "aws access key",
-                re: Regex::new(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b").expect("aws key regex"),
-            },
-            Rule {
-                label: "nvidia api key",
-                re: Regex::new(r"\bnvapi-[A-Za-z0-9_-]{16,}").expect("nvidia key regex"),
-            },
-            Rule {
-                label: "opaque oauth token",
-                re: Regex::new(
-                    r"\b(?:ya29\.[A-Za-z0-9_\-]{30,}|sq0atp-[A-Za-z0-9_\-]{20,}|sk_live_[A-Za-z0-9]{16,})",
-                )
-                .expect("opaque token regex"),
-            },
-        ];
-        Redactor { rules }
-    }
-
-    /// Replace every match with `<redacted>`; `hits` records per-rule counts.
-    fn redact(&self, input: &str, hits: &mut [usize]) -> String {
-        let mut out = input.to_string();
-        for (i, rule) in self.rules.iter().enumerate() {
-            // Collect spans first so we never re-scan replaced regions.
-            let spans: Vec<(usize, usize)> = rule.re.find_iter(&out).map(|m| (m.start(), m.end())).collect();
-            if spans.is_empty() {
-                continue;
-            }
-            hits[i] += spans.len();
-            let mut result = String::with_capacity(out.len());
-            let mut last = 0;
-            for (s, e) in spans {
-                result.push_str(&out[last..s]);
-                result.push_str("<redacted>");
-                last = e;
-            }
-            result.push_str(&out[last..]);
-            out = result;
-        }
-        out
-    }
-}
 
 /// Read a text file, or `None` if it does not exist or cannot be read.
 fn read_opt(path: &Path) -> Option<String> {
@@ -430,69 +328,67 @@ mod tests {
 
     #[test]
     fn archive_respects_jan_data_folder_and_contains_no_secret() {
-        let dir = std::env::temp_dir().join(format!("jan_doctor_test_{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        std::env::set_var("JAN_DATA_FOLDER", &dir);
+        // `JAN_DATA_FOLDER` is process-global, so this goes through the shared
+        // helper: it holds the test lock and restores the previous value. Setting
+        // the var directly here would race any concurrent test that reads it.
+        crate::core::app::commands::with_temp_data_folder(|dir| {
+            // Seed a thread.
+            let thread_id = "testthread";
+            let thread_dir = get_thread_dir(dir, thread_id);
+            fs::create_dir_all(&thread_dir).unwrap();
+            fs::write(
+                get_thread_metadata_path(dir, thread_id),
+                serde_json::json!({
+                    "id": thread_id,
+                    "title": "t",
+                    "model": { "id": "gpt-4", "provider": "openai" }
+                })
+                .to_string(),
+            )
+            .unwrap();
+            // Seed every input shape the bundler copies so decompression proves
+            // the full redaction path, including JSON authorization forms.
+            let seeds = [
+                "{\"role\":\"user\",\"content\":\"sk-abcdefghijklmnopq\"}\n",
+                "{\"role\":\"user\",\"content\":\"Authorization: Bearer abcXYZ0123456789def\"}\n",
+                "{\"role\":\"user\",\"content\":\"ghp_0123456789abcdef0123456789abcdef012345\"}\n",
+            ];
+            fs::write(thread_dir.join(MESSAGES_FILE), seeds.concat()).unwrap();
+            fs::write(
+                thread_dir.join("display.jsonl"),
+                "{\"kind\":\"note\",\"value\":\"AKIAIOSFODNN7EXAMPLE\"}\n",
+            )
+            .unwrap();
 
-        // Seed a thread.
-        let thread_id = "testthread";
-        let thread_dir = get_thread_dir(&dir, thread_id);
-        fs::create_dir_all(&thread_dir).unwrap();
-        fs::write(
-            get_thread_metadata_path(&dir, thread_id),
-            serde_json::json!({
-                "id": thread_id,
-                "title": "t",
-                "model": { "id": "gpt-4", "provider": "openai" }
-            })
-            .to_string(),
-        )
-        .unwrap();
-        // Seed every input shape the bundler copies so decompression proves the
-        // full redaction path, including JSON authorization forms.
-        let seeds = [
-            "{\"role\":\"user\",\"content\":\"sk-abcdefghijklmnopq\"}\n",
-            "{\"role\":\"user\",\"content\":\"Authorization: Bearer abcXYZ0123456789def\"}\n",
-            "{\"role\":\"user\",\"content\":\"ghp_0123456789abcdef0123456789abcdef012345\"}\n",
-        ];
-        fs::write(thread_dir.join(MESSAGES_FILE), seeds.concat()).unwrap();
-        fs::write(
-            thread_dir.join("display.jsonl"),
-            "{\"kind\":\"note\",\"value\":\"AKIAIOSFODNN7EXAMPLE\"}\n",
-        )
-        .unwrap();
+            let report = run_bug_report(dir, Some(thread_id)).expect("bug report builds");
+            assert!(report.archive.exists(), "archive exists");
+            assert!(
+                report.stripped.iter().any(|s| s.contains("github token")),
+                "expected github rule hit: {:?}",
+                report.stripped
+            );
 
-        let report = run_bug_report(&dir, Some(thread_id)).expect("bug report builds");
-        assert!(report.archive.exists(), "archive exists");
-        assert!(
-            report.stripped.iter().any(|s| s.contains("github token")),
-            "expected github rule hit: {:?}",
-            report.stripped
-        );
-
-        // Decompress and assert no raw secret survives in any bundled member.
-        let members = unpack_archive(&report.archive);
-        assert!(!members.is_empty(), "archive has members");
-        for (name, content) in &members {
-            assert!(
-                !content.contains("sk-abcdefghijklmnopq"),
-                "{name} leaked sk key: {content}"
-            );
-            assert!(
-                !content.contains("abcXYZ0123456789def"),
-                "{name} leaked bearer: {content}"
-            );
-            assert!(
-                !content.contains("AKIAIOSFODNN7EXAMPLE"),
-                "{name} leaked aws key: {content}"
-            );
-            assert!(
-                !content.contains("ghp_0123456789abcdef0123456789abcdef012345"),
-                "{name} leaked github token: {content}"
-            );
-        }
-
-        let _ = fs::remove_dir_all(&dir);
-        std::env::remove_var("JAN_DATA_FOLDER");
+            // Decompress and assert no raw secret survives in any bundled member.
+            let members = unpack_archive(&report.archive);
+            assert!(!members.is_empty(), "archive has members");
+            for (name, content) in &members {
+                assert!(
+                    !content.contains("sk-abcdefghijklmnopq"),
+                    "{name} leaked sk key: {content}"
+                );
+                assert!(
+                    !content.contains("abcXYZ0123456789def"),
+                    "{name} leaked bearer: {content}"
+                );
+                assert!(
+                    !content.contains("AKIAIOSFODNN7EXAMPLE"),
+                    "{name} leaked aws key: {content}"
+                );
+                assert!(
+                    !content.contains("ghp_0123456789abcdef0123456789abcdef012345"),
+                    "{name} leaked github token: {content}"
+                );
+            }
+        });
     }
 }

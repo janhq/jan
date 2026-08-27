@@ -27,6 +27,7 @@ pub mod rpc;
 pub mod rpc_schema;
 pub mod run_report;
 pub mod providers;
+pub mod secrets;
 mod secret_input;
 pub mod stream_input;
 pub mod telemetry;

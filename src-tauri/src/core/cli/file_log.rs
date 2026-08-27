@@ -116,13 +116,22 @@ impl FileLog {
 
 /// One line per record, plain ASCII, timestamped. Never colored; the file is
 /// meant to be read in an editor, piped, or bundled, not rendered live.
+///
+/// The message is scrubbed on the way in. This file persists across runs and
+/// ships inside `jan bug-report`, while the text reaching it is not all ours:
+/// an upstream error can echo the request's `Authorization` header back, and a
+/// user can paste a key into a prompt. Scrubbing here -- rather than at each
+/// `log::` call -- means a breadcrumb added later cannot reintroduce the leak,
+/// and it leaves the stderr sink untouched, so the terminal still shows the
+/// operator the full text.
 fn format_line(record: &Record) -> String {
     let ts = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f");
+    let message = record.args().to_string();
     format!(
         "{ts} {:<5} [{}] {}\n",
         record.level().as_str(),
         record.target(),
-        record.args()
+        crate::core::cli::secrets::SHARED.scrub(&message)
     )
 }
 
@@ -218,6 +227,43 @@ mod tests {
         assert!(content.contains("hello 1 2"), "content: {content}");
         assert!(content.contains("INFO"), "level label: {content}");
         assert!(content.starts_with("20"), "timestamp leads: {content}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The regression this sink's scrub exists for. A provider echoed the
+    /// request's `Authorization` header inside its error body; the agent logged
+    /// that error as a breadcrumb, and the raw key landed in `jan.log` -- a file
+    /// that persists across runs and ships inside `jan bug-report`.
+    ///
+    /// Asserted at the sink, not at the call site: scrubbing here is what makes
+    /// a breadcrumb added later safe by construction.
+    #[test]
+    fn file_log_scrubs_a_credential_out_of_a_record() {
+        let dir = std::env::temp_dir().join(format!("jan_file_log_secret_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("logs")).unwrap();
+        let log = FileLog::new(dir.join("logs").join(LOG_FILE)).expect("opens log");
+        let secret = "sk-live-11112222333344445555";
+        log.write(
+            &Record::builder()
+                .args(format_args!(
+                    "agent: run finished outcome=error -- Body: \
+                     {{\"message\":\"authorization: Bearer {secret}\"}}"
+                ))
+                .level(log::Level::Info)
+                .target(module_path!())
+                .build(),
+        );
+        log.flush();
+
+        let content = fs::read_to_string(dir.join("logs").join(LOG_FILE)).unwrap();
+        assert!(!content.contains(secret), "credential reached the file: {content}");
+        assert!(content.contains("<redacted>"), "redaction is marked: {content}");
+        assert!(
+            content.contains("outcome=error"),
+            "the breadcrumb still says what happened: {content}"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
