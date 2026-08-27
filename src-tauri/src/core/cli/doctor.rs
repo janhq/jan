@@ -127,9 +127,22 @@ fn read_opt(path: &Path) -> Option<String> {
     fs::read_to_string(path).ok()
 }
 
-/// Last `max_lines` lines of a file, or `None` when the file cannot be read.
+/// Last `max_lines` lines of the log, spanning rotated segments.
+///
+/// `file_log` rotates by renaming the active file to `jan.log.1`, so the oldest
+/// retained records live in the highest-numbered segment. A long session can
+/// rotate the interesting window out of the active file, so segments are
+/// concatenated oldest-first and the tail is taken across the whole thing.
 fn tail(path: &Path, max_lines: usize) -> Option<String> {
-    let content = read_opt(path)?;
+    let name = path.file_name()?.to_str()?;
+    let mut content = String::new();
+    for k in (1..=crate::core::cli::file_log::KEEP_SEGMENTS).rev() {
+        if let Some(seg) = read_opt(&path.with_file_name(format!("{name}.{k}"))) {
+            content.push_str(&seg);
+        }
+    }
+    content.push_str(&read_opt(path)?);
+
     let lines: Vec<&str> = content.lines().collect();
     let start = lines.len().saturating_sub(max_lines);
     Some(lines[start..].join("\n"))
@@ -390,6 +403,29 @@ mod tests {
             out.push((name, content));
         }
         out
+    }
+
+    #[test]
+    fn tail_spans_rotated_segments_oldest_first() {
+        // A long session rotates the interesting window out of the active file,
+        // so the bundle must reach back into jan.log.1/.2 rather than only
+        // reading whatever the active segment happens to hold.
+        let dir = std::env::temp_dir().join(format!("jan_tail_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let active = dir.join("jan.log");
+        fs::write(dir.join("jan.log.2"), "oldest\n").unwrap();
+        fs::write(dir.join("jan.log.1"), "middle\n").unwrap();
+        fs::write(&active, "newest\n").unwrap();
+
+        let out = tail(&active, 100).expect("reads log");
+        assert_eq!(out, "oldest\nmiddle\nnewest", "segments must join oldest-first");
+
+        // The line cap counts across segments and keeps the newest lines.
+        let capped = tail(&active, 1).expect("reads log");
+        assert_eq!(capped, "newest", "cap must keep the newest line: {capped}");
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

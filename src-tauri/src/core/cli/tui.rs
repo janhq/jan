@@ -6829,11 +6829,14 @@ pub async fn run(
     // switch to the alternate screen -- a single `log::warn!` from anywhere
     // (MCP, http, a dependency) then paints raw text over the frame and stays
     // there until the next full repaint. Nothing may write to the terminal
-    // except the renderer, so mute the log facade for the duration and restore
+    // except the renderer, so mute the stderr sink for the duration and restore
     // it on the way out. Anything worth the user's attention is a transcript
     // note; see `connect_active` for the MCP case.
-    let prev_log_level = log::max_level();
-    log::set_max_level(log::LevelFilter::Off);
+    //
+    // Only stderr is muted, not the `log` facade: silencing the facade globally
+    // would also stop the persistent file log, and an interactive session that
+    // hangs is exactly what `jan bug-report` needs a trail for.
+    let prev_stderr_log = super::file_log::set_stderr_enabled(false);
 
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
@@ -6949,7 +6952,7 @@ pub async fn run(
         LeaveAlternateScreen,
     );
     let _ = terminal.show_cursor();
-    log::set_max_level(prev_log_level);
+    super::file_log::set_stderr_enabled(prev_stderr_log);
     // The session is closed: leave a copyable continuation command on the real
     // terminal, the same line the non-interactive path prints after a save.
     // Only a persisted thread can be resumed, so an empty session stays quiet.

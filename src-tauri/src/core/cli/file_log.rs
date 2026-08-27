@@ -12,7 +12,7 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use log::{LevelFilter, Log, Metadata, Record};
@@ -22,8 +22,23 @@ const FILE_LEVEL: LevelFilter = LevelFilter::Info;
 /// Rotate once the active segment crosses this size.
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 /// Backup segments kept beside the active file (`jan.log.1` .. `jan.log.N`).
-const KEEP_SEGMENTS: u32 = 3;
+/// `doctor` reads the same bound when it tails across rotated segments.
+pub(crate) const KEEP_SEGMENTS: u32 = 3;
 const LOG_FILE: &str = "jan.log";
+
+/// Whether the stderr sink is allowed to write. The TUI owns the terminal once
+/// it enters the alternate screen, so a stray `warn` from a dependency would
+/// paint over the frame; it mutes stderr for the duration. This gate replaces
+/// the older `log::set_max_level(Off)` approach, which silenced the facade
+/// globally and so muted the file sink too -- exactly the interactive session
+/// a bug report needs a trail for.
+static STDERR_ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// Mute or unmute the stderr sink without touching the file sink. Returns the
+/// previous value so a caller can restore it.
+pub fn set_stderr_enabled(on: bool) -> bool {
+    STDERR_ENABLED.swap(on, Ordering::Relaxed)
+}
 
 /// The segment path for a 1-based backup number; `0` means the active file.
 fn segment_path(base: &Path, k: u32) -> PathBuf {
@@ -122,23 +137,28 @@ struct DualLogger {
 impl Log for DualLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         // Either sink wants the record: stderr's own module/level filter (which
-        // may reach debug/trace via RUST_LOG), or the file when the record is
-        // at or under the file ceiling. Nothing above both probes is wanted.
-        self.stderr.enabled(metadata)
+        // may reach debug/trace via RUST_LOG) when it is not muted, or the file
+        // when the record is at or under the file ceiling.
+        (STDERR_ENABLED.load(Ordering::Relaxed) && self.stderr.enabled(metadata))
             || (self.file.is_some() && metadata.level() <= FILE_LEVEL)
     }
 
     fn log(&self, record: &Record) {
         // The file only captures records at or under FILE_LEVEL (info), even
-        // when stderr goes deeper via RUST_LOG=debug/trace.
-        if self.file.is_some() && record.level() <= FILE_LEVEL {
-            if let Some(f) = &self.file {
+        // when stderr goes deeper via RUST_LOG=debug/trace. It is deliberately
+        // not gated on STDERR_ENABLED: a muted terminal must still leave a
+        // trail, which is the whole point of the file sink.
+        if let Some(f) = &self.file {
+            if record.level() <= FILE_LEVEL {
                 f.write(record);
             }
         }
         // stderr keeps env_logger's exact behavior, including debug/trace when
-        // RUST_LOG asks for them (env_logger filters internally).
-        self.stderr.log(record);
+        // RUST_LOG asks for them (env_logger filters internally), except while
+        // the TUI owns the terminal.
+        if STDERR_ENABLED.load(Ordering::Relaxed) {
+            self.stderr.log(record);
+        }
     }
 
     fn flush(&self) {
@@ -272,6 +292,45 @@ mod tests {
         assert!(
             !dual.enabled(&metadata(log::Level::Debug)),
             "debug must not be enabled when stderr is warn and file caps at info"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn muting_stderr_keeps_the_file_sink_writing() {
+        // The TUI mutes stderr for the whole interactive session because it owns
+        // the terminal. The file must keep recording anyway: a session that
+        // hangs is exactly what `jan bug-report` needs a trail for. Muting via
+        // `log::set_max_level(Off)` instead would silence the facade globally
+        // and lose this.
+        let dir = std::env::temp_dir().join(format!("jan_mute_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("logs")).unwrap();
+
+        let dual = DualLogger {
+            stderr: env_logger::Builder::new().filter_level(LevelFilter::Warn).build(),
+            file: Some(FileLog::new(dir.join("logs").join(LOG_FILE)).expect("opens log")),
+        };
+
+        let prev = set_stderr_enabled(false);
+        assert!(
+            dual.enabled(&metadata(log::Level::Info)),
+            "info must stay enabled for the file while stderr is muted"
+        );
+        let record = log::Record::builder()
+            .args(format_args!("muted but recorded"))
+            .level(log::Level::Info)
+            .target(module_path!())
+            .build();
+        dual.log(&record);
+        dual.flush();
+        set_stderr_enabled(prev);
+
+        let content = fs::read_to_string(dir.join("logs").join(LOG_FILE)).unwrap();
+        assert!(
+            content.contains("muted but recorded"),
+            "file lost records while stderr was muted: {content}"
         );
 
         let _ = fs::remove_dir_all(&dir);

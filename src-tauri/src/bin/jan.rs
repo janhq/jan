@@ -587,7 +587,17 @@ async fn main() {
         Commands::Plugin { cmd } => handle_plugin(cmd).await,
         Commands::Update { check, force } => handle_update(check, force).await,
         Commands::BugReport { thread } => {
-            let base = app_lib::core::app::commands::resolve_jan_data_folder();
+            // Agent runs (TUI and `jan cli agent run`) persist threads to the
+            // project's `.jan/agent`, while the desktop app uses the global data
+            // folder. Prefer the project store when the cwd actually has one, so
+            // running `jan bug-report` where the run misbehaved reports on that
+            // run rather than an unrelated desktop thread.
+            let project = app_lib::core::cli::agent_dir_for(std::path::Path::new("."));
+            let base = if project.join("threads").is_dir() {
+                project
+            } else {
+                app_lib::core::app::commands::resolve_jan_data_folder()
+            };
             match app_lib::core::cli::doctor::run_bug_report(&base, thread.as_deref()) {
                 Ok(report) => print_bug_report(&report),
                 Err(e) => {
