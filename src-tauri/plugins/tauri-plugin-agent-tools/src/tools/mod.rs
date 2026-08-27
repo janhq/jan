@@ -49,7 +49,10 @@ pub struct ImageContentPart {
 /// `allow_network` opens the sandboxed shell's network namespace. It defaults to
 /// off and is a field rather than a `new` parameter so existing callers keep the
 /// safe default without being rewritten.
-#[derive(Debug, Clone, Copy)]
+/// Not `Copy`: the output sink is an `Arc`. Cloning is cheap either way (every
+/// other field is a borrow or a bool), so callers that relied on implicit copies
+/// clone explicitly.
+#[derive(Clone)]
 pub struct ToolContext<'a> {
     pub project_root: &'a Path,
     pub store_root: &'a Path,
@@ -83,7 +86,39 @@ pub struct ToolContext<'a> {
     /// gate is then the only thing between the model and the machine, which is
     /// why nothing else about the gate changes when this is off.
     pub sandbox: bool,
+    /// Where a tool sends output as it is produced, when the caller wants to
+    /// show it live. `None` means "collect and return only", which is what every
+    /// non-interactive caller wants.
+    ///
+    /// `Arc` and not a borrow because `bash` hands its child to a detached task:
+    /// the sink has to outlive the call that created it, which is also what makes
+    /// a backgrounded command keep reporting after the tool has returned its
+    /// `job_id`.
+    pub on_output: Option<OutputSink>,
 }
+
+impl std::fmt::Debug for ToolContext<'_> {
+    /// Hand-written because a sink is a closure: reported as present or absent,
+    /// which is the only thing about it worth printing.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolContext")
+            .field("project_root", &self.project_root)
+            .field("store_root", &self.store_root)
+            .field("enabled_skills", &self.enabled_skills)
+            .field("allow_network", &self.allow_network)
+            .field("confine_writes", &self.confine_writes)
+            .field("mask_root", &self.mask_root)
+            .field("home_readonly", &self.home_readonly)
+            .field("scratch_root", &self.scratch_root)
+            .field("sandbox", &self.sandbox)
+            .field("on_output", &self.on_output.is_some())
+            .finish()
+    }
+}
+
+/// A tool's live-output channel: called with each chunk as it arrives, in order.
+/// Chunks are raw fragments, not lines -- a caller that wants lines buffers them.
+pub type OutputSink = std::sync::Arc<dyn Fn(String) + Send + Sync>;
 
 impl<'a> ToolContext<'a> {
     pub fn new(project_root: &'a Path, store_root: &'a Path, enabled_skills: &'a [String]) -> Self {
@@ -97,7 +132,15 @@ impl<'a> ToolContext<'a> {
             home_readonly: false,
             scratch_root: None,
             sandbox: true,
+            on_output: None,
         }
+    }
+
+    /// Stream this call's output to `sink` as it is produced, as well as
+    /// returning it. See [`Self::on_output`].
+    pub fn with_output_sink(mut self, sink: OutputSink) -> Self {
+        self.on_output = Some(sink);
+        self
     }
 
     pub fn with_network(mut self, allow: bool) -> Self {

@@ -42,6 +42,18 @@ pub enum StreamEvent {
         name: String,
         args: serde_json::Value,
     },
+    /// A chunk of a tool's output, as it is produced. Emitted between
+    /// [`ToolCall`] and [`ToolResult`] so a consumer can show a command's output
+    /// while it runs instead of only once it exits.
+    ///
+    /// Deltas, not the accumulated buffer, for the same reason as
+    /// [`ToolCallArgsDelta`]: resending the prefix on every chunk is quadratic in
+    /// the output size. Chunks are raw fragments and may split a line.
+    ///
+    /// Keeps arriving after a `bash` call has backgrounded itself and returned a
+    /// `job_id`, so a long-running job reports progress under the id of the call
+    /// that started it.
+    ToolOutputDelta { id: String, delta: String },
     /// A tool finished. `is_error` reflects the upstream "ERROR" encoding.
     /// `diff` is display-only focused-change text (line-prefixed `-`/`+`) for
     /// `write`/`edit`; `None` for other tools.
@@ -97,11 +109,23 @@ pub enum StreamEvent {
     MessagesUpdated {
         messages: Vec<serde_json::Value>,
     },
-    /// The `ask` tool is waiting for structured interactive input.
+    /// The `ask` tool is waiting for structured interactive input. Carries the
+    /// `ask_timeout_secs` deadline (seconds until the loop auto-selects the
+    /// recommended option) as `timeout_secs`, or `None` when no timeout is
+    /// configured. It travels on the event so a client can render a countdown
+    /// without re-reading config: the same value both arms the loop's timer and
+    /// drives the display, keeping the two in agreement.
     AskRequest {
         request_id: String,
         request: crate::core::agent::interaction::AskRequest,
+        timeout_secs: Option<u64>,
     },
+    /// An `ask` request the loop resolved without a user answer (it timed out
+    /// and auto-selected). Tells a client showing the live prompt for
+    /// `request_id` to dismiss it, since no `respond` from that client is
+    /// coming. User-driven answers never emit this: the client clears its own
+    /// prompt as it responds.
+    AskResolved { request_id: String },
     /// The canonical todo list changed (tool mutation or user edit in the
     /// TUI). Carries the full resulting snapshot for reconstruction.
     TodoUpdate {

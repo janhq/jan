@@ -174,6 +174,20 @@ function MCPServersDesktop() {
     }
   }
 
+  const updateMaxToolOutputChars = (rawValue: string) => {
+    if (rawValue === '') {
+      updateSettings({
+        maxToolOutputChars: DEFAULT_MCP_SETTINGS.maxToolOutputChars,
+      })
+      return
+    }
+
+    const numericValue = Number(rawValue)
+    if (!Number.isNaN(numericValue) && numericValue >= 0) {
+      updateSettings({ maxToolOutputChars: numericValue })
+    }
+  }
+
   const modelProviders = useModelProvider((state) => state.providers)
 
   const routerPickerDisabled =
@@ -569,6 +583,27 @@ function MCPServersDesktop() {
                       value={settings.toolCallTimeoutSeconds}
                       onChange={(event) =>
                         updateToolCallTimeout(event.target.value)
+                      }
+                      onBlur={() => {
+                        void syncServers()
+                      }}
+                      className="w-28"
+                    />
+                  }
+                />
+                <CardItem
+                  title={t('mcp-servers:runtimeSettings.maxToolOutputChars')}
+                  description={t(
+                    'mcp-servers:runtimeSettings.maxToolOutputCharsDesc'
+                  )}
+                  actions={
+                    <Input
+                      type="number"
+                      min={0}
+                      step={1000}
+                      value={settings.maxToolOutputChars}
+                      onChange={(event) =>
+                        updateMaxToolOutputChars(event.target.value)
                       }
                       onBlur={() => {
                         void syncServers()

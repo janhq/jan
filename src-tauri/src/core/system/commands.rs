@@ -405,19 +405,47 @@ pub fn launch_claude_code_with_config(
     small_model: Option<String>,
     custom_env_vars: Vec<serde_json::Value>,
 ) -> Result<(), String> {
-    // Clone values for logging before moving
-    let api_url_log = api_url.clone();
-    let big_model_log = big_model.clone();
-    let medium_model_log = medium_model.clone();
-    let small_model_log = small_model.clone();
+    let env_vars = build_claude_code_env_vars(
+        api_url,
+        api_key,
+        big_model,
+        medium_model,
+        small_model,
+        custom_env_vars,
+    )?;
+
+    // Claude Code talks to Jan's local API server, which authenticates inbound
+    // requests against its own key (the proxy_api_key). ANTHROPIC_AUTH_TOKEN
+    // MUST therefore be the local server key, and there is no valid placeholder:
+    // anything else reaches the proxy, passes its key check, and then gets
+    // rejected by the remote provider as a bogus credential (an opaque 403).
+    // Refuse to launch with a clear message rather than ship a fake key.
+    write_claude_code_env_vars(&env_vars)
+}
+
+/// Build the environment variable map for the Claude Code integration.
+/// Returns an error if no local API key is set, since the proxy will not
+/// authenticate the session otherwise.
+fn build_claude_code_env_vars(
+    api_url: String,
+    api_key: Option<String>,
+    big_model: Option<String>,
+    medium_model: Option<String>,
+    small_model: Option<String>,
+    custom_env_vars: Vec<serde_json::Value>,
+) -> Result<Vec<(String, String)>, String> {
+    let token = api_key
+        .filter(|k| !k.trim().is_empty())
+        .ok_or_else(|| {
+            "No local API key is set. Open Settings > Local API Server, set an API key, \
+             and try again: Claude Code needs a real key to authenticate with the local \
+             server and reach remote models."
+                .to_string()
+        })?;
 
     let mut env_vars: Vec<(String, String)> = Vec::with_capacity(8);
     env_vars.push(("ANTHROPIC_BASE_URL".to_string(), api_url));
-
-    env_vars.push((
-        "ANTHROPIC_AUTH_TOKEN".to_string(),
-        api_key.unwrap_or_else(|| "jan".to_string()),
-    ));
+    env_vars.push(("ANTHROPIC_AUTH_TOKEN".to_string(), token));
 
     if let Some(model) = big_model {
         env_vars.push(("ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(), model));
@@ -441,15 +469,14 @@ pub fn launch_claude_code_with_config(
         }
     }
 
-    log::info!(
-        "Launching Claude Code with API URL: {}, models: opus={:?}, sonnet={:?}, haiku={:?}, custom_envs={}",
-        api_url_log,
-        big_model_log,
-        medium_model_log,
-        small_model_log,
-        custom_env_vars.len()
-    );
+    Ok(env_vars)
+}
 
+/// Persist the Claude Code environment variables to the user's shell config
+/// (macOS/Linux) or the Windows registry, then return the result.
+fn write_claude_code_env_vars(
+    env_vars: &[(String, String)],
+) -> Result<(), String> {
     // Build the command environment
     // Export environment variables to the user's shell config file
 
@@ -470,7 +497,7 @@ pub fn launch_claude_code_with_config(
             .open(&env_file_path)
         {
             Ok(_) => {
-                write_env_to_shell(&env_file_path, &env_vars)?;
+                write_env_to_shell(&env_file_path, env_vars)?;
                 Ok(())
             }
             Err(_) => {
@@ -534,7 +561,7 @@ pub fn launch_claude_code_with_config(
             .open(&env_file_path)
         {
             Ok(_) => {
-                write_env_to_shell(&env_file_path, &env_vars)?;
+                write_env_to_shell(&env_file_path, env_vars)?;
                 Ok(())
             }
             Err(_) => {
@@ -546,7 +573,7 @@ pub fn launch_claude_code_with_config(
         }
     } else {
         // On Windows, set persistent user environment variables using setx
-        for (key, value) in &env_vars {
+        for (key, value) in env_vars {
             let output = std::process::Command::new("setx")
                 .arg(key)
                 .arg(value)
@@ -1166,5 +1193,61 @@ mod tests {
         assert!(is_safe_to_delete(std::path::Path::new(
             "/home/user/.local/share/jan"
         )));
+    }
+    #[test]
+    fn claude_code_env_uses_real_token_when_set() {
+        let env = build_claude_code_env_vars(
+            "http://127.0.0.1:1337".to_string(),
+            Some("sk-real-secret".to_string()),
+            None,
+            None,
+            None,
+            vec![],
+        )
+        .unwrap();
+        let token = env
+            .iter()
+            .find(|(k, _)| k == "ANTHROPIC_AUTH_TOKEN")
+            .map(|(_, v)| v.as_str())
+            .unwrap();
+        assert_eq!(token, "sk-real-secret");
+        assert!(env
+            .iter()
+            .all(|(_, v)| v != "jan"),
+            "placeholder must never be shipped as a token");
+    }
+
+    #[test]
+    fn claude_code_env_rejects_missing_key() {
+        let err = build_claude_code_env_vars(
+            "http://127.0.0.1:1337".to_string(),
+            None,
+            None,
+            None,
+            None,
+            vec![],
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("API key"),
+            "should tell the user a local API key is required: {err}"
+        );
+    }
+
+    #[test]
+    fn claude_code_env_rejects_blank_key() {
+        let err = build_claude_code_env_vars(
+            "http://127.0.0.1:1337".to_string(),
+            Some("   ".to_string()),
+            None,
+            None,
+            None,
+            vec![],
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("API key"),
+            "a whitespace-only key is not a real credential: {err}"
+        );
     }
 }

@@ -18,6 +18,7 @@ import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
+import { deriveToolOutputCap } from '@/lib/context-manager'
 import { renderInstructions } from '@/lib/instructionTemplate'
 import {
   Conversation,
@@ -556,9 +557,18 @@ function ThreadDetail() {
                 scope: projectId ? 'project' : 'thread',
               })
             } else if (mcpToolNames.has(toolName)) {
+              // An MCP result is injected into conversation history verbatim, so
+              // a page-sized one can exhaust the context on its own. Give the
+              // backend a budget scaled to the window this model actually has;
+              // it narrows that against the user's configured ceiling.
+              const ctxLen = useModelProvider.getState().selectedModel?.settings
+                ?.ctx_len?.controller_props?.value
               result = await serviceHub.mcp().callTool({
                 toolName,
                 arguments: toolCall.input,
+                maxOutputChars: deriveToolOutputCap(
+                  typeof ctxLen === 'number' ? ctxLen : undefined
+                ),
               })
             } else {
               result = {

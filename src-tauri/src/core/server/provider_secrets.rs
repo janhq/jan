@@ -15,7 +15,7 @@
 //! local-key scheme can be). Keyring failure is never fatal; callers additionally
 //! have `--api-key`/env as a last resort.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,6 +30,7 @@ use crate::core::app::commands::resolve_jan_data_folder;
 
 const KEYRING_SERVICE: &str = "jan-providers";
 const SECRETS_FILE_NAME: &str = "provider_secrets.enc";
+const SECRETS_INDEX_FILE_NAME: &str = "provider_secrets.index.json";
 const NONCE_LEN: usize = 12;
 
 /// Serializes read-modify-write on the fallback file.
@@ -37,6 +38,9 @@ static FILE_LOCK: Mutex<()> = Mutex::new(());
 
 #[cfg(test)]
 pub(crate) static SECRET_STORE_TEST_LOCK: Mutex<()> = Mutex::new(());
+/// Serializes read-modify-write on the presence index. Separate from
+/// `FILE_LOCK` because the index is updated around calls that take it.
+static INDEX_LOCK: Mutex<()> = Mutex::new(());
 
 /// Latched on the first infrastructure-level keyring failure (D-Bus timeout,
 /// platform/storage-access failure). Once set, every secret op skips the
@@ -107,7 +111,10 @@ fn read_file_map(path: &PathBuf) -> BTreeMap<String, Vec<String>> {
     serde_json::from_slice(&plaintext).unwrap_or_default()
 }
 
-fn write_file_map_atomic(path: &PathBuf, map: &BTreeMap<String, Vec<String>>) -> Result<(), String> {
+fn write_file_map_atomic(
+    path: &PathBuf,
+    map: &BTreeMap<String, Vec<String>>,
+) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -132,12 +139,71 @@ fn write_file_map_atomic(path: &PathBuf, map: &BTreeMap<String, Vec<String>>) ->
 fn restrict_permissions(path: &PathBuf) {
     use std::os::unix::fs::PermissionsExt;
     if let Err(err) = fs::set_permissions(path, fs::Permissions::from_mode(0o600)) {
-        log::warn!("Failed to restrict permissions on {}: {err}", path.display());
+        log::warn!(
+            "Failed to restrict permissions on {}: {err}",
+            path.display()
+        );
     }
 }
 
 #[cfg(not(unix))]
 fn restrict_permissions(_path: &PathBuf) {}
+
+fn secrets_index_path() -> PathBuf {
+    resolve_jan_data_folder().join(SECRETS_INDEX_FILE_NAME)
+}
+
+fn read_index() -> BTreeSet<String> {
+    fs::read(secrets_index_path())
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+fn write_index(names: &BTreeSet<String>) -> Result<(), String> {
+    let path = secrets_index_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let body = serde_json::to_vec(names).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, &body).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
+/// Index updates are bookkeeping: a failure must never fail the store/delete
+/// that carries the actual secret, so it is logged and swallowed.
+fn index_set(provider: &str, present: bool) {
+    let Ok(_guard) = INDEX_LOCK.lock() else {
+        return;
+    };
+    let mut names = read_index();
+    let changed = match present {
+        true => names.insert(provider.to_string()),
+        false => names.remove(provider),
+    };
+    if changed {
+        if let Err(err) = write_index(&names) {
+            log::warn!("Failed to update the provider secret index: {err}");
+        }
+    }
+}
+
+/// Whether a key is stored for `provider`, without reading the key.
+///
+/// Presence has to be answerable cheaply: on macOS a keychain item's ACL is
+/// per-entry and every authorization dialog is labelled with the shared service
+/// name, so probing the real store to answer "does this provider have a key"
+/// produced one indistinguishable prompt per provider. The index holds provider
+/// names only -- never secret material.
+///
+/// The index is authoritative once written; the encrypted fallback file is
+/// consulted as a backstop because reading it is free (no prompt) and it covers
+/// installs whose index predates this file. A keyring entry written before the
+/// index existed reads as absent until the owning app next stores that key.
+pub fn has_stored_key(provider: &str) -> bool {
+    read_index().contains(provider) || !file_load(provider).is_empty()
+}
 
 fn file_store(provider: &str, keys: &[String]) -> Result<(), String> {
     let _guard = FILE_LOCK.lock().map_err(|e| e.to_string())?;
@@ -176,12 +242,17 @@ pub fn store_provider_keys(provider: &str, keys: &[String]) -> Result<(), String
             Ok(()) => {
                 // Keyring is authoritative; drop any stale fallback copy.
                 let _ = file_remove(provider);
+                index_set(provider, true);
                 return Ok(());
             }
             Err(err) => note_keyring_failure(&err),
         }
     }
-    file_store(provider, keys)
+    let stored = file_store(provider, keys);
+    if stored.is_ok() {
+        index_set(provider, true);
+    }
+    stored
 }
 
 /// Remove a provider's stored keys from both the keyring and the fallback file.
@@ -196,7 +267,9 @@ pub fn delete_provider_keys(provider: &str) -> Result<(), String> {
             }
         }
     }
-    file_remove(provider)
+    let removed = file_remove(provider);
+    index_set(provider, false);
+    removed
 }
 
 /// Read a provider's key chain: keyring first, then the fallback file. Returns
@@ -244,7 +317,9 @@ pub fn store_secret_record(key: &str, value: &str) -> Result<(), String> {
 
 /// Read a secret record stored via [`store_secret_record`]. `None` when absent.
 pub fn load_secret_record(key: &str) -> Option<String> {
-    load_provider_keys(&format!("auth:{key}")).into_iter().next()
+    load_provider_keys(&format!("auth:{key}"))
+        .into_iter()
+        .next()
 }
 
 /// Remove a secret record stored via [`store_secret_record`]. Missing entries
@@ -277,7 +352,6 @@ mod tests {
     use super::*;
     use std::sync::MutexGuard;
 
-
     // Field order is drop order: `_dir` must be removed and the env restored
     // while the lock is still held, so `_guard` has to be the last field.
     struct TempDataFolder {
@@ -288,7 +362,9 @@ mod tests {
 
     impl TempDataFolder {
         fn new() -> Self {
-            let guard = SECRET_STORE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let guard = SECRET_STORE_TEST_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             let dir = tempfile::tempdir().unwrap();
             let prev_data_folder = std::env::var("JAN_DATA_FOLDER").ok();
             // Portable override: XDG_DATA_HOME only redirects on Linux, so
@@ -334,12 +410,45 @@ mod tests {
         // A missing key is normal churn -> must not disable the keyring.
         assert!(!is_infra_failure(&keyring::Error::NoEntry));
         // Backend-unusable errors (D-Bus timeout surfaces as PlatformFailure) latch.
-        assert!(is_infra_failure(&keyring::Error::PlatformFailure(Box::new(
-            std::io::Error::other("dbus timeout")
-        ))));
-        assert!(is_infra_failure(&keyring::Error::NoStorageAccess(Box::new(
-            std::io::Error::other("locked")
-        ))));
+        assert!(is_infra_failure(&keyring::Error::PlatformFailure(
+            Box::new(std::io::Error::other("dbus timeout"))
+        )));
+        assert!(is_infra_failure(&keyring::Error::NoStorageAccess(
+            Box::new(std::io::Error::other("locked"))
+        )));
+    }
+
+    /// Presence must be answerable from the index alone: `has_stored_key` is
+    /// what replaced probing the real store, and probing is exactly the thing
+    /// that costs a keychain prompt per provider on macOS.
+    #[test]
+    fn the_index_answers_presence_without_the_secret() {
+        let _tmp = TempDataFolder::new();
+        assert!(!has_stored_key("openai"));
+
+        index_set("openai", true);
+        assert!(has_stored_key("openai"));
+        assert!(!has_stored_key("anthropic"), "presence is per provider");
+
+        // The index carries names, never key material.
+        let raw = fs::read_to_string(secrets_index_path()).unwrap();
+        assert!(raw.contains("openai"));
+
+        index_set("openai", false);
+        assert!(!has_stored_key("openai"));
+    }
+
+    /// An install whose keys predate the index still has the encrypted fallback
+    /// file, which is free to read, so presence is not silently lost there.
+    #[test]
+    fn the_fallback_file_backstops_a_missing_index() {
+        let _tmp = TempDataFolder::new();
+        file_store("openai", &["sk-x".to_string()]).unwrap();
+        assert!(
+            !secrets_index_path().exists(),
+            "no index written by file_store"
+        );
+        assert!(has_stored_key("openai"));
     }
 
     #[test]
@@ -387,8 +496,14 @@ mod tests {
         file_store("openai", &[secret.to_string()]).unwrap();
         let bytes = fs::read(secrets_file_path()).unwrap();
         let haystack = String::from_utf8_lossy(&bytes);
-        assert!(!haystack.contains(secret), "secret must not appear in plaintext on disk");
-        assert!(!haystack.contains("openai"), "provider name must not appear in plaintext");
+        assert!(
+            !haystack.contains(secret),
+            "secret must not appear in plaintext on disk"
+        );
+        assert!(
+            !haystack.contains("openai"),
+            "provider name must not appear in plaintext"
+        );
     }
 
     #[cfg(unix)]
@@ -397,7 +512,10 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let _tmp = TempDataFolder::new();
         file_store("openai", &["sk-x".to_string()]).unwrap();
-        let mode = fs::metadata(secrets_file_path()).unwrap().permissions().mode();
+        let mode = fs::metadata(secrets_file_path())
+            .unwrap()
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o777, 0o600);
     }
 }

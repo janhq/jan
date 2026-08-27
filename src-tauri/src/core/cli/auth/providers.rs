@@ -308,6 +308,7 @@ fn persist(
                 Transport::Anthropic => Some("anthropic".to_string()),
                 Transport::OpenAi => None,
             },
+            ..Default::default()
         },
     ) {
         Ok(path) => path,
@@ -580,6 +581,7 @@ mod tests {
                     base_url: Some("https://api.deepseek.com/v1".into()),
                     models: Some(vec!["deepseek-chat".into()]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .unwrap();

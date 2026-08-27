@@ -114,6 +114,16 @@ pub fn is_cli_reachable(config: &ProviderConfig) -> bool {
     config.base_url.as_deref().is_some_and(|u| !u.is_empty())
 }
 
+/// Log a provider-config load failure at most once per process. Startup probes
+/// this in two independent places (the headless sign-in guard and the model
+/// fallback), and a malformed `~/.jan/config.toml` fails both, so without this
+/// the same multi-line TOML error is printed twice before the fatal error
+/// prints it a third time.
+fn warn_load_failure_once(context: &str, err: &str) {
+    static LOGGED: std::sync::Once = std::sync::Once::new();
+    LOGGED.call_once(|| log::warn!("could not load provider configs{context}: {err}"));
+}
+
 /// Whether this install can run a turn at all: some provider is reachable and
 /// either credentialed or local (a self-hosted endpoint - typically the desktop
 /// app's API server - needs no key). `false` is the fresh-install state that
@@ -124,7 +134,7 @@ pub fn has_usable_provider(project_root: Option<&std::path::Path>) -> bool {
     match load_provider_configs(project_root, &overrides) {
         Ok(configs) => configs.values().any(is_usable),
         Err(e) => {
-            log::warn!("could not load provider configs: {e}");
+            warn_load_failure_once("", &e);
             false
         }
     }
@@ -155,9 +165,7 @@ fn is_usable(config: &ProviderConfig) -> bool {
     if !is_cli_reachable(config) {
         return false;
     }
-    config.api_key.is_some()
-        || !config.api_keys.is_empty()
-        || config.base_url.as_deref().is_some_and(is_loopback_url)
+    has_credential(config) || config.base_url.as_deref().is_some_and(is_loopback_url)
 }
 
 /// Whether a base URL points at this machine, where an API key is usually not
@@ -178,15 +186,31 @@ pub(crate) fn is_loopback_url(url: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "0.0.0.0" | "::1")
 }
 
-/// `(provider, model_id)` pairs the CLI can actually run, sorted by provider
-/// then model.
+/// `(provider, model_id)` pairs the CLI can actually run: Tokamak first, then
+/// every other provider by name, models sorted within each.
+///
+/// Tokamak leads because it is the provider the product signs users in to; a
+/// plain alphabetical sort buried it below whatever else happened to be
+/// configured. Ordering only -- nothing is filtered by provider, so a user who
+/// prefers another provider still sees it.
 pub fn reachable_models(configs: &HashMap<String, ProviderConfig>) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = configs
         .values()
         .filter(|c| is_cli_reachable(c))
         .flat_map(|c| c.models.iter().map(|m| (c.provider.clone(), m.clone())))
         .collect();
-    out.sort();
+    // `false < true`, so the Tokamak rows sort ahead of everything else while
+    // the rest stay alphabetical.
+    out.sort_by(|a, b| {
+        let key = |(provider, model): &(String, String)| {
+            (
+                provider != super::tokamak::PROVIDER,
+                provider.clone(),
+                model.clone(),
+            )
+        };
+        key(a).cmp(&key(b))
+    });
     out
 }
 
@@ -226,7 +250,7 @@ pub fn list_provider_models(project_root: Option<&std::path::Path>) -> Vec<(Stri
     match load_provider_configs(project_root, &ProviderOverrides::default().with_env()) {
         Ok(configs) => reachable_models(&configs),
         Err(e) => {
-            log::warn!("could not load provider configs for the model picker: {e}");
+            warn_load_failure_once(" for the model picker", &e);
             Vec::new()
         }
     }
@@ -257,24 +281,27 @@ pub async fn fetch_missing_models(
         .filter(|c| {
             global.contains_key(&c.provider) && is_cli_reachable(c) && c.models.is_empty()
         })
-        .map(|c| {
-            (
-                c.provider.clone(),
-                c.base_url.clone().unwrap_or_default(),
-                c.bearer_key_chain(),
-            )
-        })
         // Probe each provider at most once per session. A provider that still
         // has an empty list after a probe was unreachable or offered nothing;
         // re-probing it on every bare `/model` would freeze the render loop
-        // for the full request timeout each time.
-        .filter(|(name, base_url, _)| {
-            let tag = format!("{name}|{base_url}");
+        // for the full request timeout each time. Filtered before the key is
+        // fetched so a re-open cannot re-prompt for a provider already probed.
+        .filter(|c| {
+            let tag = format!("{}|{}", c.provider, c.base_url.clone().unwrap_or_default());
             if already_probed.contains(&tag) {
                 return false;
             }
             already_probed.insert(tag);
             true
+        })
+        .cloned()
+        .map(|mut c| {
+            hydrate_provider_keys(&mut c);
+            (
+                c.provider.clone(),
+                c.base_url.clone().unwrap_or_default(),
+                c.bearer_key_chain(),
+            )
         })
         .collect();
     if to_fetch.is_empty() {
@@ -316,6 +343,7 @@ pub async fn fetch_missing_models(
                 clear_api_key: false,
                 models: Some(models),
                 api_type: None,
+                ..Default::default()
             },
         )?;
         populated = true;
@@ -425,17 +453,20 @@ fn seed_from_credential_store(configs: &mut HashMap<String, ProviderConfig>) {
 
 /// Layer in providers from Desktop's `settings.json` that Global doesn't
 /// already define. Read-only inherit: never overwrites a Global entry, never
-/// writes back to `settings.json`. Secrets are seeded from the OS keyring /
-/// encrypted fallback file (#8388) since they no longer live in the JSON blob.
+/// writes back to `settings.json`.
+///
+/// Their secrets live in the OS keyring (#8388) and are deliberately *not*
+/// read here: this runs on startup, on every `/model` open and on every status
+/// call, and reading N keychain items costs N macOS authorization prompts for
+/// providers a run will never select. Keys are fetched by
+/// [`hydrate_provider_keys`] for the one provider that is actually used;
+/// [`has_stored_key`] answers presence without touching the secret.
 fn inherit_desktop_providers(configs: &mut HashMap<String, ProviderConfig>) {
     let path = resolve_jan_data_folder().join("settings.json");
-    let mut desktop_configs = match std::fs::read_to_string(&path) {
+    let desktop_configs = match std::fs::read_to_string(&path) {
         Ok(raw) => parse_provider_store(&raw),
         Err(_) => return,
     };
-    seed_keys_from_store(&mut desktop_configs, |p| {
-        crate::core::server::provider_secrets::load_provider_keys(p)
-    });
     for (name, cfg) in desktop_configs {
         configs.entry(name).or_insert(cfg);
     }
@@ -473,24 +504,40 @@ fn provider_config_from_section(section: ProviderSection) -> ProviderConfig {
 /// Seed each config's key chain from the secret store when the settings blob
 /// carried no key. `load` is injected for testability. Explicit `--api-key`/env
 /// overrides run afterward and still win.
-fn seed_keys_from_store(
-    configs: &mut HashMap<String, ProviderConfig>,
-    load: impl Fn(&str) -> Vec<String>,
-) {
-    for (name, cfg) in configs.iter_mut() {
-        if cfg.api_key.is_some() {
-            continue;
-        }
-        let keys = load(name);
-        if !keys.is_empty() {
-            cfg.api_key = keys.first().cloned();
-            cfg.api_keys = keys;
-        }
+/// Fill in a provider's key chain from the OS secret store, on demand.
+///
+/// No-op when the config already carries one: `~/.jan/config.toml` providers
+/// (Tokamak included) hold their key inline, as do `--api-key`/env overrides,
+/// so the prioritized path never reaches the keyring at all. Call this only for
+/// a provider that is about to be used -- each call can cost a macOS keychain
+/// prompt.
+pub fn hydrate_provider_keys(config: &mut ProviderConfig) {
+    hydrate_with(config, |p| {
+        crate::core::server::provider_secrets::load_provider_keys(p)
+    })
+}
+
+fn hydrate_with(config: &mut ProviderConfig, mut load: impl FnMut(&str) -> Vec<String>) {
+    if !config.bearer_key_chain().is_empty() {
+        return;
+    }
+    let keys = load(&config.provider);
+    if !keys.is_empty() {
+        config.api_key = keys.first().cloned();
+        config.api_keys = keys;
     }
 }
 
+/// Whether `config` can present a key, without reading one. Inline keys answer
+/// themselves; anything else defers to the secret store's presence index.
+pub fn has_credential(config: &ProviderConfig) -> bool {
+    !config.bearer_key_chain().is_empty()
+        || crate::core::server::provider_secrets::has_stored_key(&config.provider)
+}
+
 /// Parse the `settings.json` body into provider configs. Tolerant of shape
-/// drift: anything it cannot read is skipped rather than erroring.
+/// drift: anything it cannot read is skipped rather than erroring. Providers
+/// Desktop has marked inactive are skipped too (see `provider_from_json`).
 fn parse_provider_store(raw: &str) -> HashMap<String, ProviderConfig> {
     let root: serde_json::Value = match serde_json::from_str(raw) {
         Ok(v) => v,
@@ -526,6 +573,16 @@ fn parse_provider_store(raw: &str) -> HashMap<String, ProviderConfig> {
 
 fn provider_from_json(p: &serde_json::Value) -> Option<ProviderConfig> {
     let provider = p.get("provider").and_then(|v| v.as_str())?.to_string();
+
+    // A provider the user switched off in Desktop is not an option here either.
+    // Desktop stops registering an inactive provider (`syncRemoteProviders`
+    // gates on `active`), so inheriting one meant offering an entry whose key
+    // Desktop no longer maintains. Absent field = inherit: `active` is written
+    // for every provider Desktop creates, so only an explicit `false` is a
+    // deliberate opt-out.
+    if p.get("active").and_then(|v| v.as_bool()) == Some(false) {
+        return None;
+    }
 
     let base_url = p
         .get("base_url")
@@ -639,6 +696,34 @@ mod tests {
         assert!(openai.api_keys.is_empty());
     }
 
+    /// Desktop stops maintaining an inactive provider's key, so inheriting one
+    /// offers an entry that cannot run and reports as keyless.
+    #[test]
+    fn an_inactive_desktop_provider_is_not_inherited() {
+        let store = STORE.replace(
+            r#"{\"provider\":\"openai\""#,
+            r#"{\"provider\":\"openai\",\"active\":false"#,
+        );
+        let configs = parse_provider_store(&store);
+        assert!(!configs.contains_key("openai"), "inactive provider skipped");
+        assert!(configs.contains_key("anthropic"), "active one still there");
+    }
+
+    #[test]
+    fn an_active_desktop_provider_is_inherited() {
+        let store = STORE.replace(
+            r#"{\"provider\":\"openai\""#,
+            r#"{\"provider\":\"openai\",\"active\":true"#,
+        );
+        assert!(parse_provider_store(&store).contains_key("openai"));
+    }
+
+    /// Stores predating the flag, and any shape drift, must keep working.
+    #[test]
+    fn a_provider_without_the_active_flag_is_inherited() {
+        assert!(parse_provider_store(STORE).contains_key("openai"));
+    }
+
     #[test]
     fn malformed_store_yields_empty_map() {
         assert!(parse_provider_store("not json").is_empty());
@@ -687,14 +772,14 @@ mod tests {
     }
 
     #[test]
-    fn seed_fills_missing_key_from_store() {
+    fn hydrate_fills_missing_key_from_store() {
         let mut configs = parse_provider_store(STORE);
-        // openai has an empty key in the blob -> should be seeded.
-        seed_keys_from_store(&mut configs, |p| match p {
+        // openai has an empty key in the blob -> should be filled in.
+        let openai = configs.get_mut("openai").unwrap();
+        hydrate_with(openai, |p| match p {
             "openai" => vec!["sk-stored-1".to_string(), "sk-stored-2".to_string()],
             _ => Vec::new(),
         });
-        let openai = configs.get("openai").unwrap();
         assert_eq!(openai.api_key.as_deref(), Some("sk-stored-1"));
         assert_eq!(
             openai.api_keys,
@@ -703,19 +788,43 @@ mod tests {
     }
 
     #[test]
-    fn seed_does_not_clobber_existing_key() {
+    fn hydrate_does_not_clobber_existing_key() {
         let mut configs = parse_provider_store(STORE);
         // anthropic already has sk-ant-123 from the blob -> store must not win.
-        seed_keys_from_store(&mut configs, |_| vec!["sk-should-not-apply".to_string()]);
-        let anthropic = configs.get("anthropic").unwrap();
+        let anthropic = configs.get_mut("anthropic").unwrap();
+        hydrate_with(anthropic, |_| vec!["sk-should-not-apply".to_string()]);
         assert_eq!(anthropic.api_key.as_deref(), Some("sk-ant-123"));
     }
 
+    /// The whole point of deferring: a desktop-inherited provider is keyless
+    /// as loaded, and reaches the secret store exactly once, only when it is
+    /// the provider actually being used -- each read can cost a macOS keychain
+    /// prompt.
     #[test]
-    fn seed_empty_store_leaves_key_none() {
+    fn a_desktop_provider_stays_keyless_until_hydrated() {
         let mut configs = parse_provider_store(STORE);
-        seed_keys_from_store(&mut configs, |_| Vec::new());
-        assert_eq!(configs.get("openai").unwrap().api_key, None);
+        let openai = configs.get_mut("openai").unwrap();
+        assert_eq!(openai.api_key, None, "keyless until hydrated");
+
+        let mut reads = 0;
+        hydrate_with(openai, |_| {
+            reads += 1;
+            Vec::new()
+        });
+        assert_eq!(reads, 1, "and exactly one read when it is");
+        assert_eq!(openai.api_key, None);
+    }
+
+    #[test]
+    fn hydrate_skips_the_store_when_a_key_is_already_present() {
+        let mut configs = parse_provider_store(STORE);
+        let anthropic = configs.get_mut("anthropic").unwrap();
+        let mut reads = 0;
+        hydrate_with(anthropic, |_| {
+            reads += 1;
+            Vec::new()
+        });
+        assert_eq!(reads, 0, "an inline key must not trigger a store read");
     }
 
     #[test]
@@ -819,6 +928,51 @@ mod tests {
         assert!(!is_loopback_url("https://localhost.evil.com/v1"));
         assert!(!is_loopback_url("https://api.tokamak.sh/v1"));
         assert!(!is_loopback_url(""));
+    }
+
+    /// Tokamak leads the `/model` picker; everything else keeps its alphabetical
+    /// order behind it, and models stay sorted within each provider.
+    #[test]
+    fn reachable_models_lists_tokamak_first() {
+        let mut configs = HashMap::new();
+        configs.insert(
+            "anthropic".to_string(),
+            cfg("anthropic", Some("https://api.anthropic.com/v1"), &["claude-sonnet-5"]),
+        );
+        configs.insert(
+            "tokamak".to_string(),
+            cfg("tokamak", Some("https://api.tokamak.sh/v1"), &["tokamak-1-preview"]),
+        );
+        configs.insert(
+            "openai".to_string(),
+            cfg("openai", Some("https://api.openai.com/v1"), &["gpt-5", "gpt-4o"]),
+        );
+
+        assert_eq!(
+            reachable_models(&configs),
+            vec![
+                ("tokamak".to_string(), "tokamak-1-preview".to_string()),
+                ("anthropic".to_string(), "claude-sonnet-5".to_string()),
+                ("openai".to_string(), "gpt-4o".to_string()),
+                ("openai".to_string(), "gpt-5".to_string()),
+            ]
+        );
+    }
+
+    /// Ordering is the only change: with no Tokamak entry the list is exactly
+    /// the alphabetical order it always was.
+    #[test]
+    fn without_tokamak_the_order_is_unchanged() {
+        let mut configs = HashMap::new();
+        configs.insert("zeta".to_string(), cfg("zeta", Some("https://z.example/v1"), &["z1"]));
+        configs.insert("alpha".to_string(), cfg("alpha", Some("https://a.example/v1"), &["a1"]));
+        assert_eq!(
+            reachable_models(&configs),
+            vec![
+                ("alpha".to_string(), "a1".to_string()),
+                ("zeta".to_string(), "z1".to_string()),
+            ]
+        );
     }
 
     #[test]
@@ -968,6 +1122,7 @@ mod tests {
                     clear_api_key: false,
                     models: Some(vec![]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();
@@ -996,6 +1151,7 @@ mod tests {
                     clear_api_key: false,
                     models: Some(vec!["my-model".into()]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();
@@ -1025,6 +1181,7 @@ mod tests {
                     clear_api_key: false,
                     models: Some(vec![]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();
@@ -1075,6 +1232,7 @@ mod tests {
                         clear_api_key: false,
                         models: Some(vec![]),
                         api_type: None,
+                                            ..Default::default()
                     },
                 )
                 .unwrap();
@@ -1103,6 +1261,7 @@ mod tests {
                     clear_api_key: false,
                     models: Some(vec![]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();
@@ -1207,6 +1366,7 @@ mod tests {
                         base_url: Some("http://localhost:1337/v1".into()),
                         models: Some(vec!["jan-local".into()]),
                         api_type: None,
+                        ..Default::default()
                     },
                 )
                 .unwrap();
@@ -1232,6 +1392,7 @@ mod tests {
                         base_url: Some("https://mock/v1".into()),
                         models: Some(vec!["deepseek-chat".into()]),
                         api_type: None,
+                        ..Default::default()
                     },
                 )
                 .unwrap();
@@ -1261,6 +1422,7 @@ mod tests {
                         base_url: Some("https://mock/v1".into()),
                         models: Some(vec!["deepseek-chat".into()]),
                         api_type: None,
+                        ..Default::default()
                     },
                 )
                 .unwrap();

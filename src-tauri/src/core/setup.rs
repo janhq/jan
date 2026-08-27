@@ -1,4 +1,6 @@
-use std::{fs, path::PathBuf, sync::Arc, time::Duration};
+use std::{fs, sync::Arc, time::Duration};
+#[cfg(target_os = "linux")]
+use std::path::PathBuf;
 use tauri::{App, AppHandle, Emitter, Listener, Manager, Runtime, WindowEvent, Wry};
 
 #[cfg(feature = "desktop")]

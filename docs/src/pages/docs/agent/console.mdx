@@ -105,6 +105,30 @@ Two knobs in `agent.toml` and two in `~/.jan/config.toml` tune this:
 
 See [Project config](/docs/agent/project-config) for the `agent.toml` keys.
 
+## Questions
+
+The agent can use the `ask` tool when it needs your choice before it keeps working. The console
+stops the run and shows a question with options; one option may be marked as recommended.
+
+By default a question waits forever for your answer. To keep unattended or long-running runs from
+stalling when nobody is at the terminal, set `ask_timeout_secs` in `~/.jan/config.toml`, or edit
+the same row in `/settings`:
+
+```toml
+ask_timeout_secs = 60
+```
+
+When the value is `N`, an unanswered question auto-resolves after `N` seconds. Jan chooses the
+recommended option when the question has one, otherwise the first option. The auto choice is always
+one of the listed options, not the UI-only custom answer. `0` or an unset key means wait forever,
+which is the default.
+
+Timed-out answers are marked in the tool result with `NOTE [ask_timeout]`, so the agent can tell
+they were auto-selected instead of typed by you.
+
+This does not apply to the tool-permission prompts from `jan --safe`; those never auto-approve. See
+[Approving work](#approving-work) and [Tool permissions](/docs/agent/permissions).
+
 ## Approving work
 
 Writes and shell commands are auto-approved. Start the console with `jan --safe` and they stop to

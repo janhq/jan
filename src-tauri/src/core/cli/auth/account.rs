@@ -1087,6 +1087,7 @@ async fn complete_code_login(
             base_url: Some(definition.default_base_url),
             models: Some(models),
             api_type,
+            ..Default::default()
         },
     ) {
         let _ = CredentialStore::delete(provider.credential_provider());

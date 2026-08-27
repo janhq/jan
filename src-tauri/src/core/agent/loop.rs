@@ -4,25 +4,24 @@
 //! events, and one terminal `Done`/`Error`) while still returning the final
 //! completion JSON, so the API server's original contract is unchanged.
 
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-
-use async_trait::async_trait;
-use reqwest::Client;
+use std::sync::{Arc, LazyLock};
+// Agent upstream traffic runs on `genai`, which is built against reqwest 0.13;
+// the rest of the app is still on 0.12, so the two `Client` types differ.
+use reqwest13::Client;
 #[cfg(not(feature = "cli"))]
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
 
 use crate::core::agent::events::{StreamEvent, Usage};
 use crate::core::agent::session::SessionBudget;
-use tauri_plugin_agent_tools::tools::gate::{DenyReason, PermissionDecision};
 use crate::core::agent::upstream::{
     collect_mcp_openai_tools, copy_optional_chat_params, drop_malformed_tool_calls,
     execute_mcp_tool_calls, extract_choice_message, extract_tool_calls, load_assistant_config,
     parse_openai_messages, repair_dangling_tool_calls, resolve_api_type_for_model,
-    resolve_upstream_for_model,
-    set_system_prompt, stream_openai_chat_completions,
+    resolve_upstream_for_model, set_system_prompt, stream_openai_chat_completions,
 };
 use crate::core::server::converters::{converter_for, UpstreamConverter};
 #[cfg(not(feature = "cli"))]
@@ -33,6 +32,7 @@ use crate::core::{
     mcp::models::McpSettings,
     state::{ProviderConfig, SharedMcpServers},
 };
+use tauri_plugin_agent_tools::tools::gate::{DenyReason, PermissionDecision};
 
 /// In-flight permission prompts keyed by `request_id`, shared between the loop
 /// (which inserts a one-shot sender before awaiting) and the respond command
@@ -143,8 +143,7 @@ impl ToolOutcome {
 
 #[async_trait]
 pub(crate) trait ToolInvoker: Send + Sync {
-    async fn invoke(&self, tool_calls: &[serde_json::Value])
-        -> Result<Vec<ToolOutcome>, String>;
+    async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String>;
 }
 
 struct HttpModelInvoker {
@@ -159,6 +158,14 @@ struct HttpModelInvoker {
     /// this converter translates the request and decodes the upstream stream
     /// back into chat shape. `None` keeps the verbatim chat/completions path.
     converter: Option<Box<dyn UpstreamConverter>>,
+    /// Native provider converters still use reqwest 0.12 while the default
+    /// agent path uses genai's reqwest 0.13 client.
+    converter_client: reqwest::Client,
+}
+
+fn converter_http_client() -> reqwest::Client {
+    static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+    CLIENT.clone()
 }
 
 #[async_trait]
@@ -182,7 +189,7 @@ impl ModelInvoker for HttpModelInvoker {
         }
         if let Some(converter) = &self.converter {
             crate::core::agent::upstream::stream_converted_chat_completions(
-                &self.client,
+                &self.converter_client,
                 &self.upstream_url,
                 &self.api_keys,
                 converter.as_ref(),
@@ -195,6 +202,8 @@ impl ModelInvoker for HttpModelInvoker {
                 &self.client,
                 &self.upstream_url,
                 &self.api_keys,
+                // The agent speaks OpenAI chat/completions to default providers.
+                None,
                 &normalized,
                 events,
             )
@@ -202,7 +211,6 @@ impl ModelInvoker for HttpModelInvoker {
         }
     }
 }
-
 
 struct McpToolInvoker {
     tool_to_server: HashMap<String, String>,
@@ -212,10 +220,7 @@ struct McpToolInvoker {
 
 #[async_trait]
 impl ToolInvoker for McpToolInvoker {
-    async fn invoke(
-        &self,
-        tool_calls: &[serde_json::Value],
-    ) -> Result<Vec<ToolOutcome>, String> {
+    async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String> {
         let results = execute_mcp_tool_calls(
             tool_calls,
             &self.tool_to_server,
@@ -357,10 +362,27 @@ fn resolve_sandbox(_flag: Option<bool>, _configured: Option<bool>) -> bool {
     DEFAULT_SANDBOX
 }
 
+/// The configured `ask` auto-answer timeout. The setting lives in the
+/// CLI-only `global_config` module (the desktop `ask` surface is not wired up
+/// yet), so the desktop build has no timeout and blocks on an ask forever,
+/// exactly as it does today.
+#[cfg(feature = "cli")]
+fn ask_timeout_setting() -> Option<std::time::Duration> {
+    crate::core::agent::global_config::ask_timeout()
+}
+
+#[cfg(not(feature = "cli"))]
+fn ask_timeout_setting() -> Option<std::time::Duration> {
+    None
+}
+
 /// Whether `bash` would be confined in `project_root` with no `--sandbox` flag
 /// passed: the answer `jan cli agent status` reports and the TUI notices on.
 pub fn effective_sandbox(project_root: &std::path::Path) -> bool {
-    resolve_sandbox(None, crate::core::agent::project::run_settings(project_root).sandbox)
+    resolve_sandbox(
+        None,
+        crate::core::agent::project::run_settings(project_root).sandbox,
+    )
 }
 
 /// agent.toml resolved for one run: the skill whitelist, plus the network
@@ -388,6 +410,32 @@ fn resolve_run_settings(
     }
 }
 
+/// Build a tool output sink that streams deltas to the run's event channel.
+///
+/// The sender is downgraded: `bash` hands its child to a detached task that
+/// keeps the sink alive after the call returns (that is what makes a
+/// backgrounded job keep reporting), and a strong clone in there would hold the
+/// run's channel open forever -- every consumer waits on channel closure, so the
+/// desktop's `invoke`, the headless printer and a subagent's forwarder would all
+/// hang once the turn was logically done. A weak sender still resolves for as
+/// long as the run holds its own sender, so live output is unaffected; once the
+/// run ends, a straggler's output is dropped, which is what it is worth.
+fn output_sink(
+    events: &mpsc::UnboundedSender<StreamEvent>,
+    id: &str,
+) -> tauri_plugin_agent_tools::tools::OutputSink {
+    let events = events.downgrade();
+    let id = id.to_string();
+    std::sync::Arc::new(move |delta: String| {
+        if let Some(events) = events.upgrade() {
+            let _ = events.send(StreamEvent::ToolOutputDelta {
+                id: id.clone(),
+                delta,
+            });
+        }
+    })
+}
+
 impl CompositeToolInvoker {
     fn tool_context(&self) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
         tauri_plugin_agent_tools::tools::ToolContext::new(
@@ -399,6 +447,18 @@ impl CompositeToolInvoker {
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
         .with_scratch_root(&self.scratch_root)
+    }
+
+    /// A tool context whose output streams to the run's event channel as
+    /// [`StreamEvent::ToolOutputDelta`], tagged with the call's `id`.
+    ///
+    /// Only exec-capable tools produce anything here: `bash` tees its child's
+    /// combined stdout/stderr through the sink as it reads. A send failure is
+    /// ignored -- the receiver is gone only when the run is over, and a dead
+    /// display must not stop the command.
+    fn streaming_tool_context(&self, id: &str) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
+        self.tool_context()
+            .with_output_sink(output_sink(&self.events, id))
     }
 
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
@@ -528,7 +588,8 @@ impl CompositeToolInvoker {
                 let mut registry = SubagentRegistry::load(&self.project_root);
                 match registry.create_in(&dir, def.clone(), scope, overwrite) {
                     Ok(shadows) => {
-                        let mut msg = format!("Created {scope_label}-scope subagent '{}'.", def.name);
+                        let mut msg =
+                            format!("Created {scope_label}-scope subagent '{}'.", def.name);
                         if shadows {
                             msg.push_str(
                                 " Note: it shadows a user-scope subagent of the same name.",
@@ -555,11 +616,17 @@ impl CompositeToolInvoker {
             Err(error) => return format!("ERROR: {error}"),
         };
         let (request_id, receiver) = register(registry).await;
+        // Resolve the configured timeout once, before sending the event: the
+        // same value both arms the timer below and rides on the event so the
+        // TUI can render a countdown without re-reading config (and so the
+        // displayed deadline never disagrees with actual enforcement).
+        let timeout = ask_timeout_setting();
         if self
             .events
             .send(StreamEvent::AskRequest {
                 request_id: request_id.clone(),
                 request: request.clone(),
+                timeout_secs: timeout.map(|d| d.as_secs()),
             })
             .is_err()
         {
@@ -571,7 +638,34 @@ impl CompositeToolInvoker {
             .await;
             return "ERROR [ask_cancelled]: interactive UI disconnected".to_string();
         }
-        match receiver.await {
+        let outcome = match timeout {
+            Some(duration) => match tokio::time::timeout(duration, receiver).await {
+                Ok(received) => received,
+                Err(_elapsed) => {
+                    // No answer in time: auto-select each question's recommended
+                    // (else first) option. Deregister so a late user answer is
+                    // rejected, and tell the UI to drop the now-dead prompt. This
+                    // is a distinct resolution from a user cancel, so it never
+                    // returns the `ask_cancelled` error below.
+                    let results = request.auto_selected_results();
+                    let _ = crate::core::agent::interaction::respond(
+                        registry,
+                        &request_id,
+                        Ok(results.clone()),
+                    )
+                    .await;
+                    let _ = self.events.send(StreamEvent::AskResolved {
+                        request_id: request_id.clone(),
+                    });
+                    return format!(
+                        "NOTE [ask_timeout]: no answer within the configured ask timeout; auto-selected the recommended (else first) option(s).\n{}",
+                        request.render_results(&results)
+                    );
+                }
+            },
+            None => receiver.await,
+        };
+        match outcome {
             Ok(Ok(results)) => match request.validate_results(&results) {
                 Ok(()) => request.render_results(&results),
                 Err(error) => format!("ERROR: invalid ask response: {error}"),
@@ -587,8 +681,7 @@ impl CompositeToolInvoker {
     async fn handle_todo_tool(&self, args: &serde_json::Value) -> String {
         use crate::core::agent::todo::{parse_target, render_result, TodoPhase};
         let Some(registry) = &self.todo_registry else {
-            return "ERROR [todo_unavailable]: todo tool requires an attached session"
-                .to_string();
+            return "ERROR [todo_unavailable]: todo tool requires an attached session".to_string();
         };
         let op = args.get("op").and_then(|v| v.as_str()).unwrap_or("");
         let mut list = registry.lock().await;
@@ -598,7 +691,11 @@ impl CompositeToolInvoker {
                     list_val
                         .iter()
                         .map(|p| {
-                            let name = p.get("phase").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let name = p
+                                .get("phase")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
                             let items = p
                                 .get("items")
                                 .and_then(|v| v.as_array())
@@ -653,7 +750,12 @@ impl CompositeToolInvoker {
                 let items: Vec<String> = args
                     .get("items")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(String::from).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(String::from)
+                            .collect()
+                    })
                     .unwrap_or_default();
                 if phase.is_empty() || items.is_empty() {
                     return "ERROR: append requires 'phase' and non-empty 'items'".to_string();
@@ -667,7 +769,9 @@ impl CompositeToolInvoker {
             Ok(()) => {
                 let snapshot = list.clone();
                 drop(list);
-                let _ = self.events.send(StreamEvent::TodoUpdate { list: snapshot.clone() });
+                let _ = self.events.send(StreamEvent::TodoUpdate {
+                    list: snapshot.clone(),
+                });
                 render_result(&snapshot)
             }
             Err(error) => format!("ERROR: {error}"),
@@ -711,10 +815,7 @@ fn plan_mode_read_only_msg(name: &str) -> String {
 
 #[async_trait]
 impl ToolInvoker for CompositeToolInvoker {
-    async fn invoke(
-        &self,
-        tool_calls: &[serde_json::Value],
-    ) -> Result<Vec<ToolOutcome>, String> {
+    async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String> {
         use tauri_plugin_agent_tools::tools::{
             gate::{resolve_decision, Decision, PromptKind},
             handlers::{execute_builtin_with_diff, preview_diff},
@@ -768,7 +869,11 @@ impl ToolInvoker for CompositeToolInvoker {
             // Subagent tools are handled ahead of the fs/exec gate and the MCP
             // fallback: they orchestrate nested runs, not filesystem access.
             if crate::core::agent::subagent::is_subagent_tool(name) {
-                let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 // Plan mode blocks subagent dispatch (a subagent could mutate).
                 // They are not advertised in Plan; this is defense in depth
                 // against a stale tool schema. Auto-approval cannot override.
@@ -787,7 +892,11 @@ impl ToolInvoker for CompositeToolInvoker {
                 continue;
             }
             if !is_builtin(name) {
-                let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 // Plan mode blocks all MCP tools: their capability is arbitrary
                 // and unknowable, so they are never advertised in Plan and are
                 // hard-denied here as defense in depth. Auto-approval cannot override.
@@ -879,8 +988,7 @@ impl ToolInvoker for CompositeToolInvoker {
                         .with_home_readonly(allow_home_read)
                         .with_sandbox(sandbox)
                         .with_scratch_root(&scratch);
-                    let (text, diff, images) =
-                        execute_builtin_with_diff(tool, &args, &ctx).await;
+                    let (text, diff, images) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
                         id,
                         content: text,
@@ -892,7 +1000,7 @@ impl ToolInvoker for CompositeToolInvoker {
             }
             let (text, diff, images) = match decision {
                 Decision::Allow => {
-                    execute_builtin_with_diff(tool, &args, &self.tool_context()).await
+                    execute_builtin_with_diff(tool, &args, &self.streaming_tool_context(&id)).await
                 }
                 Decision::HardDeny(reason) => {
                     (hard_deny_msg(name, reason, &self.project_root), None, None)
@@ -946,7 +1054,12 @@ impl ToolInvoker for CompositeToolInvoker {
                     self.permission_requests.lock().await.remove(&request_id);
                     match decision {
                         PermissionDecision::AllowOnce => {
-                            execute_builtin_with_diff(tool, &args, &self.tool_context()).await
+                            execute_builtin_with_diff(
+                                tool,
+                                &args,
+                                &self.streaming_tool_context(&id),
+                            )
+                            .await
                         }
                         PermissionDecision::AllowAlways => {
                             // Thread-scoped only; never persisted to agent.toml.
@@ -960,7 +1073,12 @@ impl ToolInvoker for CompositeToolInvoker {
                             } else {
                                 self.grants.lock().unwrap().grant(kind);
                             }
-                            execute_builtin_with_diff(tool, &args, &self.tool_context()).await
+                            execute_builtin_with_diff(
+                                tool,
+                                &args,
+                                &self.streaming_tool_context(&id),
+                            )
+                            .await
                         }
                         PermissionDecision::Deny => {
                             (format!("ERROR: tool '{name}' denied by user"), None, None)
@@ -1324,7 +1442,9 @@ async fn orchestrate_inner(
     // names the scratch, and whether there *is* one is the sandbox decision, so
     // both have to read the same answer or the model is told about a directory
     // nothing binds.
-    let settings = project_root.as_deref().map(|root| resolve_run_settings(root, *sandbox));
+    let settings = project_root
+        .as_deref()
+        .map(|root| resolve_run_settings(root, *sandbox));
 
     let mut system_prompt = build_run_system_prompt(
         assistant_instructions.as_deref(),
@@ -1349,7 +1469,10 @@ async fn orchestrate_inner(
         }
     }
     // Always tell the model today's date, including isolated child runs.
-    let date_line = format!("Today's date is {}.", chrono::Local::now().format("%Y-%m-%d"));
+    let date_line = format!(
+        "Today's date is {}.",
+        chrono::Local::now().format("%Y-%m-%d")
+    );
     let system_prompt = match system_prompt {
         Some(sys) => format!("{date_line}\n\n{sys}"),
         None => date_line,
@@ -1407,7 +1530,12 @@ async fn orchestrate_inner(
     #[cfg(not(feature = "cli"))]
     {
         if model_id.is_none() {
-            if let Some(first) = router_first_model(llama_state, client).await {
+            // The llama.cpp router is a desktop-only listing call on the app's
+            // reqwest 0.12 stack, not agent upstream traffic, so it does not use
+            // the genai client threaded through `OrchestrationArgs`.
+            static ROUTER_CLIENT: std::sync::LazyLock<reqwest::Client> =
+                std::sync::LazyLock::new(reqwest::Client::new);
+            if let Some(first) = router_first_model(llama_state, &ROUTER_CLIENT).await {
                 model_id = Some(first);
             }
         }
@@ -1487,9 +1615,10 @@ async fn orchestrate_inner(
         if args.subagents_enabled && run_mode != crate::core::agent::plan::RunMode::Plan {
             if let Some(root) = project_root {
                 let registry = crate::core::agent::subagent::SubagentRegistry::load(root);
-                for schema in
-                    crate::core::agent::subagent::subagent_tool_schemas(&registry, *max_parallel_subagents)
-                {
+                for schema in crate::core::agent::subagent::subagent_tool_schemas(
+                    &registry,
+                    *max_parallel_subagents,
+                ) {
                     let name = schema["function"]["name"].as_str().unwrap_or_default();
                     if permissions.is_denied(name) {
                         continue;
@@ -1544,6 +1673,7 @@ async fn orchestrate_inner(
         converter: resolve_api_type_for_model(&model_id, provider_configs.clone())
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
+        converter_client: converter_http_client(),
     };
     let mcp_tools = McpToolInvoker {
         tool_to_server,
@@ -1602,7 +1732,9 @@ async fn orchestrate_inner(
             permission_requests: permission_requests.clone(),
             ask_requests: ask_requests.clone(),
             todo_registry: todo_registry.clone(),
-            grants: std::sync::Mutex::new(tauri_plugin_agent_tools::tools::gate::SessionGrants::default()),
+            grants: std::sync::Mutex::new(
+                tauri_plugin_agent_tools::tools::gate::SessionGrants::default(),
+            ),
             subagents,
             auto_approve: *auto_approve,
             run_mode,
@@ -1630,9 +1762,11 @@ async fn orchestrate_inner(
         }
         if index_memory {
             if let Ok(completion) = &result {
-                if let Some(answer) = extract_choice_message(completion)
-                    .and_then(|m| m.get("content").and_then(|c| c.as_str()).map(str::to_string))
-                {
+                if let Some(answer) = extract_choice_message(completion).and_then(|m| {
+                    m.get("content")
+                        .and_then(|c| c.as_str())
+                        .map(str::to_string)
+                }) {
                     crate::core::agent::memory::index_message(root, "assistant", &answer);
                 }
             }
@@ -1705,10 +1839,7 @@ fn build_completion_request(
     };
     let mut completion_map = serde_json::Map::new();
     completion_map.insert("model".to_string(), serde_json::json!(model_id));
-    completion_map.insert(
-        "messages".to_string(),
-        serde_json::Value::Array(messages),
-    );
+    completion_map.insert("messages".to_string(), serde_json::Value::Array(messages));
     let tool_choice = forced_tool_choice
         .filter(|name| {
             openai_tools
@@ -1758,14 +1889,10 @@ pub(crate) async fn compact_history(
         converter: resolve_api_type_for_model(model_id, args.provider_configs.clone())
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
+        converter_client: converter_http_client(),
     };
-    crate::core::agent::compaction::compact_conversation(
-        messages,
-        model_id,
-        &model,
-        keep_recent,
-    )
-    .await
+    crate::core::agent::compaction::compact_conversation(messages, model_id, &model, keep_recent)
+        .await
 }
 
 /// Run one stateless `/goal` evaluation against `smol_model_id` (the session's
@@ -1796,6 +1923,7 @@ pub(crate) async fn evaluate_goal(
         converter: resolve_api_type_for_model(smol_model_id, args.provider_configs.clone())
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
+        converter_client: converter_http_client(),
     };
     crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
 }
@@ -1872,6 +2000,10 @@ async fn run_turn_cycle(
     // fixed turn cap.
     let unlimited = max_turns == 0;
     let mut turn: usize = 0;
+    // The budget notice is announced once, on the turn that crosses the
+    // ceiling. Without the latch every later turn would push another copy and
+    // the notice would crowd out the conversation it is annotating.
+    let mut budget_notice_recorded = false;
     // Mid-run todo upkeep: after a long uninterrupted run of mutating tool
     // calls with no todo touch, nudge the model once to keep the list honest
     // rather than only ever reminding it at a full stop -- a task that never
@@ -2010,42 +2142,69 @@ async fn run_turn_cycle(
                     continue;
                 }
             }
+            // Every turn is finished and the run passed its token ceiling, so
+            // the conversation is both complete and oversized. Compact it here,
+            // while nothing is waiting on the result: the ceiling no longer
+            // stops a run, so without this the thread only grows, and the next
+            // run resumes it by sending the whole oversized history upstream.
+            // The reactive path above cannot help with that -- it only fires
+            // once an upstream has already rejected a request.
+            //
+            // Only when it actually shrinks: `compact_conversation` returns the
+            // input untouched when there is too little to drop, and publishing
+            // an unchanged history would spend a summarizer call for nothing.
+            if budget.exhausted() {
+                match crate::core::agent::compaction::compact_conversation(
+                    &conversation_messages,
+                    model_id,
+                    model,
+                    crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
+                )
+                .await
+                {
+                    Ok(compacted) if compacted.len() < conversation_messages.len() => {
+                        log::info!(
+                            "agent: budget exhausted at end of run, compacted {} -> {} messages",
+                            conversation_messages.len(),
+                            compacted.len()
+                        );
+                        conversation_messages = compacted;
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        log::warn!("agent: budget exhausted but compaction failed: {error}");
+                    }
+                }
+            }
             let _ = events.send(StreamEvent::MessagesUpdated {
                 messages: conversation_messages.clone(),
             });
             return Ok(completion);
         }
 
-        // The session budget is exhausted. This is a soft stop, not an error:
-        // a subagent that inherits the parent's remaining budget must hand back
-        // its partial progress (as an assistant message) so the parent can act
-        // on it, instead of the run hard-failing and losing the work. Tool
-        // calls are not executed; nothing further is spent against the ceiling.
-        if budget.exhausted() {
-            let partial = extract_choice_message(&completion)
-                .and_then(|m| m.get("content").and_then(|c| c.as_str()))
-                .unwrap_or("")
-                .to_string();
-            let stop_note = format!(
-                "[session token budget exhausted ({} tokens)] Partial progress so far:\n\
-                 {}",
-                budget.spent(),
-                if partial.is_empty() {
-                    "(none yet reported)".to_string()
-                } else {
-                    partial
-                }
-            );
+        // Crossing the session budget is advisory: it is recorded and the run
+        // carries on, tool calls included. Note what this costs -- `max_turns
+        // == 0` is the normal case (see above), so with the budget no longer
+        // stopping anything, user cancellation is the only remaining bound on a
+        // run's spend.
+        //
+        // Recorded as a system note rather than an assistant turn: the model
+        // never wrote it, and putting a bracketed status marker in the
+        // assistant's voice hands it an example of itself emitting one, which
+        // is the shape a model will imitate unprompted on later turns.
+        if budget.exhausted() && !budget_notice_recorded {
+            budget_notice_recorded = true;
             conversation_messages.push(serde_json::json!({
-                "role": "assistant",
-                "content": stop_note,
+                "role": "system",
+                "content": format!(
+                    "[session token budget exhausted ({} tokens)] The configured \
+                     ceiling has been passed; this run is continuing past it.",
+                    budget.spent()
+                ),
             }));
             let _ = events.send(StreamEvent::MessagesUpdated {
                 messages: conversation_messages.clone(),
             });
-            return Ok(serde_json::json!({
-                "choices": [{ "message": { "content": stop_note }, "finish_reason": "stop" }]
-            }));
         }
 
         for tc in &tool_calls {
@@ -2116,7 +2275,11 @@ async fn run_turn_cycle(
         // sees the error and retries with a shorter response next turn.
         if stop_reason_of(&completion) == "length" {
             for tc in &tool_calls {
-                let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let content =
                     "ERROR: response truncated (finish_reason=length); tool-call arguments are \
                      incomplete and were not executed. Retry with a shorter response."
@@ -2328,7 +2491,10 @@ mod tests {
         std::sync::Arc::new(tokio::sync::Mutex::new(TodoList {
             phases: vec![TodoPhase {
                 name: "P".into(),
-                tasks: vec![TodoItem { content: "t1".into(), status: TodoStatus::Pending }],
+                tasks: vec![TodoItem {
+                    content: "t1".into(),
+                    status: TodoStatus::Pending,
+                }],
             }],
         }))
     }
@@ -2830,7 +2996,10 @@ mod tests {
         std::sync::Arc::new(tokio::sync::Mutex::new(TodoList {
             phases: vec![TodoPhase {
                 name: "P".into(),
-                tasks: vec![TodoItem { content: "t1".into(), status: TodoStatus::InProgress }],
+                tasks: vec![TodoItem {
+                    content: "t1".into(),
+                    status: TodoStatus::InProgress,
+                }],
             }],
         }))
     }
@@ -2864,10 +3033,14 @@ mod tests {
         let mut responses: Vec<serde_json::Value> = (0..13)
             .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "bash"))
             .collect();
-        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        responses.push(
+            json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
+        );
         // The task is still open at that first stop, so the close-out nudge
         // spends one more turn before the loop hands back; answer it too.
-        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        responses.push(
+            json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
+        );
         let model = MockModel::new(responses);
         let tool = MockTool::default();
         let mut budget = SessionBudget::new(None);
@@ -2893,9 +3066,15 @@ mod tests {
 
         let requests = model.requests.lock().unwrap();
         let nudges = nudge_message_count(requests.last().expect("at least one request"));
-        assert!(nudges >= 1, "expected a mid-run nudge after 12+ mutating calls");
+        assert!(
+            nudges >= 1,
+            "expected a mid-run nudge after 12+ mutating calls"
+        );
         // MID_RUN_NUDGE_MAX_PER_CYCLE is local to run_turn_cycle; mirror it here.
-        assert!(nudges <= 2, "must not exceed the per-cycle nudge cap, saw {nudges}");
+        assert!(
+            nudges <= 2,
+            "must not exceed the per-cycle nudge cap, saw {nudges}"
+        );
     }
 
     /// A resumed/multi-turn session still needs the upkeep instruction: the
@@ -2907,7 +3086,10 @@ mod tests {
         let registry = Some(todo_registry_with_open_task());
         // Not a first-message candidate (eager_todo_plan == false), list exists.
         let addendum = todo_prompt_addendum(false, &registry).await;
-        assert_eq!(addendum, Some(crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM));
+        assert_eq!(
+            addendum,
+            Some(crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM)
+        );
 
         // A first substantive message gets the init guidance instead.
         assert_eq!(
@@ -2960,9 +3142,7 @@ mod tests {
 
         let requests = model.requests.lock().unwrap();
         assert_eq!(requests.len(), 2, "one extra turn for the close-out ask");
-        let closeouts = requests
-            .last()
-            .expect("second request")["messages"]
+        let closeouts = requests.last().expect("second request")["messages"]
             .as_array()
             .expect("messages")
             .iter()
@@ -3013,7 +3193,9 @@ mod tests {
         let mut responses: Vec<serde_json::Value> = (0..13)
             .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "bash"))
             .collect();
-        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        responses.push(
+            json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
+        );
         let model = MockModel::new(responses);
         let tool = MockTool::default();
         let mut budget = SessionBudget::new(None);
@@ -3037,7 +3219,12 @@ mod tests {
         .await
         .unwrap();
         assert!(
-            model.requests.lock().unwrap().iter().all(|r| !request_has_nudge(r)),
+            model
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|r| !request_has_nudge(r)),
             "plan mode must never get a mid-run nudge"
         );
     }
@@ -3052,10 +3239,14 @@ mod tests {
             .collect();
         responses.push(mutating_tool_call_completion("mid", "todo"));
         responses.extend((0..6).map(|i| mutating_tool_call_completion(&format!("b{i}"), "edit")));
-        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        responses.push(
+            json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
+        );
         // The task is still open at that first stop, so the close-out nudge
         // spends one more turn before the loop hands back; answer it too.
-        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        responses.push(
+            json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
+        );
         let model = MockModel::new(responses);
         let tool = MockTool::default();
         let mut budget = SessionBudget::new(None);
@@ -3079,7 +3270,12 @@ mod tests {
         .await
         .unwrap();
         assert!(
-            model.requests.lock().unwrap().iter().all(|r| !request_has_nudge(r)),
+            model
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|r| !request_has_nudge(r)),
             "a todo touch partway through must reset the mutation counter"
         );
     }
@@ -3096,7 +3292,11 @@ mod tests {
             Ok(tool_calls
                 .iter()
                 .map(|tc| {
-                    let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let id = tc
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     ToolOutcome::plain(id, self.content.clone())
                 })
                 .collect())
@@ -3125,7 +3325,9 @@ mod tests {
             bash_call_completion(),
             json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
         ]);
-        let tool = FixedTool { content: content.to_string() };
+        let tool = FixedTool {
+            content: content.to_string(),
+        };
         let mut budget = SessionBudget::new(None);
         run_turn_cycle(
             &tx,
@@ -3163,12 +3365,21 @@ mod tests {
         assert!(!bash_result_is_error_flag("ok\n[exit 0]").await);
     }
 
+    /// Crossing the session token budget is advisory: it is announced once, as
+    /// a system note, and the run carries on -- tool calls included.
     #[tokio::test]
-    async fn turn_cycle_soft_stops_when_budget_exhausted() {
+    async fn an_exhausted_budget_is_announced_once_and_the_run_continues() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut over_budget = tool_call_completion();
         over_budget["usage"] = json!({ "total_tokens": 100 });
-        let model = MockModel::new(vec![over_budget]);
+        let done = json!({
+            "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
+        });
+        // A second tool-calling turn after the ceiling is crossed, so the
+        // once-only latch is actually exercised rather than assumed.
+        let mut still_over = tool_call_completion();
+        still_over["usage"] = json!({ "total_tokens": 200 });
+        let model = MockModel::new(vec![over_budget, still_over, done]);
         let tool = MockTool::default();
         let mut budget = SessionBudget::new(Some(50));
         let convo = vec![json!({ "role": "user", "content": "hi" })];
@@ -3188,29 +3399,191 @@ mod tests {
             None,
         )
         .await
-        .expect("budget exhaustion is a soft stop, not an error");
+        .expect("passing the ceiling is not an error");
 
-        let final_text = extract_choice_message(&result)
-            .and_then(|m| m.get("content").and_then(|c| c.as_str()))
-            .unwrap_or_default();
-        let spent = budget.spent();
         assert!(
-            final_text.contains("budget")
-                && final_text.contains(&spent.to_string()),
-            "soft stop should describe the exhausted budget ({spent} tokens): {final_text}",
+            budget.exhausted(),
+            "precondition: the run really did cross the ceiling"
         );
         assert!(
-            tool.calls.lock().unwrap().is_empty(),
-            "tool must not run once budget is exhausted"
+            !tool.calls.lock().unwrap().is_empty(),
+            "tool calls still run once the ceiling is passed"
         );
-        // A MessagesUpdated is published so live surfaces (and the replay
-        // session) see the partial conversation before the soft stop.
+        assert_eq!(
+            extract_choice_message(&result)
+                .and_then(|m| m.get("content").and_then(|c| c.as_str()))
+                .unwrap_or_default(),
+            "all done",
+            "the run finishes on the model's own answer, not a stop notice"
+        );
+
+        // Announced exactly once, in the system voice -- never as an assistant
+        // turn the model could later imitate.
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 3, "the run kept taking turns");
+        // The last request is two turns past the ceiling: if the latch were
+        // missing, the note would appear once per turn here.
+        let messages = requests[2]["messages"].as_array().unwrap();
+        let notes: Vec<&serde_json::Value> = messages
+            .iter()
+            .filter(|m| {
+                m.get("content")
+                    .and_then(|c| c.as_str())
+                    .is_some_and(|c| c.contains("budget exhausted"))
+            })
+            .collect();
+        assert_eq!(
+            notes.len(),
+            1,
+            "announced once, not per turn: {messages:#?}"
+        );
+        assert_eq!(notes[0]["role"], "system", "system voice, not assistant");
         assert!(
-            std::iter::from_fn(|| rx.try_recv().ok()).any(
-                |ev| matches!(ev, StreamEvent::MessagesUpdated { .. })
+            messages.iter().all(
+                |m| m.get("role").and_then(|v| v.as_str()) != Some("assistant")
+                    || !m["content"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .contains("budget exhausted")
             ),
-            "expected a MessagesUpdated event on soft stop"
+            "no assistant turn carries the marker"
         );
+
+        assert!(
+            std::iter::from_fn(|| rx.try_recv().ok())
+                .any(|ev| matches!(ev, StreamEvent::MessagesUpdated { .. })),
+            "live surfaces see the annotated conversation"
+        );
+    }
+
+    /// Passing the ceiling no longer stops a run, so a long thread only grows.
+    /// Once every turn is finished, the oversized conversation is compacted
+    /// before it is published -- otherwise the next run resumes this thread by
+    /// sending the whole thing upstream.
+    #[tokio::test]
+    async fn an_exhausted_budget_compacts_the_conversation_once_turns_are_done() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        // Comfortably longer than DEFAULT_KEEP_RECENT so there is a middle to drop.
+        let convo: Vec<serde_json::Value> = (0..24)
+            .map(|i| {
+                json!({
+                    "role": if i % 2 == 0 { "user" } else { "assistant" },
+                    "content": format!("message {i}"),
+                })
+            })
+            .collect();
+        let original_len = convo.len();
+
+        let mut over_budget = json!({
+            "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
+        });
+        over_budget["usage"] = json!({ "total_tokens": 100 });
+        let summary = json!({
+            "choices": [{ "message": { "content": "SUMMARY OF THE EARLIER WORK" } }]
+        });
+        // Second response is consumed by the summarizer inside compaction.
+        let model = MockModel::new(vec![over_budget, summary]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(Some(50));
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        assert!(budget.exhausted(), "precondition: the ceiling was passed");
+        assert_eq!(
+            model.requests.lock().unwrap().len(),
+            2,
+            "one turn, plus the summarizer call compaction makes"
+        );
+
+        // The published history is the compacted one: shorter, and carrying the
+        // summary in place of the dropped middle.
+        let published = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|ev| match ev {
+                StreamEvent::MessagesUpdated { messages } => Some(messages),
+                _ => None,
+            })
+            .last()
+            .expect("a MessagesUpdated is published");
+        assert!(
+            published.len() < original_len,
+            "history was compacted: {} -> {}",
+            original_len,
+            published.len()
+        );
+        assert!(
+            published.iter().any(|m| m["content"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("SUMMARY OF THE EARLIER WORK")),
+            "the summary replaced the dropped middle: {published:#?}"
+        );
+    }
+
+    /// A run that stayed inside its ceiling is left alone -- no summarizer call,
+    /// no compaction, history published as-is.
+    #[tokio::test]
+    async fn a_run_within_budget_is_not_compacted() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let convo: Vec<serde_json::Value> = (0..24)
+            .map(|i| json!({ "role": "user", "content": format!("message {i}") }))
+            .collect();
+        let original_len = convo.len();
+
+        let mut under_budget = json!({
+            "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
+        });
+        under_budget["usage"] = json!({ "total_tokens": 10 });
+        let model = MockModel::new(vec![under_budget]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(Some(50_000));
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        assert!(!budget.exhausted());
+        assert_eq!(
+            model.requests.lock().unwrap().len(),
+            1,
+            "no summarizer call: compaction never ran"
+        );
+        let published = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|ev| match ev {
+                StreamEvent::MessagesUpdated { messages } => Some(messages),
+                _ => None,
+            })
+            .last()
+            .expect("a MessagesUpdated is published");
+        assert_eq!(published.len(), original_len, "history untouched");
     }
 
     struct ResultQueueModel {
@@ -3258,9 +3631,22 @@ mod tests {
             convo.push(json!({ "role": r, "content": format!("m{i}") }));
         }
 
-        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
-            .await
-            .unwrap();
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(result["choices"][0]["message"]["content"], "final");
         assert!(tool.calls.lock().unwrap().is_empty());
@@ -3292,9 +3678,22 @@ mod tests {
             json!({ "role": "user", "content": "again" }),
         ];
 
-        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
-            .await
-            .unwrap();
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(result["choices"][0]["message"]["content"], "final");
         let published: Vec<serde_json::Value> = std::iter::from_fn(|| rx.try_recv().ok())
@@ -3331,8 +3730,21 @@ mod tests {
             json!({ "role": "assistant", "content": "hey", "reasoning_content": "thinking" }),
         ];
 
-        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
-            .await;
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await;
 
         assert!(result.is_err(), "a persistent rejection must fail the turn");
         assert_eq!(
@@ -3458,9 +3870,7 @@ mod tests {
             "a summarizer context overflow must fail the turn"
         );
         assert!(
-            crate::core::agent::upstream::is_context_overflow_error(
-                result.as_ref().unwrap_err()
-            ),
+            crate::core::agent::upstream::is_context_overflow_error(result.as_ref().unwrap_err()),
             "the summarizer overflow must propagate, not be rewritten"
         );
         drop(tx);
@@ -3489,9 +3899,22 @@ mod tests {
         let mut budget = SessionBudget::new(None);
         let convo = vec![json!({ "role": "user", "content": "hi" })];
 
-        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
-            .await
-            .unwrap();
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(result["choices"][0]["message"]["content"], "recovered");
         assert!(
@@ -3513,9 +3936,22 @@ mod tests {
 
         // max_turns = 0 means unbounded: it must not error out and must keep
         // going past the tool-call turn to return the final answer.
-        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 0, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
-            .await
-            .unwrap();
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(result["choices"][0]["message"]["content"], "done");
     }
@@ -3530,7 +3966,10 @@ mod tests {
     #[test]
     fn session_budget_treats_zero_and_absent_as_no_ceiling() {
         assert_eq!(body_session_budget(&json!({})), None);
-        assert_eq!(body_session_budget(&json!({ "max_session_tokens": 0 })), None);
+        assert_eq!(
+            body_session_budget(&json!({ "max_session_tokens": 0 })),
+            None
+        );
         assert_eq!(
             body_session_budget(&json!({ "max_session_tokens": 128_000 })),
             Some(128_000)
@@ -3740,13 +4179,25 @@ mod tests {
     #[test]
     fn unsandboxed_prompt_does_not_advertise_a_scratch() {
         let root = unique_project_root();
-        let confined =
-            build_run_system_prompt(None, Some("do things"), Some(&root), Some("s1"), false, true)
-                .expect("prompt");
+        let confined = build_run_system_prompt(
+            None,
+            Some("do things"),
+            Some(&root),
+            Some("s1"),
+            false,
+            true,
+        )
+        .expect("prompt");
         assert!(confined.contains("Scratch:"), "{confined}");
-        let bare =
-            build_run_system_prompt(None, Some("do things"), Some(&root), Some("s1"), false, false)
-                .expect("prompt");
+        let bare = build_run_system_prompt(
+            None,
+            Some("do things"),
+            Some(&root),
+            Some("s1"),
+            false,
+            false,
+        )
+        .expect("prompt");
         assert!(!bare.contains("Scratch:"), "{bare}");
     }
 
@@ -3759,11 +4210,8 @@ mod tests {
     fn cli_tool_context_allows_network() {
         let root = std::path::PathBuf::from("/tmp/jan-net-check");
         let (tx, _rx) = mpsc::unbounded_channel();
-        let invoker = build_prompting_invoker(
-            root,
-            tx,
-            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-        );
+        let invoker =
+            build_prompting_invoker(root, tx, Arc::new(tokio::sync::Mutex::new(HashMap::new())));
         assert!(
             invoker.tool_context().allow_network,
             "CLI shell must keep its network namespace"
@@ -3777,11 +4225,8 @@ mod tests {
     fn cli_tool_context_reads_home() {
         let root = std::path::PathBuf::from("/tmp/jan-home-check");
         let (tx, _rx) = mpsc::unbounded_channel();
-        let invoker = build_prompting_invoker(
-            root,
-            tx,
-            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-        );
+        let invoker =
+            build_prompting_invoker(root, tx, Arc::new(tokio::sync::Mutex::new(HashMap::new())));
         assert!(
             invoker.tool_context().home_readonly,
             "CLI shell must read $HOME"
@@ -3796,11 +4241,8 @@ mod tests {
     fn desktop_tool_context_withholds_home() {
         let root = std::path::PathBuf::from("/tmp/jan-home-check");
         let (tx, _rx) = mpsc::unbounded_channel();
-        let invoker = build_prompting_invoker(
-            root,
-            tx,
-            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-        );
+        let invoker =
+            build_prompting_invoker(root, tx, Arc::new(tokio::sync::Mutex::new(HashMap::new())));
         assert!(!invoker.tool_context().home_readonly);
     }
 
@@ -3811,11 +4253,8 @@ mod tests {
     fn desktop_tool_context_withholds_network() {
         let root = std::path::PathBuf::from("/tmp/jan-net-check");
         let (tx, _rx) = mpsc::unbounded_channel();
-        let invoker = build_prompting_invoker(
-            root,
-            tx,
-            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-        );
+        let invoker =
+            build_prompting_invoker(root, tx, Arc::new(tokio::sync::Mutex::new(HashMap::new())));
         assert!(!invoker.tool_context().allow_network);
     }
 
@@ -3850,6 +4289,34 @@ mod tests {
                         "id": "scope",
                         "question": "Which scope?",
                         "options": [{"label": "Small"}, {"label": "Large"}]
+                    }]
+                }))
+                .unwrap()
+            }
+        })
+    }
+
+    /// Like `ask_call`, but with three options and a non-zero `recommended`
+    /// index (2 -> "Huge"). The index is deliberately not 0 so that a silent
+    /// fallback to the first option is distinguishable from honoring the
+    /// recommended choice.
+    #[cfg(feature = "cli")]
+    fn ask_call_recommended() -> serde_json::Value {
+        json!({
+            "id": "ask-call",
+            "type": "function",
+            "function": {
+                "name": "ask",
+                "arguments": serde_json::to_string(&json!({
+                    "questions": [{
+                        "id": "scope",
+                        "question": "Which scope?",
+                        "options": [
+                            {"label": "Small"},
+                            {"label": "Large"},
+                            {"label": "Huge"}
+                        ],
+                        "recommended": 2
                     }]
                 }))
                 .unwrap()
@@ -3899,10 +4366,17 @@ mod tests {
 
         // An unknown (non-builtin) name stands in for an MCP tool a stale schema
         // could still surface; it must be denied before any dispatch.
-        let out = invoker.invoke(&[tool_call("m1", "some_mcp_tool")]).await.unwrap();
+        let out = invoker
+            .invoke(&[tool_call("m1", "some_mcp_tool")])
+            .await
+            .unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(out[0].content.contains("plan_mode_read_only"), "{}", out[0].content);
+        assert!(
+            out[0].content.contains("plan_mode_read_only"),
+            "{}",
+            out[0].content
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3920,7 +4394,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(out[0].content.contains("plan_mode_read_only"), "{}", out[0].content);
+        assert!(
+            out[0].content.contains("plan_mode_read_only"),
+            "{}",
+            out[0].content
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3960,7 +4438,10 @@ mod tests {
                 .and_then(|x| serde_json::from_value::<RunMode>(x.clone()).ok())
         };
         assert_eq!(from_body(json!({"run_mode": "plan"})), Some(RunMode::Plan));
-        assert_eq!(from_body(json!({"run_mode": "normal"})), Some(RunMode::Normal));
+        assert_eq!(
+            from_body(json!({"run_mode": "normal"})),
+            Some(RunMode::Normal)
+        );
         assert_eq!(from_body(json!({})), None);
     }
 
@@ -3992,6 +4473,7 @@ mod tests {
             StreamEvent::AskRequest {
                 request_id,
                 request,
+                ..
             } => {
                 assert_eq!(request.questions[0].id, "scope");
                 request_id
@@ -4078,6 +4560,105 @@ mod tests {
         let out = task.await.unwrap();
         assert_eq!(out[0].content, "User response for \"scope\": custom answer");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // An unanswered ask with `ask_timeout_secs` set resolves to the
+    // auto-selected recommended option (here the first, since `ask_call` sets
+    // no recommended index), NOT to `ask_cancelled`. `with_temp_home` points
+    // HOME at the config it writes; a nested current-thread runtime runs the
+    // invoke because that helper is synchronous.
+    // `global_config` (the timeout source) is CLI-only, so this test is too.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn ask_auto_selects_on_timeout_instead_of_cancelling() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let path = crate::core::agent::global_config::ensure_global_config().unwrap();
+            std::fs::write(&path, "ask_timeout_secs = 1\n").unwrap();
+
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let root = unique_project_root();
+                let (tx, _rx) = mpsc::unbounded_channel();
+                let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+                let asks = crate::core::agent::interaction::new_registry();
+                let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+                invoker.ask_requests = Some(asks.clone());
+
+                // No one answers: handle_ask_tool self-resolves after the timeout.
+                let out = invoker.invoke(&[ask_call()]).await.unwrap();
+                assert_eq!(out.len(), 1);
+                assert!(
+                    !out[0].content.contains("ask_cancelled"),
+                    "timeout is not a cancel: {}",
+                    out[0].content
+                );
+                assert!(
+                    out[0]
+                        .content
+                        .contains("User response for \"scope\": Small"),
+                    "auto-selected the first option: {}",
+                    out[0].content
+                );
+                assert!(
+                    asks.lock().await.is_empty(),
+                    "the timed-out ask must be deregistered"
+                );
+                let _ = std::fs::remove_dir_all(&root);
+            });
+        });
+    }
+
+    // A timeout with a non-zero `recommended` index must select that option,
+    // never silently fall back to the first (index 0). `ask_call_recommended`
+    // asks for `scope` with options [Small, Large, Huge] and `recommended: 2`,
+    // so a correct result says "Huge" and an index-0 fallback says "Small".
+    #[cfg(feature = "cli")]
+    #[test]
+    fn ask_timeout_auto_selects_the_recommended_option_not_the_first() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let path = crate::core::agent::global_config::ensure_global_config().unwrap();
+            std::fs::write(&path, "ask_timeout_secs = 1\n").unwrap();
+
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let root = unique_project_root();
+                let (tx, _rx) = mpsc::unbounded_channel();
+                let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+                let asks = crate::core::agent::interaction::new_registry();
+                let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+                invoker.ask_requests = Some(asks.clone());
+
+                // No one answers: handle_ask_tool self-resolves after the timeout.
+                let out = invoker.invoke(&[ask_call_recommended()]).await.unwrap();
+                assert_eq!(out.len(), 1);
+                assert!(
+                    !out[0].content.contains("ask_cancelled"),
+                    "timeout is not a cancel: {}",
+                    out[0].content
+                );
+                assert!(
+                    out[0].content.contains("User response for \"scope\": Huge"),
+                    "must select the recommended option (Huge): {}",
+                    out[0].content
+                );
+                assert!(
+                    !out[0].content.contains("Small"),
+                    "must not fall back to the first option: {}",
+                    out[0].content
+                );
+                assert!(
+                    asks.lock().await.is_empty(),
+                    "the timed-out ask must be deregistered"
+                );
+                let _ = std::fs::remove_dir_all(&root);
+            });
+        });
     }
 
     fn todo_call(id: &str, args: serde_json::Value) -> serde_json::Value {
@@ -4232,7 +4813,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(!out[0].content.starts_with("ERROR"), "got: {}", out[0].content);
+        assert!(
+            !out[0].content.starts_with("ERROR"),
+            "got: {}",
+            out[0].content
+        );
         let result: crate::core::agent::todo::TodoList =
             serde_json::from_str(&out[0].content).unwrap();
         assert_eq!(result.active().unwrap().1.content, "a");
@@ -4254,10 +4839,7 @@ mod tests {
         invoker.todo_registry = Some(todos.clone());
 
         invoker
-            .invoke(&[todo_call(
-                "t1",
-                json!({"op": "init", "items": ["a", "b"]}),
-            )])
+            .invoke(&[todo_call("t1", json!({"op": "init", "items": ["a", "b"]}))])
             .await
             .unwrap();
         let _ = rx.recv().await; // drain init's TodoUpdate
@@ -4266,7 +4848,11 @@ mod tests {
             .invoke(&[todo_call("t2", json!({"op": "done", "task": "a"}))])
             .await
             .unwrap();
-        assert!(!out[0].content.starts_with("ERROR"), "got: {}", out[0].content);
+        assert!(
+            !out[0].content.starts_with("ERROR"),
+            "got: {}",
+            out[0].content
+        );
         let result: crate::core::agent::todo::TodoList =
             serde_json::from_str(&out[0].content).unwrap();
         assert_eq!(result.active().unwrap().1.content, "b");
@@ -4293,7 +4879,11 @@ mod tests {
             .invoke(&[todo_call("t2", json!({"op": "rm", "task": "missing"}))])
             .await
             .unwrap();
-        assert!(out[0].content.starts_with("ERROR"), "got: {}", out[0].content);
+        assert!(
+            out[0].content.starts_with("ERROR"),
+            "got: {}",
+            out[0].content
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -4315,7 +4905,11 @@ mod tests {
                 "function": { "name": "read", "arguments": format!("{{\"path\":\"{path}\"}}") }
             })
         };
-        let calls = vec![read("r1", "a.txt"), read("r2", "b.txt"), read("r3", "c.txt")];
+        let calls = vec![
+            read("r1", "a.txt"),
+            read("r2", "b.txt"),
+            read("r3", "c.txt"),
+        ];
         let out = invoker.invoke(&calls).await.unwrap();
 
         assert_eq!(out.len(), 3);
@@ -4348,7 +4942,11 @@ mod tests {
         responder.await.unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(!out[0].content.starts_with("ERROR"), "unexpected: {}", out[0].content);
+        assert!(
+            !out[0].content.starts_with("ERROR"),
+            "unexpected: {}",
+            out[0].content
+        );
         assert_eq!(std::fs::read_to_string(root.join("out.txt")).unwrap(), "hi");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -4364,7 +4962,11 @@ mod tests {
         let out = invoker.invoke(&[write_call()]).await.unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(!out[0].content.starts_with("ERROR"), "unexpected: {}", out[0].content);
+        assert!(
+            !out[0].content.starts_with("ERROR"),
+            "unexpected: {}",
+            out[0].content
+        );
         assert_eq!(std::fs::read_to_string(root.join("out.txt")).unwrap(), "hi");
         // No permission prompt should have been emitted.
         assert!(
@@ -4393,7 +4995,11 @@ mod tests {
         responder.await.unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(out[0].content.contains("denied by user"), "got: {}", out[0].content);
+        assert!(
+            out[0].content.contains("denied by user"),
+            "got: {}",
+            out[0].content
+        );
         assert!(!root.join("out.txt").exists());
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -4422,7 +5028,11 @@ mod tests {
         };
 
         let out1 = invoker.invoke(&[write_call()]).await.unwrap();
-        assert!(!out1[0].content.starts_with("ERROR"), "first: {}", out1[0].content);
+        assert!(
+            !out1[0].content.starts_with("ERROR"),
+            "first: {}",
+            out1[0].content
+        );
 
         let second = json!({
             "id": "c2",
@@ -4433,7 +5043,11 @@ mod tests {
             }
         });
         let out2 = invoker.invoke(&[second]).await.unwrap();
-        assert!(!out2[0].content.starts_with("ERROR"), "second: {}", out2[0].content);
+        assert!(
+            !out2[0].content.starts_with("ERROR"),
+            "second: {}",
+            out2[0].content
+        );
 
         drop(invoker); // close events channel so responder loop ends
         responder.await.unwrap();
@@ -4468,11 +5082,18 @@ mod tests {
             })
         };
 
-        let out = invoker.invoke(&[mcp_call("m1", "web_search_exa")]).await.unwrap();
+        let out = invoker
+            .invoke(&[mcp_call("m1", "web_search_exa")])
+            .await
+            .unwrap();
         responder.await.unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(out[0].content.contains("denied by user"), "got: {}", out[0].content);
+        assert!(
+            out[0].content.contains("denied by user"),
+            "got: {}",
+            out[0].content
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -4534,14 +5155,19 @@ mod tests {
     #[test]
     fn read_only_project_still_advertises_mcp_tools() {
         use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
-        let mut tools = vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
+        let mut tools =
+            vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
         let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
         // The scaffolded CLI project default: read-only, no allow-list.
         let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
 
         retain_advertisable_mcp_tools(&mut tools, &mut map, &perms);
 
-        assert_eq!(tools.len(), 1, "read-only must not suppress MCP advertisement");
+        assert_eq!(
+            tools.len(),
+            1,
+            "read-only must not suppress MCP advertisement"
+        );
         assert!(map.contains_key("web_search_exa"));
     }
 
@@ -4567,19 +5193,67 @@ mod tests {
 
         assert_eq!(tools.len(), 1);
         assert!(map.contains_key("web_search_exa"));
-        assert!(!map.contains_key("dangerous_write"), "deny-list must still prune");
+        assert!(
+            !map.contains_key("dangerous_write"),
+            "deny-list must still prune"
+        );
     }
 
     #[test]
     fn deny_default_advertises_no_mcp_tools() {
         use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
-        let mut tools = vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
+        let mut tools =
+            vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
         let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
         let perms = ToolPermissions::new(PermissionDefault::Deny, &[], &[], &[]);
 
         retain_advertisable_mcp_tools(&mut tools, &mut map, &perms);
 
-        assert!(tools.is_empty(), "default=deny must lock down MCP advertisement");
+        assert!(
+            tools.is_empty(),
+            "default=deny must lock down MCP advertisement"
+        );
         assert!(map.is_empty());
+    }
+
+    /// `bash` hands its child to a detached task that keeps the output sink
+    /// alive after the call has returned its `job_id`. The sink must not keep
+    /// the run's event channel open with it: every consumer of that channel --
+    /// the desktop forwarder, the headless printer, a subagent's forwarder --
+    /// finishes only when the channel closes.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_backgrounded_job_does_not_hold_the_event_channel_open() {
+        use tauri_plugin_agent_tools::tools::{handlers::execute_builtin, lookup, ToolContext};
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
+        let skills: Vec<String> = Vec::new();
+        let ctx = ToolContext::new(dir.path(), dir.path(), &skills)
+            .with_sandbox(false)
+            .with_output_sink(output_sink(&tx, "call-1"));
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "sleep 3; printf 'late\\n'", "timeout": 0}),
+            &ctx,
+        )
+        .await
+        .0;
+        assert!(
+            out.contains("job_id=bash-"),
+            "expected a backgrounded job, got: {out}"
+        );
+
+        // The run is over: the orchestration future has returned and dropped its
+        // sender, so the receiver must observe closure without waiting for the
+        // straggling command (which outlives this assertion by seconds).
+        drop(tx);
+        let closed = tokio::time::timeout(std::time::Duration::from_millis(1500), async {
+            while rx.recv().await.is_some() {}
+        })
+        .await;
+        assert!(
+            closed.is_ok(),
+            "the event channel never closed while a backgrounded bash job was still running"
+        );
     }
 }

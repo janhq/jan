@@ -981,7 +981,9 @@ async fn proxy_request(
 
                         match run_server_side_openai_orchestration(
                             &openai_body,
-                            &client,
+                            // The agent loop runs on genai (reqwest 0.13); the
+                            // proxy's own passthrough stays on 0.12.
+                            &crate::core::agent::upstream::agent_http_client(),
                             provider_configs.clone(),
                             llama_state.clone(),
                             mlx_sessions.clone(),
@@ -1505,7 +1507,7 @@ async fn proxy_request(
                     {
                         match run_server_side_openai_orchestration(
                             &json_body,
-                            &client,
+                            &crate::core::agent::upstream::agent_http_client(),
                             provider_configs.clone(),
                             llama_state.clone(),
                             mlx_sessions.clone(),
@@ -2313,6 +2315,27 @@ fn is_insecure_public_bind(host: &str, api_key: &str) -> bool {
     !is_loopback && api_key.is_empty()
 }
 
+/// Convert a TCP bind failure into a user-facing message. Address-in-use
+/// (Windows error 10048 / WSAEADDRINUSE, Unix EADDRINUSE) almost always means
+/// a leftover Jan process or another service still owns the port after a
+/// restart, so name the port and the remedy instead of surfacing a bare OS
+/// errno. Any other error is passed through unchanged.
+fn map_bind_error(
+    addr: SocketAddr,
+    err: std::io::Error,
+) -> Box<dyn std::error::Error + Send + Sync> {
+    if err.kind() == std::io::ErrorKind::AddrInUse {
+        let msg = format!(
+            "Port {port} ({addr}) is already in use. A previous Jan process may still be \
+             running or another application may be using the port. Close the leftover \
+             process and try again, or pick a different port in Settings > Local API Server.",
+            port = addr.port()
+        );
+        return msg.into();
+    }
+    Box::new(err)
+}
+
 pub(crate) fn add_cors_headers_with_host_and_origin(
     builder: hyper::http::response::Builder,
     _host: &str,
@@ -2445,7 +2468,7 @@ async fn start_server_internal(
         Ok(l) => l,
         Err(e) => {
             log::error!("Failed to bind to {addr}: {e}");
-            return Err(Box::new(e));
+            return Err(map_bind_error(addr, e));
         }
     };
     log::info!("Jan API server started on http://{addr}");
@@ -2933,7 +2956,8 @@ async fn forward_non_streaming(
 
 #[cfg(test)]
 mod tests {
-    use super::is_insecure_public_bind;
+    use super::{is_insecure_public_bind, map_bind_error};
+    use std::net::SocketAddr;
 
     #[test]
     fn loopback_never_warns() {
@@ -2953,5 +2977,25 @@ mod tests {
     fn public_bind_with_key_is_ok() {
         assert!(!is_insecure_public_bind("0.0.0.0", "secret"));
         assert!(!is_insecure_public_bind("192.168.1.10", "secret"));
+    }
+
+    #[test]
+    fn addr_in_use_maps_to_actionable_message() {
+        let addr: SocketAddr = "127.0.0.1:1337".parse().unwrap();
+        let err = std::io::Error::new(std::io::ErrorKind::AddrInUse, "Address already in use");
+        let msg = map_bind_error(addr, err).to_string();
+        assert!(msg.contains("1337"), "should name the port: {msg}");
+        assert!(
+            msg.contains("already in use") && msg.contains("process"),
+            "should explain the leftover-process remedy: {msg}"
+        );
+    }
+
+    #[test]
+    fn non_addr_in_use_error_passes_through() {
+        let addr: SocketAddr = "127.0.0.1:1337".parse().unwrap();
+        let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let msg = map_bind_error(addr, err).to_string();
+        assert!(msg.contains("denied"), "should keep the original error: {msg}");
     }
 }

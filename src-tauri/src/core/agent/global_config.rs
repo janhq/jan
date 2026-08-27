@@ -29,6 +29,11 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # stream_reasoning = false            # stop streaming reasoning into the TUI
 #                                     # live tail while it folds; only the
 #                                     # [thinking] badge shows it. On by default
+# ask_timeout_secs = 60             # auto-answer an unanswered `ask` prompt
+#                                     # after this many seconds, choosing each
+#                                     # question's recommended option (else its
+#                                     # first). 0 or unset waits forever, the
+#                                     # default
 # terminal_hint = false               # stop the startup note that offers
 #                                     # /terminal-setup when this terminal is
 #                                     # dropping Shift+Enter or Option+Delete.
@@ -76,6 +81,12 @@ struct GlobalConfigToml {
     /// reasoning for good.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stream_reasoning: Option<bool>,
+    /// Auto-answer an unanswered `ask` tool prompt after this many seconds,
+    /// selecting each question's recommended option (or its first option when
+    /// none is recommended). `None` = the default, and `0` is treated the same:
+    /// wait forever, blocking the run on the ask exactly as it does today.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ask_timeout_secs: Option<u64>,
     /// Offer `/terminal-setup` at startup when a config file proves this
     /// terminal is dropping a modified key. `None` = the default, on. For the
     /// user who has read the note and decided to keep `Option` composing
@@ -111,6 +122,19 @@ struct GlobalProviderEntry {
     models: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     api_type: Option<String>,
+    /// Server-assigned id of the key, so a logout can revoke the exact key the
+    /// CLI holds rather than a user's other keys.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    key_id: Option<String>,
+    /// Unix seconds the key expires at, when the server says. Lets the CLI warn
+    /// (and show auth status) without a 401 first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    key_expires_at: Option<u64>,
+    /// Who the key belongs to, as reported when it was minted. Recorded so
+    /// `auth status` can name the account without a round trip (and without
+    /// guessing an identity endpoint's response shape).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    account: Option<String>,
 }
 
 /// Fields to update on a provider entry via [`set_provider`]. `None` leaves the
@@ -127,6 +151,14 @@ pub(crate) struct ProviderUpdate {
     /// `Some(vec)` replaces the model list; `Some(empty)` clears it.
     pub models: Option<Vec<String>>,
     pub api_type: Option<String>,
+    /// Server-assigned key metadata a browser sign-in gets back. Doubly
+    /// optional on purpose: `None` leaves whatever is stored alone (the merge
+    /// semantics above), while `Some(None)` clears it -- which is what a login
+    /// that learned no metadata has to do, so a stale id from a previous key
+    /// cannot outlive it.
+    pub key_id: Option<Option<String>>,
+    pub key_expires_at: Option<Option<u64>>,
+    pub account: Option<Option<String>>,
 }
 
 /// `~/.jan`, the user-wide config directory.
@@ -153,7 +185,7 @@ pub(crate) fn load_global_config() -> Result<HashMap<String, ProviderConfig>, St
         Err(_) => return Ok(HashMap::new()),
     };
     let parsed: GlobalConfigToml =
-        toml::from_str(&raw).map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+        toml::from_str(&raw).map_err(|e| parse_error(&path, &e, e.message()))?;
 
     Ok(parsed
         .providers
@@ -271,6 +303,22 @@ pub(crate) fn stream_reasoning_enabled() -> bool {
         .unwrap_or(true)
 }
 
+/// How long an unanswered `ask` prompt waits before it auto-answers with each
+/// question's recommended option (`ask_timeout_secs` in `~/.jan/config.toml`).
+/// `None` -- the default -- means wait forever, preserving today's blocking
+/// behavior until the user answers; `0` is treated the same as unset so the
+/// disabling value and the absent key agree.
+///
+/// A malformed config yields `None` (wait forever) rather than an error: an
+/// unreadable preference must never be the thing that changes how a run blocks.
+pub(crate) fn ask_timeout() -> Option<std::time::Duration> {
+    load_raw()
+        .ok()
+        .and_then(|config| config.ask_timeout_secs)
+        .filter(|secs| *secs > 0)
+        .map(std::time::Duration::from_secs)
+}
+
 /// The default glyph swept along the working row when `wave` is absent.
 pub(crate) const WAVE_DEFAULT: &str = "👋";
 
@@ -293,9 +341,8 @@ pub(crate) fn wave_len(glyph: &str) -> usize {
 /// key being absent, which takes the default.
 pub(crate) fn wave_error(glyph: &str) -> Option<String> {
     let len = wave_len(glyph);
-    (len > WAVE_MAX_GRAPHEMES).then(|| {
-        format!("at most {WAVE_MAX_GRAPHEMES} characters (got {len})")
-    })
+    (len > WAVE_MAX_GRAPHEMES)
+        .then(|| format!("at most {WAVE_MAX_GRAPHEMES} characters (got {len})"))
 }
 
 /// The glyph to sweep along the working row (`wave` in `~/.jan/config.toml`).
@@ -327,6 +374,46 @@ pub(crate) fn wave_glyph() -> Option<String> {
     }
 }
 
+/// Root-level (non-`[providers.*]`) keys of `~/.jan/config.toml`, used to spot
+/// the one mistake this file invites: appending a top-level key to the end of
+/// the file, where it silently lands inside whichever `[providers.*]` table
+/// happens to be last.
+const ROOT_KEYS: &[&str] = &[
+    "default_model",
+    "smol_model",
+    "mouse",
+    "sandbox",
+    "think_tags",
+    "stream_reasoning",
+    "ask_timeout_secs",
+    "terminal_hint",
+    "wave",
+];
+
+/// Render a TOML parse failure with a fix, not just a location. `toml`'s own
+/// message points at the offending line and stops there, which is useless for
+/// the common case: `echo 'key = v' >> ~/.jan/config.toml` appends *after* the
+/// last `[providers.*]` header, so the key parses as a provider field and
+/// collides on a second append. Naming the root key and the remedy turns a
+/// dead end into a one-step fix.
+fn parse_error(path: &std::path::Path, err: &impl std::fmt::Display, message: &str) -> String {
+    let base = format!("Failed to parse {}: {err}", path.display());
+    let Some(key) = ROOT_KEYS
+        .iter()
+        .find(|key| message.contains(&format!("`{key}`")))
+    else {
+        return base;
+    };
+    format!(
+        "{base}\n\
+         hint: `{key}` is a top-level key, but it landed inside a `[providers.*]` \
+         table - appending to the end of the file puts it under whichever provider \
+         is last.\n\
+         hint: move `{key}` above the first `[providers.*]` header, or set it with \
+         `/settings` in the console, which writes it to the right place."
+    )
+}
+
 /// Read `~/.jan/config.toml` into the raw TOML struct for editing. Missing file
 /// -> default (empty); malformed file -> error, so a set never silently drops an
 /// unparseable file's contents.
@@ -336,7 +423,7 @@ fn load_raw() -> Result<GlobalConfigToml, String> {
         Ok(raw) => raw,
         Err(_) => return Ok(GlobalConfigToml::default()),
     };
-    toml::from_str(&raw).map_err(|e| format!("Failed to parse {}: {e}", path.display()))
+    toml::from_str(&raw).map_err(|e| parse_error(&path, &e, e.message()))
 }
 
 /// Serialize the config back to `~/.jan/config.toml`, creating `~/.jan` if
@@ -344,9 +431,11 @@ fn load_raw() -> Result<GlobalConfigToml, String> {
 /// since it holds API keys.
 fn write_raw(config: &GlobalConfigToml) -> Result<PathBuf, String> {
     let dir = global_jan_dir()?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
     let path = dir.join("config.toml");
-    let body = toml::to_string_pretty(config).map_err(|e| format!("Failed to serialize config: {e}"))?;
+    let body =
+        toml::to_string_pretty(config).map_err(|e| format!("Failed to serialize config: {e}"))?;
     std::fs::write(&path, &body).map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
     restrict_permissions(&path);
     Ok(path)
@@ -387,6 +476,15 @@ pub(crate) fn set_provider(name: &str, update: ProviderUpdate) -> Result<PathBuf
     if let Some(api_type) = update.api_type {
         entry.api_type = Some(api_type);
     }
+    if let Some(key_id) = update.key_id {
+        entry.key_id = key_id.filter(|k| !k.is_empty());
+    }
+    if let Some(key_expires_at) = update.key_expires_at {
+        entry.key_expires_at = key_expires_at;
+    }
+    if let Some(account) = update.account {
+        entry.account = account.filter(|a| !a.is_empty());
+    }
     write_raw(&config)
 }
 
@@ -409,6 +507,30 @@ pub(crate) fn set_default_model_if_unset(model: &str) -> Result<bool, String> {
     config.default_model = Some(model.to_string());
     write_raw(&config)?;
     Ok(true)
+}
+
+/// Server-assigned metadata for a provider's stored key, when a v5 device-flow
+/// login recorded any. Used by `jan auth status` / the expiry warning and by
+/// `jan auth logout` to revoke the exact key.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct StoredKeyMeta {
+    pub key_id: Option<String>,
+    pub key_expires_at: Option<u64>,
+    pub account: Option<String>,
+}
+
+/// Read `key_id`/`key_expires_at` for a provider, if stored. Missing config or
+/// provider reads as `None` fields -- the legacy login records neither.
+pub(crate) fn provider_key_meta(name: &str) -> Result<StoredKeyMeta, String> {
+    let config = load_raw()?;
+    Ok(match config.providers.get(name) {
+        Some(entry) => StoredKeyMeta {
+            key_id: entry.key_id.clone(),
+            key_expires_at: entry.key_expires_at,
+            account: entry.account.clone(),
+        },
+        None => StoredKeyMeta::default(),
+    })
 }
 
 /// Remove a provider entry from `~/.jan/config.toml`. Returns `true` if the
@@ -455,7 +577,7 @@ pub(crate) fn set_global_key(key: &str, value: Option<toml_edit::Item>) -> Resul
         .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
     let mut doc = raw
         .parse::<toml_edit::DocumentMut>()
-        .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+        .map_err(|e| parse_error(&path, &e, e.message()))?;
 
     match value {
         // `toml_edit` renders a root table's scalars ahead of its sub-tables,
@@ -478,7 +600,8 @@ pub(crate) fn set_global_key(key: &str, value: Option<toml_edit::Item>) -> Resul
 /// yet. Idempotent and clobber-safe: never overwrites an existing file.
 pub(crate) fn ensure_global_config() -> Result<PathBuf, String> {
     let dir = global_jan_dir()?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
     let path = dir.join("config.toml");
     if !path.exists() {
         std::fs::write(&path, GLOBAL_CONFIG_TEMPLATE)
@@ -595,7 +718,10 @@ mod tests {
             assert!(think_tags_enabled());
 
             std::fs::write(&path, "not valid toml [[[").unwrap();
-            assert!(think_tags_enabled(), "an unreadable config keeps the default");
+            assert!(
+                think_tags_enabled(),
+                "an unreadable config keeps the default"
+            );
         });
     }
 
@@ -665,11 +791,53 @@ mod tests {
         assert_eq!(wave_len("👨‍👩‍👧"), 1, "ZWJ family is one cluster");
         assert_eq!(wave_len("👁️👄👁️"), 3, "5 chars, 3 clusters");
 
-        assert!(wave_error("").is_none(), "empty is the off switch, not an error");
+        assert!(
+            wave_error("").is_none(),
+            "empty is the off switch, not an error"
+        );
         assert!(wave_error("👁️👄👁️").is_none(), "exactly at the cap");
         assert!(wave_error("<o>").is_none());
         let err = wave_error("abcd").expect("over the cap");
-        assert!(err.contains('3') && err.contains('4'), "names cap and actual: {err}");
+        assert!(
+            err.contains('3') && err.contains('4'),
+            "names cap and actual: {err}"
+        );
+    }
+
+    /// A root key appended to the end of the file lands inside the last
+    /// `[providers.*]` table, and `toml`'s own error says only "duplicate key
+    /// ... in table `providers.opencode`" - true, but it never says the key
+    /// belongs at the root or how to get it there. The hint carries the fix,
+    /// so assert it fires for a misplaced root key and stays quiet otherwise.
+    #[test]
+    fn parse_error_explains_a_root_key_captured_by_a_provider_table() {
+        with_temp_home(|_| {
+            let path = ensure_global_config().expect("ensure");
+            std::fs::write(
+                &path,
+                "[providers.opencode]\napi_key = \"sk-x\"\nask_timeout_secs = 15\nask_timeout_secs = 15\n",
+            )
+            .unwrap();
+
+            let err = load_global_config().expect_err("duplicate key must fail");
+            assert!(
+                err.contains("`ask_timeout_secs` is a top-level key"),
+                "hint must name the misplaced key: {err}"
+            );
+            assert!(
+                err.contains("/settings"),
+                "hint must point at the writer that gets it right: {err}"
+            );
+
+            // Syntax errors that have nothing to do with key placement must not
+            // acquire a hint about it.
+            std::fs::write(&path, "not = = toml\n").unwrap();
+            let err = load_global_config().expect_err("syntax error must fail");
+            assert!(
+                !err.contains("top-level key"),
+                "unrelated parse errors must stay unadorned: {err}"
+            );
+        });
     }
 
     /// The `/settings` write path. Two properties matter and neither is
@@ -681,15 +849,14 @@ mod tests {
     fn set_global_key_preserves_comments_and_stays_out_of_provider_tables() {
         with_temp_home(|_| {
             let path = ensure_global_config().expect("ensure");
-            std::fs::write(
-                &path,
-                "# keep me\n[providers.openai]\napi_key = \"sk-x\"\n",
-            )
-            .unwrap();
+            std::fs::write(&path, "# keep me\n[providers.openai]\napi_key = \"sk-x\"\n").unwrap();
 
             set_global_key("wave", Some(toml_edit::value("🍌"))).expect("set");
             let raw = std::fs::read_to_string(&path).unwrap();
-            assert!(raw.contains("# keep me"), "comment survives the write: {raw}");
+            assert!(
+                raw.contains("# keep me"),
+                "comment survives the write: {raw}"
+            );
             assert!(raw.contains("sk-x"), "provider survives the write: {raw}");
             assert_eq!(
                 wave_glyph().as_deref(),
@@ -730,7 +897,10 @@ mod tests {
         with_temp_home(|_| {
             assert!(stream_reasoning_enabled(), "missing file -> streaming on");
             let path = ensure_global_config().expect("ensure");
-            assert!(stream_reasoning_enabled(), "scaffolded file -> streaming on");
+            assert!(
+                stream_reasoning_enabled(),
+                "scaffolded file -> streaming on"
+            );
 
             std::fs::write(&path, "stream_reasoning = false\n").unwrap();
             assert!(!stream_reasoning_enabled());
@@ -742,6 +912,23 @@ mod tests {
                 stream_reasoning_enabled(),
                 "an unreadable config keeps the default"
             );
+        });
+    }
+
+    #[test]
+    fn ask_timeout_defaults_off_and_treats_zero_as_unset() {
+        with_temp_home(|_| {
+            assert_eq!(ask_timeout(), None, "missing file -> wait forever");
+            let path = ensure_global_config().expect("ensure");
+            assert_eq!(ask_timeout(), None, "scaffolded file -> wait forever");
+
+            std::fs::write(&path, "ask_timeout_secs = 0\n").unwrap();
+            assert_eq!(ask_timeout(), None, "0 is the disabling value, not 0s");
+            std::fs::write(&path, "ask_timeout_secs = 30\n").unwrap();
+            assert_eq!(ask_timeout(), Some(std::time::Duration::from_secs(30)));
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert_eq!(ask_timeout(), None, "an unreadable config waits forever");
         });
     }
 
@@ -777,7 +964,10 @@ models = ["gpt-4o"]
             let configs = load_global_config().expect("load");
             let openai = configs.get("openai").expect("openai present");
             assert_eq!(openai.api_key.as_deref(), Some("sk-abc"));
-            assert_eq!(openai.base_url.as_deref(), Some("https://api.openai.com/v1"));
+            assert_eq!(
+                openai.base_url.as_deref(),
+                Some("https://api.openai.com/v1")
+            );
             assert_eq!(openai.models, vec!["gpt-4o".to_string()]);
         });
     }
@@ -802,13 +992,17 @@ models = ["gpt-4o"]
                     base_url: Some("https://api.openai.com/v1".into()),
                     models: Some(vec!["gpt-4o".into()]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .expect("set");
             let configs = load_global_config().expect("load");
             let openai = configs.get("openai").expect("present");
             assert_eq!(openai.api_key.as_deref(), Some("sk-1"));
-            assert_eq!(openai.base_url.as_deref(), Some("https://api.openai.com/v1"));
+            assert_eq!(
+                openai.base_url.as_deref(),
+                Some("https://api.openai.com/v1")
+            );
             assert_eq!(openai.models, vec!["gpt-4o".to_string()]);
         });
     }
@@ -824,19 +1018,37 @@ models = ["gpt-4o"]
                     base_url: Some("https://a".into()),
                     models: Some(vec!["gpt-4o".into()]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .unwrap();
-            set_provider("anthropic", ProviderUpdate { api_key: Some("sk-ant".into()), ..Default::default() }).unwrap();
+            set_provider(
+                "anthropic",
+                ProviderUpdate {
+                    api_key: Some("sk-ant".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
             // Update only the openai key; base_url + models must survive.
-            set_provider("openai", ProviderUpdate { api_key: Some("sk-2".into()), ..Default::default() }).unwrap();
+            set_provider(
+                "openai",
+                ProviderUpdate {
+                    api_key: Some("sk-2".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
             let configs = load_global_config().expect("load");
             let openai = configs.get("openai").unwrap();
             assert_eq!(openai.api_key.as_deref(), Some("sk-2"));
             assert_eq!(openai.base_url.as_deref(), Some("https://a"));
             assert_eq!(openai.models, vec!["gpt-4o".to_string()]);
-            assert_eq!(configs.get("anthropic").unwrap().api_key.as_deref(), Some("sk-ant"));
+            assert_eq!(
+                configs.get("anthropic").unwrap().api_key.as_deref(),
+                Some("sk-ant")
+            );
         });
     }
 
@@ -856,11 +1068,23 @@ models = ["gpt-4o"]
             .unwrap();
             set_provider("local", ProviderUpdate::default()).unwrap();
             assert_eq!(
-                load_global_config().unwrap().get("local").unwrap().api_key.as_deref(),
+                load_global_config()
+                    .unwrap()
+                    .get("local")
+                    .unwrap()
+                    .api_key
+                    .as_deref(),
                 Some("sk-1"),
                 "None merges: key kept"
             );
-            set_provider("local", ProviderUpdate { api_key: Some(String::new()), ..Default::default() }).unwrap();
+            set_provider(
+                "local",
+                ProviderUpdate {
+                    api_key: Some(String::new()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
             assert_eq!(
                 load_global_config().unwrap().get("local").unwrap().api_key,
                 None,
@@ -886,7 +1110,14 @@ models = ["gpt-4o"]
     #[test]
     fn default_model_derives_from_first_provider_model() {
         with_temp_home(|_| {
-            set_provider("openai", ProviderUpdate { models: Some(vec!["gpt-4o".into()]), ..Default::default() }).unwrap();
+            set_provider(
+                "openai",
+                ProviderUpdate {
+                    models: Some(vec!["gpt-4o".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
             assert_eq!(default_model().expect("default").as_deref(), Some("gpt-4o"));
         });
     }
@@ -901,16 +1132,36 @@ models = ["gpt-4o"]
                 "default_model = \"claude-sonnet-5\"\n[providers.openai]\nmodels = [\"gpt-4o\"]\n",
             )
             .unwrap();
-            assert_eq!(default_model().expect("default").as_deref(), Some("claude-sonnet-5"));
+            assert_eq!(
+                default_model().expect("default").as_deref(),
+                Some("claude-sonnet-5")
+            );
         });
     }
 
     #[test]
     fn default_model_derivation_is_deterministic_by_provider_name() {
         with_temp_home(|_| {
-            set_provider("zeta", ProviderUpdate { models: Some(vec!["z-model".into()]), ..Default::default() }).unwrap();
-            set_provider("alpha", ProviderUpdate { models: Some(vec!["a-model".into()]), ..Default::default() }).unwrap();
-            assert_eq!(default_model().expect("default").as_deref(), Some("a-model"));
+            set_provider(
+                "zeta",
+                ProviderUpdate {
+                    models: Some(vec!["z-model".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            set_provider(
+                "alpha",
+                ProviderUpdate {
+                    models: Some(vec!["a-model".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                default_model().expect("default").as_deref(),
+                Some("a-model")
+            );
         });
     }
 
@@ -920,7 +1171,14 @@ models = ["gpt-4o"]
             let path = global_config_path().unwrap();
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, "default_model = \"m1\"\n").unwrap();
-            set_provider("openai", ProviderUpdate { api_key: Some("sk".into()), ..Default::default() }).unwrap();
+            set_provider(
+                "openai",
+                ProviderUpdate {
+                    api_key: Some("sk".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
             assert_eq!(default_model().expect("default").as_deref(), Some("m1"));
         });
     }
@@ -940,20 +1198,33 @@ models = ["gpt-4o"]
         with_temp_home(|_| {
             set_provider(
                 "tokamak",
-                ProviderUpdate { api_key: Some("tk".into()), ..Default::default() },
+                ProviderUpdate {
+                    api_key: Some("tk".into()),
+                    ..Default::default()
+                },
             )
             .unwrap();
             assert!(!set_default_model_if_unset("  ").expect("blank"));
             assert!(set_default_model_if_unset("m1").expect("set"));
             let configs = load_global_config().expect("load");
-            assert_eq!(configs.get("tokamak").unwrap().api_key.as_deref(), Some("tk"));
+            assert_eq!(
+                configs.get("tokamak").unwrap().api_key.as_deref(),
+                Some("tk")
+            );
         });
     }
 
     #[test]
     fn remove_provider_reports_presence() {
         with_temp_home(|_| {
-            set_provider("openai", ProviderUpdate { api_key: Some("sk-1".into()), ..Default::default() }).unwrap();
+            set_provider(
+                "openai",
+                ProviderUpdate {
+                    api_key: Some("sk-1".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
             assert!(remove_provider("openai").expect("remove"));
             assert!(!remove_provider("openai").expect("remove again"));
             assert!(!load_global_config().unwrap().contains_key("openai"));
@@ -968,10 +1239,20 @@ models = ["gpt-4o"]
             let path = global_config_path().unwrap();
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, "[providers.groq]\napi_key = \"gk\"\n").unwrap();
-            set_provider("openai", ProviderUpdate { api_key: Some("sk".into()), ..Default::default() }).unwrap();
+            set_provider(
+                "openai",
+                ProviderUpdate {
+                    api_key: Some("sk".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
             let configs = load_global_config().unwrap();
             assert_eq!(configs.get("groq").unwrap().api_key.as_deref(), Some("gk"));
-            assert_eq!(configs.get("openai").unwrap().api_key.as_deref(), Some("sk"));
+            assert_eq!(
+                configs.get("openai").unwrap().api_key.as_deref(),
+                Some("sk")
+            );
         });
     }
 }

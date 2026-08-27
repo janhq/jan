@@ -10,8 +10,8 @@ use console::Style;
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::agent::plugins::InstalledPlugin;
-use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use app_lib::core::cli::mcp::{self, split_kv, McpServerEntry};
+use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use app_lib::core::cli::run_report::OutputFormat;
 use app_lib::core::cli::{
     cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
@@ -158,21 +158,31 @@ enum Commands {
     },
     /// Sign in to Tokamak and save the API key to ~/.jan/config.toml
     #[command(display_order = 2)]
-    Login,
-    /// Manage provider credentials in ~/.jan/config.toml (used by the TUI and CLI)
+    Login {
+        /// Skip the browser approval and paste an API key instead (the legacy flow)
+        #[arg(long)]
+        paste_token: bool,
+    },
+    /// Show or manage the Tokamak sign-in
     #[command(display_order = 3)]
+    Auth {
+        #[command(subcommand)]
+        cmd: AuthCommands,
+    },
+    /// Manage provider credentials in ~/.jan/config.toml (used by the TUI and CLI)
+    #[command(display_order = 4)]
     Config {
         #[command(subcommand)]
         cmd: AgentConfigCommands,
     },
     /// Manage project-local plugins and their skills
-    #[command(display_order = 4)]
+    #[command(display_order = 5)]
     Plugin {
         #[command(subcommand)]
         cmd: PluginCommands,
     },
     /// Update this binary to the latest build of the channel it was built for
-    #[command(display_order = 5)]
+    #[command(display_order = 6)]
     Update {
         /// Report whether an update exists without installing it
         #[arg(long)]
@@ -181,6 +191,16 @@ enum Commands {
         #[arg(long, conflicts_with = "check")]
         force: bool,
     },
+}
+
+/// Tokamak sign-in inspection and control.
+#[derive(Subcommand)]
+enum AuthCommands {
+    /// Show the current sign-in: account, endpoint, key id and expiry, plus a
+    /// live validity check against the upstream
+    Status,
+    /// Sign out: revoke the stored key server-side and clear the local entry.
+    Logout,
 }
 
 #[derive(Subcommand)]
@@ -528,19 +548,23 @@ async fn main() {
         return;
     };
 
-    // `jan update` reports the same thing itself, in more detail.
+    // `jan update` reports the same thing itself, in more detail. The check
+    // doubles as the usage record (see `updater::fetch_manifest`), so there is
+    // no separate ping to fire here; `JAN_CLI_NO_UPDATE_CHECK` opts out of both.
     if !matches!(command, Commands::Update { .. }) {
         app_lib::core::cli::updater::print_update_notice_if_available().await;
     }
-    // Awaited (not spawned): a short-lived `jan cli ...` invocation can exit
-    // before a detached background task gets to run. See `telemetry::ping_if_due`
-    // for what this sends and `JAN_CLI_NO_UPDATE_CHECK` to opt out.
-    app_lib::core::cli::telemetry::ping_if_due().await;
 
     match command {
         Commands::Cli { cmd } => handle_cli(cmd).await,
-        Commands::Login => {
-            if let Err(e) = app_lib::core::cli::login::run_login().await {
+        Commands::Login { paste_token } => {
+            if let Err(e) = app_lib::core::cli::login::run_login(paste_token).await {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
+        Commands::Auth { cmd } => {
+            if let Err(e) = handle_auth(cmd).await {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }
@@ -590,34 +614,35 @@ async fn handle_update(check: bool, force: bool) {
 }
 
 async fn handle_plugin(cmd: PluginCommands) {
-    let result = match cmd {
-        PluginCommands::List { project, json } => {
-            let plugins = cli_plugin_list(&project);
-            if json {
-                println!("{}", serde_json::to_string_pretty(&plugins).unwrap());
-            } else {
-                print!("{}", format_plugin_list(&plugins));
+    let result =
+        match cmd {
+            PluginCommands::List { project, json } => {
+                let plugins = cli_plugin_list(&project);
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&plugins).unwrap());
+                } else {
+                    print!("{}", format_plugin_list(&plugins));
+                }
+                Ok(())
             }
-            Ok(())
-        }
-        PluginCommands::Install { spec, project } => cli_plugin_install(&project, &spec)
-            .await
-            .map(|plugins| match plugins.as_slice() {
-                // A single install keeps the original JSON-object output so
-                // existing scripts parsing it are unaffected; a batch install
-                // (plugin collection) prints the JSON array.
-                [plugin] => println!("{}", serde_json::to_string_pretty(plugin).unwrap()),
-                many => println!("{}", serde_json::to_string_pretty(many).unwrap()),
-            }),
-        PluginCommands::Remove { name, project } => {
-            cli_plugin_remove(&project, &name).map(|()| println!("Removed plugin '{name}'"))
-        }
-        PluginCommands::Search { query, project } => {
-            cli_plugin_search(&project, query.as_deref().unwrap_or(""))
+            PluginCommands::Install { spec, project } => cli_plugin_install(&project, &spec)
                 .await
-                .map(|entries| println!("{}", serde_json::to_string_pretty(&entries).unwrap()))
-        }
-    };
+                .map(|plugins| match plugins.as_slice() {
+                    // A single install keeps the original JSON-object output so
+                    // existing scripts parsing it are unaffected; a batch install
+                    // (plugin collection) prints the JSON array.
+                    [plugin] => println!("{}", serde_json::to_string_pretty(plugin).unwrap()),
+                    many => println!("{}", serde_json::to_string_pretty(many).unwrap()),
+                }),
+            PluginCommands::Remove { name, project } => {
+                cli_plugin_remove(&project, &name).map(|()| println!("Removed plugin '{name}'"))
+            }
+            PluginCommands::Search { query, project } => {
+                cli_plugin_search(&project, query.as_deref().unwrap_or(""))
+                    .await
+                    .map(|entries| println!("{}", serde_json::to_string_pretty(&entries).unwrap()))
+            }
+        };
     if let Err(e) = result {
         eprintln!("Error: {e}");
         std::process::exit(1);
@@ -760,6 +785,70 @@ async fn handle_agent(cmd: AgentCommands) {
     }
 }
 
+/// `jan auth` handler: report sign-in state or sign out.
+async fn handle_auth(cmd: AuthCommands) -> Result<(), String> {
+    use app_lib::core::cli::tokamak;
+    match cmd {
+        AuthCommands::Status => {
+            let status = tokamak::auth_status();
+            if !status.signed_in {
+                println!("Not signed in to Tokamak. Run `jan login`.");
+                return Ok(());
+            }
+            println!("Signed in to Tokamak");
+            match &status.account {
+                Some(account) => println!("  account:      {account}"),
+                // A legacy paste login never learns the account; that is not the
+                // same as failing to look one up.
+                None => println!("  account:      not recorded"),
+            }
+            println!("  endpoint:     {}", status.endpoint);
+            if let Some(key_id) = &status.key_id {
+                println!("  key id:       {key_id}");
+            }
+            match status.key_expires_at {
+                Some(ts) if ts != 0 => println!("  key expires:  {}", format_ts(ts)),
+                // A legacy paste login records no expiry; that is not the same
+                // as a key that never expires, so don't claim it does.
+                _ => println!("  key expires:  not recorded"),
+            }
+            match tokamak::live_valid().await {
+                Some(true) => println!("  valid:        yes"),
+                Some(false) => println!("  valid:        no (re-run `jan login`)"),
+                None => println!("  valid:        could not reach upstream"),
+            }
+            if let Some(warning) = tokamak::expiry_warning() {
+                println!();
+                println!("Warning: {warning}");
+            }
+            Ok(())
+        }
+        AuthCommands::Logout => {
+            match tokamak::logout().await? {
+                tokamak::Logout::ClearedAndRevoked => {
+                    println!("Signed out of Tokamak (key revoked).")
+                }
+                tokamak::Logout::ClearedOnly => println!(
+                    "Signed out of Tokamak locally. The key could not be revoked upstream - \
+                     remove it at {}",
+                    tokamak::API_KEYS_URL
+                ),
+                tokamak::Logout::NothingToDo => println!("Not signed in to Tokamak."),
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Render a unix timestamp as a UTC date/time for `auth status`.
+fn format_ts(ts: u64) -> String {
+    let secs = i64::try_from(ts).unwrap_or(0);
+    match chrono::DateTime::from_timestamp(secs, 0) {
+        Some(dt) => dt.format("%Y-%m-%d %H:%M UTC").to_string(),
+        None => format!("unix {ts}"),
+    }
+}
+
 fn handle_agent_config(cmd: AgentConfigCommands) -> Result<(), String> {
     match cmd {
         AgentConfigCommands::Set {
@@ -861,7 +950,7 @@ async fn handle_models(cmd: ModelsCommands) {
                             "provider": c.provider,
                             "base_url": c.base_url,
                             "api_type": c.api_type,
-                            "has_api_key": !c.bearer_key_chain().is_empty(),
+                            "has_api_key": app_lib::core::cli::providers::has_credential(c),
                         })
                     })
                 })
@@ -890,10 +979,8 @@ fn mcp_list_entry(entry: &McpServerEntry, show_secrets: bool) -> serde_json::Val
     let redact_map = |m: Option<&serde_json::Map<String, serde_json::Value>>| -> serde_json::Value {
         match m {
             Some(map) => {
-                let out: serde_json::Map<String, serde_json::Value> = map
-                    .iter()
-                    .map(|(k, v)| (k.clone(), redact(v)))
-                    .collect();
+                let out: serde_json::Map<String, serde_json::Value> =
+                    map.iter().map(|(k, v)| (k.clone(), redact(v))).collect();
                 serde_json::Value::Object(out)
             }
             None => serde_json::json!({}),
@@ -1083,8 +1170,38 @@ mod tests {
     #[test]
     fn login_command_parses_and_takes_no_args() {
         let cli = Cli::parse_from(["jan", "login"]);
-        assert!(matches!(cli.command, Some(Commands::Login)));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Login { paste_token: false })
+        ));
         assert!(Cli::try_parse_from(["jan", "login", "sk-key"]).is_err());
+    }
+
+    #[test]
+    fn login_command_accepts_paste_token_flag() {
+        let cli = Cli::parse_from(["jan", "login", "--paste-token"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Login { paste_token: true })
+        ));
+    }
+
+    #[test]
+    fn auth_subcommands_parse() {
+        let cli = Cli::parse_from(["jan", "auth", "status"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Auth {
+                cmd: AuthCommands::Status
+            })
+        ));
+        let cli = Cli::parse_from(["jan", "auth", "logout"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Auth {
+                cmd: AuthCommands::Logout
+            })
+        ));
     }
 
     /// Parse a `jan cli mcp <cmd> <extra...>` argv and pull out the subcommand.
@@ -1092,7 +1209,9 @@ mod tests {
         let mut argv = vec!["jan", "cli", "mcp"];
         argv.extend_from_slice(extra);
         match Cli::parse_from(argv).command {
-            Some(Commands::Cli { cmd: CliCommands::Mcp { cmd } }) => cmd,
+            Some(Commands::Cli {
+                cmd: CliCommands::Mcp { cmd },
+            }) => cmd,
             _ => panic!("expected `cli mcp`"),
         }
     }
@@ -1100,7 +1219,12 @@ mod tests {
     #[test]
     fn mcp_list_parses_and_redacts_by_default() {
         let cmd = parsed_mcp(&["list"]);
-        assert!(matches!(cmd, McpCommands::List { show_secrets: false }));
+        assert!(matches!(
+            cmd,
+            McpCommands::List {
+                show_secrets: false
+            }
+        ));
         let cmd = parsed_mcp(&["list", "--show-secrets"]);
         assert!(matches!(cmd, McpCommands::List { show_secrets: true }));
     }
@@ -1187,11 +1311,14 @@ mod tests {
                 cmd: PluginCommands::List { json, .. }
             }) if json
         ));
-}
+    }
 
     #[test]
     fn split_kv_rejects_without_separator() {
-        assert_eq!(split_kv("K=V", "env").unwrap(), ("K".to_string(), "V".to_string()));
+        assert_eq!(
+            split_kv("K=V", "env").unwrap(),
+            ("K".to_string(), "V".to_string())
+        );
         assert!(split_kv("novalue", "env").is_err());
         assert!(split_kv("=V", "header").is_err());
     }

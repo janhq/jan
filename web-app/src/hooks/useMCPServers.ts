@@ -33,6 +33,12 @@ export type MCPSettings = {
   useLightweightRouterModel: boolean
   routerModelProvider: string
   routerModelId: string
+  /**
+   * Per-tool-result character cap applied before the result enters conversation
+   * history, so one oversized result cannot exhaust the model's context. `0`
+   * disables the cap.
+   */
+  maxToolOutputChars: number
 }
 
 export const DEFAULT_MCP_SETTINGS: MCPSettings = {
@@ -44,6 +50,7 @@ export const DEFAULT_MCP_SETTINGS: MCPSettings = {
   useLightweightRouterModel: false,
   routerModelProvider: '',
   routerModelId: '',
+  maxToolOutputChars: 40000,
 }
 
 type MCPServerStoreState = {

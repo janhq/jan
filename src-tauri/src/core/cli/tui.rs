@@ -45,12 +45,12 @@ use super::brand;
 use super::journal::{self, DisplayEntry, ReasoningSeg};
 use super::mcp::McpServerEntry;
 use super::{sort_threads_recent, AgentSession, ResumeTarget, SessionLimits};
-use serde_json::Value;
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{
     run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
 };
+use serde_json::Value;
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tauri_plugin_agent_tools::workspace;
 
@@ -119,6 +119,20 @@ fn startup_modes(mouse: bool) -> String {
         modes.push_str(MOUSE_TRACK_ON);
     }
     modes
+}
+
+/// Whether to wrap each repaint in synchronized output (`\x1b[?2026h/l`).
+/// kitty honors DEC 2026 but can drop the resize-triggered full clear + repaint
+/// while a synchronized frame is held, leaving a persistent black screen on
+/// resize (konsole ignores 2026, so it never shows this). Skipping the wrapper
+/// under kitty trades tearing for a reliable resize; every other terminal that
+/// supports 2026 keeps the anti-tearing frame.
+fn sync_output_for(kind: super::terminal_setup::Kind) -> bool {
+    !matches!(kind, super::terminal_setup::Kind::Kitty)
+}
+
+fn use_synchronized_output() -> bool {
+    sync_output_for(super::terminal_setup::identify(|k| std::env::var(k).ok()))
 }
 /// How long the dock advertises a finished copy.
 const COPY_NOTICE: Duration = Duration::from_millis(1500);
@@ -456,11 +470,11 @@ impl Picker {
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
             PickerKind::AgentSettings => " ↑/↓ select   Enter edit   x unset   Esc close",
-            PickerKind::ProviderSettings => " ↑/↓ select   Enter edit   a add   dd delete   x logout   Esc close",
-            PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
-            PickerKind::PluginSelect => {
-                " ↑/↓ select   Space toggle   Enter install   Esc cancel"
+            PickerKind::ProviderSettings => {
+                " ↑/↓ select   Enter edit   a add   dd delete   x logout   Esc close"
             }
+            PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
+            PickerKind::PluginSelect => " ↑/↓ select   Space toggle   Enter install   Esc cancel",
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
         }
     }
@@ -670,10 +684,68 @@ enum McpJobDone {
     },
 }
 
-/// `/login` key entry: a docked prompt opened after provider/method selection
-/// that collects a masked API key for the chosen provider without echoing it.
-/// Verification runs off the render loop (see `login_task` in `chat_loop`), so
-/// `verifying` marks the window where the prompt is read-only.
+/// A browser launch held back for confirmation, for flows with no dock of their
+/// own to ask in (currently `/mcp` authorization).
+struct BrowserConfirm {
+    url: String,
+    /// What the page is for, e.g. `authorize 'github'`.
+    purpose: String,
+}
+
+/// Which sign-in the `/login` dock is running. The browser flow is the default;
+/// the paste field is what a server predating it (or a failure) falls back to.
+enum LoginStage {
+    /// Creating the session -- one round trip before there is a code to show.
+    Connecting,
+    /// Waiting on the browser. The code is displayed so the user can check it
+    /// against the approve page before clicking Approve.
+    ///
+    /// While `confirm_open` is set the user has not yet said whether to launch a
+    /// browser here. The poll runs regardless, so approving from a phone still
+    /// completes the sign-in without ever answering.
+    Approving {
+        user_code: String,
+        authorize_url: String,
+        confirm_open: bool,
+    },
+    /// Legacy paste-a-key entry. `confirm_open` gates sending the user to the
+    /// API-keys page; the field only accepts a key once that is answered.
+    Paste { confirm_open: bool },
+}
+
+impl LoginStage {
+    /// The page this stage would send the user to, while that is still unasked.
+    fn unconfirmed_url(&self) -> Option<&str> {
+        match self {
+            Self::Approving {
+                authorize_url,
+                confirm_open: true,
+                ..
+            } => Some(authorize_url),
+            Self::Paste { confirm_open: true } => Some(super::tokamak::API_KEYS_URL),
+            _ => None,
+        }
+    }
+
+    /// Mark the browser question answered, whichever stage asked it.
+    fn mark_confirmed(&mut self) {
+        match self {
+            Self::Approving { confirm_open, .. } | Self::Paste { confirm_open } => {
+                *confirm_open = false
+            }
+            Self::Connecting => {}
+        }
+    }
+}
+
+/// `/login`: a docked prompt that runs the browser-approval sign-in and, when
+/// that is unavailable, collects a Tokamak API key without echoing it. The
+/// network work runs off the render loop (see `login_*_task` in `chat_loop`), so
+/// `verifying` marks the window where the paste field is read-only.
+///
+/// The dock stays open for the whole flow, which is also what makes Esc a
+/// reliable cancel: `chat_loop` drops every in-flight sign-in task the moment
+/// `app.login` goes to `None`.
 struct LoginPrompt {
     provider: String,
     /// The key as typed/pasted. Never rendered verbatim -- see `masked`.
@@ -681,6 +753,7 @@ struct LoginPrompt {
     /// Why the previous attempt failed, shown above the field.
     error: Option<String>,
     verifying: bool,
+    stage: LoginStage,
 }
 
 impl LoginPrompt {
@@ -690,7 +763,38 @@ impl LoginPrompt {
             input: String::new(),
             error: None,
             verifying: false,
+            stage: LoginStage::Paste { confirm_open: true },
         }
+    }
+
+    /// The dock as `/login` opens it, before the session exists.
+    /// The dock for Tokamak's browser-approval flow, before the session exists.
+    fn connecting() -> Self {
+        Self {
+            stage: LoginStage::Connecting,
+            ..Self::new("tokamak")
+        }
+    }
+
+    fn unconfirmed_url(&self) -> Option<String> {
+        match &self.stage {
+            LoginStage::Paste { confirm_open: true } => {
+                crate::core::cli::auth::provider_by_id(&self.provider)
+                    .map(|provider| provider.api_key.keys_url.to_string())
+            }
+            _ => self.stage.unconfirmed_url().map(str::to_string),
+        }
+    }
+
+    /// Only the paste field accepts input, and only once the browser question is
+    /// answered; the approval stages are display-only throughout.
+    fn editable(&self) -> bool {
+        matches!(
+            self.stage,
+            LoginStage::Paste {
+                confirm_open: false
+            }
+        ) && !self.verifying
     }
 
     fn masked(&self) -> String {
@@ -698,7 +802,7 @@ impl LoginPrompt {
     }
 
     fn paste(&mut self, text: &str) {
-        if !self.verifying {
+        if self.editable() {
             self.input.push_str(super::secret_input::pasted(text));
         }
     }
@@ -906,11 +1010,10 @@ fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
     let indent = " ".repeat(BANNER_INDENT as usize);
     let mut out: Vec<Line<'static>> = Vec::new();
 
-    // A clipped logo reads as breakage, so a narrow terminal gets the name
-    // as text instead. The lockup (hand beside the wordmark) is the widest
-    // splash element, so it sets the threshold that gates the whole block.
-    if width >= brand::LOCKUP_WIDTH + BANNER_INDENT * 2 {
-        for art in brand::lockup() {
+    // A clipped wordmark reads as breakage, so a narrow terminal gets the name
+    // as text instead.
+    if width >= brand::LOGO_WIDTH + BANNER_INDENT * 2 {
+        for art in brand::LOGO {
             out.push(Line::styled(format!("{indent}{art}"), accent));
         }
         out.push(Line::raw(""));
@@ -1115,7 +1218,12 @@ impl Row {
     }
 
     fn fill(&self, width: u16) {
-        if self.cache.borrow().as_ref().is_some_and(|r| r.width == width) {
+        if self
+            .cache
+            .borrow()
+            .as_ref()
+            .is_some_and(|r| r.width == width)
+        {
             return;
         }
         let lines = self.render(width);
@@ -1248,10 +1356,21 @@ struct PendingAsk {
     custom_input: String,
     rect: Rect,
     row_hitboxes: Vec<(u16, usize)>,
+    /// When the `ask` loop auto-selects the recommended option if unanswered.
+    /// `Some` only when a timeout was configured; drives the live countdown in
+    /// the prompt title. Anchored here at event receipt, a hair before the
+    /// loop arms its timer, so the countdown reaches zero marginally before the
+    /// loop fires - the safe direction (never show "0s left" while still
+    /// waiting indefinitely).
+    deadline: Option<std::time::Instant>,
 }
 
 impl PendingAsk {
-    fn new(request_id: String, request: crate::core::agent::interaction::AskRequest) -> Self {
+    fn new(
+        request_id: String,
+        request: crate::core::agent::interaction::AskRequest,
+        timeout: Option<std::time::Duration>,
+    ) -> Self {
         let answers = request
             .questions
             .iter()
@@ -1271,12 +1390,29 @@ impl PendingAsk {
             custom_input: String::new(),
             rect: Rect::default(),
             row_hitboxes: Vec::new(),
+            deadline: timeout.map(|d| std::time::Instant::now() + d),
         }
     }
 
     fn question(&self) -> &crate::core::agent::interaction::Question {
         &self.request.questions[self.question_index]
     }
+
+    /// Whole seconds until `now` reaches `deadline`, rounded up (ceil): while
+    /// the prompt is genuinely still live this never reports `0s`. `None` when
+    /// no timeout was configured or the deadline has already passed.
+    fn remaining_secs(&self, now: std::time::Instant) -> Option<u64> {
+        let deadline = self.deadline?;
+        let remaining = deadline.checked_duration_since(now)?;
+        // `checked_duration_since` yields 0 exactly at the deadline; that is
+        // "no time left", not a live 0s, so fall through to `None`. A strictly
+        // positive remainder (however tiny) rounds up to at least 1s.
+        if remaining.is_zero() {
+            return None;
+        }
+        Some(remaining.as_millis().div_ceil(1000) as u64)
+    }
+
     fn row_count(&self) -> usize {
         self.question().options.len() + 1 + usize::from(self.question().multi)
     }
@@ -1507,6 +1643,21 @@ struct App {
     /// until the command finishes, so without this its row -- live for as long
     /// as the command runs -- has nothing to name.
     bash_jobs: HashMap<String, String>,
+    /// Output streamed by each `bash` call so far, keyed by call id, bounded to
+    /// [`LIVE_OUTPUT_MAX_BYTES`] from the end. This is what turns a running
+    /// command from a spinner into a terminal.
+    live_output: HashMap<String, String>,
+    /// When each call's first output arrived, gating the panel by
+    /// [`LIVE_OUTPUT_GRACE`] so a command that finishes quickly never flashes a
+    /// box on its way to the group summary.
+    live_since: HashMap<String, Instant>,
+    /// Maps the call that *collects* a backgrounded job to the call that
+    /// *started* it. The job keeps streaming under the original id, so without
+    /// this the collecting call -- the one the user is actually waiting on --
+    /// would show an empty box while the output piled up out of sight.
+    live_alias: HashMap<String, String>,
+    /// Call id that started each backgrounded job, keyed by `job_id`.
+    job_origin: HashMap<String, String>,
     /// Base snapshot (working-tree state before the first turn) for the active
     /// thread. `Some` once snapshotting is armed; `None` = no workspace restore.
     base_snapshot: Option<String>,
@@ -1676,6 +1827,12 @@ struct App {
     /// Manual OAuth input submitted while no task sender is active; delivered to
     /// the fresh task channel on retry spawn.
     account_login_pending_manual_input: Option<String>,
+    /// `/login` asked for the browser flow: `chat_loop` creates the session.
+    login_device_request: bool,
+    /// A `/mcp` authorization waiting on the user's yes/no before a browser is
+    /// launched. Holds only the URL and what it is for - never the bound
+    /// loopback listener, which stays on the task awaiting the redirect.
+    browser_confirm: Option<BrowserConfirm>,
     /// `/update` handed off to the loop, which spawns the install. Taken once.
     update_requested: bool,
     /// `/plugin install` handed off to the loop, which runs the git clone off
@@ -1729,6 +1886,10 @@ struct App {
     view_width: u16,
     last_kind: Kind,
     should_quit: bool,
+    /// A blank idle composer has armed the exit: the first Ctrl-C only warns,
+    /// so leaving the TUI always takes a deliberate second one. Cleared by any
+    /// key that resumes composing.
+    exit_armed: bool,
     /// Live panels for background subagents currently streaming, one per run.
     /// Several may be active at once; each renders its own rolling window.
     subagents: Vec<SubagentPanel>,
@@ -2078,6 +2239,10 @@ impl App {
             diff_paths: HashMap::new(),
             bash_commands: HashMap::new(),
             bash_jobs: HashMap::new(),
+            live_output: HashMap::new(),
+            live_since: HashMap::new(),
+            live_alias: HashMap::new(),
+            job_origin: HashMap::new(),
             base_snapshot: None,
             checkpoints: Vec::new(),
             snap_queue: std::collections::VecDeque::new(),
@@ -2140,6 +2305,8 @@ impl App {
             account_login_submit: None,
             account_login_manual_tx: None,
             account_login_pending_manual_input: None,
+            login_device_request: false,
+            browser_confirm: None,
             update_requested: false,
             plugin_install_request: None,
             plugin_select_request: None,
@@ -2158,6 +2325,7 @@ impl App {
             view_width: 0,
             last_kind: Kind::None,
             should_quit: false,
+            exit_armed: false,
             subagents: Vec::new(),
             subagent_blocks: Vec::new(),
             awaiting: Vec::new(),
@@ -2553,6 +2721,44 @@ impl App {
         self.awaiting.clear();
     }
 
+    /// The live shell panel for `group`'s newest unresolved *command*, or no rows
+    /// when nothing in the group is streaming yet.
+    ///
+    /// Picks the newest call that has output rather than the newest call
+    /// outright: a group runs its calls in parallel, so a `read` issued after a
+    /// `bash` must not blank the panel until it lands and then let it pop back.
+    ///
+    /// Follows the job alias, so a call *waiting on* a backgrounded job shows the
+    /// output the detached job is still producing under the id of the call that
+    /// started it.
+    fn live_shell_panel(&self, group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
+        let Some((command, output)) = group
+            .calls
+            .iter()
+            .rev()
+            .filter(|c| c.content.is_none())
+            .find_map(|c| self.live_view(&c.id))
+        else {
+            return Vec::new();
+        };
+        shell_panel_lines(command, output, width, SHELL_PANEL_GUTTER)
+    }
+
+    /// A call's command and the output it has streamed, once both exist and the
+    /// command has been running long enough to be worth a box.
+    fn live_view(&self, id: &str) -> Option<(&str, &str)> {
+        let command = self.bash_commands.get(id)?;
+        let key = self.live_alias.get(id).map_or(id, String::as_str);
+        let output = self.live_output.get(key)?;
+        // A command that prints and exits inside the grace period renders no box
+        // at all, so its output never appears only to be yanked away a frame
+        // later by the group summary.
+        if self.live_since.get(key)?.elapsed() < LIVE_OUTPUT_GRACE {
+            return None;
+        }
+        Some((command, output))
+    }
+
     /// Pair a `bash` call with the backgrounded command it is about.
     ///
     /// Both directions run off the same maps: a call carrying a `command` is
@@ -2581,10 +2787,17 @@ impl App {
             self.bash_commands.insert(id.to_string(), cmd);
             return args;
         }
+        // Collecting a backgrounded job: the detached command still streams under
+        // the id of the call that started it, so point this call at that buffer.
+        // Without the alias the row the user is waiting on shows an empty box.
+        if let Some(origin) = bash_job_id(&args).and_then(|job| self.job_origin.get(job)) {
+            self.live_alias.insert(id.to_string(), origin.clone());
+        }
         let remembered = bash_job_id(&args)
             .and_then(|job| self.bash_jobs.get(job))
             .cloned();
         if let (Some(cmd), Some(obj)) = (remembered, args.as_object_mut()) {
+            self.bash_commands.insert(id.to_string(), cmd.clone());
             obj.insert("command".to_string(), serde_json::Value::String(cmd));
         }
         args
@@ -2685,6 +2898,26 @@ impl App {
             && self.reasoning_open()
     }
 
+    /// The open dock that owns the keyboard, phrased as what the user has to do
+    /// in it. `None` when the composer is live.
+    ///
+    /// Must mirror the guard list at the top of `handle_key`: a dock that takes
+    /// every keystroke but leaves a cursor blinking in the composer promises a
+    /// field that is not there.
+    fn blocking_dock(&self) -> Option<&'static str> {
+        if self.login.is_some() {
+            Some("sign in in the dock above")
+        } else if self.browser_confirm.is_some() {
+            Some("answer the question above")
+        } else if self.settings_prompt.is_some() {
+            Some("edit the setting above")
+        } else if self.mcp_prompt.is_some() || self.provider_prompt.is_some() {
+            Some("finish the wizard above")
+        } else {
+            None
+        }
+    }
+
     /// True while the model is mid-reasoning: either a `<think>` block is live
     /// in the answer buffer (inline-tag providers) or the newest native segment
     /// is still at the tail, i.e. no content token has arrived since
@@ -2711,12 +2944,10 @@ impl App {
             // block closed, so a long tool call or answer prose falls back to the
             // plain [working] instead of pinning [thought for Ns] till turn end.
             match (self.thought_for, self.thought_for_since) {
-                (Some(d), Some(since)) if since.elapsed() < THOUGHT_FOR_TTL => {
-                    Some((
-                        format!("thought for {}", format_elapsed(d.as_secs())),
-                        Style::new().yellow(),
-                    ))
-                }
+                (Some(d), Some(since)) if since.elapsed() < THOUGHT_FOR_TTL => Some((
+                    format!("thought for {}", format_elapsed(d.as_secs())),
+                    Style::new().yellow(),
+                )),
                 _ => None,
             }
         }
@@ -2782,6 +3013,18 @@ impl App {
             self.input_history.push(text.to_string());
         }
         self.reset_recall();
+    }
+
+    /// Record a typed-but-never-submitted draft into recall history, so a
+    /// Ctrl-C that wipes the composer is recoverable with Up. Same dedupe and
+    /// recall-reset rules as `record_submitted`; a blank draft is not worth a
+    /// history slot.
+    fn record_draft(&mut self) {
+        if self.input.trim().is_empty() {
+            return;
+        }
+        let text = self.input.clone();
+        self.record_submitted(&text);
     }
 
     /// Replace the buffer with a recalled entry, caret at the end.
@@ -3958,6 +4201,25 @@ impl App {
                     call.args.push_str(&delta);
                 }
             }
+            StreamEvent::ToolOutputDelta { id, delta } => {
+                // Bounded from the end: a runaway command must not be able to
+                // grow the TUI's memory. The tool keeps the authoritative full
+                // output (spilling to disk past its own cap) and hands it over
+                // with the result; this buffer only has to feed the live view.
+                self.live_since
+                    .entry(id.clone())
+                    .or_insert_with(Instant::now);
+                let buf = self.live_output.entry(id).or_default();
+                buf.push_str(&delta);
+                if buf.len() > LIVE_OUTPUT_MAX_BYTES {
+                    // Trim on a char boundary so the buffer stays valid UTF-8.
+                    let cut = buf.len() - LIVE_OUTPUT_MAX_BYTES;
+                    let at = (cut..buf.len())
+                        .find(|i| buf.is_char_boundary(*i))
+                        .unwrap_or(buf.len());
+                    buf.drain(..at);
+                }
+            }
             StreamEvent::ToolCall { id, name, args } => {
                 // The full call (with parsed args) supersedes its in-progress
                 // throbber.
@@ -4045,7 +4307,17 @@ impl App {
                 if let Some(cmd) = self.bash_commands.remove(&id) {
                     if let Some(job) = backgrounded_job_id(&content) {
                         self.bash_jobs.insert(job.to_string(), cmd);
+                        self.job_origin.insert(job.to_string(), id.clone());
                     }
+                }
+                // The command is over, so its live buffer is dead weight: the
+                // authoritative output is in this result. A call that backgrounded
+                // itself keeps its buffer -- the detached job is still writing to
+                // it, under this same id.
+                if backgrounded_job_id(&content).is_none() {
+                    let key = self.live_alias.remove(&id).unwrap_or_else(|| id.clone());
+                    self.live_output.remove(&key);
+                    self.live_since.remove(&key);
                 }
                 let resolved = self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
@@ -4119,9 +4391,19 @@ impl App {
             StreamEvent::AskRequest {
                 request_id,
                 request,
-            } => self
-                .ask_queue
-                .push_back(PendingAsk::new(request_id, request)),
+                timeout_secs,
+                ..
+            } => self.ask_queue.push_back(PendingAsk::new(
+                request_id,
+                request,
+                timeout_secs.map(std::time::Duration::from_secs),
+            )),
+            // The loop auto-answered a timed-out ask; drop its now-dead prompt.
+            // A user answer clears the queue in `resolve_front_ask` instead, so
+            // this only fires for the timeout path.
+            StreamEvent::AskResolved { request_id } => {
+                self.ask_queue.retain(|ask| ask.request_id != request_id);
+            }
             StreamEvent::SubagentStart { run_id, name, task } => {
                 // A queued dispatch already opened a panel for this run; promote
                 // it to running instead of pushing a duplicate. Otherwise open a
@@ -4281,8 +4563,12 @@ impl App {
                     panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
                 }
             }
-            // Token/ToolResult and any nested bracket are internal to the child
-            // run and not surfaced in the parent transcript.
+            // Token/ToolResult, a child's live tool output (`ToolOutputDelta`)
+            // and any nested bracket are internal to the child run and not
+            // surfaced in the parent transcript: a subagent panel is a one-line
+            // activity summary, so a child's shell output would have nowhere to
+            // go and would push the parent's own live panel off screen. Deliberate
+            // -- the child's output still reaches its `ToolResult`.
             _ => {}
         }
     }
@@ -5719,6 +6005,70 @@ fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Ve
     )
 }
 
+/// Live output kept per running command. Past this the front is dropped: the
+/// view shows a tail, and the tool hands over the authoritative full output when
+/// the call finishes.
+const LIVE_OUTPUT_MAX_BYTES: usize = 64 * 1024;
+
+/// Rendered rows of live command output, so a long-running command fills at most
+/// this much of the viewport.
+const LIVE_OUTPUT_TAIL_LINES: usize = 12;
+
+/// How long a command must have been printing before its output gets a box. The
+/// panel is transient -- it gives way to the group summary when the call
+/// resolves -- so anything short-lived is better shown as no box than as a flash.
+const LIVE_OUTPUT_GRACE: Duration = Duration::from_millis(400);
+
+/// Indent of the live shell panel, matching a single-call group's detail box so
+/// the running command and its expanded result sit on the same column.
+const SHELL_PANEL_GUTTER: &str = "│   ";
+
+/// A running command and its output so far, framed like a terminal. No rows
+/// until the first chunk arrives, so a command that has printed nothing shows
+/// only its activity row rather than an empty box.
+fn shell_panel_lines(
+    command: &str,
+    output: &str,
+    width: u16,
+    gutter: &'static str,
+) -> Vec<Line<'static>> {
+    if output.is_empty() {
+        return Vec::new();
+    }
+    let max = panel_inner(width as usize, gutter);
+    // The command is the session's first line, as a prompt, so the box reads as
+    // a terminal rather than as a detached wall of output.
+    let mut rows: Vec<Line<'static>> =
+        wrap_text(command, Style::new().bold(), max.saturating_sub(2))
+            .into_iter()
+            .enumerate()
+            .map(|(i, chunk)| {
+                let mut spans = vec![Span::styled(
+                    if i == 0 { "$ " } else { "  " },
+                    Style::new().cyan().bold(),
+                )];
+                spans.extend(chunk);
+                Line::from(spans)
+            })
+            .collect();
+    let all: Vec<&str> = output.lines().collect();
+    let skipped = all.len().saturating_sub(LIVE_OUTPUT_TAIL_LINES);
+    if skipped > 0 {
+        rows.push(Line::styled(
+            format!("… ({})", pluralize("earlier line", skipped)),
+            Style::new().dark_gray(),
+        ));
+    }
+    for line in &all[skipped..] {
+        rows.extend(
+            wrap_text(line, Style::new().dim(), max)
+                .into_iter()
+                .map(Line::from),
+        );
+    }
+    boxed_panel(rows, width as usize, gutter)
+}
+
 /// Bucket `nouns` into read-style and run-style clauses (first-seen order,
 /// counted and pluralized) and join them with the given verbs, so the verb
 /// always agrees with its noun (never "Ran 1 directory").
@@ -6184,6 +6534,17 @@ async fn await_login(
     }
 }
 
+async fn await_tokamak_login(
+    task: &mut Option<tokio::task::JoinHandle<Result<super::tokamak::Login, String>>>,
+) -> Result<super::tokamak::Login, String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    joined.map_err(|e| format!("Tokamak sign-in task failed: {e}"))?
+}
+
 async fn await_account_login(
     task: &mut Option<tokio::task::JoinHandle<Result<String, String>>>,
 ) -> Result<String, String> {
@@ -6197,9 +6558,7 @@ async fn await_account_login(
 
 /// Await the post-Claude-login plan-report task, parking forever when none is
 /// running so this can sit in the loop's `select!` unconditionally.
-async fn await_account_usage(
-    task: &mut Option<tokio::task::JoinHandle<String>>,
-) -> String {
+async fn await_account_usage(task: &mut Option<tokio::task::JoinHandle<String>>) -> String {
     let joined = match task.as_mut() {
         Some(h) => h.await,
         None => return pending().await,
@@ -6211,6 +6570,27 @@ async fn await_account_usage(
     }
 }
 
+/// Await the session-creation half of the browser sign-in, parking forever when
+/// none is running so this can sit in the loop's `select!` unconditionally.
+async fn await_login_begin(
+    task: &mut Option<
+        tokio::task::JoinHandle<
+            Result<super::device_auth::PendingAuth, super::device_auth::BeginError>,
+        >,
+    >,
+) -> Result<super::device_auth::PendingAuth, super::device_auth::BeginError> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    match joined {
+        Ok(inner) => inner,
+        Err(e) => Err(super::device_auth::BeginError::Failed(format!(
+            "sign-in task failed: {e}"
+        ))),
+    }
+}
 
 /// How often the dock's branch indicator re-reads `HEAD`, so a checkout made
 /// outside the TUI (another terminal, an editor) shows up without needing a
@@ -6351,7 +6731,10 @@ fn finish_plugin_install(
                 app.note("nothing installed");
             }
             for p in plugins {
-                app.note(&format!("installed plugin '{}' ({} skills)", p.name, p.skills));
+                app.note(&format!(
+                    "installed plugin '{}' ({} skills)",
+                    p.name, p.skills
+                ));
             }
         }
         Ok(GitInstall::Collection(candidates)) => {
@@ -6471,7 +6854,11 @@ pub async fn run(
     };
     app.push_session_banner(!seeded);
     if app.model.is_empty() {
-        app.note("not signed in — run /login to choose a provider");
+        app.note("not signed in - run /login to choose a provider");
+    } else if let Some(warning) = super::tokamak::expiry_warning() {
+        // Say it at launch rather than letting the key expire into a 401 in the
+        // middle of a run.
+        app.note(&warning);
     }
     // Only when there is nothing to load: a project that already has JAN.md needs
     // no invitation, and the splash hint covers re-running /init deliberately.
@@ -6537,6 +6924,14 @@ pub async fn run(
     );
     let _ = terminal.show_cursor();
     log::set_max_level(prev_log_level);
+    // The session is closed: leave a copyable continuation command on the real
+    // terminal, the same line the non-interactive path prints after a save.
+    // Only a persisted thread can be resumed, so an empty session stays quiet.
+    if let Some(id) = app.thread_id.as_deref() {
+        if !app.history.is_empty() {
+            eprintln!("{}", resume_hint(id));
+        }
+    }
     // Quitting cancels an in-flight `/update` (the runtime drops the task), so
     // say so on the real terminal now that the alternate screen is gone -- a
     // transcript note would vanish with it.
@@ -6551,8 +6946,7 @@ pub async fn run(
     res
 }
 
-const CLAUDE_ALIAS_NOTICE: &str =
-    crate::core::cli::auth::account::CLAUDE_ALIAS_NOTICE;
+const CLAUDE_ALIAS_NOTICE: &str = crate::core::cli::auth::account::CLAUDE_ALIAS_NOTICE;
 
 fn note_claude_alias_if_engaged(app: &mut App) {
     if crate::core::cli::auth::account::take_claude_alias_engaged() {
@@ -6675,6 +7069,17 @@ async fn chat_loop<B: Backend>(
     // instead of surfacing later as sonnet/opus 429s. Detached like the update
     // check: the probe is a network round trip and must not block sign-in.
     let mut account_usage_task: Option<tokio::task::JoinHandle<String>> = None;
+    // The browser-approval sign-in, in two off-loop halves: `begin` creates the
+    // session (one round trip), then the claim polls until the user approves --
+    // which can take minutes, so it must never touch the render loop.
+    let mut login_begin_task: Option<
+        tokio::task::JoinHandle<
+            Result<super::device_auth::PendingAuth, super::device_auth::BeginError>,
+        >,
+    > = None;
+    let mut login_claim_task: Option<
+        tokio::task::JoinHandle<Result<super::tokamak::Login, String>>,
+    > = None;
     // `/mcp` work that must not run on the render loop: a tool listing is a
     // round trip to the peer, and an authorization waits on a browser for up to
     // five minutes. One at a time -- the detail screen only ever asks for one.
@@ -6683,11 +7088,6 @@ async fn chat_loop<B: Backend>(
     // The update check is a network round trip, so it runs off the render loop
     // and notes itself whenever it lands rather than delaying the first frame.
     let mut update_task = Some(tokio::spawn(super::updater::available_update()));
-
-    // Anonymous usage ping (see `telemetry::ping_if_due`), same reasoning:
-    // detached so it never delays the first frame. Nothing is noted for it --
-    // it has no user-visible outcome.
-    tokio::spawn(super::telemetry::ping_if_due());
 
     // `/update` downloads tens of megabytes and rewrites the binary; off the
     // render loop for the same reason, and one at a time.
@@ -6723,6 +7123,10 @@ async fn chat_loop<B: Backend>(
         app.submit_user(task.trim().to_string());
     }
 
+    // kitty drops the resize repaint behind a held synchronized frame, so it is
+    // gated off there; see `use_synchronized_output`.
+    let sync_output = use_synchronized_output();
+
     while !app.should_quit {
         // Drive the snapshot queue: run one job off-loop at a time. A job whose
         // inputs no longer resolve (snapshots disabled) is dropped.
@@ -6736,12 +7140,20 @@ async fn chat_loop<B: Backend>(
             }
         }
 
-        // Esc closed the prompt while a verification was in flight: drop it, so a
-        // late reply can't report a sign-in the user walked away from.
+        // Esc closed the dock while sign-in work was in flight: drop all of it,
+        // so a late reply can't report a sign-in the user walked away from. The
+        // dock stays open for the whole flow, so this is the one cancel path.
         if app.login.is_none() {
             if let Some(task) = login_task.take() {
                 task.abort();
             }
+            if let Some(task) = login_claim_task.take() {
+                task.abort();
+            }
+            if let Some(task) = login_begin_task.take() {
+                task.abort();
+            }
+            app.login_device_request = false;
         }
         if app.account_login.is_none() {
             app.account_login_pending_manual_input = None;
@@ -6810,10 +7222,23 @@ async fn chat_loop<B: Backend>(
                                 "selected provider is unavailable".to_string(),
                             )
                         })?;
-                    crate::core::cli::auth::providers::login_with_api_key(&definition, &key)
-                        .await
+                    crate::core::cli::auth::providers::login_with_api_key(&definition, &key).await
                 }));
             }
+        }
+
+        // `/login` asked for the browser flow: create the session off-loop. Only
+        // when nothing else sign-in shaped is already running, so a repeated
+        // `/login` cannot open two sessions.
+        if app.login_device_request
+            && login_begin_task.is_none()
+            && login_claim_task.is_none()
+            && login_task.is_none()
+        {
+            app.login_device_request = false;
+            login_begin_task = Some(tokio::spawn(async move {
+                super::device_auth::begin(&super::tokamak::base_url()).await
+            }));
         }
 
         // `/update` was typed: install off-loop. The flag is only honored when
@@ -6910,10 +7335,16 @@ async fn chat_loop<B: Backend>(
         // tearing. Written straight to stdout (not the generic `Backend`) for the
         // same reason the clipboard write below is: `chat_loop` is generic over
         // B for TestBackend, which isn't `io::Write`. ratatui already diffs the
-        // buffer and emits ANSI only for changed cells.
-        let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
+        // buffer and emits ANSI only for changed cells. Skipped under kitty,
+        // whose resize handling drops the frame behind a held synchronized
+        // frame (see `use_synchronized_output`).
+        if sync_output {
+            let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
+        }
         let draw_result = terminal.draw(|f| draw(f, app)).map_err(|e| e.to_string());
-        let _ = execute!(io::stdout(), EndSynchronizedUpdate);
+        if sync_output {
+            let _ = execute!(io::stdout(), EndSynchronizedUpdate);
+        }
         draw_result?;
         // Outside the synchronized block: `draw` only extracts the text, so the
         // OSC 52 write can't land in the middle of a frame.
@@ -7004,6 +7435,33 @@ async fn chat_loop<B: Backend>(
             }
             usage = await_account_usage(&mut account_usage_task) => {
                 app.note(&usage);
+            }
+            begun = await_login_begin(&mut login_begin_task) => {
+                match begun {
+                    Ok(pending) => {
+                        show_login_approval(app, pending.session());
+                        login_claim_task =
+                            Some(tokio::spawn(super::tokamak::device_login(pending)));
+                    }
+                    // Not a failure, but say it: an unexplained paste field
+                    // reads as the browser sign-in having silently broken.
+                    Err(super::device_auth::BeginError::Unsupported) => {
+                        app.note("this Tokamak deployment does not support browser sign-in yet");
+                        open_login_prompt(app, "tokamak");
+                    }
+                    Err(e) => {
+                        app.note(&format!(
+                            "browser sign-in unavailable: {}",
+                            e.message(&super::tokamak::base_url())
+                        ));
+                        open_login_prompt(app, "tokamak");
+                    }
+                }
+            }
+            claimed = await_tokamak_login(&mut login_claim_task) => {
+                if finish_tokamak_login(app, claimed) {
+                    reload_provider_configs(app).await;
+                }
             }
             update = await_update_check(&mut update_task) => {
                 note_update(app, update);
@@ -7266,7 +7724,11 @@ async fn handle_ask_key(
     key: KeyEvent,
     registry: &crate::core::agent::interaction::AskRegistry,
 ) -> bool {
-    if app.ask_queue.is_empty() {
+    // A docked prompt owns the keyboard, and `handle_ask_key` runs before
+    // `handle_key` -- without this an ask queued by the running agent would
+    // swallow the secret being typed into `/login` and echo it into a custom
+    // answer that is then submitted to the model.
+    if app.ask_queue.is_empty() || app.blocking_dock().is_some() {
         return false;
     }
     if key.kind == KeyEventKind::Release {
@@ -7359,6 +7821,9 @@ async fn handle_ask_mouse(
     mouse: MouseEvent,
     registry: &crate::core::agent::interaction::AskRegistry,
 ) -> bool {
+    if app.blocking_dock().is_some() {
+        return false;
+    }
     let Some(ask) = app.ask_queue.front_mut() else {
         return false;
     };
@@ -7491,9 +7956,32 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         app.login_submit = None;
         return;
     }
+    // The browser question owns the keyboard until it is answered, so a
+    // keystroke meant for it can never fall through into the key field.
+    if app
+        .login
+        .as_ref()
+        .is_some_and(|p| p.unconfirmed_url().is_some())
+    {
+        if ctrl {
+            return;
+        }
+        match key.code {
+            KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                resolve_login_browser(app, true)
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') => resolve_login_browser(app, false),
+            _ => {}
+        }
+        return;
+    }
+
     // Ctrl-V: terminals deliver a normal paste as `Event::Paste`, but some send
     // Ctrl-V through as a key, so read the clipboard directly for those.
     if ctrl && key.code == KeyCode::Char('v') {
+        if !app.login.as_ref().is_some_and(LoginPrompt::editable) {
+            return;
+        }
         match super::secret_input::clipboard_text() {
             Ok(text) => {
                 if let Some(prompt) = app.login.as_mut() {
@@ -7512,23 +8000,23 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     let Some(prompt) = app.login.as_mut() else {
         return;
     };
-    if prompt.verifying {
+    // The browser stages have no field to edit -- only Esc, handled above, does
+    // anything. Same for a paste being verified.
+    if !prompt.editable() {
         return;
     }
     match key.code {
-        KeyCode::Enter => {
-            match crate::core::cli::auth::providers::sanitize_key(&prompt.input) {
-                Ok(key) => {
-                    prompt.verifying = true;
-                    prompt.error = None;
-                    app.login_submit = Some((prompt.provider.clone(), key));
-                }
-                Err(e) => {
-                    prompt.input.clear();
-                    prompt.error = Some(e);
-                }
+        KeyCode::Enter => match crate::core::cli::auth::providers::sanitize_key(&prompt.input) {
+            Ok(key) => {
+                prompt.verifying = true;
+                prompt.error = None;
+                app.login_submit = Some((prompt.provider.clone(), key));
             }
-        }
+            Err(e) => {
+                prompt.input.clear();
+                prompt.error = Some(e);
+            }
+        },
         KeyCode::Backspace => {
             prompt.input.pop();
         }
@@ -7544,7 +8032,9 @@ fn clipboard_text() -> Result<String, String> {
 }
 
 fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
-    if key.code == KeyCode::Esc || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d'))) {
+    if key.code == KeyCode::Esc
+        || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')))
+    {
         app.model_picker = None;
         return;
     }
@@ -7558,7 +8048,9 @@ fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                 picker.move_selection(0);
             }
             KeyCode::Up => match picker.focus {
-                ModelPickerFocus::Scopes => picker.select_scope(picker.active_scope.saturating_sub(1)),
+                ModelPickerFocus::Scopes => {
+                    picker.select_scope(picker.active_scope.saturating_sub(1))
+                }
                 ModelPickerFocus::Models => picker.move_selection(-1),
             },
             KeyCode::Down => match picker.focus {
@@ -7587,7 +8079,10 @@ fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                 picker.focus = ModelPickerFocus::Models;
             }
             KeyCode::Enter if picker.focus == ModelPickerFocus::Models => {
-                chosen = picker.items.get(picker.selected).map(|item| item.value.clone());
+                chosen = picker
+                    .items
+                    .get(picker.selected)
+                    .map(|item| item.value.clone());
             }
             _ => {}
         }
@@ -7596,6 +8091,14 @@ fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         app.set_model(value);
         app.model_picker = None;
     }
+}
+/// The copyable continuation command shown when a session closes, mirroring
+/// the non-interactive resume line in `cli`/`mod.rs`. The id is the same
+/// short thread id `--resume` accepts, taken from the thread the session
+/// persists to rather than a separately minted one.
+fn resume_hint(thread_id: &str) -> String {
+    let id: String = thread_id.chars().take(8).collect();
+    format!("\x1b[2m[session {id} - resume with `jan --resume={id}`]\x1b[0m")
 }
 async fn handle_key(
     app: &mut App,
@@ -7613,7 +8116,8 @@ async fn handle_key(
     let sup = key.modifiers.contains(KeyModifiers::SUPER);
     // A modified Enter is a newline, never a submit or a completion, so the
     // hint popups below have to let it through to the editing keys.
-    let newline = key.code == KeyCode::Enter && (alt || key.modifiers.contains(KeyModifiers::SHIFT));
+    let newline =
+        key.code == KeyCode::Enter && (alt || key.modifiers.contains(KeyModifiers::SHIFT));
     let ctrl_c = ctrl && key.code == KeyCode::Char('c');
     let ctrl_d = ctrl && key.code == KeyCode::Char('d');
 
@@ -7629,6 +8133,23 @@ async fn handle_key(
     // transcript shortcuts.
     if app.login.is_some() {
         handle_login_key(app, key, ctrl);
+        return;
+    }
+
+    // A pending browser question owns the keyboard the same way, so a `y`/`n`
+    // meant for it can never reach the input box or a transcript shortcut.
+    if app.browser_confirm.is_some() {
+        if !ctrl {
+            match key.code {
+                KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    resolve_mcp_browser(app, true)
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    resolve_mcp_browser(app, false)
+                }
+                _ => {}
+            }
+        }
         return;
     }
 
@@ -7715,7 +8236,8 @@ async fn handle_key(
         return;
     }
 
-    // Ctrl-D quits from anywhere not owned by a prompt or picker; Ctrl-C cancels a run or quits when idle.
+    // Ctrl-D quits from anywhere; Ctrl-C cancels a run, clears a draft, or (on
+    // a blank idle composer, and only on a second press) quits.
     if ctrl_d {
         abort_run(current);
         app.should_quit = true;
@@ -7821,9 +8343,7 @@ async fn handle_key(
                 if picker.armed_delete == Some(sel) {
                     // Second `d` on the same row confirms the delete.
                     app.picker = None;
-                    if crate::core::agent::global_config::remove_provider(&name)
-                        .unwrap_or(false)
-                    {
+                    if crate::core::agent::global_config::remove_provider(&name).unwrap_or(false) {
                         app.note(&format!("removed provider '{name}'"));
                     } else {
                         app.note(&format!("provider '{name}' was not configured"));
@@ -7906,9 +8426,10 @@ async fn handle_key(
                                 picker.selected.min(picker.items.len().saturating_sub(1));
                         }
                     }
-                    Err(e) => {
-                        app.note(&format!("failed to write {}: {e}", setting_path(def, &toml_path)))
-                    }
+                    Err(e) => app.note(&format!(
+                        "failed to write {}: {e}",
+                        setting_path(def, &toml_path)
+                    )),
                 }
             }
             // `/login`: `x` signs out the selected provider without leaving
@@ -7976,6 +8497,8 @@ async fn handle_key(
                             .is_some()
                         {
                             open_account_login(app, &value);
+                        } else if value == "tokamak" {
+                            open_login(app);
                         } else {
                             open_login_prompt(app, &value);
                         }
@@ -8026,9 +8549,7 @@ async fn handle_key(
             // Esc on the detail screen steps back to the server list rather
             // than closing outright: the detail is one level *inside* `/mcp`,
             // and dropping the user to the prompt loses the place they were at.
-            KeyCode::Esc | KeyCode::Char('q')
-                if !ctrl && picker.kind == PickerKind::McpServer =>
-            {
+            KeyCode::Esc | KeyCode::Char('q') if !ctrl && picker.kind == PickerKind::McpServer => {
                 open_mcp_picker(app, mcp_servers).await;
             }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
@@ -8047,10 +8568,23 @@ async fn handle_key(
     }
     if ctrl_c {
         if app.status == Status::Running {
+            // Cancel-first: an in-flight task is what Ctrl-C interrupts, and
+            // the session stays open with the partial turn intact.
             abort_run(current);
             app.cancel_run();
-        } else {
+            app.exit_armed = false;
+        } else if !app.input.trim().is_empty() {
+            // Idle with something typed: clear the draft rather than quit, and
+            // keep it in recall history so Up brings it back.
+            app.record_draft();
+            app.input_clear();
+            app.exit_armed = false;
+        } else if app.exit_armed {
             app.should_quit = true;
+        } else {
+            // Blank and idle: leaving takes a deliberate second Ctrl-C.
+            app.exit_armed = true;
+            app.system(Level::Warn, "press Ctrl-C again to quit");
         }
         return;
     }
@@ -8114,6 +8648,10 @@ async fn handle_key(
             _ => {}
         }
     }
+
+    // Any composer key that isn't the blank-idle Ctrl-C means composing has
+    // resumed, so it disarms a pending second-Ctrl-C exit.
+    app.exit_armed = false;
 
     match key.code {
         KeyCode::Esc => {
@@ -8295,6 +8833,10 @@ struct SlashCommand {
     /// Argument hint (`[id]`) or empty when the command takes none.
     hint: &'static str,
     description: &'static str,
+    /// Name of the canonical command this row is an alias of; `None` for the
+    /// command itself. `/think` and `/reasoning` alias `/effort`, so all three
+    /// share one dispatch and one session-scoped effort state.
+    alias_of: Option<&'static str>,
 }
 
 /// Slash popup metadata is intentionally loaded outside the render path.
@@ -8511,113 +9053,145 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "/help",
         hint: "",
         description: "Show available commands",
+        alias_of: None,
     },
     SlashCommand {
         name: "/new",
         hint: "",
         description: "Start a new session",
+        alias_of: None,
     },
     SlashCommand {
         name: "/clear",
         hint: "",
         description: "Clear the conversation",
+        alias_of: None,
     },
     SlashCommand {
         name: "/init",
         hint: "",
         description: "Study the project, then write JAN.md, skills, and memory",
+        alias_of: None,
     },
     SlashCommand {
         name: "/compact",
         hint: "",
         description: "Summarize older turns to free up context",
+        alias_of: None,
     },
     SlashCommand {
         name: "/goal",
         hint: "[condition|clear]",
         description: "Keep working until a condition is met (bare: status)",
+        alias_of: None,
     },
     SlashCommand {
         name: "/plan",
         hint: "[exit|text]",
-        description:
-            "Enter read-only plan mode, optionally seeding it with a message; /plan exit to leave",
+        description: "Enter read-only plan mode, optionally seeding it with a message; /plan exit to leave",
+        alias_of: None,
     },
     SlashCommand {
         name: "/todo",
         hint: "[add [phase|] text | clear]",
-        description:
-            "Open the todo editor (bare), /todo add ... to append, /todo clear to drop all",
+        description: "Open the todo editor (bare), /todo add ... to append, /todo clear to drop all",
+        alias_of: None,
     },
     SlashCommand {
         name: "/threads",
         hint: "",
         description: "List saved threads for this project",
+        alias_of: None,
     },
     SlashCommand {
         name: "/resume",
         hint: "[id]",
         description: "Resume a thread (bare: pick interactively)",
+        alias_of: None,
     },
     SlashCommand {
         name: "/model",
         hint: "[id]",
         description: "Switch model (bare: pick interactively)",
+        alias_of: None,
     },
     SlashCommand {
         name: "/effort",
         hint: "[low|medium|high]",
         description: "Set reasoning effort (bare: show current; low: faster, high: deeper thinking)",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/think",
+        hint: "[low|medium|high]",
+        description: "Alias of /effort: set reasoning effort (bare: show current)",
+        alias_of: Some("/effort"),
+    },
+    SlashCommand {
+        name: "/reasoning",
+        hint: "[low|medium|high]",
+        description: "Alias of /effort: set reasoning effort (bare: show current)",
+        alias_of: Some("/effort"),
     },
     SlashCommand {
         name: "/terminal-setup",
         hint: "",
         description: "Configure this terminal so Shift+Enter inserts a newline",
+        alias_of: None,
     },
     SlashCommand {
         name: "/mcp",
         hint: "",
         description: "List, add, edit, remove, or toggle MCP servers",
+        alias_of: None,
     },
     SlashCommand {
         name: "/plugin",
         hint: "[list|install <spec>|remove <name>|search [query]]",
         description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace",
+        alias_of: None,
     },
     SlashCommand {
         name: "/cancel",
         hint: "[N]",
         description: "Cancel queued messages (bare: all, or index)",
+        alias_of: None,
     },
     SlashCommand {
         name: "/login",
-        hint: "",
+        hint: "[--paste-token]",
         description: "Sign in to a provider",
+        alias_of: None,
     },
     SlashCommand {
         name: "/logout",
         hint: "<provider>",
         description: "Remove a saved provider credential and configuration",
+        alias_of: None,
     },
     SlashCommand {
         name: "/config",
         hint: "",
         description: "View provider config (~/.jan/config.toml)",
+        alias_of: None,
     },
     SlashCommand {
         name: "/settings",
         hint: "[max_parallel_subagents N]",
         description: "Edit agent.toml and ~/.jan settings (menu); most apply next run",
+        alias_of: None,
     },
     SlashCommand {
         name: "/update",
         hint: "",
         description: "Install the latest published build (takes effect on restart)",
+        alias_of: None,
     },
     SlashCommand {
         name: "/quit",
         hint: "",
         description: "Exit the TUI",
+        alias_of: None,
     },
 ];
 
@@ -8689,23 +9263,32 @@ fn line_bounds(s: &str, at: usize) -> (usize, usize) {
 
 const KEY_BINDINGS: &[(&str, &str)] = &[
     ("Enter", "Send the message"),
-    ("Alt+Enter / Ctrl-J", "Insert a newline (Shift+Enter where reported)"),
+    (
+        "Alt+Enter / Ctrl-J",
+        "Insert a newline (Shift+Enter where reported)",
+    ),
     ("Ctrl-A/E, Alt+B/F", "Start/end of line, word left/right"),
     ("Ctrl-W, Alt+Backspace", "Delete the word before the caret"),
     ("Ctrl-U / Ctrl-K", "Delete to the start / end of the line"),
-    ("Esc / Ctrl-C", "Cancel the running turn"),
+    (
+        "Esc / Ctrl-C",
+        "Cancel the running turn, or clear the input",
+    ),
     ("Esc Esc", "Rewind to an earlier message"),
     (
         "↑/↓",
-        "Recall sent messages (scrolls while the input has text)",
+        "Recall sent messages and drafts (scrolls while typing)",
     ),
     ("PgUp/PgDn", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
     ("Shift+Tab", "Cycle reasoning effort (low/medium/high)"),
     ("Alt+T", "Toggle reasoning effort (low / last)"),
-    ("Drag", "Select text, copied on release (Alt+drag for a block)"),
-    ("Ctrl-D", "Quit"),
+    (
+        "Drag",
+        "Select text, copied on release (Alt+drag for a block)",
+    ),
+    ("Ctrl-D, or Ctrl-C twice", "Quit"),
 ];
 
 /// Split a command line into `(name, arg)`, UTF-8 safe (no byte slicing).
@@ -8732,7 +9315,13 @@ async fn run_command(
                 } else {
                     format!("{} {}", c.name, c.hint)
                 };
-                app.system_detail_text(&format!("{sig:18} {}", c.description));
+                let desc = match c.alias_of {
+                    Some(canonical) => {
+                        format!("alias of {canonical}; {}", c.description)
+                    }
+                    None => c.description.to_string(),
+                };
+                app.system_detail_text(&format!("{sig:18} {desc}"));
             }
             app.note("keys:");
             for (keys, description) in KEY_BINDINGS {
@@ -8790,7 +9379,7 @@ async fn run_command(
         }
         "mcp" => open_mcp_picker(app, mcp_servers).await,
         "plugin" => plugin_command(app, arg).await,
-        "login" => open_login_picker(app),
+        "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
         "update" => update_command(app),
         "config" => open_config_screen(app),
@@ -8799,7 +9388,7 @@ async fn run_command(
         "goal" => goal_command(app, arg),
         "init" => init_command(app),
         "plan" => plan_command(app, arg),
-        "effort" => effort_command(app, arg),
+        "effort" | "think" | "reasoning" => effort_command(app, arg),
         "todo" => todo_command(app, arg).await,
         "cancel" => cancel_command(app, arg),
         "quit" | "exit" => app.should_quit = true,
@@ -9048,13 +9637,21 @@ enum SettingScope {
 }
 
 enum AgentSettingKind {
-    Int { default: Option<u64>, min: u64 },
+    Int {
+        default: Option<u64>,
+        min: u64,
+    },
     /// Short display glyph with a grapheme cap, and the one kind where an
     /// empty field is a *value* rather than an unset: `""` is the deliberate
     /// "off", distinct from the key being absent, which takes the default.
     /// `x` on the row still removes the key.
-    Glyph { default: &'static str, max: usize },
-    Text { default: &'static str },
+    Glyph {
+        default: &'static str,
+        max: usize,
+    },
+    Text {
+        default: &'static str,
+    },
     /// Exact-match choice: Enter writes one of `options`, cleared field
     /// unsets. Covers the `read-only | deny | allow` and `always | relevance`
     /// toggles that hand-editing agent.toml previously required.
@@ -9184,6 +9781,13 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         },
         scope: SettingScope::Global,
     },
+    AgentSettingDef {
+        key: "ask_timeout_secs",
+        label: "ask_timeout_secs",
+        desc: "auto-answer an unanswered ask after N seconds with the recommended option (0 = wait forever)",
+        kind: AgentSettingKind::Int { default: Some(0), min: 0 },
+        scope: SettingScope::Global,
+    },
 ];
 
 /// Docked edit prompt for one `/settings` row: value field, inline validation
@@ -9294,10 +9898,7 @@ impl McpPrompt {
 
     fn prev_field(&mut self) {
         let fields = self.visible_fields();
-        let pos = fields
-            .iter()
-            .position(|f| *f == self.field)
-            .unwrap_or(0);
+        let pos = fields.iter().position(|f| *f == self.field).unwrap_or(0);
         self.field = fields[if pos == 0 { fields.len() - 1 } else { pos - 1 }];
     }
 
@@ -9491,9 +10092,8 @@ impl ProviderPrompt {
                 .iter()
                 .position(|f| *f == self.field)
                 .unwrap_or(0);
-            self.field = Self::FIELD_ORDER[
-                (pos + Self::FIELD_ORDER.len() - 1) % Self::FIELD_ORDER.len()
-            ];
+            self.field =
+                Self::FIELD_ORDER[(pos + Self::FIELD_ORDER.len() - 1) % Self::FIELD_ORDER.len()];
         }
     }
 
@@ -9547,7 +10147,6 @@ impl ProviderPrompt {
         }
     }
 
-
     /// API key field for rendering: the stored key is never loaded into the
     /// prompt, so an untouched field while editing says `(unchanged)`; anything
     /// typed/pasted renders masked so a key never reaches the screen or
@@ -9574,10 +10173,7 @@ impl ProviderPrompt {
         if url.starts_with("http://") && is_loopback_url(url) {
             return None;
         }
-        Some(
-            "base URL must be https:// (or http:// for a localhost/loopback host)"
-                .to_string(),
-        )
+        Some("base URL must be https:// (or http:// for a localhost/loopback host)".to_string())
     }
     /// `None` renders as the OpenAI-compatible default; `Some("anthropic")`
     /// selects the Anthropic messages API.
@@ -9613,13 +10209,9 @@ impl ProviderPrompt {
             return Err(err);
         }
         let base_url = self.base_url.trim().to_string();
-        let api_key = (self.key_touched || self.editing.is_none())
-            .then(|| self.api_key.trim().to_string());
-        let models: Vec<String> = self
-            .models
-            .split_whitespace()
-            .map(str::to_string)
-            .collect();
+        let api_key =
+            (self.key_touched || self.editing.is_none()).then(|| self.api_key.trim().to_string());
+        let models: Vec<String> = self.models.split_whitespace().map(str::to_string).collect();
         super::cli_agent_config_set(
             name,
             api_key,
@@ -9814,8 +10406,7 @@ fn open_provider_settings(app: &mut App) {
 
     let items: Vec<PickerItem> = if providers.is_empty() {
         vec![PickerItem {
-            label: "no providers configured - press a to add an OpenAI-compatible one"
-                .to_string(),
+            label: "no providers configured - press a to add an OpenAI-compatible one".to_string(),
             value: String::new(),
             hint: None,
             checkbox: None,
@@ -9824,7 +10415,11 @@ fn open_provider_settings(app: &mut App) {
         providers
             .into_iter()
             .map(|c| {
-                let key = if c.api_key.is_some() { "key set" } else { "no key" };
+                let key = if c.api_key.is_some() {
+                    "key set"
+                } else {
+                    "no key"
+                };
                 let base = c.base_url.as_deref().unwrap_or("default url");
                 PickerItem {
                     label: format!("{key}  {base}  {} model(s)", c.models.len()),
@@ -9902,10 +10497,8 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                     }
                     Some(toml_edit::value(input.to_string()))
                 }
-                AgentSettingKind::Text { .. } => {
-                    (!prompt.input.trim().is_empty())
-                        .then(|| toml_edit::value(prompt.input.trim().to_string()))
-                }
+                AgentSettingKind::Text { .. } => (!prompt.input.trim().is_empty())
+                    .then(|| toml_edit::value(prompt.input.trim().to_string())),
                 AgentSettingKind::Enum { options, default } => {
                     let input = prompt.input.trim();
                     if input.is_empty() {
@@ -9962,8 +10555,8 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
             // leaves `👁`, so the row looks unchanged and the key reads as
             // broken. Other kinds keep the plain char pop.
             if matches!(prompt.def().kind, AgentSettingKind::Glyph { .. }) {
-                let keep = crate::core::agent::global_config::wave_len(&prompt.input)
-                    .saturating_sub(1);
+                let keep =
+                    crate::core::agent::global_config::wave_len(&prompt.input).saturating_sub(1);
                 prompt.input = grapheme_prefix(&prompt.input, keep);
             } else {
                 prompt.input.pop();
@@ -10040,25 +10633,35 @@ async fn handle_mcp_prompt_key(
             }
         }
         KeyCode::Backspace => match prompt.field {
-            McpField::Name => { prompt.name.pop(); }
-            McpField::Command => { prompt.command.pop(); }
-            McpField::Args => { prompt.args.pop(); }
-            McpField::Env => { prompt.env.pop(); }
-            McpField::Url => { prompt.url.pop(); }
-            McpField::Headers => { prompt.headers.pop(); }
+            McpField::Name => {
+                prompt.name.pop();
+            }
+            McpField::Command => {
+                prompt.command.pop();
+            }
+            McpField::Args => {
+                prompt.args.pop();
+            }
+            McpField::Env => {
+                prompt.env.pop();
+            }
+            McpField::Url => {
+                prompt.url.pop();
+            }
+            McpField::Headers => {
+                prompt.headers.pop();
+            }
             _ => {}
         },
-        KeyCode::Char(ch) if !ctrl => {
-            match prompt.field {
-                McpField::Name => prompt.name.push(ch),
-                McpField::Command => prompt.command.push(ch),
-                McpField::Args => prompt.args.push(ch),
-                McpField::Env => prompt.env.push(ch),
-                McpField::Url => prompt.url.push(ch),
-                McpField::Headers => prompt.headers.push(ch),
-                _ => {}
-            }
-        }
+        KeyCode::Char(ch) if !ctrl => match prompt.field {
+            McpField::Name => prompt.name.push(ch),
+            McpField::Command => prompt.command.push(ch),
+            McpField::Args => prompt.args.push(ch),
+            McpField::Env => prompt.env.push(ch),
+            McpField::Url => prompt.url.push(ch),
+            McpField::Headers => prompt.headers.push(ch),
+            _ => {}
+        },
         _ => {}
     }
 }
@@ -10709,11 +11312,7 @@ fn open_thread_picker(app: &mut App) {
 /// actually run, with the current raw model pre-highlighted.
 async fn open_model_picker(app: &mut App) {
     let project_root = app.project_root.clone();
-    match super::providers::fetch_missing_models(
-        Some(&project_root),
-        &mut app.probed_models,
-    )
-    .await
+    match super::providers::fetch_missing_models(Some(&project_root), &mut app.probed_models).await
     {
         Ok(true) => {
             // The discovered ids now live on disk; refresh the session's
@@ -10735,7 +11334,6 @@ async fn open_model_picker(app: &mut App) {
             "no models available (add a provider with `jan config set`, or configure one in the desktop app)",
         ),
     }
-
 }
 
 /// Action ids for the `McpServer` detail screen. String values rather than an
@@ -10949,10 +11547,7 @@ fn mcp_detail_lines(detail: &McpDetail, width: u16) -> Vec<Line<'static>> {
     ));
     rows.push((
         "Config location",
-        vec![Span::styled(
-            tilde_path(&server.config_path),
-            dim,
-        )],
+        vec![Span::styled(tilde_path(&server.config_path), dim)],
     ));
     if let Some(implementation) = &server.implementation {
         rows.push(("Server", vec![Span::styled(implementation.clone(), dim)]));
@@ -10992,9 +11587,7 @@ fn tools_span(tools: &ToolsState) -> Span<'static> {
     match tools {
         ToolsState::Unavailable => Span::styled("- connect to list", dim),
         ToolsState::Loading => Span::styled("listing...", dim),
-        ToolsState::Ready(names) if names.is_empty() => {
-            Span::styled("none exposed", dim)
-        }
+        ToolsState::Ready(names) if names.is_empty() => Span::styled("none exposed", dim),
         ToolsState::Ready(names) => Span::styled(format!("{} tools", names.len()), dim),
         ToolsState::Failed(e) => Span::styled(e.clone(), Style::new().red()),
     }
@@ -11101,6 +11694,95 @@ fn open_login_picker_at(app: &mut App, selected_provider: Option<&str>) {
     });
 }
 
+/// `/login [--paste-token]`: choose a provider, or skip directly to Tokamak's
+/// legacy API-key field.
+fn login_command(app: &mut App, arg: &str) {
+    if app.login.is_some()
+        || app.account_login.is_some()
+        || app
+            .picker
+            .as_ref()
+            .is_some_and(|picker| picker.kind == PickerKind::LoginProvider)
+    {
+        app.note("a sign-in is already in progress - press Esc to cancel it first");
+        return;
+    }
+    match arg.split_whitespace().next() {
+        Some("--paste-token" | "--paste") => open_login_prompt(app, "tokamak"),
+        Some(other) => app.note(&format!(
+            "/login: unknown option {other} (try --paste-token)"
+        )),
+        None => open_login_picker(app),
+    }
+}
+
+/// Start `/login`: the browser-approval flow. The dock opens immediately, so
+/// there is something to Esc out of while the session is being created, and
+/// `chat_loop` picks the request up off the render loop.
+fn open_login(app: &mut App) {
+    app.login = Some(LoginPrompt::connecting());
+    app.login_device_request = true;
+}
+
+/// The session exists: show the code to check and the page to approve on, and
+/// open the browser. The URL goes to the transcript as well as the dock, so a
+/// remote or headless session can still be finished by hand -- or from a phone.
+fn show_login_approval(app: &mut App, session: &super::device_auth::Session) {
+    app.note("sign in to Tokamak in your browser - confirm this code matches:");
+    app.system_detail(vec![Span::styled(
+        session.user_code.clone(),
+        Style::new().cyan().bold(),
+    )]);
+    app.system_detail(vec![Span::styled(
+        session.authorize_url.clone(),
+        Style::new().cyan(),
+    )]);
+    app.login = Some(LoginPrompt {
+        stage: LoginStage::Approving {
+            user_code: session.user_code.clone(),
+            authorize_url: session.authorize_url.clone(),
+            confirm_open: true,
+        },
+        ..LoginPrompt::new("tokamak")
+    });
+}
+
+/// Act on an answered "open a browser?" question: launch it, or say we didn't.
+/// Either way the URL is already in the transcript, so declining is a valid way
+/// to finish the flow on another device rather than a way to abandon it. Shared
+/// by `/login` and `/mcp`, which ask the same question in different docks.
+fn open_browser_reporting(app: &mut App, url: &str, open: bool) {
+    if !open {
+        app.system_detail_text("not opening a browser - use the URL above on any device");
+        return;
+    }
+    match super::browser::open(url) {
+        Ok(()) => app.system_detail_text("opening that page in your browser"),
+        Err(e) => app.system_detail_text(&format!("could not open a browser ({e})")),
+    }
+}
+
+/// Answer the question the `/login` dock is holding. The dock moves on either
+/// way, so the sign-in is never blocked on a browser.
+fn resolve_login_browser(app: &mut App, open: bool) {
+    let Some(url) = app.login.as_ref().and_then(LoginPrompt::unconfirmed_url) else {
+        return;
+    };
+    open_browser_reporting(app, &url, open);
+    if let Some(prompt) = app.login.as_mut() {
+        prompt.stage.mark_confirmed();
+    }
+}
+
+/// Answer the standalone `/mcp` question. The authorization is already waiting on
+/// its loopback listener, so declining just means the user opens the URL
+/// themselves -- the redirect still completes the sign-in.
+fn resolve_mcp_browser(app: &mut App, open: bool) {
+    let Some(confirm) = app.browser_confirm.take() else {
+        return;
+    };
+    open_browser_reporting(app, &confirm.url, open);
+}
 
 fn open_account_login(app: &mut App, provider: &str) {
     open_account_login_with_begin(app, provider, crate::core::cli::auth::account::begin);
@@ -11188,11 +11870,7 @@ fn open_login_prompt(app: &mut App, provider: &str) {
         definition.api_key.keys_url,
         Style::new().cyan(),
     )]);
-    let mut prompt = LoginPrompt::new(provider);
-    if definition.api_key.open_in_browser && open_browser(definition.api_key.keys_url).is_err() {
-        prompt.error = Some("could not open the browser; use the URL below".to_string());
-    }
-    app.login = Some(prompt);
+    app.login = Some(LoginPrompt::new(provider));
 }
 
 fn finish_login(
@@ -11206,12 +11884,58 @@ fn finish_login(
             adopt_login_model(app, &login);
         }
         Err(error) => {
-            if let Some(prompt) = app.login.as_mut() {
-                let provider = prompt.provider.clone();
-                prompt.verifying = false;
-                prompt.input.clear();
-                prompt.error = Some(login_error_message(&provider, error));
+            let Some((provider, retryable)) = app.login.as_ref().map(|prompt| {
+                (
+                    prompt.provider.clone(),
+                    prompt.editable() || prompt.verifying,
+                )
+            }) else {
+                return;
+            };
+            let message = login_error_message(&provider, error);
+            if retryable {
+                if let Some(prompt) = app.login.as_mut() {
+                    prompt.verifying = false;
+                    prompt.input.clear();
+                    prompt.error = Some(message);
+                }
+            } else {
+                app.login = None;
+                app.note(&format!("sign-in failed: {message}"));
             }
+        }
+    }
+}
+
+fn finish_tokamak_login(app: &mut App, result: Result<super::tokamak::Login, String>) -> bool {
+    match result {
+        Ok(login) => {
+            let super::tokamak::Login {
+                models,
+                config_path,
+                default_model,
+                account,
+            } = login;
+            finish_login(
+                app,
+                Ok(crate::core::cli::auth::LoginResult {
+                    provider: "tokamak".to_string(),
+                    models,
+                    config_path,
+                    default_model,
+                }),
+            );
+            if let Some(account) = account {
+                app.note(&format!("signed in to Tokamak as {account}"));
+            }
+            if let Some(warning) = super::tokamak::expiry_warning() {
+                app.note(&warning);
+            }
+            true
+        }
+        Err(error) => {
+            finish_login(app, Err(crate::core::cli::auth::LoginError::OAuth(error)));
+            false
         }
     }
 }
@@ -11268,7 +11992,6 @@ fn warn_on_claude_login(app: &mut App, provider: &str) {
     }
 }
 
-
 fn account_login_error_message(provider: &str) -> String {
     format!("{provider} sign-in failed: could not complete browser sign-in")
 }
@@ -11292,7 +12015,6 @@ fn login_error_message(provider: &str, error: crate::core::cli::auth::LoginError
     };
     format!("{provider} sign-in failed: {message}")
 }
-
 
 fn adopt_account_login_model(app: &mut App, provider: &str) {
     let models = crate::core::agent::global_config::load_global_config()
@@ -11483,12 +12205,14 @@ async fn finish_mcp_job(
                     pending.authorization_url.clone(),
                     Style::new().cyan(),
                 )]);
-                match super::browser::open(&pending.authorization_url) {
-                    Ok(()) => app.system_detail_text("opening that page in your browser"),
-                    Err(e) => {
-                        app.system_detail_text(&format!("open that URL yourself ({e})"))
-                    }
-                }
+                // Ask before launching anything. The authorization is spawned
+                // regardless: its listener is already bound, so the redirect
+                // completes the sign-in whether the page is opened here or by
+                // hand somewhere else.
+                app.browser_confirm = Some(BrowserConfirm {
+                    url: pending.authorization_url.clone(),
+                    purpose: format!("authorize '{server}'"),
+                });
                 let servers = mcp_servers.clone();
                 *job = Some(tokio::spawn(run_mcp_job(
                     McpJob::Authorize { server, pending },
@@ -11499,6 +12223,8 @@ async fn finish_mcp_job(
         },
         McpJobDone::Authorized { server, result } => match result {
             Ok(()) => {
+                // Answered or not, there is nothing left to open.
+                app.browser_confirm = None;
                 app.note(&format!("authorized '{server}' - reconnecting..."));
                 // The live connection (if any) predates the token, so it is
                 // replaced rather than left unauthorized.
@@ -11506,14 +12232,21 @@ async fn finish_mcp_job(
                 let servers = mcp_servers.clone();
                 *job = Some(tokio::spawn(run_mcp_job(McpJob::Connect(server), servers)));
             }
-            Err(e) => app.note(&format!("sign-in for '{server}' failed: {e}")),
+            Err(e) => {
+                app.browser_confirm = None;
+                app.note(&format!("sign-in for '{server}' failed: {e}"));
+            }
         },
         McpJobDone::Connected { server, result } => {
             match result {
                 Ok(()) => app.note(&format!("'{server}' connected")),
                 Err(e) => app.note(&format!("MCP: {e}")),
             }
-            if app.mcp_detail.as_ref().is_some_and(|d| d.server.name == server) {
+            if app
+                .mcp_detail
+                .as_ref()
+                .is_some_and(|d| d.server.name == server)
+            {
                 open_mcp_detail(app, &server, mcp_servers).await;
             }
         }
@@ -12377,7 +13110,8 @@ fn trailing_blank(tail: &[Line<'static>], transcript: &[Row], width: u16) -> boo
 /// `MIN_TRANSCRIPT_ROWS`, capped at `PANEL_MAX_ROWS`, and disappears entirely
 /// on a frame with nothing to spare.
 fn panel_budget(frame_h: u16, input_h: u16) -> usize {
-    let fixed = 1 + 1 + input_h + 1; // header, rule, input, dock
+    // header, transcript air, rule, input, dock
+    let fixed = 1 + TRANSCRIPT_BOTTOM_PAD + 1 + input_h + 1;
     frame_h
         .saturating_sub(fixed + MIN_TRANSCRIPT_ROWS)
         .min(PANEL_MAX_ROWS as u16) as usize
@@ -12426,20 +13160,21 @@ fn draw(f: &mut Frame, app: &mut App) {
     // between the rule and the prompt. A zero-length slot collapses away, so a
     // session with neither todos nor subagents renders exactly as before.
     let raw = Layout::vertical([
-        Constraint::Length(1),       // 0: header
-        Constraint::Min(1),          // 1: body
-        Constraint::Length(panel_h), // 2: status panel
-        Constraint::Length(1),       // 3: separator rule
-        Constraint::Length(input_h), // 4: input
-        Constraint::Length(1),       // 5: path + key hints
+        Constraint::Length(1),                     // 0: header
+        Constraint::Min(1),                        // 1: body
+        Constraint::Length(TRANSCRIPT_BOTTOM_PAD), // 2: air
+        Constraint::Length(panel_h),               // 3: status panel
+        Constraint::Length(1),                     // 4: separator rule
+        Constraint::Length(input_h),               // 5: input
+        Constraint::Length(1),                     // 6: path + key hints
     ])
     .split(f.area());
-    let panel_area = raw[2];
-    let chunks = [raw[0], raw[1], raw[4], raw[5]];
+    let panel_area = raw[3];
+    let chunks = [raw[0], raw[1], raw[5], raw[6]];
 
     f.render_widget(header(app), chunks[0]);
     // Drawn for every path (picker included) so the dock always reads the same.
-    f.render_widget(Block::default().borders(Borders::TOP), raw[3]);
+    f.render_widget(Block::default().borders(Borders::TOP), raw[4]);
 
     // Top border only, so wrapping uses the full width; the border row reduces
     // the vertical viewport.
@@ -12477,11 +13212,13 @@ fn draw(f: &mut Frame, app: &mut App) {
             .as_ref()
             .filter(|g| g.idx == i && g.is_running())
         {
-            Some(g) => Segment::eager(
-                Some(i),
-                running_group_rows(g, app.spinner_frame, width),
-                width,
-            ),
+            Some(g) => {
+                // The running row plus, when the call is a command that has
+                // started printing, its output live under it.
+                let mut rows = running_group_rows(g, app.spinner_frame, width);
+                rows.extend(app.live_shell_panel(g, width));
+                Segment::eager(Some(i), rows, width)
+            }
             None => Segment {
                 idx: Some(i),
                 height: row.height(width),
@@ -12665,16 +13402,17 @@ fn draw(f: &mut Frame, app: &mut App) {
     app.row_index = row_index;
 
     // Keep the cursor row visible when the input outgrows the box.
-    let input_scroll = if app.status == Status::Idle && app.picker.is_none() {
-        let visible = chunks[2].height.saturating_sub(1);
-        let total = Paragraph::new(input_content_lines(&app.input, app.cursor))
-            .wrap(Wrap { trim: false })
-            .line_count(chunks[2].width.saturating_sub(2).max(1))
-            .min(u16::MAX as usize) as u16;
-        total.saturating_sub(visible)
-    } else {
-        0
-    };
+    let input_scroll =
+        if app.status == Status::Idle && app.picker.is_none() && app.blocking_dock().is_none() {
+            let visible = chunks[2].height.saturating_sub(1);
+            let total = Paragraph::new(input_content_lines(&app.input, app.cursor))
+                .wrap(Wrap { trim: false })
+                .line_count(chunks[2].width.saturating_sub(2).max(1))
+                .min(u16::MAX as usize) as u16;
+            total.saturating_sub(visible)
+        } else {
+            0
+        };
     if let Some(lines) = panel_lines {
         f.render_widget(Paragraph::new(lines), panel_area);
     }
@@ -12705,6 +13443,18 @@ fn draw(f: &mut Frame, app: &mut App) {
             height,
         };
         draw_login(f, rect, prompt);
+    } else if let Some(confirm) = &app.browser_confirm {
+        let height =
+            (browser_confirm_lines(confirm, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
+                .min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        draw_browser_confirm(f, rect, confirm);
     } else if let Some(prompt) = &app.settings_prompt {
         let toml_path = app.agent_dir.join("agent.toml");
         let height = (settings_prompt_lines(prompt, &toml_path, chunks[2].width.saturating_sub(2))
@@ -12820,19 +13570,22 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
     let dim = Style::new().dark_gray();
-    let title = if queue_len > 1 {
-        format!(
-            " question {}/{} \u{b7} request 1/{queue_len} ",
-            ask.question_index + 1,
-            ask.request.questions.len()
-        )
-    } else {
-        format!(
-            " question {}/{} ",
-            ask.question_index + 1,
-            ask.request.questions.len()
-        )
-    };
+    // Whole seconds until the auto-select deadline, rounded up (ceil) so a
+    // still-live prompt reads `1s` rather than `0s`. `None` once the deadline
+    // has passed (the resolution event is imminent or already dropped this
+    // prompt) or when no timeout is configured.
+    let mut parts = vec![format!(
+        "question {}/{}",
+        ask.question_index + 1,
+        ask.request.questions.len()
+    )];
+    if queue_len > 1 {
+        parts.push(format!("request 1/{queue_len}"));
+    }
+    if let Some(secs) = ask.remaining_secs(std::time::Instant::now()) {
+        parts.push(format!("{secs}s"));
+    }
+    let title = format!(" {} ", parts.join(" \u{b7} "));
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::new().cyan())
@@ -12911,11 +13664,7 @@ fn safe_url_origin_path(raw: &str) -> String {
     )
 }
 
-fn draw_account_login(
-    f: &mut Frame,
-    area: ratatui::layout::Rect,
-    prompt: &AccountLoginPrompt,
-) {
+fn draw_account_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &AccountLoginPrompt) {
     use ratatui::widgets::Clear;
 
     let dim = Style::new().dark_gray();
@@ -12940,7 +13689,10 @@ fn draw_account_login(
         ]),
         Line::from(vec![
             Span::styled("callback: ", dim),
-            Span::styled(safe_url_origin_path(&prompt.login.redirect_uri), Style::new().cyan()),
+            Span::styled(
+                safe_url_origin_path(&prompt.login.redirect_uri),
+                Style::new().cyan(),
+            ),
         ]),
     ];
     if let Some(error) = &prompt.error {
@@ -12979,15 +13731,33 @@ const LOGIN_PROMPT_ROWS: u16 = 5;
 fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
     let dim = Style::new().dark_gray();
     let max = width.max(1) as usize;
-    let definition = crate::core::cli::auth::provider_by_id(&prompt.provider);
-    let keys_url = definition
-        .as_ref()
-        .map_or("", |provider| provider.api_key.keys_url);
-
-    let mut lines = vec![Line::from(vec![
-        Span::styled("get a key at ", dim),
-        Span::styled(keys_url.to_string(), Style::new().cyan()),
-    ])];
+    let lead = match &prompt.stage {
+        LoginStage::Connecting => vec![Span::styled("starting browser sign-in...", dim)],
+        LoginStage::Approving { authorize_url, .. } => vec![
+            Span::styled("approve at ", dim),
+            Span::styled(authorize_url.clone(), Style::new().cyan()),
+        ],
+        LoginStage::Paste { .. } => {
+            let keys_url = crate::core::cli::auth::provider_by_id(&prompt.provider)
+                .map_or("", |provider| provider.api_key.keys_url);
+            vec![
+                Span::styled("get a key at ", dim),
+                Span::styled(keys_url.to_string(), Style::new().cyan()),
+            ]
+        }
+    };
+    let mut lines: Vec<Line<'static>> = wrap_spans_hard(lead, max)
+        .into_iter()
+        .map(Line::from)
+        .collect();
+    // The code is the one thing the user must compare against the browser, so
+    // it gets its own bright line rather than riding the URL's wrap.
+    if let LoginStage::Approving { user_code, .. } = &prompt.stage {
+        lines.push(Line::from(vec![
+            Span::styled("code: ", dim),
+            Span::styled(user_code.clone(), Style::new().cyan().bold()),
+        ]));
+    }
     if let Some(error) = &prompt.error {
         lines.extend(
             wrap_text(error, Style::new().red(), max)
@@ -12995,23 +13765,49 @@ fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
                 .map(Line::from),
         );
     }
-    if prompt.verifying {
+    // The browser question, whichever stage is asking it, reads the same.
+    if prompt.unconfirmed_url().is_some() {
         lines.push(Line::styled(
-            "verifying...".to_string(),
+            "open this page in your browser?".to_string(),
             Style::new().yellow(),
         ));
-        lines.push(Line::styled("Esc cancel".to_string(), dim));
-    } else {
-        lines.extend(field_lines(
-            vec![Span::styled("API key: ", Style::new().bold())],
-            &prompt.masked(),
-            Style::new(),
-            max,
-        ));
         lines.push(Line::styled(
-            "paste the key · Enter verify · Esc cancel".to_string(),
+            "Enter open · n skip · Esc cancel".to_string(),
             dim,
         ));
+        return lines;
+    }
+    match &prompt.stage {
+        LoginStage::Connecting => lines.push(Line::styled("Esc cancel".to_string(), dim)),
+        LoginStage::Approving { .. } => {
+            lines.push(Line::styled(
+                "waiting for approval...".to_string(),
+                Style::new().yellow(),
+            ));
+            lines.push(Line::styled(
+                "approve from any device · Esc cancel".to_string(),
+                dim,
+            ));
+        }
+        LoginStage::Paste { .. } if prompt.verifying => {
+            lines.push(Line::styled(
+                "verifying...".to_string(),
+                Style::new().yellow(),
+            ));
+            lines.push(Line::styled("Esc cancel".to_string(), dim));
+        }
+        LoginStage::Paste { .. } => {
+            lines.extend(field_lines(
+                vec![Span::styled("API key: ", Style::new().bold())],
+                &prompt.masked(),
+                Style::new(),
+                max,
+            ));
+            lines.push(Line::styled(
+                "paste the key · Enter verify · Esc cancel".to_string(),
+                dim,
+            ));
+        }
     }
     lines
 }
@@ -13033,6 +13829,53 @@ fn field_lines(
         .expect("wrap_text yields at least one row")
         .push(Span::styled("█", Style::new().cyan()));
     gutter_lines(rows, lead, vec![Span::raw(" ".repeat(lead_w))])
+}
+
+/// The pending-browser box's contents at `width`, sized by the caller the same
+/// way as `login_prompt_lines` -- the URL is the long line that has to be
+/// readable, since declining means opening it by hand.
+fn browser_confirm_lines(confirm: &BrowserConfirm, width: u16) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let max = width.max(1) as usize;
+    let mut lines: Vec<Line<'static>> = wrap_spans_hard(
+        vec![
+            Span::styled(format!("{} at ", confirm.purpose), dim),
+            Span::styled(confirm.url.clone(), Style::new().cyan()),
+        ],
+        max,
+    )
+    .into_iter()
+    .map(Line::from)
+    .collect();
+    lines.push(Line::styled(
+        "open this page in your browser?".to_string(),
+        Style::new().yellow(),
+    ));
+    lines.push(Line::styled(
+        "Enter open · n skip · Esc skip".to_string(),
+        dim,
+    ));
+    lines
+}
+
+fn draw_browser_confirm(f: &mut Frame, area: ratatui::layout::Rect, confirm: &BrowserConfirm) {
+    use ratatui::widgets::Clear;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            " open a browser? ",
+            Style::new().on_cyan().black().bold(),
+        ));
+
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(
+        Paragraph::new(browser_confirm_lines(confirm, inner.width)),
+        inner,
+    );
 }
 
 fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) {
@@ -13318,12 +14161,16 @@ fn draw_slash_hints(
         .iter()
         .map(|m| match m {
             SlashMatch::Command(c) => {
-            let mut spans = vec![Span::styled(c.name, Style::new().cyan().bold())];
-            if !c.hint.is_empty() {
-                spans.push(Span::styled(format!(" {}", c.hint), dim));
-            }
-            spans.push(Span::styled(format!("  {}", c.description), dim));
-            ListItem::new(Line::from(spans))
+                let mut spans = vec![Span::styled(c.name, Style::new().cyan().bold())];
+                if !c.hint.is_empty() {
+                    spans.push(Span::styled(format!(" {}", c.hint), dim));
+                }
+                let desc = match c.alias_of {
+                    Some(canonical) => format!("alias of {canonical}; {}", c.description),
+                    None => c.description.to_string(),
+                };
+                spans.push(Span::styled(format!("  {desc}"), dim));
+                ListItem::new(Line::from(spans))
             }
             SlashMatch::PluginCommand {
                 name,
@@ -13508,7 +14355,10 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
         "Enter choose · Left/Right panes · Up/Down move · type to search · Esc close",
         rows[1].width as usize,
     );
-    f.render_widget(Paragraph::new(Line::styled(help, Style::new().dark_gray())), rows[1]);
+    f.render_widget(
+        Paragraph::new(Line::styled(help, Style::new().dark_gray())),
+        rows[1],
+    );
     if body.width == 0 || body.height == 0 {
         return;
     }
@@ -13546,11 +14396,12 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
             ))
         })
         .collect();
-    let scopes = List::new(scope_items).highlight_symbol(if picker.focus == ModelPickerFocus::Scopes {
-        "▶ "
-    } else {
-        "  "
-    });
+    let scopes =
+        List::new(scope_items).highlight_symbol(if picker.focus == ModelPickerFocus::Scopes {
+            "▶ "
+        } else {
+            "  "
+        });
     let mut scope_state = ListState::default();
     if !picker.scopes.is_empty() {
         scope_state.select(Some(picker.active_scope.min(picker.scopes.len() - 1)));
@@ -13585,12 +14436,20 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
         )),
         right_rows[0],
     );
-    let caret = if picker.focus == ModelPickerFocus::Models { "█" } else { "" };
-    let search = truncate(&format!("⌕ {}{caret}", picker.query), right_rows[1].width as usize);
+    let caret = if picker.focus == ModelPickerFocus::Models {
+        "█"
+    } else {
+        ""
+    };
+    let search = truncate(
+        &format!("⌕ {}{caret}", picker.query),
+        right_rows[1].width as usize,
+    );
     f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(search, Style::new().dark_gray()),
-        ])),
+        Paragraph::new(Line::from(vec![Span::styled(
+            search,
+            Style::new().dark_gray(),
+        )])),
         right_rows[1],
     );
 
@@ -13626,7 +14485,11 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
         .items
         .get(picker.selected)
         .map(|item| {
-            let state = if item.value == current_model { "current" } else { "default" };
+            let state = if item.value == current_model {
+                "current"
+            } else {
+                "default"
+            };
             format!("{}/{} · {state}", item.provider, item.model)
         })
         .unwrap_or_else(|| "no models match".to_string());
@@ -13733,9 +14596,7 @@ fn draw_picker(
     } else if let (PickerKind::McpServer, Some(detail)) = (picker.kind, mcp_detail) {
         // The info block and the actions share one border: they are one screen,
         // and two stacked frames would read as two unrelated panels.
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(picker.title());
+        let block = Block::default().borders(Borders::ALL).title(picker.title());
         let inner = block.inner(area);
         f.render_widget(block, area);
 
@@ -13745,7 +14606,10 @@ fn draw_picker(
         // it would displace.
         let info_h = (info.len() as u16).min(inner.height.saturating_sub(1));
         let (info_area, list_area) = (
-            Rect { height: info_h, ..inner },
+            Rect {
+                height: info_h,
+                ..inner
+            },
             Rect {
                 y: inner.y + info_h,
                 height: inner.height - info_h,
@@ -13753,11 +14617,7 @@ fn draw_picker(
             },
         );
         f.render_widget(Paragraph::new(info), info_area);
-        f.render_stateful_widget(
-            list.block(Block::default()),
-            list_area,
-            &mut state,
-        );
+        f.render_stateful_widget(list.block(Block::default()), list_area, &mut state);
     } else {
         f.render_stateful_widget(list, area, &mut state);
     }
@@ -13779,6 +14639,13 @@ const PANEL_MAX_ROWS: usize = 8;
 /// Conversation rows the panel may never eat into. Below this the panel gives
 /// up its own rows first: the transcript is the point of the screen.
 const MIN_TRANSCRIPT_ROWS: u16 = 4;
+
+/// Blank rows between the last transcript row and the dock below it. The body is
+/// bottom-pinned, so without this the model's closing line sits flush against the
+/// panel -- or, with no panel, against the separator rule over the input -- and
+/// the conversation and the dock read as one block. Unconditional: air that
+/// appears only on some frames is a layout that jumps.
+const TRANSCRIPT_BOTTOM_PAD: u16 = 1;
 
 /// Narrowest terminal that still gets two side-by-side columns. Under it they
 /// stack, plan first, because a 30-column half fits neither a task nor an agent.
@@ -13993,7 +14860,6 @@ fn shimmer_spans(text: &str, palette: [Style; 3], frame: usize) -> Vec<Span<'sta
         .collect()
 }
 
-
 /// Resolve the display label for `model`: the `provider/model` pair when the
 /// bare id maps to a configured provider (mirroring upstream resolution:
 /// an exact hit in a provider's `models` list, or a `<provider>/<model>`
@@ -14024,7 +14890,6 @@ fn provider_label_for_model(
         None => model.to_string(),
     }
 }
-
 
 fn header(app: &App) -> Paragraph<'static> {
     Paragraph::new(Line::from(header_spans(app)))
@@ -14065,7 +14930,10 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         if app.model.is_empty() {
             Span::styled(" no model", Style::new().red().bold())
         } else {
-            Span::styled(format!(" {}", app.header_model_label()), Style::new().bold())
+            Span::styled(
+                format!(" {}", app.header_model_label()),
+                Style::new().bold(),
+            )
         },
     ];
     // Reasoning-effort badge: `effort high` after the model, so the configured
@@ -14364,17 +15232,19 @@ const MAX_INPUT_ROWS: u16 = 8;
 /// editing, plus one row of air above the dock. The box is borderless, so the
 /// two rows this used to add on top of its content were simply blank.
 fn input_box_height(app: &App, width: u16) -> u16 {
-    let content =
-        if app.picker.is_none() && !(app.status == Status::Running && app.input.is_empty()) {
-            let inner = width.saturating_sub(2).max(1);
-            let rows = Paragraph::new(input_content_lines(&app.input, app.cursor))
-                .wrap(Wrap { trim: false })
-                .line_count(inner)
-                .max(1) as u16;
-            rows.min(MAX_INPUT_ROWS)
-        } else {
-            1
-        };
+    let content = if app.picker.is_none()
+        && app.blocking_dock().is_none()
+        && !(app.status == Status::Running && app.input.is_empty())
+    {
+        let inner = width.saturating_sub(2).max(1);
+        let rows = Paragraph::new(input_content_lines(&app.input, app.cursor))
+            .wrap(Wrap { trim: false })
+            .line_count(inner)
+            .max(1) as u16;
+        rows.min(MAX_INPUT_ROWS)
+    } else {
+        1
+    };
     content + 1
 }
 
@@ -14477,9 +15347,9 @@ fn input_box(app: &App) -> Paragraph<'static> {
             let message = format!("{word}…");
             let mut spans = Vec::with_capacity(6);
             match wave_glyph() {
-                Some(glyph) => spans.extend(
-                    wave_sweep_line(&message, &glyph, app.spinner_frame, style).spans,
-                ),
+                Some(glyph) => {
+                    spans.extend(wave_sweep_line(&message, &glyph, app.spinner_frame, style).spans)
+                }
                 None => {
                     spans.push(Span::styled(
                         format!("{} ", app.spinner()),
@@ -14504,6 +15374,14 @@ fn input_box(app: &App) -> Paragraph<'static> {
             ]))
             .block(block)
         }
+    } else if let Some(what) = app.blocking_dock() {
+        // The dock owns the keyboard while it is open, so this field takes
+        // nothing: say so instead of showing a cursor that will never move.
+        Paragraph::new(Line::styled(
+            format!("{what} - the field is inactive"),
+            Style::new().dim().italic(),
+        ))
+        .block(block)
     } else if app.input.is_empty() {
         // Same `> ` prompt as the typing view, then a fixed (non-blinking)
         // block cursor in front of the placeholder.
@@ -14686,49 +15564,36 @@ mod tests {
     fn no_mcp() -> crate::core::state::SharedMcpServers {
         std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()))
     }
+    use super::journal::{self, DisplayEntry};
     use super::SessionLimits;
     use super::{
-        age_closed_todos, apply_resume, assistant_is_awaiting_user_answer, brand, build_user_message,
-        clipboard_path,
-        diff_lines, Row, group_detail_lines, group_summary, handle_ask_key,
-        handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
-        route_paste_event,
-        compact_tokens, finish_account_login, finish_compaction, finish_login, finish_update_install,
-        image_mime_of, load_first_file_image, load_image_file, MAX_IMAGE_BYTES,
-        message_text, CompactKind, MAX_OVERFLOW_RETRIES,
-        estimate_token_count, header_spans,
-        provider_label_for_model,
-        note_update, open_config_screen, spawn_branch_poll, await_branch_poll,
-        parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
-        McpPrompt, McpField, pairs_to_str,
-        ProviderField,
-        autoscroll_selection, selection_text, Selection, SelectionMode, COPY_NOTICE,
-        startup_modes, KITTY_KEYS_OFF, KITTY_KEYS_ON,
-        backgrounded_job_id,
-        apply_stream_event,
-        drain_stream_events,
-        run_command,
-        starting_call_lines,
-        unescape_partial_json_string,
-        running_group_rows, split_reasoning, strip_system_xml_tags, subagent_activity,
-        answer_without_reasoning, assistant_runs, replay_display_log, thinking_open,
-        without_think_tags, ReasoningSeg,
-        subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
-        tool_activity, tool_finished,
-        transcript_top_padding, rewind_to, open_rewind_picker, rebuild_recall,
-        row_width, user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind,
-        ResumeTarget, RowKind, finish_plugin_install,
-        SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF,
-        DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
-        KEY_BINDINGS, MOUSE_TRACK_ON, SLASH_COMMANDS, SPINNER, PROVIDERS_SETTINGS_ROW,
+        age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
+        apply_resume, apply_stream_event, assistant_is_awaiting_user_answer, assistant_runs,
+        autoscroll_selection, await_branch_poll, backgrounded_job_id, brand, build_user_message,
+        clipboard_path, compact_tokens, diff_lines, drain_stream_events, estimate_token_count,
+        finish_account_login, finish_compaction, finish_login, finish_plugin_install,
+        finish_tokamak_login, finish_update_install, group_detail_lines, group_summary,
+        handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, header_spans, image_mime,
+        image_mime_of, input_content_lines, load_first_file_image, load_image_file, message_text,
+        note_update, open_config_screen, open_rewind_picker, pairs_to_str, parse_command,
+        partial_json_field, provider_label_for_model, rebuild_recall, replay_display_log,
+        restore_goal, restore_run_mode, restore_todos, resume_hint, rewind_to, route_paste_event,
+        row_width, run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
+        split_reasoning, starting_call_lines, startup_modes, strip_system_xml_tags,
+        subagent_activity, subagent_name_from_run_id, summarize_result, sync_output_for,
+        thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
+        transcript_top_padding, unescape_partial_json_string, user_content_parts, wave_sweep_line,
+        with_wave_glyph, without_think_tags, App, CompactKind, CurrentRun, McpField, McpPrompt,
+        Pending, PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeTarget, Row, RowKind,
+        Selection, SelectionMode, SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE,
+        ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS,
+        DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF, KITTY_KEYS_ON, MAX_IMAGE_BYTES,
+        MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER,
         SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
-        alt_scroll_restore, alt_scroll_save_off, spans_width, wave_sweep_line, with_wave_glyph,
     };
-    use unicode_width::UnicodeWidthStr;
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
     use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
-    use super::journal::{self, DisplayEntry};
     use ratatui::buffer::Buffer;
     use ratatui::crossterm::event::{
         Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
@@ -14739,12 +15604,12 @@ mod tests {
         style::{Color, Modifier, Style},
         text::Line,
     };
-    use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
     use serde_json::json;
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
-
+    use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+    use unicode_width::UnicodeWidthStr;
 
     /// A bare key press with no modifiers.
     fn key(code: KeyCode) -> KeyEvent {
@@ -14801,7 +15666,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let limits = SessionLimits {
             context_window: 128_000,
-            context_window_source: crate::core::cli::model_capabilities::ContextWindowSource::Fallback,
+            context_window_source:
+                crate::core::cli::model_capabilities::ContextWindowSource::Fallback,
             reserve_tokens: 16_384,
             max_tokens: None,
             max_session_tokens: 128_000,
@@ -15331,8 +16197,7 @@ mod tests {
         app.push_user_line("first line\nsecond line", &[]);
         let rows = render_rows(&mut app, 60, 12);
         assert!(
-            rows.iter()
-                .any(|r| r.trim_end().ends_with("> first line")),
+            rows.iter().any(|r| r.trim_end().ends_with("> first line")),
             "first line not on its own row: {rows:?}"
         );
         assert!(
@@ -15392,6 +16257,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id: "r1".into(),
             request,
+            timeout_secs: None,
         });
         let rows = render_rows(&mut app, 50, 30);
         let joined = rows.join("\n");
@@ -15485,7 +16351,7 @@ mod tests {
             provider: "tokamak".to_string(),
             input: String::new(),
             error: Some(error.to_string()),
-            verifying: false,
+            ..super::LoginPrompt::new("tokamak")
         });
         let rows = render_rows(&mut app, 56, 24);
         let joined = rows.join(" ");
@@ -15532,13 +16398,15 @@ mod tests {
         }
     }
 
-
     /// Degenerate frames (a sliver of a terminal mid-drag) must render, not panic.
     #[test]
     fn tiny_frames_render_without_panicking() {
         let mut app = test_app();
         app.push_user_line("hello", &[]);
-        app.push_assistant_blocks("| a | b |\n|---|---|\n| 1 | 2 |\n\n```rs\nlet x = 1;\n```", &[]);
+        app.push_assistant_blocks(
+            "| a | b |\n|---|---|\n| 1 | 2 |\n\n```rs\nlet x = 1;\n```",
+            &[],
+        );
         app.apply(StreamEvent::ToolResult {
             id: "x".into(),
             content: "done".into(),
@@ -15684,6 +16552,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, true),
+            timeout_secs: None,
         });
 
         press_ask(&mut app, &registry, KeyCode::Enter).await;
@@ -15708,6 +16577,32 @@ mod tests {
         assert!(app.ask_queue.is_empty());
     }
 
+    #[test]
+    fn ask_resolved_dismisses_only_the_matching_prompt() {
+        let mut app = test_app();
+        app.apply(StreamEvent::AskRequest {
+            request_id: "keep".into(),
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+        app.apply(StreamEvent::AskRequest {
+            request_id: "gone".into(),
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+        assert_eq!(app.ask_queue.len(), 2);
+
+        app.apply(StreamEvent::AskResolved {
+            request_id: "gone".into(),
+        });
+        assert_eq!(
+            app.ask_queue.len(),
+            1,
+            "only the timed-out prompt is dropped"
+        );
+        assert_eq!(app.ask_queue.front().unwrap().request_id, "keep");
+    }
+
     #[tokio::test]
     async fn ask_keyboard_accepts_repeated_key_events() {
         let mut app = test_app();
@@ -15716,6 +16611,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
 
         let mut key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
@@ -15735,6 +16631,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(true, false),
+            timeout_secs: None,
         });
 
         press_ask(&mut app, &registry, KeyCode::Char(' ')).await;
@@ -15754,6 +16651,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
         press_ask(&mut app, &registry, KeyCode::Esc).await;
         assert!(matches!(
@@ -15772,6 +16670,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
         let mut terminal = Terminal::new(TestBackend::new(36, 24)).unwrap();
         terminal.draw(|frame| super::draw(frame, &mut app)).unwrap();
@@ -15825,13 +16724,14 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
 
         press_ask(&mut app, &registry, KeyCode::Down).await;
         press_ask(&mut app, &registry, KeyCode::Down).await;
         press_ask(&mut app, &registry, KeyCode::Enter).await;
         assert!(app.ask_queue.front().unwrap().editing_custom);
-        app.login = Some(super::LoginPrompt::new("tokamak"));
+        app.login = Some(confirmed_paste_prompt());
 
         route_paste_event(&mut app, Event::Paste("tokamak-api-key".into()));
 
@@ -15848,6 +16748,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
 
         press_ask(&mut app, &registry, KeyCode::Down).await;
@@ -15874,12 +16775,89 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
 
         route_paste_event(&mut app, Event::Paste("must not become chat".into()));
 
         assert!(app.ask_queue.front().unwrap().custom_input.is_empty());
         assert!(app.input.is_empty(), "paste leaked into chat composer");
+    }
+
+    /// A `PendingAsk` built from a `timeout_secs: Some(n)` event carries a
+    /// deadline roughly `n` seconds out, and one with `None` carries none.
+    #[test]
+    fn pending_ask_deadline_tracks_configured_timeout() {
+        let req = ask_request(false, false);
+        let none = super::PendingAsk::new("r1".into(), req.clone(), None);
+        assert_eq!(none.deadline, None, "no timeout should mean no deadline");
+
+        let short = super::PendingAsk::new(
+            "r2".into(),
+            req.clone(),
+            Some(std::time::Duration::from_secs(30)),
+        );
+        let deadline = short.deadline.expect("a deadline should be set");
+        let now = std::time::Instant::now();
+        let slack = deadline.duration_since(now).as_secs_f64();
+        assert!(
+            (slack - 30.0).abs() < 1.0,
+            "deadline should be ~30s out, got {slack:.1}s"
+        );
+    }
+
+    /// `remaining_secs` rounds the leftover time UP (ceil): a sub-second
+    /// remainder still reads `1s`, never `0s`, so a still-live prompt never
+    /// claims it is out of time.
+    #[test]
+    fn pending_ask_remaining_seconds_rounds_up_and_stops_at_deadline() {
+        let req = ask_request(false, false);
+        let ask =
+            super::PendingAsk::new("r1".into(), req, Some(std::time::Duration::from_secs(30)));
+        let deadline = ask.deadline.unwrap();
+        // 500ms before the deadline: ceil -> 1s.
+        let early = deadline - std::time::Duration::from_millis(500);
+        assert_eq!(ask.remaining_secs(early), Some(1), "ceil, not floor");
+        // Well before: whole seconds.
+        let far = deadline - std::time::Duration::from_secs(27);
+        assert_eq!(ask.remaining_secs(far), Some(27));
+        // At/after the deadline: no remaining time.
+        assert_eq!(ask.remaining_secs(deadline), None);
+        assert_eq!(
+            ask.remaining_secs(deadline + std::time::Duration::from_secs(1)),
+            None
+        );
+    }
+
+    /// The ask box title carries the live countdown when a timeout is set, and
+    /// omits it when none is.
+    #[test]
+    fn ask_title_counts_down_the_configured_deadline() {
+        let mut app = test_app();
+        let req = ask_request(false, false);
+        app.ask_queue.push_back(super::PendingAsk::new(
+            "r1".into(),
+            req,
+            Some(std::time::Duration::from_secs(120)),
+        ));
+        let join = render_rows(&mut app, 60, 24).join("\n");
+        assert!(
+            join.contains("question 1/1") && join.contains("120s"),
+            "title should show the countdown, got {join:?}"
+        );
+
+        // No timeout: no countdown segment at all.
+        let mut app = test_app();
+        app.ask_queue.push_back(super::PendingAsk::new(
+            "r2".into(),
+            ask_request(false, false),
+            None,
+        ));
+        let join = render_rows(&mut app, 60, 24).join("\n");
+        assert!(
+            join.contains("question 1/1") && !join.contains("120s") && !join.contains("s\u{b7}"),
+            "no-timeout title should omit the countdown, got {join:?}"
+        );
     }
 
     #[test]
@@ -15974,7 +16952,10 @@ mod tests {
     fn a_split_journal_entry_replays_prose_and_reasoning_apart() {
         let entry = DisplayEntry::Assistant {
             text: "Answer.".into(),
-            reasoning: vec![ReasoningSeg { at: 0, text: "a thought".into() }],
+            reasoning: vec![ReasoningSeg {
+                at: 0,
+                text: "a thought".into(),
+            }],
         };
         let round_tripped: DisplayEntry =
             serde_json::from_str(&serde_json::to_string(&entry).unwrap()).unwrap();
@@ -16009,8 +16990,14 @@ mod tests {
     #[test]
     fn assistant_runs_interleaves_native_reasoning_by_offset() {
         let segs = vec![
-            ReasoningSeg { at: 0, text: "first".into() },
-            ReasoningSeg { at: 6, text: "second".into() },
+            ReasoningSeg {
+                at: 0,
+                text: "first".into(),
+            },
+            ReasoningSeg {
+                at: 6,
+                text: "second".into(),
+            },
         ];
         assert_eq!(
             assistant_runs("prose tail", &segs),
@@ -16109,7 +17096,10 @@ mod tests {
         // With show_reasoning on, folding is off entirely and it renders whole.
         app.show_reasoning = true;
         let shown = render_rows(&mut app, 60, 30).join("\n");
-        assert!(shown.contains("pondering"), "revealed live tail must contain it");
+        assert!(
+            shown.contains("pondering"),
+            "revealed live tail must contain it"
+        );
     }
 
     /// A long chain of thought must not push the answer, or the conversation
@@ -16117,13 +17107,7 @@ mod tests {
     #[test]
     fn live_tail_bounds_streaming_reasoning_to_its_last_lines() {
         let body: String = (1..=20).map(|n| format!("step {n}\n")).collect();
-        let lines = super::live_assistant_lines(
-            &format!("<think>{body}"),
-            &[],
-            60,
-            true,
-            true,
-        );
+        let lines = super::live_assistant_lines(&format!("<think>{body}"), &[], 60, true, true);
         let text: Vec<String> = lines
             .iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
@@ -16153,7 +17137,10 @@ mod tests {
                 "a pre-wrapped tail must not re-wrap ({n} words)"
             );
             assert!(rows <= 6, "tail grew to {rows} rows ({n} words)");
-            assert!(rows >= seen, "tail shrank from {seen} to {rows} rows ({n} words)");
+            assert!(
+                rows >= seen,
+                "tail shrank from {seen} to {rows} rows ({n} words)"
+            );
             seen = rows;
         }
         assert_eq!(seen, 6, "tail never filled to its cap");
@@ -16575,6 +17562,192 @@ mod tests {
         assert!(
             text.contains("Waiting for: cargo build --release"),
             "the poll row does not name its command: {text}"
+        );
+    }
+
+    /// Backdate a call's first-output stamp past [`LIVE_OUTPUT_GRACE`], so a test
+    /// renders the panel a long-running command would have without sleeping.
+    fn age_live_output(app: &mut App, id: &str) {
+        let since = app.live_since.get_mut(id).expect("call has streamed");
+        *since -= super::LIVE_OUTPUT_GRACE;
+    }
+
+    /// A running command is a terminal, not a spinner: its output appears under
+    /// the activity row as it is produced, framed and prefixed by the command.
+    #[test]
+    fn a_running_command_shows_its_output_live() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "make" }),
+        });
+        // Nothing printed yet: the activity row stands alone rather than opening
+        // an empty box.
+        let quiet = render_rows(&mut app, 70, 16).join("\n");
+        assert!(!quiet.contains("$ make"), "no box before output: {quiet}");
+
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "compiling foo\n".into(),
+        });
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "compiling bar\n".into(),
+        });
+        // Still inside the grace window: a command this brief would only flash.
+        let brief = render_rows(&mut app, 70, 16).join("\n");
+        assert!(!brief.contains("$ make"), "no box while brief: {brief}");
+
+        age_live_output(&mut app, "t1");
+        let live = render_rows(&mut app, 70, 16).join("\n");
+        assert!(
+            live.contains("$ make"),
+            "command on the prompt line: {live}"
+        );
+        assert!(live.contains("compiling foo"), "first chunk: {live}");
+        assert!(live.contains("compiling bar"), "and the next: {live}");
+        assert!(live.contains('\u{250c}'), "framed: {live}");
+    }
+
+    /// The result is the authoritative output, so the live buffer is released
+    /// with it -- a long session must not accumulate every command it ran.
+    #[test]
+    fn a_finished_command_releases_its_live_buffer() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "make" }),
+        });
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "compiling foo\n".into(),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "compiling foo\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        assert!(
+            !app.live_output.contains_key("t1"),
+            "the finished call still holds its buffer"
+        );
+    }
+
+    /// A group runs its calls in parallel, so the panel follows the call that is
+    /// actually printing. Keying it to the newest unresolved call instead made a
+    /// `read` issued after a long `bash` blank the box until the read landed.
+    #[test]
+    fn a_later_call_does_not_blank_the_live_panel() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "make" }),
+        });
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "compiling foo\n".into(),
+        });
+        age_live_output(&mut app, "t1");
+        app.apply(StreamEvent::ToolCall {
+            id: "t2".into(),
+            name: "read".into(),
+            args: json!({ "path": "src/main.rs" }),
+        });
+        let live = render_rows(&mut app, 70, 18).join("\n");
+        assert!(
+            live.contains("compiling foo"),
+            "the streaming call keeps the panel: {live}"
+        );
+    }
+
+    /// The wait on a backgrounded job is the case the live view matters most for.
+    /// The job streams under the id of the call that *started* it while the user
+    /// watches the later call that *collects* it, so the two are aliased.
+    #[test]
+    fn waiting_on_a_backgrounded_job_shows_its_live_output() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cargo test" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "Command exceeded 30s and is continuing in the background \
+                      (job_id=bash-7)."
+                .into(),
+            is_error: false,
+            diff: None,
+        });
+        // Backgrounded, so the buffer survives its own result.
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "test tui::rolls ... ok\n".into(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "t2".into(),
+            name: "bash".into(),
+            args: json!({ "job_id": "bash-7" }),
+        });
+        assert_eq!(
+            app.live_alias.get("t2").map(String::as_str),
+            Some("t1"),
+            "the collecting call is aliased to the job's origin"
+        );
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "test tui::folds ... ok\n".into(),
+        });
+        age_live_output(&mut app, "t1");
+        let live = render_rows(&mut app, 74, 20).join("\n");
+        assert!(
+            live.contains("test tui::folds ... ok"),
+            "the waiting row reports the job's progress: {live}"
+        );
+    }
+
+    /// A runaway command must not grow the TUI's memory without bound.
+    #[test]
+    fn live_output_is_bounded() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "t1".into(),
+            delta: "x".repeat(super::LIVE_OUTPUT_MAX_BYTES * 2),
+        });
+        let held = app.live_output.get("t1").expect("buffered").len();
+        assert!(held <= super::LIVE_OUTPUT_MAX_BYTES, "kept {held} bytes");
+    }
+
+    /// Only a bounded tail is rendered, so a chatty command cannot push the
+    /// conversation off the screen.
+    #[test]
+    fn the_live_panel_renders_only_a_bounded_tail() {
+        let many: String = (0..60).map(|i| format!("line {i}\n")).collect();
+        let rows = super::shell_panel_lines("make", &many, 70, "\u{2502}   ");
+        assert!(
+            rows.len() <= super::LIVE_OUTPUT_TAIL_LINES + 4,
+            "unbounded panel: {} rows",
+            rows.len()
+        );
+        let text = rows
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("line 59"), "the newest line shows: {text}");
+        assert!(!text.contains("line 0\n"), "the oldest is elided: {text}");
+        assert!(
+            text.contains("earlier lines"),
+            "elision is reported: {text}"
         );
     }
 
@@ -17615,6 +18788,69 @@ mod tests {
         assert_eq!(app.scrollback, 0);
     }
 
+    /// Ctrl-C is cancel-first: with a task in flight it interrupts the run and
+    /// leaves the session open, never quitting out from under the user.
+    #[tokio::test]
+    async fn ctrl_c_cancels_a_run_before_it_can_ever_quit() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert_eq!(app.status, Status::Idle, "the run must be cancelled");
+        assert!(!app.should_quit, "cancelling a run must not quit the TUI");
+    }
+
+    /// Idle with something typed, Ctrl-C wipes the draft instead of exiting.
+    #[tokio::test]
+    async fn ctrl_c_clears_a_draft_without_exiting() {
+        let mut app = test_app();
+        type_key_chars(&mut app, "unsubmitted draft").await;
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(app.input.is_empty(), "the draft must be cleared");
+        assert!(!app.should_quit, "clearing a draft must not quit the TUI");
+    }
+
+    /// A draft wiped by Ctrl-C was never submitted, but it is still in local
+    /// prompt history, so Up brings it straight back.
+    #[tokio::test]
+    async fn a_draft_cleared_by_ctrl_c_is_recoverable_with_up() {
+        let mut app = test_app();
+        type_key_chars(&mut app, "never submitted").await;
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(app.input.is_empty());
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(app.input, "never submitted", "the draft must be recallable");
+    }
+
+    /// Leaving a blank idle TUI takes a deliberate second Ctrl-C; the first
+    /// only arms the exit, and typing again disarms it.
+    #[tokio::test]
+    async fn quitting_a_blank_idle_tui_takes_a_second_ctrl_c() {
+        let mut app = test_app();
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(!app.should_quit, "the first Ctrl-C only arms the exit");
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(app.should_quit, "the second Ctrl-C quits");
+
+        // Composing again disarms a pending exit, so a later lone Ctrl-C on a
+        // blank composer still needs its own second press.
+        let mut app = test_app();
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        type_key_chars(&mut app, "x").await;
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(!app.should_quit, "typing must disarm the pending exit");
+    }
+
+    /// The closing hint is copyable as-is and names the same short thread id
+    /// `--resume` takes, matching the non-interactive wording.
+    #[test]
+    fn the_resume_hint_offers_a_copyable_continuation_command() {
+        assert_eq!(
+            resume_hint("0123456789abcdef"),
+            "\x1b[2m[session 01234567 - resume with `jan --resume=01234567`]\x1b[0m"
+        );
+    }
+
     #[tokio::test]
     async fn page_keys_still_scroll_when_there_is_history_to_recall() {
         let mut app = test_app();
@@ -17737,6 +18973,7 @@ mod tests {
                     base_url: Some("https://api.deepseek.com/v1".into()),
                     models: Some(vec!["secret-model".into()]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -17770,7 +19007,10 @@ mod tests {
                     .iter()
                     .map(|item| item.value.as_str())
                     .collect::<Vec<_>>(),
-                ordered.iter().map(|provider| provider.id).collect::<Vec<_>>()
+                ordered
+                    .iter()
+                    .map(|provider| provider.id)
+                    .collect::<Vec<_>>()
             );
             assert_eq!(
                 picker
@@ -17801,7 +19041,10 @@ mod tests {
                     .collect::<Vec<_>>()
             );
             // Tokamak is the first row.
-            assert_eq!(picker.items.first().map(|i| i.value.as_str()), Some("tokamak"));
+            assert_eq!(
+                picker.items.first().map(|i| i.value.as_str()),
+                Some("tokamak")
+            );
             assert!(picker
                 .items
                 .iter()
@@ -17864,7 +19107,10 @@ mod tests {
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
 
         assert!(app.picker.is_none());
-        assert_eq!(app.login.as_ref().map(|p| p.provider.as_str()), Some("tokamak"));
+        assert_eq!(
+            app.login.as_ref().map(|p| p.provider.as_str()),
+            Some("tokamak")
+        );
         assert!(app.account_login.is_none());
     }
 
@@ -17885,11 +19131,8 @@ mod tests {
     #[tokio::test]
     async fn login_prompt_captures_keys_and_never_renders_the_key() {
         let mut app = test_app();
-        super::open_login_prompt(&mut app, "tokamak");
-        assert!(
-            app.login.is_some(),
-            "provider selection must open the prompt"
-        );
+        open_paste_field(&mut app).await;
+        assert!(app.login.is_some(), "the paste prompt must be open");
 
         type_key_chars(&mut app, "tk-secret").await;
         // Keystrokes are the key, not chat input.
@@ -17910,7 +19153,7 @@ mod tests {
     #[tokio::test]
     async fn login_enter_hands_a_trimmed_key_to_the_loop() {
         let mut app = test_app();
-        super::open_login_prompt(&mut app, "tokamak");
+        open_paste_field(&mut app).await;
         app.login.as_mut().unwrap().paste("  tk-abc\n");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
 
@@ -17924,7 +19167,7 @@ mod tests {
     #[tokio::test]
     async fn login_rejects_a_mispasted_key_before_any_request() {
         let mut app = test_app();
-        super::open_login_prompt(&mut app, "tokamak");
+        open_paste_field(&mut app).await;
         type_key_chars(&mut app, "tk-abc def").await;
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
 
@@ -17942,7 +19185,7 @@ mod tests {
     #[tokio::test]
     async fn login_backspace_edits_and_esc_cancels() {
         let mut app = test_app();
-        super::open_login_prompt(&mut app, "tokamak");
+        open_paste_field(&mut app).await;
         type_key_chars(&mut app, "tk-ab").await;
         press(&mut app, KeyCode::Backspace, KeyModifiers::NONE).await;
         assert_eq!(app.login.as_ref().unwrap().input, "tk-a");
@@ -17972,7 +19215,7 @@ mod tests {
     #[tokio::test]
     async fn login_stays_cancellable_while_verifying() {
         let mut app = test_app();
-        super::open_login_prompt(&mut app, "tokamak");
+        open_paste_field(&mut app).await;
         app.login.as_mut().unwrap().paste("tk-abc");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
         app.login_submit.take();
@@ -17992,7 +19235,7 @@ mod tests {
     #[tokio::test]
     async fn failed_verification_keeps_the_prompt_open_with_the_reason() {
         let mut app = test_app();
-        super::open_login_prompt(&mut app, "tokamak");
+        open_paste_field(&mut app).await;
         app.login.as_mut().unwrap().paste("tk-abc");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
         app.login_submit.take();
@@ -18054,8 +19297,14 @@ mod tests {
         assert_eq!(prompt.masked().chars().count(), 32);
         let screen = render_rows(&mut app, 100, 24).join("\n");
         assert!(screen.contains("Codex sign-in"), "{screen}");
-        assert!(screen.contains("authorization: https://auth.openai.com/oauth/authorize"), "{screen}");
-        assert!(screen.contains("callback: http://localhost:1455/auth/callback"), "{screen}");
+        assert!(
+            screen.contains("authorization: https://auth.openai.com/oauth/authorize"),
+            "{screen}"
+        );
+        assert!(
+            screen.contains("callback: http://localhost:1455/auth/callback"),
+            "{screen}"
+        );
         assert!(!screen.contains("authorization-code"), "{screen}");
         assert!(!screen.contains(&state), "{screen}");
         assert!(!screen.contains(&verifier), "{screen}");
@@ -18067,14 +19316,20 @@ mod tests {
     async fn account_enter_rejects_bad_manual_input_before_sending() {
         let mut app = test_app();
         super::open_account_login(&mut app, "openai");
-        app.account_login.as_mut().unwrap().paste("authorization-code#wrong-state");
+        app.account_login
+            .as_mut()
+            .unwrap()
+            .paste("authorization-code#wrong-state");
 
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
 
         let prompt = app.account_login.as_ref().unwrap();
         assert!(!prompt.submitting);
         assert!(prompt.input.is_empty());
-        assert_eq!(prompt.error.as_deref(), Some("the redirect state did not match"));
+        assert_eq!(
+            prompt.error.as_deref(),
+            Some("the redirect state did not match")
+        );
     }
 
     #[tokio::test]
@@ -18097,7 +19352,10 @@ mod tests {
     async fn account_enter_retries_after_task_failure() {
         let mut app = test_app();
         super::open_account_login(&mut app, "openai");
-        finish_account_login(&mut app, Err("could not discover account models".to_string()));
+        finish_account_login(
+            &mut app,
+            Err("could not discover account models".to_string()),
+        );
         let state = app.account_login.as_ref().unwrap().login.state.clone();
         app.account_login_submit = None;
         let manual = format!("authorization-code#{state}");
@@ -18129,7 +19387,10 @@ mod tests {
             Some(manual.as_str())
         );
 
-        finish_account_login(&mut app, Err("could not discover account models".to_string()));
+        finish_account_login(
+            &mut app,
+            Err("could not discover account models".to_string()),
+        );
 
         assert_eq!(
             app.account_login_pending_manual_input.as_deref(),
@@ -18153,6 +19414,7 @@ mod tests {
                     base_url: Some("https://api.openai.com/v1".into()),
                     models: Some(vec!["gpt-4o-mini".into()]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -18206,7 +19468,10 @@ mod tests {
             screen.contains("anthropic sign-in failed: could not complete browser sign-in"),
             "{screen}"
         );
-        assert!(!screen.contains("/Users/alice/.jan/config.toml"), "{screen}");
+        assert!(
+            !screen.contains("/Users/alice/.jan/config.toml"),
+            "{screen}"
+        );
         assert!(!screen.contains("callback-code-do-not-render"), "{screen}");
         assert!(!screen.contains("sk-secret-do-not-render"), "{screen}");
         assert!(!screen.contains("tok-secret-do-not-render"), "{screen}");
@@ -18226,6 +19491,7 @@ mod tests {
                     base_url: Some("https://api.anthropic.com/v1".into()),
                     models: Some(vec!["claude-sonnet-5".into()]),
                     api_type: Some("anthropic".into()),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -18269,6 +19535,493 @@ mod tests {
         assert!(!text.contains("sk-secret-do-not-render"), "{text}");
         assert!(app.account_login.is_none());
         assert!(app.account_login_submit.is_none());
+    }
+
+    /// `/login --paste-token` skips straight to the legacy field, the same
+    /// escape hatch `jan login --paste-token` gives, and never asks the loop for
+    /// a browser session.
+    #[tokio::test]
+    async fn login_paste_token_forces_the_legacy_field() {
+        let mut app = test_app();
+        run_command(&mut app, "login --paste-token", &no_mcp()).await;
+        let prompt = app.login.as_ref().expect("dock open");
+        assert!(matches!(
+            prompt.stage,
+            super::LoginStage::Paste { confirm_open: true }
+        ));
+        assert!(
+            !app.login_device_request,
+            "no browser session may be started"
+        );
+
+        // The field opens only once the browser question is answered.
+        assert!(
+            !prompt.editable(),
+            "no key entry before the browser question"
+        );
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).await;
+        assert!(app.login.as_ref().unwrap().editable());
+    }
+
+    /// Nothing may reach a browser until the user says so -- in either flow.
+    #[tokio::test]
+    async fn the_browser_is_never_opened_without_an_answer() {
+        // Paste fallback.
+        let mut app = test_app();
+        super::open_login_prompt(&mut app, "tokamak");
+        let prompt = app.login.as_ref().unwrap();
+        assert_eq!(
+            prompt.stage.unconfirmed_url(),
+            Some(crate::core::cli::tokamak::API_KEYS_URL)
+        );
+        let screen = render_rows(&mut app, 80, 24).join("\n");
+        assert!(
+            screen.contains("open this page in your browser?"),
+            "{screen}"
+        );
+
+        // Browser approval.
+        let mut app = test_app();
+        super::show_login_approval(&mut app, &test_session());
+        assert_eq!(
+            app.login.as_ref().unwrap().stage.unconfirmed_url(),
+            Some("https://tokamak.sh/cli/authorize?code=ABCD-2345")
+        );
+        let screen = render_rows(&mut app, 80, 24).join("\n");
+        assert!(
+            screen.contains("open this page in your browser?"),
+            "{screen}"
+        );
+        // The code is still shown while the question is up: the user may prefer
+        // to approve on a phone and never open a browser here at all.
+        assert!(screen.contains("ABCD-2345"), "{screen}");
+    }
+
+    /// Declining does not abandon the sign-in: the poll is already running, so
+    /// the dock moves on to waiting and a phone can still approve it.
+    #[tokio::test]
+    async fn declining_the_browser_still_waits_for_approval() {
+        let mut app = test_app();
+        super::show_login_approval(&mut app, &test_session());
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).await;
+
+        let prompt = app.login.as_ref().expect("dock stays open");
+        assert!(
+            prompt.stage.unconfirmed_url().is_none(),
+            "question answered"
+        );
+        assert!(matches!(
+            prompt.stage,
+            super::LoginStage::Approving {
+                confirm_open: false,
+                ..
+            }
+        ));
+        let screen = render_rows(&mut app, 80, 24).join("\n");
+        assert!(screen.contains("waiting for approval"), "{screen}");
+    }
+
+    /// Esc at the browser question cancels the whole sign-in rather than
+    /// answering it, so the question can never wedge the dock.
+    #[tokio::test]
+    async fn esc_at_the_browser_question_cancels() {
+        for open_paste in [true, false] {
+            let mut app = test_app();
+            if open_paste {
+                super::open_login_prompt(&mut app, "tokamak");
+            } else {
+                super::show_login_approval(&mut app, &test_session());
+            }
+            press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+            assert!(app.login.is_none(), "Esc must close the dock");
+        }
+    }
+
+    fn pending_browser(app: &mut App) {
+        app.browser_confirm = Some(super::BrowserConfirm {
+            url: "https://github.com/login/oauth/authorize?client_id=x".into(),
+            purpose: "authorize 'github'".into(),
+        });
+    }
+
+    /// The `/mcp` question shows what it is for and the URL to open, so
+    /// declining still leaves a way to finish.
+    #[tokio::test]
+    async fn the_mcp_browser_question_shows_the_purpose_and_url() {
+        let mut app = test_app();
+        pending_browser(&mut app);
+        let screen = render_rows(&mut app, 90, 24).join("\n");
+        assert!(screen.contains("open a browser?"), "{screen}");
+        assert!(screen.contains("authorize 'github'"), "{screen}");
+        assert!(
+            screen.contains("open this page in your browser?"),
+            "{screen}"
+        );
+        assert!(
+            screen.contains("github.com/login/oauth/authorize"),
+            "{screen}"
+        );
+    }
+
+    /// Every answer dismisses the question. `browser::open` is disabled under
+    /// `cfg(test)`, so the accept path is exercised without a real browser.
+    #[tokio::test]
+    async fn every_answer_dismisses_the_mcp_browser_question() {
+        for key in [
+            KeyCode::Enter,
+            KeyCode::Char('y'),
+            KeyCode::Char('n'),
+            KeyCode::Esc,
+        ] {
+            let mut app = test_app();
+            pending_browser(&mut app);
+            press(&mut app, key, KeyModifiers::NONE).await;
+            assert!(
+                app.browser_confirm.is_none(),
+                "{key:?} must dismiss the question"
+            );
+        }
+    }
+
+    /// The question owns the keyboard while it is up: a keystroke meant for it
+    /// must not land in the chat input.
+    #[tokio::test]
+    async fn the_mcp_browser_question_owns_the_keyboard() {
+        let mut app = test_app();
+        pending_browser(&mut app);
+        type_key_chars(&mut app, "hello").await;
+        assert!(app.browser_confirm.is_some(), "stray keys are not answers");
+        assert!(app.input.is_empty(), "nothing may reach the chat input");
+    }
+
+    /// An authorization that settles before the user answers takes the stale
+    /// question away with it, rather than leaving a dock pointing at a spent URL.
+    #[tokio::test]
+    async fn a_settled_authorization_clears_a_pending_question() {
+        for result in [Ok(()), Err("nope".to_string())] {
+            let mut app = test_app();
+            pending_browser(&mut app);
+            let mut job = None;
+            super::finish_mcp_job(
+                &mut app,
+                super::McpJobDone::Authorized {
+                    server: "github".into(),
+                    result,
+                },
+                &no_mcp(),
+                &mut job,
+            )
+            .await;
+            assert!(app.browser_confirm.is_none(), "stale question must go");
+        }
+    }
+
+    /// The paste field with the browser question already answered -- what most
+    /// key-entry tests are actually about.
+    /// Accepting launches the opener and moves on. `browser::open` is disabled
+    /// under `cfg(test)`, so this exercises the accept path (and its "could not
+    /// open" reporting) without hijacking a real browser.
+    #[tokio::test]
+    async fn accepting_the_browser_question_moves_on_either_way() {
+        for accept in [KeyCode::Enter, KeyCode::Char('y')] {
+            let mut app = test_app();
+            super::show_login_approval(&mut app, &test_session());
+            press(&mut app, accept, KeyModifiers::NONE).await;
+
+            let prompt = app.login.as_ref().expect("dock stays open");
+            assert!(
+                prompt.stage.unconfirmed_url().is_none(),
+                "{accept:?} must answer the question"
+            );
+            let screen = render_rows(&mut app, 80, 24).join("\n");
+            assert!(screen.contains("waiting for approval"), "{screen}");
+        }
+
+        // Same for the paste fallback: accepting opens the field.
+        let mut app = test_app();
+        super::open_login_prompt(&mut app, "tokamak");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(app.login.as_ref().unwrap().editable());
+    }
+
+    /// A keystroke that is neither an answer nor a cancel is swallowed, so it
+    /// cannot leak into the key field or the chat input.
+    #[tokio::test]
+    async fn stray_keys_at_the_browser_question_do_nothing() {
+        let mut app = test_app();
+        super::open_login_prompt(&mut app, "tokamak");
+        type_key_chars(&mut app, "tk-secret").await;
+
+        let prompt = app.login.as_ref().expect("dock stays open");
+        assert!(prompt.stage.unconfirmed_url().is_some(), "still unanswered");
+        assert!(prompt.input.is_empty(), "no key may be collected yet");
+        assert!(app.input.is_empty(), "and nothing may reach the chat input");
+    }
+
+    fn confirmed_paste_prompt() -> super::LoginPrompt {
+        super::LoginPrompt {
+            stage: super::LoginStage::Paste {
+                confirm_open: false,
+            },
+            ..super::LoginPrompt::new("tokamak")
+        }
+    }
+
+    /// Open the paste fallback and decline the browser, leaving an editable field.
+    async fn open_paste_field(app: &mut App) {
+        super::open_login_prompt(app, "tokamak");
+        press(app, KeyCode::Char('n'), KeyModifiers::NONE).await;
+    }
+
+    fn test_session() -> crate::core::cli::device_auth::Session {
+        crate::core::cli::device_auth::Session {
+            session_id: "sess-1".into(),
+            user_code: "ABCD-2345".into(),
+            authorize_url: "https://tokamak.sh/cli/authorize?code=ABCD-2345".into(),
+            expires_in: 300,
+            interval: 5,
+        }
+    }
+
+    #[tokio::test]
+    async fn login_rejects_an_unknown_option_without_opening_a_dock() {
+        let mut app = test_app();
+        run_command(&mut app, "login --nope", &no_mcp()).await;
+        assert!(app.login.is_none());
+        assert!(!app.login_device_request);
+    }
+
+    /// `/login` opens the provider picker. Selecting Tokamak starts its browser
+    /// flow; other providers open their own credential path.
+    #[tokio::test]
+    async fn login_opens_the_provider_picker() {
+        let mut app = test_app();
+        run_command(&mut app, "login", &no_mcp()).await;
+        assert_eq!(
+            app.picker.as_ref().map(|picker| picker.kind),
+            Some(PickerKind::LoginProvider)
+        );
+        assert!(app.login.is_none());
+        assert!(!app.login_device_request);
+    }
+
+    /// A second `/login` while the provider picker is open must not replace it
+    /// with a different sign-in flow.
+    #[tokio::test]
+    async fn login_refuses_while_provider_selection_is_in_progress() {
+        let mut app = test_app();
+        run_command(&mut app, "login", &no_mcp()).await;
+
+        run_command(&mut app, "login --paste-token", &no_mcp()).await;
+        assert_eq!(
+            app.picker.as_ref().map(|picker| picker.kind),
+            Some(PickerKind::LoginProvider)
+        );
+        assert!(app.login.is_none());
+        assert!(!app.login_device_request);
+        let transcript = transcript_text(&app);
+        assert!(transcript.contains("already in progress"), "{transcript}");
+    }
+
+    /// The ask layer is consulted before `handle_key`, so an ask queued by the
+    /// running agent must not swallow the secret being typed into `/login` --
+    /// a custom answer is submitted to the model.
+    #[tokio::test]
+    async fn a_queued_ask_never_captures_login_keystrokes() {
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
+        open_paste_field(&mut app).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+        app.ask_queue.front_mut().unwrap().editing_custom = true;
+
+        for ch in "tk-secret".chars() {
+            let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
+            assert!(
+                !handle_ask_key(&mut app, key, &registry).await,
+                "the login dock owns the keyboard"
+            );
+            press(&mut app, KeyCode::Char(ch), KeyModifiers::NONE).await;
+        }
+
+        assert_eq!(app.login.as_ref().unwrap().input, "tk-secret");
+        assert_eq!(app.ask_queue.front().unwrap().custom_input, "");
+        assert!(app.input.is_empty(), "the composer must not see the key");
+    }
+
+    fn blank_mcp_prompt() -> super::McpPrompt {
+        super::McpPrompt {
+            editing: None,
+            field: super::McpField::Name,
+            name: String::new(),
+            transport: "stdio".to_string(),
+            command: String::new(),
+            args: String::new(),
+            env: String::new(),
+            url: String::new(),
+            headers: String::new(),
+            active: false,
+            error: None,
+        }
+    }
+
+    /// A named way to open one keyboard-owning dock, for the table below.
+    type DockSetup = (&'static str, fn(&mut App));
+
+    /// Every dock that takes the keyboard in `handle_key` must also blank the
+    /// input row: a live cursor under a dock that swallows every keystroke
+    /// promises a field that is not there. One case per guard in that list, so
+    /// the next dock added cannot quietly regress only the rendering half.
+    #[test]
+    fn every_blocking_dock_marks_the_input_row_inactive() {
+        let setups: [DockSetup; 6] = [
+            ("login/connecting", |app| {
+                app.login = Some(super::LoginPrompt::connecting())
+            }),
+            ("login/paste", |app| {
+                app.login = Some(confirmed_paste_prompt())
+            }),
+            ("browser_confirm", |app| {
+                app.browser_confirm = Some(super::BrowserConfirm {
+                    url: "https://example.com/authorize".into(),
+                    purpose: "authorize 'github'".into(),
+                })
+            }),
+            ("settings_prompt", |app| {
+                let def = AGENT_SETTINGS
+                    .iter()
+                    .find(|d| d.key == "max_parallel_subagents")
+                    .unwrap();
+                app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+            }),
+            ("mcp_prompt", |app| {
+                app.mcp_prompt = Some(blank_mcp_prompt())
+            }),
+            ("provider_prompt", |app| {
+                app.provider_prompt = Some(super::ProviderPrompt::new())
+            }),
+        ];
+        for (name, open) in setups {
+            let mut app = test_app();
+            open(&mut app);
+            assert!(app.blocking_dock().is_some(), "{name} must block the field");
+            let screen = render_rows(&mut app, 80, 24).join("\n");
+            assert!(screen.contains("the field is inactive"), "{name}: {screen}");
+            assert!(
+                !screen.contains("Type here to chat with agent"),
+                "{name}: a live field must not show while the dock is open: {screen}"
+            );
+        }
+    }
+
+    /// The composer is only dead while a dock is up -- an idle app with no dock
+    /// must still offer a field, or the guard above has over-reached.
+    #[test]
+    fn no_dock_leaves_the_input_row_live() {
+        let mut app = test_app();
+        assert!(app.blocking_dock().is_none());
+        let screen = render_rows(&mut app, 80, 24).join("\n");
+        assert!(screen.contains("Type here to chat with agent"), "{screen}");
+        assert!(!screen.contains("the field is inactive"), "{screen}");
+    }
+
+    /// The approval stage shows the code and the URL, and takes no input -- the
+    /// code is the one thing the user has to compare against the browser.
+    #[tokio::test]
+    async fn login_approval_stage_shows_the_code_and_ignores_typing() {
+        let mut app = test_app();
+        super::show_login_approval(
+            &mut app,
+            &crate::core::cli::device_auth::Session {
+                session_id: "sess-1".into(),
+                user_code: "ABCD-2345".into(),
+                authorize_url: "https://tokamak.sh/cli/authorize?code=ABCD-2345".into(),
+                expires_in: 300,
+                interval: 5,
+            },
+        );
+        let prompt = app.login.as_ref().expect("dock open");
+        assert!(matches!(prompt.stage, super::LoginStage::Approving { .. }));
+        assert!(!prompt.editable());
+
+        type_key_chars(&mut app, "xyz").await;
+        assert!(
+            app.login.as_ref().unwrap().input.is_empty(),
+            "no field to type into"
+        );
+        assert!(app.login_submit.is_none());
+
+        let screen = render_rows(&mut app, 80, 24).join("\n");
+        assert!(screen.contains("ABCD-2345"), "{screen}");
+        assert!(screen.contains("waiting for approval"), "{screen}");
+    }
+
+    /// Esc during a browser approval closes the dock, which is what makes
+    /// `chat_loop` drop the in-flight poll.
+    #[tokio::test]
+    async fn esc_cancels_a_browser_approval() {
+        let mut app = test_app();
+        run_command(&mut app, "login", &no_mcp()).await;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.login.is_none(), "Esc must close the dock");
+    }
+
+    /// A denied or expired approval has no field to correct, so the dock closes
+    /// with the reason rather than sitting there uneditable.
+    #[tokio::test]
+    async fn a_failed_approval_closes_the_dock_with_the_reason() {
+        let mut app = test_app();
+        super::show_login_approval(
+            &mut app,
+            &crate::core::cli::device_auth::Session {
+                session_id: "s".into(),
+                user_code: "A-1".into(),
+                authorize_url: "https://tokamak.sh/cli/authorize?code=A-1".into(),
+                expires_in: 300,
+                interval: 5,
+            },
+        );
+        finish_login(
+            &mut app,
+            Err(crate::core::cli::auth::LoginError::OAuth(
+                "the sign-in was denied in the browser.".to_string(),
+            )),
+        );
+        assert!(app.login.is_none(), "an uneditable dock must not stay open");
+        let text: String = row_lines(&app.transcript)
+            .iter()
+            .flat_map(|l| l.spans.clone())
+            .map(|s| s.content.to_string())
+            .collect();
+        assert!(
+            text.contains("could not complete browser sign-in"),
+            "{text}"
+        );
+    }
+
+    /// A successful browser sign-in names the account it signed in as.
+    #[test]
+    fn a_browser_login_reports_the_account() {
+        let mut app = test_app();
+        assert!(finish_tokamak_login(
+            &mut app,
+            Ok(crate::core::cli::tokamak::Login {
+                models: vec!["tokamak-1-preview".into()],
+                config_path: std::path::PathBuf::from("/tmp/config.toml"),
+                default_model: None,
+                account: Some("a@b.c".into()),
+            }),
+        ));
+        let text: String = row_lines(&app.transcript)
+            .iter()
+            .flat_map(|l| l.spans.clone())
+            .map(|s| s.content.to_string())
+            .collect();
+        assert!(text.contains("as a@b.c"), "{text}");
     }
 
     #[test]
@@ -18344,7 +20097,7 @@ mod tests {
     fn login_successful_api_key_login_reports_only_model_guidance() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let mut app = test_app();
-            app.login = Some(super::LoginPrompt::new("tokamak"));
+            app.login = Some(confirmed_paste_prompt());
             finish_login(
                 &mut app,
                 Ok(crate::core::cli::auth::LoginResult {
@@ -18356,7 +20109,8 @@ mod tests {
             );
             assert!(app.login.is_none());
             assert!(
-                transcript_text(&app).contains("signed in to tokamak. Use /model to select a model."),
+                transcript_text(&app)
+                    .contains("signed in to tokamak. Use /model to select a model."),
                 "{}",
                 transcript_text(&app)
             );
@@ -18369,7 +20123,7 @@ mod tests {
     #[test]
     fn failed_api_key_login_reports_provider_safe_error_without_key() {
         let mut app = test_app();
-        super::open_login_prompt(&mut app, "tokamak");
+        app.login = Some(confirmed_paste_prompt());
         app.login.as_mut().unwrap().paste("tk-secret-do-not-render");
 
         finish_login(
@@ -18438,12 +20192,13 @@ mod tests {
                     base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
                     models: Some(vec!["m".into()]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .expect("seed provider");
 
             let mut app = test_app();
-            app.login = Some(super::LoginPrompt::new("tokamak"));
+            app.login = Some(confirmed_paste_prompt());
             finish_login(
                 &mut app,
                 Ok(crate::core::cli::auth::LoginResult {
@@ -18473,6 +20228,7 @@ mod tests {
                     base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
                     models: Some(vec!["tokamak-1-preview".into()]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .expect("seed provider");
@@ -18480,14 +20236,16 @@ mod tests {
             let mut app = test_app();
             // Give the app a provider_configs map that is stale (empty, as it
             // would be on a fresh launch before login).
-            let provider_configs: std::collections::HashMap<String, crate::core::state::ProviderConfig> =
-                std::collections::HashMap::new();
+            let provider_configs: std::collections::HashMap<
+                String,
+                crate::core::state::ProviderConfig,
+            > = std::collections::HashMap::new();
             let args = std::sync::Arc::new(super::OrchestrationArgs {
                 client: crate::core::agent::upstream::agent_http_client(),
-                provider_configs: std::sync::Arc::new(tokio::sync::Mutex::new(
-                    provider_configs,
+                provider_configs: std::sync::Arc::new(tokio::sync::Mutex::new(provider_configs)),
+                mcp_servers: std::sync::Arc::new(tokio::sync::Mutex::new(
+                    std::collections::HashMap::new(),
                 )),
-                mcp_servers: std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
                 mcp_settings: std::sync::Arc::new(tokio::sync::Mutex::new(
                     crate::core::mcp::models::McpSettings::default(),
                 )),
@@ -18535,7 +20293,7 @@ mod tests {
 
     #[test]
     fn masked_key_is_bounded() {
-        let mut prompt = super::LoginPrompt::new("tokamak");
+        let mut prompt = confirmed_paste_prompt();
         prompt.paste(&"k".repeat(200));
         assert_eq!(prompt.masked().chars().count(), 32);
         prompt.verifying = true;
@@ -18969,7 +20727,10 @@ mod tests {
 
             assert!(app.settings_prompt.is_none(), "Enter closes the dock");
             let global = std::fs::read_to_string(home.join(".jan").join("config.toml")).unwrap();
-            assert!(global.contains("wave = \"~\""), "written globally: {global}");
+            assert!(
+                global.contains("wave = \"~\""),
+                "written globally: {global}"
+            );
             let project = std::fs::read_to_string(&toml_path).unwrap();
             assert!(
                 !project.contains("wave"),
@@ -18978,7 +20739,10 @@ mod tests {
             assert_eq!(super::wave_glyph().as_deref(), Some("~"), "applied live");
             let note = transcript_text(&app);
             assert!(note.contains("wave = ~ written"), "{note}");
-            assert!(note.contains("in effect now"), "no restart is needed: {note}");
+            assert!(
+                note.contains("in effect now"),
+                "no restart is needed: {note}"
+            );
 
             // Clearing the field writes the off value, live. It does *not*
             // remove the key: absent means the default 👋 comes back, which is
@@ -18996,7 +20760,10 @@ mod tests {
                 "cleared field persists as the off value"
             );
             let note = transcript_text(&app);
-            assert!(note.contains("wave off (throbber)"), "off, not unset: {note}");
+            assert!(
+                note.contains("wave off (throbber)"),
+                "off, not unset: {note}"
+            );
 
             // Removing the key is the other path, and it restores the default
             // rather than leaving the sweep off.
@@ -19104,7 +20871,11 @@ mod tests {
         fn input(app: &App) -> String {
             app.settings_prompt.as_ref().unwrap().input.clone()
         }
-        assert_eq!(input(&app), "👁️👄👁️", "three clusters of five chars all fit");
+        assert_eq!(
+            input(&app),
+            "👁️👄👁️",
+            "three clusters of five chars all fit"
+        );
 
         // One past the cap is dropped, and the field is left exactly as it was
         // rather than half-appended.
@@ -19276,20 +21047,12 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             // Skip to the Url field: Name -> Transport -> Url.
-            super::handle_mcp_prompt_key(
-                &mut app, key(KeyCode::Down), false, &servers,
-            )
-            .await;
-            super::handle_mcp_prompt_key(
-                &mut app, key(KeyCode::Down), false, &servers,
-            )
-            .await;
+            super::handle_mcp_prompt_key(&mut app, key(KeyCode::Down), false, &servers).await;
+            super::handle_mcp_prompt_key(&mut app, key(KeyCode::Down), false, &servers).await;
             assert_eq!(app.mcp_prompt.as_ref().unwrap().field, McpField::Url);
             for ch in "https://jk.example/".chars() {
-                super::handle_mcp_prompt_key(
-                    &mut app, key(KeyCode::Char(ch)), false, &servers,
-                )
-                .await;
+                super::handle_mcp_prompt_key(&mut app, key(KeyCode::Char(ch)), false, &servers)
+                    .await;
             }
         });
 
@@ -19406,7 +21169,10 @@ mod tests {
 
             let configs = crate::core::agent::global_config::load_global_config().unwrap();
             let cfg = configs.get("myprovider").expect("provider written");
-            assert_eq!(cfg.base_url.as_deref(), Some("https://my-provider.example/v1"));
+            assert_eq!(
+                cfg.base_url.as_deref(),
+                Some("https://my-provider.example/v1")
+            );
             assert_eq!(cfg.api_key.as_deref(), Some("sk-test-123"));
             assert_eq!(cfg.models, vec!["gpt-4o", "gpt-4o-mini"]);
         });
@@ -19424,7 +21190,9 @@ mod tests {
             assert!(p.save().is_ok());
 
             let configs = crate::core::agent::global_config::load_global_config().unwrap();
-            let cfg = configs.get("myanthropic").expect("anthropic provider written");
+            let cfg = configs
+                .get("myanthropic")
+                .expect("anthropic provider written");
             assert_eq!(cfg.api_type.as_deref(), Some("anthropic"));
         });
     }
@@ -19465,6 +21233,7 @@ mod tests {
                     base_url: Some("https://example.com/v1".into()),
                     models: Some(vec!["claude-sonnet-5".into()]),
                     api_type: Some("anthropic".into()),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -19536,13 +21305,20 @@ mod tests {
         super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
         super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
         super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
-        assert_eq!(app.provider_prompt.as_ref().unwrap().field, ProviderField::ApiKey);
+        assert_eq!(
+            app.provider_prompt.as_ref().unwrap().field,
+            ProviderField::ApiKey
+        );
         for ch in "sk-ant-k3y-j".chars() {
             super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
         }
 
         let prompt = app.provider_prompt.as_ref().expect("still open");
-        assert_eq!(prompt.field, ProviderField::ApiKey, "typing k must not move up");
+        assert_eq!(
+            prompt.field,
+            ProviderField::ApiKey,
+            "typing k must not move up"
+        );
         assert_eq!(prompt.name, "kitty-jet");
         assert_eq!(prompt.api_key, "sk-ant-k3y-j");
     }
@@ -19561,6 +21337,7 @@ mod tests {
                     clear_api_key: false,
                     models: Some(vec!["m1".into()]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -19601,6 +21378,7 @@ mod tests {
                         clear_api_key: false,
                         models: Some(vec!["m1".into()]),
                         api_type: None,
+                        ..Default::default()
                     },
                 )
                 .unwrap();
@@ -19627,7 +21405,11 @@ mod tests {
             }
             super::handle_provider_prompt_key(&mut app, key(KeyCode::Enter), false);
             assert!(app.provider_prompt.is_none());
-            assert_eq!(stored_key().as_deref(), Some("sk-new-key"), "typed key replaces");
+            assert_eq!(
+                stored_key().as_deref(),
+                Some("sk-new-key"),
+                "typed key replaces"
+            );
 
             // Empty the key field: the stored key is cleared.
             app.provider_prompt = fresh();
@@ -19655,7 +21437,11 @@ mod tests {
             models: String::new(),
             error: None,
         };
-        assert_eq!(p.masked_key(), "(unchanged)", "untouched edit shows unchanged");
+        assert_eq!(
+            p.masked_key(),
+            "(unchanged)",
+            "untouched edit shows unchanged"
+        );
         p.key_touched = true;
         p.api_key = "sk-abc".to_string();
         assert_eq!(p.masked_key(), "******", "touched key masks its length");
@@ -19680,7 +21466,10 @@ mod tests {
         super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
         super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
         super::handle_provider_prompt_key(&mut app, key(KeyCode::Down), false);
-        assert_eq!(app.provider_prompt.as_ref().unwrap().field, ProviderField::ApiKey);
+        assert_eq!(
+            app.provider_prompt.as_ref().unwrap().field,
+            ProviderField::ApiKey
+        );
         route_paste_event(&mut app, Event::Paste("sk-ant-pasted-key".into()));
         assert_eq!(
             app.provider_prompt.as_ref().unwrap().api_key,
@@ -19761,6 +21550,7 @@ mod tests {
                     clear_api_key: false,
                     models: Some(vec!["m1".into()]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -19790,6 +21580,7 @@ mod tests {
                     clear_api_key: false,
                     models: Some(vec![]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -19797,11 +21588,9 @@ mod tests {
             let mut app = test_app();
             super::open_provider_settings(&mut app);
             let rt = tokio::runtime::Runtime::new().unwrap();
-            assert!(
-                crate::core::agent::global_config::load_global_config()
-                    .unwrap()
-                    .contains_key("myprovider")
-            );
+            assert!(crate::core::agent::global_config::load_global_config()
+                .unwrap()
+                .contains_key("myprovider"));
 
             // First `d` arms but must not delete.
             rt.block_on(async {
@@ -19848,6 +21637,7 @@ mod tests {
                         clear_api_key: false,
                         models: Some(vec![]),
                         api_type: None,
+                        ..Default::default()
                     },
                 )
                 .unwrap();
@@ -19875,7 +21665,10 @@ mod tests {
                 press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE).await;
             });
             let configs = crate::core::agent::global_config::load_global_config().unwrap();
-            assert!(configs.contains_key("a"), "a must still exist, only armed on b");
+            assert!(
+                configs.contains_key("a"),
+                "a must still exist, only armed on b"
+            );
             assert!(configs.contains_key("b"));
             assert!(app.picker.as_ref().unwrap().armed_delete == Some(idx_b));
         });
@@ -19891,7 +21684,10 @@ mod tests {
             super::open_provider_settings(&mut app);
             let picker = app.picker.as_ref().expect("picker opened");
             assert_eq!(picker.items.len(), 1);
-            assert!(picker.items[0].value.is_empty(), "watermark row has no value");
+            assert!(
+                picker.items[0].value.is_empty(),
+                "watermark row has no value"
+            );
             let rt = tokio::runtime::Runtime::new().unwrap();
 
             rt.block_on(async {
@@ -19902,14 +21698,19 @@ mod tests {
                 "no arm on watermark"
             );
             assert!(
-                !crate::core::agent::global_config::load_global_config().unwrap().contains_key(""),
+                !crate::core::agent::global_config::load_global_config()
+                    .unwrap()
+                    .contains_key(""),
                 "d on the watermark must not delete an empty-named entry"
             );
 
             rt.block_on(async {
                 press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
             });
-            assert!(app.provider_prompt.is_none(), "Enter on the watermark opens no wizard");
+            assert!(
+                app.provider_prompt.is_none(),
+                "Enter on the watermark opens no wizard"
+            );
         });
     }
     /// `x` on the provider-settings picker signs out (clears the credential)
@@ -19928,6 +21729,7 @@ mod tests {
                     clear_api_key: false,
                     models: Some(vec!["m1".into()]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -19943,7 +21745,10 @@ mod tests {
 
             // The provider entry (and its models) survive; the credential is gone.
             let configs = crate::core::agent::global_config::load_global_config().unwrap();
-            assert!(configs.contains_key("myprovider"), "config kept after logout");
+            assert!(
+                configs.contains_key("myprovider"),
+                "config kept after logout"
+            );
             assert_eq!(configs.get("myprovider").unwrap().models, vec!["m1"]);
             assert!(
                 CredentialStore::load("myprovider").unwrap().is_none(),
@@ -19971,6 +21776,7 @@ mod tests {
                     clear_api_key: false,
                     models: Some(vec!["tokamak-1-preview".into()]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -19989,7 +21795,10 @@ mod tests {
                     .is_none(),
                 "x on the login picker signs out"
             );
-            assert!(app.picker.is_some(), "login picker stays open after sign-out");
+            assert!(
+                app.picker.is_some(),
+                "login picker stays open after sign-out"
+            );
             let picker = app.picker.as_ref().unwrap();
             assert_eq!(picker.items[0].value, "tokamak");
             assert_eq!(
@@ -20015,6 +21824,7 @@ mod tests {
                     clear_api_key: false,
                     models: Some(vec!["m1".into(), "m2".into()]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -20031,7 +21841,11 @@ mod tests {
             assert!(prompt.editing.is_some());
 
             // The name field is read-only while editing; typing must not change it.
-            assert_eq!(prompt.field, ProviderField::BaseUrl, "edit starts on base url");
+            assert_eq!(
+                prompt.field,
+                ProviderField::BaseUrl,
+                "edit starts on base url"
+            );
             app.provider_prompt.as_mut().unwrap().field = ProviderField::Name;
             for ch in "RENAMED".chars() {
                 super::handle_provider_prompt_key(&mut app, key(KeyCode::Char(ch)), false);
@@ -20136,6 +21950,7 @@ mod tests {
                     clear_api_key: false,
                     models: Some(vec![]), // no models configured
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .expect("seed provider");
@@ -20152,7 +21967,11 @@ mod tests {
                     .iter()
                     .any(|i| i.model.contains("discovered-model")),
                 "discovered model must be offered: {:?}",
-                picker.all_items.iter().map(|i| &i.model).collect::<Vec<_>>()
+                picker
+                    .all_items
+                    .iter()
+                    .map(|i| &i.model)
+                    .collect::<Vec<_>>()
             );
         });
     }
@@ -20173,6 +21992,7 @@ mod tests {
                     clear_api_key: false,
                     models: Some(vec![]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -20184,7 +22004,10 @@ mod tests {
             // The picker opened (no reachable pairs => the note path fires,
             // but there is no panic, no hang, and the provider stays put).
             let configs = crate::core::agent::global_config::load_global_config().unwrap();
-            assert!(configs.contains_key("dead"), "provider not removed by a failed probe");
+            assert!(
+                configs.contains_key("dead"),
+                "provider not removed by a failed probe"
+            );
 
             // Opening once more must not re-contact the dead endpoint: the
             // session short-circuit means the second open is near-instant.
@@ -22599,6 +24422,34 @@ mod tests {
         }
     }
 
+    /// kitty's `?2026` handling can drop the resize repaint, so synchronized
+    /// output is skipped there; every other identity keeps it. (Konsole, the
+    /// whole reason kitty looks broken by contrast, is not the one gated.)
+    #[test]
+    fn synchronized_output_is_off_only_for_kitty() {
+        use super::super::terminal_setup::Kind;
+        for kind in [
+            Kind::Ghostty,
+            Kind::WezTerm,
+            Kind::Foot,
+            Kind::Rio,
+            Kind::Konsole,
+            Kind::ITerm2,
+            Kind::AppleTerminal,
+            Kind::VsCode,
+            Kind::WindowsTerminal,
+            Kind::Alacritty,
+            Kind::Vte,
+            Kind::Unknown,
+        ] {
+            assert!(
+                sync_output_for(kind),
+                "{kind:?} must keep synchronized output"
+            );
+        }
+        assert!(!sync_output_for(Kind::Kitty), "kitty must skip it");
+    }
+
     #[test]
     fn alt_scroll_is_disabled_only_where_the_terminal_reports_wheel() {
         // The app keeps native alternate scroll (i.e. sends nothing) on Windows,
@@ -22606,8 +24457,16 @@ mod tests {
         // so the wheel arrives as SGR mouse reports. The save/off and restore
         // pair must always agree so the mode is left balanced on exit.
         if cfg!(windows) {
-            assert_eq!(alt_scroll_save_off(), "", "Windows must not disable alt scroll");
-            assert_eq!(alt_scroll_restore(), "", "Windows must not restore alt scroll");
+            assert_eq!(
+                alt_scroll_save_off(),
+                "",
+                "Windows must not disable alt scroll"
+            );
+            assert_eq!(
+                alt_scroll_restore(),
+                "",
+                "Windows must not restore alt scroll"
+            );
         } else {
             assert_eq!(alt_scroll_save_off(), ALT_SCROLL_SAVE_OFF);
             assert_eq!(alt_scroll_restore(), ALT_SCROLL_RESTORE);
@@ -23266,7 +25125,10 @@ mod tests {
         );
         assert_ne!(first, later, "row must change as the frame advances");
 
-        assert!(later.contains("(Esc to cancel, type to queue next message)"), "{later:?}");
+        assert!(
+            later.contains("(Esc to cancel, type to queue next message)"),
+            "{later:?}"
+        );
     }
 
     /// When the model is reasoning (a ` think>` block is streaming), the input
@@ -23320,8 +25182,7 @@ mod tests {
             if !THINKING_WORDS.iter().any(|w| row.contains(w)) {
                 return false;
             }
-            (0..buf.area.width)
-                .any(|x| buf[(x, y)].style().fg == Some(super::THINKING_ORANGE))
+            (0..buf.area.width).any(|x| buf[(x, y)].style().fg == Some(super::THINKING_ORANGE))
         });
         assert!(orange, "thinking synonym not orange");
     }
@@ -23395,7 +25256,11 @@ mod tests {
             text: "Here is the answer".into(),
         });
         app.on_done("stop".into(), None);
-        assert_eq!(app.reasoning_blocks.len(), 1, "reasoning folded into one block");
+        assert_eq!(
+            app.reasoning_blocks.len(),
+            1,
+            "reasoning folded into one block"
+        );
         // The wire history carries the answer, with the reasoning preserved on
         // the message's `reasoning_content` rather than inlined into `content`.
         let last = app.history.last().expect("assistant turn in history");
@@ -23476,13 +25341,17 @@ mod tests {
     fn native_reasoning_badge_closes_once_prose_starts() {
         let mut app = test_app();
         app.submit_user("go".into());
-        app.apply(StreamEvent::Reasoning { text: "ponder".into() });
+        app.apply(StreamEvent::Reasoning {
+            text: "ponder".into(),
+        });
         assert_eq!(
             app.reasoning_status().map(|(w, _)| w),
             Some("thinking".to_string())
         );
         assert!(app.reasoning_open(), "reasoning is live");
-        app.apply(StreamEvent::Token { text: "Answer".into() });
+        app.apply(StreamEvent::Token {
+            text: "Answer".into(),
+        });
         assert!(!app.reasoning_open(), "prose has started");
         assert_eq!(
             app.reasoning_status().map(|(w, _)| w),
@@ -23536,10 +25405,18 @@ mod tests {
     fn interleaved_native_reasoning_keeps_emission_order() {
         let mut app = test_app();
         app.submit_user("go".into());
-        app.apply(StreamEvent::Reasoning { text: "first thought".into() });
-        app.apply(StreamEvent::Token { text: "Part one.".into() });
-        app.apply(StreamEvent::Reasoning { text: "second thought".into() });
-        app.apply(StreamEvent::Token { text: " Part two.".into() });
+        app.apply(StreamEvent::Reasoning {
+            text: "first thought".into(),
+        });
+        app.apply(StreamEvent::Token {
+            text: "Part one.".into(),
+        });
+        app.apply(StreamEvent::Reasoning {
+            text: "second thought".into(),
+        });
+        app.apply(StreamEvent::Token {
+            text: " Part two.".into(),
+        });
         app.on_done("stop".into(), None);
         assert_eq!(app.reasoning_blocks.len(), 2, "two separate stretches");
         // Journaled apart: prose verbatim, each stretch at the offset it
@@ -23557,8 +25434,14 @@ mod tests {
         assert_eq!(
             reasoning,
             &vec![
-                ReasoningSeg { at: 0, text: "first thought".into() },
-                ReasoningSeg { at: 9, text: "second thought".into() },
+                ReasoningSeg {
+                    at: 0,
+                    text: "first thought".into()
+                },
+                ReasoningSeg {
+                    at: 9,
+                    text: "second thought".into()
+                },
             ]
         );
         // The wire answer is prose only; both thoughts ride along on
@@ -23732,6 +25615,48 @@ mod tests {
     #[test]
     fn compact_is_a_registered_command() {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/compact"));
+    }
+    #[test]
+    fn effort_aliases_are_registered_as_aliases_of_effort() {
+        let effort = SLASH_COMMANDS
+            .iter()
+            .find(|c| c.name == "/effort")
+            .expect("/effort is canonical");
+        assert_eq!(effort.alias_of, None, "/effort is not an alias");
+        for alias in ["/think", "/reasoning"] {
+            let row = SLASH_COMMANDS
+                .iter()
+                .find(|c| c.name == alias)
+                .unwrap_or_else(|| panic!("{alias} must be registered"));
+            assert_eq!(row.alias_of, Some("/effort"), "{alias} alias target");
+        }
+    }
+
+    #[tokio::test]
+    async fn help_lists_effort_aliases_and_marks_effort_canonical() {
+        let mut app = test_app();
+        run_command(&mut app, "help", &no_mcp()).await;
+        let text: String = app.transcript.iter().map(row_text).collect();
+        // `/effort` desc has no alias prefix; each alias row derives from
+        // `alias_of` and must read as an alias of `/effort`. Signatures are
+        // wider than the 18-char pad, so assert on the embedded parts rather
+        // than exact column alignment.
+        assert!(
+            text.contains("alias of /effort"),
+            "alias annotation missing: {text}"
+        );
+        assert!(
+            text.contains("/think [low|medium|high] alias of /effort"),
+            "think row: {text}"
+        );
+        assert!(
+            text.contains("/reasoning [low|medium|high] alias of /effort"),
+            "reasoning row: {text}"
+        );
+        assert!(
+            text.contains("/effort [low|medium|high] Set reasoning effort"),
+            "canonical effort row must not be an alias: {text}"
+        );
     }
 
     #[test]
@@ -23922,19 +25847,30 @@ mod tests {
     fn a_clamped_line_keeps_its_head_unless_it_is_the_open_one() {
         let mut call = super::StartingCall::new("c1".into(), "write".into());
         let filler = "-".repeat(super::STREAM_MAX_LINE_CHARS * 2);
-        call.args = format!(
-            r#"{{"path":"a.txt","content":"HEAD1{filler}TAIL1\nHEAD2{filler}TAIL2"#
-        );
+        call.args =
+            format!(r#"{{"path":"a.txt","content":"HEAD1{filler}TAIL1\nHEAD2{filler}TAIL2"#);
         let text: Vec<String> = starting_call_lines(&mut call, "\u{280b}")
             .iter()
             .map(line_text)
             .collect();
         let joined = text.join("\n");
 
-        assert!(joined.contains("HEAD1"), "finished line lost its head: {joined}");
-        assert!(!joined.contains("TAIL1"), "finished line kept its tail: {joined}");
-        assert!(joined.contains("TAIL2"), "open line lost its tail: {joined}");
-        assert!(!joined.contains("HEAD2"), "open line kept its head: {joined}");
+        assert!(
+            joined.contains("HEAD1"),
+            "finished line lost its head: {joined}"
+        );
+        assert!(
+            !joined.contains("TAIL1"),
+            "finished line kept its tail: {joined}"
+        );
+        assert!(
+            joined.contains("TAIL2"),
+            "open line lost its tail: {joined}"
+        );
+        assert!(
+            !joined.contains("HEAD2"),
+            "open line kept its head: {joined}"
+        );
     }
 
     /// A file-sized `write` streams its arguments in thousands of deltas. One
@@ -23983,7 +25919,8 @@ mod tests {
             handle: tokio::spawn(async {}),
         });
         for _ in 0..(super::EVENT_DRAIN_MAX + 50) {
-            tx.send(StreamEvent::Token { text: "x".into() }).expect("send");
+            tx.send(StreamEvent::Token { text: "x".into() })
+                .expect("send");
         }
         assert_eq!(
             drain_stream_events(&mut app, &mut current).await,
@@ -24001,13 +25938,17 @@ mod tests {
             rx,
             handle: tokio::spawn(async {}),
         });
-        tx.send(StreamEvent::Token { text: "hi".into() }).expect("send");
+        tx.send(StreamEvent::Token { text: "hi".into() })
+            .expect("send");
         tx.send(StreamEvent::Done {
             stop_reason: "stop".into(),
             usage: None,
         })
         .expect("send");
-        tx.send(StreamEvent::Token { text: "late".into() }).expect("send");
+        tx.send(StreamEvent::Token {
+            text: "late".into(),
+        })
+        .expect("send");
 
         let drained = drain_stream_events(&mut app, &mut current).await;
         assert_eq!(drained, 2, "drain must stop on the terminal event");
@@ -24316,7 +26257,10 @@ mod tests {
         let mut app = test_app();
         run_command(&mut app, "effort", &no_mcp()).await;
         let text: String = app.transcript.iter().map(row_text).collect();
-        assert!(text.contains("medium"), "default level not reported: {text}");
+        assert!(
+            text.contains("medium"),
+            "default level not reported: {text}"
+        );
     }
 
     #[tokio::test]
@@ -24333,9 +26277,87 @@ mod tests {
     async fn effort_command_rejects_unknown_level() {
         let mut app = test_app();
         run_command(&mut app, "effort turbo", &no_mcp()).await;
-        assert_eq!(app.reasoning_effort, "medium", "invalid level must not apply");
+        assert_eq!(
+            app.reasoning_effort, "medium",
+            "invalid level must not apply"
+        );
         let text: String = app.transcript.iter().map(row_text).collect();
-        assert!(text.contains("unknown effort level"), "missing note: {text}");
+        assert!(
+            text.contains("unknown effort level"),
+            "missing note: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn think_alias_reports_current_level() {
+        let mut app = test_app();
+        run_command(&mut app, "think", &no_mcp()).await;
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(
+            text.contains("medium"),
+            "default level not reported: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn think_alias_sets_valid_level() {
+        let mut app = test_app();
+        run_command(&mut app, "think high", &no_mcp()).await;
+        assert_eq!(app.reasoning_effort, "high");
+        assert_eq!(app.last_non_low_effort, "high");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("set to high"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn think_alias_rejects_unknown_level() {
+        let mut app = test_app();
+        run_command(&mut app, "think turbo", &no_mcp()).await;
+        assert_eq!(
+            app.reasoning_effort, "medium",
+            "invalid level must not apply"
+        );
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(
+            text.contains("unknown effort level"),
+            "missing note: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn reasoning_alias_reports_current_level() {
+        let mut app = test_app();
+        run_command(&mut app, "reasoning", &no_mcp()).await;
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(
+            text.contains("medium"),
+            "default level not reported: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn reasoning_alias_sets_valid_level() {
+        let mut app = test_app();
+        run_command(&mut app, "reasoning high", &no_mcp()).await;
+        assert_eq!(app.reasoning_effort, "high");
+        assert_eq!(app.last_non_low_effort, "high");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(text.contains("set to high"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn reasoning_alias_rejects_unknown_level() {
+        let mut app = test_app();
+        run_command(&mut app, "reasoning turbo", &no_mcp()).await;
+        assert_eq!(
+            app.reasoning_effort, "medium",
+            "invalid level must not apply"
+        );
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(
+            text.contains("unknown effort level"),
+            "missing note: {text}"
+        );
     }
 
     #[test]
@@ -24346,7 +26368,10 @@ mod tests {
         assert_eq!(app.reasoning_effort, "low");
         assert_eq!(app.last_non_low_effort, "medium");
         app.toggle_reasoning_effort();
-        assert_eq!(app.reasoning_effort, "medium", "toggle back restores last non-low");
+        assert_eq!(
+            app.reasoning_effort, "medium",
+            "toggle back restores last non-low"
+        );
     }
 
     #[test]
@@ -24357,7 +26382,10 @@ mod tests {
         app.toggle_reasoning_effort();
         assert_eq!(app.reasoning_effort, "low");
         app.toggle_reasoning_effort();
-        assert_eq!(app.reasoning_effort, "high", "restores the latest non-low, not a hardcoded default");
+        assert_eq!(
+            app.reasoning_effort, "high",
+            "restores the latest non-low, not a hardcoded default"
+        );
     }
 
     #[test]
@@ -24370,7 +26398,10 @@ mod tests {
         assert_eq!(app.reasoning_effort, "high");
         app.cycle_reasoning_effort();
         assert_eq!(app.reasoning_effort, "low", "cycles back to low");
-        assert_eq!(app.last_non_low_effort, "high", "tracks the most recent non-low");
+        assert_eq!(
+            app.last_non_low_effort, "high",
+            "tracks the most recent non-low"
+        );
     }
 
     #[test]
@@ -24607,7 +26638,10 @@ mod tests {
         assert!(injected.contains("t1") && injected.contains("t2"));
         // The reminder is hidden: no user-authored `> ` row in the transcript.
         let rows: String = app.transcript.iter().map(row_text).collect();
-        assert!(!rows.contains("> "), "reminder must not render as a user row");
+        assert!(
+            !rows.contains("> "),
+            "reminder must not render as a user row"
+        );
     }
 
     #[test]
@@ -24653,6 +26687,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: ask_request(false, false),
+            timeout_secs: None,
         });
         finish_clean_turn(&mut app);
         assert!(
@@ -25023,10 +27058,16 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: "<think>more".into(),
         });
-        assert!(!app.is_thinking(), "streamed reasoning needs no badge motion");
+        assert!(
+            !app.is_thinking(),
+            "streamed reasoning needs no badge motion"
+        );
         app.stream_reasoning = false;
         app.show_reasoning = true;
-        assert!(!app.is_thinking(), "unfolded reasoning needs no badge motion");
+        assert!(
+            !app.is_thinking(),
+            "unfolded reasoning needs no badge motion"
+        );
     }
 
     /// Folded reasoning summaries and tool rows are one run of activity: a turn
@@ -25234,6 +27275,84 @@ mod tests {
         assert!(todos < agents, "plan first when stacked: {rows:?}");
     }
 
+    /// The dock is one unit and the conversation is another:
+    /// `TRANSCRIPT_BOTTOM_PAD` keeps the model's closing line off the rule that
+    /// separates the transcript from the input.
+    #[test]
+    fn the_transcript_keeps_its_air_above_the_dock() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "an answer".into(),
+        });
+        app.flush_assistant();
+        let rows = render_rows(&mut app, 60, 20);
+
+        let rule = rows
+            .iter()
+            .rposition(|r| r.trim_end().chars().filter(|c| *c == '─').count() > 20)
+            .expect("the separator rule is on screen");
+        let last_prose = rows[..rule]
+            .iter()
+            .rposition(|r| r.trim() == "an answer")
+            .expect("the answer is on screen");
+        // Literal, not derived from the constant: the point is the geometry on
+        // screen, and reading the expectation back off `TRANSCRIPT_BOTTOM_PAD`
+        // would make the test pass at any value including zero.
+        assert_eq!(
+            rule - last_prose,
+            2,
+            "exactly one blank row between the transcript and the dock: {rows:#?}"
+        );
+        assert!(
+            rows[rule - 1].trim().is_empty(),
+            "the row above the rule is the air, not content: {rows:#?}"
+        );
+    }
+
+    /// Reasoning and answer are different bands, and the committed path gaps
+    /// between them. The live tail packed them together, so a native-reasoning
+    /// model's answer streamed flush against the reasoning above it and then
+    /// dropped a row when the commit put the real separator in.
+    #[test]
+    fn the_live_tail_gaps_between_reasoning_and_the_answer() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Reasoning {
+            text: "musing".into(),
+        });
+        app.apply(StreamEvent::Token {
+            text: "Here is the ".into(),
+        });
+
+        // The `┊` gutter marks the reasoning band in both forms: folded to a
+        // summary row while it streams, and as dimmed detail once committed.
+        let gap = |rows: &[String]| -> usize {
+            let reasoning = rows
+                .iter()
+                .rposition(|r| r.contains('┊'))
+                .unwrap_or_else(|| panic!("the reasoning band is on screen: {rows:#?}"));
+            let prose = rows
+                .iter()
+                .position(|r| r.contains("Here is the"))
+                .unwrap_or_else(|| panic!("the answer is on screen: {rows:#?}"));
+            prose - reasoning
+        };
+        let live = render_rows(&mut app, 60, 16);
+        assert_eq!(
+            gap(&live),
+            2,
+            "one blank row between the reasoning and the answer: {live:#?}"
+        );
+
+        // Committing it moves nothing: the live gap is the one the commit puts in.
+        app.flush_assistant();
+        let flushed = render_rows(&mut app, 60, 16);
+        assert_eq!(
+            gap(&flushed),
+            2,
+            "the commit must not change the gap: {flushed:#?}"
+        );
+    }
+
     /// A short terminal spends its rows on the conversation: the panel shrinks
     /// first, eliding its own tail, and disappears before the transcript does.
     #[test]
@@ -25246,8 +27365,9 @@ mod tests {
         // Roomy: capped at the panel ceiling, never more.
         assert_eq!(super::panel_budget(40, 2), super::PANEL_MAX_ROWS);
         // Squeezed: only what is left after the fixed rows and the transcript
-        // floor, and nothing at all once even that is gone.
-        assert_eq!(super::panel_budget(12, 2), 3);
+        // floor, less the row `TRANSCRIPT_BOTTOM_PAD` holds open above the dock,
+        // and nothing at all once even that is gone.
+        assert_eq!(super::panel_budget(12, 2), 2);
         assert_eq!(super::panel_budget(9, 2), 0);
 
         let rows = render_rows(&mut app, 80, 12);
@@ -25255,9 +27375,9 @@ mod tests {
             .iter()
             .filter(|r| r.contains("Todos") || r.contains("a task") || r.contains("more"))
             .collect();
-        assert!(panel.len() <= 3, "panel clamped to its budget: {rows:?}");
+        assert!(panel.len() <= 2, "panel clamped to its budget: {rows:?}");
         assert!(
-            rows.iter().any(|r| r.contains("+11 more")),
+            rows.iter().any(|r| r.contains("+12 more")),
             "the tail is elided, not dropped silently: {rows:?}"
         );
 
@@ -25357,6 +27477,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: plan_review_request(),
+            timeout_secs: None,
         });
         // Default selection 0 = "Execute plan"; Enter submits.
         press_ask(&mut app, &registry, KeyCode::Enter).await;
@@ -25385,6 +27506,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: plan_review_request(),
+            timeout_secs: None,
         });
         press_ask(&mut app, &registry, KeyCode::Enter).await;
         // Atomic handoff: no staged plan => stay in Plan, no continuation.
@@ -25408,6 +27530,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: plan_review_request(),
+            timeout_secs: None,
         });
         press_ask(&mut app, &registry, KeyCode::Down).await; // -> Keep planning
         press_ask(&mut app, &registry, KeyCode::Enter).await;
@@ -25432,6 +27555,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: plan_review_request(),
+            timeout_secs: None,
         });
         press_ask(&mut app, &registry, KeyCode::Down).await;
         press_ask(&mut app, &registry, KeyCode::Down).await; // -> Exit plan mode
@@ -25451,6 +27575,7 @@ mod tests {
         app.apply(StreamEvent::AskRequest {
             request_id,
             request: plan_review_request(),
+            timeout_secs: None,
         });
         press_ask(&mut app, &registry, KeyCode::Esc).await; // cancel the review
         assert!(app.ask_queue.is_empty(), "review wait must be cleared");
@@ -25516,8 +27641,8 @@ mod tests {
             "transcript not reset: {text}"
         );
         assert!(
-            text.contains(brand::HAND[0].trim()),
-            "hand logo missing after /clear: {text}"
+            text.contains(brand::LOGO[0].trim()),
+            "wordmark missing after /clear: {text}"
         );
         assert!(
             text.contains("--safe: approval needed"),
@@ -25584,7 +27709,12 @@ mod tests {
     fn slash_prefix_narrows_and_unmatched_hides() {
         let mut app = test_app();
         app.input = "/re".into();
-        assert_eq!(names(&app), vec!["/resume".to_string()]);
+        // Both `/resume` and `/reasoning` start with `re`; catalog order
+        // (stable sort on equal prefix score) keeps resume first.
+        assert_eq!(
+            names(&app),
+            vec!["/resume".to_string(), "/reasoning".to_string()]
+        );
         app.input = "/xyz".into();
         assert!(app.slash_matches().is_empty());
     }
@@ -25669,7 +27799,11 @@ mod tests {
         app.input_insert('s');
         assert_eq!(
             names(&app),
-            vec!["/resume".to_string(), "/threads".to_string()]
+            vec![
+                "/resume".to_string(),
+                "/reasoning".to_string(),
+                "/threads".to_string(),
+            ]
         );
     }
 
@@ -25897,11 +28031,15 @@ mod tests {
         app.input = "/res".into();
         let all = names(&app);
         // Built-in wins the `/resume` collision: no `/command:x:resume` row and
-        // no skill row. `/threads` is a separate fuzzy hit (res is a
-        // subsequence of its name), not a collision.
+        // no skill row. `/reasoning` and `/threads` are separate fuzzy hits
+        // (res is a subsequence of both names), not collisions.
         assert_eq!(
             all,
-            vec!["/resume".to_string(), "/threads".to_string()],
+            vec![
+                "/resume".to_string(),
+                "/reasoning".to_string(),
+                "/threads".to_string(),
+            ],
             "built-in only"
         );
         // The command is still reachable explicitly.
@@ -25991,7 +28129,12 @@ mod tests {
             transcript_text(&app)
         );
         // Explicit qualified form.
-        run_command(&mut app, "command:feature-dev:feature-dev fix tests", &no_mcp()).await;
+        run_command(
+            &mut app,
+            "command:feature-dev:feature-dev fix tests",
+            &no_mcp(),
+        )
+        .await;
         let user = app.history.iter().last().unwrap();
         assert!(
             user.get("content")
@@ -26113,12 +28256,21 @@ mod tests {
         // the TUI); it hands the spec to the loop, which runs the install off
         // the render loop. Drive the handoff: the request is recorded, a second
         // is refused while one is in flight, and the loop clears it on pick-up.
-        run_command(&mut app, &format!("plugin install file://{}", repo.display()), &no_mcp()).await;
+        run_command(
+            &mut app,
+            &format!("plugin install file://{}", repo.display()),
+            &no_mcp(),
+        )
+        .await;
         assert!(
             app.plugin_install_request.is_some(),
             "install spec should be handed to the loop"
         );
-        assert!(transcript_text(&app).contains("installing plugin..."), "{}", transcript_text(&app));
+        assert!(
+            transcript_text(&app).contains("installing plugin..."),
+            "{}",
+            transcript_text(&app)
+        );
         app.plugin_installing = true;
         run_command(&mut app, "plugin install file://nowhere", &no_mcp()).await;
         assert!(
@@ -26131,12 +28283,9 @@ mod tests {
 
         // Actually install so the list/dispatch/remove checks below have a
         // plugin present (the install itself is covered by plugins::tests).
-        let p = crate::core::agent::plugins::install(
-            &root,
-            &format!("file://{}", repo.display()),
-        )
-        .await
-        .unwrap();
+        let p = crate::core::agent::plugins::install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap();
         assert_eq!(p.name, "release-tools");
         app.refresh_slash_catalog();
 
@@ -26214,9 +28363,14 @@ mod tests {
         finish_plugin_install(
             &mut app,
             Some("file:///tmp/collection".to_string()),
-            Ok(crate::core::agent::plugins::GitInstall::Collection(candidates)),
+            Ok(crate::core::agent::plugins::GitInstall::Collection(
+                candidates,
+            )),
         );
-        let picker = app.picker.as_ref().expect("collection listing opens the picker");
+        let picker = app
+            .picker
+            .as_ref()
+            .expect("collection listing opens the picker");
         assert_eq!(picker.kind, PickerKind::PluginSelect);
         assert_eq!(picker.items.len(), 2);
 
@@ -26255,11 +28409,17 @@ mod tests {
         assert!(app.plugin_collection_url.is_some());
         press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE).await;
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
-        let (url, paths) = app.plugin_select_request.expect("Enter submits the pick").clone();
+        let (url, paths) = app
+            .plugin_select_request
+            .expect("Enter submits the pick")
+            .clone();
         assert_eq!(url, "file:///tmp/collection");
         assert_eq!(paths, vec!["alpha".to_string()]);
         assert!(app.picker.is_none());
-        assert!(app.plugin_collection_url.is_none(), "URL consumed on submit");
+        assert!(
+            app.plugin_collection_url.is_none(),
+            "URL consumed on submit"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -26768,7 +28928,10 @@ mod tests {
         );
         finish_compaction(&mut app, Err(overflow), 1);
 
-        assert!(app.compacting.is_none(), "a failure must clear the throbber");
+        assert!(
+            app.compacting.is_none(),
+            "a failure must clear the throbber"
+        );
         assert_eq!(app.history.len(), 1, "history must be left untouched");
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(
@@ -26884,7 +29047,10 @@ mod tests {
             .iter()
             .map(|s| s.content.as_ref())
             .collect::<String>();
-        assert!(text.contains("effort low"), "badge must track the level: {text}");
+        assert!(
+            text.contains("effort low"),
+            "badge must track the level: {text}"
+        );
     }
 
     #[test]
@@ -26907,9 +29073,15 @@ mod tests {
     #[test]
     fn body_includes_reasoning_effort() {
         let mut app = test_app();
-        assert_eq!(app.body().get("reasoning_effort").and_then(|v| v.as_str()), Some("medium"));
+        assert_eq!(
+            app.body().get("reasoning_effort").and_then(|v| v.as_str()),
+            Some("medium")
+        );
         app.reasoning_effort = "high".into();
-        assert_eq!(app.body().get("reasoning_effort").and_then(|v| v.as_str()), Some("high"));
+        assert_eq!(
+            app.body().get("reasoning_effort").and_then(|v| v.as_str()),
+            Some("high")
+        );
     }
 
     /// The session token budget is the only cap: it is always forwarded, and no
@@ -26983,32 +29155,30 @@ mod tests {
         );
     }
 
-    /// The mark and the name are one lockup, so they share rows instead of
-    /// stacking: the wordmark's first row also carries part of the hand.
+    /// The splash opens on the wordmark alone. The hand-wave block art that used
+    /// to sit beside it spent 15 rows of a fresh screen on decoration and forced
+    /// a 61-column floor before the splash would render at all.
     #[test]
-    fn banner_opens_with_the_hand_logo_beside_the_wordmark() {
+    fn banner_opens_with_the_wordmark() {
         let mut app = test_app();
         app.push_banner("--safe", true);
 
         let text = banner_text(&app, 90);
         let joined = text.join("\n");
-        let row = text
-            .iter()
-            .find(|l| l.contains(brand::LOGO[0].trim()))
-            .unwrap_or_else(|| panic!("wordmark missing:\n{joined}"));
-        let hand_row = brand::HAND
-            .iter()
-            .find(|h| row.contains(h.trim()))
-            .unwrap_or_else(|| panic!("the wordmark's row carries no hand: {row}"));
         assert!(
-            row.find(hand_row.trim()).unwrap() < row.find(brand::LOGO[0].trim()).unwrap(),
-            "the hand should sit left of the wordmark: {row}"
+            text.iter().any(|l| l.contains(brand::LOGO[0].trim())),
+            "wordmark missing:\n{joined}"
         );
         assert!(joined.contains('█'), "{joined}");
+        // The wordmark is six rows; the hand was fifteen more.
+        assert!(
+            text.iter().filter(|l| l.contains('█')).count() <= brand::LOGO.len(),
+            "the splash carries block art beyond the wordmark:\n{joined}"
+        );
     }
 
     #[test]
-    fn a_24_column_terminal_drops_the_hand_logo_too() {
+    fn a_24_column_terminal_drops_the_wordmark() {
         let mut app = test_app();
         app.push_banner("--safe", true);
         let narrow = banner_text(&app, 24);
@@ -27272,8 +29442,6 @@ mod tests {
         assert!(narrow.len() > 1, "{narrow:?}");
     }
 
-
-
     /// The transcript is laid out on every 50ms tick, so any per-frame work
     /// proportional to history (rather than to the viewport) compounds into an
     /// unusable session. `draw` must materialize only the rows on screen.
@@ -27324,7 +29492,7 @@ mod tests {
             Some(&Some(last)),
             "the last body row must map to the last transcript row"
         );
-}
+    }
     #[test]
     fn model_picker_pins_tokamak_scope_and_models_first() {
         let picker = super::ModelPicker::from_pairs(
@@ -27415,6 +29583,7 @@ mod tests {
                     base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
                     models: Some(vec!["tokamak-old".into()]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -27438,6 +29607,7 @@ mod tests {
                     base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
                     models: Some(vec!["tokamak-old".into(), "tokamak-new".into()]),
                     api_type: None,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -27513,7 +29683,11 @@ mod tests {
             // Sorted by name, so the order is stable across runs.
             assert_eq!(items[0].value, "files");
             assert_eq!(items[0].checkbox, Some(true));
-            assert!(items[0].label.contains("not connected"), "{}", items[0].label);
+            assert!(
+                items[0].label.contains("not connected"),
+                "{}",
+                items[0].label
+            );
             assert_eq!(items[1].value, "remote");
             assert_eq!(items[1].checkbox, Some(false));
             assert!(items[1].label.contains("disabled"), "{}", items[1].label);
@@ -27601,7 +29775,10 @@ mod tests {
                 .map(|i| i.value.as_str())
                 .collect();
             assert!(!values.contains(&super::MCP_ACTION_AUTH), "{values:?}");
-            assert!(!values.contains(&super::MCP_ACTION_CLEAR_AUTH), "{values:?}");
+            assert!(
+                !values.contains(&super::MCP_ACTION_CLEAR_AUTH),
+                "{values:?}"
+            );
             // Not connected, so there is nothing to list.
             assert!(!values.contains(&super::MCP_ACTION_TOOLS), "{values:?}");
             assert!(values.contains(&super::MCP_ACTION_TOGGLE), "{values:?}");
@@ -27619,7 +29796,10 @@ mod tests {
                 .unwrap();
             assert_eq!(toggle.label, "Disable");
             // Rows are numbered, as the screen is meant to read.
-            assert_eq!(app.picker.as_ref().unwrap().items[0].hint.as_deref(), Some("1."));
+            assert_eq!(
+                app.picker.as_ref().unwrap().items[0].hint.as_deref(),
+                Some("1.")
+            );
         });
     }
 
@@ -27641,7 +29821,9 @@ mod tests {
                 .find(|i| i.value == super::MCP_ACTION_AUTH)
                 .expect("an unauthenticated remote can sign in");
             assert_eq!(auth.label, "Authenticate");
-            assert!(!items.iter().any(|i| i.value == super::MCP_ACTION_CLEAR_AUTH));
+            assert!(!items
+                .iter()
+                .any(|i| i.value == super::MCP_ACTION_CLEAR_AUTH));
             // Inactive, so Reconnect is not offered and the toggle reads Enable.
             assert!(!items.iter().any(|i| i.value == super::MCP_ACTION_RECONNECT));
             assert_eq!(
@@ -27675,7 +29857,9 @@ mod tests {
             rt().block_on(super::open_mcp_detail(&mut app, "remote", &no_mcp()));
             let items = &app.picker.as_ref().unwrap().items;
             assert!(!items.iter().any(|i| i.value == super::MCP_ACTION_AUTH));
-            assert!(!items.iter().any(|i| i.value == super::MCP_ACTION_CLEAR_AUTH));
+            assert!(!items
+                .iter()
+                .any(|i| i.value == super::MCP_ACTION_CLEAR_AUTH));
         });
     }
 
@@ -27782,10 +29966,12 @@ mod tests {
             )
             .unwrap();
             // The fixture must actually load, or this test proves nothing.
-            assert!(super::super::mcp::auth_status(
-                "remote",
-                &serde_json::json!({ "type": "http", "url": "https://x/mcp" })
-            ) != crate::core::mcp::oauth::AuthStatus::Unauthenticated);
+            assert!(
+                super::super::mcp::auth_status(
+                    "remote",
+                    &serde_json::json!({ "type": "http", "url": "https://x/mcp" })
+                ) != crate::core::mcp::oauth::AuthStatus::Unauthenticated
+            );
 
             let mut app = test_app();
             rt().block_on(super::remove_mcp_server(&mut app, "remote", &no_mcp()));
@@ -27821,10 +30007,7 @@ mod tests {
     #[test]
     fn a_long_value_is_clamped_instead_of_pushing_the_border_off_the_frame() {
         use ratatui::text::Span;
-        let line = Line::from(vec![
-            Span::raw("URL:  "),
-            Span::raw("x".repeat(400)),
-        ]);
+        let line = Line::from(vec![Span::raw("URL:  "), Span::raw("x".repeat(400))]);
         let clamped = super::clamp_line(line, 40);
         let width: usize = clamped
             .spans
@@ -27832,12 +30015,7 @@ mod tests {
             .map(|s| s.content.chars().count())
             .sum();
         assert!(width <= 38, "clamped to {width}");
-        assert!(clamped
-            .spans
-            .last()
-            .unwrap()
-            .content
-            .ends_with('\u{2026}'));
+        assert!(clamped.spans.last().unwrap().content.ends_with('\u{2026}'));
     }
 
     /// The bug #8726 was reverted for: a 2-cell emoji stood in for a 1-cell
@@ -27952,5 +30130,4 @@ mod tests {
             "throbber still present in {row:?}"
         );
     }
-
 }

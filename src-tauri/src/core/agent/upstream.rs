@@ -4,6 +4,7 @@
 //! `core/server/proxy.rs` (no behavior change) so both the server path and
 //! `core/agent/loop.rs` consume one implementation.
 
+use futures_util::StreamExt;
 #[cfg(feature = "cli")]
 use std::cmp::Reverse;
 use std::collections::HashMap;
@@ -11,7 +12,6 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use futures_util::StreamExt;
 use reqwest::Client;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 #[cfg(not(feature = "cli"))]
@@ -19,9 +19,7 @@ use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
 
 use crate::core::agent::events::StreamEvent;
-use crate::core::openai_schema::{
-    http_status_indicates_api_key_retry, normalize_openai_tool_parameters_schema,
-};
+use crate::core::openai_schema::normalize_openai_tool_parameters_schema;
 use crate::core::server::converters::UpstreamConverter;
 #[cfg(not(feature = "cli"))]
 use crate::core::server::proxy::router_upstream;
@@ -29,6 +27,7 @@ use crate::core::server::proxy::router_upstream;
 use crate::core::server::MlxBackendSession;
 use crate::core::{
     mcp::models::McpSettings,
+    mcp::truncate::truncate_tool_result,
     state::{ProviderConfig, SharedMcpServers},
 };
 
@@ -167,15 +166,17 @@ pub(crate) fn repair_dangling_tool_calls(messages: &mut Vec<serde_json::Value>) 
         // isn't a tool reply.
         let mut answered: std::collections::HashSet<&str> = std::collections::HashSet::new();
         let mut j = i + 1;
-        while j < messages.len()
-            && messages[j].get("role").and_then(|v| v.as_str()) == Some("tool")
+        while j < messages.len() && messages[j].get("role").and_then(|v| v.as_str()) == Some("tool")
         {
             if let Some(id) = messages[j].get("tool_call_id").and_then(|v| v.as_str()) {
                 answered.insert(id);
             }
             j += 1;
         }
-        let missing: Vec<&String> = ids.iter().filter(|id| !answered.contains(id.as_str())).collect();
+        let missing: Vec<&String> = ids
+            .iter()
+            .filter(|id| !answered.contains(id.as_str()))
+            .collect();
         for id in &missing {
             messages.insert(
                 j,
@@ -376,12 +377,7 @@ pub(crate) async fn resolve_upstream_for_model(
         .filter(|(_, config)| {
             config.base_url.as_deref().is_some_and(|u| !u.is_empty()) && offers(config)
         })
-        .min_by_key(|(name, config)| {
-            (
-                Reverse(credentialed(config)),
-                name.to_string(),
-            )
-        })
+        .min_by_key(|(name, config)| (Reverse(credentialed(config)), name.to_string()))
         .or_else(|| pc.iter().find(|(_, config)| offers(config)));
     #[cfg(not(feature = "cli"))]
     let first_match = pc.iter().find(|(_, config)| offers(config));
@@ -400,7 +396,11 @@ pub(crate) async fn resolve_upstream_for_model(
     drop(pc);
 
     if let Some(provider) = provider_name {
-        let provider_cfg = provider_configs.lock().await.get(provider.as_str()).cloned();
+        let provider_cfg = provider_configs
+            .lock()
+            .await
+            .get(provider.as_str())
+            .cloned();
         if let Some(provider_cfg) = provider_cfg {
             // A populated base_url means an HTTP upstream (cloud, or a local
             // engine whose live endpoint was registered at runtime). A local
@@ -413,10 +413,9 @@ pub(crate) async fn resolve_upstream_for_model(
                 // proxy path and falls back to the bearer key chain here.
                 #[cfg(feature = "cli")]
                 let (api_url, api_keys) = {
-                    let account_token = crate::core::cli::auth::account::access_token(
-                        &provider_cfg.provider,
-                    )
-                    .await?;
+                    let account_token =
+                        crate::core::cli::auth::account::access_token(&provider_cfg.provider)
+                            .await?;
                     let api_url = if provider_cfg.provider == "openai"
                         && account_token.is_some()
                         && api_url.trim_end_matches('/') == "https://api.openai.com/v1"
@@ -433,6 +432,16 @@ pub(crate) async fn resolve_upstream_for_model(
                 #[cfg(not(feature = "cli"))]
                 let api_keys = provider_cfg.bearer_key_chain();
                 let url = format!("{}{}", api_url, destination_path);
+                #[cfg(feature = "cli")]
+                {
+                    if api_keys.is_empty() {
+                        let mut provider_cfg = provider_cfg;
+                        crate::core::cli::providers::hydrate_provider_keys(&mut provider_cfg);
+                        return Ok((url, provider_cfg.bearer_key_chain()));
+                    }
+                    return Ok((url, api_keys));
+                }
+                #[cfg(not(feature = "cli"))]
                 return Ok((url, api_keys));
             }
         }
@@ -478,7 +487,6 @@ pub(crate) fn strip_provider_prefix(
     model_id.to_string()
 }
 
-
 /// Resolve the wire API for `model_id`'s provider, mirroring the
 /// model-to-provider lookup in [`resolve_upstream_for_model`]. Returns the
 /// provider's `api_type` and whether its credential is an OAuth account token
@@ -501,12 +509,7 @@ pub(crate) async fn resolve_api_type_for_model(
         .filter(|(_, config)| {
             config.base_url.as_deref().is_some_and(|u| !u.is_empty()) && offers(config)
         })
-        .min_by_key(|(name, config)| {
-            (
-                Reverse(credentialed(config)),
-                name.to_string(),
-            )
-        })
+        .min_by_key(|(name, config)| (Reverse(credentialed(config)), name.to_string()))
         .or_else(|| pc.iter().find(|(_, config)| offers(config)));
     #[cfg(not(feature = "cli"))]
     let first_match = pc.iter().find(|(_, config)| offers(config));
@@ -572,28 +575,27 @@ pub(crate) async fn collect_mcp_openai_tools(
     // Probe every server concurrently so one slow/hanging server can't serialize
     // the whole collection behind its timeout (previously each server waited out
     // the full timeout before the next was contacted).
-    let listings = futures_util::future::join_all(servers.iter().map(|(server_name, service)| {
-        async move {
-            let result = match tokio::time::timeout(timeout_duration, service.list_all_tools()).await
-            {
-                Ok(Ok(tools)) => Some(tools),
-                Ok(Err(e)) => {
-                    log::warn!("MCP server {} failed to list tools: {}", server_name, e);
-                    None
-                }
-                Err(_) => {
-                    log::warn!(
-                        "Listing MCP tools timed out after {} seconds on server {}",
-                        timeout_duration.as_secs(),
-                        server_name
-                    );
-                    None
-                }
-            };
+    let listings =
+        futures_util::future::join_all(servers.iter().map(|(server_name, service)| async move {
+            let result =
+                match tokio::time::timeout(timeout_duration, service.list_all_tools()).await {
+                    Ok(Ok(tools)) => Some(tools),
+                    Ok(Err(e)) => {
+                        log::warn!("MCP server {} failed to list tools: {}", server_name, e);
+                        None
+                    }
+                    Err(_) => {
+                        log::warn!(
+                            "Listing MCP tools timed out after {} seconds on server {}",
+                            timeout_duration.as_secs(),
+                            server_name
+                        );
+                        None
+                    }
+                };
             (server_name.clone(), result)
-        }
-    }))
-    .await;
+        }))
+        .await;
 
     for (server_name, tools) in listings {
         let Some(tools) = tools else { continue };
@@ -631,7 +633,13 @@ pub(crate) async fn execute_mcp_tool_calls(
     mcp_servers: &SharedMcpServers,
     mcp_settings: &Arc<Mutex<McpSettings>>,
 ) -> Vec<(String, String)> {
-    let timeout_duration = mcp_settings.lock().await.tool_call_timeout_duration();
+    let (timeout_duration, tool_output_cap) = {
+        let settings = mcp_settings.lock().await;
+        (
+            settings.tool_call_timeout_duration(),
+            settings.tool_output_cap(None),
+        )
+    };
     let servers = mcp_servers.lock().await;
 
     let mut results = Vec::with_capacity(tool_calls.len());
@@ -695,7 +703,9 @@ pub(crate) async fn execute_mcp_tool_calls(
         };
 
         let tool_result_string = match result {
-            Ok(res) => mcp_call_result_to_string(&res),
+            // Same cap as the desktop path: this string is appended to the agent's
+            // message history, so an unbounded result would blow the context here too.
+            Ok(res) => mcp_call_result_to_string(&truncate_tool_result(&res, tool_output_cap)),
             Err(e) => format!("ERROR: {e}"),
         };
 
@@ -745,7 +755,7 @@ pub(crate) async fn call_openai_chat_completions(
         }
 
         last_err = format!("Upstream returned HTTP {status}: {text}");
-        if http_status_indicates_api_key_retry(status) && i + 1 < attempts.len() {
+        if should_try_next_api_key(status) && i + 1 < attempts.len() {
             log::warn!("OpenAI completion: HTTP {status} with API key index {i}, trying next key");
             continue;
         }
@@ -823,6 +833,7 @@ pub(crate) fn is_reasoning_field_error(err: &str) -> bool {
 /// connection, TLS mismatch, dropped socket) is one or more sources down and is
 /// otherwise lost to the user. Consecutive duplicates are collapsed: hyper and
 /// its io error often stringify identically.
+#[cfg(any(not(feature = "cli"), test))]
 fn error_source_chain(err: &dyn std::error::Error) -> Vec<String> {
     let mut chain = Vec::new();
     let mut cur = err.source();
@@ -843,6 +854,7 @@ fn error_source_chain(err: &dyn std::error::Error) -> Vec<String> {
 /// already closed as `connection closed before message completed`, or as an
 /// `ECONNRESET`/`EPIPE` io error if the RST lands while the request is going
 /// out. A timeout is deliberately excluded: retrying one doubles the wait.
+#[cfg(not(feature = "cli"))]
 fn is_retryable_send_error(err: &reqwest::Error) -> bool {
     if err.is_timeout() || err.is_body() || err.is_decode() || err.is_builder() {
         return false;
@@ -854,6 +866,7 @@ fn is_retryable_send_error(err: &reqwest::Error) -> bool {
 /// on text because the io error is several opaque layers down (hyper's
 /// `SendRequest` -> `connection error` -> `std::io::Error`) and its `ErrorKind`
 /// is not exposed through `reqwest`.
+#[cfg(not(feature = "cli"))]
 fn chain_indicates_dropped_connection(chain: &[String]) -> bool {
     const MARKERS: &[&str] = &[
         "connection closed before message completed",
@@ -862,17 +875,16 @@ fn chain_indicates_dropped_connection(chain: &[String]) -> bool {
         "connection aborted",
         "unexpected eof",
     ];
-    chain
-        .iter()
-        .any(|msg| {
-            let msg = msg.to_lowercase();
-            MARKERS.iter().any(|m| msg.contains(m))
-        })
+    chain.iter().any(|msg| {
+        let msg = msg.to_lowercase();
+        MARKERS.iter().any(|m| msg.contains(m))
+    })
 }
 
 /// How long to wait before the one retry of a dropped connection. Long enough
 /// for a load balancer that just recycled a backend to finish, short enough that
 /// the user does not read it as a hang.
+#[cfg(not(feature = "cli"))]
 const SEND_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// Send a request, retrying it once when the connection dropped before any
@@ -881,6 +893,7 @@ const SEND_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(2
 /// or its load balancer, and the next turn's request is written into a socket
 /// that is already gone. Retrying is safe precisely because nothing was received
 /// -- see [`is_retryable_send_error`].
+#[cfg(not(feature = "cli"))]
 async fn send_with_one_retry(req: reqwest::RequestBuilder) -> Result<reqwest::Response, String> {
     // `try_clone` returns `None` only for a streaming body; every caller here
     // sends a `String`, so the retry path is always available in practice.
@@ -909,26 +922,30 @@ async fn send_with_one_retry(req: reqwest::RequestBuilder) -> Result<reqwest::Re
     })
 }
 
-/// The HTTP client every agent turn goes through. `Client::new()`'s defaults are
-/// wrong for this traffic in one specific way: connections idle for up to 90s
-/// stay in the pool, but a turn spends far longer than that running tools, and
-/// the peer (or its load balancer) closes an idle connection well before then.
-/// Reusing one is the `Connection reset by peer` a long session eventually hits,
-/// so the pool is kept shorter-lived than any plausible upstream idle timeout.
-/// No overall request timeout: a streamed answer legitimately runs for minutes.
-pub(crate) fn agent_http_client() -> Client {
-    Client::builder()
-        .pool_idle_timeout(std::time::Duration::from_secs(15))
-        .tcp_keepalive(std::time::Duration::from_secs(30))
-        .connect_timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_else(|_| Client::new())
+/// The HTTP client every agent turn goes through. Agent traffic now runs on
+/// `genai`, which is built against reqwest 0.13, so this is the aliased crate
+/// rather than the 0.12 `Client` the rest of the app (and the API server below)
+/// uses. Pool tuning lives with the builder in [`super::genai_bridge`].
+pub(crate) fn agent_http_client() -> reqwest13::Client {
+    super::genai_bridge::shared_http_client()
+}
+
+/// The converted native-wire path can rotate through configured credentials on
+/// the same auth failures as the desktop proxy.
+fn should_try_next_api_key(status: reqwest::StatusCode) -> bool {
+    matches!(
+        status,
+        reqwest::StatusCode::UNAUTHORIZED
+            | reqwest::StatusCode::FORBIDDEN
+            | reqwest::StatusCode::TOO_MANY_REQUESTS
+    )
 }
 
 /// Names the proxy environment variables in force, without their values (they
 /// routinely carry credentials). A proxy set in the environment is a common
 /// reason a request fails for Jan and for nothing else, and it is invisible in
 /// the error itself.
+#[cfg(any(not(feature = "cli"), test))]
 fn proxy_env_hint() -> Option<String> {
     const VARS: &[&str] = &[
         "HTTPS_PROXY",
@@ -954,6 +971,7 @@ fn proxy_env_hint() -> Option<String> {
 /// `reqwest` message, its whole cause chain, and -- for a connect or timeout
 /// failure, where the environment is usually the culprit -- which proxy
 /// variables are set.
+#[cfg(not(feature = "cli"))]
 pub(crate) fn describe_request_error(err: &reqwest::Error) -> String {
     let stage = if err.is_timeout() {
         "timed out"
@@ -984,61 +1002,36 @@ pub(crate) fn describe_request_error(err: &reqwest::Error) -> String {
     msg
 }
 
+/// Stream a chat completion for the agent loop.
+///
+/// A thin delegate to [`super::genai_bridge`], which owns the wire format, SSE
+/// handling, provider field-name variance, and the retry policy. Every provider
+/// the agent talks to comes through here -- cloud, a Jan desktop API server, a
+/// local llama.cpp router, an MLX session -- so there is exactly one upstream
+/// implementation to reason about.
+///
+/// `api_type` selects the `genai` adapter. It is `None` for every caller today:
+/// the agent has always spoken OpenAI `/chat/completions` regardless of a
+/// provider's configured `api_type`, and honoring it here would silently change
+/// the wire format for an existing config. The API server's own converters
+/// (`core::server::converters`) remain the only consumer of that field.
 pub(crate) async fn stream_openai_chat_completions(
-    client: &Client,
+    client: &reqwest13::Client,
     upstream_url: &str,
     api_keys: &[String],
+    api_type: Option<&str>,
     body: &serde_json::Value,
     events: &mpsc::UnboundedSender<StreamEvent>,
 ) -> Result<serde_json::Value, String> {
-    let mut req_body = body.clone();
-    if let Some(obj) = req_body.as_object_mut() {
-        obj.insert("stream".to_string(), serde_json::json!(true));
-        obj.insert(
-            "stream_options".to_string(),
-            serde_json::json!({ "include_usage": true }),
-        );
-    }
-
-    let attempts: Vec<Option<&str>> = if api_keys.is_empty() {
-        vec![None]
-    } else {
-        api_keys.iter().map(|s| Some(s.as_str())).collect()
-    };
-
-    let mut last_err = String::new();
-    for (i, key_ref) in attempts.iter().enumerate() {
-        let mut req = client
-            .post(upstream_url)
-            .header("Content-Type", "application/json")
-            .header("Accept", "text/event-stream")
-            .header("Accept-Encoding", "identity");
-
-        if let Some(key) = key_ref {
-            req = req.header("Authorization", format!("Bearer {key}"));
-        }
-
-        let resp = send_with_one_retry(req.body(req_body.to_string())).await?;
-
-        let status = resp.status();
-        if status.is_success() {
-            return consume_openai_sse(resp, events).await;
-        }
-
-        let text = resp.text().await.unwrap_or_default();
-        last_err = format!("Upstream returned HTTP {status}: {text}");
-        if is_context_overflow_body(&text) {
-            last_err = format!("[{CONTEXT_OVERFLOW_MARKER}] {last_err}");
-        }
-        if http_status_indicates_api_key_retry(status) && i + 1 < attempts.len() {
-            log::warn!("OpenAI stream: HTTP {status} with API key index {i}, trying next key");
-            continue;
-        }
-
-        return Err(last_err);
-    }
-
-    Err(last_err)
+    super::genai_bridge::stream_chat_completions(
+        client,
+        upstream_url,
+        api_keys,
+        api_type,
+        body,
+        events,
+    )
+    .await
 }
 
 /// Streaming counterpart of [`stream_openai_chat_completions`] for providers
@@ -1118,7 +1111,7 @@ pub(crate) async fn stream_converted_chat_completions(
             if is_context_overflow_body(&text) {
                 last_err = format!("[{CONTEXT_OVERFLOW_MARKER}] {last_err}");
             }
-            if http_status_indicates_api_key_retry(status) && i + 1 < attempts.len() {
+            if should_try_next_api_key(status) && i + 1 < attempts.len() {
                 log::warn!(
                     "converted stream: HTTP {status} with API key index {i}, trying next key"
                 );
@@ -1248,12 +1241,13 @@ struct SseAccumulator {
     /// An error object delivered inside the stream (`data: {"error": {...}}`).
     /// OpenAI-compatible upstreams can fail mid-stream after a `200 OK`; without
     /// capturing it the run would end as a silent "no answer" instead of
-    /// surfacing the failure. Propagated as an `Err` by `consume_openai_sse`.
+    /// surfacing the failure. The converted-stream reader turns it into an error.
     error: Option<String>,
 }
 
 impl SseAccumulator {
     /// Parse one raw SSE line (`data: {...}`); non-`data:`/blank lines are ignored.
+    #[cfg(test)]
     fn ingest_line(&mut self, line: &str, events: &mpsc::UnboundedSender<StreamEvent>) {
         if let Some(rest) = line.trim_end_matches('\r').strip_prefix("data:") {
             let data = rest.trim();
@@ -1425,7 +1419,10 @@ impl SseAccumulator {
         // so a turn that only reasoned still surfaces its reasoning). Empty is
         // omitted so non-reasoning providers produce an unchanged shape.
         if !self.reasoning.is_empty() {
-            message.insert("reasoning_content".to_string(), serde_json::json!(self.reasoning));
+            message.insert(
+                "reasoning_content".to_string(),
+                serde_json::json!(self.reasoning),
+            );
         }
         if !tool_calls.is_empty() {
             message.insert(
@@ -1459,6 +1456,7 @@ impl SseAccumulator {
 
 /// Drain every complete (newline-terminated) line from `buf` into `acc`,
 /// leaving any trailing partial line buffered for the next chunk.
+#[cfg(test)]
 fn drain_complete_lines(
     buf: &mut String,
     acc: &mut SseAccumulator,
@@ -1474,6 +1472,7 @@ fn drain_complete_lines(
 /// Ingest a final, non-newline-terminated line left after the stream closes.
 /// Providers may end with `data: {...}` and no trailing blank line / `[DONE]`;
 /// without this the last chunk's finish_reason and tool-call args are dropped.
+#[cfg(test)]
 fn flush_trailing_line(
     buf: &str,
     acc: &mut SseAccumulator,
@@ -1482,43 +1481,6 @@ fn flush_trailing_line(
     if !buf.trim().is_empty() {
         acc.ingest_line(buf, events);
     }
-}
-
-async fn consume_openai_sse(
-    resp: reqwest::Response,
-    events: &mpsc::UnboundedSender<StreamEvent>,
-) -> Result<serde_json::Value, String> {
-    let url = resp.url().to_string();
-    let mut stream = resp.bytes_stream();
-    let mut buf = String::new();
-    let mut acc = SseAccumulator::default();
-    let mut bytes = 0usize;
-
-    while let Some(chunk) = stream.next().await {
-        // A stream that dies mid-response is the hardest case to tell apart from
-        // an empty answer, so the byte count so far goes in the message.
-        let chunk = chunk.map_err(|e| {
-            format!(
-                "Upstream stream error ({url}) after {bytes} bytes: {}",
-                describe_request_error(&e)
-            )
-        })?;
-        bytes += chunk.len();
-        buf.push_str(&String::from_utf8_lossy(&chunk));
-        drain_complete_lines(&mut buf, &mut acc, events);
-    }
-    flush_trailing_line(&buf, &mut acc, events);
-
-    if let Some(err) = acc.error.take() {
-        let msg = format!("Upstream stream error: {err}");
-        return Err(if is_context_overflow_body(&err) {
-            format!("[{CONTEXT_OVERFLOW_MARKER}] {msg}")
-        } else {
-            msg
-        });
-    }
-
-    Ok(acc.into_completion())
 }
 
 #[cfg(test)]
@@ -1577,7 +1539,6 @@ mod tests {
         let pc = provider_configs(&[("opencode", "https://opencode.ai/zen/go/v1")]);
         assert_eq!(strip_provider_prefix("gpt-5.6-luna", &pc), "gpt-5.6-luna");
     }
-
     /// `reqwest` prints only its own layer, so the cause chain is where the
     /// actual failure lives -- the whole point of `describe_request_error`.
     #[test]
@@ -1591,7 +1552,9 @@ mod tests {
         }
         impl std::error::Error for Err2 {
             fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-                self.1.as_ref().map(|e| e.as_ref() as &(dyn std::error::Error + 'static))
+                self.1
+                    .as_ref()
+                    .map(|e| e.as_ref() as &(dyn std::error::Error + 'static))
             }
         }
 
@@ -1615,6 +1578,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "cli"))]
     /// The reported error must name the stage and carry the OS-level reason, not
     /// just the URL. Port 1 on loopback refuses without touching the network.
     #[tokio::test]
@@ -1634,6 +1598,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "cli"))]
     #[test]
     fn dropped_connection_is_recognised_from_the_cause_chain() {
         assert!(chain_indicates_dropped_connection(&[
@@ -1654,6 +1619,7 @@ mod tests {
         assert!(!chain_indicates_dropped_connection(&[]));
     }
 
+    #[cfg(not(feature = "cli"))]
     /// A refused connect never reached the peer, so retrying it is safe; a
     /// timeout is excluded on purpose (retrying one doubles the wait).
     #[tokio::test]
@@ -1718,9 +1684,10 @@ mod tests {
         let (tx, mut rx) = sink();
         let url = format!("http://{addr}/v1/chat/completions");
         let completion = stream_openai_chat_completions(
-            &Client::new(),
+            &reqwest13::Client::new(),
             &url,
             &[],
+            None,
             &json!({ "model": "m", "messages": [] }),
             &tx,
         )
@@ -1764,9 +1731,8 @@ mod tests {
             String::from_utf8(bytes).expect("request is utf-8")
         });
 
-        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
-            br#"{"https://api.openai.com/auth":{"chatgpt_account_id":"account-123"}}"#,
-        );
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(br#"{"https://api.openai.com/auth":{"chatgpt_account_id":"account-123"}}"#);
         let token = format!("header.{payload}.signature");
         let converter =
             crate::core::server::converters::converter_for(Some("openai-responses"), true)
@@ -1799,7 +1765,6 @@ mod tests {
         assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
         assert!(body.get("max_output_tokens").is_none());
     }
-
 
     /// A proxy in the environment breaks Jan and nothing else, and never shows up
     /// in the error. Names only: the values carry credentials.
@@ -1854,12 +1819,10 @@ mod tests {
             },
         );
 
-        let (url, _keys) = resolve_upstream_for_model(
-            "sentence-transformer-mini",
-            Arc::new(Mutex::new(configs)),
-        )
-        .await
-        .expect("the API server provider is reachable");
+        let (url, _keys) =
+            resolve_upstream_for_model("sentence-transformer-mini", Arc::new(Mutex::new(configs)))
+                .await
+                .expect("the API server provider is reachable");
         assert_eq!(url, "http://127.0.0.1:1337/v1/chat/completions");
     }
 
@@ -1894,12 +1857,9 @@ mod tests {
             },
         );
 
-        let (url, keys) = resolve_upstream_for_model(
-            "gpt-5.6-luna",
-            Arc::new(Mutex::new(configs)),
-        )
-        .await
-        .expect("the credentialed provider is selected");
+        let (url, keys) = resolve_upstream_for_model("gpt-5.6-luna", Arc::new(Mutex::new(configs)))
+            .await
+            .expect("the credentialed provider is selected");
         assert_eq!(url, "https://opencode.ai/zen/v1/chat/completions");
         assert_eq!(keys, vec!["sk-opencode"]);
     }
@@ -1971,12 +1931,10 @@ mod tests {
             },
         );
 
-        let (url, keys) = resolve_upstream_for_model(
-            "account-model",
-            Arc::new(Mutex::new(configs)),
-        )
-        .await
-        .unwrap();
+        let (url, keys) =
+            resolve_upstream_for_model("account-model", Arc::new(Mutex::new(configs)))
+                .await
+                .unwrap();
         assert_eq!(url, "https://chatgpt.com/backend-api/chat/completions");
         assert_eq!(keys, vec!["account-access"]);
     }
@@ -2083,8 +2041,14 @@ mod tests {
         assert_eq!(messages.len(), 4);
         assert_eq!(messages[2]["role"], "tool");
         assert_eq!(messages[2]["tool_call_id"], "toolu_ask");
-        assert!(messages[2]["content"].as_str().unwrap().starts_with("ERROR"));
-        assert_eq!(messages[3]["content"], "next message, no reply ever recorded");
+        assert!(messages[2]["content"]
+            .as_str()
+            .unwrap()
+            .starts_with("ERROR"));
+        assert_eq!(
+            messages[3]["content"],
+            "next message, no reply ever recorded"
+        );
     }
 
     #[test]
@@ -2249,8 +2213,12 @@ mod tests {
         assert!(is_context_overflow_body(
             "{\"error\":{\"code\":\"context_length_exceeded\"}}"
         ));
-        assert!(is_context_overflow_body("This model's maximum context length is 8192 tokens"));
-        assert!(is_context_overflow_body("prompt is too long: 210000 tokens > 200000"));
+        assert!(is_context_overflow_body(
+            "This model's maximum context length is 8192 tokens"
+        ));
+        assert!(is_context_overflow_body(
+            "prompt is too long: 210000 tokens > 200000"
+        ));
         assert!(is_context_overflow_body(
             "the request exceeds the available context size"
         ));
@@ -2267,7 +2235,9 @@ mod tests {
     fn overflow_marker_round_trips() {
         let err = format!("[{CONTEXT_OVERFLOW_MARKER}] Upstream returned HTTP 400: ...");
         assert!(is_context_overflow_error(&err));
-        assert!(!is_context_overflow_error("Upstream returned HTTP 500: boom"));
+        assert!(!is_context_overflow_error(
+            "Upstream returned HTTP 500: boom"
+        ));
     }
 
     /// The shapes strict endpoints actually return, plus the two ways a false
@@ -2289,163 +2259,6 @@ mod tests {
         assert!(!is_reasoning_field_error(
             "Upstream returned HTTP 400: property 'audio' is unsupported"
         ));
-    }
-
-    #[test]
-    fn accumulates_content_and_emits_token_per_delta() {
-        let (tx, mut rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "content": "Hel" } }] }).to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "content": "lo" } }] }).to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": {}, "finish_reason": "stop" }] }).to_string(),
-            &tx,
-        );
-
-        let completion = acc.into_completion();
-        assert_eq!(completion["choices"][0]["message"]["content"], "Hello");
-        assert_eq!(completion["choices"][0]["finish_reason"], "stop");
-        assert!(completion["choices"][0]["message"]
-            .get("tool_calls")
-            .is_none());
-
-        drop(tx);
-        let mut tokens = Vec::new();
-        while let Ok(ev) = rx.try_recv() {
-            if let StreamEvent::Token { text } = ev {
-                tokens.push(text);
-            }
-        }
-        assert_eq!(tokens, vec!["Hel", "lo"]);
-    }
-
-    #[test]
-    fn reasoning_content_streams_as_native_reasoning_events_and_stays_out_of_content() {
-        let (tx, mut rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "reasoning_content": "let me " } }] }).to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "reasoning_content": "think" } }] }).to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "content": "answer" } }] }).to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": {}, "finish_reason": "stop" }] }).to_string(),
-            &tx,
-        );
-
-        // Reasoning stays out of the answer prose, but is preserved on the
-        // reconstructed message so a caller can resend it as history.
-        let completion = acc.into_completion();
-        assert_eq!(completion["choices"][0]["message"]["content"], "answer");
-        assert_eq!(
-            completion["choices"][0]["message"]["reasoning_content"],
-            "let me think"
-        );
-
-        drop(tx);
-        let mut reasoning = Vec::new();
-        let mut tokens = Vec::new();
-        while let Ok(ev) = rx.try_recv() {
-            match ev {
-                StreamEvent::Reasoning { text } => reasoning.push(text),
-                StreamEvent::Token { text } => tokens.push(text),
-                _ => {}
-            }
-        }
-        // Native events: no synthetic <think> wrapper tokens on the content
-        // stream, so a consumer never has to re-parse tags it did not receive.
-        assert_eq!(reasoning, vec!["let me ", "think"]);
-        assert_eq!(tokens, vec!["answer"]);
-    }
-
-    #[test]
-    fn reasoning_only_completion_emits_reasoning_and_no_tokens() {
-        let (tx, mut rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "reasoning_content": "hmm" } }] }).to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": {}, "finish_reason": "stop" }] }).to_string(),
-            &tx,
-        );
-
-        let completion = acc.into_completion();
-        assert!(completion["choices"][0]["message"]["content"].is_null());
-
-        drop(tx);
-        let mut reasoning = Vec::new();
-        let mut tokens = Vec::new();
-        while let Ok(ev) = rx.try_recv() {
-            match ev {
-                StreamEvent::Reasoning { text } => reasoning.push(text),
-                StreamEvent::Token { text } => tokens.push(text),
-                _ => {}
-            }
-        }
-        assert_eq!(reasoning, vec!["hmm"]);
-        assert!(tokens.is_empty(), "no content tokens for a reasoning-only turn: {tokens:?}");
-    }
-
-    /// A completion with no `reasoning_content` deltas must keep exactly the
-    /// shape it always had: the field is omitted, not emitted empty, so a
-    /// provider that rejects unknown assistant keys is unaffected.
-    #[test]
-    fn a_turn_without_reasoning_omits_the_field_entirely() {
-        let (tx, _rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "content": "answer" } }] }).to_string(),
-            &tx,
-        );
-        let completion = acc.into_completion();
-        let message = &completion["choices"][0]["message"];
-        assert_eq!(message["content"], "answer");
-        assert!(
-            message.get("reasoning_content").is_none(),
-            "no reasoning streamed, so the key must be absent: {message}"
-        );
-    }
-
-    /// A tool-call turn's reasoning is preserved too: the model reasons about
-    /// which tool to call, and that reasoning has to survive onto the assistant
-    /// turn the loop resends with its `tool_calls`.
-    #[test]
-    fn reasoning_is_preserved_on_a_tool_call_turn() {
-        let (tx, _rx) = sink();
-        let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "reasoning_content": "need to grep" } }] })
-                .to_string(),
-            &tx,
-        );
-        acc.ingest(
-            &json!({ "choices": [{ "delta": { "tool_calls": [{
-                "index": 0,
-                "id": "c1",
-                "function": { "name": "bash", "arguments": "{}" }
-            }] } }] })
-            .to_string(),
-            &tx,
-        );
-        let completion = acc.into_completion();
-        let message = &completion["choices"][0]["message"];
-        assert_eq!(message["reasoning_content"], "need to grep");
-        assert_eq!(message["tool_calls"][0]["id"], "c1");
     }
 
     /// A resent assistant turn keeps its `reasoning_content` through the message
@@ -2616,10 +2429,7 @@ mod tests {
     fn mid_stream_error_falls_back_to_message_without_type() {
         let (tx, _rx) = sink();
         let mut acc = SseAccumulator::default();
-        acc.ingest(
-            &json!({ "error": { "message": "boom" } }).to_string(),
-            &tx,
-        );
+        acc.ingest(&json!({ "error": { "message": "boom" } }).to_string(), &tx);
         assert_eq!(acc.error.as_deref(), Some("boom"));
     }
 
@@ -2691,9 +2501,7 @@ mod tests {
     /// identical. This mirrors `consume_converted_sse` (minus the live HTTP).
     #[test]
     fn converted_stream_emits_chat_shaped_events() {
-        use crate::core::server::converters::{
-            AnthropicMessagesConverter, SseEvent, StreamState,
-        };
+        use crate::core::server::converters::{AnthropicMessagesConverter, SseEvent, StreamState};
 
         let (tx, mut rx) = sink();
         let converter = AnthropicMessagesConverter::new();
@@ -2735,7 +2543,10 @@ mod tests {
         while let Ok(StreamEvent::Token { text }) = rx.try_recv() {
             tokens.push(text);
         }
-        assert!(tokens.contains(&"hi".to_string()), "token delta decoded: {tokens:?}");
+        assert!(
+            tokens.contains(&"hi".to_string()),
+            "token delta decoded: {tokens:?}"
+        );
 
         let completion = acc.into_completion();
         assert_eq!(completion["choices"][0]["message"]["content"], "hi");
