@@ -4,12 +4,14 @@
 //! `core/server/proxy.rs` (no behavior change) so both the server path and
 //! `core/agent/loop.rs` consume one implementation.
 
+use futures_util::StreamExt;
+#[cfg(feature = "cli")]
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[cfg(not(feature = "cli"))]
 use reqwest::Client;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 #[cfg(not(feature = "cli"))]
@@ -18,8 +20,7 @@ use tokio::sync::{mpsc, Mutex};
 
 use crate::core::agent::events::StreamEvent;
 use crate::core::openai_schema::normalize_openai_tool_parameters_schema;
-#[cfg(not(feature = "cli"))]
-use crate::core::openai_schema::http_status_indicates_api_key_retry;
+use crate::core::server::converters::UpstreamConverter;
 #[cfg(not(feature = "cli"))]
 use crate::core::server::proxy::router_upstream;
 #[cfg(not(feature = "cli"))]
@@ -165,15 +166,17 @@ pub(crate) fn repair_dangling_tool_calls(messages: &mut Vec<serde_json::Value>) 
         // isn't a tool reply.
         let mut answered: std::collections::HashSet<&str> = std::collections::HashSet::new();
         let mut j = i + 1;
-        while j < messages.len()
-            && messages[j].get("role").and_then(|v| v.as_str()) == Some("tool")
+        while j < messages.len() && messages[j].get("role").and_then(|v| v.as_str()) == Some("tool")
         {
             if let Some(id) = messages[j].get("tool_call_id").and_then(|v| v.as_str()) {
                 answered.insert(id);
             }
             j += 1;
         }
-        let missing: Vec<&String> = ids.iter().filter(|id| !answered.contains(id.as_str())).collect();
+        let missing: Vec<&String> = ids
+            .iter()
+            .filter(|id| !answered.contains(id.as_str()))
+            .collect();
         for id in &missing {
             messages.insert(
                 j,
@@ -336,6 +339,14 @@ fn mcp_call_result_to_string(result: &CallToolResult) -> String {
     }
 }
 
+/// True when the provider carries a credential (an API key or key chain),
+/// so a model id offered by several providers can prefer the signed-in one.
+/// Only the `cli` build ranks providers this way.
+#[cfg(feature = "cli")]
+fn credentialed(config: &ProviderConfig) -> bool {
+    config.api_key.is_some() || !config.api_keys.is_empty()
+}
+
 /// Resolve `model_id` to an upstream URL + key chain. The desktop build also
 /// resolves local engines (MLX session, llama-server router); the `cli` build is
 /// remote-only, so a model with no provider entry is unresolvable.
@@ -350,19 +361,23 @@ pub(crate) async fn resolve_upstream_for_model(
     let pc = provider_configs.lock().await;
     let offers = |config: &ProviderConfig| config.models.iter().any(|m| m == model_id);
 
-    // The same model id can be listed by several providers -- typically a local
-    // engine descriptor (no base_url) plus a Jan desktop API server exposing the
-    // same model over HTTP. `HashMap` iteration order is randomized, so pick the
-    // usable one deterministically instead of whichever hashes first. Only the
-    // CLI needs this: the desktop resolves base_url-less providers through its
-    // in-process engine branches below.
+    // The same model id can be listed by several providers, e.g. a cloud
+    // provider and an OpenAI-compatible gateway that both carry e.g.
+    // `gpt-4o`. `HashMap` iteration order is randomized, so pick determin-
+    // istically rather than whichever hashes first. When several reachable
+    // HTTP providers offer the model, prefer a credentialed one over a
+    // keyless twin: the keyless entry (typically the user's own catalog
+    // entry that was never signed in) would only fail later with a 401 even
+    // though a signed-in provider offering the same model would have worked.
+    // Sort key is `(has_credential DESC, name ASC)` so equally-credentialed
+    // entries still resolve to a stable, alphabetical name.
     #[cfg(feature = "cli")]
     let first_match = pc
         .iter()
         .filter(|(_, config)| {
             config.base_url.as_deref().is_some_and(|u| !u.is_empty()) && offers(config)
         })
-        .min_by_key(|(name, _)| name.to_string())
+        .min_by_key(|(name, config)| (Reverse(credentialed(config)), name.to_string()))
         .or_else(|| pc.iter().find(|(_, config)| offers(config)));
     #[cfg(not(feature = "cli"))]
     let first_match = pc.iter().find(|(_, config)| offers(config));
@@ -381,24 +396,53 @@ pub(crate) async fn resolve_upstream_for_model(
     drop(pc);
 
     if let Some(provider) = provider_name {
-        let pc2 = provider_configs.lock().await;
-        if let Some(provider_cfg) = pc2.get(provider.as_str()).cloned() {
+        let provider_cfg = provider_configs
+            .lock()
+            .await
+            .get(provider.as_str())
+            .cloned();
+        if let Some(provider_cfg) = provider_cfg {
             // A populated base_url means an HTTP upstream (cloud, or a local
             // engine whose live endpoint was registered at runtime). A local
             // engine loaded from persisted settings has none -- fall through to
             // the MLX session / llama-server router resolution below.
             if let Some(api_url) = provider_cfg.base_url.clone().filter(|u| !u.is_empty()) {
-                let url = format!("{}{}", api_url, destination_path);
-                // Desktop-inherited providers arrive keyless in this build; the
-                // OS secret store is read here, for the one provider the run
-                // resolved to, rather than for every provider at load time.
+                // A registered account takes its OAuth access token (refreshed if
+                // needed) ahead of any stored API key. Account auth is a `cli`
+                // concern; the desktop resolves credentials through its own
+                // proxy path and falls back to the bearer key chain here.
                 #[cfg(feature = "cli")]
-                let provider_cfg = {
-                    let mut cfg = provider_cfg;
-                    crate::core::cli::providers::hydrate_provider_keys(&mut cfg);
-                    cfg
+                let (api_url, api_keys) = {
+                    let account_token =
+                        crate::core::cli::auth::account::access_token(&provider_cfg.provider)
+                            .await?;
+                    let api_url = if provider_cfg.provider == "openai"
+                        && account_token.is_some()
+                        && api_url.trim_end_matches('/') == "https://api.openai.com/v1"
+                    {
+                        "https://chatgpt.com/backend-api".to_string()
+                    } else {
+                        api_url
+                    };
+                    let api_keys = account_token
+                        .map(|token| vec![token])
+                        .unwrap_or_else(|| provider_cfg.bearer_key_chain());
+                    (api_url, api_keys)
                 };
-                return Ok((url, provider_cfg.bearer_key_chain()));
+                #[cfg(not(feature = "cli"))]
+                let api_keys = provider_cfg.bearer_key_chain();
+                let url = format!("{}{}", api_url, destination_path);
+                #[cfg(feature = "cli")]
+                {
+                    if api_keys.is_empty() {
+                        let mut provider_cfg = provider_cfg;
+                        crate::core::cli::providers::hydrate_provider_keys(&mut provider_cfg);
+                        return Ok((url, provider_cfg.bearer_key_chain()));
+                    }
+                    return Ok((url, api_keys));
+                }
+                #[cfg(not(feature = "cli"))]
+                return Ok((url, api_keys));
             }
         }
     }
@@ -421,6 +465,80 @@ pub(crate) async fn resolve_upstream_for_model(
     }
 
     Err(format!("No upstream session found for model '{model_id}'"))
+}
+/// Strip a leading `<provider>/` qualifier from `model_id` when that prefix
+/// names a configured provider, mirroring the disambiguation in
+/// [`resolve_upstream_for_model`]. `provider/model` is the CLI's explicit
+/// selection syntax; once the upstream URL and credential are resolved the
+/// request body must carry the bare model id, or providers that reject a
+/// provider-qualified id (e.g. OpenCode GO) fail with "model not supported".
+/// A slash inside a real model id (e.g. an org-scoped name) is left alone
+/// unless the leading segment is literally a provider key.
+pub(crate) fn strip_provider_prefix(
+    model_id: &str,
+    provider_configs: &HashMap<String, ProviderConfig>,
+) -> String {
+    if let Some(sep_pos) = model_id.find('/') {
+        let potential_provider: &str = &model_id[..sep_pos];
+        if provider_configs.contains_key(potential_provider) {
+            return model_id[sep_pos + 1..].to_string();
+        }
+    }
+    model_id.to_string()
+}
+
+/// Resolve the wire API for `model_id`'s provider, mirroring the
+/// model-to-provider lookup in [`resolve_upstream_for_model`]. Returns the
+/// provider's `api_type` and whether its credential is an OAuth account token
+/// rather than an API key, when the model maps to a reachable HTTP provider
+/// that declares a non-default wire API. `None` otherwise (OpenAI
+/// chat/completions or a model with no provider entry).
+pub(crate) async fn resolve_api_type_for_model(
+    model_id: &str,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+) -> Option<(String, bool)> {
+    let pc = provider_configs.lock().await;
+    let offers = |config: &ProviderConfig| config.models.iter().any(|m| m == model_id);
+
+    // A converter is only meaningful for an HTTP provider (it needs a base_url
+    // to append the native path to), so prefer a reachable entry and otherwise
+    // fall back to the first model-claiming entry, exactly as resolution does.
+    #[cfg(feature = "cli")]
+    let first_match = pc
+        .iter()
+        .filter(|(_, config)| {
+            config.base_url.as_deref().is_some_and(|u| !u.is_empty()) && offers(config)
+        })
+        .min_by_key(|(name, config)| (Reverse(credentialed(config)), name.to_string()))
+        .or_else(|| pc.iter().find(|(_, config)| offers(config)));
+    #[cfg(not(feature = "cli"))]
+    let first_match = pc.iter().find(|(_, config)| offers(config));
+
+    let provider_name = first_match
+        .map(|(_, config)| config.provider.clone())
+        .or_else(|| {
+            if let Some(sep_pos) = model_id.find('/') {
+                let potential_provider: &str = &model_id[..sep_pos];
+                if pc.contains_key(potential_provider) {
+                    return Some(potential_provider.to_string());
+                }
+            }
+            pc.get(model_id).map(|c| c.provider.clone())
+        });
+    let cfg = provider_name.and_then(|p| pc.get(&p).cloned());
+    drop(pc);
+
+    let api_type = cfg.as_ref().and_then(|c| c.api_type.clone())?;
+    // OAuth account login is a `cli` feature; resolve the auth scheme from
+    // the stored credential so a plain API key stays on its key scheme.
+    #[cfg(feature = "cli")]
+    let oauth = cfg
+        .as_ref()
+        .map(|c| crate::core::cli::auth::account::has_oauth_credential(&c.provider))
+        .unwrap_or(false);
+    #[cfg(not(feature = "cli"))]
+    let oauth = false;
+    Some((api_type, oauth))
 }
 
 pub(crate) fn copy_optional_chat_params(
@@ -457,28 +575,27 @@ pub(crate) async fn collect_mcp_openai_tools(
     // Probe every server concurrently so one slow/hanging server can't serialize
     // the whole collection behind its timeout (previously each server waited out
     // the full timeout before the next was contacted).
-    let listings = futures_util::future::join_all(servers.iter().map(|(server_name, service)| {
-        async move {
-            let result = match tokio::time::timeout(timeout_duration, service.list_all_tools()).await
-            {
-                Ok(Ok(tools)) => Some(tools),
-                Ok(Err(e)) => {
-                    log::warn!("MCP server {} failed to list tools: {}", server_name, e);
-                    None
-                }
-                Err(_) => {
-                    log::warn!(
-                        "Listing MCP tools timed out after {} seconds on server {}",
-                        timeout_duration.as_secs(),
-                        server_name
-                    );
-                    None
-                }
-            };
+    let listings =
+        futures_util::future::join_all(servers.iter().map(|(server_name, service)| async move {
+            let result =
+                match tokio::time::timeout(timeout_duration, service.list_all_tools()).await {
+                    Ok(Ok(tools)) => Some(tools),
+                    Ok(Err(e)) => {
+                        log::warn!("MCP server {} failed to list tools: {}", server_name, e);
+                        None
+                    }
+                    Err(_) => {
+                        log::warn!(
+                            "Listing MCP tools timed out after {} seconds on server {}",
+                            timeout_duration.as_secs(),
+                            server_name
+                        );
+                        None
+                    }
+                };
             (server_name.clone(), result)
-        }
-    }))
-    .await;
+        }))
+        .await;
 
     for (server_name, tools) in listings {
         let Some(tools) = tools else { continue };
@@ -638,7 +755,7 @@ pub(crate) async fn call_openai_chat_completions(
         }
 
         last_err = format!("Upstream returned HTTP {status}: {text}");
-        if http_status_indicates_api_key_retry(status) && i + 1 < attempts.len() {
+        if should_try_next_api_key(status) && i + 1 < attempts.len() {
             log::warn!("OpenAI completion: HTTP {status} with API key index {i}, trying next key");
             continue;
         }
@@ -710,13 +827,13 @@ pub(crate) fn is_reasoning_field_error(err: &str) -> bool {
         .any(|phrase| e.contains(phrase))
 }
 
-#[cfg(not(feature = "cli"))]
 /// Every message in an error's `source()` chain, outermost cause first.
 /// `reqwest::Error` prints only its own layer -- `error sending request for url
 /// (...)` -- so the reason the request never left (DNS failure, refused
 /// connection, TLS mismatch, dropped socket) is one or more sources down and is
 /// otherwise lost to the user. Consecutive duplicates are collapsed: hyper and
 /// its io error often stringify identically.
+#[cfg(any(not(feature = "cli"), test))]
 fn error_source_chain(err: &dyn std::error::Error) -> Vec<String> {
     let mut chain = Vec::new();
     let mut cur = err.source();
@@ -730,7 +847,6 @@ fn error_source_chain(err: &dyn std::error::Error) -> Vec<String> {
     chain
 }
 
-#[cfg(not(feature = "cli"))]
 /// True when a failed send can be retried safely: the connection died before any
 /// response arrived, so nothing has been streamed to the caller and no side
 /// effect on the upstream is implied. Covers a refused/failed connect and the
@@ -738,6 +854,7 @@ fn error_source_chain(err: &dyn std::error::Error) -> Vec<String> {
 /// already closed as `connection closed before message completed`, or as an
 /// `ECONNRESET`/`EPIPE` io error if the RST lands while the request is going
 /// out. A timeout is deliberately excluded: retrying one doubles the wait.
+#[cfg(not(feature = "cli"))]
 fn is_retryable_send_error(err: &reqwest::Error) -> bool {
     if err.is_timeout() || err.is_body() || err.is_decode() || err.is_builder() {
         return false;
@@ -745,11 +862,11 @@ fn is_retryable_send_error(err: &reqwest::Error) -> bool {
     err.is_connect() || chain_indicates_dropped_connection(&error_source_chain(err))
 }
 
-#[cfg(not(feature = "cli"))]
 /// Whether an error's cause chain names a connection the peer dropped. Matched
 /// on text because the io error is several opaque layers down (hyper's
 /// `SendRequest` -> `connection error` -> `std::io::Error`) and its `ErrorKind`
 /// is not exposed through `reqwest`.
+#[cfg(not(feature = "cli"))]
 fn chain_indicates_dropped_connection(chain: &[String]) -> bool {
     const MARKERS: &[&str] = &[
         "connection closed before message completed",
@@ -758,27 +875,25 @@ fn chain_indicates_dropped_connection(chain: &[String]) -> bool {
         "connection aborted",
         "unexpected eof",
     ];
-    chain
-        .iter()
-        .any(|msg| {
-            let msg = msg.to_lowercase();
-            MARKERS.iter().any(|m| msg.contains(m))
-        })
+    chain.iter().any(|msg| {
+        let msg = msg.to_lowercase();
+        MARKERS.iter().any(|m| msg.contains(m))
+    })
 }
 
-#[cfg(not(feature = "cli"))]
 /// How long to wait before the one retry of a dropped connection. Long enough
 /// for a load balancer that just recycled a backend to finish, short enough that
 /// the user does not read it as a hang.
+#[cfg(not(feature = "cli"))]
 const SEND_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(250);
 
-#[cfg(not(feature = "cli"))]
 /// Send a request, retrying it once when the connection dropped before any
 /// response arrived. This is the failure a long turn invites: while tools run
 /// locally no bytes flow, an idle keep-alive connection is reclaimed by the peer
 /// or its load balancer, and the next turn's request is written into a socket
 /// that is already gone. Retrying is safe precisely because nothing was received
 /// -- see [`is_retryable_send_error`].
+#[cfg(not(feature = "cli"))]
 async fn send_with_one_retry(req: reqwest::RequestBuilder) -> Result<reqwest::Response, String> {
     // `try_clone` returns `None` only for a streaming body; every caller here
     // sends a `String`, so the retry path is always available in practice.
@@ -815,11 +930,22 @@ pub(crate) fn agent_http_client() -> reqwest13::Client {
     super::genai_bridge::shared_http_client()
 }
 
-#[cfg(not(feature = "cli"))]
+/// The converted native-wire path can rotate through configured credentials on
+/// the same auth failures as the desktop proxy.
+fn should_try_next_api_key(status: reqwest::StatusCode) -> bool {
+    matches!(
+        status,
+        reqwest::StatusCode::UNAUTHORIZED
+            | reqwest::StatusCode::FORBIDDEN
+            | reqwest::StatusCode::TOO_MANY_REQUESTS
+    )
+}
+
 /// Names the proxy environment variables in force, without their values (they
 /// routinely carry credentials). A proxy set in the environment is a common
 /// reason a request fails for Jan and for nothing else, and it is invisible in
 /// the error itself.
+#[cfg(any(not(feature = "cli"), test))]
 fn proxy_env_hint() -> Option<String> {
     const VARS: &[&str] = &[
         "HTTPS_PROXY",
@@ -841,11 +967,11 @@ fn proxy_env_hint() -> Option<String> {
     (!set.is_empty()).then(|| format!("proxy env set: {}", set.join(", ")))
 }
 
-#[cfg(not(feature = "cli"))]
 /// A failed HTTP request described well enough to act on: what stage failed, the
 /// `reqwest` message, its whole cause chain, and -- for a connect or timeout
 /// failure, where the environment is usually the culprit -- which proxy
 /// variables are set.
+#[cfg(not(feature = "cli"))]
 pub(crate) fn describe_request_error(err: &reqwest::Error) -> String {
     let stage = if err.is_timeout() {
         "timed out"
@@ -908,12 +1034,511 @@ pub(crate) async fn stream_openai_chat_completions(
     .await
 }
 
+/// Streaming counterpart of [`stream_openai_chat_completions`] for providers
+/// that speak a native (non-chat/completions) wire API. Uses the provider's
+/// [`UpstreamConverter`] to rewrite the request body, point at the native path,
+/// and translate the upstream stream back into chat/completions SSE chunks,
+/// which are then fed through the same [`SseAccumulator::ingest_line`] decode
+/// as the OpenAI path so `StreamEvent`s (Token / ToolCallStarted /
+/// ToolCallArgsDelta) are emitted identically.
+///
+/// `upstream_url` is the resolved base + "/chat/completions" (see
+/// [`resolve_upstream_for_model`]); the base is recovered by stripping that
+/// suffix and the native path appended in its place.
+pub(crate) async fn stream_converted_chat_completions(
+    client: &Client,
+    upstream_url: &str,
+    api_keys: &[String],
+    converter: &dyn UpstreamConverter,
+    body: &serde_json::Value,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+) -> Result<serde_json::Value, String> {
+    // Base is upstream_url minus the trailing "/chat/completions". Recover it
+    // the same way the proxy does when it swaps the destination path.
+    let base = upstream_url
+        .strip_suffix("/chat/completions")
+        .unwrap_or(upstream_url)
+        .trim_end_matches('/');
+    let native_path = converter.upstream_path(body);
+    let native_url = format!("{base}{native_path}");
+
+    // Force streaming so the converter emits the SSE form and `upstream_path`
+    // (Google) selects the `?alt=sse` variant, matching the OpenAI path.
+    let mut native_body = body.clone();
+    if let Some(obj) = native_body.as_object_mut() {
+        obj.insert("stream".to_string(), serde_json::json!(true));
+    }
+    let native_body = converter.convert_request(&native_body);
+
+    let attempts: Vec<Option<&str>> = if api_keys.is_empty() {
+        vec![None]
+    } else {
+        api_keys.iter().map(|s| Some(s.as_str())).collect()
+    };
+
+    let mut last_err = String::new();
+    for (i, key_ref) in attempts.iter().enumerate() {
+        let mut req = client
+            .post(&native_url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream")
+            .header("Accept-Encoding", "identity");
+
+        // The converter decides the auth scheme (Bearer default, but Google
+        // uses x-goog-api-key and Anthropic x-api-key).
+        if let Some(key) = key_ref {
+            let (auth_name, auth_value) = converter.auth_header(key);
+            req = req.header(auth_name, auth_value);
+            for (name, value) in converter.credential_headers(key) {
+                req = req.header(name, value);
+            }
+        }
+        // Fixed headers the native API requires (Anthropic: anthropic-version).
+        for (name, value) in converter.extra_headers() {
+            req = req.header(name, value);
+        }
+
+        let resp = req
+            .body(native_body.to_string())
+            .send()
+            .await
+            .map_err(|e| format!("Upstream request failed: {e}"))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            last_err = format!("Upstream returned HTTP {status}: {text}");
+            if is_context_overflow_body(&text) {
+                last_err = format!("[{CONTEXT_OVERFLOW_MARKER}] {last_err}");
+            }
+            if should_try_next_api_key(status) && i + 1 < attempts.len() {
+                log::warn!(
+                    "converted stream: HTTP {status} with API key index {i}, trying next key"
+                );
+                continue;
+            }
+            return Err(last_err);
+        }
+
+        // Every converted call above requests a stream. Some native backends
+        // (notably ChatGPT Codex) omit Content-Type on a valid SSE response, so
+        // absence means SSE; an explicit non-SSE type remains the JSON fallback.
+        let is_sse = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|ct| ct.contains("event-stream"))
+            .unwrap_or(true);
+
+        if is_sse {
+            return consume_converted_sse(resp, converter, events).await;
+        }
+
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| format!("Upstream body read failed: {e}"))?;
+        return decode_converted_response(&bytes, converter);
+    }
+
+    Err(last_err)
+}
+
+/// Read a native SSE stream, translating each event through `converter` and
+/// feeding the produced chat-shaped chunks into the OpenAI [`SseAccumulator`]
+/// so `StreamEvent`s match the chat/completions path exactly.
+async fn consume_converted_sse(
+    resp: reqwest::Response,
+    converter: &dyn UpstreamConverter,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+) -> Result<serde_json::Value, String> {
+    let mut stream = resp.bytes_stream();
+    let mut frame = crate::core::server::converters::SseAccumulator::new();
+    let mut state = crate::core::server::converters::StreamState::default();
+    // Reassembles the translated chat/completions SSE into one completion.
+    let mut acc = SseAccumulator::default();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Upstream stream error: {e}"))?;
+        let text = String::from_utf8_lossy(&chunk);
+        for event in frame.push(&text) {
+            for payload in converter.convert_stream_event(&event, &mut state) {
+                // Each payload is one chat-shaped JSON chunk or `[DONE]`.
+                acc.ingest(&payload, events);
+            }
+        }
+    }
+    if let Some(event) = frame.finish() {
+        for payload in converter.convert_stream_event(&event, &mut state) {
+            acc.ingest(&payload, events);
+        }
+    }
+
+    if let Some(err) = acc.error.take() {
+        let msg = format!("Upstream stream error: {err}");
+        return Err(if is_context_overflow_body(&err) {
+            format!("[{CONTEXT_OVERFLOW_MARKER}] {msg}")
+        } else {
+            msg
+        });
+    }
+
+    Ok(acc.into_completion())
+}
+
+/// Translate a non-streaming native response into a chat.completion object.
+fn decode_converted_response(
+    bytes: &[u8],
+    converter: &dyn UpstreamConverter,
+) -> Result<serde_json::Value, String> {
+    let upstream: serde_json::Value = serde_json::from_slice(bytes)
+        .map_err(|e| format!("Upstream returned invalid JSON: {e}"))?;
+    let completion = converter.convert_response(&upstream);
+    if let Some(err) = completion.get("error") {
+        let message = err
+            .get("message")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| err.to_string());
+        let msg = format!("Upstream stream error: {message}");
+        return Err(if is_context_overflow_body(&message) {
+            format!("[{CONTEXT_OVERFLOW_MARKER}] {msg}")
+        } else {
+            msg
+        });
+    }
+    Ok(completion)
+}
+
+#[derive(Default)]
+struct ToolCallAccum {
+    id: String,
+    name: String,
+    arguments: String,
+    /// A `ToolCallStarted` was already emitted for this call; guards the
+    /// once-per-call in-progress signal against later argument deltas.
+    started_emitted: bool,
+    /// Bytes of `arguments` already forwarded as `ToolCallArgsDelta`. Zero
+    /// until the first forward, which replays whatever arrived before the call
+    /// could be announced.
+    args_forwarded: usize,
+}
+
+/// Accumulates OpenAI SSE deltas into a single reconstructed completion. Kept
+/// separate from the byte-stream reader so it is unit-testable without a live
+/// HTTP response.
+#[derive(Default)]
+struct SseAccumulator {
+    content: String,
+    /// Natively streamed reasoning (`reasoning_content` deltas), accumulated so
+    /// the reconstructed completion carries it back on the assistant message.
+    /// Kept apart from `content`: reasoning is never part of the answer prose,
+    /// but a caller resending assistant turns may forward it to the model.
+    reasoning: String,
+    tool_calls: Vec<ToolCallAccum>,
+    finish_reason: Option<String>,
+    usage: Option<serde_json::Value>,
+    /// An error object delivered inside the stream (`data: {"error": {...}}`).
+    /// OpenAI-compatible upstreams can fail mid-stream after a `200 OK`; without
+    /// capturing it the run would end as a silent "no answer" instead of
+    /// surfacing the failure. The converted-stream reader turns it into an error.
+    error: Option<String>,
+}
+
+impl SseAccumulator {
+    /// Parse one raw SSE line (`data: {...}`); non-`data:`/blank lines are ignored.
+    #[cfg(test)]
+    fn ingest_line(&mut self, line: &str, events: &mpsc::UnboundedSender<StreamEvent>) {
+        if let Some(rest) = line.trim_end_matches('\r').strip_prefix("data:") {
+            let data = rest.trim();
+            if !data.is_empty() {
+                self.ingest(data, events);
+            }
+        }
+    }
+
+    fn ingest(&mut self, data: &str, events: &mpsc::UnboundedSender<StreamEvent>) {
+        if data == "[DONE]" {
+            return;
+        }
+        let json: serde_json::Value = match serde_json::from_str(data) {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+
+        if let Some(err) = json.get("error").filter(|e| !e.is_null()) {
+            let message = err
+                .get("message")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| err.to_string());
+            let kind = err.get("type").and_then(|v| v.as_str());
+            self.error = Some(match kind {
+                Some(t) if !t.is_empty() => format!("{t}: {message}"),
+                _ => message,
+            });
+            return;
+        }
+
+        if let Some(u) = json.get("usage") {
+            if !u.is_null() {
+                self.usage = Some(u.clone());
+            }
+        }
+
+        let Some(choice) = json
+            .get("choices")
+            .and_then(|c| c.as_array())
+            .and_then(|a| a.first())
+        else {
+            return;
+        };
+
+        if let Some(fr) = choice.get("finish_reason").and_then(|v| v.as_str()) {
+            self.finish_reason = Some(fr.to_string());
+        }
+
+        let Some(delta) = choice.get("delta") else {
+            return;
+        };
+
+        // Native reasoning: providers exposing a dedicated `reasoning_content`
+        // field stream it as `Reasoning` events, never as content tokens, so
+        // consumers get the boundary for free instead of re-parsing synthetic
+        // `<think>` tags. Providers that inline tags in `content` still flow
+        // through `Token`; consumers keep the tag-stripping fallback for them.
+        if let Some(text) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
+            if !text.is_empty() {
+                self.reasoning.push_str(text);
+                let _ = events.send(StreamEvent::Reasoning {
+                    text: text.to_string(),
+                });
+            }
+        }
+
+        if let Some(text) = delta.get("content").and_then(|v| v.as_str()) {
+            if !text.is_empty() {
+                self.content.push_str(text);
+                let _ = events.send(StreamEvent::Token {
+                    text: text.to_string(),
+                });
+            }
+        }
+
+        if let Some(tcs) = delta.get("tool_calls").and_then(|v| v.as_array()) {
+            for tc in tcs {
+                let idx = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                while self.tool_calls.len() <= idx {
+                    self.tool_calls.push(ToolCallAccum::default());
+                }
+                let slot = &mut self.tool_calls[idx];
+                if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
+                    if !id.is_empty() {
+                        slot.id = id.to_string();
+                    }
+                }
+                let func = tc.get("function");
+                if let Some(name) = func
+                    .and_then(|f| f.get("name"))
+                    .and_then(|v| v.as_str())
+                    .filter(|n| !n.is_empty())
+                {
+                    slot.name = name.to_string();
+                }
+                let arg_delta = func
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty());
+                if let Some(arg) = arg_delta {
+                    slot.arguments.push_str(arg);
+                }
+
+                // Signal the in-progress tool call the instant both id and name
+                // are known, so consumers can show activity while arguments are
+                // still streaming (a long window for large write/edit calls).
+                if !slot.started_emitted && !slot.id.is_empty() && !slot.name.is_empty() {
+                    slot.started_emitted = true;
+                    let _ = events.send(StreamEvent::ToolCallStarted {
+                        id: slot.id.clone(),
+                        name: slot.name.clone(),
+                    });
+                }
+
+                // Forward the argument text itself, but only once the call has
+                // been announced -- a delta with no preceding `ToolCallStarted`
+                // has no call for the consumer to attach it to. Providers that
+                // send arguments before the id/name are covered by the replay
+                // below, which flushes what was buffered before the announce.
+                if slot.started_emitted {
+                    if let Some(arg) = arg_delta {
+                        let delta = if slot.args_forwarded == 0 {
+                            // First forward after the announce: ship everything
+                            // accumulated so far, including any chunks that
+                            // arrived before id/name were known.
+                            slot.arguments.clone()
+                        } else {
+                            arg.to_string()
+                        };
+                        slot.args_forwarded = slot.arguments.len();
+                        let _ = events.send(StreamEvent::ToolCallArgsDelta {
+                            id: slot.id.clone(),
+                            delta,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    fn into_completion(self) -> serde_json::Value {
+        let tool_calls: Vec<serde_json::Value> = self
+            .tool_calls
+            .into_iter()
+            .filter(|t| !t.id.is_empty() || !t.name.is_empty() || !t.arguments.is_empty())
+            .map(|t| {
+                serde_json::json!({
+                    "id": t.id,
+                    "type": "function",
+                    "function": { "name": t.name, "arguments": t.arguments }
+                })
+            })
+            .collect();
+
+        let mut message = serde_json::Map::new();
+        message.insert("role".to_string(), serde_json::json!("assistant"));
+        message.insert(
+            "content".to_string(),
+            if self.content.is_empty() {
+                serde_json::Value::Null
+            } else {
+                serde_json::json!(self.content)
+            },
+        );
+        // Reasoning stays out of `content` but is carried on the message so a
+        // caller that resends assistant turns to the model can forward it (and
+        // so a turn that only reasoned still surfaces its reasoning). Empty is
+        // omitted so non-reasoning providers produce an unchanged shape.
+        if !self.reasoning.is_empty() {
+            message.insert(
+                "reasoning_content".to_string(),
+                serde_json::json!(self.reasoning),
+            );
+        }
+        if !tool_calls.is_empty() {
+            message.insert(
+                "tool_calls".to_string(),
+                serde_json::Value::Array(tool_calls),
+            );
+        }
+
+        let mut choice = serde_json::Map::new();
+        choice.insert("index".to_string(), serde_json::json!(0));
+        choice.insert("message".to_string(), serde_json::Value::Object(message));
+        choice.insert(
+            "finish_reason".to_string(),
+            self.finish_reason
+                .map(|s| serde_json::json!(s))
+                .unwrap_or(serde_json::Value::Null),
+        );
+
+        let mut completion = serde_json::Map::new();
+        completion.insert(
+            "choices".to_string(),
+            serde_json::Value::Array(vec![serde_json::Value::Object(choice)]),
+        );
+        if let Some(u) = self.usage {
+            completion.insert("usage".to_string(), u);
+        }
+
+        serde_json::Value::Object(completion)
+    }
+}
+
+/// Drain every complete (newline-terminated) line from `buf` into `acc`,
+/// leaving any trailing partial line buffered for the next chunk.
+#[cfg(test)]
+fn drain_complete_lines(
+    buf: &mut String,
+    acc: &mut SseAccumulator,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+) {
+    while let Some(nl) = buf.find('\n') {
+        let line = buf[..nl].to_string();
+        buf.drain(..=nl);
+        acc.ingest_line(&line, events);
+    }
+}
+
+/// Ingest a final, non-newline-terminated line left after the stream closes.
+/// Providers may end with `data: {...}` and no trailing blank line / `[DONE]`;
+/// without this the last chunk's finish_reason and tool-call args are dropped.
+#[cfg(test)]
+fn flush_trailing_line(
+    buf: &str,
+    acc: &mut SseAccumulator,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+) {
+    if !buf.trim().is_empty() {
+        acc.ingest_line(buf, events);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
 
-    #[cfg(not(feature = "cli"))]
+    fn sink() -> (
+        mpsc::UnboundedSender<StreamEvent>,
+        mpsc::UnboundedReceiver<StreamEvent>,
+    ) {
+        mpsc::unbounded_channel()
+    }
+    fn provider_configs(map: &[(&str, &str)]) -> HashMap<String, ProviderConfig> {
+        map.iter()
+            .map(|(name, url)| {
+                (
+                    name.to_string(),
+                    ProviderConfig {
+                        provider: name.to_string(),
+                        base_url: Some(url.to_string()),
+                        models: vec![],
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// A `<provider>/<model>` id resolves to the bare model once the prefix
+    /// names a configured provider - the body the upstream receives must not
+    /// carry the selection qualifier.
+    #[test]
+    fn provider_prefix_is_stripped_when_it_names_a_provider() {
+        let pc = provider_configs(&[("opencode", "https://opencode.ai/zen/go/v1")]);
+        assert_eq!(
+            strip_provider_prefix("opencode/gpt-5.6-luna", &pc),
+            "gpt-5.6-luna"
+        );
+    }
+
+    /// A slash inside a real model id is preserved when the leading segment is
+    /// not a provider key, so org-scoped ids survive untouched.
+    #[test]
+    fn unknown_slash_prefix_is_left_alone() {
+        let pc = provider_configs(&[("opencode", "https://opencode.ai/zen/go/v1")]);
+        assert_eq!(
+            strip_provider_prefix("mistral-technologies/mixtral", &pc),
+            "mistral-technologies/mixtral"
+        );
+    }
+
+    /// A bare model id (no slash) is returned unchanged.
+    #[test]
+    fn bare_model_id_is_unchanged() {
+        let pc = provider_configs(&[("opencode", "https://opencode.ai/zen/go/v1")]);
+        assert_eq!(strip_provider_prefix("gpt-5.6-luna", &pc), "gpt-5.6-luna");
+    }
     /// `reqwest` prints only its own layer, so the cause chain is where the
     /// actual failure lives -- the whole point of `describe_request_error`.
     #[test]
@@ -927,7 +1552,9 @@ mod tests {
         }
         impl std::error::Error for Err2 {
             fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-                self.1.as_ref().map(|e| e.as_ref() as &(dyn std::error::Error + 'static))
+                self.1
+                    .as_ref()
+                    .map(|e| e.as_ref() as &(dyn std::error::Error + 'static))
             }
         }
 
@@ -1021,7 +1648,124 @@ mod tests {
         }
     }
 
-    #[cfg(not(feature = "cli"))]
+    /// The failure a long turn invites: the peer reclaims a keep-alive
+    /// connection while tools run, and the next request is written into a socket
+    /// that is already gone. One retry must carry the turn through, transparently
+    /// -- the caller sees a normal completion, not an error.
+    #[tokio::test]
+    async fn a_dropped_first_connection_is_retried_and_the_turn_succeeds() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = tokio::spawn(async move {
+            // First connection: read the request, then hang up without a byte of
+            // response -- exactly what a reclaimed pooled connection looks like.
+            let (mut first, _) = listener.accept().await.expect("first accept");
+            let mut scratch = [0u8; 1024];
+            let _ = first.read(&mut scratch).await;
+            drop(first);
+
+            // Second connection: a normal one-token SSE answer.
+            let (mut second, _) = listener.accept().await.expect("second accept");
+            let _ = second.read(&mut scratch).await;
+            let sse = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n\
+                       data: [DONE]\n\n";
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{sse}",
+                sse.len()
+            );
+            let _ = second.write_all(resp.as_bytes()).await;
+            let _ = second.flush().await;
+        });
+
+        let (tx, mut rx) = sink();
+        let url = format!("http://{addr}/v1/chat/completions");
+        let completion = stream_openai_chat_completions(
+            &reqwest13::Client::new(),
+            &url,
+            &[],
+            None,
+            &json!({ "model": "m", "messages": [] }),
+            &tx,
+        )
+        .await
+        .expect("the retry carries the turn");
+
+        assert_eq!(
+            completion["choices"][0]["message"]["content"], "hi",
+            "answer from the second connection: {completion}"
+        );
+        let mut tokens = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            if let StreamEvent::Token { text } = ev {
+                tokens.push(text);
+            }
+        }
+        assert_eq!(tokens, vec!["hi".to_string()], "streamed once, not twice");
+        server.await.expect("server task");
+    }
+    #[tokio::test]
+    async fn codex_oauth_request_matches_chatgpt_backend_contract() {
+        use base64::Engine as _;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            let mut bytes = vec![0u8; 16 * 1024];
+            let read = socket.read(&mut bytes).await.expect("read");
+            bytes.truncate(read);
+            let response = "event: response.completed\n\
+                data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n";
+            let wire = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{response}",
+                response.len()
+            );
+            socket.write_all(wire.as_bytes()).await.expect("response");
+            String::from_utf8(bytes).expect("request is utf-8")
+        });
+
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(br#"{"https://api.openai.com/auth":{"chatgpt_account_id":"account-123"}}"#);
+        let token = format!("header.{payload}.signature");
+        let converter =
+            crate::core::server::converters::converter_for(Some("openai-responses"), true)
+                .expect("converter");
+        let (tx, _rx) = sink();
+        stream_converted_chat_completions(
+            &Client::new(),
+            &format!("http://{addr}/chat/completions"),
+            &[token],
+            converter.as_ref(),
+            &json!({
+                "model": "gpt-5.6-terra",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 128,
+            }),
+            &tx,
+        )
+        .await
+        .expect("request");
+
+        let request = server.await.expect("server task");
+        let lower = request.to_ascii_lowercase();
+        assert!(request.starts_with("POST /codex/responses HTTP/1.1\r\n"));
+        assert!(lower.contains("\r\nchatgpt-account-id: account-123\r\n"));
+        assert!(lower.contains("\r\nopenai-beta: responses=experimental\r\n"));
+        assert!(lower.contains("\r\noriginator: jan\r\n"));
+        let body: serde_json::Value =
+            serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert_eq!(body["store"], false);
+        assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
+        assert!(body.get("max_output_tokens").is_none());
+    }
+
     /// A proxy in the environment breaks Jan and nothing else, and never shows up
     /// in the error. Names only: the values carry credentials.
     #[test]
@@ -1075,13 +1819,124 @@ mod tests {
             },
         );
 
-        let (url, _keys) = resolve_upstream_for_model(
-            "sentence-transformer-mini",
-            Arc::new(Mutex::new(configs)),
-        )
-        .await
-        .expect("the API server provider is reachable");
+        let (url, _keys) =
+            resolve_upstream_for_model("sentence-transformer-mini", Arc::new(Mutex::new(configs)))
+                .await
+                .expect("the API server provider is reachable");
         assert_eq!(url, "http://127.0.0.1:1337/v1/chat/completions");
+    }
+
+    /// When two reachable HTTP providers offer the same model id - one
+    /// credentialed, one keyless - resolution must pick the credentialed one.
+    /// Alphabetical order alone would route e.g. `gpt-5.6-luna` (carried by
+    /// both `openai` and a signed-in `opencode`) to the keyless `openai` entry
+    /// and fail with a 401 on the first request.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn shared_model_id_prefers_the_credentialed_provider() {
+        let mut configs = HashMap::new();
+        // Alphabetically first, but keyless - the old code would pick this.
+        configs.insert(
+            "openai".to_string(),
+            ProviderConfig {
+                provider: "openai".into(),
+                base_url: Some("https://api.openai.com/v1".into()),
+                models: vec!["gpt-5.6-luna".into()],
+                ..Default::default()
+            },
+        );
+        // Signed in, so it carries a key.
+        configs.insert(
+            "opencode".to_string(),
+            ProviderConfig {
+                provider: "opencode".into(),
+                base_url: Some("https://opencode.ai/zen/v1".into()),
+                api_key: Some("sk-opencode".into()),
+                models: vec!["gpt-5.6-luna".into()],
+                ..Default::default()
+            },
+        );
+
+        let (url, keys) = resolve_upstream_for_model("gpt-5.6-luna", Arc::new(Mutex::new(configs)))
+            .await
+            .expect("the credentialed provider is selected");
+        assert_eq!(url, "https://opencode.ai/zen/v1/chat/completions");
+        assert_eq!(keys, vec!["sk-opencode"]);
+    }
+
+    /// Holds the secret-store serialization guard, the temp data folder and the
+    /// `JAN_DATA_FOLDER` restore together, so an async test can keep all three
+    /// alive across `.await` without holding a bare lock guard over it.
+    #[cfg(feature = "cli")]
+    struct TempSecretStore {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        previous: Option<String>,
+        _dir: tempfile::TempDir,
+    }
+
+    #[cfg(feature = "cli")]
+    impl TempSecretStore {
+        fn new() -> Self {
+            let guard = crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let dir = tempfile::tempdir().unwrap();
+            let previous = std::env::var("JAN_DATA_FOLDER").ok();
+            std::env::set_var("JAN_DATA_FOLDER", dir.path());
+            crate::core::server::provider_secrets::force_file_secrets();
+            Self {
+                _guard: guard,
+                previous,
+                _dir: dir,
+            }
+        }
+    }
+
+    #[cfg(feature = "cli")]
+    impl Drop for TempSecretStore {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var("JAN_DATA_FOLDER", value),
+                None => std::env::remove_var("JAN_DATA_FOLDER"),
+            }
+        }
+    }
+
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn account_credentials_override_the_api_key_chain() {
+        use crate::core::cli::auth::{Credential, CredentialStore, OAuthToken};
+
+        let _secrets = TempSecretStore::new();
+        CredentialStore::store(
+            "openai",
+            &Credential::OAuthToken(OAuthToken {
+                access_token: "account-access".into(),
+                refresh_token: Some("refresh".into()),
+                expires_at: Some(1_800_000_000),
+                token_type: "Bearer".into(),
+                scopes: vec![],
+            }),
+        )
+        .unwrap();
+        let mut configs = HashMap::new();
+        configs.insert(
+            "openai".to_string(),
+            ProviderConfig {
+                provider: "openai".into(),
+                base_url: Some("https://api.openai.com/v1".into()),
+                api_key: Some("api-key".into()),
+                models: vec!["account-model".into()],
+                ..Default::default()
+            },
+        );
+
+        let (url, keys) =
+            resolve_upstream_for_model("account-model", Arc::new(Mutex::new(configs)))
+                .await
+                .unwrap();
+        assert_eq!(url, "https://chatgpt.com/backend-api/chat/completions");
+        assert_eq!(keys, vec!["account-access"]);
     }
 
     #[test]
@@ -1186,8 +2041,14 @@ mod tests {
         assert_eq!(messages.len(), 4);
         assert_eq!(messages[2]["role"], "tool");
         assert_eq!(messages[2]["tool_call_id"], "toolu_ask");
-        assert!(messages[2]["content"].as_str().unwrap().starts_with("ERROR"));
-        assert_eq!(messages[3]["content"], "next message, no reply ever recorded");
+        assert!(messages[2]["content"]
+            .as_str()
+            .unwrap()
+            .starts_with("ERROR"));
+        assert_eq!(
+            messages[3]["content"],
+            "next message, no reply ever recorded"
+        );
     }
 
     #[test]
@@ -1352,8 +2213,12 @@ mod tests {
         assert!(is_context_overflow_body(
             "{\"error\":{\"code\":\"context_length_exceeded\"}}"
         ));
-        assert!(is_context_overflow_body("This model's maximum context length is 8192 tokens"));
-        assert!(is_context_overflow_body("prompt is too long: 210000 tokens > 200000"));
+        assert!(is_context_overflow_body(
+            "This model's maximum context length is 8192 tokens"
+        ));
+        assert!(is_context_overflow_body(
+            "prompt is too long: 210000 tokens > 200000"
+        ));
         assert!(is_context_overflow_body(
             "the request exceeds the available context size"
         ));
@@ -1370,7 +2235,9 @@ mod tests {
     fn overflow_marker_round_trips() {
         let err = format!("[{CONTEXT_OVERFLOW_MARKER}] Upstream returned HTTP 400: ...");
         assert!(is_context_overflow_error(&err));
-        assert!(!is_context_overflow_error("Upstream returned HTTP 500: boom"));
+        assert!(!is_context_overflow_error(
+            "Upstream returned HTTP 500: boom"
+        ));
     }
 
     /// The shapes strict endpoints actually return, plus the two ways a false
@@ -1424,5 +2291,264 @@ mod tests {
             out[1].get("reasoning_content").is_none(),
             "an assistant turn with no reasoning stays unchanged"
         );
+    }
+
+    /// Providers that inline `<think>` tags in `content` (no reasoning_content
+    /// field) keep streaming through Token untouched: the tag-stripping
+    /// fallback lives in the consumers.
+    #[test]
+    fn inline_think_tags_in_content_pass_through_as_tokens() {
+        let (tx, mut rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "content": "<think>hmm</think>answer" } }] })
+                .to_string(),
+            &tx,
+        );
+        drop(tx);
+        let mut tokens = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            match ev {
+                StreamEvent::Token { text } => tokens.push(text),
+                StreamEvent::Reasoning { .. } => panic!("no native reasoning here"),
+                _ => {}
+            }
+        }
+        assert_eq!(tokens, vec!["<think>hmm</think>answer"]);
+    }
+
+    #[test]
+    fn reassembles_tool_call_arguments_split_across_deltas() {
+        let (tx, _rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "tool_calls": [
+                { "index": 0, "id": "call_1", "function": { "name": "search", "arguments": "{\"q\":" } }
+            ] } }] })
+            .to_string(),
+            &tx,
+        );
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "tool_calls": [
+                { "index": 0, "function": { "arguments": "\"rust\"}" } }
+            ] } }] })
+            .to_string(),
+            &tx,
+        );
+        acc.ingest(
+            &json!({ "choices": [{ "delta": {}, "finish_reason": "tool_calls" }],
+                     "usage": { "total_tokens": 12 } })
+            .to_string(),
+            &tx,
+        );
+
+        let completion = acc.into_completion();
+        let tc = &completion["choices"][0]["message"]["tool_calls"][0];
+        assert_eq!(tc["id"], "call_1");
+        assert_eq!(tc["function"]["name"], "search");
+        assert_eq!(tc["function"]["arguments"], "{\"q\":\"rust\"}");
+        assert_eq!(completion["choices"][0]["finish_reason"], "tool_calls");
+        assert_eq!(completion["usage"]["total_tokens"], 12);
+    }
+
+    #[test]
+    fn emits_tool_call_started_once_when_id_and_name_first_known() {
+        let (tx, mut rx) = sink();
+        let mut acc = SseAccumulator::default();
+        // First delta carries id + name; arguments arrive later, split across
+        // deltas -- the in-progress signal must fire on this first delta only.
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "tool_calls": [
+                { "index": 0, "id": "call_1", "function": { "name": "write", "arguments": "{\"path\":" } }
+            ] } }] })
+            .to_string(),
+            &tx,
+        );
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "tool_calls": [
+                { "index": 0, "function": { "arguments": "\"a.txt\"}" } }
+            ] } }] })
+            .to_string(),
+            &tx,
+        );
+
+        drop(tx);
+        let started: Vec<(String, String)> = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|ev| match ev {
+                StreamEvent::ToolCallStarted { id, name } => Some((id, name)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(started, vec![("call_1".to_string(), "write".to_string())]);
+    }
+
+    #[test]
+    fn emits_tool_call_started_per_parallel_call() {
+        let (tx, mut rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "tool_calls": [
+                { "index": 0, "id": "call_a", "function": { "name": "read", "arguments": "" } },
+                { "index": 1, "id": "call_b", "function": { "name": "grep", "arguments": "" } }
+            ] } }] })
+            .to_string(),
+            &tx,
+        );
+
+        drop(tx);
+        let mut names: Vec<String> = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|ev| match ev {
+                StreamEvent::ToolCallStarted { name, .. } => Some(name),
+                _ => None,
+            })
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["grep".to_string(), "read".to_string()]);
+    }
+
+    #[test]
+    fn captures_mid_stream_error_object_with_type_prefix() {
+        let (tx, _rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "content": "partial" } }] }).to_string(),
+            &tx,
+        );
+        acc.ingest(
+            &json!({ "error": { "message": "upstream exploded", "type": "server_error" } })
+                .to_string(),
+            &tx,
+        );
+        assert_eq!(
+            acc.error.as_deref(),
+            Some("server_error: upstream exploded")
+        );
+    }
+
+    #[test]
+    fn mid_stream_error_falls_back_to_message_without_type() {
+        let (tx, _rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(&json!({ "error": { "message": "boom" } }).to_string(), &tx);
+        assert_eq!(acc.error.as_deref(), Some("boom"));
+    }
+
+    #[test]
+    fn ignores_done_sentinel_and_malformed_lines() {
+        let (tx, _rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest("[DONE]", &tx);
+        acc.ingest("not json", &tx);
+        let completion = acc.into_completion();
+        assert!(completion["choices"][0]["message"]["content"].is_null());
+    }
+
+    /// Feed arbitrary byte chunks through the real buffering path, then close.
+    fn feed_and_close(
+        chunks: &[&str],
+        events: &mpsc::UnboundedSender<StreamEvent>,
+    ) -> serde_json::Value {
+        let mut buf = String::new();
+        let mut acc = SseAccumulator::default();
+        for c in chunks {
+            buf.push_str(c);
+            drain_complete_lines(&mut buf, &mut acc, events);
+        }
+        flush_trailing_line(&buf, &mut acc, events);
+        acc.into_completion()
+    }
+
+    #[test]
+    fn flushes_final_line_without_trailing_newline() {
+        let (tx, _rx) = sink();
+        // Provider closes right after the final data line: no `\n`, no `[DONE]`.
+        let final_chunk = json!({ "choices": [{ "delta": {}, "finish_reason": "tool_calls" }] });
+        let completion = feed_and_close(
+            &[
+                "data: ",
+                &json!({ "choices": [{ "delta": { "content": "hi" } }] }).to_string(),
+                "\n\ndata: ",
+                &final_chunk.to_string(),
+            ],
+            &tx,
+        );
+
+        assert_eq!(completion["choices"][0]["message"]["content"], "hi");
+        assert_eq!(completion["choices"][0]["finish_reason"], "tool_calls");
+    }
+
+    #[test]
+    fn newline_terminated_stream_still_parses() {
+        let (tx, _rx) = sink();
+        let completion = feed_and_close(
+            &[
+                &format!(
+                    "data: {}\n\n",
+                    json!({ "choices": [{ "delta": { "content": "ok" }, "finish_reason": "stop" }] })
+                ),
+                "data: [DONE]\n\n",
+            ],
+            &tx,
+        );
+        assert_eq!(completion["choices"][0]["message"]["content"], "ok");
+        assert_eq!(completion["choices"][0]["finish_reason"], "stop");
+    }
+
+    /// The converted-stream decode path: a native (non-chat/completions) SSE
+    /// event is run through its [`UpstreamConverter::convert_stream_event`],
+    /// and each produced chat-shaped payload is fed into the same
+    /// [`SseAccumulator`] the OpenAI path uses, so `StreamEvent`s come out
+    /// identical. This mirrors `consume_converted_sse` (minus the live HTTP).
+    #[test]
+    fn converted_stream_emits_chat_shaped_events() {
+        use crate::core::server::converters::{AnthropicMessagesConverter, SseEvent, StreamState};
+
+        let (tx, mut rx) = sink();
+        let converter = AnthropicMessagesConverter::new();
+        let mut state = StreamState::default();
+        let mut acc = SseAccumulator::default();
+
+        // A single Anthropic `message_start` event -> role header chunk, then a
+        // `content_block_delta` with text -> token chunk, then `message_stop`.
+        let events = [
+            SseEvent {
+                event: "message_start".into(),
+                data: json!({
+                    "type": "message_start",
+                    "message": { "id": "msg_1", "model": "claude-sonnet-4" }
+                })
+                .to_string(),
+            },
+            SseEvent {
+                event: "content_block_delta".into(),
+                data: json!({
+                    "type": "content_block_delta",
+                    "delta": { "type": "text_delta", "text": "hi" }
+                })
+                .to_string(),
+            },
+            SseEvent {
+                event: "message_stop".into(),
+                data: json!({ "type": "message_stop" }).to_string(),
+            },
+        ];
+        for event in &events {
+            for payload in converter.convert_stream_event(event, &mut state) {
+                acc.ingest(&payload, &tx);
+            }
+        }
+
+        // Exactly one Token event with the translated text.
+        let mut tokens = Vec::new();
+        while let Ok(StreamEvent::Token { text }) = rx.try_recv() {
+            tokens.push(text);
+        }
+        assert!(
+            tokens.contains(&"hi".to_string()),
+            "token delta decoded: {tokens:?}"
+        );
+
+        let completion = acc.into_completion();
+        assert_eq!(completion["choices"][0]["message"]["content"], "hi");
     }
 }

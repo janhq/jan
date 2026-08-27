@@ -1328,6 +1328,13 @@ async fn proxy_request(
                     return Ok(error_response.body(full(e)).unwrap());
                 }
             };
+            // `provider/model` records the provider qualifier used to resolve
+            // the upstream above; the request body must carry the bare model id.
+            let body_model_id = {
+                let pc = provider_configs.lock().await;
+                crate::core::agent::upstream::strip_provider_prefix(&model_id, &pc)
+            };
+
 
             let max_turns = json_body
                 .get("max_turns")
@@ -1340,7 +1347,7 @@ async fn proxy_request(
             for _turn in 0..max_turns {
                 // Build upstream request body for each turn so messages are updated.
                 let mut completion_map = serde_json::Map::new();
-                completion_map.insert("model".to_string(), serde_json::json!(model_id));
+                completion_map.insert("model".to_string(), serde_json::json!(body_model_id));
                 completion_map.insert(
                     "messages".to_string(),
                     serde_json::Value::Array(conversation_messages.clone()),
@@ -1584,9 +1591,23 @@ async fn proxy_request(
 
                             if let Some(provider_cfg) = provider_config {
                                 // A converter only applies to chat/completions; other
-                                // paths keep verbatim forwarding.
+                                // paths keep verbatim forwarding. The OAuth auth
+                                // scheme applies only when the provider is actually
+                                // authenticated with an OAuth account token, not
+                                // merely because openai/anthropic also support
+                                // account login (an API-key sign-in must stay on
+                                // its plain key scheme).
                                 let converter = if destination_path == "/chat/completions" {
-                                    converter_for(provider_cfg.api_type.as_deref())
+                                    // OAuth account login is a `cli` feature; the
+                                    // desktop has no OAuth account token here, so it
+                                    // must keep the plain API-key scheme rather than
+                                    // treat every anthropic provider as an account.
+                                    #[cfg(feature = "cli")]
+                                    let oauth = crate::core::cli::auth::account::
+                                        has_oauth_credential(&provider_cfg.provider);
+                                    #[cfg(not(feature = "cli"))]
+                                    let oauth = false;
+                                    converter_for(provider_cfg.api_type.as_deref(), oauth)
                                 } else {
                                     None
                                 };
@@ -2015,6 +2036,11 @@ async fn proxy_request(
                 None => ("authorization", format!("Bearer {key}")),
             };
             outbound_req = outbound_req.header(auth_name, auth_value);
+            if let Some(conv) = &upstream_converter {
+                for (name, value) in conv.credential_headers(key) {
+                    outbound_req = outbound_req.header(name, value);
+                }
+            }
         } else {
             log::debug!("No session API key for this attempt");
         }

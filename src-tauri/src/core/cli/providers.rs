@@ -13,8 +13,7 @@
 //!    env fallback via [`ProviderOverrides::with_env`]) win over all of the
 //!    above - the most explicit, most ephemeral signal.
 
-use std::collections::HashMap;
-use std::time::Duration;
+use std::{collections::HashMap, path::Path, time::Duration};
 
 use crate::core::agent::global_config::load_global_config;
 use crate::core::agent::project::ProviderSection;
@@ -139,6 +138,27 @@ pub fn has_usable_provider(project_root: Option<&std::path::Path>) -> bool {
             false
         }
     }
+}
+
+/// Whether `provider` has a stored credential or resolves to a usable config.
+pub fn provider_is_signed_in(project_root: Option<&Path>, provider: &str) -> bool {
+    if matches!(
+        crate::core::cli::auth::CredentialStore::load(provider),
+        Ok(Some(_))
+    ) {
+        return true;
+    }
+
+    let overrides = ProviderOverrides {
+        provider: Some(provider.to_string()),
+        api_key: None,
+    }
+    .with_env();
+
+    load_provider_configs(project_root, &overrides)
+        .ok()
+        .and_then(|configs| configs.get(provider).map(is_usable))
+        .unwrap_or(false)
 }
 
 fn is_usable(config: &ProviderConfig) -> bool {
@@ -320,6 +340,7 @@ pub async fn fetch_missing_models(
             crate::core::agent::global_config::ProviderUpdate {
                 api_key: None,
                 base_url: None,
+                clear_api_key: false,
                 models: Some(models),
                 api_type: None,
                 ..Default::default()
@@ -403,7 +424,31 @@ pub fn load_provider_configs(
     }
 
     apply_overrides(&mut configs, overrides);
+    seed_from_credential_store(&mut configs);
     Ok(configs)
+}
+
+/// Fill a login-created provider's key chain from the auth credential store
+/// when neither persisted configuration nor CLI/env overrides supplied a key.
+/// The login flow writes only non-secret metadata to config, so without this
+/// seeding a signed-in provider would resolve keyless at runtime and every
+/// request would 401. OAuth credentials are resolved by the transport layer
+/// and deliberately not seeded here.
+fn seed_from_credential_store(configs: &mut HashMap<String, ProviderConfig>) {
+    use crate::core::cli::auth::CredentialStore;
+    for (name, cfg) in configs.iter_mut() {
+        if !cfg.bearer_key_chain().is_empty() {
+            continue;
+        }
+        let Ok(Some(credential)) = CredentialStore::load(name) else {
+            continue;
+        };
+        let Some(key) = credential.as_api_key() else {
+            continue;
+        };
+        cfg.api_key = Some(key.to_string());
+        cfg.api_keys = vec![key.to_string()];
+    }
 }
 
 /// Layer in providers from Desktop's `settings.json` that Global doesn't
@@ -1074,6 +1119,7 @@ mod tests {
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("k".into()),
                     base_url: Some(format!("http://{addr}/v1")),
+                    clear_api_key: false,
                     models: Some(vec![]),
                     api_type: None,
                                     ..Default::default()
@@ -1102,6 +1148,7 @@ mod tests {
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("k".into()),
                     base_url: Some("http://127.0.0.1:9/v1".into()), // would refuse
+                    clear_api_key: false,
                     models: Some(vec!["my-model".into()]),
                     api_type: None,
                                     ..Default::default()
@@ -1131,6 +1178,7 @@ mod tests {
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: None,
                     base_url: Some(format!("http://{addr}/v1")),
+                    clear_api_key: false,
                     models: Some(vec![]),
                     api_type: None,
                                     ..Default::default()
@@ -1181,6 +1229,7 @@ mod tests {
                     crate::core::agent::global_config::ProviderUpdate {
                         api_key: Some("k".into()),
                         base_url: Some(format!("http://{addr}/v1")),
+                        clear_api_key: false,
                         models: Some(vec![]),
                         api_type: None,
                                             ..Default::default()
@@ -1209,6 +1258,7 @@ mod tests {
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("k".into()),
                     base_url: Some("http://127.0.0.1:9/v1".into()), // refuses instantly
+                    clear_api_key: false,
                     models: Some(vec![]),
                     api_type: None,
                                     ..Default::default()
@@ -1231,6 +1281,165 @@ mod tests {
                 .block_on(fetch_missing_models(None, &mut probed))
                 .expect("second fetch");
             assert!(!again, "already-probed provider is not re-fetched");
+        });
+    }
+
+    /// Redirects the secret store (data folder + forced file fallback) for the
+    /// duration of `f`. `JAN_DATA_FOLDER` is process-wide, so tests touching it
+    /// must not run concurrently.
+    fn with_temp_secrets<T>(f: impl FnOnce() -> T) -> T {
+        let _guard = crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let prev = std::env::var("JAN_DATA_FOLDER").ok();
+        std::env::set_var("JAN_DATA_FOLDER", dir.path());
+        crate::core::server::provider_secrets::force_file_secrets();
+        let result = f();
+        match &prev {
+            Some(v) => std::env::set_var("JAN_DATA_FOLDER", v),
+            None => std::env::remove_var("JAN_DATA_FOLDER"),
+        }
+        result
+    }
+
+    #[test]
+    fn provider_is_signed_in_when_api_key_credential_exists() {
+        use crate::core::agent::global_config::with_temp_home;
+        use crate::core::cli::auth::{Credential, CredentialStore};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                CredentialStore::store("deepseek", &Credential::ApiKey("sk-live".into())).unwrap();
+
+                assert!(provider_is_signed_in(None, "deepseek"));
+            });
+        });
+    }
+
+    #[test]
+    fn provider_is_signed_in_when_oauth_credential_exists() {
+        use crate::core::agent::global_config::with_temp_home;
+        use crate::core::cli::auth::{Credential, CredentialStore, OAuthToken};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                CredentialStore::store(
+                    "anthropic",
+                    &Credential::OAuthToken(OAuthToken {
+                        access_token: "access".into(),
+                        refresh_token: Some("refresh".into()),
+                        expires_at: Some(1_800_000_000),
+                        token_type: "Bearer".into(),
+                        scopes: vec!["model.read".into()],
+                    }),
+                )
+                .unwrap();
+
+                assert!(provider_is_signed_in(None, "anthropic"));
+            });
+        });
+    }
+
+    #[test]
+    fn provider_is_not_signed_in_without_credential_or_usable_config() {
+        use crate::core::agent::global_config::with_temp_home;
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                assert!(!provider_is_signed_in(None, "deepseek"));
+            });
+        });
+    }
+
+    #[test]
+    fn provider_is_signed_in_when_resolved_config_is_usable() {
+        use crate::core::agent::global_config::{set_provider, with_temp_home, ProviderUpdate};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                set_provider(
+                    "jan",
+                    ProviderUpdate {
+                        api_key: None,
+                        clear_api_key: true,
+                        base_url: Some("http://localhost:1337/v1".into()),
+                        models: Some(vec!["jan-local".into()]),
+                        api_type: None,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+
+                assert!(provider_is_signed_in(None, "jan"));
+            });
+        });
+    }
+
+    #[test]
+    fn runtime_uses_secret_store_when_non_secret_config_has_no_key() {
+        use crate::core::agent::global_config::{set_provider, with_temp_home, ProviderUpdate};
+        use crate::core::cli::auth::{Credential, CredentialStore};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                // The login flow writes only non-secret metadata to config.
+                set_provider(
+                    "deepseek",
+                    ProviderUpdate {
+                        api_key: None,
+                        clear_api_key: true,
+                        base_url: Some("https://mock/v1".into()),
+                        models: Some(vec!["deepseek-chat".into()]),
+                        api_type: None,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                CredentialStore::store("deepseek", &Credential::ApiKey("sk-live".into())).unwrap();
+
+                let configs = load_provider_configs(None, &ProviderOverrides::default()).unwrap();
+                assert_eq!(
+                    configs.get("deepseek").unwrap().bearer_key_chain(),
+                    vec!["sk-live".to_string()]
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn secret_store_never_overrides_an_explicit_override_key() {
+        use crate::core::agent::global_config::{set_provider, with_temp_home, ProviderUpdate};
+        use crate::core::cli::auth::{Credential, CredentialStore};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                set_provider(
+                    "deepseek",
+                    ProviderUpdate {
+                        api_key: None,
+                        clear_api_key: true,
+                        base_url: Some("https://mock/v1".into()),
+                        models: Some(vec!["deepseek-chat".into()]),
+                        api_type: None,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                CredentialStore::store("deepseek", &Credential::ApiKey("sk-stored".into())).unwrap();
+
+                // A CLI/env override is the most explicit, most ephemeral signal
+                // and must win over the persisted secret.
+                let overrides = ProviderOverrides {
+                    provider: Some("deepseek".into()),
+                    api_key: Some("sk-flag".into()),
+                };
+                let configs = load_provider_configs(None, &overrides).unwrap();
+                assert_eq!(
+                    configs.get("deepseek").unwrap().bearer_key_chain(),
+                    vec!["sk-flag".to_string()]
+                );
+            });
         });
     }
 }

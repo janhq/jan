@@ -36,6 +36,8 @@ const NONCE_LEN: usize = 12;
 /// Serializes read-modify-write on the fallback file.
 static FILE_LOCK: Mutex<()> = Mutex::new(());
 
+#[cfg(test)]
+pub(crate) static SECRET_STORE_TEST_LOCK: Mutex<()> = Mutex::new(());
 /// Serializes read-modify-write on the presence index. Separate from
 /// `FILE_LOCK` because the index is updated around calls that take it.
 static INDEX_LOCK: Mutex<()> = Mutex::new(());
@@ -109,7 +111,10 @@ fn read_file_map(path: &PathBuf) -> BTreeMap<String, Vec<String>> {
     serde_json::from_slice(&plaintext).unwrap_or_default()
 }
 
-fn write_file_map_atomic(path: &PathBuf, map: &BTreeMap<String, Vec<String>>) -> Result<(), String> {
+fn write_file_map_atomic(
+    path: &PathBuf,
+    map: &BTreeMap<String, Vec<String>>,
+) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -134,7 +139,10 @@ fn write_file_map_atomic(path: &PathBuf, map: &BTreeMap<String, Vec<String>>) ->
 fn restrict_permissions(path: &PathBuf) {
     use std::os::unix::fs::PermissionsExt;
     if let Err(err) = fs::set_permissions(path, fs::Permissions::from_mode(0o600)) {
-        log::warn!("Failed to restrict permissions on {}: {err}", path.display());
+        log::warn!(
+            "Failed to restrict permissions on {}: {err}",
+            path.display()
+        );
     }
 }
 
@@ -300,6 +308,35 @@ pub async fn set_secret(key: String, value: String) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
+/// Store (or replace) one opaque secret record under `key` (namespaced
+/// `auth:<key>` so it can never collide with a provider key chain). Used for
+/// versioned login credential bundles; empty values delete the entry.
+pub fn store_secret_record(key: &str, value: &str) -> Result<(), String> {
+    store_provider_keys(&format!("auth:{key}"), &[value.to_string()])
+}
+
+/// Read a secret record stored via [`store_secret_record`]. `None` when absent.
+pub fn load_secret_record(key: &str) -> Option<String> {
+    load_provider_keys(&format!("auth:{key}"))
+        .into_iter()
+        .next()
+}
+
+/// Remove a secret record stored via [`store_secret_record`]. Missing entries
+/// are not an error.
+pub fn delete_secret_record(key: &str) -> Result<(), String> {
+    delete_provider_keys(&format!("auth:{key}"))
+}
+
+/// Force the encrypted-file fallback for the rest of the process. Test-only:
+/// lets unit tests exercise the file path without touching the developer's
+/// keychain. Every caller is a `cli`-feature test, so the desktop build would
+/// otherwise carry it unused.
+#[cfg(all(test, feature = "cli"))]
+pub(crate) fn force_file_secrets() {
+    KEYRING_DOWN.store(true, Ordering::Relaxed);
+}
+
 /// Read a single generic secret stored via `set_secret`. None when absent.
 #[cfg(not(feature = "cli"))]
 #[tauri::command]
@@ -315,28 +352,28 @@ mod tests {
     use super::*;
     use std::sync::MutexGuard;
 
-    /// `resolve_jan_data_folder` reads process-wide env, so tests that redirect
-    /// it must not run concurrently.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
+    // Field order is drop order: `_dir` must be removed and the env restored
+    // while the lock is still held, so `_guard` has to be the last field.
     struct TempDataFolder {
-        _guard: MutexGuard<'static, ()>,
         prev_data_folder: Option<String>,
         _dir: tempfile::TempDir,
+        _guard: MutexGuard<'static, ()>,
     }
 
     impl TempDataFolder {
         fn new() -> Self {
-            let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let guard = SECRET_STORE_TEST_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             let dir = tempfile::tempdir().unwrap();
             let prev_data_folder = std::env::var("JAN_DATA_FOLDER").ok();
             // Portable override: XDG_DATA_HOME only redirects on Linux, so
             // relying on it fails the fallback tests on macOS/Windows.
             std::env::set_var("JAN_DATA_FOLDER", dir.path());
             Self {
-                _guard: guard,
                 prev_data_folder,
                 _dir: dir,
+                _guard: guard,
             }
         }
     }
@@ -373,12 +410,12 @@ mod tests {
         // A missing key is normal churn -> must not disable the keyring.
         assert!(!is_infra_failure(&keyring::Error::NoEntry));
         // Backend-unusable errors (D-Bus timeout surfaces as PlatformFailure) latch.
-        assert!(is_infra_failure(&keyring::Error::PlatformFailure(Box::new(
-            std::io::Error::other("dbus timeout")
-        ))));
-        assert!(is_infra_failure(&keyring::Error::NoStorageAccess(Box::new(
-            std::io::Error::other("locked")
-        ))));
+        assert!(is_infra_failure(&keyring::Error::PlatformFailure(
+            Box::new(std::io::Error::other("dbus timeout"))
+        )));
+        assert!(is_infra_failure(&keyring::Error::NoStorageAccess(
+            Box::new(std::io::Error::other("locked"))
+        )));
     }
 
     /// Presence must be answerable from the index alone: `has_stored_key` is
@@ -459,8 +496,14 @@ mod tests {
         file_store("openai", &[secret.to_string()]).unwrap();
         let bytes = fs::read(secrets_file_path()).unwrap();
         let haystack = String::from_utf8_lossy(&bytes);
-        assert!(!haystack.contains(secret), "secret must not appear in plaintext on disk");
-        assert!(!haystack.contains("openai"), "provider name must not appear in plaintext");
+        assert!(
+            !haystack.contains(secret),
+            "secret must not appear in plaintext on disk"
+        );
+        assert!(
+            !haystack.contains("openai"),
+            "provider name must not appear in plaintext"
+        );
     }
 
     #[cfg(unix)]
@@ -469,7 +512,10 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let _tmp = TempDataFolder::new();
         file_store("openai", &["sk-x".to_string()]).unwrap();
-        let mode = fs::metadata(secrets_file_path()).unwrap().permissions().mode();
+        let mode = fs::metadata(secrets_file_path())
+            .unwrap()
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o777, 0o600);
     }
 }
