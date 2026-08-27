@@ -17,7 +17,7 @@ use crate::tools::jail;
 use crate::tools::proc;
 use crate::tools::sandbox::{
     escapes_project, in_scratch, is_hidden_jan_path, lexical_normalize, resolve_path,
-    scratch_display_path, symlink_escapes_root,
+    scratch_display_path, symlink_escapes_any_root, symlink_escapes_root,
 };
 use crate::tools::{BuiltinTool, ImageContentPart, ToolContext};
 
@@ -65,6 +65,13 @@ fn arg_u64(args: &serde_json::Value, key: &str) -> Option<u64> {
 
 fn arg_bool(args: &serde_json::Value, key: &str) -> bool {
     args.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
+/// Single-quote a value for a POSIX shell. Single quotes disable `$`/backtick
+/// expansion and globbing, and the only escape (closing quote) is handled by
+/// the `'\''` idiom. Used when launching headless Chrome through the shell.
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn rel_to(base: &Path, path: &Path) -> String {
@@ -136,7 +143,8 @@ pub async fn execute_builtin(
     let project_root = ctx.project_root;
     let scratch = ctx.scratch_root;
     let (content, images) = match tool.name {
-        "read" => read(args, project_root, scratch).await,
+        "read" => read(args, project_root, scratch, ctx.read_roots).await,
+        "screenshot" => screenshot(args, project_root, scratch, ctx.read_roots).await,
         _ => (execute_text(tool, args, ctx).await, None),
     };
     (content, images)
@@ -144,17 +152,24 @@ pub async fn execute_builtin(
 
 /// The text result for every tool except `read`. Split out so `read` can also
 /// return image parts without duplicating the remaining tool dispatch.
-async fn execute_text(tool: &BuiltinTool, args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
+async fn execute_text(
+    tool: &BuiltinTool,
+    args: &serde_json::Value,
+    ctx: &ToolContext<'_>,
+) -> String {
     let project_root = ctx.project_root;
     let scratch = ctx.scratch_root;
     match tool.name {
-        "read" => read(args, project_root, scratch).await.0,
-        "ls" => ls(args, project_root, scratch, ctx.sandbox).await,
+        // Read tools consult the attached read-only roots; `write`/`edit`
+        // deliberately do not, which is what keeps an attached folder
+        // readable and unwritable.
+        "read" => read(args, project_root, scratch, ctx.read_roots).await.0,
+        "ls" => ls(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
         "write" => write(args, project_root, scratch, ctx.confine_writes).await,
         "edit" => edit(args, project_root, scratch, ctx.confine_writes).await,
         "bash" => bash(args, ctx).await,
-        "find" => find(args, project_root, scratch, ctx.sandbox).await,
-        "grep" => grep(args, project_root, scratch, ctx.sandbox).await,
+        "find" => find(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
+        "grep" => grep(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
         // Memory and skills live in the store root, not the sandbox: they must
         // outlive the conversation the filesystem tools are scoped to.
         "memory_list" => memory_list(ctx.store_root).await,
@@ -480,6 +495,7 @@ async fn read(
     args: &serde_json::Value,
     root: &Path,
     scratch: Option<&Path>,
+    read_roots: &[PathBuf],
 ) -> (String, Option<Vec<ImageContentPart>>) {
     let Some(path) = arg_str(args, "path") else {
         return ("ERROR: missing required argument 'path'".to_string(), None);
@@ -489,7 +505,7 @@ async fn read(
     let target = resolve_path(root, scratch, path);
     // Fail closed: a component swapped to a symlink after the gate validated
     // the path must not redirect the open out of the workspace.
-    if symlink_escapes_root(root, scratch, &target) {
+    if symlink_escapes_any_root(root, scratch, read_roots, &target) {
         return (
             format!("ERROR: refused to read through a symlink out of the workspace: {path}"),
             None,
@@ -561,14 +577,20 @@ async fn read(
     )
 }
 
-async fn ls(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, hide_jan: bool) -> String {
+async fn ls(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    hide_jan: bool,
+    read_roots: &[PathBuf],
+) -> String {
     let path = arg_str(args, "path").unwrap_or(".");
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
         .unwrap_or(LS_DEFAULT_LIMIT);
     let target = resolve_path(root, scratch, path);
     // Names are content too: a symlinked directory would list a host directory.
-    if symlink_escapes_root(root, scratch, &target) {
+    if symlink_escapes_any_root(root, scratch, read_roots, &target) {
         return format!("ERROR: refused to list through a symlink out of the workspace: {path}");
     }
     let mut entries = match tokio::fs::read_dir(&target).await {
@@ -605,7 +627,12 @@ async fn ls(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, hide_
     cap_output(&joined, usize::MAX, MAX_BYTES, "\n[truncated: 64KB limit]")
 }
 
-async fn write(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, confine: bool) -> String {
+async fn write(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    confine: bool,
+) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
     };
@@ -650,7 +677,12 @@ async fn write(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, co
     }
 }
 
-async fn edit(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, confine: bool) -> String {
+async fn edit(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    confine: bool,
+) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
     };
@@ -720,8 +752,8 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         );
     }
 
-    let mut policy = jail::Policy::new(root, ctx.allow_network)
-        .with_home_readonly(ctx.home_readonly);
+    let mut policy =
+        jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
     // While the shell is sandboxed, hide the project's own `.jan` state directory
     // from it (see [`Policy::with_hide_root`]). When the shell runs unconfined the
     // hide is both pointless (there is no OS mount to layer it on) and wrong
@@ -734,6 +766,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     }
     if let Some(scratch) = ctx.scratch_root {
         policy = policy.with_scratch_root(scratch);
+    }
+    if !ctx.read_roots.is_empty() {
+        policy = policy.with_read_roots(ctx.read_roots.to_vec());
     }
     // With the sandbox off the shell is spawned bare, the way the user's own
     // terminal would: no wrapper, no policy, the real `$HOME` and `/tmp`. Only
@@ -1115,9 +1150,7 @@ fn spill_dir(scratch: Option<&Path>) -> Option<PathBuf> {
 
 fn new_temp_path(scratch: Option<&Path>) -> Option<PathBuf> {
     let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-    Some(
-        spill_dir(scratch)?.join(format!("jan-bash-{}-{}.txt", std::process::id(), n)),
-    )
+    Some(spill_dir(scratch)?.join(format!("jan-bash-{}-{}.txt", std::process::id(), n)))
 }
 
 /// Open a spill file atomically with `O_EXCL` so we never truncate or write
@@ -1126,7 +1159,10 @@ fn new_temp_path(scratch: Option<&Path>) -> Option<PathBuf> {
 /// non-symlink parent from [`spill_dir`], the model-controlled spill bytes
 /// cannot be redirected onto a host file.
 fn open_spill_file(path: &Path) -> std::io::Result<std::fs::File> {
-    std::fs::OpenOptions::new().write(true).create_new(true).open(path)
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
 }
 
 /// Write `content` to a uniquely named temp file, returning its path on
@@ -1154,14 +1190,210 @@ fn remove_spill_file(path: &Path) {
     let _ = std::fs::remove_file(path);
 }
 
-async fn find(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, hide_jan: bool) -> String {
+const SCREENSHOT_MAX_PNG_BYTES: usize = 4 * 1024 * 1024; // 4 MiB
+
+fn chrome_binary() -> Option<PathBuf> {
+    if let Ok(env) = std::env::var("CHROME_PATH") {
+        if !env.is_empty() {
+            return Some(PathBuf::from(env));
+        }
+    }
+    const CANDIDATES: &[&str] = &[
+        // macOS (bundled browsers)
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        // Linux
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+    ];
+    CANDIDATES
+        .iter()
+        .find(|p| Path::new(p).exists())
+        .map(PathBuf::from)
+}
+
+/// Render a local HTML/SVG file to PNG bytes with headless Chrome.
+///
+/// Shared by the model-facing `screenshot` tool and the `agent_render_preview`
+/// command the annotation overlay calls, so both agree on Chrome discovery,
+/// viewport clamping and the output cap. `width`/`height` are the viewport in
+/// CSS pixels; the caller picks them (the overlay passes its own stage size so
+/// the PNG lines up pixel-for-pixel with what the user drew on).
+///
+/// `scale` is the device pixel ratio: the PNG comes out `width*scale` pixels
+/// wide with the layout unchanged. The overlay passes the webview's own ratio
+/// so a HiDPI screen doesn't composite crisp marks over an upscaled blur.
+pub async fn render_html_png(
+    target: &Path,
+    width: u64,
+    height: u64,
+    scale: f64,
+) -> Result<Vec<u8>, String> {
+    let ext = target
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    if ext != "html" && ext != "htm" && ext != "svg" {
+        return Err(format!(
+            "screenshot only renders .html/.htm/.svg files, got .{ext}"
+        ));
+    }
+    if !target.is_file() {
+        return Err(format!("file not found: {}", target.display()));
+    }
+
+    let Some(chrome) = chrome_binary() else {
+        return Err(
+            "no Chrome/Chromium binary found (set CHROME_PATH to point at one)".to_string(),
+        );
+    };
+
+    let width = width.clamp(320, 4096);
+    let height = height.clamp(240, 4096);
+    let scale = if scale.is_finite() {
+        scale.clamp(1.0, 3.0)
+    } else {
+        1.0
+    };
+    // A per-call profile (pid + nanos) keeps headless Chrome from colliding
+    // with a running browser or a leftover from a previous call; `--screenshot`
+    // exits after writing, but the wait below is bounded in case it lingers.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let shot = std::env::temp_dir().join(format!("jan-shot-{}-{nanos}.png", std::process::id()));
+    let profile = std::env::temp_dir().join(format!("jan-chrome-{}-{nanos}", std::process::id()));
+
+    // file:// lets the page resolve relative assets against its own directory,
+    // matching what the artifact preview does.
+    let file_url = format!("file://{}", target.display());
+    // Chrome is spawned through the shell (`sh -c`): on macOS, a Chrome
+    // headless-new process spawned directly by a non-bundled parent fails its
+    // singleton/TCC check with "Multiple targets are not supported in headless
+    // mode", while the same invocation via the shell succeeds. The `bash` tool
+    // already relies on this property, so we inherit it here.
+    let profile_quoted = shell_quote(profile.to_str().unwrap_or_default());
+    let shot_quoted = shell_quote(shot.to_str().unwrap_or_default());
+    let url_quoted = shell_quote(&file_url);
+    let chrome_quoted = shell_quote(chrome.to_str().unwrap_or_default());
+    let cmd = format!(
+        "{chrome_quoted} --headless=new --disable-gpu --hide-scrollbars --no-sandbox \
+         --disable-dev-shm-usage --no-first-run --user-data-dir={profile_quoted} \
+         --force-device-scale-factor={scale} \
+         --window-size={width},{height} --screenshot={shot_quoted} {url_quoted}"
+    );
+    let shell = proc::shell();
+    let mut child = match tokio::process::Command::new(shell.program.clone())
+        .args(shell.args.clone())
+        .arg(&cmd)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => return Err(format!("failed to launch Chrome: {e}")),
+    };
+    // Bounded: headless Chrome can linger after writing the PNG. Give it a
+    // generous window, then reap whatever is left and proceed if the file
+    // exists. stderr is drained on a background task so a chatty Chrome never
+    // fills the pipe and deadlocks.
+    let stderr_pipe = child.stderr.take();
+    let drain = tokio::spawn(async move {
+        use tokio::io::AsyncReadExt as _;
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = stderr_pipe {
+            let _ = pipe.read_to_end(&mut buf).await;
+        }
+        String::from_utf8_lossy(&buf).into_owned()
+    });
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(30), child.wait()).await;
+    let _ = child.kill().await;
+    let stderr = drain.await.unwrap_or_default();
+    let _ = tokio::fs::remove_dir_all(&profile).await;
+
+    let png = match tokio::fs::read(&shot).await {
+        Ok(b) => b,
+        Err(e) => {
+            let detail = stderr.lines().take(3).collect::<Vec<_>>().join(" | ");
+            return Err(format!("screenshot not produced: {e} (chrome: {detail})"));
+        }
+    };
+    let _ = tokio::fs::remove_file(&shot).await;
+
+    if png.is_empty() {
+        return Err("Chrome produced an empty screenshot (page may be blank)".to_string());
+    }
+    if png.len() > SCREENSHOT_MAX_PNG_BYTES {
+        return Err(format!(
+            "screenshot is {} KiB, over the {}-MiB cap; try a smaller viewport",
+            png.len() / 1024,
+            SCREENSHOT_MAX_PNG_BYTES / 1024 / 1024
+        ));
+    }
+    Ok(png)
+}
+
+/// Render a local HTML/SVG file and hand the model the image.
+///
+/// Returns an `ImageContentPart` rather than a data URL pasted into the text,
+/// matching what `read` does for images: that is the form a vision model
+/// actually consumes, and it keeps a megabyte of base64 out of the transcript.
+async fn screenshot(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    read_roots: &[PathBuf],
+) -> (String, Option<Vec<ImageContentPart>>) {
+    let Some(path) = arg_str(args, "path") else {
+        return ("ERROR: missing required argument 'path'".to_string(), None);
+    };
+    let width = arg_u64(args, "width").unwrap_or(1280).clamp(320, 4096);
+    let height = arg_u64(args, "height").unwrap_or(960).clamp(240, 4096);
+    let target = resolve_path(root, scratch, path);
+    if symlink_escapes_any_root(root, scratch, read_roots, &target) {
+        return (
+            format!("ERROR: refused to screenshot through a symlink out of the workspace: {path}"),
+            None,
+        );
+    }
+    let png = match render_html_png(&target, width, height, 1.0).await {
+        Ok(b) => b,
+        Err(e) => return (format!("ERROR: {e}"), None),
+    };
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+    let name = target
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string());
+    (
+        format!("Screenshot of {path} ({width}x{height})"),
+        Some(vec![ImageContentPart {
+            data_url: format!("data:image/png;base64,{b64}"),
+            name,
+        }]),
+    )
+}
+
+async fn find(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    hide_jan: bool,
+    read_roots: &[PathBuf],
+) -> String {
     let pattern = arg_str(args, "pattern").map(String::from);
     let path = arg_str(args, "path").unwrap_or(".").to_string();
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
         .unwrap_or(FIND_DEFAULT_LIMIT);
     let base = resolve_path(root, scratch, &path);
-    if symlink_escapes_root(root, scratch, &base) {
+    if symlink_escapes_any_root(root, scratch, read_roots, &base) {
         return format!("ERROR: refused to search through a symlink out of the workspace: {path}");
     }
     let root_owned = root.to_path_buf();
@@ -1210,7 +1442,13 @@ async fn find(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, hid
     res.unwrap_or_else(|e| format!("ERROR: {e}"))
 }
 
-async fn grep(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, hide_jan: bool) -> String {
+async fn grep(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    hide_jan: bool,
+    read_roots: &[PathBuf],
+) -> String {
     let pattern = arg_str(args, "pattern").map(String::from);
     let path = arg_str(args, "path").unwrap_or(".").to_string();
     let glob_filter = arg_str(args, "glob").map(String::from);
@@ -1221,11 +1459,13 @@ async fn grep(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, hid
         .map(|v| v as usize)
         .unwrap_or(GREP_DEFAULT_LIMIT);
     let base = resolve_path(root, scratch, &path);
-    if symlink_escapes_root(root, scratch, &base) {
+    if symlink_escapes_any_root(root, scratch, read_roots, &base) {
         return format!("ERROR: refused to search through a symlink out of the workspace: {path}");
     }
     let root_owned = root.to_path_buf();
     let scratch_owned = scratch.map(Path::to_path_buf);
+    // Owned for the blocking walk closure, which outlives this frame.
+    let roots_owned = read_roots.to_vec();
 
     let Some(pattern) = pattern else {
         return "ERROR: missing required argument 'pattern'".to_string();
@@ -1321,7 +1561,12 @@ async fn grep(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, hid
                 // Checked (not skipped outright) so a link that stays inside the
                 // workspace -- every yarn workspace has them -- is still searched.
                 if file_type.is_symlink()
-                    && symlink_escapes_root(&root_owned, scratch_owned.as_deref(), entry.path())
+                    && symlink_escapes_any_root(
+                        &root_owned,
+                        scratch_owned.as_deref(),
+                        &roots_owned,
+                        entry.path(),
+                    )
                 {
                     continue;
                 }
@@ -1387,7 +1632,8 @@ mod tests {
     ) -> (String, Option<String>) {
         let store = crate::workspace::project_store(root);
         let (content, diff, _images) =
-            super::execute_builtin_with_diff(tool, args, &ToolContext::new(root, &store, &[])).await;
+            super::execute_builtin_with_diff(tool, args, &ToolContext::new(root, &store, &[]))
+                .await;
         (content, diff)
     }
 
@@ -1479,7 +1725,10 @@ mod tests {
         )
         .await;
         assert!(!content.starts_with("ERROR"), "got: {content}");
-        assert!(images.is_some(), "extension-matching png must yield an image");
+        assert!(
+            images.is_some(),
+            "extension-matching png must yield an image"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1494,7 +1743,10 @@ mod tests {
             &root,
         )
         .await;
-        assert!(out.starts_with("ERROR"), "slicing an image must not render: {out}");
+        assert!(
+            out.starts_with("ERROR"),
+            "slicing an image must not render: {out}"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1512,7 +1764,10 @@ mod tests {
             &ToolContext::new(&root, &crate::workspace::project_store(&root), &[]),
         )
         .await;
-        assert!(images.is_none(), "an over-cap image must not yield image parts");
+        assert!(
+            images.is_none(),
+            "an over-cap image must not yield image parts"
+        );
         assert!(content.starts_with("ERROR"), "got: {content}");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1621,7 +1876,10 @@ mod tests {
             &[json!({"old_string": "two", "new_string": "TWO"})],
             "one\ntwo\nthree",
         );
-        assert_eq!(d, "     1 | one\n-    2 | two\n+    2 | TWO\n     3 | three");
+        assert_eq!(
+            d,
+            "     1 | one\n-    2 | two\n+    2 | TWO\n     3 | three"
+        );
     }
 
     /// Two edits far apart in one call: each hunk carries its own file context
@@ -1935,8 +2193,12 @@ mod tests {
             &json!({"path": "../escape.txt", "content": "x"}),
             &ctx,
         )
-        .await.0;
-        assert!(out.starts_with("ERROR: refused to write outside"), "got: {out}");
+        .await
+        .0;
+        assert!(
+            out.starts_with("ERROR: refused to write outside"),
+            "got: {out}"
+        );
         assert!(!root.parent().unwrap().join("escape.txt").exists());
 
         let out = super::execute_builtin(
@@ -1944,8 +2206,12 @@ mod tests {
             &json!({"path": "../escape.txt", "edits": [{"old_string": "a", "new_string": "b"}]}),
             &ctx,
         )
-        .await.0;
-        assert!(out.starts_with("ERROR: refused to edit outside"), "got: {out}");
+        .await
+        .0;
+        assert!(
+            out.starts_with("ERROR: refused to edit outside"),
+            "got: {out}"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1991,7 +2257,8 @@ mod tests {
             &json!({"pattern": "*.txt", "path": "/tmp"}),
             &ctx,
         )
-        .await.0;
+        .await
+        .0;
         assert!(
             !out.contains("secret.txt"),
             "walked out of the scratch through a symlink: {out}"
@@ -2015,7 +2282,12 @@ mod tests {
         std::fs::write(outside.join("secret.txt"), b"classified").unwrap();
         std::os::unix::fs::symlink(outside.join("secret.txt"), root.join("key.txt")).unwrap();
         std::fs::write(root.join("real.txt"), b"plain").unwrap();
-        let out = execute_builtin(lookup("grep").unwrap(), &json!({"pattern": "classified", "path": "."}), &root).await;
+        let out = execute_builtin(
+            lookup("grep").unwrap(),
+            &json!({"pattern": "classified", "path": "."}),
+            &root,
+        )
+        .await;
         assert!(
             !out.contains("secret") && !out.contains("classified"),
             "read through a file symlink outside the root: {out}"
@@ -2036,11 +2308,24 @@ mod tests {
         std::fs::write(root.join("pkg/index.js"), b"needle here").unwrap();
         std::os::unix::fs::symlink(root.join("pkg/index.js"), root.join("linked.js")).unwrap();
 
-        let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "linked.js"}), &root).await;
+        let out = execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "linked.js"}),
+            &root,
+        )
+        .await;
         assert!(out.contains("needle"), "in-root symlink was refused: {out}");
 
-        let out = execute_builtin(lookup("grep").unwrap(), &json!({"pattern": "needle", "path": "."}), &root).await;
-        assert!(out.contains("linked.js"), "in-root symlink was skipped: {out}");
+        let out = execute_builtin(
+            lookup("grep").unwrap(),
+            &json!({"pattern": "needle", "path": "."}),
+            &root,
+        )
+        .await;
+        assert!(
+            out.contains("linked.js"),
+            "in-root symlink was skipped: {out}"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -2056,7 +2341,10 @@ mod tests {
         let outside = unique_root();
         std::os::unix::fs::symlink(&outside, scratch.join("jan-bash")).unwrap();
 
-        assert!(new_temp_path(Some(&scratch)).is_none(), "dir symlink accepted");
+        assert!(
+            new_temp_path(Some(&scratch)).is_none(),
+            "dir symlink accepted"
+        );
         assert!(
             write_temp_output("x", Some(&scratch)).is_none(),
             "wrote through a redirected spill dir"
@@ -2113,7 +2401,8 @@ mod tests {
             &json!({"path": "/tmp/esc/pwned.txt", "content": "x"}),
             &ctx,
         )
-        .await.0;
+        .await
+        .0;
         assert!(out.starts_with("ERROR"), "must be refused, got: {out}");
         assert!(
             !outside.join("pwned.txt").exists(),
@@ -2135,7 +2424,8 @@ mod tests {
         let outside = unique_root();
         std::fs::write(outside.join("secret.txt"), b"classified").unwrap();
         std::os::unix::fs::symlink(outside.join("secret.txt"), root.join("link.txt")).unwrap();
-        let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "link.txt"}), &root).await;
+        let out =
+            execute_builtin(lookup("read").unwrap(), &json!({"path": "link.txt"}), &root).await;
         assert!(out.starts_with("ERROR"), "must refuse, got: {out}");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
@@ -2196,7 +2486,8 @@ mod tests {
             &json!({"path": "/tmp/scratch.txt", "content": "persist"}),
             &ctx,
         )
-        .await.0;
+        .await
+        .0;
         assert!(out.starts_with("Created /tmp/scratch.txt"), "got: {out}");
         assert!(scratch.join("scratch.txt").exists(), "wrote into scratch");
 
@@ -2205,7 +2496,8 @@ mod tests {
             &json!({"path": "/tmp/scratch.txt"}),
             &ctx,
         )
-        .await.0;
+        .await
+        .0;
         assert_eq!(out, "persist");
 
         // No stray file on the real host /tmp.
@@ -2273,6 +2565,7 @@ mod tests {
             &json!({"path": "/tmp/x.txt", "content": "y"}),
             &root,
             Some(&scratch),
+            &[],
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
             true,
@@ -2301,6 +2594,7 @@ mod tests {
             &json!({"path": "/tmp/esc/x.txt", "content": "y"}),
             &root,
             Some(&scratch),
+            &[],
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
             true,
@@ -2349,7 +2643,10 @@ mod tests {
         let out = execute_builtin(lookup("ls").unwrap(), &json!({}), &root).await;
         assert!(out.contains("src.rs"), "unexpected: {out}");
         assert!(out.contains("JAN.md"), "unexpected: {out}");
-        assert!(!out.contains(".jan/"), "must not list the agent state dir: {out}");
+        assert!(
+            !out.contains(".jan/"),
+            "must not list the agent state dir: {out}"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2363,9 +2660,14 @@ mod tests {
         std::fs::write(root.join("src.rs"), b"x").unwrap();
         let store = crate::workspace::project_store(&root);
         let ctx = ToolContext::new(&root, &store, &[]).with_sandbox(false);
-        let out = super::execute_builtin(lookup("ls").unwrap(), &json!({}), &ctx).await.0;
+        let out = super::execute_builtin(lookup("ls").unwrap(), &json!({}), &ctx)
+            .await
+            .0;
         assert!(out.contains("src.rs"), "unexpected: {out}");
-        assert!(out.contains(".jan/"), "must list .jan when unconfined: {out}");
+        assert!(
+            out.contains(".jan/"),
+            "must list .jan when unconfined: {out}"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2531,7 +2833,10 @@ mod tests {
         .0;
         let streamed = seen.lock().unwrap().clone();
         assert!(streamed.contains("one"), "sink saw nothing: {streamed:?}");
-        assert!(streamed.contains("two"), "sink missed a chunk: {streamed:?}");
+        assert!(
+            streamed.contains("two"),
+            "sink missed a chunk: {streamed:?}"
+        );
         // The return value still carries it, so the model's view is unchanged.
         assert!(out.contains("one") && out.contains("two"), "{out}");
         let _ = std::fs::remove_dir_all(&root);
@@ -2815,7 +3120,8 @@ mod tests {
             &json!({"command": "for i in $(seq 1 16000); do printf '%064d\\n' \"$i\"; done"}),
             &ctx,
         )
-        .await.0;
+        .await
+        .0;
         let path = out
             .rsplit("full output written to ")
             .next()
@@ -2832,7 +3138,8 @@ mod tests {
             &json!({"path": path, "offset": 15999, "limit": 1}),
             &ctx,
         )
-        .await.0;
+        .await
+        .0;
         assert!(
             full.contains("015999") || full.contains("016000"),
             "spill at {path} must be readable back: {full}"
@@ -2855,8 +3162,12 @@ mod tests {
             &json!({"command": "echo unconfined"}),
             &ctx,
         )
-        .await.0;
-        assert!(out.contains("unconfined"), "unsandboxed bash did not run: {out}");
+        .await
+        .0;
+        assert!(
+            out.contains("unconfined"),
+            "unsandboxed bash did not run: {out}"
+        );
         assert!(
             !out.contains("no OS sandbox could be established"),
             "withheld despite the opt-out: {out}"
@@ -3069,20 +3380,24 @@ mod tests {
         let store = crate::workspace::project_store(&root);
         let ctx = ToolContext::new(&root, &store, &enabled);
 
-        let list = super::execute_builtin(lookup("skill_list").unwrap(), &json!({}), &ctx).await.0;
+        let list = super::execute_builtin(lookup("skill_list").unwrap(), &json!({}), &ctx)
+            .await
+            .0;
         assert!(list.contains("on"), "list: {list}");
         assert!(!list.contains("off body"), "disabled skill leaked: {list}");
 
         // Disabled skill is unreadable.
         let read_off =
             super::execute_builtin(lookup("skill_read").unwrap(), &json!({"name": "off"}), &ctx)
-                .await.0;
+                .await
+                .0;
         assert!(read_off.starts_with("ERROR"), "disabled read: {read_off}");
 
         // Enabled skill still readable.
         let read_on =
             super::execute_builtin(lookup("skill_read").unwrap(), &json!({"name": "on"}), &ctx)
-                .await.0;
+                .await
+                .0;
         assert_eq!(read_on, "on body");
 
         // A disabled skill is read-only for the model: writing to it is refused
@@ -3092,14 +3407,16 @@ mod tests {
             &json!({"name": "off", "content": "evil body"}),
             &ctx,
         )
-        .await.0;
+        .await
+        .0;
         assert!(
             write_off.starts_with("ERROR"),
             "disabled write: {write_off}"
         );
         let r =
             super::execute_builtin(lookup("skill_read").unwrap(), &json!({"name": "off"}), &ctx)
-                .await.0;
+                .await
+                .0;
         assert!(r.starts_with("ERROR"), "still disabled after write");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -3165,6 +3482,87 @@ mod tests {
                 "name {bad:?} should be rejected: {out}"
             );
         }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+    // ---- screenshot ---------------------------------------------------------
+
+    /// Two headless Chromes racing for the same profile dir collide, so the
+    /// tests that actually launch one are serialised.
+    static CHROME_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[tokio::test]
+    async fn screenshot_rejects_a_non_html_file() {
+        let root = unique_root();
+        std::fs::write(root.join("a.txt"), b"nope").unwrap();
+        let (out, images) = screenshot(&json!({"path": "a.txt"}), &root, None, &[]).await;
+        assert!(out.contains("only renders"), "{out}");
+        assert!(images.is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn screenshot_rejects_a_missing_file() {
+        let root = unique_root();
+        let (out, images) = screenshot(&json!({"path": "gone.html"}), &root, None, &[]).await;
+        assert!(out.contains("file not found"), "{out}");
+        assert!(images.is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn screenshot_requires_a_path() {
+        let root = unique_root();
+        let (out, _) = screenshot(&json!({}), &root, None, &[]).await;
+        assert!(out.contains("missing required argument"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn screenshot_refuses_a_symlink_out_of_the_workspace() {
+        let root = unique_root();
+        let outside = unique_root();
+        let secret = outside.join("secret.html");
+        std::fs::write(&secret, b"<h1>secret</h1>").unwrap();
+        let link = root.join("innocent.html");
+        std::os::unix::fs::symlink(&secret, &link).unwrap();
+
+        let (out, images) = screenshot(&json!({"path": "innocent.html"}), &root, None, &[]).await;
+        assert!(out.contains("symlink"), "{out}");
+        assert!(images.is_none());
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// Renders for real when a browser is present, and returns an image part
+    /// rather than a data URL buried in the text.
+    #[tokio::test]
+    async fn screenshot_returns_an_image_part_when_chrome_is_present() {
+        if chrome_binary().is_none() {
+            return;
+        }
+        let _guard = CHROME_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let root = unique_root();
+        std::fs::write(
+            root.join("page.html"),
+            b"<html><body style=\"background:#0af\"><h1>hi</h1></body></html>",
+        )
+        .unwrap();
+
+        let (out, images) = screenshot(
+            &json!({"path": "page.html", "width": 400, "height": 300}),
+            &root,
+            None,
+            &[],
+        )
+        .await;
+        assert!(!out.starts_with("ERROR"), "{out}");
+        let images = images.expect("an image part");
+        assert_eq!(images.len(), 1);
+        assert!(images[0].data_url.starts_with("data:image/png;base64,"));
+        assert_eq!(images[0].name, "page.html");
+        // The base64 stays out of the model-facing text.
+        assert!(!out.contains("base64"), "{out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

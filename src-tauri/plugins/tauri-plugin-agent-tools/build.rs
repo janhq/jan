@@ -3,6 +3,9 @@ const COMMANDS: &[&str] = &[
     "thread_workspace_path",
     "thread_workspace_delete",
     "thread_workspace_sweep",
+    "session_workspace_path",
+    "session_workspace_delete",
+    "session_workspace_sweep",
     "skill_list",
     "skill_read",
     "skill_write",
@@ -14,6 +17,7 @@ const COMMANDS: &[&str] = &[
     "tool_schemas",
     "sandbox_status",
     "execute_tool",
+    "execute_tool_streaming",
 ];
 
 fn main() {

@@ -95,6 +95,10 @@ pub struct Policy {
     /// The directory must already exist before the sandbox is built (the
     /// backends reference it, they do not create it).
     pub scratch_root: Option<PathBuf>,
+    /// Folders the user attached read-only. Bound after the `$HOME`/data-folder
+    /// masks (so a project under either survives) and before the workspace bind
+    /// (so one can never shadow the only writable path).
+    pub read_roots: Vec<PathBuf>,
 }
 
 impl Policy {
@@ -106,7 +110,15 @@ impl Policy {
             hide_root: None,
             home_readonly: false,
             scratch_root: None,
+            read_roots: Vec::new(),
         }
+    }
+
+    /// Attach read-only roots. See [`Policy::read_roots`] for why their bind
+    /// order relative to the masks and the workspace is load-bearing.
+    pub fn with_read_roots(mut self, read_roots: Vec<PathBuf>) -> Self {
+        self.read_roots = read_roots;
+        self
     }
 
     /// Mask `mask_root` from the sandboxed shell. The desktop data folder holds
@@ -357,7 +369,14 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     // It is deliberately read-only, so no later rw bind can shadow it.
     if let Some(home) = home_dir() {
         if policy.home_readonly {
-            push(&mut args, &["--ro-bind", &home.to_string_lossy(), &home.to_string_lossy()]);
+            push(
+                &mut args,
+                &[
+                    "--ro-bind",
+                    &home.to_string_lossy(),
+                    &home.to_string_lossy(),
+                ],
+            );
         } else {
             push(&mut args, &["--tmpfs", &home.to_string_lossy()]);
         }
@@ -368,6 +387,17 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     // (it is nested under this root on the desktop), so it survives.
     if let Some(mask) = &policy.mask_root {
         push(&mut args, &["--tmpfs", &mask.to_string_lossy()]);
+    }
+
+    // Between the masks above and the workspace below, and that position is the
+    // enforcement: after the `$HOME`/data-folder tmpfs so a project living under
+    // either is punched back through, and before the workspace bind so a read
+    // root can never shadow the one writable path. Read-only, so nothing the
+    // shell does can write into the user's own folder. Not `--ro-bind-try`: a
+    // root that vanished should fail loudly rather than silently unmount.
+    for root in &policy.read_roots {
+        let root = root.to_string_lossy();
+        push(&mut args, &["--ro-bind", &root, &root]);
     }
 
     push(&mut args, &["--bind", &ws, &ws]);
@@ -467,6 +497,16 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
              (allow file-write* (subpath (param \"SCRATCH\")))\n",
         );
     }
+    // After the HOME/MASK denials, so an attached folder inside either is read
+    // back: in Seatbelt the later rule wins. Read only — no matching
+    // `file-write*`, so `(deny default)` keeps the folder unwritable. Emitted
+    // one per root, and only with the matching `-DREAD_ROOT_n`, since
+    // sandbox-exec refuses a profile referencing an unsupplied parameter.
+    for i in 0..policy.read_roots.len() {
+        p.push_str(&format!(
+            "(allow file-read* (subpath (param \"READ_ROOT_{i}\")))\n"
+        ));
+    }
     // Last, so it wins over the workspace allow above: the agent's own state
     // directory is neither readable nor writable, however the command spells it.
     if policy.hide_root.is_some() {
@@ -504,6 +544,9 @@ pub fn seatbelt_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     ));
     if let Some(mask) = &policy.mask_root {
         args.push(format!("-DMASK_ROOT={}", mask.to_string_lossy()));
+    }
+    for (i, root) in policy.read_roots.iter().enumerate() {
+        args.push(format!("-DREAD_ROOT_{i}={}", root.to_string_lossy()));
     }
     if let Some(hide) = &policy.hide_root {
         args.push(format!("-DHIDE_ROOT={}", hide.to_string_lossy()));
@@ -573,8 +616,30 @@ pub fn denial_hint(policy: &Policy) -> String {
         Some(path) => format!(" and the scratch dir ({})", path.display()),
         None => String::new(),
     };
+    // An attached folder the file tools can read but the shell cannot is a real
+    // asymmetry on Windows, where granting it would mean permanently rewriting
+    // the DACL of a directory Jan does not own and never revokes. Saying so
+    // beats letting the model read the folder with `read` and conclude `bash` is
+    // broken when the same path is missing there.
+    let attached = if policy.read_roots.is_empty() {
+        String::new()
+    } else if backend() == Backend::AppContainer {
+        " The attached folder is readable by the file tools but not by shell \
+         commands on this platform."
+            .to_string()
+    } else {
+        format!(
+            " The attached folder ({}) is readable but not writable.",
+            policy
+                .read_roots
+                .iter()
+                .map(|r| r.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
     format!(
-        "\n[sandbox: writes are limited to the workspace ({}){scratch}{home}.{net}]",
+        "\n[sandbox: writes are limited to the workspace ({}){scratch}{home}.{net}{attached}]",
         policy.workspace.display()
     )
 }
@@ -653,9 +718,94 @@ mod tests {
         ));
         let bind = text.find(&format!("--bind {ws} {ws}")).expect("bind");
         let tmpfs = text.find(&format!("--tmpfs {hide}")).expect("hide tmpfs");
-        assert!(bind < tmpfs, "the mask must follow the workspace bind: {text}");
+        assert!(
+            bind < tmpfs,
+            "the mask must follow the workspace bind: {text}"
+        );
         // Unset by default, so nothing is hidden where no state dir is named.
         assert!(!joined(&bwrap_args(&policy(), &cfg())).contains(".jan"));
+    }
+
+    /// The bind order *is* the enforcement, on both sides: after the `$HOME`
+    /// tmpfs so a folder living under the home is punched back through the mask,
+    /// and before the workspace bind so a read root can never shadow the only
+    /// writable path.
+    #[test]
+    fn bwrap_binds_read_roots_between_the_home_mask_and_the_workspace() {
+        let ws = "/data/agent-workspace/threads/t1";
+        let repo = "/home/u/Projects/app";
+        let text = joined(&bwrap_args(
+            &policy().with_read_roots(vec![PathBuf::from(repo)]),
+            &cfg(),
+        ));
+        let home = home_dir().expect("a home dir");
+        let home_tmpfs = text
+            .find(&format!("--tmpfs {}", home.to_string_lossy()))
+            .expect("home tmpfs");
+        let ro = text
+            .find(&format!("--ro-bind {repo} {repo}"))
+            .expect("read root bind");
+        let bind = text.find(&format!("--bind {ws} {ws}")).expect("ws bind");
+        assert!(
+            home_tmpfs < ro,
+            "read root must follow the home mask: {text}"
+        );
+        assert!(
+            ro < bind,
+            "read root must precede the workspace bind: {text}"
+        );
+    }
+
+    #[test]
+    fn bwrap_binds_read_roots_read_only_and_omits_them_by_default() {
+        let repo = "/home/u/repo";
+        let text = joined(&bwrap_args(
+            &policy().with_read_roots(vec![PathBuf::from(repo)]),
+            &cfg(),
+        ));
+        assert!(text.contains(&format!("--ro-bind {repo} {repo}")), "{text}");
+        assert!(
+            !text.contains(&format!("--bind {repo} {repo}")),
+            "never writable: {text}"
+        );
+        assert!(!joined(&bwrap_args(&policy(), &cfg())).contains(repo));
+    }
+
+    /// Seatbelt takes the last matching rule, so the read allow has to come
+    /// after the HOME/MASK denials or a folder inside either stays unreadable.
+    #[test]
+    fn seatbelt_allows_read_roots_after_the_denials_and_never_writes() {
+        let repo = "/Users/u/repo";
+        let p = seatbelt_policy(
+            &policy()
+                .with_mask_root(Path::new("/data"))
+                .with_read_roots(vec![PathBuf::from(repo)]),
+        );
+        let deny = p
+            .find("(deny file-read* (subpath (param \"MASK_ROOT\")))")
+            .expect("mask deny");
+        let allow = p
+            .find("(allow file-read* (subpath (param \"READ_ROOT_0\")))")
+            .expect("read root allow");
+        assert!(deny < allow, "the allow must win over the denials: {p}");
+        assert!(
+            !p.contains("(allow file-write* (subpath (param \"READ_ROOT_0\")))"),
+            "a read root is never writable: {p}"
+        );
+
+        let args = seatbelt_args(&policy().with_read_roots(vec![PathBuf::from(repo)]), &cfg());
+        assert!(args.iter().any(|a| a == &format!("-DREAD_ROOT_0={repo}")));
+    }
+
+    /// sandbox-exec refuses a profile that references a parameter no `-D`
+    /// supplies, so the rule and the argument have to appear together.
+    #[test]
+    fn seatbelt_omits_the_read_root_rule_when_there_is_none() {
+        let p = seatbelt_policy(&policy());
+        assert!(!p.contains("READ_ROOT"), "{p}");
+        assert!(!seatbelt_args(&policy(), &cfg())
+            .iter()
+            .any(|a| a.contains("READ_ROOT")));
     }
 
     #[test]
@@ -739,9 +889,15 @@ mod tests {
         // home_readonly: no home read-denial, and the write section never opens
         // HOME_ROOT, so reads work but writes stay confined to workspace/temp.
         let p = seatbelt_policy(&policy().with_home_readonly(true));
-        assert!(!p.contains("(deny file-read* (subpath (param \"HOME_ROOT\")))"), "{p}");
+        assert!(
+            !p.contains("(deny file-read* (subpath (param \"HOME_ROOT\")))"),
+            "{p}"
+        );
         assert!(p.contains("(allow file-read*)"), "{p}");
-        assert!(!p.contains("(allow file-write* (subpath (param \"HOME_ROOT\")))"), "{p}");
+        assert!(
+            !p.contains("(allow file-write* (subpath (param \"HOME_ROOT\")))"),
+            "{p}"
+        );
     }
 
     #[test]
@@ -1138,8 +1294,14 @@ mod enforcement_tests {
         let _ = std::fs::remove_file(&secret);
         let _ = std::fs::remove_file(&victim);
         let _ = std::fs::remove_dir_all(&ws);
-        assert!(out.contains("READABLE_SECRET"), "home reads must work: {out}");
-        assert!(!leaked, "home writes must stay confined even when readable: {out}");
+        assert!(
+            out.contains("READABLE_SECRET"),
+            "home reads must work: {out}"
+        );
+        assert!(
+            !leaked,
+            "home writes must stay confined even when readable: {out}"
+        );
         assert!(!ok, "the write into the home must fail: {out}");
     }
 
