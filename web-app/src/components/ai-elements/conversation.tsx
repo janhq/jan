@@ -23,7 +23,7 @@ export type ConversationContentProps = ComponentProps<typeof StickToBottom.Conte
 
 export const ConversationContent = memo(({ className, ...props }: ConversationContentProps) => (
   <StickToBottom.Content
-    className={cn('flex flex-col gap-x-8 gap-y-2 px-2', className)}
+    className={cn('flex flex-col gap-x-8 gap-y-2 px-2 pb-4', className)}
     {...props}
   />
 ))

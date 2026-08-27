@@ -11,7 +11,10 @@ import { Button } from '@/components/ui/button'
 import { AlertTriangle } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
-export type ApprovalDecision = 'allow-once' | 'allow-always' | 'deny'
+// Imported rather than redeclared: the approval store owns the scopes, and a
+// second copy here silently missed `allow-thread` when that was added.
+import type { ApprovalDecision } from '@/hooks/useToolApprovalRequests'
+export type { ApprovalDecision }
 
 /**
  * Presentational approval dialog shared by the chat MCP tool-approval flow

@@ -13,6 +13,7 @@
     "type": "separator"
   },
   "projects": "Projects",
+  "cowork": "Cowork",
   "assistants": "Assistants",
   "web-search": "Web Search",
   "file-upload": "File Upload",

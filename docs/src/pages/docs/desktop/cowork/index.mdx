@@ -1,0 +1,111 @@
+---
+title: Cowork
+description: Point Jan at a folder on your computer and work alongside an agent that reads, writes, and runs code in it.
+keywords:
+  [
+    Jan,
+    Jan Desktop,
+    Cowork,
+    coding agent,
+    agent,
+    artifacts,
+    subagents,
+    local files,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+
+# Cowork
+
+**Cowork** is where you hand Jan a folder and work on it together. You describe what you want; the
+agent reads the files, writes new ones, runs commands, and shows you what it did as it goes.
+
+It is a different shape of conversation from a normal chat. A chat answers you. Cowork changes
+things on your disk - so the whole screen is built around seeing those changes and staying in
+control of them.
+
+Open it from **Cowork** in the left sidebar.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                                                              │
+│  SCREENSHOT PLACEHOLDER                                      │
+│  ../_assets/cowork-overview.png                              │
+│                                                              │
+│  The Cowork screen mid-run: tool calls folded in the         │
+│  transcript, a side panel open on the right, folder and git  │
+│  branch under the input.                                     │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+<Callout type="info">
+  Cowork is a desktop front-end for [Jan Agent](/docs/agent) - the same agent, the same tools, the
+  same permission model. This section covers what is specific to the desktop: the screen, the
+  panels, artifacts and annotations. Everything about how the agent itself behaves is documented
+  once, in the [Jan Agent docs](/docs/agent).
+</Callout>
+
+## The layout
+
+```
+┌────────────────────────────────┬──────────────────┐
+│                                │                  │
+│  Transcript                    │   Side panel     │
+│    what the agent said,        │                  │
+│    every tool it called,       │    Progress      │
+│    the files it produced       │    Agent changes │
+│                                │    Background    │
+│                                │      tasks       │
+│                                │    Preview       │
+├────────────────────────────────┤                  │
+│  Input   [mode] [model]        │                  │
+│  ~/code/my-project  main       │                  │
+└────────────────────────────────┴──────────────────┘
+```
+
+- **Transcript** - the conversation, with every tool call folded inline. Expand one to see exactly
+  what the agent read, wrote, or ran.
+- **Side panel** - one of four views, described in [Side panels](./panels). Drag its left edge to
+  resize.
+- **Input** - your message, plus the run mode and model pickers.
+- **Footer** - the project folder the agent is scoped to, and the current git branch.
+
+## Specific to Cowork
+
+| Page | What it covers |
+| --- | --- |
+| [Quickstart](./quickstart) | Pick a folder, give the agent a task, review what changed |
+| [Side panels](./panels) | Progress, Agent changes, Background tasks, Preview |
+| [Artifacts](./artifacts) | Files the agent produced, and the artifacts library |
+| [Annotations](./annotations) | Draw on a preview and send it back to the agent |
+
+## Shared with Jan Agent
+
+These behave the same in Cowork as they do in the terminal, and are documented in the agent docs:
+
+| Topic | Where |
+| --- | --- |
+| Normal, Plan, and Bypass permissions modes | [Run modes](/docs/agent/run-modes) |
+| Approving tool calls, and what a grant covers | [Tool permissions](/docs/agent/permissions) |
+| Reading, writing, and searching your project | [Working with files](/docs/agent/files) |
+| Web search and page fetch | [Web search & fetch](/docs/agent/web) |
+| Delegating work to parallel agents | [Subagents](/docs/agent/subagents) |
+| Keeping the agent working toward a condition | [Goals & todos](/docs/agent/goals-and-todos) |
+| Context window and compaction | [Context & compaction](/docs/agent/context) |
+| Project-scoped memory | [Memory](/docs/agent/memory) |
+| Reusable instructions the agent can load | [Skills](/docs/agent/skills) |
+| Connecting external tools | [MCP](/docs/agent/mcp) |
+| Per-project configuration | [Project config](/docs/agent/project-config) |
+
+<Callout type="info">
+  Everything the agent does is scoped to the folder you picked. Paths that escape it are refused
+  before the tool runs.
+</Callout>
+
+## Sessions
+
+Each Cowork session remembers its folder, mode, conversation, todos, and goal, and survives
+restarting Jan. Start as many as you like - a session running in the background keeps going while
+you look at another one.

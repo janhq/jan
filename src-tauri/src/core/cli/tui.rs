@@ -4449,7 +4449,9 @@ impl App {
                     waiting,
                 });
             }
-            StreamEvent::SubagentEnd { run_id, name } => {
+            StreamEvent::SubagentEnd { run_id, name, .. } => {
+                // Take the run's full call list, commit a folded summary row, and
+                // retain the detail so Ctrl-O can expand it (like a tool group).
                 let calls = self
                     .subagents
                     .iter()
@@ -9327,6 +9329,10 @@ async fn run_command(
             for (keys, description) in KEY_BINDINGS {
                 app.system_detail_text(&format!("{keys:18} {description}"));
             }
+            app.push(Line::styled(
+                "  hold Shift while dragging to select/copy text (most terminals)".to_string(),
+                Style::new().dim(),
+            ));
         }
         "clear" => {
             app.reset_session();
@@ -16453,6 +16459,7 @@ mod tests {
         let mut app = test_app();
         app.apply(StreamEvent::PermissionRequest {
             request_id: "w1".into(),
+            tool_call_id: None,
             tool_name: "write".into(),
             capability: "write".into(),
             path: Some("out.txt".into()),
@@ -16490,6 +16497,7 @@ mod tests {
         let mut app = test_app();
         app.apply(StreamEvent::PermissionRequest {
             request_id: "e1".into(),
+            tool_call_id: None,
             tool_name: "bash".into(),
             capability: "exec".into(),
             path: None,
@@ -20263,6 +20271,7 @@ mod tests {
                 auto_approve: false,
                 run_mode: crate::core::agent::plan::RunMode::Normal,
                 session_id: None,
+                background_subagents: None,
                 sandbox: None,
             });
             app.args = Some(args.clone());
@@ -20402,6 +20411,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "sub-reviewer-1".into(),
             name: "reviewer".into(),
+            usage: None,
         });
         assert_eq!(
             app.awaiting.len(),
@@ -22038,6 +22048,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            usage: None,
         });
         // A collapsed summary row + a retained expandable block.
         assert_eq!(app.subagent_blocks.len(), 1);
@@ -22093,6 +22104,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            usage: None,
         });
         assert!(app.subagents.iter().all(|p| p.run_id != "r1"));
         assert!(app
@@ -22138,6 +22150,7 @@ mod tests {
             "reviewer",
             StreamEvent::PermissionRequest {
                 request_id: "p1".into(),
+                tool_call_id: None,
                 tool_name: "bash".into(),
                 capability: "exec".into(),
                 path: None,
@@ -22176,6 +22189,7 @@ mod tests {
             "reviewer",
             StreamEvent::PermissionRequest {
                 request_id: "p1".into(),
+                tool_call_id: None,
                 tool_name: "bash".into(),
                 capability: "exec".into(),
                 path: None,
@@ -22191,6 +22205,7 @@ mod tests {
             "explorer",
             StreamEvent::PermissionRequest {
                 request_id: "p2".into(),
+                tool_call_id: None,
                 tool_name: "read".into(),
                 capability: "read".into(),
                 path: Some("secrets.env".into()),
@@ -23877,6 +23892,7 @@ mod tests {
             });
             app.apply(StreamEvent::PermissionRequest {
                 request_id: format!("p-{id}"),
+                tool_call_id: None,
                 tool_name: "bash".into(),
                 capability: "exec".into(),
                 path: None,
@@ -24311,6 +24327,62 @@ mod tests {
         assert!(fresh.recall_prev());
         assert_eq!(fresh.input, "first");
         assert_eq!(fresh.scrollback, 0, "recall must not scroll the transcript");
+    }
+
+    #[tokio::test]
+    async fn apply_resume_retains_an_ask_custom_answer_for_the_next_turn() {
+        let mut app = test_app();
+        let history = vec![
+            json!({ "role": "user", "content": "Ask me for a password." }),
+            json!({
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "id": "ask-password",
+                    "type": "function",
+                    "function": { "name": "ask", "arguments": "{}" }
+                }]
+            }),
+            json!({
+                "role": "tool",
+                "tool_call_id": "ask-password",
+                "content": r#"[{"id":"password","selected":[],"custom_input":"ember-7392"}]"#
+            }),
+            json!({ "role": "assistant", "content": "RECEIVED." }),
+        ];
+        let id =
+            super::super::cli_save_thread(&app.agent_dir, None, "saved-model", &history, None)
+                .unwrap();
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeTarget::Id(id)).await;
+
+        let answer = fresh
+            .history
+            .iter()
+            .find(|message| {
+                message.get("role").and_then(|value| value.as_str()) == Some("tool")
+                    && message.get("tool_call_id").and_then(|value| value.as_str())
+                        == Some("ask-password")
+            })
+            .expect("the custom ask answer must remain paired with its tool call");
+        assert!(
+            answer
+                .get("content")
+                .and_then(|value| value.as_str())
+                .is_some_and(|content| content.contains("ember-7392"))
+        );
+        assert!(fresh.history.iter().any(|message| {
+            message.get("tool_calls").and_then(|value| value.as_array()).is_some_and(|calls| {
+                calls.iter().any(|call| {
+                    call.get("function")
+                        .and_then(|function| function.get("name"))
+                        .and_then(|name| name.as_str())
+                        == Some("ask")
+                })
+            })
+        }));
     }
 
     #[tokio::test]
@@ -24949,6 +25021,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r0".into(),
             name: "alpha".into(),
+            usage: None,
         });
         assert!(app.subagents.is_empty(), "live panel closed");
         let rows = render_rows(&mut app, 100, 24);

@@ -91,8 +91,8 @@ fn now_secs() -> u64 {
 }
 
 /// The evaluator's verdict for one turn.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct GoalVerdict {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct GoalVerdict {
     /// True when the condition is satisfied.
     pub met: bool,
     /// A short human-readable reason (guidance when `met` is false).

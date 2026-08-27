@@ -2,10 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { PromptProgress } from '../PromptProgress'
 import { useAppState } from '@/hooks/useAppState'
+import { useCodeRun } from '@/hooks/useCodeRun'
 
 // Mock the useAppState hook
 vi.mock('@/hooks/useAppState', () => ({
   useAppState: vi.fn(),
+}))
+
+// Cowork's own mirror (stateKey path) — see useCodeRun.loadingModels for why
+// it's a separate store rather than useAppState's chat-thread-keyed Records.
+vi.mock('@/hooks/useCodeRun', () => ({
+  useCodeRun: vi.fn(),
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -13,10 +20,15 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 const mockUseAppState = useAppState as ReturnType<typeof vi.fn>
+const mockUseCodeRun = useCodeRun as ReturnType<typeof vi.fn>
 
 describe('PromptProgress', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Empty by default — only the stateKey-specific tests populate this.
+    mockUseCodeRun.mockImplementation((selector) =>
+      selector({ loadingModels: {}, modelLoadProgress: {} })
+    )
   })
 
   it('should calculate percentage correctly', () => {
@@ -147,6 +159,94 @@ describe('PromptProgress', () => {
     render(<PromptProgress />)
 
     expect(screen.getByText('Loading model…')).toBeInTheDocument()
+  })
+
+  it('should read useCodeRun\'s own Records under stateKey, not useAppState\'s', () => {
+    // useParams is mocked to return undefined above, matching a route with no
+    // :threadId param (e.g. Cowork) — stateKey is how such a caller supplies
+    // its own id instead. Chat's own Records (useAppState) are left empty to
+    // prove this path doesn't depend on them at all.
+    mockUseAppState.mockImplementation((selector) =>
+      selector({
+        promptProgress: undefined,
+        promptProgresses: {},
+        loadingModel: false,
+        loadingModels: {},
+        modelLoadProgress: undefined,
+        modelLoadProgressByThread: {},
+      })
+    )
+    mockUseCodeRun.mockImplementation((selector) =>
+      selector({
+        loadingModels: { 'session-1': true },
+        modelLoadProgress: {
+          'session-1': { modelId: 'model-1', value: 0.6 },
+        },
+      })
+    )
+
+    render(<PromptProgress stateKey="session-1" />)
+
+    expect(screen.getByText('Loading model: 60%')).toBeInTheDocument()
+  })
+
+  it('should not bleed another session\'s state in through stateKey', () => {
+    mockUseCodeRun.mockImplementation((selector) =>
+      selector({
+        loadingModels: { 'session-1': true },
+        modelLoadProgress: {
+          'session-1': { modelId: 'model-1', value: 0.6 },
+        },
+      })
+    )
+    mockUseAppState.mockImplementation((selector) =>
+      selector({
+        promptProgress: undefined,
+        promptProgresses: {},
+        loadingModel: false,
+        loadingModels: {},
+        modelLoadProgress: undefined,
+        modelLoadProgressByThread: {},
+      })
+    )
+
+    render(<PromptProgress stateKey="session-2" />)
+
+    // session-2 has no entry in useCodeRun's Records — falls through to
+    // undefined, landing on the generic "Working…" idle label, never on
+    // session-1's 60%.
+    expect(screen.getByText('Working…')).toBeInTheDocument()
+  })
+
+  it('should ignore useAppState entirely when stateKey is given, even if chat has a matching key', () => {
+    // Same id happens to exist in BOTH stores here — stateKey mode must still
+    // only ever look at useCodeRun's, never fall back to or blend with
+    // useAppState's, however similar the shapes are.
+    mockUseAppState.mockImplementation((selector) =>
+      selector({
+        promptProgress: undefined,
+        promptProgresses: {},
+        loadingModel: false,
+        loadingModels: { 'session-1': true },
+        modelLoadProgress: undefined,
+        modelLoadProgressByThread: {
+          'session-1': { modelId: 'a-chat-thread-model', value: 0.1 },
+        },
+      })
+    )
+    mockUseCodeRun.mockImplementation((selector) =>
+      selector({
+        loadingModels: { 'session-1': true },
+        modelLoadProgress: {
+          'session-1': { modelId: 'model-1', value: 0.6 },
+        },
+      })
+    )
+
+    render(<PromptProgress stateKey="session-1" />)
+
+    expect(screen.getByText('Loading model: 60%')).toBeInTheDocument()
+    expect(screen.queryByText('Loading model: 10%')).toBeNull()
   })
 
   it('should handle zero total gracefully', () => {

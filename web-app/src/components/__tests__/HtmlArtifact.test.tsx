@@ -110,4 +110,21 @@ describe('HtmlArtifact', () => {
       doc.indexOf('<title>t</title>')
     )
   })
+
+  it('shows a notice when the HTML has unresolved relative asset refs', () => {
+    render(<HtmlArtifact code={'<img src="./logo.png"><h1>hi</h1>'} />)
+    expect(screen.getByTestId('html-artifact-unresolved')).toBeInTheDocument()
+  })
+
+  it('shows no notice for self-contained HTML', () => {
+    render(<HtmlArtifact code={'<h1>hi</h1><img src="https://x.dev/a.png">'} />)
+    expect(screen.queryByTestId('html-artifact-unresolved')).not.toBeInTheDocument()
+  })
+
+  it('hides the notice in the Code view', async () => {
+    const user = userEvent.setup()
+    render(<HtmlArtifact code={'<img src="a.png">'} />)
+    await user.click(screen.getByRole('tab', { name: /code/i }))
+    expect(screen.queryByTestId('html-artifact-unresolved')).not.toBeInTheDocument()
+  })
 })

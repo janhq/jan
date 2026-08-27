@@ -124,6 +124,13 @@ type ChatInputProps = {
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
+  // Overrides the conversation scope this input belongs to — both its message
+  // queue and its pending attachments (default: useThreads' currentThreadId).
+  // Callers outside the general chat (e.g. Code UI, keyed by session id) pass
+  // their own id here so each gets an independent queue and attachment draft.
+  // Anything writing attachments for such a surface (the cowork preview panel's
+  // annotations) must use this same id or they land under a key nobody reads.
+  scopeKey?: string
 }
 
 // Video containers llama-server can decode via ffmpeg/ffprobe into frames.
@@ -151,6 +158,7 @@ const ChatInput = memo(function ChatInput({
   onSubmit,
   onStop,
   chatStatus,
+  scopeKey,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
@@ -432,7 +440,10 @@ const ChatInput = memo(function ChatInput({
   const maxFileSizeMB = useAttachments((s) => s.maxFileSizeMB)
 
   // Derived: any document currently processing (ingestion in progress)
-  const attachmentsKey = currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
+  // Same scope as the message queue: the cowork preview panel writes its
+  // annotations under the code-session id, so reading a thread id here would
+  // silently drop them.
+  const attachmentsKey = scopeKey ?? currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
   const attachments = useChatAttachments(
     useCallback(
       (state) => state.getAttachments(attachmentsKey),
@@ -465,22 +476,29 @@ const ChatInput = memo(function ChatInput({
     total: number
   } | null>(null)
 
-  // Queued messages for this thread (shown as chips in the input area)
+  // Queued messages for this thread/session (shown as chips in the input
+  // area). scopeKey lets a non-general-chat caller (e.g. Code UI) supply its
+  // own id instead of useThreads' currentThreadId.
+  const queueId = scopeKey ?? currentThreadId ?? ''
   const queuedMessages = useMessageQueue(
-    useShallow((s) => s.getQueue(currentThreadId ?? ''))
+    useShallow((s) => s.getQueue(queueId))
   )
   const queueLength = queuedMessages.length
 
   const removeQueuedMessage = useCallback(
     (id: string) => {
-      useMessageQueue.getState().removeMessage(currentThreadId ?? '', id)
+      useMessageQueue.getState().removeMessage(queueId, id)
     },
-    [currentThreadId]
+    [queueId]
   )
 
   const lastTransferredThreadId = useRef<string | null>(null)
 
   useEffect(() => {
+    // Only the general chat migrates a draft: it composes under the
+    // "new thread" key until the thread exists. A scopeKey caller has a stable
+    // id from the start, so there is nothing to move.
+    if (scopeKey) return
     if (
       currentThreadId &&
       lastTransferredThreadId.current !== currentThreadId
@@ -488,7 +506,7 @@ const ChatInput = memo(function ChatInput({
       transferAttachments(NEW_THREAD_ATTACHMENT_KEY, currentThreadId)
       lastTransferredThreadId.current = currentThreadId
     }
-  }, [currentThreadId, transferAttachments])
+  }, [scopeKey, currentThreadId, transferAttachments])
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
@@ -547,8 +565,8 @@ const ChatInput = memo(function ChatInput({
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
       // When the model is still streaming, queue the message for later
-      if (isStreaming && currentThreadId) {
-        useMessageQueue.getState().enqueue(currentThreadId, {
+      if (isStreaming && queueId) {
+        useMessageQueue.getState().enqueue(queueId, {
           id: generateId(),
           text: effectivePrompt,
           createdAt: Date.now(),
@@ -2817,13 +2835,19 @@ const ChatInput = memo(function ChatInput({
                       size="icon-sm"
                       className="rounded-full mr-1 mb-1"
                       onClick={() => {
-                        if (!currentThreadId) return
-                        const queue = useMessageQueue.getState().getQueue(currentThreadId)
-                        if (queue.length > 0) {
-                          useMessageQueue.getState().clearQueue(currentThreadId)
-                        } else {
-                          stopStreaming(currentThreadId)
+                        // Stopping with messages queued just clears the queue
+                        // (nothing to interrupt yet) instead of stopping the
+                        // active stream. stopStreaming itself already falls
+                        // through to onStop (Code UI's own cancel) when
+                        // supplied, else the general chat's abort.
+                        if (queueId) {
+                          const queue = useMessageQueue.getState().getQueue(queueId)
+                          if (queue.length > 0) {
+                            useMessageQueue.getState().clearQueue(queueId)
+                            return
+                          }
                         }
+                        stopStreaming(currentThreadId ?? '')
                       }}
                     >
                       <IconPlayerStopFilled />

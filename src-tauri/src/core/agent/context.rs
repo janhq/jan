@@ -271,6 +271,10 @@ pub(crate) fn build_system_prompt(
     if subagents_enabled {
         blocks.push(SUBAGENT_GUIDE.to_string());
     }
+    blocks.push(format!(
+        "# Working Directory\n\nCurrent project directory: `{}`\n\nAll relative paths in tool calls resolve against this directory unless stated otherwise.",
+        project_root.display()
+    ));
     blocks.push(DEFAULT_SKILL_GUIDE.trim().to_string());
     blocks.push(WEB_TOOLS_GUIDE.to_string());
     if let Some(context) = load_context_files(project_root) {

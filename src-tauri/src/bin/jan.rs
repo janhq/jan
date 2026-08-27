@@ -343,6 +343,11 @@ enum AgentCommands {
         #[command(flatten)]
         providers: ProviderArgs,
     },
+    /// Manage standalone provider credentials in ~/.jan/config.toml (no Desktop needed)
+    Config {
+        #[command(subcommand)]
+        cmd: AgentConfigCommands,
+    },
 }
 
 /// Read/write the user-wide `~/.jan/config.toml` provider store. This is the
@@ -510,6 +515,8 @@ async fn main() {
         "warn"
     }))
     .init();
+
+    app_lib::core::cli::updater::print_update_notice_if_available().await;
 
     // Inject the logo at runtime so we can use ANSI styling.
     let logo = make_logo();
@@ -778,6 +785,7 @@ async fn handle_agent(cmd: AgentCommands) {
                 Err(e) => Err(e),
             }
         }
+        AgentCommands::Config { cmd } => handle_agent_config(cmd),
     };
     if let Err(e) = result {
         eprintln!("Error: {e}");

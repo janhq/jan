@@ -2,7 +2,8 @@
   "htmlArtifact": {
     "code": "コード",
     "preview": "プレビュー",
-    "previewStreaming": "生成が完了すると利用できます"
+    "previewStreaming": "生成が完了すると利用できます",
+    "unresolvedAssets": "{{count}} 個のアセット参照をプレビューで読み込めません（相対パスに解決先のベース URL がありません）"
   },
   "assistants": "アシスタント",
   "hardware": "ハードウェア",

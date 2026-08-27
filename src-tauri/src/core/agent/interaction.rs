@@ -32,8 +32,11 @@ pub(crate) struct OptionItem {
     pub description: Option<String>,
 }
 
+// `pub`, not `pub(crate)`: reachable through the `pub` `agent_ask_respond`
+// Tauri command's parameter type (see `AgentAsks` in commands.rs) — same
+// reasoning as `PermissionDecision`.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub(crate) struct QuestionResult {
+pub struct QuestionResult {
     pub id: String,
     #[serde(default)]
     pub selected: Vec<String>,
@@ -42,7 +45,7 @@ pub(crate) struct QuestionResult {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum AskError {
+pub enum AskError {
     Cancelled,
 }
 
