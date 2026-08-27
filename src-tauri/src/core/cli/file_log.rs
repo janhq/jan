@@ -99,7 +99,20 @@ impl FileLog {
         }
     }
 
+    /// Shift `jan.log{,.1,.2}` down one slot and start a fresh active file.
+    ///
+    /// `len` counts only what this process wrote plus the size it saw at open,
+    /// so several `jan` processes sharing a data folder each reach the threshold
+    /// on their own. Re-stat the path first: if the active file is already small
+    /// another process just rotated it, and shifting again would discard a live
+    /// segment (only [`KEEP_SEGMENTS`] are kept). Resync the counter instead.
     fn rotate(&self) {
+        if let Ok(actual) = fs::metadata(&self.path).map(|m| m.len()) {
+            if actual < MAX_LOG_BYTES {
+                self.len.store(actual, Ordering::Relaxed);
+                return;
+            }
+        }
         for k in (2..=KEEP_SEGMENTS).rev() {
             let _ = fs::rename(segment_path(&self.path, k - 1), segment_path(&self.path, k));
         }
@@ -263,6 +276,46 @@ mod tests {
         assert!(
             content.contains("outcome=error"),
             "the breadcrumb still says what happened: {content}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Several `jan` processes share one data folder, and each tracks the log's
+    /// length on its own. When one rotates, the others still believe the active
+    /// file is full, so they rotate a file that is already fresh -- and since
+    /// only `KEEP_SEGMENTS` are kept, a burst of processes would shift real
+    /// history off the end. Rotation must notice and resync instead.
+    #[test]
+    fn rotate_resyncs_instead_of_shifting_an_already_rotated_file() {
+        let dir = std::env::temp_dir().join(format!("jan_rot_race_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("logs")).unwrap();
+        let path = dir.join("logs").join(LOG_FILE);
+
+        // Stand in for a peer's rotation: `.1` holds the retained history and
+        // the active file is small again.
+        fs::write(segment_path(&path, 1), "rotated-by-a-peer\n").unwrap();
+        fs::write(&path, "fresh\n").unwrap();
+
+        let log = FileLog::new(path.clone()).expect("opens log");
+        // This process still thinks the active file is full.
+        log.len.store(MAX_LOG_BYTES, Ordering::Relaxed);
+        log.rotate();
+
+        assert_eq!(
+            fs::read_to_string(segment_path(&path, 1)).unwrap(),
+            "rotated-by-a-peer\n",
+            "the peer's segment must survive"
+        );
+        assert!(
+            !segment_path(&path, 2).exists(),
+            "no redundant shift happened"
+        );
+        assert_eq!(
+            log.len.load(Ordering::Relaxed),
+            "fresh\n".len() as u64,
+            "counter resynced to the real file size"
         );
 
         let _ = fs::remove_dir_all(&dir);
