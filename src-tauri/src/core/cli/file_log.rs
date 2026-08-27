@@ -177,18 +177,25 @@ pub fn init(data_folder: PathBuf, verbose: bool) {
     let stderr = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default))
         .build();
     let file = FileLog::new(data_folder.join("logs").join(LOG_FILE));
-
-    // The global gate must admit everything the deepest sink may want: stderr
-    // can go to debug/trace via RUST_LOG, while the file self-limits to info.
-    // Each sink filters independently, so there is no single Info ceiling.
+    // The global gate must admit whatever the deepest sink wants, and no more:
+    // it is the cheap static check `log::debug!` does before building a record,
+    // so leaving it at `Trace` would make every dependency's debug/trace record
+    // pay a dynamic `enabled()` call to then be dropped. stderr can be raised
+    // to debug/trace via RUST_LOG, the file self-limits to FILE_LEVEL, and each
+    // sink still filters independently below the gate.
+    let ceiling = stderr.filter().max(FILE_LEVEL);
     let _ = log::set_boxed_logger(Box::new(DualLogger { stderr, file }));
-    log::set_max_level(LevelFilter::Trace);
+    log::set_max_level(ceiling);
 }
 
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `STDERR_ENABLED` is process-global, so a test that toggles it would
+    /// otherwise race any sibling test reading `enabled()` in parallel.
+    static STDERR_GATE: Mutex<()> = Mutex::new(());
 
     #[test]
     fn file_log_writes_info_records_with_timestamp() {
@@ -218,6 +225,7 @@ mod tests {
 
     #[test]
     fn dual_logger_delegates_stderr_verbosity_but_caps_file_at_info() {
+        let _gate = STDERR_GATE.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("jan_dual_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("logs")).unwrap();
@@ -272,6 +280,7 @@ mod tests {
 
     #[test]
     fn dual_logger_file_does_not_broaden_a_warn_stderr() {
+        let _gate = STDERR_GATE.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("jan_dual_warn_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("logs")).unwrap();
@@ -299,6 +308,7 @@ mod tests {
 
     #[test]
     fn muting_stderr_keeps_the_file_sink_writing() {
+        let _gate = STDERR_GATE.lock().unwrap_or_else(|e| e.into_inner());
         // The TUI mutes stderr for the whole interactive session because it owns
         // the terminal. The file must keep recording anyway: a session that
         // hangs is exactly what `jan bug-report` needs a trail for. Muting via
@@ -337,16 +347,18 @@ mod tests {
     }
 
     #[test]
-    fn init_raises_global_gate_to_trace_not_info() {
+    fn init_gates_at_the_deepest_sink_not_wider() {
         let dir = std::env::temp_dir().join(format!("jan_init_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("logs")).unwrap();
         init(dir.clone(), false);
-        // The global gate must admit debug/trace so RUST_LOG still works over
-        // stderr; the file ceiling is enforced by DualLogger, not globally.
-        assert!(
-            log::max_level() >= LevelFilter::Debug,
-            "global max_level must not cap at info, got {:?}",
+        // With stderr at its `warn` default, the file's `info` need sets the
+        // gate: high enough that info+ records reach the file, low enough that
+        // dependency debug/trace stays compiled out at the call site.
+        assert_eq!(
+            log::max_level(),
+            FILE_LEVEL,
+            "gate must sit at the deepest sink's level, got {:?}",
             log::max_level()
         );
         let _ = fs::remove_dir_all(&dir);
