@@ -59,5 +59,5 @@ export async function deleteMemory(name: string): Promise<void> {
 
 /** Open the store in the OS file manager. */
 export async function revealStore(): Promise<void> {
-  await getServiceHub().opener().revealItemInDir(await storePath())
+  await getServiceHub().opener().openPath(await storePath())
 }
