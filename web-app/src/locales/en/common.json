@@ -2,7 +2,9 @@
   "htmlArtifact": {
     "code": "Code",
     "preview": "Preview",
-    "previewStreaming": "Available when generation finishes"
+    "previewStreaming": "Available when generation finishes",
+    "unresolvedAssets_one": "1 asset reference can't load in the preview. Relative paths have no base URL to resolve against.",
+    "unresolvedAssets_other": "{{count}} asset references can't load in the preview. Relative paths have no base URL to resolve against."
   },
   "assistants": "Assistants",
   "hardware": "Hardware",
@@ -598,5 +600,70 @@
     "seconds": "{{count}}s",
     "minutes": "{{count}}m",
     "hours": "{{count}}h"
-  }
+  },
+  "collapse": "Collapse",
+  "expand": "Expand",
+  "todoPanelTitle": "Progress",
+  "todoPanelEmpty": "No todo list yet.",
+  "artifactOpenPreview": "Open preview",
+  "artifactOpenExternal": "Open",
+  "artifactMoreActions": "More actions",
+  "artifactShowInFolder": "Show in Folder",
+  "skillsUsedLabel": "Skills used",
+  "skillsUsed": "Skills used: {{skills}}",
+  "artifactsAll": "All",
+  "artifactsEmpty": "Nothing produced yet. Artifacts from Cowork runs show up here.",
+  "artifactsNoMatch": "No artifacts match.",
+  "artifactsSearch": "Search artifacts",
+  "artifactsShowMore": "Show {{count}} more",
+  "workspace": {
+    "readsFrom": "Reads from",
+    "writesTo": "Writes to",
+    "readOnly": "read-only",
+    "sandbox": "Sandbox",
+    "sandboxForSession": "Sandbox for this session",
+    "footnote": "Anything the agent creates stays in the sandbox. Your folder is never modified.",
+    "footnoteEmpty": "Attach a folder to let the agent read your project. It still won't change anything in it.",
+    "attach": "Attach a folder",
+    "change": "Change folder",
+    "detach": "Detach folder",
+    "open": "Open",
+    "reveal": "Reveal",
+    "missing": "This folder isn't there anymore. Attach a different one.",
+    "a11yWithFolder": "Workspace. Reads from {{folder}}, read-only. Writes to this session’s sandbox.",
+    "a11ySandboxOnly": "Workspace. Writes to this session’s sandbox. No folder attached."
+  },
+  "sandbox": {
+    "noTerminal": "No terminal",
+    "a11y": "Running commands is turned off. Details.",
+    "title": "Running commands is turned off",
+    "body": "Jan lets the agent run shell commands only when your system can confine them. No sandbox is available here, so the agent can read, write and edit files in its sandbox — but not run anything.",
+    "fixLinux": "Linux uses bubblewrap. Install it, then restart Jan.",
+    "fixMac": "macOS uses the built-in sandbox at /usr/bin/sandbox-exec. Restart Jan once it is available.",
+    "fixWindows": "Windows uses AppContainer. Restart Jan to try again.",
+    "recheck": "Check again"
+  },
+  "planMode": {
+    "label": "Plan",
+    "tooltipOff": "Plan first — the agent reads and proposes, without writing.",
+    "tooltipOn": "Planning. Turn this off to let the agent write files.",
+    "onAnnounce": "Plan mode on",
+    "placeholder": "Ask for a plan. The agent won't change any files."
+  },
+  "budget": {
+    "steps": "step {{step}}/{{max}}",
+    "stoppedSteps": "Stopped at {{max}} steps. The agent hasn’t finished.",
+    "keepGoing": "Keep going",
+    "stoppedTokens": "Stopped — this session hit its token budget.",
+    "compact": "Compact",
+    "newSession": "New session"
+  },
+  "askContinue": "Continue",
+  "askNext": "Next question",
+  "askPrev": "Previous question",
+  "askRecommended": "Recommended",
+  "askSelectedCount": "{{count}} selected",
+  "askSomethingElse": "Something else",
+  "askSomethingElsePlaceholder": "Type your own answer",
+  "submit": "Submit"
 }

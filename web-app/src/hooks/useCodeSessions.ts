@@ -1,25 +1,37 @@
+import type { UIMessage } from 'ai'
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { backendStorage } from '@/lib/backendStorage'
+import { codeTurnsToUIMessages } from '@/lib/codeTurns'
+import type {
+  CodeTurn,
+  SubagentRun,
+  Usage,
+  CodeGoal,
+  TodoList,
+} from '@/types/codeSession'
 
-// A single visible transcript entry. `tool` rows are display-only and carry the
-// structured call/result so the UI can render a tool card. The extra fields are
-// optional for backward-compat with sessions persisted before they existed.
-export type CodeTurn = {
-  role: 'user' | 'assistant' | 'tool'
-  content: string
-  // Tool-row only: merged from the `tool_call` + matching `tool_result` events.
-  callId?: string
-  name?: string
-  args?: unknown
-  result?: string
-  isError?: boolean
-  diff?: string
-  status?: 'running' | 'done'
-}
+// The transcript/todo/subagent shapes live in a store-free module so panels and
+// pure helpers can import them without pulling in zustand. Re-exported here
+// because this store is still their most natural import site.
+export type {
+  CodeTurn,
+  Usage,
+  SubagentRun,
+  TodoStatus,
+  TodoItem,
+  TodoPhase,
+  TodoList,
+  CodeGoal,
+} from '@/types/codeSession'
 
-// OpenAI-style history replayed to the agent on the next turn (no tool rows).
+/**
+ * @deprecated Superseded by `CodeSession.messages`. This shape cannot model
+ * tool calls, so replaying it drops every tool turn — survivable while Rust
+ * owned the loop and kept its own history, but not now the client is the
+ * history. Retained only so sessions persisted by an earlier build still load.
+ */
 export type CodeMessage = {
   role: 'user' | 'assistant'
   content: string
@@ -28,9 +40,24 @@ export type CodeMessage = {
 export type CodeSession = {
   id: string
   title: string
+  /** An attached project folder, mounted read-only. Writes always land in the
+   * session's own sandbox, never here. */
   folder: string | null
   turns: CodeTurn[]
-  history: CodeMessage[]
+  /** The authoritative conversation, sent to the model each turn. */
+  messages: UIMessage[]
+  /** @deprecated Read once to migrate into `messages`, then left alone. */
+  history?: CodeMessage[]
+  /** Finished subagent runs across this session, merged by runId. */
+  subagents?: SubagentRun[]
+  /** Usage from the most recent completed run. */
+  lastUsage?: Usage
+  /** `/goal` state: checked after each turn, cleared when met. */
+  goal?: CodeGoal
+  /** Canonical session todo list, updated by the `todo_write` tool. */
+  todos?: TodoList
+  /** Plan mode: the agent reads and proposes, without writing. Absent means off. */
+  planMode?: boolean
   updated: number
 }
 
@@ -40,9 +67,28 @@ type CodeSessionsState = {
   createSession: () => string
   selectSession: (id: string) => void
   deleteSession: (id: string) => void
-  setFolder: (id: string, folder: string) => void
+  setFolder: (id: string, folder: string | null) => void
+  setPlanMode: (id: string, planMode: boolean) => void
   setTitle: (id: string, title: string) => void
-  commitTurns: (id: string, turns: CodeTurn[], history: CodeMessage[]) => void
+  setMessages: (id: string, messages: UIMessage[]) => void
+  setGoal: (id: string, goal: CodeGoal | null) => void
+  setTodos: (id: string, todos: TodoList) => void
+  /**
+   * @deprecated Bridge for the pre-AI-SDK code route, which has no
+   * `UIMessage[]` to commit. Removed together with that route.
+   */
+  commitLegacyTurns: (
+    id: string,
+    turns: CodeTurn[],
+    history: CodeMessage[]
+  ) => void
+  commitTurns: (
+    id: string,
+    turns: CodeTurn[],
+    messages: UIMessage[],
+    subagents: SubagentRun[],
+    usage?: Usage
+  ) => void
   clearSession: (id: string) => void
 }
 
@@ -61,7 +107,7 @@ export const useCodeSessions = create<CodeSessionsState>()(
           title: 'New session',
           folder: null,
           turns: [],
-          history: [],
+          messages: [],
           updated: now(),
         }
         set((s) => ({ sessions: [session, ...s.sessions], currentId: id }))
@@ -85,29 +131,81 @@ export const useCodeSessions = create<CodeSessionsState>()(
           ),
         })),
 
+      setMessages: (id, messages) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === id ? { ...x, messages, updated: now() } : x
+          ),
+        })),
+
+      setGoal: (id, goal) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === id ? { ...x, goal: goal ?? undefined } : x
+          ),
+        })),
+
+      setTodos: (id, todos) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) => (x.id === id ? { ...x, todos } : x)),
+        })),
+
+      setPlanMode: (id, planMode) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === id ? { ...x, planMode, updated: now() } : x
+          ),
+        })),
+
       setTitle: (id, title) =>
         set((s) => ({
           sessions: s.sessions.map((x) => (x.id === id ? { ...x, title } : x)),
         })),
 
-      commitTurns: (id, turns, history) =>
+      commitLegacyTurns: (id, turns, history) =>
         set((s) => ({
           sessions: s.sessions.map((x) =>
             x.id === id
-              ? {
-                  ...x,
-                  turns: [...x.turns, ...turns],
-                  history,
-                  updated: now(),
-                }
+              ? { ...x, turns: [...x.turns, ...turns], history, updated: now() }
               : x
           ),
+        })),
+
+      commitTurns: (id, turns, messages, subagents, usage) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) => {
+            if (x.id !== id) return x
+            // Accumulate across this session's runs, keyed by runId — a later
+            // run that dispatches no subagents of its own must not erase what
+            // an earlier run in the same session already finished.
+            const incoming = new Set(subagents.map((r) => r.runId))
+            return {
+              ...x,
+              turns: [...x.turns, ...turns],
+              messages,
+              subagents: [
+                ...(x.subagents ?? []).filter((r) => !incoming.has(r.runId)),
+                ...subagents,
+              ],
+              lastUsage: usage ?? x.lastUsage,
+              updated: now(),
+            }
+          }),
         })),
 
       clearSession: (id) =>
         set((s) => ({
           sessions: s.sessions.map((x) =>
-            x.id === id ? { ...x, turns: [], history: [], updated: now() } : x
+            x.id === id
+              ? {
+                  ...x,
+                  turns: [],
+                  messages: [],
+                  subagents: [],
+                  lastUsage: undefined,
+                  updated: now(),
+                }
+              : x
           ),
         })),
     }),
@@ -119,6 +217,26 @@ export const useCodeSessions = create<CodeSessionsState>()(
       // hydrateBackendStores() once the ServiceHub is ready.
       storage: createJSONStorage(() => backendStorage),
       skipHydration: true,
+      version: 1,
+      // v0 persisted an OpenAI-shaped `history` that could not represent tool
+      // calls, so replaying it dropped every tool turn. Rebuild the message
+      // list from `turns`, which did record them, and leave `history` in place
+      // untouched rather than mutating a blob a rollback would still read.
+      migrate: (persisted, version) => {
+        const state = persisted as { sessions?: CodeSession[] } | undefined
+        if (version >= 1 || !state?.sessions) return persisted
+        return {
+          ...state,
+          sessions: state.sessions.map((session) =>
+            session.messages
+              ? session
+              : {
+                  ...session,
+                  messages: codeTurnsToUIMessages(session.turns ?? [], session.id),
+                }
+          ),
+        }
+      },
     }
   )
 )
