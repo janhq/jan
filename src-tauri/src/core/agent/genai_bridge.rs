@@ -29,6 +29,7 @@ use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 
 use crate::core::agent::events::StreamEvent;
+use crate::core::agent::upstream::log_brief;
 
 /// How long a pooled connection may sit idle. Deliberately shorter than any
 /// plausible upstream idle timeout: a turn spends minutes running tools with no
@@ -37,20 +38,6 @@ use crate::core::agent::events::StreamEvent;
 const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(15);
 const TCP_KEEPALIVE: Duration = Duration::from_secs(30);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
-/// Upstream error bodies are provider-controlled and can be large, and some
-/// providers echo the request (or an offending credential) back. The breadcrumbs
-/// below persist to the log file, so only this much of an error is recorded --
-/// enough to identify the failure, not enough to spill a request body.
-const LOG_ERR_BUDGET: usize = 200;
-
-/// First `LOG_ERR_BUDGET` chars of an upstream error, for a log breadcrumb.
-/// Truncates on a char boundary and marks it so a reader knows it was cut.
-fn log_brief(err: &str) -> String {
-    match err.char_indices().nth(LOG_ERR_BUDGET) {
-        Some((cut, _)) => format!("{}...", &err[..cut]),
-        None => err.to_string(),
-    }
-}
 
 /// The pool-tuned client every agent turn goes through. `genai` is on reqwest
 /// 0.13 while the rest of the app is on 0.12, so this is the aliased crate --
@@ -867,24 +854,6 @@ async fn run_once(
 mod tests {
     use super::*;
     use serde_json::json;
-
-    /// Upstream error bodies reach the on-disk log, so the breadcrumb must be
-    /// bounded -- and must not panic when the cut lands inside a UTF-8 char.
-    #[test]
-    fn log_brief_bounds_the_error_on_a_char_boundary() {
-        assert_eq!(log_brief("short"), "short", "short errors pass through");
-
-        let long = "x".repeat(LOG_ERR_BUDGET + 50);
-        let out = log_brief(&long);
-        assert_eq!(out.len(), LOG_ERR_BUDGET + 3, "budget plus the ellipsis");
-        assert!(out.ends_with("..."), "truncation is marked: {out}");
-
-        // Multi-byte chars straddling the cut must not panic or split a char.
-        let wide = "é".repeat(LOG_ERR_BUDGET + 50);
-        let out = log_brief(&wide);
-        assert!(out.ends_with("..."), "wide truncation is marked");
-        assert_eq!(out.chars().count(), LOG_ERR_BUDGET + 3, "counts chars, not bytes");
-    }
 
     /// The trailing slash is load-bearing: `Url::join` would otherwise replace
     /// the last segment and drop the API version from the path.
