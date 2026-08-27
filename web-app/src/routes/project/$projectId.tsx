@@ -130,6 +130,7 @@ function ProjectPageContent() {
               showSpeedToken={false}
               initialMessage={true}
               projectId={projectId}
+              projectAssistantId={project.assistantId}
             />
           </div>
 

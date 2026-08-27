@@ -53,8 +53,17 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       channel: agent-nightly
 
+  build-linux-aarch64:
+    uses: ./.github/workflows/template-cli-build-linux-aarch64.yml
+    needs: [get-update-version, resolve-ref]
+    secrets: inherit
+    with:
+      ref: ${{ needs.resolve-ref.outputs.ref }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: agent-nightly
+
   sync-manifest:
-    needs: [get-update-version, build-linux-x64, build-macos, build-windows-x64]
+    needs: [get-update-version, build-linux-x64, build-macos, build-windows-x64, build-linux-aarch64]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -75,6 +84,10 @@ jobs:
               "linux-x86_64": {
                 "url": "https://delta.jan.ai/agent-nightly/${{ needs.build-linux-x64.outputs.FILE_NAME }}",
                 "sha256": "${{ needs.build-linux-x64.outputs.SHA256 }}"
+              },
+              "linux-aarch64": {
+                "url": "https://delta.jan.ai/agent-nightly/${{ needs.build-linux-aarch64.outputs.FILE_NAME }}",
+                "sha256": "${{ needs.build-linux-aarch64.outputs.SHA256 }}"
               },
               "darwin-universal": {
                 "url": "https://delta.jan.ai/agent-nightly/${{ needs.build-macos.outputs.FILE_NAME }}",

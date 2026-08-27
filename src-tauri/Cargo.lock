@@ -7562,12 +7562,17 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-llamacpp"
-version = "0.8.3"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
+ "bytes",
+ "cc",
  "futures-util",
  "hmac",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "jan-utils",
  "lddtree",
  "log",
@@ -7576,15 +7581,12 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
- "sysinfo",
  "tauri",
  "tauri-plugin",
  "tauri-plugin-hardware",
  "thiserror 2.0.18",
  "tokio",
- "walkdir",
 ]
 
 [[package]]

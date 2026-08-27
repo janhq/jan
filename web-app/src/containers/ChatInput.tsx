@@ -118,6 +118,7 @@ type ChatInputProps = {
   model?: ThreadModel
   initialMessage?: boolean
   projectId?: string
+  projectAssistantId?: string
   onSubmit?: (
     text: string,
     files?: Array<{ type: string; mediaType: string; url: string }>
@@ -148,6 +149,7 @@ const ChatInput = memo(function ChatInput({
   className,
   initialMessage,
   projectId,
+  projectAssistantId,
   onSubmit,
   onStop,
   chatStatus,
@@ -392,12 +394,12 @@ const ChatInput = memo(function ChatInput({
   })
   const [selectedAssistantId, setSelectedAssistantId] = useState<
     string | undefined
-  >(loading ? undefined : currentAssistant?.id || '')
+  >(loading ? undefined : projectAssistantId || currentAssistant?.id || '')
 
   useEffect(() => {
-    setSelectedAssistantId(currentAssistant?.id || '')
+    setSelectedAssistantId(projectAssistantId || currentAssistant?.id || '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading])
+  }, [loading, projectAssistantId])
 
   // Jan Browser Extension hook
   const {

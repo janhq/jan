@@ -179,6 +179,52 @@ fn test_resolve_jan_scoped_path_rejects_absolute_path_outside_root() {
     let _ = fs::remove_dir_all(outside_path.parent().unwrap());
 }
 
+#[test]
+fn test_unpack_archive_tar_gz() {
+    let dir = unique_test_dir("unpack");
+    let nested = dir.join("build/bin");
+    fs::create_dir_all(&nested).unwrap();
+    File::create(nested.join("llama-server"))
+        .unwrap()
+        .write_all(b"binary")
+        .unwrap();
+
+    let archive_path = dir.join("backend.tar.gz");
+    {
+        let gz = flate2::write::GzEncoder::new(
+            File::create(&archive_path).unwrap(),
+            flate2::Compression::fast(),
+        );
+        let mut builder = tar::Builder::new(gz);
+        builder.append_dir_all("build", dir.join("build")).unwrap();
+        builder.into_inner().unwrap().finish().unwrap();
+    }
+
+    let out = dir.join("out");
+    unpack_archive(&archive_path, &out).unwrap();
+    assert_eq!(
+        fs::read_to_string(out.join("build/bin/llama-server")).unwrap(),
+        "binary"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_unpack_archive_rejects_unknown_extension() {
+    let dir = unique_test_dir("unpack-bad");
+    fs::create_dir_all(&dir).unwrap();
+    let archive_path = dir.join("backend.rar");
+    File::create(&archive_path)
+        .unwrap()
+        .write_all(b"x")
+        .unwrap();
+
+    assert!(unpack_archive(&archive_path, &dir.join("out")).is_err());
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
 fn unique_test_dir(label: &str) -> PathBuf {
     use std::time::{SystemTime, UNIX_EPOCH};
 

@@ -22,7 +22,7 @@ use crate::core::agent::events::StreamEvent;
 use crate::core::openai_schema::normalize_openai_tool_parameters_schema;
 use crate::core::server::converters::UpstreamConverter;
 #[cfg(not(feature = "cli"))]
-use crate::core::server::proxy::router_upstream;
+use crate::core::server::proxy::engine_upstream;
 #[cfg(not(feature = "cli"))]
 use crate::core::server::MlxBackendSession;
 use crate::core::{
@@ -459,7 +459,7 @@ pub(crate) async fn resolve_upstream_for_model(
         }
         drop(mlx_guard);
 
-        if let Some((url, key)) = router_upstream(&llama_state, destination_path).await {
+        if let Some((url, key)) = engine_upstream(&llama_state, destination_path).await {
             return Ok((url, vec![key]));
         }
     }

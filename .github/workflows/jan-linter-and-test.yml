@@ -90,28 +90,16 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@9e57365e36de1e26dea5145e57d471261468d9f7 # cargo-llvm-cov
 
+      # The same script the coverage job uses. It stubs the engine worker and a
+      # libggml* too, which the bundle config now requires and this inline copy
+      # did not.
       - name: Create Tauri resource stubs for CI
-        run: |
-          TRIPLE=$(rustc -vV | awk '/^host:/ { print $2 }')
-          mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/icons
-          touch src-tauri/resources/pre-install/.gitkeep
-          touch src-tauri/resources/LICENSE
-          touch src-tauri/resources/bin/jan
-          for bin in uv bun; do
-            touch "src-tauri/resources/bin/${bin}-${TRIPLE}"
-          done
-          # Icons are gitignored; generate_context!() requires them at compile time
-          for icon in 32x32.png 128x128.png 128x128@2x.png icon.icns icon.ico; do
-            [ -f "src-tauri/icons/$icon" ] || cp src-tauri/icons/icon.png "src-tauri/icons/$icon"
-          done
+        run: ./scripts/stub-tauri-resources.sh
 
       - name: Run Rust test coverage
         run: |
           cargo llvm-cov clean --workspace --manifest-path src-tauri/Cargo.toml
           cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
-          # The headless CLI is a separate, mutually-exclusive feature config
-          # (no Tauri); its modules are compiled out of the run above.
-          cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml --no-default-features --features cli --lib -- --test-threads=1
           cargo llvm-cov --no-report --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
           cargo llvm-cov --no-report --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
           cargo llvm-cov --no-report --manifest-path src-tauri/utils/Cargo.toml

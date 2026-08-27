@@ -32,7 +32,11 @@ import {
   unloadMlxModel,
   MlxConfig,
 } from '@janhq/tauri-plugin-mlx-api'
-import { readGgufMetadata, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
+import {
+  readGgufMetadata,
+  generateApiKey,
+  ModelConfig,
+} from '@janhq/tauri-plugin-llamacpp-api'
 
 // Error message constant
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
@@ -107,10 +111,7 @@ export default class mlx_extension extends AIEngine {
 
   private async generateApiKey(modelId: string, port: string): Promise<string> {
     // Reuse the llamacpp plugin's API key generation
-    const hash = await invoke<string>('plugin:llamacpp|generate_api_key', {
-      modelId: modelId + port,
-      apiSecret: this.apiSecret,
-    })
+    const hash = await generateApiKey(modelId + port, this.apiSecret)
     return hash
   }
 

@@ -6,5 +6,27 @@
   "increaseContextSize": "Increase Context Size",
   "lastRequestOverflowed": "Last request overflowed the context window.",
   "contextOverflowDetail": "This request needed {{request}} tokens, but the model’s context window holds only {{context}}.",
-  "contextOverflowGeneric": "The request exceeds the available context size."
+  "contextOverflowGeneric": "The request exceeds the available context size.",
+  "engine": {
+    "unknown": "The model engine reported an unexpected error.",
+    "MODEL_LOAD_FAILED": "The model could not be loaded.",
+    "MODEL_ARCH_NOT_SUPPORTED": "This model's architecture is not supported by the current engine. Updating the engine from Settings may add support.",
+    "MODEL_LOAD_TIMED_OUT": "The model took too long to load and was stopped. A smaller model or a smaller context size usually helps.",
+    "MISSING_SHARED_LIBRARY": "A library the engine needs is missing, so it cannot start.",
+    "GPU_DRIVER_TOO_OLD": "Your GPU driver is too old for this engine. Updating the driver, or switching to the CPU engine in Settings, will fix this.",
+    "OUT_OF_MEMORY": "There is not enough memory to run this model. A smaller model or a smaller context size usually helps.",
+    "INVALID_ARGUMENT": "One of the model's settings is not valid.",
+    "IO_ERROR": "A file could not be read or written while starting the model.",
+    "INTERNAL_ERROR": "Something went wrong inside Jan while starting the model."
+  },
+  "engineMissingLibraries": "Missing: {{libraries}}",
+  "engineReportedDetail": "The engine reported: {{detail}}",
+  "startModelFailed": "Failed to start model: {{reason}}",
+  "createModelFailed": "Failed to create model: {{reason}}",
+  "noRunningSession": "No running session found for model: {{model}}",
+  "serverPortOccupied": "Port has been occupied",
+  "serverPortOccupiedDescription": "Port {{port}} is already in use. Please try a different port.",
+  "serverInvalidModelPath": "Invalid or inaccessible model path",
+  "serverStartModelFailed": "Failed to start model",
+  "serverStartFailed": "Failed to start server"
 }

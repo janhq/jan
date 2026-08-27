@@ -69,12 +69,48 @@ impl CudaPaths {
     }
 }
 
+/// Environment a child needs to resolve the backend's libraries. Returned
+/// rather than applied so callers holding either a `tokio` or a `std` Command
+/// share one implementation.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct LibraryEnv {
+    pub vars: Vec<(String, String)>,
+    pub current_dir: Option<std::path::PathBuf>,
+}
+
+// Mirrors the Command setter names so the path-building logic below reads the
+// same whether it targets a Command or this struct.
+impl LibraryEnv {
+    fn env(&mut self, key: &str, value: impl AsRef<str>) {
+        self.vars
+            .push((key.to_string(), value.as_ref().to_string()));
+    }
+
+    fn current_dir(&mut self, dir: impl AsRef<Path>) {
+        self.current_dir = Some(dir.as_ref().to_path_buf());
+    }
+}
+
 /// Merges binary lib dir + CUDA paths into a single `command.env()` call per variable.
 pub fn setup_library_path(
     library_path: Option<&Path>,
     cuda: &CudaPaths,
     command: &mut tokio::process::Command,
 ) {
+    let env = library_path_env(library_path, cuda);
+    for (key, value) in &env.vars {
+        command.env(key, value);
+    }
+    if let Some(dir) = &env.current_dir {
+        command.current_dir(dir);
+    }
+}
+
+/// Computes the same overrides `setup_library_path` applies.
+pub fn library_path_env(library_path: Option<&Path>, cuda: &CudaPaths) -> LibraryEnv {
+    let mut env = LibraryEnv::default();
+    let command = &mut env;
+
     if cfg!(target_os = "linux") {
         let mut all_lib_dirs: Vec<String> = Vec::new();
         if let Some(lib_path) = library_path {
@@ -152,6 +188,8 @@ pub fn setup_library_path(
         #[cfg(feature = "logging")]
         log::warn!("Library path setup not supported on this OS");
     }
+
+    env
 }
 
 pub fn binary_requires_cuda(_bin_path: &Path) -> bool {

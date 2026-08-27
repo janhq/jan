@@ -6,7 +6,7 @@ import {
   VectorDBExtension,
   type AttachmentInput,
   type SettingComponentProps,
-  AIEngine,
+  embedTexts,
   type AttachmentFileInfo,
   logger,
 } from '@janhq/core'
@@ -232,7 +232,7 @@ export default class RagExtension extends RAGExtension {
         }
       }
 
-      const queryEmb = (await this.embedTexts([query]))?.[0]
+      const queryEmb = (await embedTexts([query]))?.[0]
       if (!queryEmb) {
         return {
           error: 'Failed to compute embeddings',
@@ -530,25 +530,7 @@ export default class RagExtension extends RAGExtension {
 
   async embed(texts: string[]): Promise<number[][]> {
     if (!texts || texts.length === 0) return []
-    return this.embedTexts(texts)
+    return embedTexts(texts)
   }
 
-  // Locally implement embedding logic (previously in embeddings-extension)
-  private async embedTexts(texts: string[]): Promise<number[][]> {
-    const llm = window.core?.extensionManager.getByName(
-      '@janhq/llamacpp-extension'
-    ) as AIEngine & {
-      embed?: (
-        texts: string[]
-      ) => Promise<{ data: Array<{ embedding: number[]; index: number }> }>
-    }
-    if (!llm?.embed) throw new Error('llamacpp extension not available')
-    const res = await llm.embed(texts)
-    const data: Array<{ embedding: number[]; index: number }> = res?.data || []
-    const out: number[][] = new Array(texts.length)
-    for (const item of data) {
-      out[item.index] = item.embedding
-    }
-    return out
-  }
 }

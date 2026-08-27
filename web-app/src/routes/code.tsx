@@ -10,6 +10,7 @@ import { GitBranch, Laptop, Folder } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { invoke, Channel } from '@tauri-apps/api/core'
+import { getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import { predefinedProviders } from '@/constants/providers'
 import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
@@ -443,11 +444,11 @@ function CodePage() {
     setRunning(true)
 
     // Local models load before the first token — but only on a cold start.
-    // Probe the router (as the chat transport does) so the load card shows only
+    // Probe the engine (as the chat transport does) so the load card shows only
     // when the model isn't already loaded, not on every warm run.
     if (selectedProvider === 'llamacpp') {
       try {
-        const loaded = await invoke<string[]>('plugin:llamacpp|get_loaded_models')
+        const loaded = await getLoadedModels()
         if (!loaded.includes(selectedModel.id)) {
           modelLoadingRef.current = true
           useAppState.getState().updateModelLoadProgress(undefined)

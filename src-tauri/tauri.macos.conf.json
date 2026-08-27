@@ -21,7 +21,13 @@
         "decorations": true,
         "titleBarStyle": "Overlay",
         "windowEffects": {
-          "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
+          "effects": [
+            "fullScreenUI",
+            "mica",
+            "tabbed",
+            "blur",
+            "acrylic"
+          ],
           "state": "active"
         },
         "dragDropEnabled": false
@@ -29,9 +35,22 @@
     ]
   },
   "bundle": {
-    "targets": ["app", "dmg"],
-    "resources": ["resources/LICENSE", "resources/bin/mlx-server", "resources/bin/mlx-swift_Cmlx.bundle", "resources/bin/jan"],
-    "externalBin": ["resources/bin/bun", "resources/bin/uv"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "resources": [
+      "resources/LICENSE",
+      "resources/bin/mlx-server",
+      "resources/bin/mlx-swift_Cmlx.bundle",
+      "resources/bin/jan",
+      "resources/bin/jan-llama-worker",
+      "resources/bin/libggml*"
+    ],
+    "externalBin": [
+      "resources/bin/bun",
+      "resources/bin/uv"
+    ],
     "macOS": {
       "entitlements": "./Entitlements.plist"
     }
