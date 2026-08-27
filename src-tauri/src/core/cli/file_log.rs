@@ -203,12 +203,15 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("logs")).unwrap();
         let log = FileLog::new(dir.join("logs").join(LOG_FILE)).expect("opens log");
-        let record = Record::builder()
-            .args(format_args!("hello {} {}", 1, 2))
-            .level(log::Level::Info)
-            .target(module_path!())
-            .build();
-        log.write(&record);
+        // Built and consumed in one statement: a `format_args!` with runtime
+        // arguments borrows temporaries that a `let` binding would drop first.
+        log.write(
+            &Record::builder()
+                .args(format_args!("hello {} {}", 1, 2))
+                .level(log::Level::Info)
+                .target(module_path!())
+                .build(),
+        );
         log.flush();
 
         let content = fs::read_to_string(dir.join("logs").join(LOG_FILE)).unwrap();
