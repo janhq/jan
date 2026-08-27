@@ -350,30 +350,6 @@ pub fn open_app_directory<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn open_file_explorer(path: String) -> Result<(), String> {
-    let path = PathBuf::from(path);
-    let (program, arg): (&str, std::ffi::OsString) = if cfg!(target_os = "windows") {
-        // Normalize extended-length paths (\\?\...) for explorer compatibility.
-        let mut path_str = path.to_string_lossy().into_owned();
-        if let Some(stripped) = path_str.strip_prefix(r"\\?\UNC\") {
-            path_str = format!(r"\\{}", stripped);
-        } else if let Some(stripped) = path_str.strip_prefix(r"\\?\") {
-            path_str = stripped.to_string();
-        }
-        ("explorer", path_str.into())
-    } else if cfg!(target_os = "macos") {
-        ("open", path.into())
-    } else {
-        ("xdg-open", path.into())
-    };
-    std::process::Command::new(program)
-        .arg(arg)
-        .status()
-        .map_err(|e| format!("Failed to open file explorer: {e}"))?;
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn read_logs<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
     let log_path = get_jan_data_folder_path(app).join("logs").join("app.log");
     if log_path.exists() {

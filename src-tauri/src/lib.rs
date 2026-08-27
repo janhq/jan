@@ -70,7 +70,6 @@ macro_rules! invoke_commands_with_extras {
         // System commands
         core::system::commands::relaunch,
         core::system::commands::open_app_directory,
-        core::system::commands::open_file_explorer,
         core::system::commands::factory_reset,
         core::system::commands::take_pending_webdata_reset,
         core::system::commands::read_logs,
@@ -85,9 +84,6 @@ macro_rules! invoke_commands_with_extras {
         core::server::commands::stop_server,
         core::server::commands::get_server_status,
         // Agent commands
-        core::agent::commands::agent_run,
-        core::agent::commands::agent_cancel,
-        core::agent::commands::agent_permission_respond,
         core::agent::commands::agent_skill_list,
         core::agent::commands::agent_skill_read,
         core::agent::commands::agent_skill_write,
@@ -331,8 +327,6 @@ pub fn run() {
             mcp_reconnect_notify: Arc::new(tokio::sync::Notify::new()),
             mcp_last_known_tools: Arc::new(Mutex::new(HashMap::new())),
         })
-        .manage(core::agent::commands::AgentRuns::default())
-        .manage(core::agent::commands::AgentPermissions::default())
         .setup(|app| {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
