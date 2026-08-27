@@ -2453,6 +2453,20 @@ impl App {
         self.reminder_awaiting_progress = false;
     }
 
+    /// Drop the provider's token measurement, because the history it measured is
+    /// no longer the history we hold.
+    ///
+    /// Any edit to the conversation behind the model's back -- a compaction, a
+    /// rewind, resuming a different thread -- invalidates the last reported
+    /// `prompt_tokens`: it describes turns that are gone. `/context` then falls
+    /// back to the estimator and says so, rather than presenting a stale count
+    /// as measured. Callers that *empty* the history use [`App::reset_session`]
+    /// instead, where zero is exact rather than an estimate.
+    fn invalidate_token_provenance(&mut self) {
+        self.tokens_estimated = true;
+        self.turn_prompt_tokens = 0;
+    }
+
     /// Drop any selection, and with it a copy armed but not yet lifted out of a
     /// frame -- otherwise it would fire against whatever is selected next.
     fn clear_selection(&mut self) {
@@ -4168,7 +4182,12 @@ impl App {
         // real prompt: the whole thing, minus the JAN.md block, minus the
         // skills/memory catalogs. Splitting a single build (rather than
         // re-deriving each piece) is what keeps them summing to what is sent.
-        let (mut prompt_chars, mut context_chars, mut skills_chars) = (0usize, 0usize, 0usize);
+        //
+        // Sized in bytes, not chars, because `estimate_token_count` -- which
+        // sizes the Messages segment below -- divides `str::len` by four. Mixing
+        // the two would make the same non-ASCII text count differently depending
+        // on which segment it landed in.
+        let (mut prompt_bytes, mut context_bytes, mut skills_bytes) = (0usize, 0usize, 0usize);
         if let (Some(args), Some(root)) = (args, root.as_deref()) {
             let full = crate::core::agent::r#loop::context_system_prompt_preview(
                 args.system_prompt_override.as_deref(),
@@ -4178,21 +4197,16 @@ impl App {
                 args.sandbox,
             )
             .unwrap_or_default();
-            context_chars = crate::core::agent::context::load_context_files(root)
-                .map_or(0, |s| s.chars().count());
-            skills_chars = crate::core::agent::context::load_skills(root)
-                .map_or(0, |s| s.chars().count())
-                + crate::core::agent::context::load_memory_catalog(root)
-                    .map_or(0, |s| s.chars().count());
-            prompt_chars = full
-                .chars()
-                .count()
-                .saturating_sub(context_chars + skills_chars);
+            context_bytes =
+                crate::core::agent::context::load_context_files(root).map_or(0, |s| s.len());
+            skills_bytes = crate::core::agent::context::load_skills(root).map_or(0, |s| s.len())
+                + crate::core::agent::context::load_memory_catalog(root).map_or(0, |s| s.len());
+            prompt_bytes = full.len().saturating_sub(context_bytes + skills_bytes);
         }
 
         // Tool schemas as actually advertised, serialized the way they go on
         // the wire.
-        let tools_chars = match args {
+        let tools_bytes = match args {
             Some(args) => crate::core::agent::r#loop::context_advertised_tools(
                 &args.mcp_servers,
                 &args.mcp_settings,
@@ -4206,37 +4220,38 @@ impl App {
             )
             .await
             .iter()
-            .map(|t| t.to_string().chars().count())
+            .map(|t| t.to_string().len())
             .sum(),
             None => 0,
         };
 
-        let chars_to_tokens = |chars: usize| (chars / 4) as u64;
+        // Same divisor as `estimate_token_count`, applied to the same unit.
+        let bytes_to_tokens = |bytes: usize| (bytes / 4) as u64;
         segments.push(ContextSegment {
             label: "System prompt",
             glyph: CONTEXT_GLYPH_SYSTEM,
-            tokens: chars_to_tokens(prompt_chars),
+            tokens: bytes_to_tokens(prompt_bytes),
             always_show: true,
             unit: " tokens",
         });
         segments.push(ContextSegment {
             label: "System tools",
             glyph: CONTEXT_GLYPH_SYSTEM,
-            tokens: chars_to_tokens(tools_chars),
+            tokens: bytes_to_tokens(tools_bytes),
             always_show: true,
             unit: " tokens",
         });
         segments.push(ContextSegment {
             label: "System context",
             glyph: CONTEXT_GLYPH_SYSTEM,
-            tokens: chars_to_tokens(context_chars),
+            tokens: bytes_to_tokens(context_bytes),
             always_show: false,
             unit: " tokens",
         });
         segments.push(ContextSegment {
             label: "Skills",
             glyph: CONTEXT_GLYPH_SYSTEM,
-            tokens: chars_to_tokens(skills_chars),
+            tokens: bytes_to_tokens(skills_bytes),
             always_show: false,
             unit: " tokens",
         });
@@ -5373,10 +5388,16 @@ impl ContextReport {
         cells
     }
 
-    /// Percentage of the *window* each segment occupies. Sums to 100 whenever
-    /// the segments partition the window, which is how they are built.
+    /// Percentage of the window each segment occupies, summing to 100.
+    ///
+    /// The denominator matches [`ContextReport::cells`]: normally the segments
+    /// partition the window exactly and it *is* the window, but when the
+    /// estimate overshoots, free space is already clamped to zero and the
+    /// segments sum past the window. Dividing by the window there would print
+    /// a legend totalling more than 100% beside a grid that is exactly full.
     fn percents(&self) -> Vec<f64> {
-        let denom = self.window.max(1) as f64;
+        let total: u64 = self.segments.iter().map(|s| s.tokens).sum();
+        let denom = self.window.max(total).max(1) as f64;
         self.segments
             .iter()
             .map(|s| s.tokens as f64 / denom * 100.0)
@@ -5386,19 +5407,24 @@ impl ContextReport {
 
 /// Compact token count for display: `6K`, `2.1K`, `950`. Sub-1K counts stay
 /// exact; 1K-10K keeps one decimal so a 2.1K segment is not flattened to `2K`.
+///
+/// Done in integer tenths rather than by formatting an `f64`: the decimal digit
+/// and the decision to print it have to come from the same rounding, and
+/// `{:.1}` rounds half-to-even while `f64::round` rounds half-away-from-zero.
+/// Straddling the two renders `2050` as `2.0K` -- the exact output the
+/// whole-number branch exists to avoid.
 fn format_tokens(tokens: u64) -> String {
-    match tokens {
-        0..=999 => tokens.to_string(),
-        1_000..=9_999 => {
-            let k = tokens as f64 / 1000.0;
-            // 6.0K reads as noise; report it as 6K.
-            if (k * 10.0).round() as u64 % 10 == 0 {
-                format!("{}K", k.round() as u64)
-            } else {
-                format!("{k:.1}K")
-            }
-        }
-        _ => format!("{}K", (tokens as f64 / 1000.0).round() as u64),
+    if tokens < 1_000 {
+        return tokens.to_string();
+    }
+    // Tenths of a thousand, half-up. Exact for every u64 below ~1.8e15.
+    let tenths = (tokens + 50) / 100;
+    if tokens < 10_000 && tenths % 10 != 0 {
+        format!("{}.{}K", tenths / 10, tenths % 10)
+    } else {
+        // 6.0K reads as noise; report it as 6K. Above 10K the decimal is
+        // meaningless precision on an estimate, so it is always dropped.
+        format!("{}K", (tokens + 500) / 1000)
     }
 }
 
@@ -5406,7 +5432,7 @@ fn format_tokens(tokens: u64) -> String {
 /// the way model catalogs advertise a window (`234k`), which keeps it visually
 /// distinct from the uppercase `K` used for live token counts.
 fn format_window(tokens: u64) -> String {
-    format!("{}k", (tokens as f64 / 1000.0).round() as u64)
+    format!("{}k", (tokens + 500) / 1000)
 }
 
 /// Style each grid glyph gets, so the chart is readable in colour and still
@@ -9955,7 +9981,19 @@ fn compact_command(app: &mut App) {
 /// Show the `/context` breakdown: what currently fills the window, by category.
 /// Read-only -- it inspects the live session state and the same prompt/tool
 /// builders a turn would use, and sends nothing to the provider.
+///
+/// Idle-only, for a mechanical reason rather than a semantic one: sizing the
+/// tool segment takes the MCP server lock, and a turn executing an MCP tool
+/// call holds that lock for up to the tool-call timeout. Since commands are
+/// awaited inline on the key-handling path, running this mid-turn would freeze
+/// the whole UI -- spinner, streamed output, everything -- until the tool
+/// returned. The numbers are also least meaningful mid-turn, when the request
+/// in flight has not reported its usage yet.
 async fn context_command(app: &mut App) {
+    if app.status != Status::Idle {
+        app.note("/context is only available while idle");
+        return;
+    }
     let report = app.context_report().await;
     app.note("Context Usage");
     app.push_row(RowKind::Context(Box::new(report)));
@@ -10030,11 +10068,10 @@ fn finish_compaction(
             app.history = compacted;
             app.persist();
             // Estimate tokens from compacted message content (~4 chars ≈ 1 token).
-            // The provider's last `usage` measured the pre-compaction history,
-            // so it no longer describes this conversation: the count is an
-            // estimate until the next response reports a fresh one.
+            // The provider's last `usage` measured the pre-compaction history, so
+            // it no longer describes this conversation.
             app.tokens = estimate_token_count(&app.history);
-            app.tokens_estimated = true;
+            app.invalidate_token_provenance();
             app.note(&format!(
                 "{} {base_len} -> {} messages (ctx {}K/{}K)",
                 kind.done_label(),
@@ -13097,6 +13134,10 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     .0;
 
     app.history.truncate(cut);
+    // The rewound-away turns are exactly what the provider's last `prompt_tokens`
+    // measured, so that count now overstates the window by the removed prefix.
+    app.invalidate_token_provenance();
+    app.tokens = estimate_token_count(&app.history);
     // The journal is keyed by its own user entries, not by history indices: it
     // holds rows (tool calls, reasoning) that history never had.
     app.display_log
@@ -13279,7 +13320,6 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     app.assistant_buf.clear();
     app.reasoning_segs.clear();
     app.turn = (0, 0);
-    app.tokens = 0;
     app.scrollback = 0;
     app.message_queue.clear();
     restore_snapshots(app, thread.get("metadata"));
@@ -13309,6 +13349,11 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     // before journaling (or whose journal was lost).
     let logged = journal::read_journal(&journal::journal_path(&app.agent_dir, full_id));
     app.history = super::rebuild_wire_history(&messages);
+    // A resumed thread was never measured by *this* session's provider calls, and
+    // any count left over from the thread we were on describes a different
+    // conversation entirely. Estimate until a fresh response lands.
+    app.invalidate_token_provenance();
+    app.tokens = estimate_token_count(&app.history);
     let count = app
         .history
         .iter()
@@ -16060,7 +16105,7 @@ mod tests {
         apply_resume, apply_stream_event, assistant_is_awaiting_user_answer, assistant_runs,
         autoscroll_selection, await_branch_poll, backgrounded_job_id, brand, build_user_message,
         clipboard_path, compact_tokens, context_lines, diff_lines, drain_stream_events,
-        estimate_token_count,
+        estimate_token_count, format_tokens,
         finish_account_login, finish_compaction, finish_login, finish_plugin_install,
         finish_tokamak_login, finish_update_install, group_detail_lines, group_summary,
         handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, header_spans, image_mime,
@@ -26328,6 +26373,105 @@ mod tests {
         assert!(
             app.context_report().await.fill_reported,
             "a fresh response restores the measured count"
+        );
+    }
+
+    /// Rewinding drops turns the provider's count measured, so that count now
+    /// overstates the window. It must revert to an estimate.
+    #[tokio::test]
+    async fn context_fill_is_estimated_after_a_rewind() {
+        let mut app = test_app();
+        for i in 0..4 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": "x".repeat(4_000),
+            }));
+        }
+        app.apply(StreamEvent::TurnUsage {
+            usage: Usage {
+                prompt_tokens: Some(120_000),
+                completion_tokens: Some(10),
+                total_tokens: Some(120_010),
+            },
+        });
+        assert!(app.context_report().await.fill_reported);
+        rewind_to(&mut app, 0, false);
+        assert!(
+            !app.context_report().await.fill_reported,
+            "a count measured over rewound-away turns must not read as measured"
+        );
+    }
+
+    /// Resuming a thread swaps the whole conversation; a count measured against
+    /// the previous one describes nothing on screen.
+    #[test]
+    fn resuming_a_thread_invalidates_the_measured_count() {
+        let mut app = test_app();
+        app.tokens_estimated = false;
+        app.turn_prompt_tokens = 120_000;
+        app.invalidate_token_provenance();
+        assert!(app.tokens_estimated, "resumed history is not measured");
+        assert_eq!(
+            app.turn_prompt_tokens, 0,
+            "the stale measurement must be dropped, not kept"
+        );
+    }
+
+    /// `/context` takes the MCP lock to size the tool segment, and commands are
+    /// awaited on the key-handling path: mid-turn it would freeze the UI.
+    #[tokio::test]
+    async fn context_is_refused_while_a_turn_is_running() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        run_command(&mut app, "context", &no_mcp()).await;
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(
+            text.contains("only available while idle"),
+            "a mid-turn /context must be refused: {text}"
+        );
+        assert!(
+            !app.transcript
+                .iter()
+                .any(|r| matches!(r.kind, RowKind::Context(_))),
+            "no chart may be rendered mid-turn"
+        );
+    }
+
+    /// The whole-number branch exists so `6.0K` never reaches the screen. The
+    /// guard and the digits must agree at every half-way boundary.
+    #[test]
+    fn format_tokens_never_prints_a_zero_decimal() {
+        for tokens in 0..=20_000u64 {
+            let text = format_tokens(tokens);
+            assert!(
+                !text.contains(".0K"),
+                "{tokens} rendered as {text}: a zero decimal is exactly what the \
+                 whole-number branch exists to avoid"
+            );
+        }
+        // Spot-check the boundaries the float path used to get wrong.
+        assert_eq!(format_tokens(2_050), "2.1K");
+        assert_eq!(format_tokens(6_050), "6.1K");
+        assert_eq!(format_tokens(9_950), "10K");
+        assert_eq!(format_tokens(999), "999");
+        assert_eq!(format_tokens(2_100), "2.1K");
+    }
+
+    /// An over-full estimate clamps free space to zero; the legend must still
+    /// total 100% rather than out-summing the grid beside it.
+    #[test]
+    fn context_percentages_stay_whole_when_the_estimate_overshoots() {
+        // Content alone exceeds the window, so free space is zero.
+        let report = context_report(100_000, 10_000, [40_000, 40_000, 40_000, 40_000, 40_000]);
+        let total: f64 = report.percents().iter().sum();
+        assert!(
+            (total - 100.0).abs() < 1e-6,
+            "an over-full report's percentages sum to {total}, not 100"
+        );
+        assert_eq!(
+            report.cells().iter().sum::<u64>(),
+            CONTEXT_GRID_CELLS,
+            "the grid stays exactly full"
         );
     }
     #[test]
