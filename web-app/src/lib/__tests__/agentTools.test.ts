@@ -133,7 +133,8 @@ describe('agentTools', () => {
       { command: 'ls' },
       undefined,
       undefined,
-      false
+      false,
+      undefined
     )
 
     useAgentToolsConfig.getState().setBashNetworkEnabled(true)
@@ -145,7 +146,8 @@ describe('agentTools', () => {
       { command: 'ls' },
       undefined,
       undefined,
-      true
+      true,
+      undefined
     )
     useAgentToolsConfig.getState().setBashNetworkEnabled(false)
   })
@@ -160,7 +162,7 @@ describe('agentTools', () => {
 
   /// The thread id scopes the sandbox, so it must reach the plugin on every
   /// call; without it two conversations would share one scratch directory.
-  it('scopes execution to the calling thread and passes no project path', async () => {
+  it('scopes execution to the calling thread and attaches no folder by default', async () => {
     executeTool.mockResolvedValue({
       content: 'hello',
       diff: null,
@@ -177,8 +179,42 @@ describe('agentTools', () => {
       { path: 'a.txt' },
       undefined,
       undefined,
-      false
+      false,
+      undefined
     )
+  })
+
+  // The workspace UI promises "reads from <folder>", so the folder has to reach
+  // the plugin; Rust is what makes it read-only.
+  it('forwards an attached folder as the read-only project', async () => {
+    vi.mocked(executeTool).mockResolvedValue({
+      content: 'ok',
+      isError: false,
+      diff: null,
+    } as never)
+    const { executeAgentTool } = await import('../agentTools')
+    await executeAgentTool('read', { path: 'a.txt' }, 'thread-1', '/home/u/repo')
+    expect(executeTool).toHaveBeenLastCalledWith(
+      '/data',
+      'thread-1',
+      'read',
+      { path: 'a.txt' },
+      undefined,
+      undefined,
+      false,
+      '/home/u/repo'
+    )
+  })
+
+  it('sends undefined, not null, when no folder is attached', async () => {
+    vi.mocked(executeTool).mockResolvedValue({
+      content: 'ok',
+      isError: false,
+      diff: null,
+    } as never)
+    const { executeAgentTool } = await import('../agentTools')
+    await executeAgentTool('read', { path: 'a.txt' }, 'thread-1', null)
+    expect(vi.mocked(executeTool).mock.calls.at(-1)?.[7]).toBeUndefined()
   })
 
   it('maps a gate refusal to an error rather than content', async () => {
@@ -220,7 +256,8 @@ describe('agentTools', () => {
       {},
       undefined,
       undefined,
-      false
+      false,
+      undefined
     )
   })
 
