@@ -1,23 +1,45 @@
 import { useAppState } from '@/hooks/useAppState'
+import { useCodeRun } from '@/hooks/useCodeRun'
 import { Loader } from 'lucide-react'
 import { useParams } from '@tanstack/react-router'
 import { Progress } from '@/components/ui/progress'
 
-export function PromptProgress({ hideIdle = false }: { hideIdle?: boolean }) {
+export function PromptProgress({
+  hideIdle = false,
+  stateKey,
+}: {
+  hideIdle?: boolean
+  /**
+   * Identifies a caller outside the `/threads/:threadId` route — Cowork, keyed
+   * by its own session id — overriding the auto-detected route param, and
+   * switching the loading/progress read from useAppState's thread-keyed
+   * Records to useCodeRun's session-keyed mirror of the same shape. Prompt
+   * progress has no Cowork equivalent, so it keeps the global fallback;
+   * harmless, since Cowork never writes there.
+   */
+  stateKey?: string
+}) {
   const params = useParams({ strict: false })
-  const threadId = (params as { threadId?: string })?.threadId
+  const threadId = stateKey ?? (params as { threadId?: string })?.threadId
   const promptProgress = useAppState((state) =>
     (threadId ? state.promptProgresses[threadId] : undefined) ??
     state.promptProgress
   )
-  const loadingModel = useAppState((state) =>
-    (threadId ? state.loadingModels[threadId] : undefined) ??
-    state.loadingModel
+  const chatLoadingModel = useAppState((state) =>
+    (threadId ? state.loadingModels[threadId] : undefined) ?? state.loadingModel
   )
-  const loadProgress = useAppState((state) =>
+  const coworkLoadingModel = useCodeRun((state) =>
+    stateKey ? state.loadingModels[stateKey] : undefined
+  )
+  const loadingModel = stateKey ? coworkLoadingModel : chatLoadingModel
+  const chatLoadProgress = useAppState((state) =>
     (threadId ? state.modelLoadProgressByThread[threadId] : undefined) ??
     state.modelLoadProgress
   )
+  const coworkLoadProgress = useCodeRun((state) =>
+    stateKey ? state.modelLoadProgress[stateKey] : undefined
+  )
+  const loadProgress = stateKey ? coworkLoadProgress : chatLoadProgress
 
   const percentage =
     promptProgress && promptProgress.total > 0

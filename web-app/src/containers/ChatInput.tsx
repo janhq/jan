@@ -125,6 +125,11 @@ type ChatInputProps = {
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
+  // Overrides the conversation scope this input belongs to — both its message
+  // queue and its pending attachments (default: useThreads' currentThreadId).
+  // Callers outside the general chat (e.g. Cowork, keyed by session id) pass
+  // their own id so each gets an independent queue and attachment draft.
+  scopeKey?: string
 }
 
 // Video containers llama-server can decode via ffmpeg/ffprobe into frames.
@@ -153,6 +158,7 @@ const ChatInput = memo(function ChatInput({
   onSubmit,
   onStop,
   chatStatus,
+  scopeKey,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
@@ -434,7 +440,10 @@ const ChatInput = memo(function ChatInput({
   const maxFileSizeMB = useAttachments((s) => s.maxFileSizeMB)
 
   // Derived: any document currently processing (ingestion in progress)
-  const attachmentsKey = currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
+  // Same scope as the message queue: a surface writing attachments under its
+  // own id would have them silently dropped if this read a thread id.
+  const attachmentsKey =
+    scopeKey ?? currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
   const attachments = useChatAttachments(
     useCallback(
       (state) => state.getAttachments(attachmentsKey),
@@ -468,21 +477,26 @@ const ChatInput = memo(function ChatInput({
   } | null>(null)
 
   // Queued messages for this thread (shown as chips in the input area)
+  const queueId = scopeKey ?? currentThreadId ?? ''
   const queuedMessages = useMessageQueue(
-    useShallow((s) => s.getQueue(currentThreadId ?? ''))
+    useShallow((s) => s.getQueue(queueId))
   )
   const queueLength = queuedMessages.length
 
   const removeQueuedMessage = useCallback(
     (id: string) => {
-      useMessageQueue.getState().removeMessage(currentThreadId ?? '', id)
+      useMessageQueue.getState().removeMessage(queueId, id)
     },
-    [currentThreadId]
+    [queueId]
   )
 
   const lastTransferredThreadId = useRef<string | null>(null)
 
   useEffect(() => {
+    // Only the general chat migrates a draft: it composes under the "new
+    // thread" key until the thread exists. A scopeKey caller has a stable id
+    // from the start, so there is nothing to move.
+    if (scopeKey) return
     if (
       currentThreadId &&
       lastTransferredThreadId.current !== currentThreadId
@@ -490,7 +504,7 @@ const ChatInput = memo(function ChatInput({
       transferAttachments(NEW_THREAD_ATTACHMENT_KEY, currentThreadId)
       lastTransferredThreadId.current = currentThreadId
     }
-  }, [currentThreadId, transferAttachments])
+  }, [scopeKey, currentThreadId, transferAttachments])
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
@@ -549,8 +563,8 @@ const ChatInput = memo(function ChatInput({
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
       // When the model is still streaming, queue the message for later
-      if (isStreaming && currentThreadId) {
-        useMessageQueue.getState().enqueue(currentThreadId, {
+      if (isStreaming && queueId) {
+        useMessageQueue.getState().enqueue(queueId, {
           id: generateId(),
           text: effectivePrompt,
           createdAt: Date.now(),
@@ -2819,13 +2833,20 @@ const ChatInput = memo(function ChatInput({
                       size="icon-sm"
                       className="rounded-full mr-1 mb-1"
                       onClick={() => {
-                        if (!currentThreadId) return
-                        const queue = useMessageQueue.getState().getQueue(currentThreadId)
-                        if (queue.length > 0) {
-                          useMessageQueue.getState().clearQueue(currentThreadId)
-                        } else {
-                          stopStreaming(currentThreadId)
+                        // Stopping with messages queued clears the queue —
+                        // there is nothing to interrupt yet. The old
+                        // `if (!currentThreadId) return` guard made this button
+                        // inert for any surface without a thread id.
+                        if (queueId) {
+                          const queue = useMessageQueue
+                            .getState()
+                            .getQueue(queueId)
+                          if (queue.length > 0) {
+                            useMessageQueue.getState().clearQueue(queueId)
+                            return
+                          }
                         }
+                        stopStreaming(currentThreadId ?? '')
                       }}
                     >
                       <IconPlayerStopFilled />
