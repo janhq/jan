@@ -107,6 +107,10 @@ For those who enjoy the scenic route:
 - Make ≥ 3.81
 - Rust (for Tauri)
 - (macOS Apple Silicon only) MetalToolchain `xcodebuild -downloadComponent MetalToolchain`
+- (Linux / Ubuntu) System dependencies:
+  ```bash
+  sudo apt install -y libglib2.0-dev pkg-config libgdk-pixbuf-2.0-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libpango1.0-dev libatk1.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev
+  ```
 
 ### Run with Make
 
