@@ -294,6 +294,22 @@ jobs:
           Set-Content -Path $t -Value $c -NoNewline
           Select-String -Path $t -Pattern 'ARCH|aarch64|jan_' | Select-Object -First 12
 
+      # Only src-tauri, which covers the two release compiles that follow the
+      # engine: `build:cli` and `tauri build`. The llamacpp plugin has its own
+      # target dir -- these are separate crates, not one workspace -- and it is
+      # deliberately left uncached: its OUT_DIR holds the whole cmake tree with
+      # ggml-cuda built for seven architectures, which would swallow the 10 GB
+      # per-repo cache budget on its own.
+      #
+      # Does nothing for a cold first run; the payoff is every run after it.
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+          # This job has failed in packaging after an hour of compiling more
+          # than once. Saving anyway keeps the next attempt cheap.
+          cache-on-failure: true
+
       - name: Install AzureSignTool
         run: dotnet tool install --global --version 6.0.0 AzureSignTool
 
