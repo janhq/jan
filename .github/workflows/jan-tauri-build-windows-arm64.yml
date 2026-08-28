@@ -1,0 +1,276 @@
+# Windows ARM64 desktop build.
+#
+# Standalone on purpose: it neither calls the x64 template nor edits any file
+# that build reads, so it cannot change an x64 artifact. Merging the two behind
+# an `arch` input is the eventual shape, once ARM64 has gone green.
+#
+# Unsigned, no updater artifacts, so it needs no secrets. Signing, the
+# `windows-aarch64` updater entry and publication come later.
+name: Tauri Build Windows ARM64
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'stable / beta / nightly'
+        required: false
+        type: string
+        default: 'nightly'
+      new_version:
+        description: 'Version to stamp into the app'
+        required: false
+        type: string
+        default: '0.0.0'
+      engine_variant:
+        description: >
+          JAN_ENGINE_VARIANT. `cuda13` is the minimum that exercises CUDA;
+          `cuda13-vulkan` adds the fallback for GPUs with no CUDA runtime.
+        required: false
+        type: string
+        default: 'cuda13'
+      vulkan_fallback:
+        description: >
+          JAN_ENGINE_VULKAN_FALLBACK. Defaults to 1 in the Makefile, which adds
+          the vulkan feature -- and the SDK requirement -- to any vendor build
+          whether or not the variant named it. Set to 1 with cuda13-vulkan.
+        required: false
+        type: string
+        default: '0'
+  # Pre-merge testing hook only. GitHub does not offer workflow_dispatch until
+  # the file is on the default branch, so without this there is no way to run
+  # this before merging. Drop it once that lands.
+  push:
+    branches: ['feat/windows-arm64']
+
+concurrency:
+  group: tauri-win-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CHANNEL: ${{ inputs.channel || 'nightly' }}
+  NEW_VERSION: ${{ inputs.new_version || '0.0.0' }}
+  JAN_ENGINE_VARIANT: ${{ inputs.engine_variant || 'cuda13' }}
+  JAN_ENGINE_VULKAN_FALLBACK: ${{ inputs.vulkan_fallback || '0' }}
+  CUDA_SHORT: '13.4'
+  # 13.4 is the first release with Windows ARM64, and is a developer preview --
+  # hence packages.nvidia.com/prerelease; the usual compute/cuda path has no
+  # 13.4 entry.
+  CUDA_URL: 'https://packages.nvidia.com/prerelease/cuda/13.4.0/local_installers/cuda_13.4.0_windows_arm64.exe'
+
+jobs:
+  build-windows-arm64:
+    runs-on: windows-11-arm
+    timeout-minutes: 180
+
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Replace Icons for Beta Build
+        if: env.CHANNEL != 'stable'
+        shell: bash
+        run: cp .github/scripts/icon-${CHANNEL}.png src-tauri/icons/icon.png
+
+      - name: Installing node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+
+      - name: Install ctoml
+        run: cargo install ctoml
+
+      # build.rs reads VCToolsInstallDir to locate bin/Host*/arm64/cl.exe. The
+      # image does not export it outside a developer prompt.
+      - name: Resolve the MSVC ARM64 toolset
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsRoot = & $vswhere -products * -latest -property installationPath | Select-Object -First 1
+          if (-not $vsRoot) { throw 'vswhere found no Visual Studio installation' }
+          $ver = (Get-Content "$vsRoot\VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt" -Raw).Trim()
+          $vcTools = "$vsRoot\VC\Tools\MSVC\$ver"
+          $found = $false
+          foreach ($host_ in 'Hostarm64', 'Hostx64') {
+            $cl = "$vcTools\bin\$host_\arm64\cl.exe"
+            if (Test-Path $cl) { Write-Host "ARM64 host compiler: $cl"; $found = $true; break }
+          }
+          if (-not $found) { throw "no arm64 cl.exe under $vcTools\bin\Host*\arm64" }
+          "VCToolsInstallDir=$vcTools" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      # ~3.8 GB with no network installer available, so this dominates the job.
+      # Uncached deliberately: it would claim a third of the repo's 10 GB cache
+      # budget and evict the cargo caches that matter more.
+      - name: Install the CUDA toolkit (ARM64)
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $exe = Join-Path $env:RUNNER_TEMP 'cuda_arm64.exe'
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          Invoke-WebRequest -Uri $env:CUDA_URL -OutFile $exe
+          Write-Host ("Downloaded {0:N0} MB in {1:N1} min" -f ((Get-Item $exe).Length / 1MB), $sw.Elapsed.TotalMinutes)
+
+          $sw.Restart()
+          Start-Process -FilePath $exe -ArgumentList '-s' -Wait -NoNewWindow
+          Write-Host ("Installed in {0:N1} min" -f $sw.Elapsed.TotalMinutes)
+
+          $root = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_SHORT"
+          if (-not (Test-Path $root)) { throw "CUDA not installed at $root" }
+          "CUDA_PATH=$root" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "$root\bin"       | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+          & "$root\bin\nvcc.exe" --version
+
+      # LunarG's Windows ARM64 SDK is platform code `warm`; `windows` is x64.
+      - name: Provision the Vulkan SDK
+        if: contains(format('-{0}-', env.JAN_ENGINE_VARIANT), '-vulkan-') || env.JAN_ENGINE_VULKAN_FALLBACK == '1'
+        shell: bash
+        run: |
+          curl -fL -o "$RUNNER_TEMP/vulkan-sdk.exe" \
+            https://sdk.lunarg.com/sdk/download/latest/warm/vulkan_sdk.exe
+          "$RUNNER_TEMP/vulkan-sdk.exe" --root 'C:\VulkanSDK' \
+            --accept-licenses --default-answer --confirm-command install
+          echo 'VULKAN_SDK=C:\VulkanSDK' >> "$GITHUB_ENV"
+          echo 'C:\VulkanSDK\Bin' >> "$GITHUB_PATH"
+
+      - name: Verify the engine toolchain
+        shell: bash
+        run: |
+          for tool in cmake ninja clang; do
+            command -v "$tool" >/dev/null 2>&1 || { echo "::error::$tool is not on PATH"; exit 1; }
+            echo "$tool -> $(command -v "$tool")"
+          done
+          nvcc --version
+
+      - name: Update app version and product name
+        shell: bash
+        run: |
+          jq --arg version "$NEW_VERSION" '.version = $version' ./src-tauri/tauri.conf.json > /tmp/c.json
+          mv /tmp/c.json ./src-tauri/tauri.conf.json
+
+          jq '.bundle.targets = ["nsis"] | .bundle.windows.nsis.template = "tauri.bundle.windows.nsis.template"' \
+             ./src-tauri/tauri.windows.conf.json > /tmp/w.json
+          mv /tmp/w.json ./src-tauri/tauri.windows.conf.json
+
+          jq --arg version "$NEW_VERSION" '.version = $version' web-app/package.json > /tmp/p.json
+          mv /tmp/p.json web-app/package.json
+
+          for p in hardware llamacpp; do
+            jq --arg version "$NEW_VERSION" '.version = $version' \
+              "./src-tauri/plugins/tauri-plugin-$p/package.json" > /tmp/p.json
+            mv /tmp/p.json "./src-tauri/plugins/tauri-plugin-$p/package.json"
+            ctoml "./src-tauri/plugins/tauri-plugin-$p/Cargo.toml" package.version "$NEW_VERSION"
+          done
+          ctoml ./src-tauri/Cargo.toml package.version "$NEW_VERSION"
+
+          if [ "$CHANNEL" != "stable" ]; then
+            jq --arg name "Jan-$CHANNEL" '.productName = $name' ./src-tauri/tauri.conf.json > /tmp/c.json
+            mv /tmp/c.json ./src-tauri/tauri.conf.json
+            chmod +x .github/scripts/rename-tauri-app.sh .github/scripts/rename-workspace.sh
+            .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json "$CHANNEL"
+            .github/scripts/rename-workspace.sh ./package.json "$CHANNEL"
+            ctoml ./src-tauri/Cargo.toml package.name "Jan-$CHANNEL"
+          fi
+
+      # The checked-in NSIS "template" is a rendered Handlebars dump: every
+      # value is literal, including the arch, the sidecar filenames and the
+      # workspace path of whatever machine generated it. Rewritten here rather
+      # than in the file, which the x64 build shares.
+      - name: Retarget the NSIS template for ARM64
+        shell: pwsh
+        run: |
+          $t = 'src-tauri/tauri.bundle.windows.nsis.template'
+          $c = Get-Content $t -Raw
+
+          # .Replace, not -replace: regex would eat the backslashes.
+          $c = $c.Replace('D:\a\jan\jan', $env:GITHUB_WORKSPACE)
+          $c = $c.Replace('!define ARCH "x64"', '!define ARCH "arm64"')
+          $c = $c.Replace('\nsis\x64\', '\nsis\arm64\')
+          # Sidecars are named by target triple, so they land as aarch64-*.
+          # Without this NSIS fails late with "could not find file".
+          $c = $c.Replace('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')
+
+          $base, $build = $env:NEW_VERSION, $env:NEW_VERSION
+          if ($env:NEW_VERSION -match '^([^-]+)-(?:rc(\d+)-beta|(.+))$') {
+            $base = $Matches[1]
+            $build = "$base." + $(if ($Matches[2]) { $Matches[2] } else { $Matches[3] })
+          } else {
+            $build = "$base.0"
+          }
+          $c = $c.Replace('jan_version', $base).Replace('jan_build', $build)
+
+          if ($env:CHANNEL -eq 'stable') {
+            $c = $c.Replace('jan_productname', 'Jan').
+                    Replace('jan_mainbinaryname', 'Jan-Desktop').
+                    Replace('jan_bundleid', 'jan.ai.app')
+          } else {
+            $c = $c.Replace('jan_productname', "Jan-$env:CHANNEL").
+                    Replace('jan_mainbinaryname', "Jan-Desktop-$env:CHANNEL").
+                    Replace('jan_bundleid', "jan-$env:CHANNEL.ai.app")
+          }
+
+          Set-Content -Path $t -Value $c -NoNewline
+          Select-String -Path $t -Pattern 'ARCH|aarch64|jan_' | Select-Object -First 12
+
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Build app
+        shell: bash
+        run: make build
+
+      - name: Upload the engine build log
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: engine-build-log-windows-arm64
+          path: src-tauri/target/engine-build.log
+          if-no-files-found: ignore
+
+      # `make build` succeeding is not the same as having produced an ARM64
+      # binary with a CUDA backend beside it.
+      - name: Verify the artifacts
+        shell: pwsh
+        run: |
+          $bin = 'src-tauri/resources/bin'
+          $worker = Join-Path $bin 'jan-llama-worker.exe'
+          if (-not (Test-Path $worker)) { throw "$worker missing" }
+
+          $vc = $env:VCToolsInstallDir
+          $dumpbin = Join-Path $vc 'bin\Hostarm64\arm64\dumpbin.exe'
+          if (-not (Test-Path $dumpbin)) { $dumpbin = Join-Path $vc 'bin\Hostx64\x64\dumpbin.exe' }
+
+          $bad = @()
+          foreach ($f in @($worker) + @(Get-ChildItem $bin -Filter 'ggml*.dll')) {
+            $p = if ($f -is [string]) { $f } else { $f.FullName }
+            $h = & $dumpbin /headers $p 2>&1 | Out-String
+            $arm = $h -match 'AA64|ARM64'
+            Write-Host ("{0,-46} {1}" -f (Split-Path $p -Leaf), $(if ($arm) { 'ARM64' } else { 'NOT ARM64' }))
+            if (-not $arm) { $bad += (Split-Path $p -Leaf) }
+          }
+          if ($bad) { throw "not ARM64: $($bad -join ', ')" }
+
+          $backends = Get-ChildItem $bin -Filter 'ggml-*.dll' |
+            Where-Object { $_.Name -notmatch 'ggml-base' }
+          if (-not $backends) { throw 'no ggml backend modules staged' }
+          Write-Host "backends: $($backends.Name -join ', ')"
+          if (-not ($backends.Name -contains 'ggml-cuda.dll')) {
+            throw 'ggml-cuda.dll missing -- the CUDA backend did not build'
+          }
+
+          Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -Include *.exe |
+            ForEach-Object { Write-Host "bundle: $($_.FullName)" }
+
+      - name: Upload NSIS Installer Artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: jan-windows-arm64-exe-${{ env.NEW_VERSION }}
+          path: ./src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

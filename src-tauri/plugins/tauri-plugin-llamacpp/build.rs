@@ -109,10 +109,63 @@ mod engine {
             return;
         }
         cmd.args(["-G", WINDOWS_GENERATOR]);
+        // One per target arch, both clang. The arm64 file also pins
+        // `-march=armv8.7-a`, upstream's baseline for its own ARM64 releases.
+        let toolchain = if env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default() == "aarch64" {
+            "cmake/arm64-windows-llvm.cmake"
+        } else {
+            "cmake/x64-windows-llvm.cmake"
+        };
         cmd.arg(format!(
             "-DCMAKE_TOOLCHAIN_FILE={}",
-            cmake_path(&src.join("cmake/x64-windows-llvm.cmake"))
+            cmake_path(&src.join(toolchain))
         ));
+        windows_cuda_host_compiler(cmd);
+    }
+
+    /// nvcc needs a host compiler for the non-device half of every `.cu`, and
+    /// cmake infers it from the host arch -- wrong when the target is ARM64.
+    /// Upstream's `cmake/arm64-windows-msvc-cuda.cmake` fixes that but leaves
+    /// `CMAKE_C_COMPILER` unset, so C/C++ falls to `cl.exe`, which ggml-cpu
+    /// rejects for ARM. So the clang toolchain file stays authoritative and
+    /// only the CUDA host compiler is overridden here.
+    ///
+    /// `VCToolsInstallDir` is the arch-independent toolset root, set by any VS
+    /// developer environment. Left alone when absent, so cmake reports the
+    /// missing compiler rather than a path that does not exist.
+    fn windows_cuda_host_compiler(cmd: &mut Command) {
+        if env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default() != "aarch64" {
+            return;
+        }
+        if !feature_enabled("engine-cuda") {
+            return;
+        }
+        println!("cargo:rerun-if-env-changed=VCToolsInstallDir");
+        let Ok(tools) = env::var("VCToolsInstallDir") else {
+            println!(
+                "cargo:warning=VCToolsInstallDir is unset, so cmake will guess the CUDA host \
+                 compiler from the host arch; run from a Visual Studio developer prompt if the \
+                 CUDA configure fails"
+            );
+            return;
+        };
+        // Probed, not assumed: ARM64 is reachable from either host.
+        let root = PathBuf::from(tools);
+        for host in ["Hostarm64", "Hostx64"] {
+            let cl = root.join("bin").join(host).join("arm64").join("cl.exe");
+            if cl.is_file() {
+                cmd.arg(format!(
+                    "-DCMAKE_CUDA_HOST_COMPILER={}",
+                    cmake_path(&cl)
+                ));
+                return;
+            }
+        }
+        println!(
+            "cargo:warning=no arm64 cl.exe under {}/bin/Host*/arm64 -- install the MSVC ARM64 \
+             toolset (Microsoft.VisualStudio.Component.VC.Tools.ARM64)",
+            root.display()
+        );
     }
 
     /// cmake takes forward slashes on every platform and treats a backslash as
@@ -674,11 +727,20 @@ mod engine {
     /// `GGML_CPU_ALL_VARIANTS` hard-errors on architectures it has no variant
     /// table for (ggml/src/CMakeLists.txt:581), so it is opt-in per arch rather
     /// than unconditional.
+    ///
+    /// The table is keyed on (arch, OS), not arch alone: the ARM branch covers
+    /// Linux, Android and Apple only, so Windows hits the `FATAL_ERROR`.
+    /// Opting out there is safe, not just quieter -- `GGML_BACKEND_DL` still
+    /// yields one CPU backend as a loadable MODULE, which is what
+    /// stage-engine.sh asserts. Cost is that one backend at the toolchain
+    /// file's armv8.7-a baseline instead of a runtime-scored set.
     fn cpu_all_variants_supported() -> bool {
-        matches!(
-            env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default().as_str(),
-            "x86_64" | "aarch64" | "riscv64"
-        )
+        let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+        let os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+        if arch == "aarch64" && os == "windows" {
+            return false;
+        }
+        matches!(arch.as_str(), "x86_64" | "aarch64" | "riscv64")
     }
 
     /// `JAN_LLAMA_CPP_DIR` overrides the vendored clone, which is what a
