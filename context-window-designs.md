@@ -389,37 +389,37 @@ FREE 79K 33.5% | BUFFER 35K 15.0% | SPLIT ESTIMATED
 
 ## Concept 11 - Rail + Banks
 
-Combine the Threshold Rail's operational answer with Bank Bars' category detail. The rail answers "how close are we to autocompaction?" first; the equal-scale banks explain what occupies the window immediately below it.
+Combine the Threshold Rail's operational answer with Bank Bars' category detail. The rail answers "how close are we to autocompaction?" first; the equal-scale bars explain what occupies the window immediately below it. The presentation uses plain user-facing language and does not expose rendering provenance or symbol legends.
 
 ```text
-CTX CONTROL DECK // TOKAMAK-1-PREVIEW                   STATUS NOMINAL
-FILL 120K / 234K / 51.5% [PROVIDER]          HEADROOM TO COMPACT 79K
+Context Usage
+tokamak-1-preview · 120K / 234K tokens used (51.5%, provider)
 
 0%                           51.5%                85%     100%
 |==============================^...................|#########|
 0K                           120K                199K     234K
-                              NOW            AUTO-COMPACT
-= FILLED / PROVIDER   . HEADROOM / DERIVED   # BUFFER / CONFIGURED
 
-BREAKDOWN // ESTIMATED // EACH BANK USES THE FULL-WINDOW BASELINE
-P  PROMPT    2.6%  [▌░░░░░░░░░░░░░░░░░░░]   6K
-T  TOOLS     3.8%  [▊░░░░░░░░░░░░░░░░░░░]   9K
-C  PROJECT   0.9%  [▏░░░░░░░░░░░░░░░░░░░]  2.1K
-K  SKILLS    3.4%  [▋░░░░░░░░░░░░░░░░░░░]   8K
-M  MESSAGES 40.7%  [████████▏░░░░░░░░░░░]  95K
-.  FREE     33.5%  [██████▋░░░░░░░░░░░░░]  79K
-B  BUFFER   15.0%  [███░░░░░░░░░░░░░░░░░]  35K
+79K tokens available before auto-compact
 
-FILL REPORTED // BREAKDOWN ESTIMATED // AUTO-COMPACT @ 199K
+Estimated usage
+PROMPT     2.6%  [▌░░░░░░░░░░░░░░░░░░░]   6K
+TOOLS      3.8%  [▊░░░░░░░░░░░░░░░░░░░]   9K
+PROJECT    0.9%  [▏░░░░░░░░░░░░░░░░░░░]  2.1K
+SKILLS     3.4%  [▋░░░░░░░░░░░░░░░░░░░]   8K
+MESSAGES  40.7%  [████████▏░░░░░░░░░░░]  95K
+FREE      33.5%  [██████▋░░░░░░░░░░░░░]  79K
+BUFFER    15.0%  [███░░░░░░░░░░░░░░░░░]  35K
 ```
 
-**Tone:** Tactical control surface above a scientific diagnostic ledger.
+Remove the previous `CTX CONTROL DECK`, `STATUS NOMINAL`, `NOW`, `AUTO-COMPACT`, symbol legend, `BREAKDOWN // ... BASELINE`, one-letter category keys, and provenance footer. The headline states provider or estimated provenance once. `Estimated usage` states category provenance once.
 
-**Strengths:** Best complete single view, fastest threshold scan, strongest category comparison, explicit provenance, and no dependency on color for meaning.
+**Tone:** Direct capacity summary. The rail and bars carry the visual identity; the copy remains ordinary language.
 
-**Risk:** Repeats free and buffer information in both the rail and bank rows, uses more vertical space than either parent concept, and replaces the exact 200-cell requirement with two complementary approximate scales.
+**Strengths:** Fast threshold scan, complete category comparison, visible provenance, and no decoding step before the values make sense.
 
-**Narrow behavior:** Keep the rail and shorten every bank to available width. Below about 32 columns, replace the bars with exact `label tokens percent` rows while retaining `120K/234K | 79K to compact`.
+**Risk:** Free space and buffer still appear in both the rail and category rows, but that repetition connects the threshold overview to the detailed accounting.
+
+**Narrow behavior:** Keep the rail and shorten every bar to available width. Below about 32 columns, replace the bars with exact `label tokens percent` rows while retaining the current usage and tokens available before auto-compact.
 
 ---
 
