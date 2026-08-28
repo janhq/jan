@@ -7,6 +7,7 @@ import {
   turnsFor,
   abortRun,
   answerAsk,
+  isAbortLike,
   isRunning,
   __testing,
   type PendingToolCall,
@@ -36,7 +37,11 @@ const textStep = (text: string, usageTotal?: number): UIMessageChunk[] => [
 ]
 
 const toolStep = (name: string, id = 'c1'): UIMessageChunk[] => [
-  { type: 'tool-input-start', toolCallId: id, toolName: name } as UIMessageChunk,
+  {
+    type: 'tool-input-start',
+    toolCallId: id,
+    toolName: name,
+  } as UIMessageChunk,
   {
     type: 'tool-input-available',
     toolCallId: id,
@@ -58,7 +63,9 @@ const deps = (
 ) => {
   let i = 0
   return {
-    sendStep: vi.fn(async () => streamOf(steps[Math.min(i++, steps.length - 1)])),
+    sendStep: vi.fn(async () =>
+      streamOf(steps[Math.min(i++, steps.length - 1)])
+    ),
     dispatch,
     sink: noopSink(),
     onStep: vi.fn(),
@@ -286,5 +293,74 @@ describe('run handles', () => {
 
   it('is a no-op for a session that is not running', () => {
     expect(() => abortRun('nope')).not.toThrow()
+  })
+})
+
+describe('isAbortLike', () => {
+  it('recognises the stop the tauri http plugin actually reports', () => {
+    expect(isAbortLike(new Error('Request cancelled'))).toBe(true)
+    const err = new Error('nope')
+    err.name = 'AbortError'
+    expect(isAbortLike(err)).toBe(true)
+  })
+
+  // A dropped socket says "connection aborted"; reporting that as a user stop
+  // would hide a real failure behind a notice that says nothing went wrong.
+  it('does not mistake a network failure for a stop', () => {
+    expect(isAbortLike(new Error('connection aborted by peer'))).toBe(false)
+  })
+
+  it('trusts the signal over the message', () => {
+    const c = new AbortController()
+    c.abort()
+    expect(isAbortLike(new Error('error sending request'), c.signal)).toBe(true)
+  })
+})
+
+describe('runTurn failure paths', () => {
+  const throwingDeps = (error: unknown) => ({
+    ...deps([[]]),
+    sendStep: vi.fn(async () => {
+      throw error
+    }),
+  })
+
+  it('reports a stop as an outcome instead of throwing', async () => {
+    const c = new AbortController()
+    const d = throwingDeps(new Error('Request cancelled'))
+    c.abort()
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: c.signal,
+    })
+    expect(out.stoppedBy).toBe('aborted')
+    expect(out.errorText).toBeUndefined()
+  })
+
+  it('reports a transport failure as an outcome, message intact', async () => {
+    const d = throwingDeps(new Error('error sending request for url (…)'))
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.stoppedBy).toBe('error')
+    expect(out.errorText).toContain('error sending request')
+    // Nothing to replay: the model never answered, so no assistant turn exists.
+    expect(out.messages).toHaveLength(1)
+  })
+
+  // An assistant message with no parts is a turn the model never took, and the
+  // next request would replay it as one.
+  it('appends no assistant message for a step that produced nothing', async () => {
+    const d = deps([[{ type: 'error', errorText: 'boom' } as UIMessageChunk]])
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.stoppedBy).toBe('error')
+    expect(out.messages).toHaveLength(1)
   })
 })

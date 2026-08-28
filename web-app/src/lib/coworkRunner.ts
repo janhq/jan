@@ -98,6 +98,24 @@ export function abortRun(sid: string, reason = 'cancelled'): void {
   handles.delete(sid)
 }
 
+/**
+ * Whether a rejection means "the user stopped this", not "this failed".
+ *
+ * Needed because the abort does not arrive as an `AbortError`: Jan streams
+ * through `@tauri-apps/plugin-http`, whose `fetch` rejects with a plain
+ * `Error('Request cancelled')` when the signal fires. Matched exactly rather
+ * than by substring — "connection aborted" is a network failure and must keep
+ * being reported as one.
+ */
+export function isAbortLike(e: unknown, signal?: AbortSignal): boolean {
+  if (signal?.aborted) return true
+  if (e instanceof Error && e.name === 'AbortError') return true
+  const message = (e instanceof Error ? e.message : String(e)).trim()
+  return /^(request cancelled|the operation was aborted\.?|the user aborted a request\.?)$/i.test(
+    message
+  )
+}
+
 /** Settle a pending `ask`. Returns false when the request is already gone. */
 export function answerAsk(
   sid: string,
@@ -253,10 +271,7 @@ export type RunDeps = {
     signal: AbortSignal
   ) => Promise<ReadableStream<UIMessageChunk>>
   /** Run one tool call. Must resolve, never reject. */
-  dispatch: (
-    call: PendingToolCall,
-    signal: AbortSignal
-  ) => Promise<ToolOutcome>
+  dispatch: (call: PendingToolCall, signal: AbortSignal) => Promise<ToolOutcome>
   sink: StreamSink
   /** Called once per completed step with everything that step produced. */
   onStep: (info: {
@@ -329,8 +344,27 @@ export async function runTurn(opts: {
     // A snapshot, not the live array: the loop pushes to `messages` after the
     // stream is handed over, and the transport rewrites what it is given
     // (trimming, compaction) without expecting it to move underneath.
-    const stream = await deps.sendStep([...messages], signal)
-    const result = await consumeStep(stream, deps.sink)
+    let result: StepResult
+    try {
+      const stream = await deps.sendStep([...messages], signal)
+      result = await consumeStep(stream, deps.sink)
+    } catch (e) {
+      // A transport failure is an outcome, not an exception: throwing here left
+      // the caller with no steps, no usage and nothing to render but the raw
+      // message, and a user-initiated stop arrived down this same path.
+      return {
+        messages,
+        steps: step,
+        usage,
+        sessionTokens: spend.spent,
+        stoppedBy: isAbortLike(e, signal) ? 'aborted' : 'error',
+        errorText: isAbortLike(e, signal)
+          ? undefined
+          : e instanceof Error
+            ? e.message
+            : String(e),
+      }
+    }
     step += 1
     if (result.usage) {
       usage = result.usage
@@ -338,7 +372,13 @@ export async function runTurn(opts: {
     }
 
     if (result.errorText) {
-      messages.push(assistantMessageFor(deps.nextMessageId(), result, new Map()))
+      // Only when the step produced something: an assistant message with no
+      // parts is a turn the model never took, and it would be replayed as one.
+      if (result.text || result.toolCalls.length > 0) {
+        messages.push(
+          assistantMessageFor(deps.nextMessageId(), result, new Map())
+        )
+      }
       deps.onStep({
         step,
         result,
@@ -369,7 +409,9 @@ export async function runTurn(opts: {
       outcomes.set(call.toolCallId, await deps.dispatch(call, signal))
     }
 
-    messages.push(assistantMessageFor(deps.nextMessageId(), result, outcomes))
+    if (result.text || result.toolCalls.length > 0) {
+      messages.push(assistantMessageFor(deps.nextMessageId(), result, outcomes))
+    }
     deps.onStep({ step, result, turns: turnsFor(result, outcomes), outcomes })
 
     if (result.aborted || signal.aborted) {

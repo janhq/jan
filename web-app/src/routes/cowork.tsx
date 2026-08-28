@@ -50,6 +50,7 @@ import { CoworkChangesChip } from '@/containers/CoworkChangesChip'
 import { collectCodeFileDiffs } from '@/lib/coworkDiffs'
 import { CoworkSandboxChip } from '@/containers/CoworkSandboxChip'
 import { CoworkBudgetNotice } from '@/containers/CoworkBudgetNotice'
+import { CoworkRunNotice } from '@/containers/CoworkRunNotice'
 import { CoworkAskCard } from '@/containers/CoworkAskCard'
 import { CoworkChatTransport } from '@/lib/coworkTransport'
 import { dispatchCoworkTool } from '@/lib/coworkDispatch'
@@ -60,6 +61,7 @@ import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { MAX_AGENT_STEPS } from '@/lib/coworkBudget'
 import {
   abortRun,
+  isAbortLike,
   answerAsk,
   runTurn,
   type RunOutcome,
@@ -102,6 +104,7 @@ function CoworkPage() {
   const [stoppedBy, setStoppedBy] = useState<RunOutcome['stoppedBy'] | null>(
     null
   )
+  const [runError, setRunError] = useState<string | undefined>(undefined)
   const [gitBranch, setGitBranch] = useState<string | null>(null)
   const [subagentDefs, setSubagentDefs] = useState<SubagentDefinition[]>([])
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
@@ -182,8 +185,14 @@ function CoworkPage() {
     if (session?.id) useCoworkSessions.getState().setFolder(session.id, null)
   }, [session?.id])
 
+  // `liveTurns` holds only the rows this run has produced — `commitTurns`
+  // appends them — so the committed transcript has to be shown alongside it or
+  // the conversation disappears the moment a follow-up run starts.
   const displayedTurns = useMemo(
-    () => (running ? liveTurns : (session?.turns ?? [])),
+    () =>
+      running
+        ? [...(session?.turns ?? []), ...liveTurns]
+        : (session?.turns ?? []),
     [running, liveTurns, session?.turns]
   )
   const uiMessages = useMemo(
@@ -229,11 +238,17 @@ function CoworkPage() {
     setLiveTurns(liveTurnsRef.current)
   }, [])
 
-  const handleSubmit = async (text: string) => {
+  /**
+   * Drive one request. `text` is null for a resume — a retry after a failure
+   * re-runs the committed history rather than re-sending the question, which
+   * would leave the model reading it twice.
+   */
+  const runRequest = async (text: string | null) => {
     if (running) return
     const sid = ensureCurrentSession()
     const store = useCoworkSessions.getState()
     const current = store.sessions.find((s) => s.id === sid)
+    if (!text && !(current?.messages?.length ?? 0)) return
     if (!selectedModel?.id) {
       toast.error(t('common:selectModel'))
       return
@@ -245,11 +260,13 @@ function CoworkPage() {
       toast.error(t('common:modelNoTools', { model: selectedModel.id }))
       return
     }
-    if (current?.title === 'New session') store.setTitle(sid, text.slice(0, 40))
+    if (text && current?.title === 'New session')
+      store.setTitle(sid, text.slice(0, 40))
 
     setStoppedBy(null)
+    setRunError(undefined)
     setLiveUsage(null)
-    liveTurnsRef.current = [{ role: 'user', content: text }]
+    liveTurnsRef.current = text ? [{ role: 'user', content: text }] : []
     setLiveTurns(liveTurnsRef.current)
     useCoworkRun.getState().resetSubagents(sid)
     setRunning(true)
@@ -316,16 +333,19 @@ function CoworkPage() {
     }
 
     const baseMessages = current?.messages ?? []
-    const messages = [
-      ...baseMessages,
-      {
-        id: `${sid}-user-${baseMessages.length}`,
-        role: 'user',
-        parts: [{ type: 'text', text }],
-      } as any,
-    ]
+    const messages = text
+      ? [
+          ...baseMessages,
+          {
+            id: `${sid}-user-${baseMessages.length}`,
+            role: 'user',
+            parts: [{ type: 'text', text }],
+          } as any,
+        ]
+      : [...baseMessages]
 
     let outcome: RunOutcome | null = null
+    let thrown: Pick<RunOutcome, 'stoppedBy' | 'errorText'> | null = null
     try {
       outcome = await runTurn({
         messages,
@@ -481,16 +501,15 @@ function CoworkPage() {
         },
       })
     } catch (e) {
-      pushLive([
-        {
-          role: 'tool',
-          content: '',
-          name: 'error',
-          result: e instanceof Error ? e.message : String(e),
-          isError: true,
-          status: 'done',
-        },
-      ])
+      // The runner turns a failed step into an outcome, so this is the last
+      // resort — a fault in the loop itself. Either way it is not a tool call,
+      // and rendering it as one claimed the agent had run something.
+      thrown = isAbortLike(e, controller.signal)
+        ? { stoppedBy: 'aborted' }
+        : {
+            stoppedBy: 'error',
+            errorText: e instanceof Error ? e.message : String(e),
+          }
     } finally {
       useAppState.getState().updateLoadingModel(false)
       useCoworkSessions
@@ -508,9 +527,28 @@ function CoworkPage() {
       abortRef.current = null
       askResolvers.current.clear()
       setAsk(null)
-      setStoppedBy(outcome?.stoppedBy ?? null)
+      setStoppedBy(thrown?.stoppedBy ?? outcome?.stoppedBy ?? null)
+      setRunError(thrown?.errorText ?? outcome?.errorText)
     }
   }
+
+  // Read through a ref so the memoized message rows keep a stable callback
+  // while still calling the current render's closure.
+  const runRequestRef = useRef(runRequest)
+  runRequestRef.current = runRequest
+
+  const handleSubmit = (text: string) => void runRequest(text)
+
+  /**
+   * Take the last turn again. Rewinding to the question and resuming is the
+   * whole operation — an agent turn is a chain of tool calls, so regenerating
+   * means discarding that chain, not re-sending the question after it.
+   */
+  const handleRegenerate = useCallback(() => {
+    if (running || !session?.id) return
+    useCoworkSessions.getState().rewindToLastUser(session.id)
+    void runRequestRef.current(null)
+  }, [running, session?.id])
 
   const abortRef = useRef<AbortController | null>(null)
   const askResolvers = useRef(
@@ -579,6 +617,7 @@ function CoworkPage() {
                         isFirstMessage={i === 0}
                         isLastMessage={i === uiMessages.length - 1}
                         status={running ? 'streaming' : 'ready'}
+                        onRegenerate={handleRegenerate}
                         reasoningContainerRef={reasoningContainerRef}
                         isReasoningAtBottom={isReasoningAtBottom}
                         onReasoningScroll={handleReasoningScroll}
@@ -613,6 +652,16 @@ function CoworkPage() {
                       kind="steps"
                       max={MAX_AGENT_STEPS}
                       onContinue={() => void handleSubmit('Continue.')}
+                    />
+                  )}
+                  {stoppedBy === 'aborted' && (
+                    <CoworkRunNotice kind="stopped" />
+                  )}
+                  {stoppedBy === 'error' && (
+                    <CoworkRunNotice
+                      kind="error"
+                      message={runError}
+                      onRetry={() => void runRequest(null)}
                     />
                   )}
                   {stoppedBy === 'tokens' && (

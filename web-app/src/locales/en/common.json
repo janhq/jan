@@ -685,6 +685,11 @@
     "compact": "Compact",
     "newSession": "New session"
   },
+  "run": {
+    "stopped": "Stopped.",
+    "failed": "The run stopped early.",
+    "tryAgain": "Try again"
+  },
   "modelNoTools": "{{model}} can’t call tools, so it can’t act as an agent. Pick a tool-calling model.",
   "askContinue": "Continue",
   "askNext": "Next question",

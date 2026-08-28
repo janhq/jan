@@ -11,7 +11,8 @@ vi.mock('@/lib/backendStorage', () => ({
 import { useCoworkSessions } from '../useCoworkSessions'
 import type { CoworkTurn, SubagentRun } from '@/types/coworkSession'
 
-const reset = () => useCoworkSessions.setState({ sessions: [], currentId: null })
+const reset = () =>
+  useCoworkSessions.setState({ sessions: [], currentId: null })
 
 const sub = (runId: string, name: string): SubagentRun => ({
   runId,
@@ -29,6 +30,39 @@ describe('useCoworkSessions', () => {
     const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
     expect(s.messages).toEqual([])
     expect(s.folder).toBeNull()
+  })
+
+  it('rewinds a run back to the question that started it', () => {
+    const id = useCoworkSessions.getState().createSession()
+    const turns: CoworkTurn[] = [
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'done' },
+      { role: 'user', content: 'second' },
+      { role: 'tool', content: '', name: 'read', status: 'done' },
+      { role: 'assistant', content: 'answer' },
+    ]
+    const msgs = [
+      { id: 'm1', role: 'user', parts: [] },
+      { id: 'm2', role: 'assistant', parts: [] },
+      { id: 'm3', role: 'user', parts: [] },
+      { id: 'm4', role: 'assistant', parts: [] },
+    ] as never
+    useCoworkSessions.getState().commitTurns(id, turns, msgs, [])
+    useCoworkSessions.getState().rewindToLastUser(id)
+
+    const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
+    // The question survives; the chain of tool calls it produced does not.
+    expect(s.turns.map((t) => t.content)).toEqual(['first', 'done', 'second'])
+    expect(s.messages.map((m) => m.id)).toEqual(['m1', 'm2', 'm3'])
+  })
+
+  // Rewinding a session that has never had a turn would otherwise empty it.
+  it('leaves a session with no user turn alone', () => {
+    const id = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().rewindToLastUser(id)
+    const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
+    expect(s.turns).toEqual([])
+    expect(s.messages).toEqual([])
   })
 
   it('appends turns and replaces the message list on commit', () => {
@@ -59,7 +93,9 @@ describe('useCoworkSessions', () => {
 
   it('keeps the last usage when a run reports none', () => {
     const id = useCoworkSessions.getState().createSession()
-    useCoworkSessions.getState().commitTurns(id, [], [], [], { total_tokens: 42 })
+    useCoworkSessions
+      .getState()
+      .commitTurns(id, [], [], [], { total_tokens: 42 })
     useCoworkSessions.getState().commitTurns(id, [], [], [])
     const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
     expect(s.lastUsage?.total_tokens).toBe(42)
@@ -130,9 +166,9 @@ describe('useCoworkSessions persist migration', () => {
       (m: { parts?: unknown[] }) => m.parts ?? []
     )
     expect(out.sessions[0].messages.length).toBeGreaterThan(0)
-    expect(
-      parts.some((p: { type?: string }) => p.type === 'tool-write')
-    ).toBe(true)
+    expect(parts.some((p: { type?: string }) => p.type === 'tool-write')).toBe(
+      true
+    )
   })
 
   it('leaves an already-migrated session alone', () => {

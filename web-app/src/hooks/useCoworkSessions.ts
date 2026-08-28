@@ -89,6 +89,10 @@ type CoworkSessionsState = {
     subagents: SubagentRun[],
     usage?: Usage
   ) => void
+  /** Drop everything the agent produced since the last question, so the run can
+   * be taken again. Both lists are rewound together or the transcript and the
+   * history the model sees would disagree. */
+  rewindToLastUser: (id: string) => void
   clearSession: (id: string) => void
 }
 
@@ -193,6 +197,28 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
           }),
         })),
 
+      rewindToLastUser: (id) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) => {
+            if (x.id !== id) return x
+            const lastIndexOfUser = (roles: { role: string }[]) => {
+              for (let i = roles.length - 1; i >= 0; i--) {
+                if (roles[i].role === 'user') return i
+              }
+              return -1
+            }
+            const lastTurn = lastIndexOfUser(x.turns)
+            const lastMessage = lastIndexOfUser(x.messages)
+            if (lastTurn < 0 || lastMessage < 0) return x
+            return {
+              ...x,
+              turns: x.turns.slice(0, lastTurn + 1),
+              messages: x.messages.slice(0, lastMessage + 1),
+              updated: now(),
+            }
+          }),
+        })),
+
       clearSession: (id) =>
         set((s) => ({
           sessions: s.sessions.map((x) =>
@@ -232,7 +258,10 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
               ? session
               : {
                   ...session,
-                  messages: coworkTurnsToUIMessages(session.turns ?? [], session.id),
+                  messages: coworkTurnsToUIMessages(
+                    session.turns ?? [],
+                    session.id
+                  ),
                 }
           ),
         }
