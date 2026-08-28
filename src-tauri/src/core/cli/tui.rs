@@ -4171,8 +4171,8 @@ impl App {
     ///
     /// The per-category numbers are always estimates (chars/4 over each
     /// segment's real serialized text, via the same [`estimate_token_count`]
-    /// path the compaction gauge uses), which is why the legend is headed
-    /// "Estimated usage by category" regardless of the headline's source.
+    /// path the compaction gauge uses), which is why the section is headed
+    /// "Context breakdown (estimated)" regardless of the headline's source.
     async fn context_report(&self) -> ContextReport {
         let mut segments = Vec::new();
         let args = self.args.as_ref();
@@ -4229,22 +4229,22 @@ impl App {
         let bytes_to_tokens = |bytes: usize| (bytes / 4) as u64;
         segments.push(ContextSegment {
             key: 'P',
-            label: "PROMPT",
+            label: "System prompt",
             tokens: bytes_to_tokens(prompt_bytes),
         });
         segments.push(ContextSegment {
             key: 'T',
-            label: "TOOLS",
+            label: "System tools",
             tokens: bytes_to_tokens(tools_bytes),
         });
         segments.push(ContextSegment {
             key: 'C',
-            label: "PROJECT",
+            label: "Project context",
             tokens: bytes_to_tokens(context_bytes),
         });
         segments.push(ContextSegment {
             key: 'K',
-            label: "SKILLS",
+            label: "Skills",
             tokens: bytes_to_tokens(skills_bytes),
         });
         let messages = if self.history.is_empty() {
@@ -4254,7 +4254,7 @@ impl App {
         };
         segments.push(ContextSegment {
             key: 'M',
-            label: "MESSAGES",
+            label: "Messages",
             tokens: messages,
         });
 
@@ -4266,12 +4266,12 @@ impl App {
         let free = self.context_window.saturating_sub(used + buffer);
         segments.push(ContextSegment {
             key: '.',
-            label: "FREE",
+            label: "Available",
             tokens: free,
         });
         segments.push(ContextSegment {
             key: 'B',
-            label: "BUFFER",
+            label: "Auto-compact reserve",
             tokens: buffer,
         });
 
@@ -5439,7 +5439,10 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
                 format!("{} before auto-compact", format_tokens(headroom)),
                 Style::new().bold(),
             )],
-            vec![Span::styled("Estimated usage", Style::new().dim())],
+            vec![Span::styled(
+                "Context breakdown (estimated)",
+                Style::new().dim(),
+            )],
         ];
         for (segment, percent) in report.segments.iter().zip(&percents) {
             rows.push(vec![Span::raw(format!(
@@ -5537,11 +5540,20 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
         Style::new().bold(),
     )]);
     rows.push(Vec::new());
-    rows.push(vec![Span::styled("Estimated usage", Style::new().dim())]);
+    rows.push(vec![Span::styled(
+        "Context breakdown (estimated)",
+        Style::new().dim(),
+    )]);
 
+    let label_width = report
+        .segments
+        .iter()
+        .map(|segment| segment.label.chars().count())
+        .max()
+        .unwrap_or_default();
     for (segment, percent) in report.segments.iter().zip(&percents) {
         let tokens = format_tokens(segment.tokens);
-        let prefix = format!("{:<8} {:>5.1}%  [", segment.label, percent);
+        let prefix = format!("{:<label_width$} {:>5.1}%  [", segment.label, percent);
         let suffix = format!("]  {tokens}");
         let fixed = prefix.chars().count() + suffix.chars().count();
         let bank_width = width.saturating_sub(fixed).clamp(1, CONTEXT_BANK_WIDTH_MAX);
@@ -26147,11 +26159,11 @@ mod tests {
     /// exercise the real partition rather than a hand-balanced one.
     fn context_report(window: u64, buffer: u64, content: [u64; 5]) -> ContextReport {
         let labels = [
-            ('P', "PROMPT"),
-            ('T', "TOOLS"),
-            ('C', "PROJECT"),
-            ('K', "SKILLS"),
-            ('M', "MESSAGES"),
+            ('P', "System prompt"),
+            ('T', "System tools"),
+            ('C', "Project context"),
+            ('K', "Skills"),
+            ('M', "Messages"),
         ];
         let mut segments: Vec<ContextSegment> = labels
             .iter()
@@ -26161,12 +26173,12 @@ mod tests {
         let used: u64 = content.iter().sum();
         segments.push(ContextSegment {
             key: '.',
-            label: "FREE",
+            label: "Available",
             tokens: window.saturating_sub(used + buffer),
         });
         segments.push(ContextSegment {
             key: 'B',
-            label: "BUFFER",
+            label: "Auto-compact reserve",
             tokens: buffer.min(window),
         });
         ContextReport {
@@ -26179,7 +26191,7 @@ mod tests {
     }
 
     #[test]
-    fn context_view_keeps_the_threshold_rail_and_bars_without_telemetry_jargon() {
+    fn context_view_uses_consistent_language_and_aligned_bars() {
         let mut report = context_report(234_000, 35_000, [6_049, 9_000, 2_149, 8_049, 95_253]);
         report.fill = 120_490;
         report.fill_reported = true;
@@ -26194,16 +26206,33 @@ mod tests {
         assert!(text.contains("Context window"));
         assert!(text.contains("|==============================^...................|╳╳╳╳╳╳╳╳╳|"));
         assert!(text.contains("79K tokens available before auto-compact"));
-        assert!(text.contains("Estimated usage"));
-        for label in [
-            "PROMPT", "TOOLS", "PROJECT", "SKILLS", "MESSAGES", "FREE", "BUFFER",
-        ] {
-            assert!(
+        assert!(text.contains("Context breakdown (estimated)"));
+
+        let labels = [
+            "System prompt",
+            "System tools",
+            "Project context",
+            "Skills",
+            "Messages",
+            "Available",
+            "Auto-compact reserve",
+        ];
+        let bar_lines = labels
+            .iter()
+            .map(|label| {
                 text.lines()
-                    .any(|line| line.trim_start().starts_with(label)),
-                "missing bar {label}: {text}"
-            );
-        }
+                    .find(|line| line.starts_with(label))
+                    .unwrap_or_else(|| panic!("missing bar {label}: {text}"))
+            })
+            .collect::<Vec<_>>();
+        let bar_column = bar_lines[0].find('[').expect("first bar must render");
+        assert!(
+            bar_lines
+                .iter()
+                .all(|line| line.find('[') == Some(bar_column)),
+            "bars must align: {bar_lines:?}"
+        );
+
         for removed in [
             "CTX CONTROL DECK",
             "STATUS NOMINAL",
@@ -26212,6 +26241,7 @@ mod tests {
             "BREAKDOWN //",
             "FULL-WINDOW BASELINE",
             "FILL REPORTED //",
+            "Estimated usage",
         ] {
             assert!(!text.contains(removed), "obsolete copy {removed}: {text}");
         }
@@ -26257,7 +26287,7 @@ mod tests {
             estimated.contains("tokamak-1-preview · 120K / 234k tokens used (51.5%, estimated)"),
             "an estimated fill must say so: {estimated}"
         );
-        assert!(estimated.contains("Estimated usage"));
+        assert!(estimated.contains("Context breakdown (estimated)"));
 
         report.fill_reported = true;
         let reported = text(&report);
