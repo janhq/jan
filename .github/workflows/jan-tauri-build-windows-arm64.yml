@@ -105,6 +105,31 @@ jobs:
           if (-not $found) { throw "no arm64 cl.exe under $vcTools\bin\Host*\arm64" }
           "VCToolsInstallDir=$vcTools" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
+          # cmake links executables through `cmake -E vs_link_exe`, which shells
+          # out to `mt` to embed the manifest. mt.exe ships in the Windows SDK,
+          # not with LLVM, and cmake looks for that exact name -- so LLVM's
+          # llvm-mt.exe on PATH does not satisfy it. Without this, cmake reports
+          # CMAKE_MT as empty and every executable link dies on
+          # "no such file or directory", starting with its own compiler probe.
+          $sdkBin = $null
+          $kits = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          if (Test-Path $kits) {
+            $versions = Get-ChildItem $kits -Directory |
+              Where-Object { $_.Name -as [version] } |
+              Sort-Object { [version]$_.Name } -Descending
+            foreach ($ver in $versions) {
+              # arm64 first so the native tool wins over the emulated x64 one.
+              foreach ($a in 'arm64', 'x64') {
+                $cand = Join-Path $ver.FullName $a
+                if (Test-Path (Join-Path $cand 'mt.exe')) { $sdkBin = $cand; break }
+              }
+              if ($sdkBin) { break }
+            }
+          }
+          if (-not $sdkBin) { throw "no mt.exe under $kits\<version>\{arm64,x64}" }
+          Write-Host "Windows SDK bin: $sdkBin"
+          $sdkBin | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+
       # Every archive is arm64: this is a native build, so nvcc itself is an
       # ARM64 binary. Upstream cross-compiles instead and pairs x86_64 host
       # tools with arm64 target libraries -- worth remembering as the fallback
@@ -186,7 +211,9 @@ jobs:
       - name: Verify the engine toolchain
         shell: bash
         run: |
-          for tool in cmake ninja clang; do
+          # mt is included because cmake needs it to link any executable, and
+          # its absence surfaces as an opaque failure inside a compiler probe.
+          for tool in cmake ninja clang mt; do
             command -v "$tool" >/dev/null 2>&1 || { echo "::error::$tool is not on PATH"; exit 1; }
             echo "$tool -> $(command -v "$tool")"
           done
