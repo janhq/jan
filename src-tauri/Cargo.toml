@@ -10,14 +10,14 @@ edition = "2021"
 # Below that the previous floor was 1.82, for `Option::is_none_or` in agent/loop.rs.
 rust-version = "1.85"
 resolver = "2"
-default-run = "jan-desktop"
+default-run = "Jan-Desktop"
 
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "jan-desktop"
+name = "Jan-Desktop"
 path = "src/main.rs"
 required-features = ["desktop"]
 
