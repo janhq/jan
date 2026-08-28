@@ -395,8 +395,9 @@ Combine the Threshold Rail's operational answer with Bank Bars' category detail.
 Context Usage
 tokamak-1-preview · 120K / 234K tokens used (51.5%, provider)
 
+Context window
 0%                           51.5%                85%     100%
-|==============================^...................|#########|
+|==============================^...................|╳╳╳╳╳╳╳╳╳|
 0K                           120K                199K     234K
 
 79K tokens available before auto-compact
@@ -412,6 +413,7 @@ BUFFER    15.0%  [███░░░░░░░░░░░░░░░░░] 
 ```
 
 Remove the previous `CTX CONTROL DECK`, `STATUS NOMINAL`, `NOW`, `AUTO-COMPACT`, symbol legend, `BREAKDOWN // ... BASELINE`, one-letter category keys, and provenance footer. The headline states provider or estimated provenance once. `Estimated usage` states category provenance once.
+The `╳` hatch marks the reserved autocompact buffer as unavailable to normal conversation content. It replaces `#`, which looked like consumed context.
 
 **Tone:** Direct capacity summary. The rail and bars carry the visual identity; the copy remains ordinary language.
 
