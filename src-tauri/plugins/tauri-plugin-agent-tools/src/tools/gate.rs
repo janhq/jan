@@ -176,7 +176,6 @@ pub fn resolve_decision(
             .and_then(|v| v.as_str())
             .map(|c| command_touches_hidden_jan_path(ctx.project_root, c))
             .unwrap_or(false);
-
     if hits_hidden || exec_hits_hidden {
         return Decision::HardDeny(DenyReason::Hidden);
     }
@@ -1011,7 +1010,6 @@ mod tests {
     #[test]
     fn an_escaping_read_still_prompts_when_no_root_covers_it() {
         let root = unique_root();
-
         let repo = unique_root();
         let elsewhere = unique_root();
         let roots = vec![repo.clone()];
@@ -1027,7 +1025,6 @@ mod tests {
             &ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
             &SessionGrants::default(),
         );
-
         assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
         for d in [&root, &repo, &elsewhere] {
             let _ = std::fs::remove_dir_all(d);
