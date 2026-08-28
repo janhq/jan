@@ -1864,6 +1864,11 @@ struct App {
     /// An install is in flight: `/update` is refused (two processes must not
     /// rewrite the same binary) and the footer shows progress.
     update_installing: bool,
+    /// Newest published build the user has been told about this session (the
+    /// startup one-shot or a prior interval poll). Keyed by `latest` so a
+    /// polled discovery that has not changed is never re-noted: `note_update`
+    /// consults it and only announces each version once.
+    last_announced_update: Option<String>,
     /// Lines scrolled back from the tail; 0 pins the view to the bottom so new
     /// content follows. Non-zero survives streaming so scroll-back stays usable.
     scrollback: u16,
@@ -2313,6 +2318,7 @@ impl App {
             plugin_collection_url: None,
             plugin_installing: false,
             update_installing: false,
+            last_announced_update: None,
             compact_request: None,
             compacting: None,
             compact_started: None,
@@ -6597,6 +6603,13 @@ async fn await_login_begin(
 /// restart. Cheap (`rev-parse --abbrev-ref HEAD`) but still shells out, so this
 /// is a poll, not every tick.
 const BRANCH_POLL_INTERVAL: Duration = Duration::from_secs(2);
+/// How often the loop re-checks for a newer published build. The agent CLI
+/// ships on a Tue/Thu nightly cadence, so a session left open across a publish
+/// is the normal case; an hours-long interval keeps the check off the hot path
+/// and bounds the load a fleet of long-lived sessions puts on the manifest
+/// host (`delta.jan.ai`) to not much more than the startup check. This is the
+/// only rate limit the check has, so it is deliberately long.
+const UPDATE_POLL_INTERVAL: Duration = Duration::from_secs(4 * 60 * 60);
 
 /// Re-read the current git branch off-loop (a blocking `git` call), only when
 /// no poll is already in flight. A no-op when the project isn't a git repo.
@@ -6635,9 +6648,31 @@ async fn await_update_check(
 /// Surface a newer published build in the transcript. The stderr notice the
 /// non-interactive commands print is invisible here (the alternate screen wipes
 /// it), so the TUI has to say it itself.
+///
+/// Announce each version at most once per session. Both the startup one-shot
+/// and every interval poll feed this same path, so on a timer the dedup keeps
+/// an unchanged manifest from being re-announced every tick.
 fn note_update(app: &mut App, update: Option<super::updater::AvailableUpdate>) {
-    if let Some(update) = update {
-        app.note(&format!("{}; run /update to install it", update.summary()));
+    let Some(update) = update else {
+        return;
+    };
+    if app.last_announced_update.as_deref() == Some(update.latest.as_str()) {
+        return;
+    }
+    app.last_announced_update = Some(update.latest.clone());
+    app.note(&format!("{}; run /update to install it", update.summary()));
+}
+
+/// Surface a deferred polled update, if any. Called at the top of the chat
+/// loop, which runs every 50ms tick even while a turn streams, so the notice is
+/// held until the run finishes: landing mid-stream would cut into the model's
+/// output. `update` stays pending, not dropped, when a run is active.
+fn flush_deferred_update(app: &mut App, update: &mut Option<super::updater::AvailableUpdate>) {
+    if app.status == Status::Running {
+        return;
+    }
+    if let Some(update) = update.take() {
+        note_update(app, Some(update));
     }
 }
 
@@ -7088,6 +7123,11 @@ async fn chat_loop<B: Backend>(
     // The update check is a network round trip, so it runs off the render loop
     // and notes itself whenever it lands rather than delaying the first frame.
     let mut update_task = Some(tokio::spawn(super::updater::available_update()));
+    // Follow-up checks started by the poll; one in flight at a time, reusing
+    // `await_update_check`'s cancel-safe await.
+    let mut update_poll_task: Option<
+        tokio::task::JoinHandle<Option<super::updater::AvailableUpdate>>,
+    > = None;
 
     // `/update` downloads tens of megabytes and rewrites the binary; off the
     // render loop for the same reason, and one at a time.
@@ -7116,6 +7156,19 @@ async fn chat_loop<B: Backend>(
     let mut branch_task: Option<tokio::task::JoinHandle<Option<String>>> = None;
     let mut branch_poll = tokio::time::interval(BRANCH_POLL_INTERVAL);
     branch_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // The update check is also re-run on a slow poll, so a session left open
+    // across a publish learns about the new build without a restart. Like
+    // `branch_poll`, one check in flight at a time, also with `Delay` so a slow
+    // manifest fetch never causes a burst of catch-up ticks. The startup
+    // one-shot below still fires immediately; this is only the follow-ups.
+    let mut update_poll = tokio::time::interval(UPDATE_POLL_INTERVAL);
+    update_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // Discard the interval's immediate first tick: the startup one-shot above
+    // already checks right now, so the first poll must wait a full interval.
+    update_poll.tick().await;
+    // A notice that landed during an active turn is deferred to the next quiet
+    // point (when the turn ends) instead of cutting into streaming output.
+    let mut update_pending: Option<super::updater::AvailableUpdate> = None;
 
     // Nothing to say when there is no seed message: the splash already invites
     // the first one (`Banner::awaiting_first_message`).
@@ -7128,6 +7181,10 @@ async fn chat_loop<B: Backend>(
     let sync_output = use_synchronized_output();
 
     while !app.should_quit {
+        // A polled update that landed mid-turn surfaces here, held back until
+        // the active run finishes so it never cuts into the model's output.
+        flush_deferred_update(app, &mut update_pending);
+
         // Drive the snapshot queue: run one job off-loop at a time. A job whose
         // inputs no longer resolve (snapshots disabled) is dropped.
         if snap_task.is_none() {
@@ -7385,6 +7442,14 @@ async fn chat_loop<B: Backend>(
                     branch_task = Some(spawn_branch_poll(&app.project_root));
                 }
             }
+            _ = update_poll.tick() => {
+                // One check in flight at a time. A stalled manifest must not
+                // stack up or block: the poll spawns nothing while one is out,
+                // and the next tick parks until this slot clears.
+                if update_poll_task.is_none() {
+                    update_poll_task = Some(tokio::spawn(super::updater::available_update()));
+                }
+            }
             branch = await_branch_poll(&mut branch_task) => {
                 app.git_branch = branch;
             }
@@ -7465,6 +7530,13 @@ async fn chat_loop<B: Backend>(
             }
             update = await_update_check(&mut update_task) => {
                 note_update(app, update);
+            }
+            polled = await_update_check(&mut update_poll_task) => {
+                if let Some(update) = polled {
+                    // Deferred to a quiet point: a note landing here would cut
+                    // into whatever the active turn is streaming.
+                    update_pending = Some(update);
+                }
             }
             install = await_update_install(&mut update_install_task) => {
                 finish_update_install(app, install);
@@ -15572,24 +15644,24 @@ mod tests {
         autoscroll_selection, await_branch_poll, backgrounded_job_id, brand, build_user_message,
         clipboard_path, compact_tokens, diff_lines, drain_stream_events, estimate_token_count,
         finish_account_login, finish_compaction, finish_login, finish_plugin_install,
-        finish_tokamak_login, finish_update_install, group_detail_lines, group_summary,
-        handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, header_spans, image_mime,
-        image_mime_of, input_content_lines, load_first_file_image, load_image_file, message_text,
-        note_update, open_config_screen, open_rewind_picker, pairs_to_str, parse_command,
-        partial_json_field, provider_label_for_model, rebuild_recall, replay_display_log,
-        restore_goal, restore_run_mode, restore_todos, resume_hint, rewind_to, route_paste_event,
-        row_width, run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
-        split_reasoning, starting_call_lines, startup_modes, strip_system_xml_tags,
-        subagent_activity, subagent_name_from_run_id, summarize_result, sync_output_for,
-        thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
-        transcript_top_padding, unescape_partial_json_string, user_content_parts, wave_sweep_line,
-        with_wave_glyph, without_think_tags, App, CompactKind, CurrentRun, McpField, McpPrompt,
-        Pending, PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeTarget, Row, RowKind,
-        Selection, SelectionMode, SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE,
-        ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS,
-        DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF, KITTY_KEYS_ON, MAX_IMAGE_BYTES,
-        MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER,
-        SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
+        finish_tokamak_login, finish_update_install, flush_deferred_update, group_detail_lines,
+        group_summary, handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, header_spans,
+        image_mime, image_mime_of, input_content_lines, load_first_file_image, load_image_file,
+        message_text, note_update, open_config_screen, open_rewind_picker, pairs_to_str,
+        parse_command, partial_json_field, provider_label_for_model, rebuild_recall,
+        replay_display_log, restore_goal, restore_run_mode, restore_todos, resume_hint, rewind_to,
+        route_paste_event, row_width, run_command, running_group_rows, selection_text, spans_width,
+        spawn_branch_poll, split_reasoning, starting_call_lines, startup_modes,
+        strip_system_xml_tags, subagent_activity, subagent_name_from_run_id, summarize_result,
+        sync_output_for, thinking_open, tilde_path, tokens_per_second, tool_activity,
+        tool_finished, transcript_top_padding, unescape_partial_json_string, user_content_parts,
+        wave_sweep_line, with_wave_glyph, without_think_tags, App, CompactKind, CurrentRun,
+        McpField, McpPrompt, Pending, PendingImage, PickerKind, ProviderField, ReasoningSeg,
+        ResumeTarget, Row, RowKind, Selection, SelectionMode, SnapshotJob, Status, AGENT_SETTINGS,
+        ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG, DIFF_DEL_BG,
+        DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF, KITTY_KEYS_ON,
+        MAX_IMAGE_BYTES, MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW,
+        SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -15805,6 +15877,86 @@ mod tests {
         let before = app.transcript.len();
         note_update(&mut app, None);
         assert_eq!(app.transcript.len(), before);
+    }
+    /// A polled discovery must not re-announce the same build every tick: only
+    /// a version the user has not already been told about is noted.
+    #[test]
+    fn the_same_version_is_announced_at_most_once() {
+        let mut app = test_app();
+        note_update(&mut app, Some(available_update("0.8.4-10", "0.8.4-11")));
+        let first_count = app
+            .transcript
+            .iter()
+            .filter(|r| message_text_of(r).contains("0.8.4-10 -> 0.8.4-11"))
+            .count();
+        assert_eq!(first_count, 1);
+
+        // Same build again on the next tick: no new note.
+        note_update(&mut app, Some(available_update("0.8.4-10", "0.8.4-11")));
+        let after_same = app
+            .transcript
+            .iter()
+            .filter(|r| message_text_of(r).contains("0.8.4-10 -> 0.8.4-11"))
+            .count();
+        assert_eq!(after_same, 1, "an unchanged build must not be re-noted");
+
+        // A genuinely newer build is announced.
+        note_update(&mut app, Some(available_update("0.8.4-10", "0.8.4-12")));
+        let text = app
+            .transcript
+            .iter()
+            .map(message_text_of)
+            .collect::<String>();
+        assert!(text.contains("0.8.4-10 -> 0.8.4-12"), "{text}");
+    }
+
+    /// A polled notice landing while a turn streams would cut into the model's
+    /// output, so the flush holds it until the run finishes.
+    #[test]
+    fn deferred_update_held_while_running() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        let mut pending = Some(available_update("0.8.4-10", "0.8.4-11"));
+        flush_deferred_update(&mut app, &mut pending);
+        assert!(pending.is_some(), "the notice must stay pending, not drop");
+        assert_eq!(app.transcript.len(), 0);
+
+        // Once the run ends, the held notice surfaces.
+        app.status = Status::Idle;
+        flush_deferred_update(&mut app, &mut pending);
+        assert!(pending.is_none());
+        let text = app
+            .transcript
+            .iter()
+            .map(message_text_of)
+            .collect::<String>();
+        assert!(text.contains("0.8.4-10 -> 0.8.4-11"), "{text}");
+    }
+
+    /// The periodic path must honour `JAN_CLI_NO_UPDATE_CHECK` like the startup
+    /// one-shot: with it set, `available_update()` returns `None` and the poll
+    /// notes nothing, so an opted-out session makes no periodic requests.
+    #[tokio::test]
+    async fn opted_out_poll_notes_nothing_and_makes_no_request() {
+        // Guard against concurrent tests mutating the same env var. The env is
+        // only read synchronously at the top of `available_update()`, so the
+        // lock only needs to protect the mutations here, not the await below.
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let prev;
+        {
+            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            prev = std::env::var_os("JAN_CLI_NO_UPDATE_CHECK");
+            std::env::set_var("JAN_CLI_NO_UPDATE_CHECK", "1");
+        } // guard dropped before the await
+
+        let polled = crate::core::cli::updater::available_update().await;
+        assert!(polled.is_none(), "opt-out must yield no update");
+
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        match prev {
+            Some(v) => std::env::set_var("JAN_CLI_NO_UPDATE_CHECK", v),
+            None => std::env::remove_var("JAN_CLI_NO_UPDATE_CHECK"),
+        }
     }
 
     #[tokio::test]
