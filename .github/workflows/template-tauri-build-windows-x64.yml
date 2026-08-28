@@ -225,10 +225,12 @@ jobs:
             .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
             cat ./package.json
             sed -i "s/jan_productname/Jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
-            sed -i "s/jan_mainbinaryname/jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_mainbinaryname/Jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_bundleid/jan-${{ inputs.channel }}.ai.app/g" ./src-tauri/tauri.bundle.windows.nsis.template
           else
             sed -i "s/jan_productname/Jan/g" ./src-tauri/tauri.bundle.windows.nsis.template
-            sed -i "s/jan_mainbinaryname/jan/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_mainbinaryname/jan-desktop/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_bundleid/jan.ai.app/g" ./src-tauri/tauri.bundle.windows.nsis.template
           fi
           echo "---------nsis.template---------"
           cat ./src-tauri/tauri.bundle.windows.nsis.template
