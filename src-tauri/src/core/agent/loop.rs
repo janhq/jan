@@ -955,14 +955,16 @@ impl ToolInvoker for CompositeToolInvoker {
             let decision = resolve_decision(
                 tool,
                 &args,
-                &self.project_root,
-                Some(self.scratch_root.as_path()),
-                // The CLI works *in* the project, so it has no separate
-                // read-only root to attach.
-                &[],
+                &tauri_plugin_agent_tools::tools::gate::GateContext {
+                    project_root: &self.project_root,
+                    scratch: Some(self.scratch_root.as_path()),
+                    // The CLI works *in* the project, so it has no separate
+                    // read-only root to attach.
+                    read_roots: &[],
+                    hide_jan: self.sandbox,
+                },
                 &self.permissions,
                 &snapshot,
-                self.sandbox,
             );
             // Auto-approval suppresses every prompt (sandbox escape, write, exec) but
             // still honors HardDeny, so the hidden `.jan` invariant (while the shell
