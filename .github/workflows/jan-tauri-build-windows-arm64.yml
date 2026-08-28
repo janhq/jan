@@ -112,24 +112,40 @@ jobs:
           # llvm-mt.exe on PATH does not satisfy it. Without this, cmake reports
           # CMAKE_MT as empty and every executable link dies on
           # "no such file or directory", starting with its own compiler probe.
-          $sdkBin = $null
+          # mt.exe and signtool.exe are searched for separately: the ARM64 SDK
+          # bin ships a subset of the tools, so the two can live in different
+          # arch directories on the same image.
           $kits = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          $versions = @()
           if (Test-Path $kits) {
             $versions = Get-ChildItem $kits -Directory |
               Where-Object { $_.Name -as [version] } |
               Sort-Object { [version]$_.Name } -Descending
-            foreach ($ver in $versions) {
-              # arm64 first so the native tool wins over the emulated x64 one.
-              foreach ($a in 'arm64', 'x64') {
-                $cand = Join-Path $ver.FullName $a
-                if (Test-Path (Join-Path $cand 'mt.exe')) { $sdkBin = $cand; break }
-              }
-              if ($sdkBin) { break }
-            }
           }
-          if (-not $sdkBin) { throw "no mt.exe under $kits\<version>\{arm64,x64}" }
-          Write-Host "Windows SDK bin: $sdkBin"
-          $sdkBin | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+          # arm64 first so a native tool wins over the emulated x64 one.
+          function Find-SdkTool([string]$exe) {
+            foreach ($ver in $versions) {
+              foreach ($a in 'arm64', 'x64', 'x86') {
+                $p = Join-Path (Join-Path $ver.FullName $a) $exe
+                if (Test-Path $p) { return $p }
+              }
+            }
+            return $null
+          }
+
+          $mt = Find-SdkTool 'mt.exe'
+          if (-not $mt) { throw "no mt.exe under $kits\<version>\{arm64,x64,x86}" }
+          Write-Host "mt:       $mt"
+          Split-Path $mt -Parent | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+
+          # tauri-bundler resolves signtool itself, from the registry plus the
+          # *native* processor architecture -- so on this runner it only ever
+          # looks in the arm64 directory and fails when signtool is not there.
+          # TAURI_WINDOWS_SIGNTOOL_PATH short-circuits that lookup entirely.
+          $signtool = Find-SdkTool 'signtool.exe'
+          if (-not $signtool) { throw "no signtool.exe under $kits\<version>\{arm64,x64,x86}" }
+          Write-Host "signtool: $signtool"
+          "TAURI_WINDOWS_SIGNTOOL_PATH=$signtool" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       # Every archive is arm64: this is a native build, so nvcc itself is an
       # ARM64 binary. Upstream cross-compiles instead and pairs x86_64 host
@@ -219,6 +235,13 @@ jobs:
             echo "$tool -> $(command -v "$tool")"
           done
           nvcc --version
+          # Not on PATH -- tauri reads it from the environment. Checked here so
+          # a missing signtool fails in seconds rather than after the ~75
+          # minutes of compiling that precede bundling.
+          [ -x "$TAURI_WINDOWS_SIGNTOOL_PATH" ] || {
+            echo "::error::TAURI_WINDOWS_SIGNTOOL_PATH is not an executable: ${TAURI_WINDOWS_SIGNTOOL_PATH:-<unset>}"; exit 1;
+          }
+          echo "signtool -> $TAURI_WINDOWS_SIGNTOOL_PATH"
 
       - name: Update app version and product name
         shell: bash
