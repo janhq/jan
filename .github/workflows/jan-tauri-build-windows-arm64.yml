@@ -1,12 +1,12 @@
 # Windows ARM64 desktop build.
 #
 # Standalone on purpose: it neither calls the x64 template nor edits any file
-# that build reads, so it cannot change an x64 artifact. Merging the two behind
-# an `arch` input is the eventual shape, once ARM64 has gone green.
+# that build reads, so it cannot change an x64 artifact. Folding the two behind
+# an `arch` input comes once ARM64 is green.
 #
-# Signing and updater artifacts match the x64 template. Publication does not:
-# no S3 sync, no release upload, and no `windows-aarch64` entry in latest.json,
-# so an ARM64 build cannot yet reach users through the updater.
+# Signing and updater artifacts match x64. Publication does not -- no S3, no
+# release upload, no `windows-aarch64` in latest.json -- so ARM64 builds cannot
+# yet reach users through the updater.
 name: Tauri Build Windows ARM64
 
 on:
@@ -37,9 +37,8 @@ on:
         required: false
         type: string
         default: '0'
-  # Pre-merge testing hook only. GitHub does not offer workflow_dispatch until
-  # the file is on the default branch, so without this there is no way to run
-  # this before merging. Drop it once that lands.
+  # Pre-merge hook: workflow_dispatch is not offered until the file is on the
+  # default branch. Drop this once it lands there.
   push:
     branches: ['feat/windows-arm64']
 
@@ -56,11 +55,10 @@ env:
   JAN_ENGINE_VARIANT: ${{ inputs.engine_variant || 'cuda13' }}
   JAN_ENGINE_VULKAN_FALLBACK: ${{ inputs.vulkan_fallback || '0' }}
   CUDA_SHORT: '13.4'
-  # Redistributable archives rather than the 3.8 GB local installer, which is
-  # how upstream llama.cpp provisions this same toolkit
-  # (.github/actions/windows-setup-cuda). A full silent install spends most of
-  # its time on the display driver and the Nsight profilers, none of which a
-  # build needs, and it hung past 38 minutes on a runner with no NVIDIA GPU.
+  # Redistributable archives, as upstream llama.cpp provisions this same
+  # toolkit (.github/actions/windows-setup-cuda). The 3.8 GB installer spends
+  # its time on the display driver and Nsight, neither of which a build needs,
+  # and hung past 38 minutes on a runner with no NVIDIA GPU.
   CUDA_POOL: 'https://packages.nvidia.com/bin-archive/pool/windows-arm64/5B515474-7E78-11F1-8656-C51E4F4B317F'
 
 jobs:
@@ -88,8 +86,8 @@ jobs:
       - name: Install ctoml
         run: cargo install ctoml
 
-      # build.rs reads VCToolsInstallDir to locate bin/Host*/arm64/cl.exe. The
-      # image does not export it outside a developer prompt.
+      # build.rs reads VCToolsInstallDir to find bin/Host*/arm64/cl.exe; the
+      # image only exports it inside a developer prompt.
       - name: Resolve the MSVC ARM64 toolset
         shell: pwsh
         run: |
@@ -106,15 +104,14 @@ jobs:
           if (-not $found) { throw "no arm64 cl.exe under $vcTools\bin\Host*\arm64" }
           "VCToolsInstallDir=$vcTools" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
-          # cmake links executables through `cmake -E vs_link_exe`, which shells
-          # out to `mt` to embed the manifest. mt.exe ships in the Windows SDK,
-          # not with LLVM, and cmake looks for that exact name -- so LLVM's
-          # llvm-mt.exe on PATH does not satisfy it. Without this, cmake reports
-          # CMAKE_MT as empty and every executable link dies on
-          # "no such file or directory", starting with its own compiler probe.
-          # mt.exe and signtool.exe are searched for separately: the ARM64 SDK
-          # bin ships a subset of the tools, so the two can live in different
-          # arch directories on the same image.
+          # Two Windows SDK tools, searched separately because the ARM64 bin
+          # ships a subset and they land in different arch directories:
+          #   mt       cmake shells out to it from vs_link_exe to embed the
+          #            manifest. It looks for that exact name, so LLVM's
+          #            llvm-mt.exe does not count; without it CMAKE_MT is empty
+          #            and every executable link fails.
+          #   signtool tauri needs it to *verify* existing signatures, which a
+          #            custom signCommand does not replace.
           $kits = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
           $versions = @()
           if (Test-Path $kits) {
@@ -122,7 +119,7 @@ jobs:
               Where-Object { $_.Name -as [version] } |
               Sort-Object { [version]$_.Name } -Descending
           }
-          # arm64 first so a native tool wins over the emulated x64 one.
+          # arm64 first: native beats emulated x64.
           function Find-SdkTool([string]$exe) {
             foreach ($ver in $versions) {
               foreach ($a in 'arm64', 'x64', 'x86') {
@@ -138,23 +135,20 @@ jobs:
           Write-Host "mt:       $mt"
           Split-Path $mt -Parent | Out-File $env:GITHUB_PATH -Append -Encoding utf8
 
-          # tauri-bundler resolves signtool itself, from the registry plus the
-          # *native* processor architecture -- so on this runner it only ever
-          # looks in the arm64 directory and fails when signtool is not there.
-          # TAURI_WINDOWS_SIGNTOOL_PATH short-circuits that lookup entirely.
+          # tauri derives the directory from the *native* processor arch, so
+          # here it only ever looks in arm64. This env var bypasses that.
           $signtool = Find-SdkTool 'signtool.exe'
           if (-not $signtool) { throw "no signtool.exe under $kits\<version>\{arm64,x64,x86}" }
           Write-Host "signtool: $signtool"
           "TAURI_WINDOWS_SIGNTOOL_PATH=$signtool" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
-      # Every archive is arm64: this is a native build, so nvcc itself is an
-      # ARM64 binary. Upstream cross-compiles instead and pairs x86_64 host
-      # tools with arm64 target libraries -- worth remembering as the fallback
-      # if a native nvcc misbehaves, though switching would also mean
-      # cross-compiling the Tauri app and relocating every output path.
+      # All arm64: this is a native build, so nvcc is an ARM64 binary too.
+      # Upstream instead cross-compiles, pairing x86_64 host tools with arm64
+      # target libs -- the fallback if a native nvcc misbehaves, though it would
+      # also mean cross-compiling the app and relocating every output path.
       #
-      # Versions are pinned. These live in a prerelease pool with no "latest"
-      # alias, so an unpinned URL is not merely unstable, it does not exist.
+      # Pinned because this prerelease pool has no "latest" alias: an unpinned
+      # URL does not just drift, it 404s.
       - name: Install the CUDA toolkit (ARM64)
         shell: pwsh
         run: |
@@ -183,8 +177,8 @@ jobs:
             Invoke-WebRequest -Uri "$env:CUDA_POOL/$a.zip" -OutFile $zip
             $total += (Get-Item $zip).Length
             Expand-Archive -Path $zip -DestinationPath $tmp -Force
-            # Each archive unpacks to <name>/{bin,lib,include}; merge them all
-            # into one toolkit root, which is what CUDA_PATH has to point at.
+            # Each unpacks to <name>/{bin,lib,include}; merge into one root,
+            # which is what CUDA_PATH must point at.
             Copy-Item -Path (Join-Path $tmp "$a\*") -Destination $root -Recurse -Force
           }
           Write-Host ("Fetched {0:N0} MB and unpacked in {1:N1} min" -f ($total / 1MB), $sw.Elapsed.TotalMinutes)
@@ -192,8 +186,7 @@ jobs:
           "CUDA_PATH=$root" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "$root\bin"       | Out-File $env:GITHUB_PATH -Append -Encoding utf8
 
-          # Layout differs between the installer and these archives, and between
-          # host and target arch, so print it rather than assume it.
+          # Layout differs from the installer's and by arch, so print it.
           foreach ($d in 'bin', 'lib', 'lib\arm64', 'lib\x64') {
             $path = Join-Path $root $d
             Write-Host "--- $path"
@@ -228,15 +221,15 @@ jobs:
       - name: Verify the engine toolchain
         shell: bash
         run: |
-          # mt is included because cmake needs it to link any executable, and
-          # its absence surfaces as an opaque failure inside a compiler probe.
+          # mt included: without it every executable link fails, and it
+          # surfaces opaquely inside cmake's own compiler probe.
           for tool in cmake ninja clang mt; do
             command -v "$tool" >/dev/null 2>&1 || { echo "::error::$tool is not on PATH"; exit 1; }
             echo "$tool -> $(command -v "$tool")"
           done
           nvcc --version
-          # Not on PATH -- tauri reads it from the environment. Checked here so
-          # a missing signtool fails in seconds rather than after the ~75
+          # Not on PATH; tauri reads it from the env. Checked here so a missing
+          # signtool fails in seconds rather than after the ~75
           # minutes of compiling that precede bundling.
           [ -x "$TAURI_WINDOWS_SIGNTOOL_PATH" ] || {
             echo "::error::TAURI_WINDOWS_SIGNTOOL_PATH is not an executable: ${TAURI_WINDOWS_SIGNTOOL_PATH:-<unset>}"; exit 1;
