@@ -402,17 +402,17 @@ Context window
 
 79K tokens available before auto-compact
 
-Estimated usage
-PROMPT     2.6%  [▌░░░░░░░░░░░░░░░░░░░]   6K
-TOOLS      3.8%  [▊░░░░░░░░░░░░░░░░░░░]   9K
-PROJECT    0.9%  [▏░░░░░░░░░░░░░░░░░░░]  2.1K
-SKILLS     3.4%  [▋░░░░░░░░░░░░░░░░░░░]   8K
-MESSAGES  40.7%  [████████▏░░░░░░░░░░░]  95K
-FREE      33.5%  [██████▋░░░░░░░░░░░░░]  79K
-BUFFER    15.0%  [███░░░░░░░░░░░░░░░░░]  35K
+Context breakdown (estimated)
+System prompt         2.6%  [▌░░░░░░░░░░░░░░░░░░░]   6K
+System tools          3.8%  [▊░░░░░░░░░░░░░░░░░░░]   9K
+Project context       0.9%  [▏░░░░░░░░░░░░░░░░░░░]  2.1K
+Skills                3.4%  [▋░░░░░░░░░░░░░░░░░░░]   8K
+Messages             40.7%  [████████▏░░░░░░░░░░░]  95K
+Available            33.5%  [██████▋░░░░░░░░░░░░░]  79K
+Auto-compact reserve 15.0%  [███░░░░░░░░░░░░░░░░░]  35K
 ```
 
-Remove the previous `CTX CONTROL DECK`, `STATUS NOMINAL`, `NOW`, `AUTO-COMPACT`, symbol legend, `BREAKDOWN // ... BASELINE`, one-letter category keys, and provenance footer. The headline states provider or estimated provenance once. `Estimated usage` states category provenance once.
+Remove the previous `CTX CONTROL DECK`, `STATUS NOMINAL`, `NOW`, `AUTO-COMPACT`, symbol legend, `BREAKDOWN // ... BASELINE`, one-letter category keys, uppercase abbreviations, and provenance footer. The headline states provider or estimated provenance once. `Context breakdown (estimated)` states category provenance once.
 The `╳` hatch marks the reserved autocompact buffer as unavailable to normal conversation content. It replaces `#`, which looked like consumed context.
 
 **Tone:** Direct capacity summary. The rail and bars carry the visual identity; the copy remains ordinary language.
