@@ -5,6 +5,7 @@ import {
   estimateMessageTokens,
   trimMessages,
   compactMessages,
+  deriveToolOutputCap,
   type ContextManagerConfig,
 } from '../context-manager'
 
@@ -227,5 +228,35 @@ describe('compactMessages', () => {
     expect(result.messages.length).toBeGreaterThan(0)
     // No summary generated on fallback
     expect(result.compactedSummary).toBeUndefined()
+  })
+})
+
+describe('deriveToolOutputCap', () => {
+  it('scales the budget with the model context window', () => {
+    const small = deriveToolOutputCap(8_192)
+    const large = deriveToolOutputCap(1_000_000)
+
+    expect(small).toBeGreaterThan(0)
+    expect(large).toBeGreaterThan(small!)
+  })
+
+  it('leaves most of the window for the conversation itself', () => {
+    // A single tool result must not be allowed to fill the context it lives in.
+    const ctxTokens = 100_000
+    const cap = deriveToolOutputCap(ctxTokens)!
+
+    expect(estimateTokens('x'.repeat(cap))).toBeLessThan(ctxTokens / 2)
+  })
+
+  it('returns undefined when the context window is unknown', () => {
+    // Remote providers often report no window; the user's setting then governs
+    // alone rather than a fabricated budget taking over.
+    expect(deriveToolOutputCap(undefined)).toBeUndefined()
+    expect(deriveToolOutputCap(0)).toBeUndefined()
+    expect(deriveToolOutputCap(-1)).toBeUndefined()
+  })
+
+  it('returns a whole number of characters', () => {
+    expect(Number.isInteger(deriveToolOutputCap(8_191))).toBe(true)
   })
 })

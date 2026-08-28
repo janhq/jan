@@ -59,13 +59,13 @@ type ModelYaml = ModelConfig & {
 // Hidden from the setting's UI value.
 //
 // Added unconditionally, and that is load-bearing. The emitted `parallel` is
-// therefore always 2 or more, which is what lets the frontend pin background
-// work to a fixed BACKGROUND_SLOT_ID (web-app/src/constants/models.ts) instead
+// therefore always 3 or more, which is what lets the frontend pin background
+// work and Cowork to fixed slot ids (web-app/src/constants/models.ts) instead
 // of computing an index here that the two sides then have to keep in sync.
 // Upstream wraps an out-of-range id_slot modulo the slot count rather than
 // rejecting it, so any such desync is silent: the background request lands back
 // on the chat slot and overwrites the cache it was meant to protect.
-export const RESERVED_BACKGROUND_SLOTS = 1
+export const RESERVED_BACKGROUND_SLOTS = 2
 
 /**
  * The ubatch every embedding model's preset section is pinned to.

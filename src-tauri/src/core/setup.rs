@@ -1,4 +1,6 @@
-use std::{fs, path::PathBuf, sync::Arc, time::Duration};
+use std::{fs, sync::Arc, time::Duration};
+#[cfg(target_os = "linux")]
+use std::path::PathBuf;
 use tauri::{App, AppHandle, Emitter, Listener, Manager, Runtime, WindowEvent, Wry};
 
 #[cfg(feature = "desktop")]
@@ -173,11 +175,7 @@ pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_change
                 use std::os::windows::process::CommandExt;
                 cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
             }
-            if cmd
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-            {
+            if cmd.output().map(|o| o.status.success()).unwrap_or(false) {
                 log::debug!("jan CLI already on PATH — skipping reinstall");
                 return;
             }
@@ -187,7 +185,11 @@ pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_change
             Ok(status) => {
                 log::info!(
                     "jan CLI {} to {}",
-                    if version_changed { "updated" } else { "installed" },
+                    if version_changed {
+                        "updated"
+                    } else {
+                        "installed"
+                    },
                     status.path.as_deref().unwrap_or("<unknown>")
                 );
             }

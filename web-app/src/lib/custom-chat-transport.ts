@@ -27,6 +27,8 @@ import {
   WEB_FETCH_DESCRIPTION,
   WEB_FETCH_INPUT_SCHEMA,
 } from '@/lib/webSearchTool'
+import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
+import { getAgentToolSchemas, sandboxEnforces } from '@/lib/agentTools'
 import { useAppState } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
@@ -230,6 +232,19 @@ async function resolveThinkingBudgetTokens(
   }
   return tokensForThinkingBudgetLevel(rawLevel, contextSize || 8192)
 }
+
+export function effectiveContextWindow(
+  configuredContextTokens: number,
+  liveContextTokens: number | undefined,
+  contextShiftEnabled: boolean
+): number {
+  return contextShiftEnabled &&
+    typeof liveContextTokens === 'number' &&
+    liveContextTokens > 0
+    ? liveContextTokens
+    : configuredContextTokens
+}
+
 
 /**
  * Coerce a schema-node slot into a valid sub-schema. Some tool generators
@@ -762,7 +777,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   public model: LanguageModel | null = null
   private routerModel: LanguageModel | null = null
   private routerModelKey = ''
-  private tools: Record<string, Tool> = {}
+  protected tools: Record<string, Tool> = {}
   // Smart tool routing selects tools from the latest user message, which would
   // change the tool set (and thus the cached prompt prefix) every turn. Freeze
   // the routed set for the thread's lifetime so the prefix stays stable;
@@ -773,9 +788,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private hasDocuments = false
   private modelSupportsTools = false
   private ragFeatureAvailable = false
-  private systemMessage?: string
-  private serviceHub: ServiceHub | null
-  private threadId?: string
+  protected systemMessage?: string
+  protected serviceHub: ServiceHub | null
+  protected threadId?: string
   private continueFromContent: ContinuationContent | null = null
   /** Latest user message text — used by the MCP orchestrator for tool routing. */
   private lastUserMessage = ''
@@ -848,6 +863,46 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * Filters out disabled tools based on thread settings
    * @private
    */
+  /**
+   * llama.cpp slot pin for this surface. Chat reuses one slot per thread so its
+   * KV prefix survives across turns; other surfaces override to claim their own
+   * and avoid evicting it. See CHAT_SLOT_ID.
+   */
+  protected slotParams(threadId?: string): Record<string, unknown> {
+    return { id_slot: CHAT_SLOT_ID, thread_id: threadId }
+  }
+
+  /**
+   * The system turn for this surface. Whitespace-only prompts collapse to
+   * undefined so we don't send a useless system turn that some chat templates
+   * still wrap into special tokens.
+   */
+  protected buildSystemPrompt(messages: UIMessage[]): string | undefined {
+    const raw =
+      [
+        this.systemMessage,
+        this.buildFilesSystemInstruction(messages),
+        this.buildWebSearchSystemInstruction(),
+        this.buildAgentToolsSystemInstruction(),
+      ]
+        .filter((s) => typeof s === 'string' && s.trim().length > 0)
+        .join('\n\n') || undefined
+    return typeof raw === 'string' && raw.trim().length > 0 ? raw : undefined
+  }
+
+  /**
+   * Many chat templates (Qwen3.5+) reject a window with no genuine user query
+   * and throw a cryptic Jinja error. Fail early with a clear message when
+   * deletion/eviction has left no real user turn to respond to.
+   */
+  protected assertSendable(messages: UIMessage[]): void {
+    if (!hasGenuineUserQuery(messages)) {
+      throw new Error(
+        'This conversation has no user message to respond to. Add a message, or regenerate from a turn that includes your question.'
+      )
+    }
+  }
+
   async refreshTools(abortSignal?: AbortSignal) {
     if (!this.serviceHub) {
       this.tools = {}
@@ -1006,6 +1061,22 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           description: WEB_FETCH_DESCRIPTION,
           inputSchema: jsonSchema(WEB_FETCH_INPUT_SCHEMA as Record<string, unknown>),
         } as Tool
+      }
+
+      // Built-in agent tools (filesystem reads plus skills/memory), provided by
+      // the agent-tools plugin. Schemas come from Rust so they are never
+      // re-typed here.
+      if (useAgentToolsConfig.getState().agentToolsEnabled) {
+        try {
+          for (const schema of await getAgentToolSchemas()) {
+            toolsRecord[schema.function.name] = {
+              description: schema.function.description,
+              inputSchema: jsonSchema(schema.function.parameters),
+            } as Tool
+          }
+        } catch (error) {
+          console.warn('Failed to load agent tools:', error)
+        }
       }
     }
 
@@ -1226,8 +1297,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // including in a later session. It is stripped before the request
       // reaches llama.cpp.
       if (providerId === 'llamacpp') {
-        mergedParams.id_slot = CHAT_SLOT_ID
-        mergedParams.thread_id = threadId
+        Object.assign(mergedParams, this.slotParams(threadId))
       }
       this.model = await this.createModelOrAbort(
         modelId,
@@ -1264,18 +1334,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const selectedModel = useModelProvider.getState().selectedModel
 
-    const filesInstruction = this.buildFilesSystemInstruction(messagesToConvert)
-    const webSearchInstruction = this.buildWebSearchSystemInstruction()
-    const rawSystem =
-      [this.systemMessage, filesInstruction, webSearchInstruction]
-        .filter((s) => typeof s === 'string' && s.trim().length > 0)
-        .join('\n\n') || undefined
-    // Drop whitespace-only system prompts so we don't send a useless system
-    // turn that some chat templates still wrap into special tokens.
-    const effectiveSystem =
-      typeof rawSystem === 'string' && rawSystem.trim().length > 0
-        ? rawSystem
-        : undefined
+    const effectiveSystem = this.buildSystemPrompt(messagesToConvert)
 
     const maxOutputTokens: number | undefined = (() => {
       const raw = inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
@@ -1284,15 +1343,36 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       return isNaN(n) ? undefined : n
     })()
 
-    const maxContextTokens = (() => {
+    const configuredContextTokens = (() => {
       const raw = inferenceParams.max_context_tokens
       return typeof raw === 'number' ? raw : (Number(raw) || 0)
     })()
+    const contextShiftEnabled =
+      providerId === 'llamacpp' &&
+      provider.settings?.some(
+        (setting) =>
+          setting.key === 'ctx_shift' &&
+          setting.controller_props?.value === true
+      ) === true
+    let liveContextTokens: number | undefined
+    if (contextShiftEnabled) {
+      try {
+        liveContextTokens = (
+          await getLlamacppExtension()?.getModelProps?.(modelId)
+        )?.nCtx
+      } catch {
+        // The router has not loaded the model yet. Preserve the configured limit.
+      }
+    }
+    const maxContextTokens = effectiveContextWindow(
+      configuredContextTokens,
+      liveContextTokens,
+      contextShiftEnabled
+    )
     const autoCompact =
       inferenceParams.auto_compact === true ||
       inferenceParams.auto_compact === 'true'
 
-    // Auto-trim or auto-compact conversation history when max_context_tokens is configured
     let effectiveMessages = messagesToConvert
     if (maxContextTokens > 0) {
       const contextConfig: ContextManagerConfig = {
@@ -1301,11 +1381,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         autoCompact: !!autoCompact,
       }
 
+      // Context Shift only shifts llama.cpp's KV cache after generation starts.
+      // Keep the submitted chat history under the live router context window first.
       const systemPromptTokens = effectiveSystem
         ? estimateTokens(effectiveSystem) + 4
         : 0
-
-      if (autoCompact && this.model) {
+      if (autoCompact && !contextShiftEnabled && this.model) {
         const compactResult = await compactMessages(
           messagesToConvert,
           contextConfig,
@@ -1337,11 +1418,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Many chat templates (Qwen3.5+) reject a window with no genuine user query
     // and throw a cryptic Jinja error. Fail early with a clear message when
     // deletion/eviction has left no real user turn to respond to.
-    if (!hasGenuineUserQuery(effectiveMessages)) {
-      throw new Error(
-        'This conversation has no user message to respond to. Add a message, or regenerate from a turn that includes your question.'
-      )
-    }
+    this.assertSendable(effectiveMessages)
 
     const modelSupportsVision =
       selectedModel?.capabilities?.includes('vision') ?? false
@@ -1669,6 +1746,41 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       'Cite each distinct source you rely on; do not add a separate references',
       'or sources section.',
     ].join(' ')
+  }
+
+  /**
+   * Static instruction describing the isolated agent workspace the built-in
+   * tools operate in. Only added when the toolset is enabled so it doesn't
+   * affect prompt caching for users who keep it off.
+   */
+  buildAgentToolsSystemInstruction(): string {
+    if (!useAgentToolsConfig.getState().agentToolsEnabled) return ''
+    const parts = [
+      '# Workspace',
+      'read, ls, find, grep, write and edit operate on an isolated agent',
+      "workspace, not the user's whole filesystem. Paths are relative to that",
+      'workspace root and cannot escape it. The workspace is scratch space for',
+      'this conversation only and is deleted with it, so do not keep anything',
+      'there that should last. Use memory_write to persist facts worth remembering',
+      'across conversations, and memory_list/memory_read to recall them. Skills',
+      'are reusable instructions: list and read them before a task they cover,',
+      'and record a repeatable procedure with skill_write.',
+    ]
+    // Stating the limits up front is cheaper than letting the model discover
+    // them by having a command refused. Only when bash is actually offered.
+    if (sandboxEnforces()) {
+      parts.push(
+        'bash runs commands in that workspace under an OS sandbox: it starts',
+        'there, can only write there, and cannot read files in the',
+        "user's home directory."
+      )
+      parts.push(
+        useAgentToolsConfig.getState().bashNetworkEnabled
+          ? 'It has network access.'
+          : 'It has no network access, so commands that download or upload will fail.'
+      )
+    }
+    return parts.join(' ')
   }
 
   mapUserInlineAttachments(messages: UIMessage[]): UIMessage[] {

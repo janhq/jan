@@ -175,9 +175,21 @@ function ClaudeCodeIntegration() {
         toast.info('Starting server...', {
           description: 'Preparing server for Claude Code',
         })
-        await startServer()
+        try {
+          await startServer()
+        } catch (startErr) {
+          // A bind/start failure (e.g. Windows error 10048, address already in
+          // use) is a server-start problem, not an env-var problem. Name it
+          // clearly and abort instead of mislabeling it below. The 'already
+          // running' case is already swallowed inside startServer and proceeds.
+          const msg =
+            startErr instanceof Error ? startErr.message : String(startErr)
+          toast.error('Failed to start the local API server', {
+            description: msg,
+          })
+          return
+        }
       }
-
       await invoke('launch_claude_code_with_config', {
         apiUrl,
         apiKey: apiKey || undefined,

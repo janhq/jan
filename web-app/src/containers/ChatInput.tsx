@@ -3,6 +3,8 @@ import { cn, formatBytes } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
+import type { ReactNode } from 'react'
+import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -70,6 +72,7 @@ import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
+import type { TokenUsageSource } from '@/hooks/useTokensCount'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
@@ -101,6 +104,14 @@ import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionD
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import {
+  parsePromptForReferences,
+  resolvePathReference,
+  searchFiles,
+  stripPromptReferences,
+  type FilePickerEntry as FileEntry,
+} from '@/lib/path-references'
+import { FilePickerPopover } from '@/components/FilePickerPopover'
 
 type ChatInputProps = {
   className?: string
@@ -115,6 +126,33 @@ type ChatInputProps = {
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
+  // Overrides the conversation scope this input belongs to — both its message
+  // queue and its pending attachments (default: useThreads' currentThreadId).
+  // Callers outside the general chat (e.g. Cowork, keyed by session id) pass
+  // their own id so each gets an independent queue and attachment draft.
+  scopeKey?: string
+  /**
+   * Whether the surface's tool set is configured from this composer.
+   *
+   * False for a surface that builds its own set (Cowork, via
+   * `buildCoworkTools`). Its toggles here would be inert on this surface while
+   * still writing the global chat stores, so a user turning "agent tools" off
+   * in Cowork would silently disable them in Chat.
+   */
+  ownsToolSet?: boolean
+  /**
+   * Surface-specific controls docked in the composer's control row (Cowork's
+   * plan toggle and folder chip). They sit outside the streaming dim, because
+   * both configure the *next* message rather than the run in flight.
+   */
+  surfaceControls?: ReactNode
+  /**
+   * Usage for a surface that keeps no thread messages (Cowork). Rendering the
+   * counter here rather than in the caller is what keeps its placement, the
+   * `tokenCounterCompact` setting and the spacing to the send button identical
+   * across surfaces.
+   */
+  tokenSource?: TokenUsageSource
 }
 
 // Video containers llama-server can decode via ffmpeg/ffprobe into frames.
@@ -143,6 +181,10 @@ const ChatInput = memo(function ChatInput({
   onSubmit,
   onStop,
   chatStatus,
+  scopeKey,
+  ownsToolSet = true,
+  surfaceControls,
+  tokenSource,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
@@ -185,9 +227,157 @@ const ChatInput = memo(function ChatInput({
   )
   // When projectId is present, treat as normal chat (disable agent mode UI)
   const effectiveAgentMode = isAgentMode && !projectId
+  // Gate for the controls that shape which tools the model is offered.
+  const showToolControls = ownsToolSet && !effectiveAgentMode
   const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
   const webSearchEnabled = useWebSearchConfig((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useWebSearchConfig((s) => s.setWebSearchEnabled)
+
+  const [filePickerOpen, setFilePickerOpen] = useState(false)
+  const [filePickerQuery, setFilePickerQuery] = useState('')
+  const [filePickerEntries, setFilePickerEntries] = useState<FileEntry[]>([])
+  const [filePickerPosition, setFilePickerPosition] = useState<{
+    top: number
+    left: number
+  } | null>(null)
+  const [workingDir, setWorkingDir] = useState<string | undefined>(undefined)
+  // Textarea cursor position snapshot at the time @ was typed
+  const filePickerCursorPos = useRef<number | null>(null)
+
+  // Pre-load working directory
+  useEffect(() => {
+    const loadWorkingDir = async () => {
+      try {
+        // Try to get project home directory
+        const { homeDir } = await import('@tauri-apps/api/path')
+        const home = await homeDir()
+        setWorkingDir(home)
+      } catch {
+        setWorkingDir(undefined)
+      }
+    }
+    if (effectiveAgentMode) {
+      loadWorkingDir()
+    }
+  }, [effectiveAgentMode])
+
+  // Detect `@` in the prompt text and open the file picker
+  const handlePromptChange = useCallback(
+    (value: string) => {
+      setPrompt(value)
+
+      // Only enable in agent mode
+      if (!effectiveAgentMode) {
+        setFilePickerOpen(false)
+        return
+      }
+
+      const cursorIdx = filePickerCursorPos.current ?? value.length
+
+      // Look backwards from current cursor to find the last word starting with
+      // @ (the @ must not be glued to a preceding word char, so `user@host`
+      // never opens the picker)
+      const beforeCursor = value.slice(0, cursorIdx)
+      const atMatch = beforeCursor.match(/(?<![A-Za-z0-9_])@([\w./-]*)$/)
+
+      if (atMatch) {
+        const query = atMatch[1] ?? ''
+        setFilePickerQuery(query)
+
+        // If we have a working directory, search files
+        if (workingDir) {
+          searchFiles(workingDir, query)
+            .then((entries) => setFilePickerEntries(entries.slice(0, 50)))
+            .catch(() => setFilePickerEntries([]))
+        } else {
+          setFilePickerEntries([])
+        }
+
+        // Position the picker above the text
+        if (textareaRef.current) {
+          const lineHeight = 22
+          const lines = beforeCursor.split('\n').length
+          const pos = {
+            top: -Math.min(lines * lineHeight + 40, 300),
+            left: 0,
+          }
+          setFilePickerPosition(pos)
+        }
+        setFilePickerOpen(true)
+      } else {
+        setFilePickerOpen(false)
+      }
+    },
+    [effectiveAgentMode, workingDir, setPrompt]
+  )
+
+  // Insert a selected file reference into the prompt
+  const handleFilePickerSelect = useCallback(
+    (entry: FileEntry) => {
+      if (filePickerCursorPos.current == null) return
+
+      const beforeCursor = prompt.slice(0, filePickerCursorPos.current)
+      const afterCursor = prompt.slice(filePickerCursorPos.current)
+
+      // Replace the `@query` with `path/to/file` (the resolved reference)
+      const textBefore = beforeCursor.replace(/(?<![A-Za-z0-9_])@[\w./-]*$/, '')
+      const refText = entry.path
+      const newPrompt = textBefore + refText + afterCursor
+
+      setPrompt(newPrompt)
+      setFilePickerOpen(false)
+      filePickerCursorPos.current = null
+
+      // Focus back on textarea
+      setTimeout(() => textareaRef.current?.focus(), 0)
+    },
+    [prompt, setPrompt]
+  )
+
+  const handleFilePickerClose = useCallback(() => {
+    setFilePickerOpen(false)
+    filePickerCursorPos.current = null
+  }, [])
+
+  // Resolve @path references in the prompt text, returning the resolved content
+  const resolvePromptReferences = useCallback(
+    async (text: string): Promise<{
+      text: string
+      resolvedContents: string
+    }> => {
+      const refs = parsePromptForReferences(text)
+      if (refs.length === 0) return { text, resolvedContents: '' }
+
+      const parts: string[] = []
+      for (const ref of refs) {
+        const resolved = await resolvePathReference(ref, workingDir)
+        if (resolved) {
+          if (resolved.kind === 'file') {
+            parts.push(
+              `--- File: ${resolved.absolutePath} ---\n${resolved.content}`
+            )
+          } else if (resolved.kind === 'directory') {
+            parts.push(
+              `--- Directory: ${resolved.absolutePath} ---\n${resolved.content}`
+            )
+          }
+        } else {
+          parts.push(
+            `[File not found or too large: ${ref}]`
+          )
+        }
+      }
+
+      const resolvedContents = parts.join('\n\n')
+
+      // Remove @ references from the prompt text (they'll be replaced by the
+      // resolved contents above so the model sees the content directly)
+      const cleanText = stripPromptReferences(text)
+
+      return { text: cleanText, resolvedContents }
+    },
+    [workingDir]
+  )
 
   const handleAgentToggle = useCallback(() => {
     toggleAgentMode(agentModeKey)
@@ -231,6 +421,7 @@ const ChatInput = memo(function ChatInput({
     isInitialMessage: !!initialMessage,
     hasMessages: (threadMessages?.length ?? 0) > 0,
     hasPromptText: prompt.trim().length > 0,
+    hasReportedUsage: (tokenSource?.usage?.totalTokens ?? 0) > 0,
   })
   const [selectedAssistantId, setSelectedAssistantId] = useState<
     string | undefined
@@ -274,7 +465,10 @@ const ChatInput = memo(function ChatInput({
   const maxFileSizeMB = useAttachments((s) => s.maxFileSizeMB)
 
   // Derived: any document currently processing (ingestion in progress)
-  const attachmentsKey = currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
+  // Same scope as the message queue: a surface writing attachments under its
+  // own id would have them silently dropped if this read a thread id.
+  const attachmentsKey =
+    scopeKey ?? currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
   const attachments = useChatAttachments(
     useCallback(
       (state) => state.getAttachments(attachmentsKey),
@@ -308,21 +502,26 @@ const ChatInput = memo(function ChatInput({
   } | null>(null)
 
   // Queued messages for this thread (shown as chips in the input area)
+  const queueId = scopeKey ?? currentThreadId ?? ''
   const queuedMessages = useMessageQueue(
-    useShallow((s) => s.getQueue(currentThreadId ?? ''))
+    useShallow((s) => s.getQueue(queueId))
   )
   const queueLength = queuedMessages.length
 
   const removeQueuedMessage = useCallback(
     (id: string) => {
-      useMessageQueue.getState().removeMessage(currentThreadId ?? '', id)
+      useMessageQueue.getState().removeMessage(queueId, id)
     },
-    [currentThreadId]
+    [queueId]
   )
 
   const lastTransferredThreadId = useRef<string | null>(null)
 
   useEffect(() => {
+    // Only the general chat migrates a draft: it composes under the "new
+    // thread" key until the thread exists. A scopeKey caller has a stable id
+    // from the start, so there is nothing to move.
+    if (scopeKey) return
     if (
       currentThreadId &&
       lastTransferredThreadId.current !== currentThreadId
@@ -330,7 +529,7 @@ const ChatInput = memo(function ChatInput({
       transferAttachments(NEW_THREAD_ATTACHMENT_KEY, currentThreadId)
       lastTransferredThreadId.current = currentThreadId
     }
-  }, [currentThreadId, transferAttachments])
+  }, [scopeKey, currentThreadId, transferAttachments])
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
@@ -367,7 +566,15 @@ const ChatInput = memo(function ChatInput({
       setMessage('Please select a model to start chatting.')
       return
     }
-    if (!prompt.trim() && !hasSendableMedia) {
+
+    // Resolve @path references before sending
+    const { text: resolvedText, resolvedContents } =
+      await resolvePromptReferences(prompt)
+    const effectivePrompt = resolvedContents
+      ? `${resolvedText}\n\n---\nReferenced file contents:\n\n${resolvedContents}`
+      : resolvedText
+
+    if (!effectivePrompt.trim() && !hasSendableMedia) {
       return
     }
     if (ingestingAny) {
@@ -376,15 +583,15 @@ const ChatInput = memo(function ChatInput({
     }
 
     setMessage('')
-    addToHistory(prompt)
+    addToHistory(effectivePrompt)
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
       // When the model is still streaming, queue the message for later
-      if (isStreaming && currentThreadId) {
-        useMessageQueue.getState().enqueue(currentThreadId, {
+      if (isStreaming && queueId) {
+        useMessageQueue.getState().enqueue(queueId, {
           id: generateId(),
-          text: prompt,
+          text: effectivePrompt,
           createdAt: Date.now(),
         })
         setPrompt('')
@@ -414,7 +621,7 @@ const ChatInput = memo(function ChatInput({
         }))
       const files = [...imageFiles, ...audioFiles, ...videoFiles]
 
-      onSubmit(prompt, files.length > 0 ? files : undefined)
+      onSubmit(effectivePrompt, files.length > 0 ? files : undefined)
       setPrompt('')
       clearAttachmentsForThread(attachmentsKey)
     } else {
@@ -429,7 +636,7 @@ const ChatInput = memo(function ChatInput({
       )
 
       const messagePayload = {
-        text: prompt,
+        text: effectivePrompt,
         files: [] as Array<{ type: string; mediaType: string; url: string }>,
       }
 
@@ -1899,9 +2106,27 @@ const ChatInput = memo(function ChatInput({
               value={prompt}
               data-testid={'chat-input'}
               onChange={(e) => {
-                setPrompt(e.target.value)
+                const value = e.target.value
+                const cursorIdx = e.target.selectionStart
+
+                // Track when @ is freshly typed
+                const prevPrompt = prompt
+                handlePromptChange(value)
+
+                // Snapshot cursor position when user types @
+                if (value.includes('@') && !prevPrompt.includes('@')) {
+                  filePickerCursorPos.current = cursorIdx
+                } else if (value.endsWith('@') && cursorIdx > 0) {
+                  filePickerCursorPos.current = cursorIdx
+                } else if (!value.includes('@')) {
+                  filePickerCursorPos.current = null
+                } else if (filePickerCursorPos.current == null) {
+                  // If picker already open, keep tracking cursor
+                  filePickerCursorPos.current = cursorIdx
+                }
+
                 // Count the number of newlines to estimate rows
-                const newRows = (e.target.value.match(/\n/g) || []).length + 1
+                const newRows = (value.match(/\n/g) || []).length + 1
                 setRows(Math.min(newRows, maxRows))
               }}
               onKeyDown={(e) => {
@@ -1938,6 +2163,17 @@ const ChatInput = memo(function ChatInput({
                     navigateHistory('down')
                   }
                 }
+                // Tab completes the selected @path file reference
+                if (
+                  e.key === 'Tab' &&
+                  filePickerOpen &&
+                  filePickerEntries.length > 0 &&
+                  !isComposing
+                ) {
+                  e.preventDefault()
+                  // Select the first entry as the default Tab completion
+                  handleFilePickerSelect(filePickerEntries[0])
+                }
               }}
               onPaste={handlePaste}
               placeholder={t('common:placeholder.chatInput')}
@@ -1952,6 +2188,20 @@ const ChatInput = memo(function ChatInput({
                 className
               )}
             />
+            {/* @path file reference picker popover */}
+            {filePickerOpen && effectiveAgentMode && (
+              <div className="relative">
+                <FilePickerPopover
+                  entries={filePickerEntries}
+                  query={filePickerQuery}
+                  open={filePickerOpen}
+                  position={filePickerPosition}
+                  onSelect={handleFilePickerSelect}
+                  onClose={handleFilePickerClose}
+                  textareaRef={textareaRef}
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -1960,7 +2210,7 @@ const ChatInput = memo(function ChatInput({
             <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
               <div
                 className={cn(
-                  'px-1 flex items-center w-full gap-1',
+                  'px-1 flex items-center gap-1',
                   isStreaming && 'opacity-50 pointer-events-none'
                 )}
               >
@@ -2065,7 +2315,7 @@ const ChatInput = memo(function ChatInput({
                     updateCurrentThreadAssistant,
                   }}
                 />
-                {!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
+                {showToolControls && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -2098,16 +2348,16 @@ const ChatInput = memo(function ChatInput({
                     <TooltipContent>
                       <p>
                         {isJanBrowserMCPLoading
-                          ? 'Starting...'
+                          ? t('common:starting')
                           : janBrowserMCPActive
-                            ? 'Browse (Active)'
-                            : 'Browse'}
+                            ? t('common:browse') + t('common:activeSuffix')
+                            : t('common:browse')}
                       </p>
                     </TooltipContent>
                   </Tooltip>
                 )}
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('embeddings') && (
+                {showToolControls && selectedModel?.capabilities?.includes('embeddings') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -2126,7 +2376,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') &&
+                {showToolControls && selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
                     // Use custom MCP component
@@ -2241,7 +2491,7 @@ const ChatInput = memo(function ChatInput({
                     <TooltipContent>
                       <p>
                         {webSearchEnabled
-                          ? t('common:web_search') + ' (Active)'
+                          ? t('common:web_search') + t('common:activeSuffix')
                           : t('common:web_search')}
                       </p>
                     </TooltipContent>
@@ -2563,12 +2813,25 @@ const ChatInput = memo(function ChatInput({
                     )
                   })()}
               </div>
+              {surfaceControls && (
+                <div className="flex min-w-0 flex-1 items-center gap-1">
+                  <Separator
+                    orientation="vertical"
+                    className="mx-1 h-4 shrink-0"
+                  />
+                  {surfaceControls}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
               {tokenCounterVisible && tokenCounterCompact && (
                 <div className="flex-1 flex justify-center">
-                  <TokenCounter messages={threadMessages || []} compact={true} />
+                  <TokenCounter
+                    messages={threadMessages || []}
+                    source={tokenSource}
+                    compact={true}
+                  />
                 </div>
               )}
 
@@ -2580,13 +2843,20 @@ const ChatInput = memo(function ChatInput({
                       size="icon-sm"
                       className="rounded-full mr-1 mb-1"
                       onClick={() => {
-                        if (!currentThreadId) return
-                        const queue = useMessageQueue.getState().getQueue(currentThreadId)
-                        if (queue.length > 0) {
-                          useMessageQueue.getState().clearQueue(currentThreadId)
-                        } else {
-                          stopStreaming(currentThreadId)
+                        // Stopping with messages queued clears the queue —
+                        // there is nothing to interrupt yet. The old
+                        // `if (!currentThreadId) return` guard made this button
+                        // inert for any surface without a thread id.
+                        if (queueId) {
+                          const queue = useMessageQueue
+                            .getState()
+                            .getQueue(queueId)
+                          if (queue.length > 0) {
+                            useMessageQueue.getState().clearQueue(queueId)
+                            return
+                          }
                         }
+                        stopStreaming(currentThreadId ?? '')
                       }}
                     >
                       <IconPlayerStopFilled />
@@ -2633,7 +2903,7 @@ const ChatInput = memo(function ChatInput({
 
       {tokenCounterVisible && !tokenCounterCompact && (
         <div className="flex-1 w-full flex justify-start px-2">
-          <TokenCounter messages={threadMessages || []} />
+          <TokenCounter messages={threadMessages || []} source={tokenSource} />
         </div>
       )}
 

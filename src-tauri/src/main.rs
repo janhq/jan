@@ -6,5 +6,8 @@ fn main() {
     // worker (and any other child) inherits directories added by fix_path_env.
     let _ = fix_path_env::fix();
 
+    // Exits early if invoked as the Windows sandbox helper for a `bash` tool call.
+    tauri_plugin_agent_tools::run_sandbox_helper_if_requested();
+
     app_lib::run();
 }
