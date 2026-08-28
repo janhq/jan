@@ -1867,6 +1867,15 @@ struct App {
     /// Lines scrolled back from the tail; 0 pins the view to the bottom so new
     /// content follows. Non-zero survives streaming so scroll-back stays usable.
     scrollback: u16,
+    /// A full repaint is owed before the next frame: `apply_repaint` clears the
+    /// screen and resets ratatui's diff baseline so the following draw re-emits
+    /// every cell. A
+    /// foreign write to the TTY (a `wall(1)` broadcast) damages the physical
+    /// screen without touching either buffer, so the diff alone sees no change
+    /// and would leave that damage on screen for the rest of the session. Set
+    /// by Ctrl-L and by `Event::Resize`, never per frame -- an unconditional
+    /// clear would flicker and undo the synchronized-update work.
+    repaint: bool,
     /// Set when the user submits a message; the loop spawns a run next tick.
     want_start: bool,
     /// Turns (model roundtrips, plus the submission that kicked off a run)
@@ -2319,6 +2328,7 @@ impl App {
             retry_after_compact: false,
             overflow_retries: 0,
             scrollback: 0,
+            repaint: false,
             want_start: false,
             turns_since_todos_closed: 0,
             todos_closed_at: None,
@@ -2442,6 +2452,18 @@ impl App {
     fn clear_selection(&mut self) {
         self.selection = None;
         self.copy_armed = false;
+    }
+
+    /// Owe a full repaint on the next frame. A pure display operation: it
+    /// leaves the draft, scroll position, and run state alone, so it is safe
+    /// to request from any mode, mid-turn included.
+    fn request_repaint(&mut self) {
+        self.repaint = true;
+    }
+
+    /// Take the pending full-repaint request, if there is one.
+    fn take_repaint(&mut self) -> bool {
+        std::mem::take(&mut self.repaint)
     }
 
     /// Line count of a copy recent enough to still advertise, if any.
@@ -7330,6 +7352,15 @@ async fn chat_loop<B: Backend>(
             }
         }
 
+        // A repaint was asked for (Ctrl-L, or a resize): invalidate the frame
+        // so the draw below re-emits every cell rather than diffing against
+        // buffers that no longer describe the screen. See `apply_repaint`.
+        // Kept outside the synchronized block below: the clear is its own
+        // screen operation, not part of the frame that block flips atomically.
+        if app.take_repaint() {
+            apply_repaint(terminal);
+        }
+
         // Wrap the repaint in synchronized-output (`\x1b[?2026h/l`) so the
         // terminal buffers the whole frame and flips it atomically, eliminating
         // tearing. Written straight to stdout (not the generic `Backend`) for the
@@ -7376,6 +7407,7 @@ async fn chat_loop<B: Backend>(
                                 handle_mouse(app, mouse);
                             }
                         }
+                        Ok(event @ Event::Resize(_, _)) => route_resize_event(app, event),
                         _ => {}
                     }
                 }
@@ -7735,6 +7767,14 @@ async fn handle_ask_key(
         return true;
     }
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    // A docked ask owns the keyboard, and runs before `handle_key`, so the
+    // repaint key has to be honoured here too -- otherwise a broadcast that
+    // lands during a question stays on screen until the question is answered.
+    // Consumed rather than typed into a custom answer.
+    if ctrl && key.code == KeyCode::Char('l') {
+        app.request_repaint();
+        return true;
+    }
     if ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')) {
         crate::core::agent::interaction::cancel_all(registry).await;
         app.ask_queue.clear();
@@ -7804,6 +7844,41 @@ fn route_paste_event(app: &mut App, event: Event) {
         for c in text.chars() {
             app.input_insert(c);
         }
+    }
+}
+
+/// Route a terminal resize to a full repaint. Diffing the next frame against a
+/// buffer laid out for the old geometry leaves debris on screen, so the whole
+/// frame is re-emitted against the new size instead. Purely a display concern:
+/// the draft, scroll position, and any running turn are untouched.
+fn route_resize_event(app: &mut App, event: Event) {
+    if !matches!(event, Event::Resize(_, _)) {
+        return;
+    }
+    app.request_repaint();
+}
+
+/// Clear the screen and reset ratatui's diff baseline, so the next `draw`
+/// re-emits every cell instead of only the ones its buffers say changed. This
+/// is what actually erases a foreign write: a `wall(1)` broadcast paints over
+/// the frame without touching either buffer, so the diff alone considers those
+/// cells already correct and would leave the damage there for the session.
+///
+/// `Terminal::resize` rather than `Terminal::clear`: both clear and reset the
+/// baseline, but `clear` first asks the backend for the cursor position, which
+/// on crossterm is a DSR (`\x1b[6n`) round trip -- a *blocking* read of up to
+/// two seconds. A terminal that never answers (a pipe, a multiplexer that
+/// swallows it, or one whose reply our own event reader already consumed)
+/// would stall streaming and input for that long and then skip the clear
+/// anyway, which is the frozen-UI failure this key exists to fix. `size` is a
+/// `TIOCGWINSZ` ioctl with no round trip, so the repaint stays immediate.
+///
+/// Best-effort like the synchronized-update markers: a terminal that refuses
+/// its size is not reason enough to end the session, and the next frame still
+/// draws.
+fn apply_repaint<B: Backend>(terminal: &mut Terminal<B>) {
+    if let Ok(size) = terminal.size() {
+        let _ = terminal.resize(size.into());
     }
 }
 
@@ -8112,6 +8187,17 @@ async fn handle_key(
     }
 
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+
+    // Ctrl-L is the readline/less spelling of "redraw", and it is deliberately
+    // ahead of every mode guard below: the screen can be damaged by a foreign
+    // write (a `wall(1)` broadcast) at any moment, including while a prompt or
+    // picker owns the keyboard, so the recovery key has to work in all of them.
+    // Repainting touches nothing but the display -- the draft, scroll position,
+    // and any in-flight turn are left exactly as they were.
+    if ctrl && key.code == KeyCode::Char('l') {
+        app.request_repaint();
+        return;
+    }
     let alt = key.modifiers.contains(KeyModifiers::ALT);
     let sup = key.modifiers.contains(KeyModifiers::SUPER);
     // A modified Enter is a newline, never a submit or a completion, so the
@@ -9282,6 +9368,7 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("PgUp/PgDn", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
+    ("Ctrl-L", "Redraw the screen (repairs a broadcast over it)"),
     ("Shift+Tab", "Cycle reasoning effort (low/medium/high)"),
     ("Alt+T", "Toggle reasoning effort (low / last)"),
     (
@@ -15568,28 +15655,29 @@ mod tests {
     use super::SessionLimits;
     use super::{
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
-        apply_resume, apply_stream_event, assistant_is_awaiting_user_answer, assistant_runs,
-        autoscroll_selection, await_branch_poll, backgrounded_job_id, brand, build_user_message,
-        clipboard_path, compact_tokens, diff_lines, drain_stream_events, estimate_token_count,
-        finish_account_login, finish_compaction, finish_login, finish_plugin_install,
-        finish_tokamak_login, finish_update_install, group_detail_lines, group_summary,
-        handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, header_spans, image_mime,
-        image_mime_of, input_content_lines, load_first_file_image, load_image_file, message_text,
-        note_update, open_config_screen, open_rewind_picker, pairs_to_str, parse_command,
-        partial_json_field, provider_label_for_model, rebuild_recall, replay_display_log,
-        restore_goal, restore_run_mode, restore_todos, resume_hint, rewind_to, route_paste_event,
-        row_width, run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
-        split_reasoning, starting_call_lines, startup_modes, strip_system_xml_tags,
-        subagent_activity, subagent_name_from_run_id, summarize_result, sync_output_for,
-        thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
-        transcript_top_padding, unescape_partial_json_string, user_content_parts, wave_sweep_line,
-        with_wave_glyph, without_think_tags, App, CompactKind, CurrentRun, McpField, McpPrompt,
-        Pending, PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeTarget, Row, RowKind,
-        Selection, SelectionMode, SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE,
-        ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS,
-        DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF, KITTY_KEYS_ON, MAX_IMAGE_BYTES,
-        MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER,
-        SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
+        apply_repaint, apply_resume, apply_stream_event, assistant_is_awaiting_user_answer,
+        assistant_runs, autoscroll_selection, await_branch_poll, backgrounded_job_id, brand,
+        build_user_message, clipboard_path, compact_tokens, diff_lines, drain_stream_events,
+        estimate_token_count, finish_account_login, finish_compaction, finish_login,
+        finish_plugin_install, finish_tokamak_login, finish_update_install, group_detail_lines,
+        group_summary, handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, header_spans,
+        image_mime, image_mime_of, input_content_lines, load_first_file_image, load_image_file,
+        message_text, note_update, open_config_screen, open_rewind_picker, pairs_to_str,
+        parse_command, partial_json_field, provider_label_for_model, rebuild_recall,
+        replay_display_log, restore_goal, restore_run_mode, restore_todos, resume_hint, rewind_to,
+        route_paste_event, route_resize_event, row_width, run_command, running_group_rows,
+        selection_text, spans_width, spawn_branch_poll, split_reasoning, starting_call_lines,
+        startup_modes, strip_system_xml_tags, subagent_activity, subagent_name_from_run_id,
+        summarize_result, sync_output_for, thinking_open, tilde_path, tokens_per_second,
+        tool_activity, tool_finished, transcript_top_padding, unescape_partial_json_string,
+        user_content_parts, wave_sweep_line, with_wave_glyph, without_think_tags, App, CompactKind,
+        CurrentRun, McpField, McpPrompt, Pending, PendingImage, PickerKind, ProviderField,
+        ReasoningSeg, ResumeTarget, Row, RowKind, Selection, SelectionMode, SnapshotJob, Status,
+        AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG,
+        DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF,
+        KITTY_KEYS_ON, MAX_IMAGE_BYTES, MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON,
+        PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS, THINKING_WORDS,
+        WORKING_WORDS,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -24670,6 +24758,292 @@ mod tests {
         assert_eq!(app.copy_notice(), Some(3));
         app.copied = Some((Instant::now() - COPY_NOTICE - Duration::from_millis(1), 3));
         assert_eq!(app.copy_notice(), None);
+    }
+
+    /// The bug this exists for: a foreign write to the TTY (`wall(1)`) damages
+    /// the physical screen without touching either of ratatui's buffers, so the
+    /// per-cell diff considers those cells already correct and never repaints
+    /// them -- the damage is permanent for the session. Simulated by writing
+    /// straight to the backend (`Backend::draw` is what the real terminal write
+    /// amounts to: it changes the screen, not the buffers). First half asserts
+    /// the bug is real under a plain redraw; second half asserts the repaint
+    /// path repairs it.
+    #[test]
+    fn repaint_restores_cells_a_foreign_write_corrupted() {
+        use ratatui::backend::Backend as _;
+        use ratatui::buffer::Cell;
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let mut app = test_app();
+        app.submit_user("what does this project do".to_string());
+        let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        let clean = terminal.backend().buffer().clone();
+
+        // Pick a cell the frame actually painted, so a restored value is
+        // distinguishable from an incidentally blank one.
+        let (cx, cy) = (0..clean.area.height)
+            .flat_map(|y| (0..clean.area.width).map(move |x| (x, y)))
+            .find(|&(x, y)| clean[(x, y)].symbol().trim() != "")
+            .expect("the frame must paint something");
+
+        let mut broadcast = Cell::EMPTY;
+        broadcast.set_symbol("W");
+        terminal
+            .backend_mut()
+            .draw(std::iter::once((cx, cy, &broadcast)))
+            .unwrap();
+        assert_eq!(
+            terminal.backend().buffer()[(cx, cy)].symbol(),
+            "W",
+            "the simulated broadcast must actually land on the screen"
+        );
+
+        // The bug: an ordinary redraw diffs identical buffers, emits nothing,
+        // and leaves the broadcast sitting on the frame.
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        assert_eq!(
+            terminal.backend().buffer()[(cx, cy)].symbol(),
+            "W",
+            "a plain redraw is expected to leave foreign damage in place"
+        );
+
+        // The fix: the repaint resets the diff baseline, so the next frame
+        // re-emits every cell and the damage is gone.
+        app.request_repaint();
+        assert!(app.take_repaint());
+        apply_repaint(&mut terminal);
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        assert_eq!(
+            terminal.backend().buffer(),
+            &clean,
+            "a repaint must restore the frame the broadcast damaged"
+        );
+    }
+
+    /// Ctrl-L is the repaint key, in ordinary composing and while a docked ask
+    /// owns the keyboard (`handle_ask_key` runs first and would otherwise
+    /// swallow it). It is a display operation: it must not type into the
+    /// composer or answer.
+    #[tokio::test]
+    async fn ctrl_l_routes_to_a_repaint() {
+        let mut app = test_app();
+        let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let mcp_servers: crate::core::state::SharedMcpServers =
+            Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let mut current: Option<CurrentRun> = None;
+        let ctrl_l = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL);
+
+        handle_key(&mut app, ctrl_l, &registry, &mut current, &mcp_servers).await;
+        assert!(app.take_repaint(), "Ctrl-L must request a full repaint");
+        assert!(app.input.is_empty(), "got: {:?}", app.input);
+
+        // A plain `l` is ordinary text, not a repaint.
+        let plain_l = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE);
+        handle_key(&mut app, plain_l, &registry, &mut current, &mcp_servers).await;
+        assert!(!app.take_repaint(), "only Ctrl-L may repaint");
+        assert_eq!(app.input, "l");
+
+        assert!(
+            KEY_BINDINGS.iter().any(|(k, _)| k.contains("Ctrl-L")),
+            "the repaint key needs advertising"
+        );
+    }
+
+    /// A resize is a repaint trigger in its own right: the next frame must not
+    /// be diffed against a buffer laid out for the old geometry.
+    #[test]
+    fn resize_routes_to_a_repaint() {
+        let mut app = test_app();
+        route_resize_event(&mut app, Event::Resize(100, 40));
+        assert!(app.take_repaint(), "a resize must request a full repaint");
+
+        // Other events leave the flag alone -- the repaint is triggered, never
+        // unconditional (a per-frame clear would flicker).
+        route_resize_event(&mut app, Event::Paste("hi".into()));
+        assert!(!app.take_repaint());
+    }
+
+    /// A backend that counts cursor-position queries and otherwise behaves
+    /// exactly like `TestBackend`. `Terminal::clear` issues one; on crossterm
+    /// that is a DSR (`\x1b[6n`) round trip, which `read_position_raw` waits
+    /// on for up to two seconds.
+    struct CountingBackend {
+        inner: ratatui::backend::TestBackend,
+        cursor_queries: std::cell::Cell<usize>,
+    }
+
+    impl ratatui::backend::Backend for CountingBackend {
+        type Error = <ratatui::backend::TestBackend as ratatui::backend::Backend>::Error;
+
+        fn draw<'a, I>(&mut self, content: I) -> Result<(), Self::Error>
+        where
+            I: Iterator<Item = (u16, u16, &'a ratatui::buffer::Cell)>,
+        {
+            self.inner.draw(content)
+        }
+
+        fn get_cursor_position(&mut self) -> Result<ratatui::layout::Position, Self::Error> {
+            self.cursor_queries.set(self.cursor_queries.get() + 1);
+            self.inner.get_cursor_position()
+        }
+
+        fn set_cursor_position<P: Into<ratatui::layout::Position>>(
+            &mut self,
+            position: P,
+        ) -> Result<(), Self::Error> {
+            self.inner.set_cursor_position(position)
+        }
+
+        fn hide_cursor(&mut self) -> Result<(), Self::Error> {
+            self.inner.hide_cursor()
+        }
+
+        fn show_cursor(&mut self) -> Result<(), Self::Error> {
+            self.inner.show_cursor()
+        }
+
+        fn clear(&mut self) -> Result<(), Self::Error> {
+            self.inner.clear()
+        }
+
+        fn clear_region(
+            &mut self,
+            clear_type: ratatui::backend::ClearType,
+        ) -> Result<(), Self::Error> {
+            self.inner.clear_region(clear_type)
+        }
+
+        fn size(&self) -> Result<ratatui::layout::Size, Self::Error> {
+            self.inner.size()
+        }
+
+        fn window_size(&mut self) -> Result<ratatui::backend::WindowSize, Self::Error> {
+            self.inner.window_size()
+        }
+
+        fn flush(&mut self) -> Result<(), Self::Error> {
+            self.inner.flush()
+        }
+    }
+
+    /// `apply_repaint` must never ask the backend where the cursor is.
+    /// `Terminal::clear` does, and on crossterm that DSR round trip blocks this
+    /// single-threaded loop for up to two seconds against a terminal that does
+    /// not answer -- freezing streaming and input, and then skipping the clear
+    /// anyway. Measured at 2.04s against an unresponsive PTY before this was
+    /// switched to the size-based path, versus 0.06s once it was.
+    #[test]
+    fn repaint_never_blocks_on_a_cursor_query() {
+        use ratatui::backend::Backend as _;
+        use ratatui::Terminal;
+
+        let mut app = test_app();
+        let backend = CountingBackend {
+            inner: ratatui::backend::TestBackend::new(60, 30),
+            cursor_queries: std::cell::Cell::new(0),
+        };
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        let clean = terminal.backend().inner.buffer().clone();
+
+        // Damage the screen the way a `wall(1)` broadcast does.
+        let (cx, cy) = (0..clean.area.height)
+            .flat_map(|y| (0..clean.area.width).map(move |x| (x, y)))
+            .find(|&(x, y)| clean[(x, y)].symbol().trim() != "")
+            .expect("the frame must paint something");
+        let mut broadcast = ratatui::buffer::Cell::EMPTY;
+        broadcast.set_symbol("W");
+        terminal
+            .backend_mut()
+            .draw(std::iter::once((cx, cy, &broadcast)))
+            .unwrap();
+
+        let before = terminal.backend().cursor_queries.get();
+        apply_repaint(&mut terminal);
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        let asked = terminal.backend().cursor_queries.get() - before;
+
+        assert_eq!(
+            asked, 0,
+            "the repaint must not issue a cursor-position query: on crossterm \
+             that is a blocking DSR round trip on the render loop"
+        );
+        assert_eq!(
+            terminal.backend().inner.buffer(),
+            &clean,
+            "and it must still restore the frame the broadcast damaged"
+        );
+    }
+
+    /// A repaint is a display operation and nothing more: a user pressing
+    /// Ctrl-L mid-draft must not lose the draft or have the transcript jump.
+    #[tokio::test]
+    async fn composer_draft_and_scroll_survive_a_repaint() {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let mut app = test_app();
+        for i in 0..40 {
+            app.submit_user(format!("message {i}"));
+        }
+        app.input = "a draft mid-sentence".to_string();
+        app.scrollback = 7;
+
+        let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        let before = terminal.backend().buffer().clone();
+
+        let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let mcp_servers: crate::core::state::SharedMcpServers =
+            Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let mut current: Option<CurrentRun> = None;
+        let ctrl_l = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL);
+        handle_key(&mut app, ctrl_l, &registry, &mut current, &mcp_servers).await;
+
+        assert_eq!(app.input, "a draft mid-sentence", "the draft must survive");
+        assert_eq!(app.scrollback, 7, "the scroll position must survive");
+
+        // And the repainted frame is the same frame, redrawn -- not a scrolled
+        // or emptied one.
+        assert!(app.take_repaint());
+        apply_repaint(&mut terminal);
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        assert_eq!(
+            terminal.backend().buffer(),
+            &before,
+            "a repaint must reproduce the same frame"
+        );
+    }
+
+    /// A docked ask owns the keyboard and runs before `handle_key`, so it has
+    /// to honour the repaint key itself -- a broadcast landing during a
+    /// question would otherwise stay on screen until it is answered. The key is
+    /// consumed, never typed into a custom answer, and the question survives.
+    #[tokio::test]
+    async fn ctrl_l_repaints_while_an_ask_owns_the_keyboard() {
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+            timeout_secs: None,
+        });
+
+        let ctrl_l = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL);
+        assert!(
+            handle_ask_key(&mut app, ctrl_l, &registry).await,
+            "the ask must consume Ctrl-L rather than pass it on"
+        );
+        assert!(app.take_repaint(), "Ctrl-L must repaint during an ask");
+        assert!(
+            !app.ask_queue.is_empty(),
+            "a repaint must not answer or dismiss the question"
+        );
+        assert!(
+            app.ask_queue.front().unwrap().custom_input.is_empty(),
+            "the repaint key must not be typed into the answer"
+        );
     }
 
     #[tokio::test]

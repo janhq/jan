@@ -464,15 +464,16 @@ pub fn workspace_filename(name: &str) -> Result<String, String> {
 /// the sweep deletes the directory the other test is mid-way through using. Any
 /// test that either sweeps or depends on a live scratch takes this first.
 #[cfg(test)]
-pub(crate) static SCRATCH_NAMESPACE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+pub(crate) static SCRATCH_NAMESPACE_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
+    std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
 
-/// Take [`SCRATCH_NAMESPACE_LOCK`], ignoring poisoning: a panic in one test must
-/// not cascade into unrelated failures in every other one.
+/// Take [`SCRATCH_NAMESPACE_LOCK`], awaiting the mutex like the tests that use
+/// it. The guard is held across the async body on purpose: these tests serialise
+/// against the sweep that otherwise races them, and [`tokio::sync::Mutex`] drops
+/// the guard if a task is cancelled, so it cannot deadlock.
 #[cfg(test)]
-pub(crate) fn lock_scratch_namespace() -> std::sync::MutexGuard<'static, ()> {
-    SCRATCH_NAMESPACE_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+pub(crate) async fn lock_scratch_namespace() -> tokio::sync::MutexGuard<'static, ()> {
+    SCRATCH_NAMESPACE_LOCK.lock().await
 }
 
 #[cfg(test)]
@@ -546,7 +547,7 @@ mod tests {
     #[tokio::test]
     async fn stale_scratch_dirs_are_swept_and_fresh_ones_are_not() {
         let session = format!("sweep-stale-{}", std::process::id());
-        let _guard = lock_scratch_namespace();
+        let _guard = lock_scratch_namespace().await;
         let orphan = ensure_scratch_dir(&session).await.unwrap();
         std::fs::write(orphan.join("spill.txt"), b"leaked").unwrap();
         let bystander = std::env::temp_dir().join(format!("not-a-scratch-{session}"));
