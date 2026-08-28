@@ -1,7 +1,19 @@
 import { invoke, Channel } from '@tauri-apps/api/core'
-import { SkillMeta, ToolResult, ToolSchema } from './types'
+import {
+  SkillMeta,
+  ToolOutputChunk,
+  ToolResult,
+  ToolSchema,
+  WorkspaceScope,
+} from './types'
 
-export { SkillMeta, ToolResult, ToolSchema } from './types'
+export {
+  SkillMeta,
+  ToolOutputChunk,
+  ToolResult,
+  ToolSchema,
+  WorkspaceScope,
+} from './types'
 
 /**
  * Every call takes the Jan data folder, because the plugin derives its

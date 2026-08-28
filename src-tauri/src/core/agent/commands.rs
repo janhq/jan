@@ -13,6 +13,8 @@ use crate::core::agent::project::{
 };
 use crate::core::agent::skill_hub;
 use crate::core::agent::skills as agent_skills;
+use crate::core::agent::subagent;
+use crate::core::app::commands::get_jan_data_folder_path;
 use tauri_plugin_agent_tools::skills::{self, SkillMeta};
 use tauri_plugin_agent_tools::workspace;
 
@@ -151,4 +153,45 @@ pub async fn agent_plugin_search(
 #[tauri::command]
 pub fn agent_git_branch(project: String) -> Option<String> {
     git::current_branch(std::path::Path::new(&project))
+}
+
+/// A saved subagent definition, for the `task` tool's advertised name list and
+/// the Cowork subagents panel.
+#[derive(serde::Serialize)]
+pub struct SubagentDefinitionDto {
+    pub name: String,
+    pub description: String,
+    pub system_prompt: String,
+    /// When set, the child's toolset is this list intersected with the parent's;
+    /// it never widens. `None` inherits the parent's set.
+    pub allowed_tools: Option<Vec<String>>,
+    pub model: Option<String>,
+}
+
+/// Every subagent saved for the desktop, from the single
+/// `<jan_data>/agent-workspace/subagents/` directory.
+///
+/// Deliberately not the CLI's plugin/user/project merge: Cowork has no project
+/// root in a default session, and an attached folder is mounted read-only, so
+/// scanning it would let a cloned repo inject a system prompt and a tool
+/// allowlist into the agent. Malformed files are skipped, so a bad TOML costs one
+/// definition rather than the whole list.
+#[tauri::command]
+pub async fn agent_subagent_list<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+) -> Result<Vec<SubagentDefinitionDto>, String> {
+    let dir = subagent::desktop_subagents_dir(&get_jan_data_folder_path(app_handle));
+    Ok(
+        subagent::SubagentRegistry::load_one(&dir, subagent::SubagentScope::User)
+            .list()
+            .into_iter()
+            .map(|d| SubagentDefinitionDto {
+                name: d.name.clone(),
+                description: d.description.clone(),
+                system_prompt: d.system_prompt.clone(),
+                allowed_tools: d.allowed_tools.clone(),
+                model: d.model.clone(),
+            })
+            .collect(),
+    )
 }
