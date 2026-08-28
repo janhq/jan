@@ -55,10 +55,12 @@ env:
   JAN_ENGINE_VARIANT: ${{ inputs.engine_variant || 'cuda13' }}
   JAN_ENGINE_VULKAN_FALLBACK: ${{ inputs.vulkan_fallback || '0' }}
   CUDA_SHORT: '13.4'
-  # 13.4 is the first release with Windows ARM64, and is a developer preview --
-  # hence packages.nvidia.com/prerelease; the usual compute/cuda path has no
-  # 13.4 entry.
-  CUDA_URL: 'https://packages.nvidia.com/prerelease/cuda/13.4.0/local_installers/cuda_13.4.0_windows_arm64.exe'
+  # Redistributable archives rather than the 3.8 GB local installer, which is
+  # how upstream llama.cpp provisions this same toolkit
+  # (.github/actions/windows-setup-cuda). A full silent install spends most of
+  # its time on the display driver and the Nsight profilers, none of which a
+  # build needs, and it hung past 38 minutes on a runner with no NVIDIA GPU.
+  CUDA_POOL: 'https://packages.nvidia.com/bin-archive/pool/windows-arm64/5B515474-7E78-11F1-8656-C51E4F4B317F'
 
 jobs:
   build-windows-arm64:
@@ -103,56 +105,71 @@ jobs:
           if (-not $found) { throw "no arm64 cl.exe under $vcTools\bin\Host*\arm64" }
           "VCToolsInstallDir=$vcTools" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
-      # ~3.8 GB with no network installer available, so this dominates the job.
-      # Uncached deliberately: it would claim a third of the repo's 10 GB cache
-      # budget and evict the cargo caches that matter more.
+      # Every archive is arm64: this is a native build, so nvcc itself is an
+      # ARM64 binary. Upstream cross-compiles instead and pairs x86_64 host
+      # tools with arm64 target libraries -- worth remembering as the fallback
+      # if a native nvcc misbehaves, though switching would also mean
+      # cross-compiling the Tauri app and relocating every output path.
       #
-      # Subpackages are enumerated rather than using a bare `-s`. A full silent
-      # install pulls all ~42 components plus Display.Driver, which on a runner
-      # with no NVIDIA GPU ran past 38 minutes with no output before being
-      # killed -- against a 3 minute download. Naming the packages skips the
-      # driver, all three Nsight profilers, documentation, sanitizer, opencl,
-      # the maths libraries ggml does not link (npp/cufft/curand/cusolver/
-      # cusparse/nvjpeg) and the Visual Studio integration we do not use with
-      # Ninja.
+      # Versions are pinned. These live in a prerelease pool with no "latest"
+      # alias, so an unpinned URL is not merely unstable, it does not exist.
       - name: Install the CUDA toolkit (ARM64)
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $ProgressPreference = 'SilentlyContinue'
-          $exe = Join-Path $env:RUNNER_TEMP 'cuda_arm64.exe'
+          $root = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_SHORT"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+
+          $archives = @(
+            'cuda_nvcc-windows-arm64-13.4.46-archive',
+            'cuda_crt-windows-arm64-13.4.46-archive',
+            'libnvvm-windows-arm64-13.4.46-archive',
+            'cuda_cudart-windows-arm64-13.4.46-archive',
+            'libcublas-windows-arm64-13.7.0.10-archive',
+            'cccl-windows-arm64-13.3.4.1.2-archive',
+            'cuda_nvtx-windows-arm64-13.4.46-archive',
+            'cuda_profiler_api-windows-arm64-13.4.46-archive'
+          )
+
           $sw = [Diagnostics.Stopwatch]::StartNew()
-          Invoke-WebRequest -Uri $env:CUDA_URL -OutFile $exe
-          Write-Host ("Downloaded {0:N0} MB in {1:N1} min" -f ((Get-Item $exe).Length / 1MB), $sw.Elapsed.TotalMinutes)
+          $tmp = Join-Path $env:RUNNER_TEMP 'cuda'
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          $total = 0
+          foreach ($a in $archives) {
+            $zip = Join-Path $tmp "$a.zip"
+            Invoke-WebRequest -Uri "$env:CUDA_POOL/$a.zip" -OutFile $zip
+            $total += (Get-Item $zip).Length
+            Expand-Archive -Path $zip -DestinationPath $tmp -Force
+            # Each archive unpacks to <name>/{bin,lib,include}; merge them all
+            # into one toolkit root, which is what CUDA_PATH has to point at.
+            Copy-Item -Path (Join-Path $tmp "$a\*") -Destination $root -Recurse -Force
+          }
+          Write-Host ("Fetched {0:N0} MB and unpacked in {1:N1} min" -f ($total / 1MB), $sw.Elapsed.TotalMinutes)
 
-          $v = $env:CUDA_SHORT
-          $packages = @(
-            'nvcc', 'crt', 'nvvm', 'cudart',          # compiler + runtime
-            'cublas', 'cublas_dev',                   # the only maths library ggml links
-            'cuda_profiler_api', 'thrust', 'nvtx',    # headers ggml includes
-            'nvrtc', 'nvrtc_dev',
-            'nvjitlink', 'nvfatbin', 'nvptxcompiler', # device link time
-            'cuobjdump', 'nvdisasm', 'nvprune', 'cuxxfilt'
-          ) | ForEach-Object { '{0}_{1}' -f $_, $v }
-          Write-Host "Installing: $($packages -join ' ')"
-
-          $sw.Restart()
-          Start-Process -FilePath $exe -ArgumentList (@('-s') + $packages) -Wait -NoNewWindow
-          Write-Host ("Installed in {0:N1} min" -f $sw.Elapsed.TotalMinutes)
-
-          $root = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$v"
-          if (-not (Test-Path $root)) { throw "CUDA not installed at $root" }
           "CUDA_PATH=$root" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "$root\bin"       | Out-File $env:GITHUB_PATH -Append -Encoding utf8
 
-          # A named subpackage that the installer did not recognise is skipped
-          # silently, so list what actually landed instead of assuming.
-          Write-Host "--- $root\lib\arm64"
-          Get-ChildItem "$root\lib\arm64" -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty Name
-          foreach ($need in 'cudart.lib', 'cublas.lib', 'cublasLt.lib') {
-            if (-not (Test-Path "$root\lib\arm64\$need")) { throw "missing $need" }
+          # Layout differs between the installer and these archives, and between
+          # host and target arch, so print it rather than assume it.
+          foreach ($d in 'bin', 'lib', 'lib\arm64', 'lib\x64') {
+            $path = Join-Path $root $d
+            Write-Host "--- $path"
+            if (Test-Path $path) {
+              Get-ChildItem $path | Select-Object -ExpandProperty Name
+            } else { Write-Host '   (absent)' }
           }
-          & "$root\bin\nvcc.exe" --version
+
+          $nvcc = Get-ChildItem $root -Recurse -Filter 'nvcc.exe' | Select-Object -First 1
+          if (-not $nvcc) { throw 'nvcc.exe not found under the toolkit root' }
+          Write-Host "nvcc: $($nvcc.FullName)"
+          & $nvcc.FullName --version
+
+          foreach ($need in 'cudart.lib', 'cublas.lib', 'cublasLt.lib') {
+            if (-not (Get-ChildItem $root -Recurse -Filter $need -ErrorAction SilentlyContinue)) {
+              throw "missing $need -- the archive list is incomplete"
+            }
+          }
 
       # LunarG's Windows ARM64 SDK is platform code `warm`; `windows` is x64.
       - name: Provision the Vulkan SDK
