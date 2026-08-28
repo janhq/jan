@@ -9,7 +9,7 @@
 
 /** A single visible transcript entry. `tool` rows are display-only and carry the
  * structured call/result so the UI can render a tool card. */
-export type CodeTurn = {
+export type CoworkTurn = {
   role: 'user' | 'assistant' | 'tool'
   content: string
   /** User-row only: data URLs of images attached via paste/file picker. */
@@ -47,7 +47,7 @@ export type SubagentRun = {
   /** 1-based FIFO queue position while `queued`; cleared on start. */
   waiting?: number
   /** The subagent's own trace. The final answer is in `finalOutput`, not here. */
-  turns: CodeTurn[]
+  turns: CoworkTurn[]
   finalOutput?: string
   usage?: Usage
 }
@@ -71,7 +71,7 @@ export type TodoList = {
 
 /** `/goal` state: set by `/goal <condition>`, checked after each turn completes,
  * cleared by `/goal clear` or once the evaluator reports it met. */
-export type CodeGoal = {
+export type CoworkGoal = {
   condition: string
   turns: number
   status: 'active' | 'achieved'

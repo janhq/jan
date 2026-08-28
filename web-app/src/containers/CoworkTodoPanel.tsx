@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { Check, ChevronDown, Loader2, Minus } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
-import type { TodoList, TodoStatus } from '@/types/codeSession'
-import { CodeSidePanel } from '@/containers/CodeSidePanel'
+import type { TodoList, TodoStatus } from '@/types/coworkSession'
+import { CoworkSidePanel } from '@/containers/CoworkSidePanel'
 import { cleanTaskLabel } from '@/lib/todoLabels'
 
 /** Status dot: filled when resolved, hollow while still open. */
@@ -38,7 +38,7 @@ function StatusDot({ status }: { status: TodoStatus }) {
  * (see todo.rs) the TUI already renders as a HUD. Read-only: the model owns
  * mutations via the `todo` tool; this just projects the current snapshot.
  */
-export function CodeTodoPanel({
+export function CoworkTodoPanel({
   todos,
   onClose,
 }: {
@@ -63,7 +63,7 @@ export function CodeTodoPanel({
     })
 
   return (
-    <CodeSidePanel
+    <CoworkSidePanel
       title={t('common:todoPanelTitle')}
       summary={
         tasks.length > 0 ? (
@@ -150,6 +150,6 @@ export function CodeTodoPanel({
           )}
         </div>
       </div>
-    </CodeSidePanel>
+    </CoworkSidePanel>
   )
 }

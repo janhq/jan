@@ -1,4 +1,4 @@
-import type { CodeTurn, SubagentRun } from '@/types/codeSession'
+import type { CoworkTurn, SubagentRun } from '@/types/coworkSession'
 
 export type ActivityLabel = { text: string; startedAt: number } | null
 
@@ -115,7 +115,7 @@ export function usedSkillNames(parts: ToolPartLike[]): string[] {
   return [...names]
 }
 
-function lastRunningToolTurn(turns: CodeTurn[]): CodeTurn | undefined {
+function lastRunningToolTurn(turns: CoworkTurn[]): CoworkTurn | undefined {
   for (let i = turns.length - 1; i >= 0; i--) {
     const turn = turns[i]
     if (turn.role === 'tool' && turn.status === 'running') return turn
@@ -139,4 +139,19 @@ export function subagentActivityLabel(subagents: SubagentRun[]): ActivityLabel {
 
   const startedAt = Math.min(...running.map((s) => s.startedAt))
   return { text: `${running.length} subagents working`, startedAt }
+}
+
+/**
+ * Whether a running agent is waiting on the model with nothing to show for it.
+ *
+ * True in the two gaps an agent loop leaves: before the first token, and again
+ * after each tool result. Streaming text and a running tool already report
+ * themselves, so a generic "Working…" beside them is noise.
+ */
+export function awaitsModel(running: boolean, turns: CoworkTurn[]): boolean {
+  if (!running) return false
+  const last = turns.at(-1)
+  if (!last) return true
+  if (last.role === 'user') return true
+  return last.role === 'tool' && last.status === 'done'
 }

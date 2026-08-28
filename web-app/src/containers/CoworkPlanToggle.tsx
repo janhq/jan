@@ -14,13 +14,13 @@ type Props = {
 }
 
 /**
- * A pressed-state button, not a Switch: a Switch reads as a settings control
- * and is too tall for the 28px dock row, and this is a mode flipped mid-
- * conversation.
+ * A pressed-state button, not a Switch: a Switch reads as a settings control,
+ * and this is a mode flipped mid-conversation.
  *
- * The visual cues are deliberately quiet — a filled glyph here, a placeholder
- * swap and one hairline on the composer. Tinting the composer made every
- * plan-mode session look like an error state.
+ * Icon-only until it is on, then it grows a label. The composer's control row
+ * is a row of quiet ghost icons; an outlined pill sitting among them read as
+ * bolted on, and a mode that is off has nothing to say. `text-primary` for the
+ * on state is the row's own convention, borrowed from the web-search toggle.
  */
 export function CoworkPlanToggle({ planMode, onChange }: Props) {
   const { t } = useTranslation()
@@ -30,28 +30,24 @@ export function CoworkPlanToggle({ planMode, onChange }: Props) {
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            variant={planMode ? 'secondary' : 'outline'}
-            size="sm"
+            variant="ghost"
+            size={planMode ? 'xs' : 'icon-xs'}
             aria-pressed={planMode}
+            aria-label={t('common:planMode.label')}
             onClick={() => onChange(!planMode)}
             className={cn(
-              'h-7 gap-1.5 rounded-full shrink-0',
-              planMode && 'border-primary/40'
+              'shrink-0',
+              planMode ? 'text-primary' : 'text-muted-foreground'
             )}
           >
             <Diamond
-              size={13}
               aria-hidden
               className={cn(
                 'shrink-0',
-                planMode
-                  ? 'fill-current text-primary'
-                  : 'text-muted-foreground'
+                planMode ? 'size-3.5 fill-current' : 'size-[18px]'
               )}
             />
-            <span className={planMode ? undefined : 'text-muted-foreground'}>
-              {t('common:planMode.label')}
-            </span>
+            {planMode && <span>{t('common:planMode.label')}</span>}
           </Button>
         </TooltipTrigger>
         <TooltipContent>

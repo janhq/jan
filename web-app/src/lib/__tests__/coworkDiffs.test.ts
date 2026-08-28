@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { collectCodeFileDiffs } from '@/lib/codeDiffs'
-import type { CodeTurn, SubagentRun } from '@/hooks/useCodeSessions'
+import { collectCodeFileDiffs } from '@/lib/coworkDiffs'
+import type { CoworkTurn, SubagentRun } from '@/hooks/useCoworkSessions'
 
 const edit = (
   path: unknown,
   diff: string,
-  extra: Partial<CodeTurn> = {}
-): CodeTurn => ({
+  extra: Partial<CoworkTurn> = {}
+): CoworkTurn => ({
   role: 'tool',
   content: '',
   name: 'edit',

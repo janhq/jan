@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { UIMessage, UIMessageChunk } from 'ai'
-import type { AskAnswer, CodeTurn, Usage } from '@/types/codeSession'
+import type { AskAnswer, CoworkTurn, Usage } from '@/types/coworkSession'
 import {
   MAX_AGENT_STEPS,
   budgetExceeded,
+  newSpend,
+  recordSpend,
   type BudgetStop,
 } from '@/lib/coworkBudget'
 
@@ -224,8 +226,8 @@ export function assistantMessageFor(
 export function turnsFor(
   step: StepResult,
   outcomes: Map<string, ToolOutcome>
-): CodeTurn[] {
-  const turns: CodeTurn[] = []
+): CoworkTurn[] {
+  const turns: CoworkTurn[] = []
   if (step.text) turns.push({ role: 'assistant', content: step.text })
   for (const call of step.toolCalls) {
     const outcome = outcomes.get(call.toolCallId)
@@ -260,7 +262,7 @@ export type RunDeps = {
   onStep: (info: {
     step: number
     result: StepResult
-    turns: CodeTurn[]
+    turns: CoworkTurn[]
     outcomes: Map<string, ToolOutcome>
   }) => void
   /** Monotonic ids for the assistant messages this run appends. */
@@ -295,7 +297,9 @@ export async function runTurn(opts: {
   const maxSteps = opts.maxSteps ?? MAX_AGENT_STEPS
   const messages = [...opts.messages]
   let step = 0
-  let sessionTokens = opts.sessionTokens ?? 0
+  // Not a running sum of each step's `total_tokens`: every step replays the whole
+  // conversation, so summing totals charges the same context once per step.
+  let spend = newSpend(opts.sessionTokens ?? 0)
   let usage: Usage | null = null
 
   for (;;) {
@@ -304,17 +308,20 @@ export async function runTurn(opts: {
         messages,
         steps: step,
         usage,
-        sessionTokens,
+        sessionTokens: spend.spent,
         stoppedBy: 'aborted',
       }
     }
-    const overBudget = budgetExceeded({ step, sessionTokens }, maxSteps)
+    const overBudget = budgetExceeded(
+      { step, sessionTokens: spend.spent },
+      maxSteps
+    )
     if (overBudget) {
       return {
         messages,
         steps: step,
         usage,
-        sessionTokens,
+        sessionTokens: spend.spent,
         stoppedBy: overBudget,
       }
     }
@@ -327,7 +334,7 @@ export async function runTurn(opts: {
     step += 1
     if (result.usage) {
       usage = result.usage
-      sessionTokens += result.usage.total_tokens ?? 0
+      spend = recordSpend(spend, result.usage)
     }
 
     if (result.errorText) {
@@ -342,7 +349,7 @@ export async function runTurn(opts: {
         messages,
         steps: step,
         usage,
-        sessionTokens,
+        sessionTokens: spend.spent,
         stoppedBy: 'error',
         errorText: result.errorText,
       }
@@ -370,13 +377,19 @@ export async function runTurn(opts: {
         messages,
         steps: step,
         usage,
-        sessionTokens,
+        sessionTokens: spend.spent,
         stoppedBy: 'aborted',
       }
     }
     // No tool calls means the model answered rather than asked for more work.
     if (result.toolCalls.length === 0) {
-      return { messages, steps: step, usage, sessionTokens, stoppedBy: 'done' }
+      return {
+        messages,
+        steps: step,
+        usage,
+        sessionTokens: spend.spent,
+        stoppedBy: 'done',
+      }
     }
   }
 }

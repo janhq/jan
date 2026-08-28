@@ -1,4 +1,4 @@
-import { Folder, GitBranch, HardDrive, Lock } from 'lucide-react'
+import { Folder, FolderPlus, GitBranch, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Popover,
@@ -8,30 +8,31 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { basenameOf } from '@/lib/codePreview'
+import { basenameOf } from '@/lib/coworkPreview'
 import { truncateMiddle } from '@/lib/utils'
 
 type Props = {
   /** Attached project folder, or null when the session is sandbox-only. */
   folder: string | null
-  /** Absolute path of this session's sandbox — where every write lands. */
-  sandboxPath: string | null
   gitBranch?: string | null
   onAttach: () => void
   onDetach: () => void
 }
 
 /**
- * Names both halves of the session's filesystem: the read-only folder it reads
- * from, and the sandbox it writes to.
+ * Attach, inspect and detach the read-only project folder.
  *
- * The two headings carry the whole point. A single "folder" control would imply
- * the agent edits your project, which it cannot — so the direction is stated
- * structurally rather than in a warning the user learns to skip.
+ * The sandbox it writes into is deliberately unnamed: it is an implementation
+ * detail the user never picks or opens, and surfacing it invited the reading
+ * that the folder and the sandbox are two halves of one choice. What has to
+ * stay visible is the read-only contract on the folder.
+ *
+ * The trigger is icon-only until a folder is attached, matching the composer
+ * row's other controls: with nothing attached there is no name to print, and a
+ * pill reading "Attach a folder" outweighed every icon beside it.
  */
 export function CoworkWorkspacePill({
   folder,
-  sandboxPath,
   gitBranch,
   onAttach,
   onDetach,
@@ -44,29 +45,26 @@ export function CoworkWorkspacePill({
     <Popover>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
-          size="sm"
-          className="h-7 gap-1.5 rounded-full shrink-0"
+          variant="ghost"
+          size={folderName ? 'xs' : 'icon-xs'}
+          className="shrink-0 text-muted-foreground"
           aria-label={
             folderName
               ? t('common:workspace.a11yWithFolder', { folder: folderName })
-              : t('common:workspace.a11ySandboxOnly')
+              : t('common:workspace.a11yNoFolder')
           }
         >
           {folderName ? (
             <>
-              <Folder size={14} className="text-muted-foreground shrink-0" />
-              <span className="truncate max-w-[120px]">{folderName}</span>
-              <span className="text-muted-foreground/80 text-xs">
-                {t('common:workspace.readOnly')}
+              <Folder className="size-3.5 shrink-0" />
+              <span className="max-w-[120px] truncate text-foreground">
+                {folderName}
               </span>
-              <span aria-hidden className="text-muted-foreground/60">
-                →
-              </span>
+              <Lock className="size-3 shrink-0 text-muted-foreground/70" />
             </>
-          ) : null}
-          <HardDrive size={14} className="text-muted-foreground shrink-0" />
-          <span>{t('common:workspace.sandbox')}</span>
+          ) : (
+            <FolderPlus className="size-[18px] shrink-0" />
+          )}
         </Button>
       </PopoverTrigger>
 
@@ -109,9 +107,7 @@ export function CoworkWorkspacePill({
                 variant="ghost"
                 size="sm"
                 className="h-7"
-                onClick={() =>
-                  void serviceHub.opener().revealItemInDir(folder)
-                }
+                onClick={() => void serviceHub.opener().revealItemInDir(folder)}
               >
                 {t('common:workspace.reveal')}
               </Button>
@@ -119,36 +115,6 @@ export function CoworkWorkspacePill({
             <Separator className="my-3" />
           </>
         ) : null}
-
-        <p className="text-xs font-medium text-muted-foreground">
-          {t('common:workspace.writesTo')}
-        </p>
-        <div className="mt-1 flex items-center gap-2">
-          <HardDrive size={14} className="shrink-0 text-muted-foreground" />
-          <span className="truncate text-sm font-medium">
-            {t('common:workspace.sandboxForSession')}
-          </span>
-          {sandboxPath && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto h-7 shrink-0"
-              onClick={() => void serviceHub.opener().openPath(sandboxPath)}
-            >
-              {t('common:workspace.open')}
-            </Button>
-          )}
-        </div>
-        {sandboxPath && (
-          <p
-            className="mt-0.5 font-mono text-xs text-muted-foreground"
-            title={sandboxPath}
-          >
-            {truncateMiddle(sandboxPath, 44)}
-          </p>
-        )}
-
-        <Separator className="my-3" />
 
         <p className="text-xs text-muted-foreground">
           {folder

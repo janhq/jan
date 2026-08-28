@@ -8,8 +8,8 @@ import {
 import { Card } from '@/components/ui/card'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { resolveInRoot } from '@/lib/codePreview'
-import { ARTIFACT_ICON, type CodeArtifact } from '@/lib/codeArtifacts'
+import { resolveInRoot } from '@/lib/coworkPreview'
+import { ARTIFACT_ICON, type CoworkArtifact } from '@/lib/coworkArtifacts'
 
 /**
  * Inline card for something the agent produced (jan-internal #242).
@@ -20,12 +20,12 @@ import { ARTIFACT_ICON, type CodeArtifact } from '@/lib/codeArtifacts'
  *
  * Card body opens the in-app preview; the split button hands the file to the OS.
  */
-export function CodeArtifactCard({
+export function CoworkArtifactCard({
   artifact,
   root,
   onPreview,
 }: {
-  artifact: CodeArtifact
+  artifact: CoworkArtifact
   root: string | null
   onPreview: (path: string) => void
 }) {

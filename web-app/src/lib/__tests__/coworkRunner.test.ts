@@ -146,17 +146,33 @@ describe('runTurn', () => {
     expect(d.sendStep).not.toHaveBeenCalled()
   })
 
-  it('accumulates usage across steps into the session total', async () => {
+  // Each step's reported total includes the whole replayed prompt, so the spend
+  // is the growth between steps, not the sum of the totals (which would be 300
+  // here and would trip the cap on a run nowhere near it).
+  it('charges only the growth in usage across steps', async () => {
     const d = deps([
       [...toolStep('read'), ...textStep('', 100)],
-      textStep('done', 50),
+      textStep('done', 200),
     ])
     const out = await runTurn({
       messages: [user('hi')],
       deps: d,
       signal: new AbortController().signal,
     })
-    expect(out.sessionTokens).toBe(150)
+    expect(out.sessionTokens).toBe(200)
+  })
+
+  it('does not charge a step whose reported total shrank', async () => {
+    const d = deps([
+      [...toolStep('read'), ...textStep('', 100)],
+      textStep('done', 60),
+    ])
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.sessionTokens).toBe(100)
   })
 
   it('marks outstanding calls interrupted when aborted mid-dispatch', async () => {

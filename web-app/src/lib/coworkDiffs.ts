@@ -1,21 +1,21 @@
-import type { CodeTurn, SubagentRun } from '@/types/codeSession'
+import type { CoworkTurn, SubagentRun } from '@/types/coworkSession'
 
-export type CodeDiffOperation = {
+export type CoworkDiffOperation = {
   diff: string
   source: 'main' | 'subagent'
   sourceName?: string
 }
 
-export type CodeFileDiff = {
+export type CoworkFileDiff = {
   path: string
   additions: number
   deletions: number
-  operations: CodeDiffOperation[]
+  operations: CoworkDiffOperation[]
 }
 
 function addOperation(
-  files: Map<string, CodeFileDiff>,
-  turn: CodeTurn,
+  files: Map<string, CoworkFileDiff>,
+  turn: CoworkTurn,
   source: 'main' | 'subagent',
   sourceName?: string
 ) {
@@ -36,7 +36,7 @@ function addOperation(
   const lines = turn.diff.split('\n')
   const additions = lines.filter((line) => line.startsWith('+ ')).length
   const deletions = lines.filter((line) => line.startsWith('- ')).length
-  const operation: CodeDiffOperation = sourceName
+  const operation: CoworkDiffOperation = sourceName
     ? { diff: turn.diff, source, sourceName }
     : { diff: turn.diff, source }
   const current = files.get(path)
@@ -52,10 +52,10 @@ function addOperation(
 }
 
 export function collectCodeFileDiffs(
-  turns: CodeTurn[],
+  turns: CoworkTurn[],
   subagents: SubagentRun[]
-): CodeFileDiff[] {
-  const files = new Map<string, CodeFileDiff>()
+): CoworkFileDiff[] {
+  const files = new Map<string, CoworkFileDiff>()
 
   for (const turn of turns) {
     addOperation(files, turn, 'main')

@@ -52,6 +52,16 @@ export class CoworkChatTransport extends CustomChatTransport {
     this.frozenTools = null
   }
 
+  /**
+   * The set actually advertised this run, for narrowing a subagent's tools.
+   *
+   * A child's allowlist intersects with this rather than with the full built-in
+   * list, so plan mode and a withheld `bash` propagate to children for free.
+   */
+  get advertisedTools(): Record<string, Tool> {
+    return this.frozenTools ?? this.tools
+  }
+
   /** Cowork gets its own llama.cpp slot: sharing chat's would evict the viewed
    * thread's prefix on every one of this turn's many prefills, and vice versa. */
   protected override slotParams(threadId?: string): Record<string, unknown> {
@@ -71,6 +81,7 @@ export class CoworkChatTransport extends CustomChatTransport {
       planMode: this.config.planMode,
       bashAvailable: sandboxEnforces(),
       subagentNames: this.config.allowSubagents ? this.config.subagentNames : [],
+      webSearch: this.config.webSearch,
     })
     const files = this.buildFilesSystemInstruction(messages)
     return files.trim().length > 0 ? `${base}\n\n${files}` : base

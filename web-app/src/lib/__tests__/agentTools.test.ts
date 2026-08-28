@@ -134,7 +134,8 @@ describe('agentTools', () => {
       undefined,
       undefined,
       false,
-      undefined
+      undefined,
+      'thread'
     )
 
     useAgentToolsConfig.getState().setBashNetworkEnabled(true)
@@ -147,7 +148,8 @@ describe('agentTools', () => {
       undefined,
       undefined,
       true,
-      undefined
+      undefined,
+      'thread'
     )
     useAgentToolsConfig.getState().setBashNetworkEnabled(false)
   })
@@ -180,7 +182,8 @@ describe('agentTools', () => {
       undefined,
       undefined,
       false,
-      undefined
+      undefined,
+      'thread'
     )
   })
 
@@ -202,7 +205,8 @@ describe('agentTools', () => {
       undefined,
       undefined,
       false,
-      '/home/u/repo'
+      '/home/u/repo',
+      'thread'
     )
   })
 
@@ -257,7 +261,8 @@ describe('agentTools', () => {
       undefined,
       undefined,
       false,
-      undefined
+      undefined,
+      'thread'
     )
   })
 

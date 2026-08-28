@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { applyTodoOp, renderTodoResult, todoProgress } from '../coworkTodo'
-import type { TodoList } from '@/types/codeSession'
+import type { TodoList } from '@/types/coworkSession'
 
 // Ported from `core/agent/todo.rs`'s own tests: the two implementations drive
 // the same schema and the same panel, so they have to agree.

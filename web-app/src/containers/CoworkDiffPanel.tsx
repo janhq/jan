@@ -1,21 +1,26 @@
 import { useState } from 'react'
-import { ChevronDown, GitBranch } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { DiffView } from '@/components/DiffView'
-import { CodeSidePanel } from '@/containers/CodeSidePanel'
-import type { CodeFileDiff } from '@/lib/codeDiffs'
+import { CoworkSidePanel } from '@/containers/CoworkSidePanel'
+import type { CoworkFileDiff } from '@/lib/coworkDiffs'
 
-export function CodeDiffPanel({
+/**
+ * Every write and edit this session landed, grouped by file.
+ *
+ * No folder or branch header: an attached folder is mounted read-only, so
+ * nothing here is ever a change to the user's project. Naming their repo and
+ * branch beside "Agent changes" claimed the opposite.
+ */
+export function CoworkDiffPanel({
   files,
-  folderName,
-  gitBranch,
   onClose,
 }: {
-  files: CodeFileDiff[]
-  folderName?: string
-  gitBranch: string | null
+  files: CoworkFileDiff[]
   onClose: () => void
 }): React.ReactElement {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const additions = files.reduce((sum, file) => sum + file.additions, 0)
   const deletions = files.reduce((sum, file) => sum + file.deletions, 0)
@@ -33,8 +38,8 @@ export function CodeDiffPanel({
   }
 
   return (
-    <CodeSidePanel
-      title="Agent changes"
+    <CoworkSidePanel
+      title={t('common:changes.title')}
       summary={
         <span className="shrink-0 text-xs font-mono text-main-view-fg/60">
           +{additions} -{deletions}
@@ -43,26 +48,9 @@ export function CodeDiffPanel({
       onClose={onClose}
     >
       <div className="h-full overflow-y-auto">
-        <div className="flex flex-col gap-2 border-b p-3 text-xs text-main-view-fg/60">
-          <div className="truncate" title={folderName}>
-            {folderName ?? 'No folder selected'}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {gitBranch ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 font-mono">
-                <GitBranch size={10} />
-                {gitBranch}
-              </span>
-            ) : null}
-            <span>{files.length} files</span>
-            <span className="font-mono text-green-600">+{additions}</span>
-            <span className="font-mono text-red-600">-{deletions}</span>
-          </div>
-        </div>
-
         {files.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-main-view-fg/50">
-            Successful agent write and edit changes will appear here.
+            {t('common:changes.empty')}
           </p>
         ) : (
           <div className="divide-y">
@@ -96,8 +84,12 @@ export function CodeDiffPanel({
                   {isExpanded ? (
                     <div className="border-t bg-background">
                       {file.operations.map((operation, index) => (
-                        <div key={`${file.path}-${index}`} className="border-b last:border-b-0">
-                          {operation.source === 'subagent' && operation.sourceName ? (
+                        <div
+                          key={`${file.path}-${index}`}
+                          className="border-b last:border-b-0"
+                        >
+                          {operation.source === 'subagent' &&
+                          operation.sourceName ? (
                             <p className="px-3 pt-2 text-xs text-muted-foreground">
                               {operation.sourceName}
                             </p>
@@ -116,6 +108,6 @@ export function CodeDiffPanel({
           </div>
         )}
       </div>
-    </CodeSidePanel>
+    </CoworkSidePanel>
   )
 }

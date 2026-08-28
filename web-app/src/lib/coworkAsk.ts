@@ -2,7 +2,7 @@ import type {
   AskAnswer,
   AskQuestion,
   AskRequestPayload,
-} from '@/types/codeSession'
+} from '@/types/coworkSession'
 import type { ToolOutcome } from '@/lib/coworkRunner'
 
 /**

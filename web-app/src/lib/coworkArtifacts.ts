@@ -1,6 +1,6 @@
 import { AudioLines, Code2, FileText, ImageIcon, Video } from 'lucide-react'
-import { basenameOf, extensionOf, resolveInRoot } from '@/lib/codePreview'
-import type { CodeTurn } from '@/types/codeSession'
+import { basenameOf, extensionOf, resolveInRoot } from '@/lib/coworkPreview'
+import type { CoworkTurn } from '@/types/coworkSession'
 
 /**
  * Artifacts a run produced, derived from its `write`/`edit` tool calls
@@ -20,7 +20,7 @@ import type { CodeTurn } from '@/types/codeSession'
  * Modifications remain visible in the diff panel (#285), which is the right
  * surface for "what did the agent change".
  */
-export type CodeArtifact = {
+export type CoworkArtifact = {
   /** Project-relative path, as the tool reported it. */
   path: string
   /** Display name — the basename without its extension. */
@@ -32,7 +32,7 @@ export type CodeArtifact = {
 }
 
 /** Extension → grouping. Anything absent is not an artifact. */
-const ARTIFACT_GROUPS: Record<string, CodeArtifact['group']> = {
+const ARTIFACT_GROUPS: Record<string, CoworkArtifact['group']> = {
   html: 'Code',
   htm: 'Code',
   svg: 'Code',
@@ -66,7 +66,7 @@ export function isArtifactPath(path: string): boolean {
   return extensionOf(path) in ARTIFACT_GROUPS
 }
 
-export function artifactFor(path: string): CodeArtifact | null {
+export function artifactFor(path: string): CoworkArtifact | null {
   const ext = extensionOf(path)
   const group = ARTIFACT_GROUPS[ext]
   if (!group) return null
@@ -158,12 +158,12 @@ export function bashArtifactPaths(
   command: unknown,
   output: unknown,
   root: string | null | undefined
-): CodeArtifact[] {
+): CoworkArtifact[] {
   const cmd = typeof command === 'string' ? command : ''
   const out = typeof output === 'string' ? output : ''
   if (!out) return []
   const seen = new Set<string>()
-  const found: CodeArtifact[] = []
+  const found: CoworkArtifact[] = []
   const consider = (raw: string) => {
     const token = raw.trim()
     if (!token || seen.has(token) || !isArtifactPath(token)) return
@@ -197,9 +197,9 @@ export function bashArtifactPaths(
  * Deduplicated by path, keeping first-seen order: a run that writes then edits
  * the same file produced one artifact, not two.
  */
-export function artifactsFromParts(parts: PartLike[] | undefined): CodeArtifact[] {
+export function artifactsFromParts(parts: PartLike[] | undefined): CoworkArtifact[] {
   if (!parts?.length) return []
-  const out: CodeArtifact[] = []
+  const out: CoworkArtifact[] = []
   const seen = new Set<string>()
   for (const part of parts) {
     // `edit` targets a file that already existed, so it never creates one.
@@ -220,7 +220,7 @@ export function artifactsFromParts(parts: PartLike[] | undefined): CodeArtifact[
 /**
  * Artifacts a whole session produced, read straight off its turns.
  *
- * Deliberately not `codeTurnsToUIMessages` + {@link artifactsFromParts}: that
+ * Deliberately not `coworkTurnsToUIMessages` + {@link artifactsFromParts}: that
  * builds the full message tree (markdown parts, reasoning splitting, tool
  * grouping) for every session just to recover a handful of paths. The library
  * lists every session at once, so that cost is paid per render.
@@ -229,11 +229,11 @@ export function artifactsFromParts(parts: PartLike[] | undefined): CodeArtifact[
  * one artifact, not one per rewrite.
  */
 export function artifactsFromTurns(
-  turns: CodeTurn[] | undefined,
+  turns: CoworkTurn[] | undefined,
   root?: string | null
-): CodeArtifact[] {
+): CoworkArtifact[] {
   if (!turns?.length) return []
-  const byPath = new Map<string, CodeArtifact>()
+  const byPath = new Map<string, CoworkArtifact>()
   for (const turn of turns) {
     if (turn.role !== 'tool') continue
     // Only a completed, non-error call produced a file.

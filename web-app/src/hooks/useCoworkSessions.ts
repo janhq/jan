@@ -3,57 +3,57 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { backendStorage } from '@/lib/backendStorage'
-import { codeTurnsToUIMessages } from '@/lib/codeTurns'
+import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
 import type {
-  CodeTurn,
+  CoworkTurn,
   SubagentRun,
   Usage,
-  CodeGoal,
+  CoworkGoal,
   TodoList,
-} from '@/types/codeSession'
+} from '@/types/coworkSession'
 
 // The transcript/todo/subagent shapes live in a store-free module so panels and
 // pure helpers can import them without pulling in zustand. Re-exported here
 // because this store is still their most natural import site.
 export type {
-  CodeTurn,
+  CoworkTurn,
   Usage,
   SubagentRun,
   TodoStatus,
   TodoItem,
   TodoPhase,
   TodoList,
-  CodeGoal,
-} from '@/types/codeSession'
+  CoworkGoal,
+} from '@/types/coworkSession'
 
 /**
- * @deprecated Superseded by `CodeSession.messages`. This shape cannot model
+ * @deprecated Superseded by `CoworkSession.messages`. This shape cannot model
  * tool calls, so replaying it drops every tool turn — survivable while Rust
  * owned the loop and kept its own history, but not now the client is the
  * history. Retained only so sessions persisted by an earlier build still load.
  */
-export type CodeMessage = {
+export type CoworkMessage = {
   role: 'user' | 'assistant'
   content: string
 }
 
-export type CodeSession = {
+export type CoworkSession = {
   id: string
   title: string
   /** An attached project folder, mounted read-only. Writes always land in the
    * session's own sandbox, never here. */
   folder: string | null
-  turns: CodeTurn[]
+  turns: CoworkTurn[]
   /** The authoritative conversation, sent to the model each turn. */
   messages: UIMessage[]
   /** @deprecated Read once to migrate into `messages`, then left alone. */
-  history?: CodeMessage[]
+  history?: CoworkMessage[]
   /** Finished subagent runs across this session, merged by runId. */
   subagents?: SubagentRun[]
   /** Usage from the most recent completed run. */
   lastUsage?: Usage
   /** `/goal` state: checked after each turn, cleared when met. */
-  goal?: CodeGoal
+  goal?: CoworkGoal
   /** Canonical session todo list, updated by the `todo_write` tool. */
   todos?: TodoList
   /** Plan mode: the agent reads and proposes, without writing. Absent means off. */
@@ -61,8 +61,8 @@ export type CodeSession = {
   updated: number
 }
 
-type CodeSessionsState = {
-  sessions: CodeSession[]
+type CoworkSessionsState = {
+  sessions: CoworkSession[]
   currentId: string | null
   createSession: () => string
   selectSession: (id: string) => void
@@ -71,20 +71,20 @@ type CodeSessionsState = {
   setPlanMode: (id: string, planMode: boolean) => void
   setTitle: (id: string, title: string) => void
   setMessages: (id: string, messages: UIMessage[]) => void
-  setGoal: (id: string, goal: CodeGoal | null) => void
+  setGoal: (id: string, goal: CoworkGoal | null) => void
   setTodos: (id: string, todos: TodoList) => void
   /**
-   * @deprecated Bridge for the pre-AI-SDK code route, which has no
+   * @deprecated Bridge for the pre-AI-SDK Cowork route, which has no
    * `UIMessage[]` to commit. Removed together with that route.
    */
   commitLegacyTurns: (
     id: string,
-    turns: CodeTurn[],
-    history: CodeMessage[]
+    turns: CoworkTurn[],
+    history: CoworkMessage[]
   ) => void
   commitTurns: (
     id: string,
-    turns: CodeTurn[],
+    turns: CoworkTurn[],
     messages: UIMessage[],
     subagents: SubagentRun[],
     usage?: Usage
@@ -94,7 +94,7 @@ type CodeSessionsState = {
 
 const now = () => Date.now()
 
-export const useCodeSessions = create<CodeSessionsState>()(
+export const useCoworkSessions = create<CoworkSessionsState>()(
   persist(
     (set) => ({
       sessions: [],
@@ -102,7 +102,7 @@ export const useCodeSessions = create<CodeSessionsState>()(
 
       createSession: () => {
         const id = crypto.randomUUID()
-        const session: CodeSession = {
+        const session: CoworkSession = {
           id,
           title: 'New session',
           folder: null,
@@ -210,7 +210,7 @@ export const useCodeSessions = create<CodeSessionsState>()(
         })),
     }),
     {
-      name: localStorageKey.codeSessions,
+      name: localStorageKey.coworkSessions,
       // Persist through the Rust settings store (see backendStorage) so sessions
       // live in <jan_data>/settings.json instead of webview localStorage.
       // Async storage requires skipHydration + explicit rehydrate in
@@ -223,7 +223,7 @@ export const useCodeSessions = create<CodeSessionsState>()(
       // list from `turns`, which did record them, and leave `history` in place
       // untouched rather than mutating a blob a rollback would still read.
       migrate: (persisted, version) => {
-        const state = persisted as { sessions?: CodeSession[] } | undefined
+        const state = persisted as { sessions?: CoworkSession[] } | undefined
         if (version >= 1 || !state?.sessions) return persisted
         return {
           ...state,
@@ -232,7 +232,7 @@ export const useCodeSessions = create<CodeSessionsState>()(
               ? session
               : {
                   ...session,
-                  messages: codeTurnsToUIMessages(session.turns ?? [], session.id),
+                  messages: coworkTurnsToUIMessages(session.turns ?? [], session.id),
                 }
           ),
         }
@@ -243,7 +243,7 @@ export const useCodeSessions = create<CodeSessionsState>()(
 
 /** Return the current session, creating one if none is selected. */
 export function ensureCurrentSession(): string {
-  const { currentId, sessions, createSession } = useCodeSessions.getState()
+  const { currentId, sessions, createSession } = useCoworkSessions.getState()
   if (currentId && sessions.some((s) => s.id === currentId)) return currentId
   return createSession()
 }

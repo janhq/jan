@@ -41,6 +41,15 @@ const DYNAMIC_KEYS: Record<string, string[]> = {
     'checkSearchProbeFailed',
     'checkSearchUnavailable',
   ],
+  common: [
+    // CoworkEmptyState picks its example set by whether a folder is attached.
+    'coworkEmpty.sandbox.first',
+    'coworkEmpty.sandbox.second',
+    'coworkEmpty.sandbox.third',
+    'coworkEmpty.folder.first',
+    'coworkEmpty.folder.second',
+    'coworkEmpty.folder.third',
+  ],
   'model-errors': [
     'engine.unknown',
     'engine.MODEL_LOAD_FAILED',
@@ -72,14 +81,25 @@ function loadNamespace(namespace: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(LOCALE_DIR, `${namespace}.json`), 'utf8'))
 }
 
+function lookup(bundle: Record<string, unknown>, key: string): unknown {
+  return key.split('.').reduce<unknown>((node, part) => {
+    if (node && typeof node === 'object' && part in node) {
+      return (node as Record<string, unknown>)[part]
+    }
+    return undefined
+  }, bundle)
+}
+
+/**
+ * A count-aware key lives in the bundle as `_one`/`_other`, never under its own
+ * name, so i18next can pick the form. Without this, the only way to satisfy the
+ * scan is to drop the `common:` prefix and fall out of it entirely.
+ */
 function resolveKey(bundle: Record<string, unknown>, key: string): boolean {
   return (
-    key.split('.').reduce<unknown>((node, part) => {
-      if (node && typeof node === 'object' && part in node) {
-        return (node as Record<string, unknown>)[part]
-      }
-      return undefined
-    }, bundle) !== undefined
+    lookup(bundle, key) !== undefined ||
+    (lookup(bundle, `${key}_one`) !== undefined &&
+      lookup(bundle, `${key}_other`) !== undefined)
   )
 }
 

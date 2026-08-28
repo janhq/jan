@@ -50,7 +50,20 @@ export type CoworkPromptOptions = {
   /** False when no OS sandbox enforces, in which case `bash` is not offered. */
   bashAvailable: boolean
   subagentNames: string[]
+  /** Whether `web_search`/`web_fetch` are advertised this run. */
+  webSearch: boolean
 }
+
+/** Marker text matches chat's, so the same renderer turns it into source chips. */
+const WEB_BLOCK = [
+  '# Web',
+  '',
+  'You can search with `web_search` and read pages with `web_fetch`. Use them',
+  'whenever the task needs current or external information. When a statement',
+  'rests on a source, cite it inline right after that statement as',
+  '[[cite:URL]], using the full URL from a `web_search` result. Do not add a',
+  'separate sources section.',
+].join('\n')
 
 function workspaceBlock(opts: CoworkPromptOptions): string {
   const lines = ['# Workspace', '']
@@ -86,6 +99,7 @@ function workspaceBlock(opts: CoworkPromptOptions): string {
 
 export function buildCoworkSystemPrompt(opts: CoworkPromptOptions): string {
   const blocks = [IDENTITY, GUIDELINES, workspaceBlock(opts)]
+  if (opts.webSearch) blocks.push(WEB_BLOCK)
   if (opts.subagentNames.length > 0 && !opts.planMode) {
     blocks.push(
       [
@@ -100,4 +114,32 @@ export function buildCoworkSystemPrompt(opts: CoworkPromptOptions): string {
   }
   if (opts.planMode) blocks.push(PLAN_ADDENDUM)
   return blocks.join('\n\n')
+}
+
+/**
+ * A child's system prompt: its own role, then the workspace facts.
+ *
+ * The Rust loop replaces the whole system prompt with the definition's
+ * (`system_prompt_override`), which works there because the CLI's project root
+ * is the shell's working directory. Here it is a sandbox path the child has no
+ * way to guess, and an attached folder is read-only — so the workspace block
+ * travels with the definition rather than replacing it.
+ */
+export function buildSubagentSystemPrompt(
+  definitionPrompt: string,
+  opts: Omit<CoworkPromptOptions, 'planMode' | 'subagentNames'>
+): string {
+  return [
+    definitionPrompt.trim(),
+    workspaceBlock({ ...opts, planMode: false, subagentNames: [] }),
+    ...(opts.webSearch ? [WEB_BLOCK] : []),
+    [
+      '# Scope',
+      '',
+      'You are a subagent running one errand. You cannot see the conversation',
+      'that dispatched you, cannot ask the user questions, and cannot dispatch',
+      'subagents of your own. Your final message is the whole answer returned to',
+      'the agent that called you, so make it self-contained.',
+    ].join('\n'),
+  ].join('\n\n')
 }

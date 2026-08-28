@@ -6,6 +6,7 @@ import {
   threadWorkspaceSweep,
   type SandboxStatus,
   type ToolSchema,
+  type WorkspaceScope,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
@@ -141,7 +142,14 @@ export async function executeAgentTool(
    * that overlaps the workspace or the Jan data folder, rather than silently
    * dropping it, so an unusable attachment surfaces as a tool error.
    */
-  readOnlyProject?: string | null
+  readOnlyProject?: string | null,
+  /**
+   * Which sandbox namespace `threadId` names. Load-bearing: a Cowork session id
+   * is not a chat thread id, so running one under `'thread'` would put its files
+   * where the thread sweep's keep-list can never mention them — and the sweep
+   * would delete the only copy of the agent's work.
+   */
+  scope: WorkspaceScope = 'thread'
 ): Promise<AgentToolResult> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
@@ -158,7 +166,8 @@ export async function executeAgentTool(
       undefined,
       undefined,
       useAgentToolsConfig.getState().bashNetworkEnabled,
-      readOnlyProject ?? undefined
+      readOnlyProject ?? undefined,
+      scope
     )
     if (result.isError) return { error: result.content }
     return { content: result.content, diff: result.diff ?? undefined }

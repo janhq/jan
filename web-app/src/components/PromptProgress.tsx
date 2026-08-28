@@ -1,8 +1,9 @@
 import { useAppState } from '@/hooks/useAppState'
-import { useCodeRun } from '@/hooks/useCodeRun'
+import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { Loader } from 'lucide-react'
 import { useParams } from '@tanstack/react-router'
 import { Progress } from '@/components/ui/progress'
+import { cn } from '@/lib/utils'
 
 export function PromptProgress({
   hideIdle = false,
@@ -13,7 +14,7 @@ export function PromptProgress({
    * Identifies a caller outside the `/threads/:threadId` route — Cowork, keyed
    * by its own session id — overriding the auto-detected route param, and
    * switching the loading/progress read from useAppState's thread-keyed
-   * Records to useCodeRun's session-keyed mirror of the same shape. Prompt
+   * Records to useCoworkRun's session-keyed mirror of the same shape. Prompt
    * progress has no Cowork equivalent, so it keeps the global fallback;
    * harmless, since Cowork never writes there.
    */
@@ -28,7 +29,7 @@ export function PromptProgress({
   const chatLoadingModel = useAppState((state) =>
     (threadId ? state.loadingModels[threadId] : undefined) ?? state.loadingModel
   )
-  const coworkLoadingModel = useCodeRun((state) =>
+  const coworkLoadingModel = useCoworkRun((state) =>
     stateKey ? state.loadingModels[stateKey] : undefined
   )
   const loadingModel = stateKey ? coworkLoadingModel : chatLoadingModel
@@ -36,7 +37,7 @@ export function PromptProgress({
     (threadId ? state.modelLoadProgressByThread[threadId] : undefined) ??
     state.modelLoadProgress
   )
-  const coworkLoadProgress = useCodeRun((state) =>
+  const coworkLoadProgress = useCoworkRun((state) =>
     stateKey ? state.modelLoadProgress[stateKey] : undefined
   )
   const loadProgress = stateKey ? coworkLoadProgress : chatLoadProgress
@@ -81,8 +82,18 @@ export function PromptProgress({
   const detail =
     showReading && !loadingModel ? buildDetail(promptProgress) : undefined
 
+  // The floor keeps the box from resizing as the percentage and ETA change; a
+  // bare "Working…" has nothing to stabilise, so it shrink-wraps instead of
+  // sitting in a mostly-empty rectangle.
+  const sized = loadingModel || showReading
+
   return (
-    <div className="inline-flex flex-col gap-2 rounded-lg border border-border/40 bg-muted/30 px-3 py-2 min-w-56">
+    <div
+      className={cn(
+        'inline-flex flex-col gap-2 rounded-lg border border-border/40 bg-muted/30 px-3 py-2',
+        sized && 'min-w-56'
+      )}
+    >
       <div className="flex items-center gap-2 text-sm">
         <Loader className="animate-spin w-3.5 h-3.5 text-primary shrink-0" />
         <span className="font-medium text-foreground">{label}</span>

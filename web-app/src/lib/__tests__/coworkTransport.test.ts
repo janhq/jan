@@ -15,6 +15,7 @@ import { CHAT_SLOT_ID, COWORK_SLOT_ID } from '@/constants/models'
 
 const config = (over = {}) => ({
   planMode: false,
+  webSearch: false,
   subagentNames: ['researcher'],
   allowSubagents: true,
   workspacePath: '/ws/s1',
@@ -97,5 +98,26 @@ describe('CoworkChatTransport', () => {
         []
       )
     ).not.toThrow()
+  })
+})
+
+describe('CoworkChatTransport.advertisedTools', () => {
+  beforeEach(() => {
+    buildCoworkTools.mockReset()
+    buildCoworkTools.mockResolvedValue({ read: {}, task: {} })
+    sandboxEnforces.mockReturnValue(true)
+  })
+
+  // A subagent's allowlist intersects with this, so plan mode and a withheld
+  // `bash` reach children without a second policy check.
+  it('reports the set frozen for the run', async () => {
+    const t = new CoworkChatTransport('s1', config())
+    await t.refreshTools()
+    expect(Object.keys(t.advertisedTools)).toEqual(['read', 'task'])
+  })
+
+  it('is empty before a run advertises anything', () => {
+    const t = new CoworkChatTransport('s1', config())
+    expect(t.advertisedTools).toEqual({})
   })
 })

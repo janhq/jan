@@ -36,7 +36,7 @@
   "privacy": "Privacy",
   "keyboardShortcuts": "Shortcuts",
   "home": "Home",
-  "code": "Code",
+  "cowork": "Cowork",
   "newSession": "New session",
   "artifacts": "Artifacts",
   "customize": "Customize",
@@ -126,7 +126,21 @@
   "deny": "Deny",
   "start": "Start",
   "stop": "Stop",
-  "preview": "Preview",
+  "preview": {
+    "loading": "Opening…",
+    "unsupported": "Jan can't show this kind of file. Open it to see it in another app.",
+    "outside": "This file is no longer in the session workspace.",
+    "tooLarge": "Too big to preview. Open it to see it in another app.",
+    "reload": "Reload",
+    "allowNetwork": "Allow network",
+    "unresolvedRefs_one": "1 file this page links to can't load in the preview. Open it to see it in a browser.",
+    "unresolvedRefs_other": "{{count}} files this page links to can't load in the preview. Open it to see it in a browser."
+  },
+  "changes": {
+    "title": "Agent changes",
+    "empty": "Files the agent writes or edits will show up here.",
+    "a11y": "Agent changes: {{files}} files, {{additions}} added, {{deletions}} removed"
+  },
   "compactWidth": "Compact Width",
   "fullWidth": "Full Width",
   "dark": "Dark",
@@ -618,11 +632,8 @@
   "artifactsShowMore": "Show {{count}} more",
   "workspace": {
     "readsFrom": "Reads from",
-    "writesTo": "Writes to",
     "readOnly": "read-only",
-    "sandbox": "Sandbox",
-    "sandboxForSession": "Sandbox for this session",
-    "footnote": "Anything the agent creates stays in the sandbox. Your folder is never modified.",
+    "footnote": "The agent only reads this folder. Nothing inside it is ever modified.",
     "footnoteEmpty": "Attach a folder to let the agent read your project. It still won't change anything in it.",
     "attach": "Attach a folder",
     "change": "Change folder",
@@ -630,8 +641,24 @@
     "open": "Open",
     "reveal": "Reveal",
     "missing": "This folder isn't there anymore. Attach a different one.",
-    "a11yWithFolder": "Workspace. Reads from {{folder}}, read-only. Writes to this session’s sandbox.",
-    "a11ySandboxOnly": "Workspace. Writes to this session’s sandbox. No folder attached."
+    "a11yWithFolder": "Project folder {{folder}}, attached read-only. Change or detach it.",
+    "a11yNoFolder": "No project folder attached. Attach one."
+  },
+  "coworkEmpty": {
+    "title": "What are we working on?",
+    "subtitleSandbox": "Give Jan a task. It reads and writes files, runs commands, and works through the steps on its own.",
+    "subtitleFolder": "Give Jan a task. It reads {{folder}} without changing anything in it, and works on its own from there.",
+    "try": "Try",
+    "sandbox": {
+      "first": "Write a Python script that renames files by the date they were taken",
+      "second": "Build a single-page dashboard from a CSV I'll paste in",
+      "third": "Draft a README for a project I describe to you"
+    },
+    "folder": {
+      "first": "Explain how {{folder}} is put together",
+      "second": "Find every TODO in {{folder}} and group them by area",
+      "third": "Write tests for the part of {{folder}} I point you at"
+    }
   },
   "sandbox": {
     "noTerminal": "No terminal",
@@ -658,6 +685,7 @@
     "compact": "Compact",
     "newSession": "New session"
   },
+  "modelNoTools": "{{model}} can’t call tools, so it can’t act as an agent. Pick a tool-calling model.",
   "askContinue": "Continue",
   "askNext": "Next question",
   "askPrev": "Previous question",

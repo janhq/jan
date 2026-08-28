@@ -5,8 +5,8 @@ import {
   isArtifactPath,
   artifactsFromParts,
   artifactsFromTurns,
-} from '@/lib/codeArtifacts'
-import type { CodeTurn } from '@/hooks/useCodeSessions'
+} from '@/lib/coworkArtifacts'
+import type { CoworkTurn } from '@/hooks/useCoworkSessions'
 
 const write = (path: string, state = 'output-available', output = `Created ${path} (10 bytes)`) => ({
   type: 'tool-write',
@@ -117,7 +117,7 @@ describe('artifactsFromParts', () => {
 })
 
 describe('artifactsFromTurns', () => {
-  const toolTurn = (name: string, path: string, extra: Partial<CodeTurn> = {}) =>
+  const toolTurn = (name: string, path: string, extra: Partial<CoworkTurn> = {}) =>
     ({
       role: 'tool',
       content: '',
@@ -126,7 +126,7 @@ describe('artifactsFromTurns', () => {
       status: 'done',
       result: `Created ${path} (10 bytes)`,
       ...extra,
-    }) as CodeTurn
+    }) as CoworkTurn
 
   it('reads write/edit artifacts straight off session turns', () => {
     const turns = [
@@ -134,7 +134,7 @@ describe('artifactsFromTurns', () => {
       toolTurn('write', 'index.html'),
       toolTurn('write', 'package.json'),
       toolTurn('read', 'index.html'),
-    ] as CodeTurn[]
+    ] as CoworkTurn[]
     expect(artifactsFromTurns(turns).map((a) => a.path)).toEqual(['index.html'])
   })
 
@@ -194,7 +194,7 @@ describe('artifactsFromTurns', () => {
         isError: false,
         result:
           '[download] Destination: /Users/thinhlpg/Desktop/Rick Astley - Never Gonna Give You Up.mp4\n[download] 100% of 11MiB',
-      } as CodeTurn,
+      } as CoworkTurn,
     ]
     const artifacts = artifactsFromTurns(turns, '/Users/thinhlpg/Desktop')
     expect(artifacts).toHaveLength(1)
@@ -212,7 +212,7 @@ describe('artifactsFromTurns', () => {
         status: 'done',
         isError: false,
         result: '-rw-r--r--@ 1 u staff 144K Aug 6 11:50 cat_video.mp4',
-      } as CodeTurn,
+      } as CoworkTurn,
     ]
     const artifacts = artifactsFromTurns(turns, '/p')
     expect(artifacts).toHaveLength(1)
@@ -229,7 +229,7 @@ describe('artifactsFromTurns', () => {
         status: 'done',
         isError: false,
         result: '-rw-r--r--@ 1 u staff 144K Aug 6 11:50 /p/cat_video.mp4',
-      } as CodeTurn,
+      } as CoworkTurn,
     ]
     const artifacts = artifactsFromTurns(turns, '/p')
     expect(artifacts).toHaveLength(1)
@@ -246,7 +246,7 @@ describe('artifactsFromTurns', () => {
         status: 'done',
         isError: false,
         result: '/opt/homebrew/bin/yt-dlp\n/opt/homebrew/bin/ffmpeg',
-      } as CodeTurn,
+      } as CoworkTurn,
     ]
     expect(artifactsFromTurns(turns, '/p')).toEqual([])
   })
@@ -261,7 +261,7 @@ describe('artifactsFromTurns', () => {
         status: 'done',
         isError: true,
         result: "can't open file 'make.py': No such file",
-      } as CodeTurn,
+      } as CoworkTurn,
     ]
     expect(artifactsFromTurns(turns, '/p')).toEqual([])
   })

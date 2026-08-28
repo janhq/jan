@@ -5,8 +5,10 @@ import {
   usedSkillNames,
   activeToolPart,
   subagentActivityLabel,
+  awaitsModel,
 } from './agentActivity'
-import type { SubagentRun } from '@/hooks/useCodeSessions'
+import type { SubagentRun } from '@/hooks/useCoworkSessions'
+import type { CoworkTurn } from '@/types/coworkSession'
 
 describe('toolActivityText', () => {
   it('formats write with basename only', () => {
@@ -195,5 +197,38 @@ describe('subagentActivityLabel', () => {
       text: '2 subagents working',
       startedAt: 1000,
     })
+  })
+})
+
+describe('awaitsModel', () => {
+  const tool = (status: CoworkTurn['status']): CoworkTurn => ({
+    role: 'tool',
+    content: '',
+    callId: 'c1',
+    name: 'bash',
+    status,
+  })
+
+  it('is false when nothing is running', () => {
+    expect(awaitsModel(false, [])).toBe(false)
+    expect(awaitsModel(false, [{ role: 'user', content: 'hi' }])).toBe(false)
+  })
+
+  it('is true before the first token', () => {
+    expect(awaitsModel(true, [{ role: 'user', content: 'hi' }])).toBe(true)
+    expect(awaitsModel(true, [])).toBe(true)
+  })
+
+  // The gap between a finished tool and the next token has nothing else on
+  // screen reporting progress.
+  it('is true again after a tool settles', () => {
+    expect(awaitsModel(true, [tool('done')])).toBe(true)
+  })
+
+  it('is false while a tool is running or text is streaming', () => {
+    expect(awaitsModel(true, [tool('running')])).toBe(false)
+    expect(awaitsModel(true, [{ role: 'assistant', content: 'thinking' }])).toBe(
+      false
+    )
   })
 })

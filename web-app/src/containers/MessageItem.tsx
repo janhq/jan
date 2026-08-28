@@ -10,7 +10,7 @@ import {
   usedSkillNames,
   type ActivityLabel,
 } from '@/lib/agentActivity'
-import type { SubagentRun } from '@/types/codeSession'
+import type { SubagentRun } from '@/types/coworkSession'
 import { Loader } from 'lucide-react'
 
 /** How close to the cap the step counter becomes visible. */

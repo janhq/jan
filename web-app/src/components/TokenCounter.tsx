@@ -7,7 +7,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { useTokensCount } from '@/hooks/useTokensCount'
+import { useTokensCount, type TokenUsageSource } from '@/hooks/useTokensCount'
 import { ThreadMessage } from '@janhq/core'
 import {
   IconBrain,
@@ -27,6 +27,8 @@ interface TokenCounterProps {
   className?: string
   compact?: boolean
   additionalTokens?: number
+  /** Usage reported directly, for a surface that keeps no thread messages. */
+  source?: TokenUsageSource
 }
 
 const WARN_PCT = 85
@@ -38,9 +40,10 @@ export const TokenCounter = memo(function TokenCounter({
   messages = [],
   className,
   additionalTokens = 0,
+  source,
 }: TokenCounterProps) {
   const { t } = useTranslation()
-  const { calculateTokens, ...tokenData } = useTokensCount(messages)
+  const { calculateTokens, ...tokenData } = useTokensCount(messages, source)
 
   const [isAnimating, setIsAnimating] = useState(false)
   const [prevTokenCount, setPrevTokenCount] = useState(0)

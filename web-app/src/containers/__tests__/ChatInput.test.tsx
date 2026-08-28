@@ -644,4 +644,49 @@ describe('ChatInput', () => {
     expect(transferAttachmentsMock).not.toHaveBeenCalled()
   })
 
+  describe('tool controls', () => {
+    const icons = (cls: string) =>
+      document.querySelectorAll(`.tabler-icon-${cls}`).length
+
+    // Web access is a global capability both surfaces honour -- Cowork reads
+    // the same store when it builds its tool set -- so the toggle travels.
+    it('offers the web-search toggle on every surface', () => {
+      renderInput()
+      expect(icons('world-search')).toBe(1)
+      renderInput({ ownsToolSet: false })
+      expect(icons('world-search')).toBeGreaterThan(0)
+    })
+
+    // Its only switch is Settings > Agent Tools now. In the composer it read as
+    // a per-message choice while actually flipping a global.
+    it('no longer offers the agent-tools toggle', () => {
+      renderInput()
+      expect(icons('folder-code')).toBe(0)
+    })
+
+    it('withholds MCP controls from a surface that owns its tool set', () => {
+      renderInput({ ownsToolSet: false })
+      // The composer still works: the textarea and attachments stay.
+      expect(getTextarea()).toBeInTheDocument()
+    })
+  })
+
+  describe('surfaceControls', () => {
+    it('docks a surface\'s own controls in the control row', () => {
+      renderInput({ surfaceControls: <button>plan</button> })
+      expect(screen.getByText('plan')).toBeInTheDocument()
+    })
+
+    // They configure the next message, not the run in flight, so streaming
+    // must not disable them the way it dims the tool icons.
+    it('keeps them live while streaming', () => {
+      renderInput({
+        surfaceControls: <button>plan</button>,
+        chatStatus: 'streaming',
+      })
+      const dimmed = document.querySelector('.pointer-events-none')
+      expect(dimmed).toBeTruthy()
+      expect(dimmed!.contains(screen.getByText('plan'))).toBe(false)
+    })
+  })
 })

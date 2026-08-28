@@ -17,40 +17,33 @@ vi.mock('@/hooks/useServiceHub', () => ({
 
 import { CoworkWorkspacePill } from '../CoworkWorkspacePill'
 
-const SANDBOX = '/home/u/.jan/agent-workspace/sessions/4f2a'
-
 describe('CoworkWorkspacePill', () => {
   beforeEach(() => {
     openPath.mockReset()
     revealItemInDir.mockReset()
   })
 
-  it('names only the sandbox when no folder is attached', async () => {
+  it('invites attaching a folder when none is attached', async () => {
     render(
-      <CoworkWorkspacePill
-        folder={null}
-        sandboxPath={SANDBOX}
-        onAttach={vi.fn()}
-        onDetach={vi.fn()}
-      />
+      <CoworkWorkspacePill folder={null} onAttach={vi.fn()} onDetach={vi.fn()} />
     )
-    await userEvent.click(screen.getByRole('button'))
+    await userEvent.click(screen.getByRole('button', { name: /a11yNoFolder/ }))
 
-    expect(screen.getByText('common:workspace.writesTo')).toBeInTheDocument()
     expect(screen.queryByText('common:workspace.readsFrom')).toBeNull()
     // No folder means nothing to detach.
     expect(screen.queryByText('common:workspace.detach')).toBeNull()
-    expect(screen.getByText('common:workspace.attach')).toBeInTheDocument()
+    expect(
+      screen.getAllByText('common:workspace.attach').length
+    ).toBeGreaterThan(0)
   })
 
   // The honesty requirement: whenever a folder is attached, the popover must
-  // state both directions and mark the folder read-only. A regression here
-  // would have the UI implying the agent edits the user's project.
-  it('states both directions and marks the folder read-only', async () => {
+  // name the direction and mark the folder read-only. A regression here would
+  // have the UI implying the agent edits the user's project.
+  it('names the read direction and marks the folder read-only', async () => {
     render(
       <CoworkWorkspacePill
         folder="/home/u/Projects/jan-app"
-        sandboxPath={SANDBOX}
         gitBranch="dev"
         onAttach={vi.fn()}
         onDetach={vi.fn()}
@@ -59,7 +52,6 @@ describe('CoworkWorkspacePill', () => {
     await userEvent.click(screen.getByRole('button', { name: /a11yWithFolder/ }))
 
     expect(screen.getByText('common:workspace.readsFrom')).toBeInTheDocument()
-    expect(screen.getByText('common:workspace.writesTo')).toBeInTheDocument()
     expect(
       screen.getAllByText('common:workspace.readOnly').length
     ).toBeGreaterThan(0)
@@ -71,7 +63,6 @@ describe('CoworkWorkspacePill', () => {
     render(
       <CoworkWorkspacePill
         folder="/home/u/Projects/jan-app"
-        sandboxPath={SANDBOX}
         onAttach={vi.fn()}
         onDetach={vi.fn()}
       />
@@ -90,7 +81,6 @@ describe('CoworkWorkspacePill', () => {
     render(
       <CoworkWorkspacePill
         folder="/home/u/Projects/jan-app"
-        sandboxPath={SANDBOX}
         onAttach={vi.fn()}
         onDetach={onDetach}
       />

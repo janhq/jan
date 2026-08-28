@@ -15,8 +15,8 @@ export function NavTabs() {
   const { t } = useTranslation()
   const { pathname } = useLocation()
 
-  const isCode = isCoworkRoute(pathname)
-  // Home owns the chat surfaces (new chat, threads, projects); Code owns /code.
+  const isCowork = isCoworkRoute(pathname)
+  // Home owns the chat surfaces (new chat, threads, projects); Cowork owns /cowork.
   const isHome =
     pathname === route.home ||
     pathname.startsWith('/threads') ||
@@ -24,7 +24,7 @@ export function NavTabs() {
 
   const tabs: TabItem[] = [
     { label: t('common:home'), to: route.home, icon: HomeIcon, isActive: isHome },
-    { label: t('common:code'), to: route.code, icon: Handshake, isActive: isCode },
+    { label: t('common:cowork'), to: route.cowork, icon: Handshake, isActive: isCowork },
   ]
 
   return (

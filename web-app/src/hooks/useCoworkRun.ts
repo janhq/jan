@@ -1,11 +1,11 @@
 import { create } from 'zustand'
 import type {
-  CodeTurn,
+  CoworkTurn,
   SubagentRun,
   Usage,
   TodoList,
   AskRequestPayload,
-} from '@/types/codeSession'
+} from '@/types/coworkSession'
 import type { ModelLoadProgress } from '@/hooks/useAppState'
 
 // The ask shapes live in the store-free types module; re-exported here because
@@ -15,7 +15,7 @@ export type {
   AskQuestion,
   AskRequestPayload,
   AskAnswer,
-} from '@/types/codeSession'
+} from '@/types/coworkSession'
 
 // StreamEvent shapes emitted by the Rust agent loop (events.rs, tag = "type").
 // Owned here because this store is what consumes/dispatches them.
@@ -39,7 +39,7 @@ export type StreamEvent =
 // Append a streamed token to the last assistant turn, or start a new one.
 // Shared by the main stream (appendToken) and a subagent's wrapped stream
 // (applyInnerToTurns) — same merge, different turn lane.
-function appendAssistantToken(turns: CodeTurn[], text: string): CodeTurn[] {
+function appendAssistantToken(turns: CoworkTurn[], text: string): CoworkTurn[] {
   const last = turns[turns.length - 1]
   if (last && last.role === 'assistant')
     return [...turns.slice(0, -1), { ...last, content: last.content + text }]
@@ -47,12 +47,12 @@ function appendAssistantToken(turns: CodeTurn[], text: string): CodeTurn[] {
 }
 
 // A freshly-dispatched tool call's turn. Shared by the main stream's
-// pushToolTurn call site (code.tsx) and a subagent's wrapped tool_call.
+// pushToolTurn call site (cowork.tsx) and a subagent's wrapped tool_call.
 export function makeToolCallTurn(ev: {
   id: string
   name: string
   args: unknown
-}): CodeTurn {
+}): CoworkTurn {
   return {
     role: 'tool',
     content: '',
@@ -67,10 +67,10 @@ export function makeToolCallTurn(ev: {
 // array reference (no-op) when there's no match, so callers can cheaply
 // detect "nothing changed". Shared by updateToolTurn and applyInnerToTurns.
 function mergeToolResult(
-  turns: CodeTurn[],
+  turns: CoworkTurn[],
   callId: string,
-  patch: Partial<CodeTurn>
-): CodeTurn[] {
+  patch: Partial<CoworkTurn>
+): CoworkTurn[] {
   const idx = turns.findIndex((tn) => tn.role === 'tool' && tn.callId === callId)
   if (idx === -1) return turns
   return [...turns.slice(0, idx), { ...turns[idx], ...patch }, ...turns.slice(idx + 1)]
@@ -78,7 +78,7 @@ function mergeToolResult(
 
 // Apply one wrapped inner subagent event to that subagent's own turn lane
 // (token append / tool_call push / tool_result merge). Pure.
-function applyInnerToTurns(turns: CodeTurn[], inner: StreamEvent): CodeTurn[] {
+function applyInnerToTurns(turns: CoworkTurn[], inner: StreamEvent): CoworkTurn[] {
   switch (inner.type) {
     case 'token':
       return appendAssistantToken(turns, inner.text)
@@ -116,7 +116,7 @@ function omitKey<T>(map: Record<string, T>, key: string): Record<string, T> {
   return next
 }
 
-// Transient (non-persisted) run state for the Code UI, keyed by session id —
+// Transient (non-persisted) run state for the Cowork UI, keyed by session id —
 // mirroring useAppState's per-thread Record<id, T> maps. This is what lets a run
 // keep updating a background session while another is viewed: every stream write
 // targets the session id captured at submit, and rendering reads the viewed id.
@@ -124,8 +124,8 @@ function omitKey<T>(map: Record<string, T>, key: string): Record<string, T> {
 // No separate `running` flag: a session is running iff it has a runId, so
 // that's read directly (runId[sid] != null) instead of a second map that
 // would need to be kept in sync with it.
-type CodeRunState = {
-  liveTurns: Record<string, CodeTurn[]>
+type CoworkRunState = {
+  liveTurns: Record<string, CoworkTurn[]>
   subagents: Record<string, SubagentRun[]>
   runId: Record<string, string>
   // In-flight `ask` tool questions per session. A subagent's wrapped ask is
@@ -162,13 +162,16 @@ type CodeRunState = {
 
   beginRun: (sid: string, runId: string, userText: string, images?: string[]) => void
   appendToken: (sid: string, text: string) => void
-  pushToolTurn: (sid: string, turn: CodeTurn) => void
-  updateToolTurn: (sid: string, callId: string, patch: Partial<CodeTurn>) => void
+  pushToolTurn: (sid: string, turn: CoworkTurn) => void
+  updateToolTurn: (sid: string, callId: string, patch: Partial<CoworkTurn>) => void
   // `tool_call_started`: open a live tool row before any args exist, so the
   // card shows a spot the user can watch fill as the arguments stream.
   announceToolCall: (sid: string, id: string, name: string) => void
   // `tool_call_args_delta`: append raw JSON argument text to the running row.
   appendToolArgs: (sid: string, id: string, delta: string) => void
+  /** Empty a session's subagent lanes at the start of a run, so the panel shows
+   * this run's children rather than every child the session ever had. */
+  resetSubagents: (sid: string) => void
   startSubagent: (sid: string, runId: string, name: string) => void
   // `subagent_queued`: mark a child as waiting for a concurrency slot.
   queueSubagent: (sid: string, runId: string, name: string, waiting: number) => void
@@ -195,11 +198,11 @@ type CodeRunState = {
   // can commit them before clearCodeRun without a second round of store
   // reads. Run-level failure is surfaced separately via `useMessageErrors`,
   // not through this function.
-  finalizeRun: (sid: string) => { turns: CodeTurn[]; subagents: SubagentRun[] }
+  finalizeRun: (sid: string) => { turns: CoworkTurn[]; subagents: SubagentRun[] }
   clearCodeRun: (sid: string) => void
 }
 
-export const useCodeRun = create<CodeRunState>()((set, get) => ({
+export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
   liveTurns: {},
   subagents: {},
   runId: {},
@@ -270,6 +273,9 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
         },
       }
     }),
+
+  resetSubagents: (sid) =>
+    set((s) => ({ subagents: { ...s.subagents, [sid]: [] } })),
 
   startSubagent: (sid, runId, name) =>
     set((s) => {
@@ -412,7 +418,7 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
     // Run-level failure surfaces via `useMessageErrors` (Generation-failed
     // banner), not as a synthetic tool-error turn — that used to render a
     // misleading error-styled tool card even though no tool call failed.
-    const turns: CodeTurn[] = (get().liveTurns[sid] ?? []).map((tn) =>
+    const turns: CoworkTurn[] = (get().liveTurns[sid] ?? []).map((tn) =>
       tn.role === 'tool' && tn.status === 'running'
         ? { ...tn, status: 'done' as const, isError: true, result: tn.result || '(interrupted)' }
         : tn
@@ -445,5 +451,5 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
 // component reading only one session's slice re-renders on that session's
 // changes, not on every other session's.
 export const useIsSessionActive = (sid: string | undefined) =>
-  useCodeRun((s) => (sid ? s.runId[sid] != null : false))
+  useCoworkRun((s) => (sid ? s.runId[sid] != null : false))
 

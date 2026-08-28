@@ -37,12 +37,12 @@ import {
   MessageCircleIcon,
   type MessageCircleIconHandle,
 } from '@/components/animated-icon/message-circle'
-import { useCodeSessions, type CodeSession } from '@/hooks/useCodeSessions'
-import { useIsSessionActive } from '@/hooks/useCodeRun'
+import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
+import { useIsSessionActive } from '@/hooks/useCoworkRun'
 import { memo, useCallback, useRef, useState } from 'react'
 import SkillsManagerDialog from '@/containers/dialogs/SkillsManagerDialog'
 
-type CodeNavItem = {
+type CoworkNavItem = {
   title: string
   icon: LucideIcon
   onClick: () => void
@@ -60,7 +60,7 @@ const SessionItem = memo(function SessionItem({
   onSelect,
   onRequestDelete,
 }: {
-  session: CodeSession
+  session: CoworkSession
   isCurrent: boolean
   isMobile: boolean
   onSelect: (id: string) => void
@@ -110,12 +110,12 @@ const SessionItem = memo(function SessionItem({
   )
 })
 
-export function NavCode() {
+export function NavCowork() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { isMobile } = useSidebar()
-  const sessions = useCodeSessions((s) => s.sessions)
-  const currentId = useCodeSessions((s) => s.currentId)
+  const sessions = useCoworkSessions((s) => s.sessions)
+  const currentId = useCoworkSessions((s) => s.currentId)
   const [skillsOpen, setSkillsOpen] = useState(false)
   // Session pending deletion; drives the confirm dialog (null = closed).
   const [pendingDelete, setPendingDelete] = useState<{
@@ -123,21 +123,21 @@ export function NavCode() {
     title: string
   } | null>(null)
 
-  const goCode = useCallback(() => navigate({ to: route.code }), [navigate])
+  const goCowork = useCallback(() => navigate({ to: route.cowork }), [navigate])
   const newSessionIconRef = useRef<MessageCircleIconHandle>(null)
   const newSession = () => {
-    useCodeSessions.getState().createSession()
-    goCode()
+    useCoworkSessions.getState().createSession()
+    goCowork()
   }
   const selectSession = useCallback(
     (id: string) => {
-      useCodeSessions.getState().selectSession(id)
-      goCode()
+      useCoworkSessions.getState().selectSession(id)
+      goCowork()
     },
-    [goCode]
+    [goCowork]
   )
 
-  const items: CodeNavItem[] = [
+  const items: CoworkNavItem[] = [
     {
       title: t('common:artifacts'),
       icon: Box,
@@ -151,7 +151,7 @@ export function NavCode() {
   ]
 
   const confirmDelete = () => {
-    if (pendingDelete) useCodeSessions.getState().deleteSession(pendingDelete.id)
+    if (pendingDelete) useCoworkSessions.getState().deleteSession(pendingDelete.id)
     setPendingDelete(null)
   }
 

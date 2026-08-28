@@ -6,7 +6,7 @@ import {
   isAssetKind,
   unresolvedRefs,
   resolveInRoot,
-} from '@/lib/codePreview'
+} from '@/lib/coworkPreview'
 
 describe('previewKindFor', () => {
   it('maps the renderable types', () => {

@@ -3,7 +3,7 @@ import { Maximize2, Minimize2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
-type CodeSidePanelProps = {
+type CoworkSidePanelProps = {
   title: ReactNode
   leading?: ReactNode
   summary?: ReactNode
@@ -15,13 +15,13 @@ const PANEL_MIN_W = 240
 const PANEL_MAX_W = 640
 const PANEL_DEFAULT_W = 320
 
-export function CodeSidePanel({
+export function CoworkSidePanel({
   title,
   leading,
   summary,
   children,
   onClose,
-}: CodeSidePanelProps): React.ReactElement {
+}: CoworkSidePanelProps): React.ReactElement {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const [width, setWidth] = useState(PANEL_DEFAULT_W)

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
-import { CodeAskCard } from '@/containers/CodeAskCard'
-import type { AskRequestPayload } from '@/hooks/useCodeRun'
+import { CoworkAskCard } from '@/containers/CoworkAskCard'
+import type { AskRequestPayload } from '@/hooks/useCoworkRun'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -46,23 +46,23 @@ beforeEach(() => {
 
 const submitButton = () => screen.getByLabelText('common:submit')
 
-describe('CodeAskCard', () => {
+describe('CoworkAskCard', () => {
   it('renders nothing when there is no pending request', () => {
     const { container } = render(
-      <CodeAskCard requestId={null} request={null} onRespond={onRespond} />
+      <CoworkAskCard requestId={null} request={null} onRespond={onRespond} />
     )
     expect(container).toBeEmptyDOMElement()
   })
 
   it('submits the selected option label', () => {
-    render(<CodeAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
     fireEvent.click(screen.getByText('Small'))
     fireEvent.click(submitButton())
     expect(onRespond).toHaveBeenCalledWith('ask-1', [{ id: 'scope', selected: ['Small'] }])
   })
 
   it('single-select replaces the previous pick rather than accumulating', () => {
-    render(<CodeAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
     fireEvent.click(screen.getByText('Small'))
     fireEvent.click(screen.getByText('Large'))
     fireEvent.click(submitButton())
@@ -70,7 +70,7 @@ describe('CodeAskCard', () => {
   })
 
   it('multi-select accumulates', () => {
-    render(<CodeAskCard requestId="ask-1" request={multi} onRespond={onRespond} />)
+    render(<CoworkAskCard requestId="ask-1" request={multi} onRespond={onRespond} />)
     fireEvent.click(screen.getByText('Team'))
     fireEvent.click(screen.getByText('Public'))
     fireEvent.click(submitButton())
@@ -80,7 +80,7 @@ describe('CodeAskCard', () => {
   })
 
   it('free text and options are mutually exclusive, per the QuestionResult contract', () => {
-    render(<CodeAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
     fireEvent.click(screen.getByText('Small'))
     fireEvent.click(screen.getByText('common:askSomethingElse'))
     fireEvent.change(screen.getByPlaceholderText('common:askSomethingElsePlaceholder'), {
@@ -94,7 +94,7 @@ describe('CodeAskCard', () => {
   })
 
   it('cannot submit on empty free text', () => {
-    render(<CodeAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
     fireEvent.click(screen.getByText('common:askSomethingElse'))
     expect(submitButton()).toBeDisabled()
     fireEvent.change(screen.getByPlaceholderText('common:askSomethingElsePlaceholder'), {
@@ -104,7 +104,7 @@ describe('CodeAskCard', () => {
   })
 
   it('requires every question answered before submitting, since the core rejects partial responses', () => {
-    render(<CodeAskCard requestId="ask-1" request={twoQuestions} onRespond={onRespond} />)
+    render(<CoworkAskCard requestId="ask-1" request={twoQuestions} onRespond={onRespond} />)
     // Answer only the first, then page to the last.
     fireEvent.click(screen.getByText('A1'))
     fireEvent.click(screen.getByLabelText('common:askNext'))
@@ -120,24 +120,24 @@ describe('CodeAskCard', () => {
   })
 
   it('Skip declines the whole request (the core has no per-question skip)', () => {
-    render(<CodeAskCard requestId="ask-1" request={twoQuestions} onRespond={onRespond} />)
+    render(<CoworkAskCard requestId="ask-1" request={twoQuestions} onRespond={onRespond} />)
     fireEvent.click(screen.getByText('common:skip'))
     expect(onRespond).toHaveBeenCalledWith('ask-1', null)
   })
 
   it('dismissing declines too, so a paused run never hangs silently', () => {
-    render(<CodeAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
     fireEvent.click(screen.getByLabelText('common:close'))
     expect(onRespond).toHaveBeenCalledWith('ask-1', null)
   })
 
   it('resets state when a new request arrives', () => {
     const { rerender } = render(
-      <CodeAskCard requestId="ask-1" request={single} onRespond={onRespond} />
+      <CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />
     )
     fireEvent.click(screen.getByText('Small'))
     // A second request must not inherit the first one's pick.
-    rerender(<CodeAskCard requestId="ask-2" request={single} onRespond={onRespond} />)
+    rerender(<CoworkAskCard requestId="ask-2" request={single} onRespond={onRespond} />)
     expect(submitButton()).toBeDisabled()
   })
 })

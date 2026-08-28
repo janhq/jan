@@ -1,4 +1,4 @@
-import type { TodoItem, TodoList, TodoPhase } from '@/types/codeSession'
+import type { TodoItem, TodoList, TodoPhase } from '@/types/coworkSession'
 
 /**
  * The `todo` tool's reducer, ported from `core/agent/todo.rs`.

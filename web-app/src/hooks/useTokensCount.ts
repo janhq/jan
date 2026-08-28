@@ -27,10 +27,22 @@ export interface TokenCountData {
   isOverflow?: boolean
 }
 
-interface UsageMeta {
+export interface UsageMeta {
   inputTokens?: number
   outputTokens?: number
   totalTokens?: number
+}
+
+/**
+ * Usage for a surface that keeps no `ThreadMessage`s.
+ *
+ * Cowork stores its transcript as its own turns, so there is nothing to scan
+ * for `metadata.usage`. It reports the same two facts directly rather than
+ * synthesising thread messages to carry them.
+ */
+export interface TokenUsageSource {
+  threadId?: string
+  usage?: UsageMeta
 }
 
 // The token-usage popup normally reflects the last *successful* turn. When a
@@ -66,7 +78,10 @@ const readSettingNumber = (v: unknown): number | undefined => {
   return undefined
 }
 
-export const useTokensCount = (messages: ThreadMessage[] = []) => {
+export const useTokensCount = (
+  messages: ThreadMessage[] = [],
+  source?: TokenUsageSource
+) => {
   const { selectedModel, selectedProvider, getProviderByName } =
     useModelProvider()
   const [modelProps, setModelProps] = useState<ModelProps | undefined>(
@@ -79,7 +94,7 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
     selectedProvider === 'llamacpp' || selectedProvider === 'mlx'
   const modelId = isLocalProvider ? selectedModel?.id : undefined
 
-  const threadId = messages[0]?.thread_id
+  const threadId = source?.threadId ?? messages[0]?.thread_id
   // Populated per-chunk while a llama.cpp turn is streaming (timings_per_token);
   // cleared on stream start/finish/error, so its presence means "live now".
   const liveStats = useAppState((s) =>
@@ -132,7 +147,7 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
           fitEnabled: false,
         }
       }
-      const usage = getLatestServerUsage(messages)
+      const usage = source?.usage ?? getLatestServerUsage(messages)
       return {
         tokenCount: usage.totalTokens ?? 0,
         inputTokens: usage.inputTokens,
@@ -158,7 +173,7 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
           outputTokens: liveStats.completionTokens,
           totalTokens: liveStats.promptTokens + liveStats.completionTokens,
         }
-      : getLatestServerUsage(messages)
+      : (source?.usage ?? getLatestServerUsage(messages))
     const tokenCount = overflow?.requestTokens ?? usage.totalTokens ?? 0
     const maxTokens = overflow?.contextTokens ?? modelProps?.nCtx
     const percentage = maxTokens ? (tokenCount / maxTokens) * 100 : undefined
@@ -196,6 +211,7 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
     }
   }, [
     messages,
+    source,
     modelId,
     selectedProvider,
     isLocalProvider,
