@@ -2563,12 +2563,14 @@ mod tests {
         let d = crate::tools::gate::resolve_decision(
             lookup("write").unwrap(),
             &json!({"path": "/tmp/x.txt", "content": "y"}),
-            &root,
-            Some(&scratch),
-            &[],
+            &crate::tools::gate::GateContext {
+                project_root: &root,
+                scratch: Some(&scratch),
+                read_roots: &[],
+                hide_jan: true,
+            },
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
-            true,
         );
         assert_eq!(
             d,
@@ -2592,12 +2594,14 @@ mod tests {
         let d = crate::tools::gate::resolve_decision(
             lookup("write").unwrap(),
             &json!({"path": "/tmp/esc/x.txt", "content": "y"}),
-            &root,
-            Some(&scratch),
-            &[],
+            &crate::tools::gate::GateContext {
+                project_root: &root,
+                scratch: Some(&scratch),
+                read_roots: &[],
+                hide_jan: true,
+            },
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
-            true,
         );
         assert_eq!(
             d,
@@ -3487,8 +3491,10 @@ mod tests {
     // ---- screenshot ---------------------------------------------------------
 
     /// Two headless Chromes racing for the same profile dir collide, so the
-    /// tests that actually launch one are serialised.
-    static CHROME_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// tests that actually launch one are serialised. An async mutex so the test
+    /// can hold it across the awaited screenshot without `await_holding_lock`.
+    static CHROME_TEST_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
+        std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
 
     #[tokio::test]
     async fn screenshot_rejects_a_non_html_file() {
@@ -3541,7 +3547,7 @@ mod tests {
         if chrome_binary().is_none() {
             return;
         }
-        let _guard = CHROME_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = CHROME_TEST_LOCK.lock().await;
         let root = unique_root();
         std::fs::write(
             root.join("page.html"),

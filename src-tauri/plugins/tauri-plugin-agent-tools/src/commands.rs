@@ -354,6 +354,7 @@ impl WorkspaceScope {
 // `read_only_project` is a folder the user attached read-only. It is validated
 // here rather than trusted: an unusable one is an error, never a silent drop,
 // or the agent would work against a folder it believes is attached and is not.
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_tool(
     data_folder: String,
     thread_id: String,
@@ -459,12 +460,14 @@ async fn execute_tool_inner(
     match gate::resolve_decision(
         tool,
         &args,
-        &root,
-        Some(&scratch),
-        &read_roots,
+        &gate::GateContext {
+            project_root: &root,
+            scratch: Some(&scratch),
+            read_roots: &read_roots,
+            hide_jan: true,
+        },
         &ToolPermissions::default(),
         &SessionGrants::default(),
-        true,
     ) {
         Decision::Allow => {}
         Decision::HardDeny(gate::DenyReason::Hidden) => {
@@ -591,8 +594,12 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
 
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    /// Chunks recorded by [`test_sink`]: monotonic `(seq, call_id, text)`.
+    type SeenChunks = Arc<Mutex<Vec<(u64, Option<String>, String)>>>;
 
     /// A temp dir standing in for the Jan data folder.
     fn unique_data_folder() -> PathBuf {
@@ -792,7 +799,7 @@ mod tests {
         // "No change" instead of "Created".
         // The sweep test collects every scratch in the shared temp dir; without
         // this it can delete ours between the write and the assertion.
-        let _guard = crate::workspace::lock_scratch_namespace();
+        let _guard = crate::workspace::lock_scratch_namespace().await;
         let scratch = crate::workspace::ensure_scratch_dir(T_SCRATCH)
             .await
             .unwrap();
@@ -1446,8 +1453,7 @@ mod tests {
     /// and what matters here is the ordering, correlation and the byte budget.
     #[test]
     fn the_output_sink_numbers_chunks_and_tags_them_with_the_call() {
-        use std::sync::{Arc, Mutex};
-        let seen: Arc<Mutex<Vec<(u64, Option<String>, String)>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen: SeenChunks = Arc::new(Mutex::new(Vec::new()));
         let sink = test_sink(seen.clone(), Some("call-7".into()));
 
         sink("one".into());
@@ -1466,8 +1472,7 @@ mod tests {
     /// tool result.
     #[test]
     fn the_output_sink_stops_at_the_byte_cap_and_says_so() {
-        use std::sync::{Arc, Mutex};
-        let seen: Arc<Mutex<Vec<(u64, Option<String>, String)>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen: SeenChunks = Arc::new(Mutex::new(Vec::new()));
         let sink = test_sink(seen.clone(), None);
 
         sink("x".repeat(MAX_STREAMED_BYTES + 1));
@@ -1481,10 +1486,7 @@ mod tests {
 
     /// Mirrors `output_sink`'s accounting without a `Channel`, which cannot be
     /// constructed outside a webview.
-    fn test_sink(
-        seen: std::sync::Arc<std::sync::Mutex<Vec<(u64, Option<String>, String)>>>,
-        call_id: Option<String>,
-    ) -> crate::tools::OutputSink {
+    fn test_sink(seen: SeenChunks, call_id: Option<String>) -> crate::tools::OutputSink {
         use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
         use std::sync::Arc;
         let seq = Arc::new(AtomicU64::new(0));
