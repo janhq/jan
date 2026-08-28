@@ -4228,32 +4228,24 @@ impl App {
         // Same divisor as `estimate_token_count`, applied to the same unit.
         let bytes_to_tokens = |bytes: usize| (bytes / 4) as u64;
         segments.push(ContextSegment {
-            label: "System prompt",
-            glyph: CONTEXT_GLYPH_SYSTEM,
+            key: 'P',
+            label: "PROMPT",
             tokens: bytes_to_tokens(prompt_bytes),
-            always_show: true,
-            unit: " tokens",
         });
         segments.push(ContextSegment {
-            label: "System tools",
-            glyph: CONTEXT_GLYPH_SYSTEM,
+            key: 'T',
+            label: "TOOLS",
             tokens: bytes_to_tokens(tools_bytes),
-            always_show: true,
-            unit: " tokens",
         });
         segments.push(ContextSegment {
-            label: "System context",
-            glyph: CONTEXT_GLYPH_SYSTEM,
+            key: 'C',
+            label: "PROJECT",
             tokens: bytes_to_tokens(context_bytes),
-            always_show: false,
-            unit: " tokens",
         });
         segments.push(ContextSegment {
-            label: "Skills",
-            glyph: CONTEXT_GLYPH_SYSTEM,
+            key: 'K',
+            label: "SKILLS",
             tokens: bytes_to_tokens(skills_bytes),
-            always_show: false,
-            unit: " tokens",
         });
         let messages = if self.history.is_empty() {
             0
@@ -4261,11 +4253,9 @@ impl App {
             estimate_token_count(&self.history)
         };
         segments.push(ContextSegment {
-            label: "Messages",
-            glyph: CONTEXT_GLYPH_MESSAGES,
+            key: 'M',
+            label: "MESSAGES",
             tokens: messages,
-            always_show: true,
-            unit: " tokens",
         });
 
         // Free space is what is left after the estimated content and the
@@ -4275,23 +4265,18 @@ impl App {
         let used: u64 = segments.iter().map(|s| s.tokens).sum();
         let free = self.context_window.saturating_sub(used + buffer);
         segments.push(ContextSegment {
-            label: "Free space",
-            glyph: CONTEXT_GLYPH_FREE,
+            key: '.',
+            label: "FREE",
             tokens: free,
-            always_show: true,
-            unit: "",
         });
         segments.push(ContextSegment {
-            label: "Autocompact buffer",
-            glyph: CONTEXT_GLYPH_BUFFER,
+            key: 'B',
+            label: "BUFFER",
             tokens: buffer,
-            always_show: true,
-            unit: " tokens",
         });
 
         let reported = !self.tokens_estimated && self.turn_prompt_tokens > 0;
         ContextReport {
-            model_label: self.header_model_label(),
             model_id: self.model.clone(),
             window_source: self.context_window_source.label(),
             window: self.context_window,
@@ -5285,43 +5270,19 @@ fn estimate_token_count(messages: &[serde_json::Value]) -> u64 {
     ((total_chars / 4) as u64 + envelope).max(1)
 }
 
-/// One cell of the `/context` grid is 1/200th of the window (0.5%), so the grid
-/// is 10 rows of [`CONTEXT_GRID_COLS`].
-const CONTEXT_GRID_CELLS: u64 = 200;
-
-/// Cells per grid row, filled row-major.
-const CONTEXT_GRID_COLS: usize = 20;
-
-/// Grid glyphs. All four are single-width, non-combining, so a row is exactly
-/// `2 * CONTEXT_GRID_COLS` columns wide once each cell is space-separated.
-const CONTEXT_GLYPH_SYSTEM: char = '⛁';
-const CONTEXT_GLYPH_MESSAGES: char = '⛃';
-const CONTEXT_GLYPH_FREE: char = '⛶';
-const CONTEXT_GLYPH_BUFFER: char = '⛝';
-
-/// One row of the `/context` breakdown: a labelled slice of the context window
-/// with the glyph its grid cells are drawn with.
+/// One bank in the `/context` breakdown. `key` is the monochrome-safe category
+/// marker; `label` is the compact uppercase name shown beside its bar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ContextSegment {
+    key: char,
     label: &'static str,
-    glyph: char,
     tokens: u64,
-    /// Suppressed from the legend when the segment is empty *and* optional
-    /// (a project with no JAN.md has no "System context" to report).
-    always_show: bool,
-    /// Unit written after the count. Every category is measured in tokens, but
-    /// the spec's free-space line states the bare number (`Free space: 79K
-    /// (33.5%)`) where the others spell the unit out, so it is per-segment
-    /// rather than a constant.
-    unit: &'static str,
 }
 
 /// The full `/context` model: the authoritative window fill, whether that fill
 /// is provider-reported or estimated, and the per-category breakdown.
 #[derive(Debug, Clone)]
 struct ContextReport {
-    /// Provider-qualified display name, e.g. `anthropic/claude-sonnet-4-6`.
-    model_label: String,
     /// Bare model id as configured.
     model_id: String,
     /// Where `window` came from (configured override, catalog, or fallback),
@@ -5335,66 +5296,16 @@ struct ContextReport {
     /// Whether `fill` came from the provider's `usage.prompt_tokens`. False
     /// makes every number on the headline an estimate, and the view says so.
     fill_reported: bool,
-    /// Content categories plus free space and the autocompact buffer, in grid
-    /// order. Always exactly the seven categories the spec names.
+    /// Content categories plus free space and the autocompact buffer. Always
+    /// exactly the seven banks the approved control-deck view names.
     segments: Vec<ContextSegment>,
 }
 
 impl ContextReport {
-    /// Cells per segment, largest-remainder allocated so the total is exactly
-    /// [`CONTEXT_GRID_CELLS`] and a non-zero segment never rounds away to
-    /// nothing (it floors to one cell, taken from the largest allocation).
-    ///
-    /// Shares are taken over the sum of the segments rather than the window:
-    /// the segments already partition the window (content + free + buffer), and
-    /// normalizing keeps the grid exactly full when an estimate overshoots.
-    fn cells(&self) -> Vec<u64> {
-        let total: u64 = self.segments.iter().map(|s| s.tokens).sum();
-        if total == 0 || self.segments.is_empty() {
-            return vec![0; self.segments.len()];
-        }
-        // Floor each share, then hand the remaining cells to the largest
-        // fractional parts (largest remainder), so the total is exact.
-        let scaled: Vec<u128> = self
-            .segments
-            .iter()
-            .map(|s| s.tokens as u128 * CONTEXT_GRID_CELLS as u128)
-            .collect();
-        let mut cells: Vec<u64> = scaled.iter().map(|v| (v / total as u128) as u64).collect();
-        let mut order: Vec<usize> = (0..self.segments.len()).collect();
-        order.sort_by_key(|&i| std::cmp::Reverse(scaled[i] % total as u128));
-        let mut short = CONTEXT_GRID_CELLS.saturating_sub(cells.iter().sum::<u64>());
-        for &i in order.iter().cycle().take(order.len() * 2) {
-            if short == 0 {
-                break;
-            }
-            cells[i] += 1;
-            short -= 1;
-        }
-        // A real-but-tiny segment must not read as absent: give it one cell,
-        // funded by whichever allocation can most afford it.
-        for i in 0..cells.len() {
-            if self.segments[i].tokens > 0 && cells[i] == 0 {
-                let Some(donor) = (0..cells.len())
-                    .filter(|&j| cells[j] > 1)
-                    .max_by_key(|&j| cells[j])
-                else {
-                    break;
-                };
-                cells[donor] -= 1;
-                cells[i] += 1;
-            }
-        }
-        cells
-    }
-
-    /// Percentage of the window each segment occupies, summing to 100.
-    ///
-    /// The denominator matches [`ContextReport::cells`]: normally the segments
-    /// partition the window exactly and it *is* the window, but when the
-    /// estimate overshoots, free space is already clamped to zero and the
-    /// segments sum past the window. Dividing by the window there would print
-    /// a legend totalling more than 100% beside a grid that is exactly full.
+    /// Percentage of the effective whole each bank occupies. Normally the
+    /// segments partition the configured window exactly. If an estimate
+    /// overshoots, normalize over the larger segment total so the banks still
+    /// sum to 100% instead of presenting impossible negative free space.
     fn percents(&self) -> Vec<f64> {
         let total: u64 = self.segments.iter().map(|s| s.tokens).sum();
         let denom = self.window.max(total).max(1) as f64;
@@ -5436,153 +5347,265 @@ fn format_window(tokens: u64) -> String {
     format!("{}k", (tokens + 500) / 1000)
 }
 
-/// Style each grid glyph gets, so the chart is readable in colour and still
-/// distinguishable by glyph alone in a monochrome terminal.
-fn context_glyph_style(glyph: char) -> Style {
-    match glyph {
-        CONTEXT_GLYPH_MESSAGES => Style::new().cyan(),
-        CONTEXT_GLYPH_FREE => Style::new().dark_gray(),
-        CONTEXT_GLYPH_BUFFER => Style::new().magenta(),
+const CONTEXT_RAIL_INNER_MAX: usize = 60;
+const CONTEXT_BANK_WIDTH_MAX: usize = 20;
+const CONTEXT_BANK_FRACTIONS: [char; 8] = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
+
+fn context_segment_style(key: char) -> Style {
+    match key {
+        'M' => Style::new().cyan(),
+        '.' => Style::new().dark_gray(),
+        'B' => Style::new().magenta(),
         _ => Style::new().yellow(),
     }
 }
 
-/// Columns the grid occupies: a leading space, then one `glyph + space` per
-/// column. The trailing space doubles as the first of the gap to the right
-/// column.
-const CONTEXT_GRID_WIDTH: usize = 1 + CONTEXT_GRID_COLS * 2;
+fn context_rail_style(glyph: char) -> Style {
+    match glyph {
+        '=' => Style::new().cyan(),
+        '^' => Style::new().yellow().bold(),
+        '.' => Style::new().dark_gray(),
+        '#' => Style::new().magenta(),
+        _ => Style::new().dim(),
+    }
+}
 
-/// The `/context` view at a given draw `width`: a 20-wide grid of the window
-/// filled row-major by category, with the model headline and per-category
-/// legend in a right column beside it.
-///
-/// Each cell is a fixed 0.5% of the window, so the grid cannot be narrowed
-/// without lying about the scale. Instead it degrades in two steps: the right
-/// column moves below the grid, then the grid is dropped entirely and only the
-/// legend (clipped) survives.
+/// Place centered labels on a fixed-width scale. A label that would collide
+/// with an earlier, higher-priority one is omitted; the exact values remain in
+/// the headline, so tight scales never render garbled text.
+fn context_marker_line(width: usize, labels: &[(usize, String)]) -> String {
+    let mut chars = vec![' '; width];
+    for (center, text) in labels {
+        let len = text.chars().count().min(width);
+        let start = center
+            .saturating_sub(len / 2)
+            .min(width.saturating_sub(len));
+        if chars[start..start + len].iter().any(|c| *c != ' ') {
+            continue;
+        }
+        for (offset, ch) in text.chars().take(len).enumerate() {
+            chars[start + offset] = ch;
+        }
+    }
+    chars.into_iter().collect::<String>().trim_end().to_string()
+}
+
+/// One category's share of the full window, rounded to eighth-block precision.
+/// A non-zero share always gets at least the thinnest visible block.
+fn context_bank_bar(percent: f64, width: usize) -> (String, String) {
+    let mut eighths = (percent.clamp(0.0, 100.0) * width as f64 * 8.0 / 100.0).round() as usize;
+    if percent > 0.0 {
+        eighths = eighths.max(1);
+    }
+    eighths = eighths.min(width * 8);
+
+    let full = eighths / 8;
+    let fraction = eighths % 8;
+    let mut filled = "█".repeat(full);
+    if fraction > 0 {
+        filled.push(CONTEXT_BANK_FRACTIONS[fraction]);
+    }
+    let empty = "░".repeat(width.saturating_sub(filled.chars().count()));
+    (filled, empty)
+}
+
+/// The approved `/context` control deck: current pressure and autocompaction
+/// threshold first, followed by seven equal-scale category banks.
 fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
-    let cells = report.cells();
+    let max = width.max(1);
     let percents = report.percents();
-    // Flatten the per-segment cell counts into one glyph stream, then deal it
-    // out row-major: a category boundary can land mid-row, which is what makes
-    // the chart read as one continuous window rather than a stacked bar.
-    let stream: Vec<char> = report
-        .segments
-        .iter()
-        .zip(&cells)
-        .flat_map(|(seg, &n)| std::iter::repeat_n(seg.glyph, n as usize))
-        .collect();
-
-    // Right column, one entry per grid row: model identity, the headline fill,
-    // a spacer, then the legend. An empty entry renders as a blank line.
     let fill_pct = report.fill as f64 / report.window.max(1) as f64 * 100.0;
     let window_k = format_window(report.window);
-    let mut right: Vec<Vec<Span<'static>>> = vec![
+    let buffer = report
+        .segments
+        .iter()
+        .find(|segment| segment.key == 'B')
+        .map_or(0, |segment| segment.tokens);
+    let compact_at = report.window.saturating_sub(buffer);
+    let compact_pct = compact_at as f64 / report.window.max(1) as f64 * 100.0;
+    let headroom = compact_at.saturating_sub(report.fill);
+    let fill_source = if report.fill_reported {
+        "PROVIDER"
+    } else {
+        "ESTIMATED"
+    };
+
+    if width < 32 {
+        let mut rows = vec![
+            vec![Span::styled(
+                format!(
+                    "{}/{} | {} to compact",
+                    format_tokens(report.fill),
+                    window_k,
+                    format_tokens(headroom)
+                ),
+                Style::new().bold(),
+            )],
+            vec![Span::styled(
+                format!("FILL {fill_source} | BREAKDOWN EST."),
+                Style::new().dim(),
+            )],
+        ];
+        for (segment, percent) in report.segments.iter().zip(&percents) {
+            rows.push(vec![
+                Span::styled(segment.key.to_string(), context_segment_style(segment.key)),
+                Span::raw(format!(
+                    " {} {} ({percent:.1}%)",
+                    segment.label,
+                    format_tokens(segment.tokens),
+                )),
+            ]);
+        }
+        return rows
+            .into_iter()
+            .map(|spans| Line::from(clip_spans(spans, max)))
+            .collect();
+    }
+
+    let status = if report.fill >= compact_at {
+        "COMPACT"
+    } else {
+        "NOMINAL"
+    };
+    let mut rows: Vec<Vec<Span<'static>>> = vec![
         vec![Span::styled(
-            format!("{} ({window_k} context)", report.model_label),
+            format!(
+                "CTX CONTROL DECK // {} // {} WINDOW // STATUS {status}",
+                report.model_id.to_ascii_uppercase(),
+                report.window_source.to_ascii_uppercase(),
+            ),
             Style::new().bold(),
         )],
         vec![Span::styled(
             format!(
-                "{}[{window_k}] · {} window",
-                report.model_id, report.window_source
+                "FILL {} / {} / {fill_pct:.1}% [{fill_source}]    HEADROOM TO COMPACT {}",
+                format_tokens(report.fill),
+                window_k,
+                format_tokens(headroom),
             ),
-            Style::new().dim(),
-        )],
-        // The honesty marker rides on the number itself: a reported fill is
-        // stated plainly, an estimated one is never allowed to look measured.
-        vec![Span::styled(
-            if report.fill_reported {
-                format!(
-                    "{}/{window_k} tokens ({fill_pct:.1}%)",
-                    format_tokens(report.fill)
-                )
-            } else {
-                format!(
-                    "~{}/{window_k} tokens ({fill_pct:.1}%, estimated)",
-                    format_tokens(report.fill)
-                )
-            },
             Style::new().bold(),
         )],
         Vec::new(),
-        vec![Span::styled(
-            "Estimated usage by category",
-            Style::new().dim(),
-        )],
     ];
-    for (seg, pct) in report.segments.iter().zip(&percents) {
-        if seg.tokens == 0 && !seg.always_show {
-            continue;
-        }
-        right.push(vec![
-            Span::styled(seg.glyph.to_string(), context_glyph_style(seg.glyph)),
-            Span::raw(format!(
-                " {}: {}{} ({pct:.1}%)",
-                seg.label,
-                format_tokens(seg.tokens),
-                seg.unit,
-            )),
+
+    let inner = width.saturating_sub(2).min(CONTEXT_RAIL_INNER_MAX);
+    let rail_width = inner + 2;
+    let fill_pos = ((report.fill as f64 / report.window.max(1) as f64 * inner as f64).round()
+        as usize)
+        .clamp(1, inner);
+    let compact_pos = ((compact_at as f64 / report.window.max(1) as f64 * inner as f64).round()
+        as usize)
+        .clamp(1, inner);
+
+    if width >= 50 {
+        rows.push(vec![Span::styled(
+            context_marker_line(
+                rail_width,
+                &[
+                    (0, "0%".to_string()),
+                    (fill_pos, format!("{fill_pct:.1}%")),
+                    (compact_pos, format!("{compact_pct:.0}%")),
+                    (rail_width - 1, "100%".to_string()),
+                ],
+            ),
+            Style::new().dim(),
+        )]);
+    }
+
+    let mut rail_cells: Vec<char> = (0..inner)
+        .map(|index| {
+            if index < fill_pos {
+                '='
+            } else if index < compact_pos {
+                '.'
+            } else {
+                '#'
+            }
+        })
+        .collect();
+    rail_cells[compact_pos - 1] = '|';
+    rail_cells[fill_pos - 1] = '^';
+    let mut rail = vec![Span::styled("|", Style::new().dim())];
+    rail.extend(
+        rail_cells
+            .into_iter()
+            .map(|glyph| Span::styled(glyph.to_string(), context_rail_style(glyph))),
+    );
+    rail.push(Span::styled("|", Style::new().dim()));
+    rows.push(rail);
+
+    if width >= 50 {
+        rows.push(vec![Span::styled(
+            context_marker_line(
+                rail_width,
+                &[
+                    (0, "0K".to_string()),
+                    (fill_pos, format_tokens(report.fill)),
+                    (compact_pos, format_tokens(compact_at)),
+                    (rail_width - 1, format_tokens(report.window)),
+                ],
+            ),
+            Style::new().dim(),
+        )]);
+        rows.push(vec![Span::styled(
+            context_marker_line(
+                rail_width,
+                &[
+                    (fill_pos, "NOW".to_string()),
+                    (compact_pos, "AUTO-COMPACT".to_string()),
+                ],
+            ),
+            Style::new().dim(),
+        )]);
+    }
+    rows.push(vec![Span::styled(
+        format!("= FILLED / {fill_source}   . HEADROOM / DERIVED   # BUFFER / CONFIGURED"),
+        Style::new().dim(),
+    )]);
+    rows.push(Vec::new());
+    rows.push(vec![Span::styled(
+        "BREAKDOWN // ESTIMATED // EACH BANK USES THE FULL-WINDOW BASELINE",
+        Style::new().dim(),
+    )]);
+
+    for (segment, percent) in report.segments.iter().zip(&percents) {
+        let tokens = format_tokens(segment.tokens);
+        let prefix = format!("  {:<8} {:>5.1}%  [", segment.label, percent);
+        let suffix = format!("]  {tokens}");
+        let fixed = 1 + prefix.chars().count() + suffix.chars().count();
+        let bank_width = width.saturating_sub(fixed).clamp(1, CONTEXT_BANK_WIDTH_MAX);
+        let (filled, empty) = context_bank_bar(*percent, bank_width);
+        let style = context_segment_style(segment.key);
+        rows.push(vec![
+            Span::styled(segment.key.to_string(), style.bold()),
+            Span::raw(prefix),
+            Span::styled(filled, style),
+            Span::styled(empty, Style::new().dark_gray()),
+            Span::raw(suffix),
         ]);
     }
 
-    let grid_rows = CONTEXT_GRID_CELLS as usize / CONTEXT_GRID_COLS;
-    let widest_right = right
-        .iter()
-        .map(|e| e.iter().map(|s| s.content.chars().count()).sum::<usize>())
-        .max()
-        .unwrap_or(0);
-    let grid_row = |row: usize| -> Vec<Span<'static>> {
-        let mut spans: Vec<Span<'static>> = vec![Span::raw(" ")];
-        for col in 0..CONTEXT_GRID_COLS {
-            match stream.get(row * CONTEXT_GRID_COLS + col) {
-                Some(&g) => spans.push(Span::styled(format!("{g} "), context_glyph_style(g))),
-                None => spans.push(Span::raw("  ")),
-            }
-        }
-        spans
-    };
-
-    // Side by side when the grid and the longest legend line both fit.
-    if width >= CONTEXT_GRID_WIDTH + 1 + widest_right {
-        let mut lines = Vec::with_capacity(grid_rows.max(right.len()));
-        for row in 0..grid_rows.max(right.len()) {
-            let mut spans = if row < grid_rows {
-                grid_row(row)
+    rows.push(Vec::new());
+    rows.push(vec![Span::styled(
+        format!(
+            "FILL {} // BREAKDOWN ESTIMATED // AUTO-COMPACT @ {}",
+            if report.fill_reported {
+                "REPORTED"
             } else {
-                vec![Span::raw(" ".repeat(CONTEXT_GRID_WIDTH))]
-            };
-            match right.get(row) {
-                Some(entry) if !entry.is_empty() => {
-                    spans.push(Span::raw(" "));
-                    spans.extend(entry.iter().cloned());
-                }
-                _ => {}
-            }
-            lines.push(Line::from(spans));
-        }
-        return lines;
-    }
+                "ESTIMATED"
+            },
+            format_tokens(compact_at),
+        ),
+        Style::new().dim(),
+    )]);
 
-    // Too narrow to sit beside the grid, but the grid still fits: stack them.
-    let mut lines = Vec::with_capacity(grid_rows + right.len());
-    if width >= CONTEXT_GRID_WIDTH {
-        for row in 0..grid_rows {
-            lines.push(Line::from(grid_row(row)));
-        }
-    }
-    for entry in &right {
-        if entry.is_empty() {
-            lines.push(Line::default());
-        } else {
-            lines.push(Line::from(clip_spans(entry.clone(), width.max(1))));
-        }
-    }
-    lines
+    rows.into_iter()
+        .map(|spans| Line::from(clip_spans(spans, max)))
+        .collect()
 }
 
-/// Truncate a styled row to `max` columns, counting characters (the grid glyphs
-/// are multi-byte, so byte lengths would cut mid-glyph and corrupt the row).
+/// Truncate a styled row to `max` columns, counting characters so multi-byte
+/// block glyphs are never cut in the middle of their UTF-8 encoding.
 fn clip_spans(spans: Vec<Span<'static>>, max: usize) -> Vec<Span<'static>> {
     let mut out = Vec::with_capacity(spans.len());
     let mut used = 0usize;
@@ -16106,29 +16129,27 @@ mod tests {
         apply_resume, apply_stream_event, assistant_is_awaiting_user_answer, assistant_runs,
         autoscroll_selection, await_branch_poll, backgrounded_job_id, brand, build_user_message,
         clipboard_path, compact_tokens, context_lines, diff_lines, drain_stream_events,
-        estimate_token_count, format_tokens,
-        finish_account_login, finish_compaction, finish_login, finish_plugin_install,
-        finish_tokamak_login, finish_update_install, group_detail_lines, group_summary,
-        handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, header_spans, image_mime,
-        image_mime_of, input_content_lines, load_first_file_image, load_image_file, message_text,
-        note_update, open_config_screen, open_rewind_picker, pairs_to_str, parse_command,
-        partial_json_field, provider_label_for_model, rebuild_recall, replay_display_log,
-        restore_goal, restore_run_mode, restore_todos, resume_hint, rewind_to, route_paste_event,
-        row_width, run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
+        estimate_token_count, finish_account_login, finish_compaction, finish_login,
+        finish_plugin_install, finish_tokamak_login, finish_update_install, format_tokens,
+        group_detail_lines, group_summary, handle_ask_key, handle_ask_mouse, handle_key,
+        handle_mouse, header_spans, image_mime, image_mime_of, input_content_lines,
+        load_first_file_image, load_image_file, message_text, note_update, open_config_screen,
+        open_rewind_picker, pairs_to_str, parse_command, partial_json_field,
+        provider_label_for_model, rebuild_recall, replay_display_log, restore_goal,
+        restore_run_mode, restore_todos, resume_hint, rewind_to, route_paste_event, row_width,
+        run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
         split_reasoning, starting_call_lines, startup_modes, strip_system_xml_tags,
         subagent_activity, subagent_name_from_run_id, summarize_result, sync_output_for,
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding, unescape_partial_json_string, user_content_parts, wave_sweep_line,
         with_wave_glyph, without_think_tags, App, CompactKind, ContextReport, ContextSegment,
-        CurrentRun, McpField, McpPrompt,
-        Pending, PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeTarget, Row, RowKind,
-        Selection, SelectionMode, SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE,
-        ALT_SCROLL_SAVE_OFF, CONTEXT_GLYPH_BUFFER, CONTEXT_GLYPH_FREE, CONTEXT_GLYPH_MESSAGES,
-        CONTEXT_GLYPH_SYSTEM, CONTEXT_GRID_CELLS, CONTEXT_GRID_WIDTH, COPY_NOTICE, DIFF_ADD_BG,
-        DIFF_DEL_BG, DIFF_MAX_ROWS,
-        DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF, KITTY_KEYS_ON, MAX_IMAGE_BYTES,
-        MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER,
-        SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
+        CurrentRun, McpField, McpPrompt, Pending, PendingImage, PickerKind, ProviderField,
+        ReasoningSeg, ResumeTarget, Row, RowKind, Selection, SelectionMode, SnapshotJob, Status,
+        AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG,
+        DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF,
+        KITTY_KEYS_ON, MAX_IMAGE_BYTES, MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON,
+        PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS, THINKING_WORDS,
+        WORKING_WORDS,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -26170,42 +26191,31 @@ mod tests {
     /// exercise the real partition rather than a hand-balanced one.
     fn context_report(window: u64, buffer: u64, content: [u64; 5]) -> ContextReport {
         let labels = [
-            ("System prompt", CONTEXT_GLYPH_SYSTEM),
-            ("System tools", CONTEXT_GLYPH_SYSTEM),
-            ("System context", CONTEXT_GLYPH_SYSTEM),
-            ("Skills", CONTEXT_GLYPH_SYSTEM),
-            ("Messages", CONTEXT_GLYPH_MESSAGES),
+            ('P', "PROMPT"),
+            ('T', "TOOLS"),
+            ('C', "PROJECT"),
+            ('K', "SKILLS"),
+            ('M', "MESSAGES"),
         ];
         let mut segments: Vec<ContextSegment> = labels
             .iter()
             .zip(content)
-            .map(|(&(label, glyph), tokens)| ContextSegment {
-                label,
-                glyph,
-                tokens,
-                always_show: true,
-                unit: " tokens",
-            })
+            .map(|(&(key, label), tokens)| ContextSegment { key, label, tokens })
             .collect();
         let used: u64 = content.iter().sum();
         segments.push(ContextSegment {
-            label: "Free space",
-            glyph: CONTEXT_GLYPH_FREE,
+            key: '.',
+            label: "FREE",
             tokens: window.saturating_sub(used + buffer),
-            always_show: true,
-            unit: "",
         });
         segments.push(ContextSegment {
-            label: "Autocompact buffer",
-            glyph: CONTEXT_GLYPH_BUFFER,
+            key: 'B',
+            label: "BUFFER",
             tokens: buffer.min(window),
-            always_show: true,
-            unit: " tokens",
         });
         ContextReport {
-            model_label: "tokamak/tokamak-1-preview".into(),
             model_id: "tokamak-1-preview".into(),
-            window_source: "catalog",
+            window_source: "configured",
             window,
             fill: used,
             fill_reported: false,
@@ -26213,59 +26223,34 @@ mod tests {
         }
     }
 
-    /// The grid is a fixed-scale instrument: every cell is 0.5% of the window,
-    /// so the allocation must total exactly 200 whatever the inputs round to.
     #[test]
-    fn context_cells_always_total_the_grid() {
-        let cases: [(u64, u64, [u64; 5]); 6] = [
-            // The spec's own example.
-            (234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]),
-            // Thirds and sevenths: nothing divides evenly into 200.
-            (100_000, 33_333, [1, 1, 1, 1, 33_333]),
-            (128_000, 12_800, [7, 7, 7, 7, 7]),
-            // Awkward primes.
-            (99_991, 9_973, [1_009, 1_013, 1_019, 1_021, 1_031]),
-            // Content alone fills the window: free space collapses to zero.
-            (10_000, 1_000, [2_000, 2_000, 2_000, 2_000, 2_000]),
-            // Over-full: the estimate exceeds the window entirely.
-            (10_000, 1_000, [9_000, 9_000, 1, 1, 1]),
-        ];
-        for (window, buffer, content) in cases {
-            let report = context_report(window, buffer, content);
-            let cells = report.cells();
-            assert_eq!(
-                cells.iter().sum::<u64>(),
-                CONTEXT_GRID_CELLS,
-                "window {window} buffer {buffer} content {content:?} -> {cells:?}"
-            );
-        }
-    }
+    fn context_control_deck_combines_threshold_rail_and_bank_breakdown() {
+        let mut report = context_report(234_000, 35_000, [6_049, 9_000, 2_149, 8_049, 95_253]);
+        report.fill = 120_490;
+        report.fill_reported = true;
 
-    /// A small-but-real segment rendering as zero cells would read as "absent",
-    /// which is exactly the lie the chart must not tell.
-    #[test]
-    fn context_cells_never_round_a_real_segment_away() {
-        // 1 token out of a 234K window is ~0.0009 cells: it floors to zero and
-        // must be promoted.
-        let report = context_report(234_000, 35_000, [1, 1, 1, 1, 190_000]);
-        let cells = report.cells();
-        for (seg, &n) in report.segments.iter().zip(&cells) {
-            if seg.tokens > 0 {
-                assert!(n >= 1, "{} has {} tokens but 0 cells", seg.label, seg.tokens);
-            }
-        }
-        assert_eq!(cells.iter().sum::<u64>(), CONTEXT_GRID_CELLS);
-    }
+        let text = context_lines(&report, 80)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
 
-    /// An empty segment stays empty: promotion is for real content only.
-    #[test]
-    fn context_cells_leave_empty_segments_at_zero() {
-        let report = context_report(200_000, 20_000, [5_000, 5_000, 0, 0, 50_000]);
-        for (seg, n) in report.segments.iter().zip(report.cells()) {
-            if seg.tokens == 0 {
-                assert_eq!(n, 0, "{} is empty but got cells", seg.label);
-            }
+        assert!(text.contains("CTX CONTROL DECK // TOKAMAK-1-PREVIEW"));
+        assert!(text.contains("FILL 120K / 234k / 51.5% [PROVIDER]"));
+        assert!(text.contains("HEADROOM TO COMPACT 79K"));
+        assert!(text.contains("|==============================^...................|#########|"));
+        for bank in [
+            "P  PROMPT",
+            "T  TOOLS",
+            "C  PROJECT",
+            "K  SKILLS",
+            "M  MESSAGES",
+            ".  FREE",
+            "B  BUFFER",
+        ] {
+            assert!(text.contains(bank), "missing bank {bank}: {text}");
         }
+        assert!(text.contains("FILL REPORTED // BREAKDOWN ESTIMATED"));
     }
 
     /// Free space and the buffer are categories like any other, so the seven
@@ -26273,7 +26258,11 @@ mod tests {
     #[test]
     fn context_percentages_sum_to_the_whole_window() {
         for (window, buffer, content) in [
-            (234_000u64, 35_000u64, [6_000u64, 9_000, 2_100, 8_000, 95_000]),
+            (
+                234_000u64,
+                35_000u64,
+                [6_000u64, 9_000, 2_100, 8_000, 95_000],
+            ),
             (128_000, 12_800, [1_000, 2_000, 3_000, 4_000, 5_000]),
             (64_000, 6_400, [0, 0, 0, 0, 0]),
         ] {
@@ -26289,48 +26278,47 @@ mod tests {
     /// The headline must never present a stale or derived number as measured.
     #[test]
     fn context_headline_labels_an_estimated_fill() {
-        let mut report = context_report(234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]);
-        let text = |r: &ContextReport| {
-            context_lines(r, 200)
+        let mut report = context_report(234_000, 35_000, [6_049, 9_000, 2_149, 8_049, 95_253]);
+        report.fill = 120_490;
+        let text = |value: &ContextReport| {
+            context_lines(value, 200)
                 .iter()
-                .map(|l| {
-                    l.spans
-                        .iter()
-                        .map(|s| s.content.as_ref())
-                        .collect::<String>()
-                })
+                .map(line_text)
                 .collect::<Vec<_>>()
                 .join("\n")
         };
+
+        let estimated = text(&report);
         assert!(
-            text(&report).contains("estimated"),
-            "an estimated fill must say so"
+            estimated.contains("FILL 120K / 234k / 51.5% [ESTIMATED]"),
+            "an estimated fill must say so: {estimated}"
         );
+        assert!(estimated.contains("BREAKDOWN ESTIMATED"));
+
         report.fill_reported = true;
-        report.fill = 120_000;
         let reported = text(&report);
         assert!(
-            reported.contains("120K/234k tokens (51.3%)"),
-            "a reported fill is stated plainly: {reported}"
+            reported.contains("FILL 120K / 234k / 51.5% [PROVIDER]"),
+            "a provider fill is stated plainly: {reported}"
         );
         assert!(
-            !reported.contains("estimated)"),
-            "a reported fill must not be labelled an estimate: {reported}"
+            !reported.contains("FILL 120K / 234k / 51.5% [ESTIMATED]"),
+            "a provider fill must not be labelled an estimate: {reported}"
         );
     }
 
-    /// The chart's cells are positional, so it must degrade rather than wrap:
-    /// at every width it renders, and it never emits a line wider than asked.
+    /// Every row adapts to the available width rather than clipping a fixed
+    /// control surface at the frame edge.
     #[test]
-    fn context_chart_degrades_instead_of_overflowing() {
-        let report = context_report(234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]);
-        for width in [1usize, 2, 8, 20, 41, 42, 60, 80, 200] {
+    fn context_control_deck_never_overflows_the_available_width() {
+        let report = context_report(234_000, 35_000, [6_049, 9_000, 2_149, 8_049, 95_253]);
+        for width in [1usize, 2, 8, 20, 31, 32, 42, 60, 70, 80, 200] {
             let lines = context_lines(&report, width);
             assert!(!lines.is_empty(), "width {width} rendered nothing");
             for line in &lines {
                 let w = row_width(line);
                 assert!(
-                    w <= width.max(CONTEXT_GRID_WIDTH),
+                    w <= width.max(1),
                     "width {width}: line of {w} columns: {line:?}"
                 );
             }
@@ -26340,11 +26328,19 @@ mod tests {
     /// The `/context` row goes through the same frame sizes the rest of the
     /// transcript survives.
     #[test]
-    fn tiny_frames_render_the_context_chart_without_panicking() {
+    fn tiny_frames_render_the_context_control_deck_without_panicking() {
         let mut app = test_app();
         let report = context_report(234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]);
         app.push_row(RowKind::Context(Box::new(report)));
-        for (w, h) in [(1u16, 1u16), (2, 3), (8, 4), (20, 6), (40, 2), (43, 12), (200, 80)] {
+        for (w, h) in [
+            (1u16, 1u16),
+            (2, 3),
+            (8, 4),
+            (20, 6),
+            (40, 2),
+            (43, 12),
+            (200, 80),
+        ] {
             render_rows(&mut app, w, h);
         }
     }
@@ -26434,7 +26430,7 @@ mod tests {
             !app.transcript
                 .iter()
                 .any(|r| matches!(r.kind, RowKind::Context(_))),
-            "no chart may be rendered mid-turn"
+            "no context control deck may be rendered mid-turn"
         );
     }
 
@@ -26458,21 +26454,15 @@ mod tests {
         assert_eq!(format_tokens(2_100), "2.1K");
     }
 
-    /// An over-full estimate clamps free space to zero; the legend must still
-    /// total 100% rather than out-summing the grid beside it.
+    /// An over-full estimate clamps free space to zero; the category banks
+    /// still normalize to one whole rather than printing more than 100%.
     #[test]
     fn context_percentages_stay_whole_when_the_estimate_overshoots() {
-        // Content alone exceeds the window, so free space is zero.
         let report = context_report(100_000, 10_000, [40_000, 40_000, 40_000, 40_000, 40_000]);
         let total: f64 = report.percents().iter().sum();
         assert!(
             (total - 100.0).abs() < 1e-6,
             "an over-full report's percentages sum to {total}, not 100"
-        );
-        assert_eq!(
-            report.cells().iter().sum::<u64>(),
-            CONTEXT_GRID_CELLS,
-            "the grid stays exactly full"
         );
     }
     #[test]
