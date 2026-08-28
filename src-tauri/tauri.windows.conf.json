@@ -41,7 +41,7 @@
     ],
     "resources": [
       "resources/LICENSE",
-      "resources/bin/jan-cli.exe",
+      "resources/bin/jan.exe",
       "resources/bin/jan-llama-worker.exe",
       "resources/bin/ggml*.dll"
     ],

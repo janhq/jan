@@ -25,13 +25,26 @@ fi
 # Use jq to transform the content
 jq --arg channel "$CHANNEL" --arg updater "$UPDATER" '
     .productName = "Jan-\($channel)" |
-    .identifier = "jan-\($channel).ai.app"
+    .identifier = "jan-\($channel).ai.app" |
+    .mainBinaryName = "Jan-Desktop-\($channel)"
 ' "$INPUT_JSON_FILE" > ./tauri.conf.json.tmp
 
 cat ./tauri.conf.json.tmp
 
 rm $INPUT_JSON_FILE
 mv ./tauri.conf.json.tmp $INPUT_JSON_FILE
+
+# mainBinaryName has to name a real Cargo bin target, and `default-run` has to
+# name the same one, so all three move together or the manifest stops parsing.
+CARGO_TOML_PATH="$(dirname "$INPUT_JSON_FILE")/Cargo.toml"
+if [ -f "$CARGO_TOML_PATH" ]; then
+    echo "Renaming the desktop bin target in $CARGO_TOML_PATH..."
+    sed -e "s|^name = \"Jan-Desktop\"$|name = \"Jan-Desktop-${CHANNEL}\"|" \
+        -e "s|^default-run = \"Jan-Desktop\"$|default-run = \"Jan-Desktop-${CHANNEL}\"|" \
+        "$CARGO_TOML_PATH" > ./Cargo.toml.tmp
+    mv ./Cargo.toml.tmp "$CARGO_TOML_PATH"
+    grep -c "Jan-Desktop-${CHANNEL}" "$CARGO_TOML_PATH"
+fi
 
 # Update Info.plist if it exists
 INFO_PLIST_PATH="./src-tauri/Info.plist"

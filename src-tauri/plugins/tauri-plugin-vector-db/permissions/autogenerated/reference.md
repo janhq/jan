@@ -15,6 +15,9 @@ Default permissions for the vector-db plugin
 - `allow-chunk-text`
 - `allow-list-attachments`
 - `allow-get-chunks`
+- `allow-memory-index`
+- `allow-memory-search`
+- `allow-memory-clear`
 
 ## Permission Table
 

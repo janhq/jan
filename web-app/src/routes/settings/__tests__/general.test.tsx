@@ -204,6 +204,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
     }),
     opener: () => ({
       revealItemInDir: vi.fn(),
+      openPath: vi.fn(),
     }),
     path: () => ({
       join: vi.fn().mockResolvedValue('/test/data/folder/logs'),
@@ -222,6 +223,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
 
 vi.mock('@tauri-apps/plugin-opener', () => ({
   revealItemInDir: vi.fn(),
+  openPath: vi.fn(),
 }))
 
 vi.mock('@tauri-apps/api/webviewWindow', () => {

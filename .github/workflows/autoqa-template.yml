@@ -233,9 +233,9 @@ jobs:
               echo "JAN_APP_PATH=/tmp/jan-installer.deb" >> $GITHUB_ENV
               echo "IS_NIGHTLY=${{ inputs.is_nightly }}" >> $GITHUB_ENV
               if [ "${{ inputs.is_nightly }}" = "true" ]; then
-                echo "JAN_PROCESS_NAME=Jan-nightly" >> $GITHUB_ENV
+                echo "JAN_PROCESS_NAME=Jan-Desktop-nightly" >> $GITHUB_ENV
               else
-                echo "JAN_PROCESS_NAME=Jan" >> $GITHUB_ENV
+                echo "JAN_PROCESS_NAME=Jan-Desktop" >> $GITHUB_ENV
               fi
             else
               echo "[FAILED] No .deb file found in artifact"
@@ -254,9 +254,9 @@ jobs:
             # Set the correct environment variables for the test runner
             echo "JAN_APP_PATH=/tmp/jan-installer.deb" >> $GITHUB_ENV
             if [ "${{ inputs.is_nightly }}" = "true" ]; then
-              echo "JAN_PROCESS_NAME=Jan-nightly" >> $GITHUB_ENV
+              echo "JAN_PROCESS_NAME=Jan-Desktop-nightly" >> $GITHUB_ENV
             else
-              echo "JAN_PROCESS_NAME=Jan" >> $GITHUB_ENV
+              echo "JAN_PROCESS_NAME=Jan-Desktop" >> $GITHUB_ENV
             fi
           fi
 
@@ -355,9 +355,9 @@ jobs:
               echo "JAN_APP_PATH=/tmp/jan-installer.dmg" >> $GITHUB_ENV
               echo "IS_NIGHTLY=${{ inputs.is_nightly }}" >> $GITHUB_ENV
               if [ "${{ inputs.is_nightly }}" = "true" ]; then
-                echo "PROCESS_NAME=Jan-nightly" >> $GITHUB_ENV
+                echo "PROCESS_NAME=Jan-Desktop-nightly" >> $GITHUB_ENV
               else
-                echo "PROCESS_NAME=Jan" >> $GITHUB_ENV
+                echo "PROCESS_NAME=Jan-Desktop" >> $GITHUB_ENV
               fi
             else
               echo "[FAILED] No .dmg file found in artifact"
@@ -376,9 +376,9 @@ jobs:
             # Set the correct environment variables for the test runner
             echo "JAN_APP_PATH=/tmp/jan-installer.dmg" >> $GITHUB_ENV
             if [ "${{ inputs.is_nightly }}" = "true" ]; then
-              echo "PROCESS_NAME=Jan-nightly" >> $GITHUB_ENV
+              echo "PROCESS_NAME=Jan-Desktop-nightly" >> $GITHUB_ENV
             else
-              echo "PROCESS_NAME=Jan" >> $GITHUB_ENV
+              echo "PROCESS_NAME=Jan-Desktop" >> $GITHUB_ENV
             fi
           fi
 

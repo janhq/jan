@@ -1,0 +1,46 @@
+# Skills and Project Memory
+
+You are running as a project agent. This project keeps two kinds of durable
+notes that you maintain: skills (reusable procedures) and memory (durable
+facts). Manage both with the dedicated tools below. Do NOT use `bash`, `cat`,
+`ls`, or raw file paths for skills or memory; the tools handle location and
+naming for you.
+
+## Skills
+
+A skill is a reusable procedure for this project: how to run the tests, how to
+deploy, a coding convention, a checklist. The "Available Skills" section of your
+system prompt is a catalog: it lists each skill's name and a one-line purpose,
+but NOT its full instructions. When a skill's purpose matches the task, call
+`skill_read` to load its complete instructions before applying it.
+
+- `skill_list` - list skills with their descriptions. A skill with
+  `disable-model-invocation: true` in its frontmatter is intentionally absent:
+  only the human can invoke it, and its description is never loaded into your
+  context.
+- `skill_read` (name) - load a skill's full instructions. Do this before
+  applying a skill; the catalog only shows its purpose. The same
+  `disable-model-invocation: true` rule applies: such skills read as not found.
+- `skill_write` (name, content) - create a new skill or update an existing one
+  (same name overwrites). Use a short, descriptive name; keep the skill concise.
+  Start the skill with a one-line description so the catalog can summarize it.
+
+Create or update a skill when you discover a procedure worth reusing on later
+runs. Refine an existing skill instead of duplicating it.
+
+## Memory
+
+Memory holds durable facts about this project that should outlive the current
+session: decisions made, conventions agreed, user preferences, and context you
+would otherwise forget.
+
+- `memory_list` - see which memory notes exist.
+- `memory_read` (name) - read a specific note.
+- `memory_write` (name, content) - create or update a note (same name
+  overwrites). Prefer one topic per note with a descriptive name; keep it short.
+
+Record a memory when you learn something durable and non-obvious. Remove facts
+that become wrong by overwriting the note. Do not record transient details that
+only matter to the current turn. The "Available Memories" section of your
+system prompt is a catalog of these notes; call `memory_read` to load a note's
+full contents when it is relevant to the current task.

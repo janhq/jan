@@ -2,6 +2,9 @@
   "toolApproval": {
     "needsApproval": "Dieses Werkzeug benötigt Ihre Genehmigung, bevor es ausgeführt wird.",
     "deny": "Ablehnen",
-    "allowOnce": "Einmal erlauben"
+    "allowOnce": "Einmal erlauben",
+    "title": "Werkzeugaufruf angefordert",
+    "description": "Der Assistent möchte folgendes Werkzeug verwenden:",
+    "securityNotice": "Sicherheitshinweis: Schädliche Werkzeuge oder Konversationsinhalte könnten den Assistenten möglicherweise zu schädlichen Aktionen verleiten. Überprüfe jeden Werkzeug-Aufruf sorgfältig, bevor Du ihn genehmigst."
   }
 }

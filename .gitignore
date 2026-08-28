@@ -1,5 +1,7 @@
 .env
 error.log
+# Runtime agent workspace scaffolded by ensure_project (not source)
+.jan/
 node_modules
 *.tgz
 dist
@@ -72,6 +74,10 @@ llm-docs
 .claude/agents
 .claude
 CLAUDE.md
+JAN.md
+
+## agent
+.jan
 
 # Vendored llama.cpp: a shallow clone of the pinned tag, fetched by
 # `make engine-source`. Never committed -- the pin lives in build.rs.

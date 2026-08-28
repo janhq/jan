@@ -162,19 +162,19 @@ describe('generatePreset MTP emission', () => {
 })
 
 describe('generatePreset parallel reservation', () => {
-  it('adds one reserved background slot on top of the global parallel value', async () => {
+  it('adds the reserved background slots on top of the global parallel value', async () => {
     setupModel('llama', {})
     await generatePreset('/p', '/jan', { parallel: 1 } as any, {
     })
     const ini = writtenFiles['/p/router.preset.ini']
-    expect(ini).toContain('parallel = 2')
+    expect(ini).toContain('parallel = 3')
   })
 
-  it('adds one reserved background slot on top of a per-model parallel override', async () => {
+  it('adds the reserved background slots on top of a per-model parallel override', async () => {
     setupModel('llama', { parallel: 3 })
     await generatePreset('/p', '/jan', {} as any)
     const ini = writtenFiles['/p/router.preset.ini']
-    expect(ini).toContain('parallel = 4')
+    expect(ini).toContain('parallel = 5')
   })
 
   it('omits parallel when unset, leaving llama.cpp auto-default untouched', async () => {
@@ -218,10 +218,10 @@ describe('generatePreset parallel reservation', () => {
   // slot count rather than rejecting it. So the reservation has to be
   // unconditional: every emitted `parallel` must be at least 2, or the pin
   // silently lands back on the chat slot 0.
-  it('reserves the background slot by default, so slot 1 always exists', async () => {
+  it('reserves the background slots by default, so slots 1 and 2 always exist', async () => {
     setupModel('llama', {})
     await generatePreset('/p', '/jan', { parallel: 1 } as any)
-    expect(writtenFiles['/p/router.preset.ini']).toContain('parallel = 2')
+    expect(writtenFiles['/p/router.preset.ini']).toContain('parallel = 3')
   })
 
   it('reserves it in the per-model section too, which overrides [*]', async () => {
@@ -230,8 +230,8 @@ describe('generatePreset parallel reservation', () => {
     const ini = writtenFiles['/p/router.preset.ini']
     // The provider-level value is what the old pin was computed from; the
     // section's own value is what llama.cpp actually applies.
-    expect(ini).toContain('parallel = 5')
-    expect(ini).toContain('parallel = 2')
+    expect(ini).toContain('parallel = 6')
+    expect(ini).toContain('parallel = 3')
   })
 })
 
@@ -241,7 +241,7 @@ describe('generatePreset kv-unified', () => {
     await generatePreset('/p', '/jan', { parallel: 1 } as any, {
     })
     const ini = writtenFiles['/p/router.preset.ini']
-    expect(ini).toContain('parallel = 2')
+    expect(ini).toContain('parallel = 3')
     expect(ini).toContain('kv-unified = true')
   })
 
