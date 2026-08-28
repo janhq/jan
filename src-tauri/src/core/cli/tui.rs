@@ -4278,7 +4278,6 @@ impl App {
         let reported = !self.tokens_estimated && self.turn_prompt_tokens > 0;
         ContextReport {
             model_id: self.model.clone(),
-            window_source: self.context_window_source.label(),
             window: self.context_window,
             fill: if reported {
                 self.turn_prompt_tokens
@@ -5285,10 +5284,6 @@ struct ContextSegment {
 struct ContextReport {
     /// Bare model id as configured.
     model_id: String,
-    /// Where `window` came from (configured override, catalog, or fallback),
-    /// mirroring the header gauge's own source label rather than inventing a
-    /// second convention for an inferred window.
-    window_source: &'static str,
     window: u64,
     /// Total window fill. Provider-reported when `fill_reported`, else the
     /// chars/4 estimate over the same history.
@@ -5297,7 +5292,7 @@ struct ContextReport {
     /// makes every number on the headline an estimate, and the view says so.
     fill_reported: bool,
     /// Content categories plus free space and the autocompact buffer. Always
-    /// exactly the seven banks the approved control-deck view names.
+    /// exactly the seven bars rendered by the context view.
     segments: Vec<ContextSegment>,
 }
 
@@ -5409,8 +5404,8 @@ fn context_bank_bar(percent: f64, width: usize) -> (String, String) {
     (filled, empty)
 }
 
-/// The approved `/context` control deck: current pressure and autocompaction
-/// threshold first, followed by seven equal-scale category banks.
+/// Plain `/context` summary: current usage and autocompaction threshold first,
+/// followed by seven equal-scale category bars.
 fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
     let max = width.max(1);
     let percents = report.percents();
@@ -5424,37 +5419,34 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
     let compact_at = report.window.saturating_sub(buffer);
     let compact_pct = compact_at as f64 / report.window.max(1) as f64 * 100.0;
     let headroom = compact_at.saturating_sub(report.fill);
-    let fill_source = if report.fill_reported {
-        "PROVIDER"
+    let provenance = if report.fill_reported {
+        "provider"
     } else {
-        "ESTIMATED"
+        "estimated"
     };
 
     if width < 32 {
         let mut rows = vec![
             vec![Span::styled(
                 format!(
-                    "{}/{} | {} to compact",
+                    "{}/{} ({fill_pct:.1}%, {provenance})",
                     format_tokens(report.fill),
                     window_k,
-                    format_tokens(headroom)
                 ),
                 Style::new().bold(),
             )],
             vec![Span::styled(
-                format!("FILL {fill_source} | BREAKDOWN EST."),
-                Style::new().dim(),
+                format!("{} before auto-compact", format_tokens(headroom)),
+                Style::new().bold(),
             )],
+            vec![Span::styled("Estimated usage", Style::new().dim())],
         ];
         for (segment, percent) in report.segments.iter().zip(&percents) {
-            rows.push(vec![
-                Span::styled(segment.key.to_string(), context_segment_style(segment.key)),
-                Span::raw(format!(
-                    " {} {} ({percent:.1}%)",
-                    segment.label,
-                    format_tokens(segment.tokens),
-                )),
-            ]);
+            rows.push(vec![Span::raw(format!(
+                "{} {} ({percent:.1}%)",
+                segment.label,
+                format_tokens(segment.tokens),
+            ))]);
         }
         return rows
             .into_iter()
@@ -5462,26 +5454,13 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
             .collect();
     }
 
-    let status = if report.fill >= compact_at {
-        "COMPACT"
-    } else {
-        "NOMINAL"
-    };
     let mut rows: Vec<Vec<Span<'static>>> = vec![
         vec![Span::styled(
             format!(
-                "CTX CONTROL DECK // {} // {} WINDOW // STATUS {status}",
-                report.model_id.to_ascii_uppercase(),
-                report.window_source.to_ascii_uppercase(),
-            ),
-            Style::new().bold(),
-        )],
-        vec![Span::styled(
-            format!(
-                "FILL {} / {} / {fill_pct:.1}% [{fill_source}]    HEADROOM TO COMPACT {}",
+                "{} · {} / {} tokens used ({fill_pct:.1}%, {provenance})",
+                report.model_id,
                 format_tokens(report.fill),
                 window_k,
-                format_tokens(headroom),
             ),
             Style::new().bold(),
         )],
@@ -5547,57 +5526,33 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
             ),
             Style::new().dim(),
         )]);
-        rows.push(vec![Span::styled(
-            context_marker_line(
-                rail_width,
-                &[
-                    (fill_pos, "NOW".to_string()),
-                    (compact_pos, "AUTO-COMPACT".to_string()),
-                ],
-            ),
-            Style::new().dim(),
-        )]);
     }
-    rows.push(vec![Span::styled(
-        format!("= FILLED / {fill_source}   . HEADROOM / DERIVED   # BUFFER / CONFIGURED"),
-        Style::new().dim(),
-    )]);
     rows.push(Vec::new());
     rows.push(vec![Span::styled(
-        "BREAKDOWN // ESTIMATED // EACH BANK USES THE FULL-WINDOW BASELINE",
-        Style::new().dim(),
+        format!(
+            "{} tokens available before auto-compact",
+            format_tokens(headroom)
+        ),
+        Style::new().bold(),
     )]);
+    rows.push(Vec::new());
+    rows.push(vec![Span::styled("Estimated usage", Style::new().dim())]);
 
     for (segment, percent) in report.segments.iter().zip(&percents) {
         let tokens = format_tokens(segment.tokens);
-        let prefix = format!("  {:<8} {:>5.1}%  [", segment.label, percent);
+        let prefix = format!("{:<8} {:>5.1}%  [", segment.label, percent);
         let suffix = format!("]  {tokens}");
-        let fixed = 1 + prefix.chars().count() + suffix.chars().count();
+        let fixed = prefix.chars().count() + suffix.chars().count();
         let bank_width = width.saturating_sub(fixed).clamp(1, CONTEXT_BANK_WIDTH_MAX);
         let (filled, empty) = context_bank_bar(*percent, bank_width);
         let style = context_segment_style(segment.key);
         rows.push(vec![
-            Span::styled(segment.key.to_string(), style.bold()),
             Span::raw(prefix),
             Span::styled(filled, style),
             Span::styled(empty, Style::new().dark_gray()),
             Span::raw(suffix),
         ]);
     }
-
-    rows.push(Vec::new());
-    rows.push(vec![Span::styled(
-        format!(
-            "FILL {} // BREAKDOWN ESTIMATED // AUTO-COMPACT @ {}",
-            if report.fill_reported {
-                "REPORTED"
-            } else {
-                "ESTIMATED"
-            },
-            format_tokens(compact_at),
-        ),
-        Style::new().dim(),
-    )]);
 
     rows.into_iter()
         .map(|spans| Line::from(clip_spans(spans, max)))
@@ -26215,7 +26170,6 @@ mod tests {
         });
         ContextReport {
             model_id: "tokamak-1-preview".into(),
-            window_source: "configured",
             window,
             fill: used,
             fill_reported: false,
@@ -26224,7 +26178,7 @@ mod tests {
     }
 
     #[test]
-    fn context_control_deck_combines_threshold_rail_and_bank_breakdown() {
+    fn context_view_keeps_the_threshold_rail_and_bars_without_telemetry_jargon() {
         let mut report = context_report(234_000, 35_000, [6_049, 9_000, 2_149, 8_049, 95_253]);
         report.fill = 120_490;
         report.fill_reported = true;
@@ -26235,22 +26189,30 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        assert!(text.contains("CTX CONTROL DECK // TOKAMAK-1-PREVIEW"));
-        assert!(text.contains("FILL 120K / 234k / 51.5% [PROVIDER]"));
-        assert!(text.contains("HEADROOM TO COMPACT 79K"));
+        assert!(text.contains("tokamak-1-preview · 120K / 234k tokens used (51.5%, provider)"));
         assert!(text.contains("|==============================^...................|#########|"));
-        for bank in [
-            "P  PROMPT",
-            "T  TOOLS",
-            "C  PROJECT",
-            "K  SKILLS",
-            "M  MESSAGES",
-            ".  FREE",
-            "B  BUFFER",
+        assert!(text.contains("79K tokens available before auto-compact"));
+        assert!(text.contains("Estimated usage"));
+        for label in [
+            "PROMPT", "TOOLS", "PROJECT", "SKILLS", "MESSAGES", "FREE", "BUFFER",
         ] {
-            assert!(text.contains(bank), "missing bank {bank}: {text}");
+            assert!(
+                text.lines()
+                    .any(|line| line.trim_start().starts_with(label)),
+                "missing bar {label}: {text}"
+            );
         }
-        assert!(text.contains("FILL REPORTED // BREAKDOWN ESTIMATED"));
+        for removed in [
+            "CTX CONTROL DECK",
+            "STATUS NOMINAL",
+            "NOW",
+            "= FILLED",
+            "BREAKDOWN //",
+            "FULL-WINDOW BASELINE",
+            "FILL REPORTED //",
+        ] {
+            assert!(!text.contains(removed), "obsolete copy {removed}: {text}");
+        }
     }
 
     /// Free space and the buffer are categories like any other, so the seven
@@ -26290,19 +26252,19 @@ mod tests {
 
         let estimated = text(&report);
         assert!(
-            estimated.contains("FILL 120K / 234k / 51.5% [ESTIMATED]"),
+            estimated.contains("tokamak-1-preview · 120K / 234k tokens used (51.5%, estimated)"),
             "an estimated fill must say so: {estimated}"
         );
-        assert!(estimated.contains("BREAKDOWN ESTIMATED"));
+        assert!(estimated.contains("Estimated usage"));
 
         report.fill_reported = true;
         let reported = text(&report);
         assert!(
-            reported.contains("FILL 120K / 234k / 51.5% [PROVIDER]"),
+            reported.contains("tokamak-1-preview · 120K / 234k tokens used (51.5%, provider)"),
             "a provider fill is stated plainly: {reported}"
         );
         assert!(
-            !reported.contains("FILL 120K / 234k / 51.5% [ESTIMATED]"),
+            !reported.contains("tokens used (51.5%, estimated)"),
             "a provider fill must not be labelled an estimate: {reported}"
         );
     }
@@ -26310,7 +26272,7 @@ mod tests {
     /// Every row adapts to the available width rather than clipping a fixed
     /// control surface at the frame edge.
     #[test]
-    fn context_control_deck_never_overflows_the_available_width() {
+    fn context_view_never_overflows_the_available_width() {
         let report = context_report(234_000, 35_000, [6_049, 9_000, 2_149, 8_049, 95_253]);
         for width in [1usize, 2, 8, 20, 31, 32, 42, 60, 70, 80, 200] {
             let lines = context_lines(&report, width);
@@ -26328,7 +26290,7 @@ mod tests {
     /// The `/context` row goes through the same frame sizes the rest of the
     /// transcript survives.
     #[test]
-    fn tiny_frames_render_the_context_control_deck_without_panicking() {
+    fn tiny_frames_render_the_context_view_without_panicking() {
         let mut app = test_app();
         let report = context_report(234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]);
         app.push_row(RowKind::Context(Box::new(report)));
