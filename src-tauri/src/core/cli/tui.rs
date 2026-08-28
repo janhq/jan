@@ -5360,7 +5360,7 @@ fn context_rail_style(glyph: char) -> Style {
         '=' => Style::new().cyan(),
         '^' => Style::new().yellow().bold(),
         '.' => Style::new().dark_gray(),
-        '#' => Style::new().magenta(),
+        '╳' => Style::new().magenta(),
         _ => Style::new().dim(),
     }
 }
@@ -5476,6 +5476,7 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
         as usize)
         .clamp(1, inner);
 
+    rows.push(vec![Span::styled("Context window", Style::new().dim())]);
     if width >= 50 {
         rows.push(vec![Span::styled(
             context_marker_line(
@@ -5498,7 +5499,7 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
             } else if index < compact_pos {
                 '.'
             } else {
-                '#'
+                '╳'
             }
         })
         .collect();
@@ -26190,7 +26191,8 @@ mod tests {
             .join("\n");
 
         assert!(text.contains("tokamak-1-preview · 120K / 234k tokens used (51.5%, provider)"));
-        assert!(text.contains("|==============================^...................|#########|"));
+        assert!(text.contains("Context window"));
+        assert!(text.contains("|==============================^...................|╳╳╳╳╳╳╳╳╳|"));
         assert!(text.contains("79K tokens available before auto-compact"));
         assert!(text.contains("Estimated usage"));
         for label in [
