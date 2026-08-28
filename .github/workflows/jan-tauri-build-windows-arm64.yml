@@ -106,6 +106,15 @@ jobs:
       # ~3.8 GB with no network installer available, so this dominates the job.
       # Uncached deliberately: it would claim a third of the repo's 10 GB cache
       # budget and evict the cargo caches that matter more.
+      #
+      # Subpackages are enumerated rather than using a bare `-s`. A full silent
+      # install pulls all ~42 components plus Display.Driver, which on a runner
+      # with no NVIDIA GPU ran past 38 minutes with no output before being
+      # killed -- against a 3 minute download. Naming the packages skips the
+      # driver, all three Nsight profilers, documentation, sanitizer, opencl,
+      # the maths libraries ggml does not link (npp/cufft/curand/cusolver/
+      # cusparse/nvjpeg) and the Visual Studio integration we do not use with
+      # Ninja.
       - name: Install the CUDA toolkit (ARM64)
         shell: pwsh
         run: |
@@ -115,14 +124,34 @@ jobs:
           Invoke-WebRequest -Uri $env:CUDA_URL -OutFile $exe
           Write-Host ("Downloaded {0:N0} MB in {1:N1} min" -f ((Get-Item $exe).Length / 1MB), $sw.Elapsed.TotalMinutes)
 
+          $v = $env:CUDA_SHORT
+          $packages = @(
+            'nvcc', 'crt', 'nvvm', 'cudart',          # compiler + runtime
+            'cublas', 'cublas_dev',                   # the only maths library ggml links
+            'cuda_profiler_api', 'thrust', 'nvtx',    # headers ggml includes
+            'nvrtc', 'nvrtc_dev',
+            'nvjitlink', 'nvfatbin', 'nvptxcompiler', # device link time
+            'cuobjdump', 'nvdisasm', 'nvprune', 'cuxxfilt'
+          ) | ForEach-Object { '{0}_{1}' -f $_, $v }
+          Write-Host "Installing: $($packages -join ' ')"
+
           $sw.Restart()
-          Start-Process -FilePath $exe -ArgumentList '-s' -Wait -NoNewWindow
+          Start-Process -FilePath $exe -ArgumentList (@('-s') + $packages) -Wait -NoNewWindow
           Write-Host ("Installed in {0:N1} min" -f $sw.Elapsed.TotalMinutes)
 
-          $root = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_SHORT"
+          $root = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$v"
           if (-not (Test-Path $root)) { throw "CUDA not installed at $root" }
           "CUDA_PATH=$root" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "$root\bin"       | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+
+          # A named subpackage that the installer did not recognise is skipped
+          # silently, so list what actually landed instead of assuming.
+          Write-Host "--- $root\lib\arm64"
+          Get-ChildItem "$root\lib\arm64" -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty Name
+          foreach ($need in 'cudart.lib', 'cublas.lib', 'cublasLt.lib') {
+            if (-not (Test-Path "$root\lib\arm64\$need")) { throw "missing $need" }
+          }
           & "$root\bin\nvcc.exe" --version
 
       # LunarG's Windows ARM64 SDK is platform code `warm`; `windows` is x64.
