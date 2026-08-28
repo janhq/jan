@@ -5346,6 +5346,14 @@ const CONTEXT_RAIL_INNER_MAX: usize = 60;
 const CONTEXT_BANK_WIDTH_MAX: usize = 20;
 const CONTEXT_BANK_FRACTIONS: [char; 8] = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
 
+/// Free space (`.`) and the auto-compact reserve (`B`) stay in the report so
+/// the rail and the percentage partition still cover the whole window, but the
+/// breakdown lists only what the conversation actually consumes -- the rail
+/// above already states the remaining and reserved capacity.
+fn is_consumed_segment(segment: &ContextSegment) -> bool {
+    !matches!(segment.key, '.' | 'B')
+}
+
 fn context_segment_style(key: char) -> Style {
     match key {
         'M' => Style::new().cyan(),
@@ -5365,9 +5373,11 @@ fn context_rail_style(glyph: char) -> Style {
     }
 }
 
-/// Place centered labels on a fixed-width scale. A label that would collide
-/// with an earlier, higher-priority one is omitted; the exact values remain in
-/// the headline, so tight scales never render garbled text.
+/// Place centered labels on a fixed-width scale. Earlier labels win: pass the
+/// live markers (fill, threshold) before the fixed scale ends so a low fill
+/// never loses its annotation to the `0%`/`0K` endpoint. A label that would
+/// collide with an earlier one is omitted; the exact values remain in the
+/// headline, so tight scales never render garbled text.
 fn context_marker_line(width: usize, labels: &[(usize, String)]) -> String {
     let mut chars = vec![' '; width];
     for (center, text) in labels {
@@ -5444,7 +5454,12 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
                 Style::new().dim(),
             )],
         ];
-        for (segment, percent) in report.segments.iter().zip(&percents) {
+        for (segment, percent) in report
+            .segments
+            .iter()
+            .zip(&percents)
+            .filter(|(segment, _)| is_consumed_segment(segment))
+        {
             rows.push(vec![Span::raw(format!(
                 "{} {} ({percent:.1}%)",
                 segment.label,
@@ -5485,9 +5500,9 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
             context_marker_line(
                 rail_width,
                 &[
-                    (0, "0%".to_string()),
                     (fill_pos, format!("{fill_pct:.1}%")),
                     (compact_pos, format!("{compact_pct:.0}%")),
+                    (0, "0%".to_string()),
                     (rail_width - 1, "100%".to_string()),
                 ],
             ),
@@ -5522,9 +5537,9 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
             context_marker_line(
                 rail_width,
                 &[
-                    (0, "0K".to_string()),
                     (fill_pos, format_tokens(report.fill)),
                     (compact_pos, format_tokens(compact_at)),
+                    (0, "0K".to_string()),
                     (rail_width - 1, format_tokens(report.window)),
                 ],
             ),
@@ -5548,10 +5563,16 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
     let label_width = report
         .segments
         .iter()
+        .filter(|segment| is_consumed_segment(segment))
         .map(|segment| segment.label.chars().count())
         .max()
         .unwrap_or_default();
-    for (segment, percent) in report.segments.iter().zip(&percents) {
+    for (segment, percent) in report
+        .segments
+        .iter()
+        .zip(&percents)
+        .filter(|(segment, _)| is_consumed_segment(segment))
+    {
         let tokens = format_tokens(segment.tokens);
         let prefix = format!("{:<label_width$} {:>5.1}%  [", segment.label, percent);
         let suffix = format!("]  {tokens}");
@@ -26214,8 +26235,6 @@ mod tests {
             "Project context",
             "Skills",
             "Messages",
-            "Available",
-            "Auto-compact reserve",
         ];
         let bar_lines = labels
             .iter()
@@ -26232,7 +26251,6 @@ mod tests {
                 .all(|line| line.find('[') == Some(bar_column)),
             "bars must align: {bar_lines:?}"
         );
-
         for removed in [
             "CTX CONTROL DECK",
             "STATUS NOMINAL",
@@ -26242,9 +26260,38 @@ mod tests {
             "FULL-WINDOW BASELINE",
             "FILL REPORTED //",
             "Estimated usage",
+            "Available ",
+            "Auto-compact reserve",
         ] {
             assert!(!text.contains(removed), "obsolete copy {removed}: {text}");
         }
+    }
+
+    /// A nearly-empty window still has to say where it stands: the fill marker
+    /// outranks the `0%`/`0K` scale ends, which would otherwise swallow it.
+    #[test]
+    fn context_rail_annotates_a_low_fill() {
+        let report = context_report(200_000, 16_000, [1_500, 3_500, 0, 74, 0]);
+
+        let rows = context_lines(&report, 80)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>();
+        let rail = rows
+            .iter()
+            .position(|line| line.starts_with('|'))
+            .expect("the rail must render");
+
+        assert!(
+            rows[rail - 1].contains("2.5%"),
+            "the percent scale must annotate the fill marker: {:?}",
+            rows[rail - 1]
+        );
+        assert!(
+            rows[rail + 1].contains("5.1K"),
+            "the token scale must annotate the fill marker: {:?}",
+            rows[rail + 1]
+        );
     }
 
     /// Free space and the buffer are categories like any other, so the seven
