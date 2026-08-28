@@ -373,7 +373,7 @@ function General() {
                               janDataFolder,
                               'logs'
                             )
-                            await serviceHub.opener().revealItemInDir(logsPath)
+                            await serviceHub.opener().openPath(logsPath)
                           } catch (error) {
                             console.error(
                               'Failed to reveal logs folder:',

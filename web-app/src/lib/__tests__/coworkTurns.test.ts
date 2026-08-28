@@ -1,17 +1,17 @@
 import { describe, it, expect } from 'vitest'
-import { codeTurnsToUIMessages } from '@/lib/codeTurns'
-import type { CodeTurn } from '@/hooks/useCodeSessions'
+import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
+import type { CoworkTurn } from '@/hooks/useCoworkSessions'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const partsOf = (messages: any[], index = 0) => messages[index]?.parts ?? []
-const toolPart = (turns: CodeTurn[]) =>
-  partsOf(codeTurnsToUIMessages(turns)).find((p: any) =>
+const toolPart = (turns: CoworkTurn[]) =>
+  partsOf(coworkTurnsToUIMessages(turns)).find((p: any) =>
     p.type?.startsWith('tool-')
   )
 
-describe('codeTurnsToUIMessages', () => {
+describe('coworkTurnsToUIMessages', () => {
   it('starts a new user message and flushes the assistant before it', () => {
-    const messages = codeTurnsToUIMessages([
+    const messages = coworkTurnsToUIMessages([
       { role: 'user', content: 'first' },
       { role: 'assistant', content: 'answer' },
       { role: 'user', content: 'second' },
@@ -96,9 +96,9 @@ describe('codeTurnsToUIMessages', () => {
   })
 
   it('keeps ids unique across prefixes so committed and live turns can merge', () => {
-    const turns: CodeTurn[] = [{ role: 'user', content: 'hi' }]
-    const committed = codeTurnsToUIMessages(turns, 'c')
-    const live = codeTurnsToUIMessages(turns, 'l')
+    const turns: CoworkTurn[] = [{ role: 'user', content: 'hi' }]
+    const committed = coworkTurnsToUIMessages(turns, 'c')
+    const live = coworkTurnsToUIMessages(turns, 'l')
     expect(committed[0].id).not.toBe(live[0].id)
   })
 })

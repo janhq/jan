@@ -148,8 +148,18 @@ export const providerModels = {
 
 /**
  * llama.cpp slot pins. Jan sends every chat turn to slot 0 so a thread reuses
- * its cached KV prefix across turns, and every background task (title
- * generation) to slot 1 so it can never overwrite that cache.
+ * its cached KV prefix across turns, every background task (title generation,
+ * subagents) to slot 1 so it can never overwrite that cache, and every Cowork
+ * turn to slot 2.
+ *
+ * Cowork needs its own slot because one agent turn re-prefills a growing prompt
+ * dozens of times; sharing slot 0 would evict the viewed thread's prefix on
+ * every step, and vice versa. Subagents deliberately reuse the background slot
+ * rather than taking a fourth: their prefixes are worth nothing to preserve
+ * (each has a different system prompt, so concurrent subagents evict each other
+ * regardless), and all that matters is that a dispatch cannot evict the
+ * *parent's* prefix on slot 2. Reserving one slot instead of two keeps the KV
+ * cache split three ways rather than four.
  *
  * Both are fixed indices rather than values derived from the "Parallel
  * Sequences" setting, because upstream *wraps* an out-of-range `id_slot`
@@ -162,3 +172,4 @@ export const providerModels = {
  */
 export const CHAT_SLOT_ID = 0
 export const BACKGROUND_SLOT_ID = 1
+export const COWORK_SLOT_ID = 2

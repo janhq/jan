@@ -54,6 +54,46 @@ pub fn escapes_project(
     Ok(true)
 }
 
+/// True iff `raw` escapes every root a *read* may legitimately reach: the
+/// project, the scratch, or any attached read-only root.
+///
+/// Layered on [`escapes_project`] rather than replacing it, so the write path
+/// keeps the exact check it has today and a read root can only ever widen what
+/// reads reach, never what writes do.
+///
+/// A read root that cannot be canonicalized grants nothing — same rule as the
+/// scratch above. A vanished root must not silently open a path up.
+pub fn escapes_read_roots(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    read_roots: &[PathBuf],
+    raw: &str,
+) -> Result<bool, String> {
+    if !escapes_project(project_root, scratch, raw)? {
+        return Ok(false);
+    }
+    if read_roots.is_empty() {
+        return Ok(true);
+    }
+    let abs = if Path::new(raw).is_absolute() {
+        PathBuf::from(raw)
+    } else {
+        // Relative paths belong to the workspace, never to an attached folder:
+        // resolving them against a read root would make `write` and `read`
+        // disagree about what one path means.
+        project_root.join(raw)
+    };
+    let resolved = canonicalize_lenient(&abs)?;
+    for root in read_roots {
+        if let Ok(root) = root.canonicalize() {
+            if resolved.starts_with(&root) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
 /// Resolve a tool-supplied path to its on-disk location, forwarding an absolute
 /// `/tmp/...` path into the session scratch when one is set (and only on Linux,
 /// where the bash sandbox binds the scratch over `/tmp`). This keeps every
@@ -225,14 +265,28 @@ pub fn command_touches_hidden_jan_path(project_root: &Path, command: &str) -> bo
 /// Still a re-check, not a guarantee: a swap landing between this call and the
 /// open is not covered. That needs descriptor-relative no-follow opens
 /// (`openat2` with `RESOLVE_BENEATH`, reparse-point handling on Windows).
-pub fn symlink_escapes_root(
+pub fn symlink_escapes_root(project_root: &Path, scratch: Option<&Path>, target: &Path) -> bool {
+    symlink_escapes_any_root(project_root, scratch, &[], target)
+}
+
+/// As [`symlink_escapes_root`], but also treating `read_roots` as trusted.
+///
+/// Passing the read roots is not optional once one is attached: a path inside
+/// an attached folder is not lexically under the project or the scratch, so the
+/// early return above would classify it as "already decided" and skip the check
+/// entirely — leaving a link in the user's repo pointing at `~/.ssh` followed.
+pub fn symlink_escapes_any_root(
     project_root: &Path,
     scratch: Option<&Path>,
+    read_roots: &[PathBuf],
     target: &Path,
 ) -> bool {
     let mut roots = vec![project_root];
     if let Some(s) = scratch {
         roots.push(s);
+    }
+    for r in read_roots {
+        roots.push(r.as_path());
     }
     let normalized = lexical_normalize(target);
     if !roots
@@ -344,7 +398,10 @@ mod tests {
     fn absolute_outside_escapes() {
         let root = unique_root();
         let outside = std::env::temp_dir().join("definitely_outside_the_root.txt");
-        assert_eq!(escapes_project(&root, None, outside.to_str().unwrap()), Ok(true));
+        assert_eq!(
+            escapes_project(&root, None, outside.to_str().unwrap()),
+            Ok(true)
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -353,7 +410,10 @@ mod tests {
         let root = unique_root();
         std::fs::write(root.join("inner.txt"), b"x").unwrap();
         let inside = root.join("inner.txt");
-        assert_eq!(escapes_project(&root, None, inside.to_str().unwrap()), Ok(false));
+        assert_eq!(
+            escapes_project(&root, None, inside.to_str().unwrap()),
+            Ok(false)
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -364,7 +424,6 @@ mod tests {
         assert_eq!(escapes_project(&root, None, "sub/newfile.txt"), Ok(false));
         let _ = std::fs::remove_dir_all(&root);
     }
-
 
     #[test]
     fn hidden_path_covers_the_whole_jan_dir() {
@@ -565,16 +624,32 @@ mod tests {
         std::os::unix::fs::symlink(&outside, &outward).unwrap();
 
         assert!(!symlink_escapes_root(&root, None, &inward.join("index.js")));
-        assert!(symlink_escapes_root(&root, None, &outward.join("secret.txt")));
+        assert!(symlink_escapes_root(
+            &root,
+            None,
+            &outward.join("secret.txt")
+        ));
         // A not-yet-existing leaf under a real directory is not an escape.
-        assert!(!symlink_escapes_root(&root, None, &root.join("pkg/new.txt")));
+        assert!(!symlink_escapes_root(
+            &root,
+            None,
+            &root.join("pkg/new.txt")
+        ));
         // Outside both roots: the gate already decided, so this check abstains.
-        assert!(!symlink_escapes_root(&root, None, &outside.join("secret.txt")));
+        assert!(!symlink_escapes_root(
+            &root,
+            None,
+            &outside.join("secret.txt")
+        ));
         // The scratch counts as a trusted root, so a link between the two is in.
         let scratch = unique_root();
         let cross = scratch.join("into-project");
         std::os::unix::fs::symlink(root.join("pkg"), &cross).unwrap();
-        assert!(!symlink_escapes_root(&root, Some(&scratch), &cross.join("index.js")));
+        assert!(!symlink_escapes_root(
+            &root,
+            Some(&scratch),
+            &cross.join("index.js")
+        ));
 
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
@@ -590,5 +665,117 @@ mod tests {
         assert_eq!(tmp_relative("/tmp/a.txt"), Some("a.txt".to_string()));
         assert_eq!(tmp_relative("/tmpx"), None);
         assert_eq!(tmp_relative("/tmp-archive/a.txt"), None);
+    }
+    // ---- read-only attached roots -------------------------------------------
+
+    #[test]
+    fn a_path_in_a_read_root_is_not_a_read_escape() {
+        let ws = unique_root_outside_tmp();
+        let repo = unique_root_outside_tmp();
+        std::fs::write(repo.join("main.rs"), b"fn main() {}").unwrap();
+        let roots = vec![repo.clone()];
+        let target = repo.join("main.rs").to_string_lossy().into_owned();
+
+        // Without the root it is an escape; with it, a legitimate read.
+        assert!(escapes_project(&ws, None, &target).unwrap());
+        assert!(!escapes_read_roots(&ws, None, &roots, &target).unwrap());
+
+        let _ = std::fs::remove_dir_all(&ws);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    // The whole point of the mount: reads widen, writes do not. `escapes_project`
+    // is what the write path keeps using, so it must still call this an escape.
+    #[test]
+    fn a_write_into_a_read_root_is_still_an_escape() {
+        let ws = unique_root_outside_tmp();
+        let repo = unique_root_outside_tmp();
+        let target = repo.join("new.txt").to_string_lossy().into_owned();
+        assert!(escapes_project(&ws, None, &target).unwrap());
+        let _ = std::fs::remove_dir_all(&ws);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_path_outside_every_root_is_still_an_escape() {
+        let ws = unique_root_outside_tmp();
+        let repo = unique_root_outside_tmp();
+        let other = unique_root_outside_tmp();
+        let roots = vec![repo.clone()];
+        let target = other.join("secret").to_string_lossy().into_owned();
+        assert!(escapes_read_roots(&ws, None, &roots, &target).unwrap());
+        for d in [&ws, &repo, &other] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    // A read root that vanished must grant nothing, matching the scratch rule.
+    #[test]
+    fn a_missing_read_root_grants_nothing() {
+        let ws = unique_root_outside_tmp();
+        let gone = unique_root_outside_tmp();
+        let target = gone.join("x").to_string_lossy().into_owned();
+        std::fs::remove_dir_all(&gone).unwrap();
+        let roots = vec![gone];
+        assert!(escapes_read_roots(&ws, None, &roots, &target).unwrap());
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    // Relative paths belong to the workspace. Resolving them against an attached
+    // folder would make `read` and `write` disagree about what one path means.
+    #[test]
+    fn a_relative_path_still_resolves_against_the_workspace() {
+        let ws = unique_root_outside_tmp();
+        let repo = unique_root_outside_tmp();
+        std::fs::write(repo.join("only-in-repo.txt"), b"x").unwrap();
+        let roots = vec![repo.clone()];
+        assert!(escapes_read_roots(&ws, None, &roots, "only-in-repo.txt").is_ok());
+        let _ = std::fs::remove_dir_all(&ws);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    // The hole this mount opens if the read roots are not passed: a link inside
+    // the attached folder is not lexically under the workspace, so the plain
+    // check returns "already decided" and never looks at where it points.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_out_of_a_read_root_is_caught() {
+        let ws = unique_root_outside_tmp();
+        let repo = unique_root_outside_tmp();
+        let secret_dir = unique_root_outside_tmp();
+        let secret = secret_dir.join("id_rsa");
+        std::fs::write(&secret, b"key").unwrap();
+        let link = repo.join("innocent.txt");
+        std::os::unix::fs::symlink(&secret, &link).unwrap();
+        let roots = vec![repo.clone()];
+
+        assert!(
+            symlink_escapes_any_root(&ws, None, &roots, &link),
+            "a link leaving the attached folder must be refused"
+        );
+        assert!(
+            !symlink_escapes_root(&ws, None, &link),
+            "and the plain check is exactly why the roots must be passed"
+        );
+        for d in [&ws, &repo, &secret_dir] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    // A link that stays inside the attached folder is ordinary and must work --
+    // every monorepo has them.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_inside_a_read_root_is_allowed() {
+        let repo = unique_root_outside_tmp();
+        let ws = unique_root_outside_tmp();
+        let real = repo.join("real.txt");
+        std::fs::write(&real, b"x").unwrap();
+        let link = repo.join("link.txt");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let roots = vec![repo.clone()];
+        assert!(!symlink_escapes_any_root(&ws, None, &roots, &link));
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&ws);
     }
 }

@@ -957,6 +957,9 @@ impl ToolInvoker for CompositeToolInvoker {
                 &args,
                 &self.project_root,
                 Some(self.scratch_root.as_path()),
+                // The CLI works *in* the project, so it has no separate
+                // read-only root to attach.
+                &[],
                 &self.permissions,
                 &snapshot,
                 self.sandbox,

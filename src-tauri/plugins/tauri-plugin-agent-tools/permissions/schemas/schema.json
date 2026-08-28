@@ -307,6 +307,18 @@
           "markdownDescription": "Denies the execute_tool command without any pre-configured scope."
         },
         {
+          "description": "Enables the execute_tool_streaming command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-execute-tool-streaming",
+          "markdownDescription": "Enables the execute_tool_streaming command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the execute_tool_streaming command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-execute-tool-streaming",
+          "markdownDescription": "Denies the execute_tool_streaming command without any pre-configured scope."
+        },
+        {
           "description": "Enables the memory_delete command without any pre-configured scope.",
           "type": "string",
           "const": "allow-memory-delete",
@@ -365,6 +377,42 @@
           "type": "string",
           "const": "deny-sandbox-status",
           "markdownDescription": "Denies the sandbox_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the session_workspace_delete command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-session-workspace-delete",
+          "markdownDescription": "Enables the session_workspace_delete command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the session_workspace_delete command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-session-workspace-delete",
+          "markdownDescription": "Denies the session_workspace_delete command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the session_workspace_path command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-session-workspace-path",
+          "markdownDescription": "Enables the session_workspace_path command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the session_workspace_path command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-session-workspace-path",
+          "markdownDescription": "Denies the session_workspace_path command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the session_workspace_sweep command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-session-workspace-sweep",
+          "markdownDescription": "Enables the session_workspace_sweep command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the session_workspace_sweep command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-session-workspace-sweep",
+          "markdownDescription": "Denies the session_workspace_sweep command without any pre-configured scope."
         },
         {
           "description": "Enables the skill_delete command without any pre-configured scope.",
@@ -475,10 +523,10 @@
           "markdownDescription": "Denies the workspace_path command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-execute-tool`",
+          "description": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-execute-tool`"
+          "markdownDescription": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`"
         }
       ]
     }

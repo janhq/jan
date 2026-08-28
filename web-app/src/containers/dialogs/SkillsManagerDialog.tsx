@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useCodeSessions } from '@/hooks/useCodeSessions'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useSkills, type HubSkill } from '@/hooks/useSkills'
 
 export default function SkillsManagerDialog({
@@ -23,8 +23,8 @@ export default function SkillsManagerDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
-  const sessions = useCodeSessions((s) => s.sessions)
-  const currentId = useCodeSessions((s) => s.currentId)
+  const sessions = useCoworkSessions((s) => s.sessions)
+  const currentId = useCoworkSessions((s) => s.currentId)
   const folder = sessions.find((s) => s.id === currentId)?.folder ?? null
 
   const { skills, remove, write, read, hubList, hubImport } = useSkills(folder)

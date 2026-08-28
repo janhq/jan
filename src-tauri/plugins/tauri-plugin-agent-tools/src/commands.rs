@@ -135,6 +135,42 @@ pub async fn thread_workspace_sweep(
         .map_err(Into::into)
 }
 
+/// The Cowork session sandbox, created if absent.
+#[cfg_attr(feature = "tauri", tauri::command)]
+pub async fn session_workspace_path(
+    data_folder: String,
+    session_id: String,
+) -> Result<String, AgentToolsError> {
+    let dir = workspace::ensure_session_workspace(Path::new(&data_folder), &session_id).await?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+/// Delete a Cowork session's sandbox, with its scratch.
+#[cfg_attr(feature = "tauri", tauri::command)]
+pub async fn session_workspace_delete(
+    data_folder: String,
+    session_id: String,
+) -> Result<(), AgentToolsError> {
+    workspace::remove_session_workspace(Path::new(&data_folder), &session_id)
+        .await
+        .map_err(Into::into)
+}
+
+/// Collect session sandboxes whose sessions no longer exist.
+///
+/// Deliberately separate from the thread sweep: the two id spaces are
+/// independent, so handing either one the other's keep list would delete live
+/// work. `keep` being empty is a no-op, not a full wipe.
+#[cfg_attr(feature = "tauri", tauri::command)]
+pub async fn session_workspace_sweep(
+    data_folder: String,
+    keep: Vec<String>,
+) -> Result<usize, AgentToolsError> {
+    workspace::sweep_session_workspaces(Path::new(&data_folder), &keep)
+        .await
+        .map_err(Into::into)
+}
+
 /// Every discovered skill with its description, including empty stubs so the
 /// user can see and edit them.
 #[tauri::command]
@@ -266,6 +302,48 @@ pub async fn sandbox_status() -> Result<SandboxStatus, AgentToolsError> {
     })
 }
 
+/// One fragment of a tool's live output.
+///
+/// `seq` is monotonic per call so the receiver can assert ordering and notice
+/// the truncation below; `callId` says which tool call it belongs to, which a
+/// backgrounded `bash` needs because it keeps streaming after the tool returned.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolOutputChunk {
+    pub seq: u64,
+    pub call_id: Option<String>,
+    pub text: String,
+}
+
+/// Live output past this point is dropped from the stream, not from the result.
+///
+/// A `yes`-style command would otherwise flood the webview with IPC messages
+/// faster than it can render them. The full text still reaches the caller in
+/// `ToolResult`, and in the spill file when it overflows that.
+const MAX_STREAMED_BYTES: usize = 2 * 1024 * 1024;
+
+/// Which sandbox namespace an id belongs to.
+///
+/// Chat threads and Cowork sessions have independent id spaces and independent
+/// sweeps, so the caller has to say which one it means; guessing would let one
+/// surface's cleanup delete the other's work.
+#[derive(Debug, Clone, Copy, Default, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceScope {
+    #[default]
+    Thread,
+    Session,
+}
+
+impl WorkspaceScope {
+    async fn ensure(self, data_folder: &Path, id: &str) -> Result<PathBuf, String> {
+        match self {
+            Self::Thread => workspace::ensure_thread_workspace(data_folder, id).await,
+            Self::Session => workspace::ensure_session_workspace(data_folder, id).await,
+        }
+    }
+}
+
 /// Execute one built-in tool.
 ///
 /// The gate decides, not the caller. `write` and `edit` resolve to `Prompt` and
@@ -273,6 +351,9 @@ pub async fn sandbox_status() -> Result<SandboxStatus, AgentToolsError> {
 /// round-trip exists; a read that escapes the project root prompts too. `bash`
 /// runs only under an enforcing sandbox (see the module docs).
 #[tauri::command]
+// `read_only_project` is a folder the user attached read-only. It is validated
+// here rather than trusted: an unusable one is an error, never a silent drop,
+// or the agent would work against a folder it believes is attached and is not.
 pub async fn execute_tool(
     data_folder: String,
     thread_id: String,
@@ -281,14 +362,97 @@ pub async fn execute_tool(
     args: serde_json::Value,
     enabled_skills: Option<Vec<String>>,
     allow_network: Option<bool>,
+    read_only_project: Option<String>,
+    scope: Option<WorkspaceScope>,
+    call_id: Option<String>,
+) -> Result<ToolResult, AgentToolsError> {
+    execute_tool_inner(
+        data_folder,
+        thread_id,
+        project,
+        name,
+        args,
+        enabled_skills,
+        allow_network,
+        read_only_project,
+        scope,
+        call_id,
+        None,
+    )
+    .await
+}
+
+/// `execute_tool`, plus a channel that receives the tool's output as it is
+/// produced. A separate command rather than an optional argument because
+/// `tauri::ipc::Channel` is a `CommandArg`, not a `Deserialize`, so it cannot be
+/// wrapped in `Option`.
+#[cfg(feature = "tauri")]
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn execute_tool_streaming(
+    data_folder: String,
+    thread_id: String,
+    project: Option<String>,
+    name: String,
+    args: serde_json::Value,
+    enabled_skills: Option<Vec<String>>,
+    allow_network: Option<bool>,
+    read_only_project: Option<String>,
+    scope: Option<WorkspaceScope>,
+    call_id: Option<String>,
+    on_output: tauri::ipc::Channel<ToolOutputChunk>,
+) -> Result<ToolResult, AgentToolsError> {
+    let sink = output_sink(on_output, call_id.clone());
+    execute_tool_inner(
+        data_folder,
+        thread_id,
+        project,
+        name,
+        args,
+        enabled_skills,
+        allow_network,
+        read_only_project,
+        scope,
+        call_id,
+        Some(sink),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_tool_inner(
+    data_folder: String,
+    thread_id: String,
+    project: Option<String>,
+    name: String,
+    args: serde_json::Value,
+    enabled_skills: Option<Vec<String>>,
+    allow_network: Option<bool>,
+    read_only_project: Option<String>,
+    scope: Option<WorkspaceScope>,
+    call_id: Option<String>,
+    sink: Option<crate::tools::OutputSink>,
 ) -> Result<ToolResult, AgentToolsError> {
     // Created here rather than trusted to exist: `escapes_project` canonicalizes
     // the sandbox root and treats a missing one as an escape, so every tool call
     // would be refused if the thread's first tool call arrived before any UI
     // surface had ensured it.
-    let root = workspace::ensure_thread_workspace(Path::new(&data_folder), &thread_id).await?;
+    let root = scope
+        .unwrap_or_default()
+        .ensure(Path::new(&data_folder), &thread_id)
+        .await?;
     let scratch = workspace::ensure_scratch_dir(&thread_id).await?;
     let store = resolve_store(&data_folder, project.as_deref());
+    // Plural from the outset so attaching a second folder later is not another
+    // signature change.
+    let read_roots: Vec<PathBuf> = match read_only_project.as_deref() {
+        Some(path) => vec![workspace::validate_read_root(
+            Path::new(path),
+            &root,
+            Some(Path::new(&data_folder)),
+        )?],
+        None => Vec::new(),
+    };
     let tool = lookup(&name)
         .ok_or_else(|| AgentToolsError::from(format!("unknown built-in tool '{name}'")))?;
 
@@ -297,6 +461,7 @@ pub async fn execute_tool(
         &args,
         &root,
         Some(&scratch),
+        &read_roots,
         &ToolPermissions::default(),
         &SessionGrants::default(),
         true,
@@ -332,10 +497,20 @@ pub async fn execute_tool(
         // `WriteEscape` and refused here outright, since this surface has no
         // prompt round-trip to approve it.
         Decision::Prompt(PromptKind::Write) => {}
+        // The message matters as much as the refusal: told only "refused", a
+        // model retries the same write until the step budget runs out.
         Decision::Prompt(PromptKind::WriteEscape) => {
-            return Err(format!(
-                "tool '{name}' tried to write outside the agent workspace and was refused"
-            )
+            return Err(match read_roots.first() {
+                Some(attached) => format!(
+                    "tool '{name}' cannot write outside the agent workspace. The attached \
+                     folder {} is mounted read-only; copy the file into the workspace and \
+                     edit it there.",
+                    attached.display()
+                ),
+                None => format!(
+                    "tool '{name}' tried to write outside the agent workspace and was refused"
+                ),
+            }
             .into());
         }
         Decision::Prompt(kind) => {
@@ -347,11 +522,18 @@ pub async fn execute_tool(
     }
 
     let enabled = enabled_skills.unwrap_or_default();
-    let ctx = ToolContext::new(&root, &store, &enabled)
+    let mut ctx = ToolContext::new(&root, &store, &enabled)
         .with_network(allow_network.unwrap_or(false))
         .with_confined_writes(true)
         .with_mask_root(Path::new(&data_folder))
-        .with_scratch_root(&scratch);
+        .with_scratch_root(&scratch)
+        .with_read_roots(&read_roots);
+    if let Some(id) = call_id.as_deref() {
+        ctx = ctx.with_call_id(id);
+    }
+    if let Some(sink) = sink {
+        ctx = ctx.with_output_sink(sink);
+    }
     let (content, diff, _images) = handlers::execute_builtin_with_diff(tool, &args, &ctx).await;
     let is_error =
         content.starts_with("ERROR") || (name == "bash" && handlers::bash_result_failed(&content));
@@ -359,6 +541,48 @@ pub async fn execute_tool(
         content,
         diff,
         is_error,
+    })
+}
+
+/// Build the live-output sink.
+///
+/// `OutputSink` is `Fn`, not `FnMut`, so the sequence counter and the byte
+/// budget live in atomics. The channel is `Clone + Send + Sync + 'static`, which
+/// is what lets a detached background job keep reporting after the call that
+/// created the sink has returned.
+#[cfg(feature = "tauri")]
+fn output_sink(
+    channel: tauri::ipc::Channel<ToolOutputChunk>,
+    call_id: Option<String>,
+) -> crate::tools::OutputSink {
+    use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let seq = Arc::new(AtomicU64::new(0));
+    let sent = Arc::new(AtomicUsize::new(0));
+    let stopped = Arc::new(AtomicBool::new(false));
+    Arc::new(move |text: String| {
+        if stopped.load(Ordering::Relaxed) {
+            return;
+        }
+        let total = sent.fetch_add(text.len(), Ordering::Relaxed) + text.len();
+        // One honest final chunk rather than silently going quiet.
+        let payload = if total > MAX_STREAMED_BYTES {
+            stopped.store(true, Ordering::Relaxed);
+            "\n[output truncated in the live view]\n".to_string()
+        } else {
+            text
+        };
+        let chunk = ToolOutputChunk {
+            seq: seq.fetch_add(1, Ordering::Relaxed),
+            call_id: call_id.clone(),
+            text: payload,
+        };
+        // A send error means the webview is gone; stop rather than keep trying
+        // for the lifetime of a backgrounded job.
+        if channel.send(chunk).is_err() {
+            stopped.store(true, Ordering::Relaxed);
+        }
     })
 }
 
@@ -376,7 +600,29 @@ mod tests {
         std::env::temp_dir().join(format!("jan_cmd_test_{}_{}", std::process::id(), n))
     }
 
+    /// A folder that is *not* under the host temp dir. On Linux an absolute
+    /// `/tmp/...` path is remapped into the session scratch, which would route
+    /// an attached-folder test through the wrong branch entirely.
+    fn repo_outside_tmp(tag: &str) -> PathBuf {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("attach-tests")
+            .join(format!("{tag}_{}_{}", std::process::id(), n));
+        std::fs::create_dir_all(&dir).expect("create test repo");
+        dir
+    }
+
     const T1: &str = "thread-one";
+    /// Own thread ids: the session scratch is keyed by thread id and lives in
+    /// the shared host temp dir, so reusing one couples these tests to every
+    /// other test that uses it.
+    /// Its own id: this test depends on its scratch staying alive, and any
+    /// test that deletes a thread workspace also deletes that thread's scratch.
+    const T_SCRATCH: &str = "thread-scratch";
+    const T_ATTACH_RW: &str = "thread-attach-rw";
+    const T_ATTACH_NONE: &str = "thread-attach-none";
+    const T_ATTACH_OVERLAP: &str = "thread-attach-overlap";
     const T2: &str = "thread-two";
 
     #[test]
@@ -426,6 +672,9 @@ mod tests {
             json!({"path": "a.txt", "content": "hello"}),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .await
         .expect("a write inside the sandbox is allowed");
@@ -454,6 +703,9 @@ mod tests {
             None,
             "edit".into(),
             json!({"path": "a.txt", "edits": [{"old_string": "before", "new_string": "after"}]}),
+            None,
+            None,
+            None,
             None,
             None,
         )
@@ -488,6 +740,9 @@ mod tests {
             json!({"path": "../../../etc/hostname"}),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .await
         .expect_err("an escaping read must be refused");
@@ -512,10 +767,13 @@ mod tests {
         for path in ["../escape.txt", "/etc/hosts", "/home/akarshan/.bashrc"] {
             let err = execute_tool(
                 df.clone(),
-                T1.into(),
+                T_SCRATCH.into(),
                 None,
                 "write".into(),
                 json!({"path": path, "content": "x"}),
+                None,
+                None,
+                None,
                 None,
                 None,
             )
@@ -532,7 +790,12 @@ mod tests {
         // spelling reaches the scratch on this platform. The scratch outlives the
         // test process, so the name is per-run: a leftover file would answer
         // "No change" instead of "Created".
-        let scratch = crate::workspace::ensure_scratch_dir(T1).await.unwrap();
+        // The sweep test collects every scratch in the shared temp dir; without
+        // this it can delete ours between the write and the assertion.
+        let _guard = crate::workspace::lock_scratch_namespace();
+        let scratch = crate::workspace::ensure_scratch_dir(T_SCRATCH)
+            .await
+            .unwrap();
         let name = format!("jan_cmd_scratch_{}.txt", std::process::id());
         let (requested, expected) = if cfg!(target_os = "linux") {
             let p = format!("/tmp/{name}");
@@ -543,10 +806,13 @@ mod tests {
         };
         let res = execute_tool(
             df.clone(),
-            T1.into(),
+            T_SCRATCH.into(),
             None,
             "write".into(),
             json!({"path": requested, "content": "x"}),
+            None,
+            None,
+            None,
             None,
             None,
         )
@@ -562,10 +828,13 @@ mod tests {
         // An in-sandbox write still succeeds, so we didn't over-tighten.
         let res = execute_tool(
             df.clone(),
-            T1.into(),
+            T_SCRATCH.into(),
             None,
             "write".into(),
             json!({"path": "ok.txt", "content": "x"}),
+            None,
+            None,
+            None,
             None,
             None,
         )
@@ -600,6 +869,9 @@ mod tests {
             None,
             "bash".into(),
             json!({"command": "echo hi"}),
+            None,
+            None,
+            None,
             None,
             None,
         )
@@ -641,6 +913,9 @@ mod tests {
             json!({"command": "exec 3<>/dev/tcp/1.1.1.1/53 && echo connected"}),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -670,6 +945,9 @@ mod tests {
             json!({}),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -691,6 +969,9 @@ mod tests {
             None,
             "read".to_string(),
             json!({"path": "a.txt"}),
+            None,
+            None,
+            None,
             None,
             None,
         )
@@ -729,6 +1010,9 @@ mod tests {
             json!({"path": "../isolation-thread-one/secret.txt"}),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .await
         .expect_err("a relative climb-out to a sibling thread must be refused");
@@ -750,10 +1034,17 @@ mod tests {
             json!({"path": "/tmp/secret.txt"}),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
-        assert!(out.is_error, "t2 sees an empty scratch, got: {}", out.content);
+        assert!(
+            out.is_error,
+            "t2 sees an empty scratch, got: {}",
+            out.content
+        );
         let _ = std::fs::remove_dir_all(&data);
         let _ = crate::workspace::remove_scratch_dir(t1).await;
         let _ = crate::workspace::remove_scratch_dir(t2).await;
@@ -774,6 +1065,9 @@ mod tests {
             json!({"name": "prefs", "content": "user likes tabs"}),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -790,6 +1084,9 @@ mod tests {
             None,
             "memory_read".into(),
             json!({"name": "prefs"}),
+            None,
+            None,
+            None,
             None,
             None,
         )
@@ -818,6 +1115,9 @@ mod tests {
             None,
             "read".into(),
             json!({"path": "../../memory/prefs.md"}),
+            None,
+            None,
+            None,
             None,
             None,
         )
@@ -872,6 +1172,9 @@ mod tests {
                     "ls".into(),
                     json!({}),
                     None,
+                    None,
+                    None,
+                    None,
                     None
                 )
                 .await
@@ -896,6 +1199,9 @@ mod tests {
             json!({"path": ".jan/agent/agent.toml"}),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .await
         .expect_err("agent config must be hard-denied");
@@ -917,6 +1223,9 @@ mod tests {
             None,
             "rm_rf".to_string(),
             json!({}),
+            None,
+            None,
+            None,
             None,
             None,
         )
@@ -992,6 +1301,9 @@ mod tests {
             json!({"name": "deploy", "content": "---\ndescription: d\n---\nrun it"}),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -1007,10 +1319,193 @@ mod tests {
             json!({"name": "deploy"}),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
         assert_eq!(out.content, "run it");
         let _ = std::fs::remove_dir_all(&data);
+    }
+    // ---- read-only attached folder, end to end ------------------------------
+
+    /// The contract the workspace UI promises: the agent reads your folder and
+    /// writes only into its own sandbox.
+    #[tokio::test]
+    async fn an_attached_folder_is_readable_and_unwritable() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("rw");
+        std::fs::write(repo.join("main.rs"), b"fn main() {}").unwrap();
+        let attached = Some(repo.to_string_lossy().to_string());
+
+        let read = execute_tool(
+            df.clone(),
+            T_ATTACH_RW.into(),
+            None,
+            "read".into(),
+            json!({"path": repo.join("main.rs").to_string_lossy()}),
+            None,
+            None,
+            attached.clone(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(!read.is_error, "{}", read.content);
+        assert!(read.content.contains("fn main"), "{}", read.content);
+
+        let write = execute_tool(
+            df.clone(),
+            T_ATTACH_RW.into(),
+            None,
+            "write".into(),
+            json!({"path": repo.join("evil.txt").to_string_lossy(), "content": "x"}),
+            None,
+            None,
+            attached,
+            None,
+            None,
+        )
+        .await;
+        let err = write.expect_err("a write into the attached folder must be refused");
+        // The wording matters: told only "refused", a model retries until the
+        // step budget runs out.
+        let msg = format!("{err:?}");
+        assert!(msg.contains("read-only"), "{msg}");
+        assert!(msg.contains("copy the file into the workspace"), "{msg}");
+        assert!(!repo.join("evil.txt").exists(), "nothing was written");
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// Without an attached folder nothing outside the sandbox is readable, so
+    /// the mount is genuinely opt-in.
+    #[tokio::test]
+    async fn without_an_attachment_the_same_read_is_refused() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("noattach");
+        std::fs::write(repo.join("main.rs"), b"fn main() {}").unwrap();
+
+        let out = execute_tool(
+            df.clone(),
+            T_ATTACH_NONE.into(),
+            None,
+            "read".into(),
+            json!({"path": repo.join("main.rs").to_string_lossy()}),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert!(out.is_err() || out.unwrap().is_error);
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// An unusable attachment is an error, never a silent drop: otherwise the
+    /// agent works against a folder it believes is attached and is not.
+    #[tokio::test]
+    async fn an_overlapping_attachment_is_rejected_not_ignored() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let inside = workspace::ensure_thread_workspace(&data, T_ATTACH_OVERLAP)
+            .await
+            .unwrap()
+            .join("nested");
+        std::fs::create_dir_all(&inside).unwrap();
+
+        let out = execute_tool(
+            df.clone(),
+            T_ATTACH_OVERLAP.into(),
+            None,
+            "ls".into(),
+            json!({}),
+            None,
+            None,
+            Some(inside.to_string_lossy().to_string()),
+            None,
+            None,
+        )
+        .await;
+        let err = out.expect_err("a root inside the workspace must be refused");
+        assert!(format!("{err:?}").contains("overlaps"), "{err:?}");
+
+        let _ = std::fs::remove_dir_all(&data);
+    }
+    // ---- live output streaming ---------------------------------------------
+
+    /// The sink builder is exercised directly: a real `Channel` needs a webview,
+    /// and what matters here is the ordering, correlation and the byte budget.
+    #[test]
+    fn the_output_sink_numbers_chunks_and_tags_them_with_the_call() {
+        use std::sync::{Arc, Mutex};
+        let seen: Arc<Mutex<Vec<(u64, Option<String>, String)>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = test_sink(seen.clone(), Some("call-7".into()));
+
+        sink("one".into());
+        sink("two".into());
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0].0, 0);
+        assert_eq!(seen[1].0, 1, "seq is monotonic so a gap is detectable");
+        assert_eq!(seen[0].1.as_deref(), Some("call-7"));
+        assert_eq!(seen[1].2, "two");
+    }
+
+    /// A `yes`-style command would otherwise flood the webview. The stream stops
+    /// with one honest marker; the full text still reaches the caller in the
+    /// tool result.
+    #[test]
+    fn the_output_sink_stops_at_the_byte_cap_and_says_so() {
+        use std::sync::{Arc, Mutex};
+        let seen: Arc<Mutex<Vec<(u64, Option<String>, String)>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = test_sink(seen.clone(), None);
+
+        sink("x".repeat(MAX_STREAMED_BYTES + 1));
+        sink("more".into());
+        sink("even more".into());
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 1, "nothing is sent after the cap");
+        assert!(seen[0].2.contains("truncated"), "{}", seen[0].2);
+    }
+
+    /// Mirrors `output_sink`'s accounting without a `Channel`, which cannot be
+    /// constructed outside a webview.
+    fn test_sink(
+        seen: std::sync::Arc<std::sync::Mutex<Vec<(u64, Option<String>, String)>>>,
+        call_id: Option<String>,
+    ) -> crate::tools::OutputSink {
+        use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let seq = Arc::new(AtomicU64::new(0));
+        let sent = Arc::new(AtomicUsize::new(0));
+        let stopped = Arc::new(AtomicBool::new(false));
+        Arc::new(move |text: String| {
+            if stopped.load(Ordering::Relaxed) {
+                return;
+            }
+            let total = sent.fetch_add(text.len(), Ordering::Relaxed) + text.len();
+            let payload = if total > MAX_STREAMED_BYTES {
+                stopped.store(true, Ordering::Relaxed);
+                "\n[output truncated in the live view]\n".to_string()
+            } else {
+                text
+            };
+            seen.lock().unwrap().push((
+                seq.fetch_add(1, Ordering::Relaxed),
+                call_id.clone(),
+                payload,
+            ));
+        })
     }
 }

@@ -141,18 +141,30 @@ vi.mock('@/hooks/useAttachments', () => ({
 }))
 
 let attachmentsList: any[] = []
+/** Attachments stored under a specific scope key, for the scopeKey tests. */
+let attachmentsByKey: Record<string, any[]> = {}
+/** Keys ChatInput actually read this render, so a mismatch is visible. */
+let readKeys: string[] = []
 const setAttachmentsMock = vi.fn()
 const clearAttachmentsMock = vi.fn()
 const transferAttachmentsMock = vi.fn()
+// Key-aware on purpose: the store is keyed, and a caller reading a different
+// key than the writer used is exactly the bug this mock has to be able to see.
+const attachmentStore = {
+  getAttachments: (key: string) => {
+    readKeys.push(key)
+    return attachmentsByKey[key] ?? attachmentsList
+  },
+  setAttachments: setAttachmentsMock,
+  clearAttachments: clearAttachmentsMock,
+  transferAttachments: transferAttachmentsMock,
+}
 vi.mock('@/hooks/useChatAttachments', () => ({
   NEW_THREAD_ATTACHMENT_KEY: '__new_thread__',
-  useChatAttachments: (selector: any) =>
-    selector({
-      getAttachments: () => attachmentsList,
-      setAttachments: setAttachmentsMock,
-      clearAttachments: clearAttachmentsMock,
-      transferAttachments: transferAttachmentsMock,
-    }),
+  useChatAttachments: Object.assign(
+    (selector: any) => selector(attachmentStore),
+    { getState: () => attachmentStore }
+  ),
 }))
 
 vi.mock('@/hooks/useJanBrowserExtension', () => ({
@@ -310,6 +322,8 @@ const resetAll = () => {
   promptState = ''
   appStateOverrides = {}
   attachmentsList = []
+  attachmentsByKey = {}
+  readKeys = []
   agentModeOn = false
   selectedModelOverride = {
     id: 'model-a',
@@ -594,6 +608,85 @@ describe('ChatInput', () => {
       promptState = ''
       renderInput()
       expect(screen.queryByTestId('stub-token-counter')).not.toBeInTheDocument()
+    })
+  })
+
+  // Cowork is not keyed by thread: it passes its session id as scopeKey, and
+  // the preview panel writes annotation images under that same id. Reading the
+  // thread key here silently dropped every annotation.
+  it('reads attachments under scopeKey and shows them in the input', () => {
+    attachmentsByKey['code-session-1'] = [
+      {
+        type: 'image',
+        name: 'annotation.png',
+        dataUrl: 'data:image/png;base64,annotated',
+        mimeType: 'image/png',
+      },
+    ]
+    renderInput({ scopeKey: 'code-session-1' })
+    expect(readKeys).toContain('code-session-1')
+    const thumb = document.querySelector(
+      'img[src="data:image/png;base64,annotated"]'
+    )
+    expect(thumb).toBeTruthy()
+  })
+
+  it('falls back to the thread key when no scopeKey is given', () => {
+    renderInput()
+    expect(readKeys.length).toBeGreaterThan(0)
+    expect(readKeys).not.toContain('code-session-1')
+  })
+
+  // A scopeKey caller owns a stable id from the start; migrating the general
+  // chat's "new thread" draft into it would steal another surface's files.
+  it('does not migrate the new-thread draft into a scopeKey surface', () => {
+    renderInput({ scopeKey: 'code-session-1' })
+    expect(transferAttachmentsMock).not.toHaveBeenCalled()
+  })
+
+  describe('tool controls', () => {
+    const icons = (cls: string) =>
+      document.querySelectorAll(`.tabler-icon-${cls}`).length
+
+    // Web access is a global capability both surfaces honour -- Cowork reads
+    // the same store when it builds its tool set -- so the toggle travels.
+    it('offers the web-search toggle on every surface', () => {
+      renderInput()
+      expect(icons('world-search')).toBe(1)
+      renderInput({ ownsToolSet: false })
+      expect(icons('world-search')).toBeGreaterThan(0)
+    })
+
+    // Its only switch is Settings > Agent Tools now. In the composer it read as
+    // a per-message choice while actually flipping a global.
+    it('no longer offers the agent-tools toggle', () => {
+      renderInput()
+      expect(icons('folder-code')).toBe(0)
+    })
+
+    it('withholds MCP controls from a surface that owns its tool set', () => {
+      renderInput({ ownsToolSet: false })
+      // The composer still works: the textarea and attachments stay.
+      expect(getTextarea()).toBeInTheDocument()
+    })
+  })
+
+  describe('surfaceControls', () => {
+    it('docks a surface\'s own controls in the control row', () => {
+      renderInput({ surfaceControls: <button>plan</button> })
+      expect(screen.getByText('plan')).toBeInTheDocument()
+    })
+
+    // They configure the next message, not the run in flight, so streaming
+    // must not disable them the way it dims the tool icons.
+    it('keeps them live while streaming', () => {
+      renderInput({
+        surfaceControls: <button>plan</button>,
+        chatStatus: 'streaming',
+      })
+      const dimmed = document.querySelector('.pointer-events-none')
+      expect(dimmed).toBeTruthy()
+      expect(dimmed!.contains(screen.getByText('plan'))).toBe(false)
     })
   })
 })

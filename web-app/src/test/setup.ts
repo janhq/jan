@@ -113,6 +113,7 @@ const mockServiceHub = {
   opener: vi.fn().mockReturnValue({
     open: vi.fn().mockResolvedValue(undefined),
     revealItemInDir: vi.fn().mockResolvedValue(undefined),
+    openPath: vi.fn().mockResolvedValue(undefined),
   }),
   updater: () => ({
     checkForUpdates: vi.fn().mockResolvedValue(null),
@@ -143,9 +144,27 @@ const mockServiceHub = {
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => mockServiceHub,
   getServiceHub: () => mockServiceHub,
+  // The transports read the hub off the store in their constructor, so an
+  // incomplete mock here makes the class impossible to instantiate in a test.
+  useServiceStore: {
+    getState: () => ({ serviceHub: mockServiceHub }),
+    setState: vi.fn(),
+    subscribe: vi.fn(),
+  },
   initializeServiceHubStore: vi.fn(),
   isServiceHubInitialized: () => true,
 }))
+
+// Radix's floating primitives (Tooltip, Popover, Select) measure with
+// ResizeObserver, which jsdom does not implement. Stubbed globally rather than
+// per test file, where it was already copied three times.
+if (!('ResizeObserver' in globalThis)) {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+}
 
 // Mock window.matchMedia for useMediaQuery tests
 Object.defineProperty(window, 'matchMedia', {

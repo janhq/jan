@@ -3,6 +3,8 @@ import { cn, formatBytes } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
+import type { ReactNode } from 'react'
+import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -32,7 +34,6 @@ import {
   IconPaperclip,
   IconLoader2,
   IconWorldSearch,
-  IconFolderCode,
   IconBrandChrome,
 } from '@tabler/icons-react'
 import { generateId } from 'ai'
@@ -71,6 +72,7 @@ import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
+import type { TokenUsageSource } from '@/hooks/useTokensCount'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
@@ -110,7 +112,6 @@ import {
   type FilePickerEntry as FileEntry,
 } from '@/lib/path-references'
 import { FilePickerPopover } from '@/components/FilePickerPopover'
-import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
 
 type ChatInputProps = {
   className?: string
@@ -125,6 +126,33 @@ type ChatInputProps = {
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
+  // Overrides the conversation scope this input belongs to — both its message
+  // queue and its pending attachments (default: useThreads' currentThreadId).
+  // Callers outside the general chat (e.g. Cowork, keyed by session id) pass
+  // their own id so each gets an independent queue and attachment draft.
+  scopeKey?: string
+  /**
+   * Whether the surface's tool set is configured from this composer.
+   *
+   * False for a surface that builds its own set (Cowork, via
+   * `buildCoworkTools`). Its toggles here would be inert on this surface while
+   * still writing the global chat stores, so a user turning "agent tools" off
+   * in Cowork would silently disable them in Chat.
+   */
+  ownsToolSet?: boolean
+  /**
+   * Surface-specific controls docked in the composer's control row (Cowork's
+   * plan toggle and folder chip). They sit outside the streaming dim, because
+   * both configure the *next* message rather than the run in flight.
+   */
+  surfaceControls?: ReactNode
+  /**
+   * Usage for a surface that keeps no thread messages (Cowork). Rendering the
+   * counter here rather than in the caller is what keeps its placement, the
+   * `tokenCounterCompact` setting and the spacing to the send button identical
+   * across surfaces.
+   */
+  tokenSource?: TokenUsageSource
 }
 
 // Video containers llama-server can decode via ffmpeg/ffprobe into frames.
@@ -153,6 +181,10 @@ const ChatInput = memo(function ChatInput({
   onSubmit,
   onStop,
   chatStatus,
+  scopeKey,
+  ownsToolSet = true,
+  surfaceControls,
+  tokenSource,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
@@ -195,13 +227,11 @@ const ChatInput = memo(function ChatInput({
   )
   // When projectId is present, treat as normal chat (disable agent mode UI)
   const effectiveAgentMode = isAgentMode && !projectId
+  // Gate for the controls that shape which tools the model is offered.
+  const showToolControls = ownsToolSet && !effectiveAgentMode
   const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
   const webSearchEnabled = useWebSearchConfig((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useWebSearchConfig((s) => s.setWebSearchEnabled)
-  const agentToolsEnabled = useAgentToolsConfig((s) => s.agentToolsEnabled)
-  const setAgentToolsEnabled = useAgentToolsConfig(
-    (s) => s.setAgentToolsEnabled
-  )
 
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [filePickerQuery, setFilePickerQuery] = useState('')
@@ -391,6 +421,7 @@ const ChatInput = memo(function ChatInput({
     isInitialMessage: !!initialMessage,
     hasMessages: (threadMessages?.length ?? 0) > 0,
     hasPromptText: prompt.trim().length > 0,
+    hasReportedUsage: (tokenSource?.usage?.totalTokens ?? 0) > 0,
   })
   const [selectedAssistantId, setSelectedAssistantId] = useState<
     string | undefined
@@ -434,7 +465,10 @@ const ChatInput = memo(function ChatInput({
   const maxFileSizeMB = useAttachments((s) => s.maxFileSizeMB)
 
   // Derived: any document currently processing (ingestion in progress)
-  const attachmentsKey = currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
+  // Same scope as the message queue: a surface writing attachments under its
+  // own id would have them silently dropped if this read a thread id.
+  const attachmentsKey =
+    scopeKey ?? currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
   const attachments = useChatAttachments(
     useCallback(
       (state) => state.getAttachments(attachmentsKey),
@@ -468,21 +502,26 @@ const ChatInput = memo(function ChatInput({
   } | null>(null)
 
   // Queued messages for this thread (shown as chips in the input area)
+  const queueId = scopeKey ?? currentThreadId ?? ''
   const queuedMessages = useMessageQueue(
-    useShallow((s) => s.getQueue(currentThreadId ?? ''))
+    useShallow((s) => s.getQueue(queueId))
   )
   const queueLength = queuedMessages.length
 
   const removeQueuedMessage = useCallback(
     (id: string) => {
-      useMessageQueue.getState().removeMessage(currentThreadId ?? '', id)
+      useMessageQueue.getState().removeMessage(queueId, id)
     },
-    [currentThreadId]
+    [queueId]
   )
 
   const lastTransferredThreadId = useRef<string | null>(null)
 
   useEffect(() => {
+    // Only the general chat migrates a draft: it composes under the "new
+    // thread" key until the thread exists. A scopeKey caller has a stable id
+    // from the start, so there is nothing to move.
+    if (scopeKey) return
     if (
       currentThreadId &&
       lastTransferredThreadId.current !== currentThreadId
@@ -490,7 +529,7 @@ const ChatInput = memo(function ChatInput({
       transferAttachments(NEW_THREAD_ATTACHMENT_KEY, currentThreadId)
       lastTransferredThreadId.current = currentThreadId
     }
-  }, [currentThreadId, transferAttachments])
+  }, [scopeKey, currentThreadId, transferAttachments])
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
@@ -549,8 +588,8 @@ const ChatInput = memo(function ChatInput({
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
       // When the model is still streaming, queue the message for later
-      if (isStreaming && currentThreadId) {
-        useMessageQueue.getState().enqueue(currentThreadId, {
+      if (isStreaming && queueId) {
+        useMessageQueue.getState().enqueue(queueId, {
           id: generateId(),
           text: effectivePrompt,
           createdAt: Date.now(),
@@ -2171,7 +2210,7 @@ const ChatInput = memo(function ChatInput({
             <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
               <div
                 className={cn(
-                  'px-1 flex items-center w-full gap-1',
+                  'px-1 flex items-center gap-1',
                   isStreaming && 'opacity-50 pointer-events-none'
                 )}
               >
@@ -2276,7 +2315,7 @@ const ChatInput = memo(function ChatInput({
                     updateCurrentThreadAssistant,
                   }}
                 />
-                {!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
+                {showToolControls && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -2318,7 +2357,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('embeddings') && (
+                {showToolControls && selectedModel?.capabilities?.includes('embeddings') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -2337,7 +2376,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') &&
+                {showToolControls && selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
                     // Use custom MCP component
@@ -2454,34 +2493,6 @@ const ChatInput = memo(function ChatInput({
                         {webSearchEnabled
                           ? t('common:web_search') + t('common:activeSuffix')
                           : t('common:web_search')}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        className={cn(agentToolsEnabled && 'text-primary')}
-                        onClick={() => setAgentToolsEnabled(!agentToolsEnabled)}
-                      >
-                        <IconFolderCode
-                          size={18}
-                          className={cn(
-                            'text-muted-foreground',
-                            agentToolsEnabled && 'text-primary'
-                          )}
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>
-                        {agentToolsEnabled
-                          ? t('common:agent_tools') + t('common:activeSuffix')
-                          : t('common:agent_tools')}
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -2802,12 +2813,25 @@ const ChatInput = memo(function ChatInput({
                     )
                   })()}
               </div>
+              {surfaceControls && (
+                <div className="flex min-w-0 flex-1 items-center gap-1">
+                  <Separator
+                    orientation="vertical"
+                    className="mx-1 h-4 shrink-0"
+                  />
+                  {surfaceControls}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
               {tokenCounterVisible && tokenCounterCompact && (
                 <div className="flex-1 flex justify-center">
-                  <TokenCounter messages={threadMessages || []} compact={true} />
+                  <TokenCounter
+                    messages={threadMessages || []}
+                    source={tokenSource}
+                    compact={true}
+                  />
                 </div>
               )}
 
@@ -2819,13 +2843,20 @@ const ChatInput = memo(function ChatInput({
                       size="icon-sm"
                       className="rounded-full mr-1 mb-1"
                       onClick={() => {
-                        if (!currentThreadId) return
-                        const queue = useMessageQueue.getState().getQueue(currentThreadId)
-                        if (queue.length > 0) {
-                          useMessageQueue.getState().clearQueue(currentThreadId)
-                        } else {
-                          stopStreaming(currentThreadId)
+                        // Stopping with messages queued clears the queue —
+                        // there is nothing to interrupt yet. The old
+                        // `if (!currentThreadId) return` guard made this button
+                        // inert for any surface without a thread id.
+                        if (queueId) {
+                          const queue = useMessageQueue
+                            .getState()
+                            .getQueue(queueId)
+                          if (queue.length > 0) {
+                            useMessageQueue.getState().clearQueue(queueId)
+                            return
+                          }
                         }
+                        stopStreaming(currentThreadId ?? '')
                       }}
                     >
                       <IconPlayerStopFilled />
@@ -2872,7 +2903,7 @@ const ChatInput = memo(function ChatInput({
 
       {tokenCounterVisible && !tokenCounterCompact && (
         <div className="flex-1 w-full flex justify-start px-2">
-          <TokenCounter messages={threadMessages || []} />
+          <TokenCounter messages={threadMessages || []} source={tokenSource} />
         </div>
       )}
 

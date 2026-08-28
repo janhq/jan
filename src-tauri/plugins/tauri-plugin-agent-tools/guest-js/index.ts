@@ -1,7 +1,19 @@
-import { invoke } from '@tauri-apps/api/core'
-import { SkillMeta, ToolResult, ToolSchema } from './types'
+import { invoke, Channel } from '@tauri-apps/api/core'
+import {
+  SkillMeta,
+  ToolOutputChunk,
+  ToolResult,
+  ToolSchema,
+  WorkspaceScope,
+} from './types'
 
-export { SkillMeta, ToolResult, ToolSchema } from './types'
+export {
+  SkillMeta,
+  ToolOutputChunk,
+  ToolResult,
+  ToolSchema,
+  WorkspaceScope,
+} from './types'
 
 /**
  * Every call takes the Jan data folder, because the plugin derives its
@@ -58,6 +70,43 @@ export async function threadWorkspaceSweep(
   keep: string[]
 ): Promise<number> {
   return await invoke('plugin:agent-tools|thread_workspace_sweep', {
+    dataFolder,
+    keep,
+  })
+}
+
+/** The Cowork session sandbox, created if absent. */
+export async function sessionWorkspacePath(
+  dataFolder: string,
+  sessionId: string
+): Promise<string> {
+  return await invoke('plugin:agent-tools|session_workspace_path', {
+    dataFolder,
+    sessionId,
+  })
+}
+
+/** Delete a Cowork session's sandbox, with its scratch. */
+export async function sessionWorkspaceDelete(
+  dataFolder: string,
+  sessionId: string
+): Promise<void> {
+  await invoke('plugin:agent-tools|session_workspace_delete', {
+    dataFolder,
+    sessionId,
+  })
+}
+
+/**
+ * Collect session sandboxes whose sessions no longer exist, returning how many
+ * were removed. Separate from the thread sweep: the id spaces are independent,
+ * and an empty `keep` is a no-op rather than a full wipe.
+ */
+export async function sessionWorkspaceSweep(
+  dataFolder: string,
+  keep: string[]
+): Promise<number> {
+  return await invoke('plugin:agent-tools|session_workspace_sweep', {
     dataFolder,
     keep,
   })
@@ -196,6 +245,16 @@ export async function sandboxStatus(): Promise<SandboxStatus> {
  *
  * `allowNetwork` opens the sandboxed shell's network namespace. It defaults to
  * off, so omitting it is the safe choice.
+ *
+ * `scope` picks the sandbox namespace: chat threads and Cowork sessions have
+ * independent id spaces and independent sweeps.
+ *
+ * `callId` is echoed on every streamed output chunk, which a backgrounded
+ * `bash` needs because it keeps producing output after the tool has returned.
+ *
+ * `readOnlyProject` attaches a folder the tools may read but never write. It is
+ * validated on the Rust side and rejected outright if it overlaps the workspace
+ * or the Jan data folder, rather than being silently dropped.
  */
 export async function executeTool(
   dataFolder: string,
@@ -204,7 +263,10 @@ export async function executeTool(
   args: Record<string, unknown>,
   project?: string,
   enabledSkills?: string[],
-  allowNetwork?: boolean
+  allowNetwork?: boolean,
+  readOnlyProject?: string,
+  scope?: WorkspaceScope,
+  callId?: string
 ): Promise<ToolResult> {
   return await invoke('plugin:agent-tools|execute_tool', {
     dataFolder,
@@ -214,5 +276,45 @@ export async function executeTool(
     args,
     enabledSkills,
     allowNetwork,
+    readOnlyProject,
+    scope,
+    callId,
+  })
+}
+
+/**
+ * `executeTool`, with the tool's output delivered as it is produced.
+ *
+ * A separate command rather than an optional argument: a Tauri `Channel` is a
+ * command argument, not a deserialisable value, so it cannot be wrapped in an
+ * optional. Chunks carry a monotonic `seq` and the `callId` they belong to.
+ */
+export async function executeToolStreaming(
+  dataFolder: string,
+  threadId: string,
+  name: string,
+  args: Record<string, unknown>,
+  onOutput: Channel<ToolOutputChunk>,
+  options?: {
+    project?: string
+    enabledSkills?: string[]
+    allowNetwork?: boolean
+    readOnlyProject?: string
+    scope?: WorkspaceScope
+    callId?: string
+  }
+): Promise<ToolResult> {
+  return await invoke('plugin:agent-tools|execute_tool_streaming', {
+    dataFolder,
+    threadId,
+    name,
+    args,
+    onOutput,
+    project: options?.project,
+    enabledSkills: options?.enabledSkills,
+    allowNetwork: options?.allowNetwork,
+    readOnlyProject: options?.readOnlyProject,
+    scope: options?.scope,
+    callId: options?.callId,
   })
 }

@@ -1,167 +1,22 @@
-//! Tauri command surface for the shared agent loop. Lives in-crate (not a
-//! separate plugin) because the loop depends on app-owned state
-//! (`LlamacppState`, MLX sessions, provider configs, MCP). `agent_run` bridges
-//! the loop's Tauri-free `mpsc` event stream onto a `tauri::ipc::Channel` and is
-//! cancellable by `run_id` via `agent_cancel`.
+//! Tauri command surface for the agent's project-scoped state: skills, the
+//! skill hub, plugins, and the git branch shown in the workspace pill.
+//!
+//! The agent *loop* is no longer driven from here. The desktop runs it in the
+//! renderer on the Vercel AI SDK (`web-app/src/lib/coworkRunner.ts`), calling
+//! the tool plugin directly; `core::agent::r#loop` stays for the headless CLI
+//! and the OpenAI-compatible API server, which still orchestrate in Rust.
 
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager, Runtime, State};
-use tauri_plugin_llamacpp::state::LlamacppState;
-use tokio::sync::{mpsc, oneshot, Mutex};
-
-use crate::core::agent::events::StreamEvent;
 use crate::core::agent::git;
 use crate::core::agent::plugins;
 use crate::core::agent::project::{
-    agent_toml_path, ensure_project, load_agent_config, permissions_from,
-    set_skills_enabled_in_agent_toml,
+    agent_toml_path, ensure_project, load_agent_config, set_skills_enabled_in_agent_toml,
 };
-use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs};
 use crate::core::agent::skill_hub;
 use crate::core::agent::skills as agent_skills;
+use crate::core::agent::subagent;
 use crate::core::app::commands::get_jan_data_folder_path;
-use crate::core::state::AppState;
-use tauri_plugin_agent_tools::permissions::ToolPermissions;
 use tauri_plugin_agent_tools::skills::{self, SkillMeta};
-use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tauri_plugin_agent_tools::workspace;
-
-/// Registry of in-flight agent runs keyed by client-supplied `run_id`, holding a
-/// one-shot cancel sender per run. Managed via `app.manage(AgentRuns::default())`.
-#[derive(Default)]
-pub struct AgentRuns(pub Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>);
-
-/// Registry of in-flight permission prompts keyed by request_id, shared with the
-/// agent loop so `agent_permission_respond` can resolve the awaiting tool call.
-#[derive(Default)]
-pub struct AgentPermissions(pub Arc<Mutex<HashMap<String, oneshot::Sender<PermissionDecision>>>>);
-
-fn build_orchestration_args<R: Runtime>(
-    app_handle: &AppHandle<R>,
-    state: &AppState,
-) -> OrchestrationArgs {
-    let llama_state: State<Arc<LlamacppState>> = app_handle.state();
-    let llama_state_arc = llama_state.inner().clone();
-
-    // MLX is macOS-only; elsewhere the session map is permanently empty.
-    #[cfg(target_os = "macos")]
-    let mlx_sessions = {
-        let mlx_state: State<tauri_plugin_mlx::state::MlxState> = app_handle.state();
-        mlx_state.mlx_server_process.clone()
-    };
-    #[cfg(not(target_os = "macos"))]
-    let mlx_sessions: Arc<Mutex<HashMap<i32, crate::core::server::MlxBackendSession>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-
-    OrchestrationArgs {
-        client: crate::core::agent::upstream::agent_http_client(),
-        provider_configs: state.provider_configs.clone(),
-        llama_state: llama_state_arc,
-        mlx_sessions,
-        mcp_servers: state.mcp_servers.clone(),
-        mcp_settings: state.mcp_settings.clone(),
-        jan_data_folder: get_jan_data_folder_path(app_handle.clone())
-            .to_string_lossy()
-            .into_owned(),
-        permissions: ToolPermissions::allow_all(),
-        project_root: None,
-        permission_requests: Arc::new(Mutex::new(HashMap::new())),
-        ask_requests: None,
-        todo_registry: None,
-        system_prompt_override: None,
-        subagents_enabled: true,
-        max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
-        auto_approve: false,
-        run_mode: crate::core::agent::plan::RunMode::Normal,
-        session_id: None,
-        sandbox: None,
-    }
-}
-
-/// Run the agent loop for one request, streaming `StreamEvent`s to `on_event`.
-/// Resolves when the loop reaches a terminal state (or is cancelled); the
-/// terminal `Done`/`Error` is also delivered over the channel.
-#[tauri::command]
-pub async fn agent_run<R: Runtime>(
-    app_handle: AppHandle<R>,
-    state: State<'_, AppState>,
-    runs: State<'_, AgentRuns>,
-    perms_registry: State<'_, AgentPermissions>,
-    run_id: String,
-    body: serde_json::Value,
-    on_event: Channel<StreamEvent>,
-) -> Result<(), String> {
-    let mut args = build_orchestration_args(&app_handle, &state);
-    args.permission_requests = perms_registry.0.clone();
-
-    // When a project is explicitly named, its agent.toml governs tool permissions.
-    // The project is auto-managed: scaffold a `.jan/agent/` on first use, then
-    // load it. A malformed config is still a hard error (never silently permissive).
-    if let Some(project) = body.get("project").and_then(|v| v.as_str()) {
-        let project_root = std::path::PathBuf::from(project);
-        ensure_project(&project_root)?;
-        let cfg = load_agent_config(&project_root)?;
-        args.permissions = permissions_from(&cfg);
-        args.project_root = Some(project_root);
-    }
-
-    let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
-    let forward = tokio::spawn(async move {
-        while let Some(ev) = rx.recv().await {
-            if on_event.send(ev).is_err() {
-                break;
-            }
-        }
-    });
-
-    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
-    runs.0.lock().await.insert(run_id.clone(), cancel_tx);
-
-    // Cancellation is a normal terminal state: emit one `cancelled` event and
-    // resolve Ok so the invoke promise does not also surface as an error.
-    let result = tokio::select! {
-        r = run_orchestration_streamed(&tx, &body, &args) => r,
-        _ = cancel_rx => {
-            let _ = tx.send(StreamEvent::Error {
-                code: "cancelled".to_string(),
-                message: "Agent run cancelled".to_string(),
-            });
-            Ok(serde_json::Value::Null)
-        }
-    };
-
-    drop(tx);
-    let _ = forward.await;
-    runs.0.lock().await.remove(&run_id);
-
-    result.map(|_| ())
-}
-
-/// Cancel an in-flight `agent_run` by `run_id`. No-op if the run already
-/// finished or never existed.
-#[tauri::command]
-pub async fn agent_cancel(runs: State<'_, AgentRuns>, run_id: String) -> Result<(), String> {
-    if let Some(cancel_tx) = runs.0.lock().await.remove(&run_id) {
-        let _ = cancel_tx.send(());
-    }
-    Ok(())
-}
-
-/// Resolve an in-flight permission prompt emitted by the agent loop.
-#[tauri::command]
-pub async fn agent_permission_respond(
-    perms_registry: State<'_, AgentPermissions>,
-    request_id: String,
-    decision: PermissionDecision,
-) -> Result<(), String> {
-    if let Some(tx) = perms_registry.0.lock().await.remove(&request_id) {
-        let _ = tx.send(decision);
-    }
-    Ok(())
-}
 
 /// Strip the internal `ERROR: ` prefix (an agent-tool-output convention) so the
 /// message reads cleanly in a UI toast.
@@ -234,10 +89,7 @@ pub async fn agent_skill_enabled_get(project: String) -> Result<Vec<String>, Str
 /// Set the project's enabled-skill whitelist. Empty = all skills enabled.
 /// Persisted to `[skills].enabled` in agent.toml (format-preserving).
 #[tauri::command]
-pub async fn agent_skill_enabled_set(
-    project: String,
-    enabled: Vec<String>,
-) -> Result<(), String> {
+pub async fn agent_skill_enabled_set(project: String, enabled: Vec<String>) -> Result<(), String> {
     let root = std::path::PathBuf::from(&project);
     ensure_project(&root)?;
     set_skills_enabled_in_agent_toml(&agent_toml_path(&root), &enabled).map_err(ui_error)
@@ -301,4 +153,45 @@ pub async fn agent_plugin_search(
 #[tauri::command]
 pub fn agent_git_branch(project: String) -> Option<String> {
     git::current_branch(std::path::Path::new(&project))
+}
+
+/// A saved subagent definition, for the `task` tool's advertised name list and
+/// the Cowork subagents panel.
+#[derive(serde::Serialize)]
+pub struct SubagentDefinitionDto {
+    pub name: String,
+    pub description: String,
+    pub system_prompt: String,
+    /// When set, the child's toolset is this list intersected with the parent's;
+    /// it never widens. `None` inherits the parent's set.
+    pub allowed_tools: Option<Vec<String>>,
+    pub model: Option<String>,
+}
+
+/// Every subagent saved for the desktop, from the single
+/// `<jan_data>/agent-workspace/subagents/` directory.
+///
+/// Deliberately not the CLI's plugin/user/project merge: Cowork has no project
+/// root in a default session, and an attached folder is mounted read-only, so
+/// scanning it would let a cloned repo inject a system prompt and a tool
+/// allowlist into the agent. Malformed files are skipped, so a bad TOML costs one
+/// definition rather than the whole list.
+#[tauri::command]
+pub async fn agent_subagent_list<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+) -> Result<Vec<SubagentDefinitionDto>, String> {
+    let dir = subagent::desktop_subagents_dir(&get_jan_data_folder_path(app_handle));
+    Ok(
+        subagent::SubagentRegistry::load_one(&dir, subagent::SubagentScope::User)
+            .list()
+            .into_iter()
+            .map(|d| SubagentDefinitionDto {
+                name: d.name.clone(),
+                description: d.description.clone(),
+                system_prompt: d.system_prompt.clone(),
+                allowed_tools: d.allowed_tools.clone(),
+                model: d.model.clone(),
+            })
+            .collect(),
+    )
 }

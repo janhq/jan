@@ -1,7 +1,7 @@
 //! Built-in agent tools: the capability classification and the `BUILTIN_TOOLS`
 //! registry every other module in this crate keys off.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Windows-only confinement backend for [`jail`]. Present on every platform so
 /// the argv it builds stays unit-testable.
@@ -95,6 +95,21 @@ pub struct ToolContext<'a> {
     /// a backgrounded command keep reporting after the tool has returned its
     /// `job_id`.
     pub on_output: Option<OutputSink>,
+    /// Folders attached read-only: readable by the file tools and the shell,
+    /// never writable. Empty on every surface that has not attached one.
+    ///
+    /// Owned paths rather than borrows because they are canonicalized once at
+    /// attach time; re-canonicalizing per call would be both slower and a
+    /// check/use race of its own.
+    pub read_roots: &'a [PathBuf],
+    /// Correlation id echoed on every streamed output chunk.
+    ///
+    /// Needed because `bash` with `timeout: 0` backgrounds and keeps streaming
+    /// after the tool has returned: without an id the caller cannot route late
+    /// chunks to the tool call that produced them. Minted by the caller (the
+    /// frontend's tool-call id) rather than inside `bash`, so the sink can carry
+    /// it from the first chunk.
+    pub call_id: Option<&'a str>,
 }
 
 impl std::fmt::Debug for ToolContext<'_> {
@@ -112,6 +127,8 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("scratch_root", &self.scratch_root)
             .field("sandbox", &self.sandbox)
             .field("on_output", &self.on_output.is_some())
+            .field("read_roots", &self.read_roots)
+            .field("call_id", &self.call_id)
             .finish()
     }
 }
@@ -133,7 +150,22 @@ impl<'a> ToolContext<'a> {
             scratch_root: None,
             sandbox: true,
             on_output: None,
+            read_roots: &[],
+            call_id: None,
         }
+    }
+
+    /// Attach folders the tools may read but never write. Callers pass the
+    /// canonical form from [`crate::workspace::validate_read_root`].
+    pub fn with_read_roots(mut self, read_roots: &'a [PathBuf]) -> Self {
+        self.read_roots = read_roots;
+        self
+    }
+
+    /// Tag streamed output with `call_id`. See [`Self::call_id`].
+    pub fn with_call_id(mut self, call_id: &'a str) -> Self {
+        self.call_id = Some(call_id);
+        self
     }
 
     /// Stream this call's output to `sink` as it is produced, as well as
@@ -229,6 +261,12 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
     },
     BuiltinTool {
         name: "grep",
+        capability: Capability::Read,
+        path_args: &["path"],
+    },
+    // Read: it renders a file that is already reachable and writes nothing back.
+    BuiltinTool {
+        name: "screenshot",
         capability: Capability::Read,
         path_args: &["path"],
     },
@@ -344,8 +382,8 @@ mod tests {
 
     #[test]
     fn builtin_count_matches_expected() {
-        // 7 coding tools + 6 dedicated skill/memory tools + 2 native web tools.
-        assert_eq!(BUILTIN_TOOLS.len(), 15);
+        // 8 coding tools + 6 dedicated skill/memory tools + 2 native web tools.
+        assert_eq!(BUILTIN_TOOLS.len(), 16);
     }
 
     #[test]

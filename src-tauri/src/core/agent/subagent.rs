@@ -10,6 +10,11 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use tauri_plugin_agent_tools::permissions::ToolPermissions;
+use tauri_plugin_agent_tools::workspace;
+
+/// Directory name holding `<name>.toml` definitions, under both a project's
+/// `.jan/agent/` and the desktop's permanent store.
+const SUBAGENTS: &str = "subagents";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -76,15 +81,25 @@ impl std::fmt::Display for SubagentError {
 
 /// `~/.jan/agent/subagents/`. `None` when the home directory can't be resolved.
 pub fn user_subagents_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".jan").join("agent").join("subagents"))
+    dirs::home_dir().map(|h| h.join(".jan").join("agent").join(SUBAGENTS))
 }
 
 /// `<project_root>/.jan/agent/subagents/`.
 pub fn project_subagents_dir(project_root: &Path) -> PathBuf {
-    project_root
-        .join(".jan")
-        .join("agent")
-        .join("subagents")
+    project_root.join(".jan").join("agent").join(SUBAGENTS)
+}
+
+/// The desktop's single subagent directory:
+/// `<jan_data_folder>/agent-workspace/subagents/`.
+///
+/// Cowork has no project root in a default session and mounts an attached folder
+/// read-only, so two of the three CLI scopes (project, and plugin -- which is
+/// also project-relative) are unreachable or unwritable there. Desktop keeps one
+/// directory instead, a sibling of `memory/` and `skills/` in the permanent
+/// store. That placement also puts it outside every tool's project root, so the
+/// agent cannot rewrite its own definitions with `write`.
+pub fn desktop_subagents_dir(jan_data_folder: &Path) -> PathBuf {
+    workspace::store_dir(&workspace::permanent_store(jan_data_folder), SUBAGENTS)
 }
 
 /// A subagent name is used to build a filename, so it must be a single path
@@ -128,6 +143,15 @@ impl SubagentRegistry {
             SubagentScope::Project,
             &mut defs,
         );
+        Self { defs }
+    }
+
+    /// Load exactly one directory as one scope, for the desktop's flat layout
+    /// (see [`desktop_subagents_dir`]). No merge, so no shadowing: `get` and
+    /// `list` both see the same set.
+    pub fn load_one(dir: &Path, scope: SubagentScope) -> Self {
+        let mut defs = Vec::new();
+        load_dir(dir, scope, &mut defs);
         Self { defs }
     }
 
@@ -1165,6 +1189,48 @@ mod tests {
         assert_eq!(def.allowed_tools.as_deref(), Some(&["read".to_string(), "grep".to_string()][..]));
         assert_eq!(def.model.as_deref(), Some("m-1"));
         assert_eq!(def.scope, SubagentScope::Project);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn desktop_dir_is_a_sibling_of_the_store_kinds() {
+        let data = unique_root("desktopdir");
+        let dir = desktop_subagents_dir(&data);
+        assert_eq!(dir, data.join("agent-workspace").join("subagents"));
+        // A sibling of memory/ and skills/, never inside a thread or session
+        // sandbox -- that is what keeps `write` away from these definitions.
+        assert_eq!(
+            dir.parent(),
+            Some(workspace::permanent_store(&data).as_path())
+        );
+        assert_ne!(dir, workspace::threads_dir(&data));
+        assert_ne!(dir, workspace::sessions_dir(&data));
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn load_one_reads_only_the_directory_it_is_given() {
+        let root = unique_root("loadone");
+        let flat = root.join("flat");
+        write_def(&flat, "desktop-agent", "");
+        // A project-scoped definition under the same root must stay invisible:
+        // Cowork mounts an attached folder read-only and must not pick up
+        // definitions that ship inside it.
+        write_def(&project_subagents_dir(&root), "project-agent", "");
+
+        let reg = SubagentRegistry::load_one(&flat, SubagentScope::User);
+        assert_eq!(reg.list().len(), 1);
+        let def = reg.get("desktop-agent").expect("loaded");
+        assert_eq!(def.scope, SubagentScope::User);
+        assert!(reg.get("project-agent").is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn load_one_on_a_missing_directory_is_empty_not_an_error() {
+        let root = unique_root("loadone_missing");
+        let reg = SubagentRegistry::load_one(&root.join("nope"), SubagentScope::User);
+        assert!(reg.list().is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
 

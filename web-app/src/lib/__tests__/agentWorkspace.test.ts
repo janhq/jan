@@ -13,13 +13,14 @@ const api = {
 }
 const getJanDataFolder = vi.fn()
 const revealItemInDir = vi.fn()
+const openPath = vi.fn()
 
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => api)
 
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({
     app: () => ({ getJanDataFolder }),
-    opener: () => ({ revealItemInDir }),
+    opener: () => ({ revealItemInDir, openPath }),
   }),
 }))
 
@@ -30,6 +31,7 @@ describe('agentWorkspace', () => {
     api.workspacePath.mockResolvedValue('/data/agent-workspace')
     getJanDataFolder.mockReset().mockResolvedValue('/data')
     revealItemInDir.mockReset()
+    openPath.mockReset()
   })
 
   /// Every call resolves the data folder first; none of them take a project
@@ -81,9 +83,12 @@ describe('agentWorkspace', () => {
     expect(api.memoryList).not.toHaveBeenCalled()
   })
 
-  it('reveals the resolved store path, not the data folder', async () => {
+  // openPath, not revealItemInDir: revealing a directory selects it in its
+  // parent, which is not what "open the store" means.
+  it('opens the resolved store path, not the data folder', async () => {
     const ws = await import('../agentWorkspace')
     await ws.revealStore()
-    expect(revealItemInDir).toHaveBeenCalledWith('/data/agent-workspace')
+    expect(openPath).toHaveBeenCalledWith('/data/agent-workspace')
+    expect(revealItemInDir).not.toHaveBeenCalled()
   })
 })

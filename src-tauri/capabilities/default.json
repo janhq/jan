@@ -24,6 +24,8 @@
     "log:default",
     "core:webview:allow-create-webview-window",
     "opener:allow-open-url",
+    "opener:allow-open-path",
+    "opener:allow-reveal-item-in-dir",
     "store:default",
     "vector-db:default",
     "rag:default",
@@ -63,6 +65,16 @@
         },
         {
           "url": "http://0.0.0.0:*"
+        }
+      ]
+    },
+    {
+      "identifier": "opener:allow-open-path",
+      "description": "Open a Cowork artifact in the OS default application. Scoped to any path because a Cowork project folder is user-chosen and can live anywhere; the same breadth the assetProtocol scope already has.",
+      "windows": ["*"],
+      "allow": [
+        {
+          "path": "**"
         }
       ]
     }

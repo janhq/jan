@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { UIMessage } from 'ai'
-import type { CodeTurn } from '@/hooks/useCodeSessions'
+import type { CoworkTurn } from '@/types/coworkSession'
 import { reasoningPartsFromText } from '@/lib/messages'
 
 /**
- * Adapts the code screen's flat `CodeTurn[]` transcript into the AI SDK
+ * Adapts the code screen's flat `CoworkTurn[]` transcript into the AI SDK
  * `UIMessage[]` shape that `MessageItem` (the shared chat renderer) consumes.
  *
  * Grouping: each `user` turn starts a user message; every following
@@ -17,8 +17,8 @@ import { reasoningPartsFromText } from '@/lib/messages'
  * real coloured diff by `AgentToolWidget`, keyed on `toolCallId`. Folding it into
  * the output text would also corrupt the output the widget parses.
  */
-export function codeTurnsToUIMessages(
-  turns: CodeTurn[],
+export function coworkTurnsToUIMessages(
+  turns: CoworkTurn[],
   idPrefix = 'code'
 ): UIMessage[] {
   const messages: UIMessage[] = []
