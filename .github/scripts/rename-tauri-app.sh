@@ -25,13 +25,25 @@ fi
 # Use jq to transform the content
 jq --arg channel "$CHANNEL" --arg updater "$UPDATER" '
     .productName = "Jan-\($channel)" |
-    .identifier = "jan-\($channel).ai.app"
+    .identifier = "jan-\($channel).ai.app" |
+    .mainBinaryName = "Jan-\($channel)"
 ' "$INPUT_JSON_FILE" > ./tauri.conf.json.tmp
 
 cat ./tauri.conf.json.tmp
 
 rm $INPUT_JSON_FILE
 mv ./tauri.conf.json.tmp $INPUT_JSON_FILE
+
+# mainBinaryName must name a real Cargo bin target, so the desktop bin and
+# `default-run` have to be renamed with it. The workflow's ctoml call owns
+# `default-run`; the target itself only exists here.
+CARGO_TOML_PATH="$(dirname "$INPUT_JSON_FILE")/Cargo.toml"
+if [ -f "$CARGO_TOML_PATH" ]; then
+    echo "Renaming the desktop bin target in $CARGO_TOML_PATH..."
+    sed "s|^name = \"jan-desktop\"$|name = \"Jan-${CHANNEL}\"|" "$CARGO_TOML_PATH" > ./Cargo.toml.tmp
+    mv ./Cargo.toml.tmp "$CARGO_TOML_PATH"
+    grep -n "^name = \"Jan-${CHANNEL}\"$" "$CARGO_TOML_PATH"
+fi
 
 # Update Info.plist if it exists
 INFO_PLIST_PATH="./src-tauri/Info.plist"
