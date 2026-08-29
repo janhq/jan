@@ -162,48 +162,57 @@ pub(crate) fn find_installed(root: &Path, query: &str) -> Option<(String, Instal
 }
 
 fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
-    let dir = skills::plugins_dir(root);
-    let Ok(rd) = std::fs::read_dir(&dir) else {
-        return Vec::new();
-    };
-    // Scan each artifact kind once; per-plugin counts filter the shared lists
-    // rather than re-walking the whole plugin tree per plugin.
+    // A linked git worktree also sees the main worktree's plugins, the
+    // project-local one shadowing a same-named shared one. Counts come from
+    // the merged discovery above, so shared plugins report real payloads.
+    let mut seen = std::collections::HashSet::new();
     let all_skills = skills::discover_plugins(root);
     let all_commands = crate::core::agent::plugin_commands::discover(root);
     let mut out = Vec::new();
-    for entry in rd.flatten() {
-        let path = entry.path();
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let Some(directory) = path.file_name().and_then(|s| s.to_str()) else {
+    for r in skills::discovery_roots(root) {
+        let dir = skills::plugins_dir(&r);
+        let Ok(rd) = std::fs::read_dir(&dir) else {
             continue;
         };
-        if directory.starts_with(".installing-") {
-            continue;
+        // Scan each artifact kind once; per-plugin counts filter the shared
+        // lists rather than re-walking the whole plugin tree per plugin.
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let Some(directory) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if directory.starts_with(".installing-") {
+                continue;
+            }
+            if !seen.insert(directory.to_string()) {
+                continue;
+            }
+            let manifest = read_manifest(&path);
+            let plugin_skills = all_skills
+                .iter()
+                .filter(|e| e.plugin.as_deref() == Some(directory))
+                .count();
+            let plugin_commands = all_commands
+                .iter()
+                .filter(|e| e.plugin == directory)
+                .count();
+            let plugin_agents = crate::core::agent::subagent::count_plugin_agents(root, directory);
+            out.push((
+                directory.to_string(),
+                InstalledPlugin {
+                    name: manifest.name.unwrap_or_else(|| directory.to_string()),
+                    description: manifest.description.unwrap_or_default(),
+                    version: manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
+                    repo: manifest.repo.unwrap_or_default(),
+                    skills: plugin_skills,
+                    commands: plugin_commands,
+                    agents: plugin_agents,
+                },
+            ));
         }
-        let manifest = read_manifest(&path);
-        let plugin_skills = all_skills
-            .iter()
-            .filter(|e| e.plugin.as_deref() == Some(directory))
-            .count();
-        let plugin_commands = all_commands
-            .iter()
-            .filter(|e| e.plugin == directory)
-            .count();
-        let plugin_agents = crate::core::agent::subagent::count_plugin_agents(root, directory);
-        out.push((
-            directory.to_string(),
-            InstalledPlugin {
-                name: manifest.name.unwrap_or_else(|| directory.to_string()),
-                description: manifest.description.unwrap_or_default(),
-                version: manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
-                repo: manifest.repo.unwrap_or_default(),
-                skills: plugin_skills,
-                commands: plugin_commands,
-                agents: plugin_agents,
-            },
-        ));
     }
     out.sort_by(|a, b| a.1.name.cmp(&b.1.name));
     out

@@ -120,6 +120,37 @@ pub(crate) fn current_branch(path: &Path) -> Option<String> {
         .filter(|s| !s.is_empty() && s != "HEAD")
 }
 
+/// The main worktree's root when `path` sits in a *linked* worktree, `None`
+/// when `path` is the main worktree itself (or not a git repo at all). Skills
+/// and plugins are installed under `<repo>/.jan/agent` in whatever checkout ran
+/// the install; a linked worktree has its own working tree but shares the
+/// repository, so agent setup should follow the repo, not the checkout.
+/// `--git-common-dir` points at the shared `<main>/.git`; the main worktree
+/// root is its parent. `--path-format=absolute` (git 2.31+) keeps the answer
+/// usable no matter which cwd git would otherwise resolve against.
+pub(crate) fn worktree_primary_root(path: &Path) -> Option<PathBuf> {
+    let p = path.to_string_lossy();
+    let common = git(&[
+        "-C",
+        &p,
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-common-dir",
+    ])
+    .ok()
+    .map(|s| s.trim().to_string())
+    .filter(|s| !s.is_empty())?;
+    let primary = PathBuf::from(&common).parent()?.to_path_buf();
+    // Only a linked worktree shares: the main worktree's common dir lives
+    // *inside* its own root, so this filter also keeps callers from merging a
+    // directory with itself (duplicate entries).
+    if primary == path {
+        None
+    } else {
+        Some(primary)
+    }
+}
+
 /// The canonical empty tree object every git repo has, without needing a
 /// commit to hash it from -- used as the base tree when `HEAD` is unborn.
 #[cfg(feature = "cli")]
@@ -413,6 +444,25 @@ mod tests {
         assert_eq!(second.as_deref(), Some("feature/other"));
         assert_ne!(first, second, "the branch must change after an external checkout");
 
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A linked worktree shares the repo's common dir but has its own working
+    /// tree: `worktree_primary_root` must resolve to the main checkout there,
+    /// and to `None` in the main checkout itself (no self-merge).
+    #[test]
+    fn worktree_primary_root_resolves_linked_worktrees() {
+        let Some(root) = init_repo() else { return };
+        assert_eq!(worktree_primary_root(&root), None, "main worktree has no primary");
+
+        let linked = std::env::temp_dir().join(format!("jan_wt_linked_{}", COUNTER.fetch_add(1, Ordering::SeqCst)));
+        let r = root.to_string_lossy().to_string();
+        let l = linked.to_string_lossy().to_string();
+        git(&["-C", &r, "worktree", "add", &l, "-b", "jan-test-linked"])
+            .expect("add worktree");
+        assert_eq!(worktree_primary_root(&linked).as_deref(), Some(root.as_path()));
+
+        let _ = std::fs::remove_dir_all(&linked);
         let _ = std::fs::remove_dir_all(&root);
     }
 }
