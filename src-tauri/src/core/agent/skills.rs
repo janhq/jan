@@ -538,12 +538,20 @@ pub(crate) fn user_catalog(root: &Path, enabled: &[String]) -> Vec<SkillMeta> {
     side_catalog(root, enabled, |p| p.user_invocable)
 }
 
+/// Every discovered skill (project + plugin), both invocation sides, ignoring
+/// the enabled whitelist — the full disk truth. This is what `/reload skills`
+/// diffs against the previous scan, so an edit or install shows up as an
+/// added/removed/changed entry regardless of who may invoke it.
+pub(crate) fn full_catalog(root: &Path) -> Vec<SkillMeta> {
+    side_catalog(root, &[], |_| true)
+}
+
 /// Metadata for every skill one plugin ships (both invocation sides), for the
 /// `/plugin list` view. The enabled whitelist is intentionally ignored here:
 /// the management view shows what the plugin contributes, not what is active.
 #[cfg(feature = "cli")]
 pub(crate) fn plugin_skill_metas(root: &Path, plugin: &str) -> Vec<SkillMeta> {
-    let mut metas = side_catalog(root, &[], |_| true);
+    let mut metas = full_catalog(root);
     metas.retain(|m| m.plugin.as_deref() == Some(plugin));
     metas
 }
