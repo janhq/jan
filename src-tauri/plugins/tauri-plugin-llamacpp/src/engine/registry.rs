@@ -7,6 +7,12 @@
 //! The two invariants are taken from upstream (`server-models.cpp:92-95` and
 //! `:103-210`): never evict a model with requests in flight, and make a caller
 //! that arrives while the registry is full wait rather than fail.
+//!
+//! Capacity is per kind: `models_max` counts chat models only, and embedding
+//! models live in a single reserved slot of their own -- loading the embedder
+//! never evicts a chat model, and a chat model is never the victim that makes
+//! room for another chat model. This is what gives the local API the same
+//! "switch" behavior the desktop's own load path enforces.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,6 +35,11 @@ pub struct LoadedModel {
     /// with a non-zero count, or it would cancel a live generation.
     inflight: usize,
     last_used: u64,
+    /// Whether the engine was started as an embedding model (`embeddings =
+    /// true` in its preset section, `--embeddings` in its arg list). Capacity
+    /// and eviction are per kind: chat models fill `models_max`, an embedding
+    /// model fills the single reserved slot.
+    is_embedding: bool,
 }
 
 impl LoadedModel {
@@ -41,7 +52,9 @@ impl LoadedModel {
 pub enum RegistryError {
     /// Every slot is taken and every resident model is busy, so nothing can be
     /// evicted to make room.
-    Full { models_max: usize },
+    Full {
+        models_max: usize,
+    },
     Engine(EngineError),
 }
 
@@ -114,7 +127,9 @@ pub struct Registry {
     /// methods -- has to forget them before it hands one of their slot ids to
     /// another thread. `take_dropped` is drained where occupancy is claimed.
     dropped: Vec<String>,
-    /// 0 means unlimited, matching llama.cpp's `--models-max`.
+    /// Max concurrently resident CHAT models; 0 means unlimited, matching
+    /// llama.cpp's `--models-max`. Embedding models do not count against it:
+    /// one embedder may reside in a reserved slot of its own.
     models_max: usize,
     /// Where every transition below is published for `/models/sse`.
     events: EventBus,
@@ -214,14 +229,16 @@ impl Registry {
         self.failures.get(model_id).map(String::as_str)
     }
 
-    /// True when the registry is at capacity and nothing is evictable, i.e. a
-    /// caller must wait. Split out so the HTTP layer can queue instead of
-    /// holding the registry lock across a load.
-    pub fn is_saturated(&self) -> bool {
-        if self.models_max == 0 || self.loaded.len() < self.models_max {
+    /// True when the incoming model's kind is at capacity and nothing of that
+    /// kind is evictable, i.e. a caller must wait. Split out so the HTTP layer
+    /// can queue instead of holding the registry lock across a load.
+    pub fn is_saturated(&self, model_id: &str) -> bool {
+        if self.models_max == 0 {
             return false;
         }
-        self.lru_idle().is_none()
+        let embedding = self.specs.get(model_id).is_some_and(spec_is_embedding);
+        self.kind_count(embedding) >= self.kind_capacity(embedding)
+            && self.lru_idle_of_kind(embedding).is_none()
     }
 
     /// Acquires the engine for a model, loading (and evicting) as needed, and
@@ -246,7 +263,7 @@ impl Registry {
                 model_id.to_string(),
             )))?;
 
-        self.make_room()?;
+        self.make_room(model_id)?;
 
         self.events.emit(model_id, Transition::Loading);
         // Real load progress, straight from server_context. Only the `loading`
@@ -290,12 +307,14 @@ impl Registry {
             }
         };
         let engine = Arc::new(engine);
+        let is_embedding = spec_is_embedding(&spec);
         self.loaded.insert(
             model_id.to_string(),
             LoadedModel {
                 engine: Arc::clone(&engine),
                 inflight: 1,
                 last_used: next_tick(),
+                is_embedding,
             },
         );
         self.events.emit(model_id, Transition::Loaded);
@@ -421,43 +440,73 @@ impl Registry {
         ids
     }
 
-    /// Evicts LRU-idle models until one more fits under `models_max`.
+    /// Evicts same-kind LRU-idle models until one more of the incoming model's
+    /// kind fits.
+    ///
+    /// Capacities are per kind: chat models fill `models_max`; embedding
+    /// models own a single reserved slot. A chat arrival therefore never
+    /// evicts -- nor waits behind -- the embedder, and loading the embedder
+    /// never disturbs a chat model. The chat-vs-embedder split is what makes
+    /// switching models through the local API unload the outgoing chat model
+    /// instead of letting both pile up until VRAM runs out.
     ///
     /// Deliberately does *not* persist the victim's KV cache: `save_model_slots`
-    /// is called only from `unload_model`, which is the path Jan actually takes
-    /// when switching models (`models_max` is 1, so the extension unloads before
-    /// it loads). The victim's slot occupancy is still released here via
-    /// `dropped`, so the residual is a lost cache and a re-prefill, not a
-    /// cross-thread overwrite.
-    ///
-    /// It becomes reachable as soon as a user raises `models_max` above 1, or
-    /// when an embedding model loads alongside a chat model on a tight budget.
-    /// Saving here needs the same await-and-persist that `unload_model` does,
-    /// which the registry cannot do while holding its own lock -- so it belongs
-    /// with the caller, as a follow-up. `retire` has the same omission.
-    fn make_room(&mut self) -> Result<(), RegistryError> {
+    /// is called only from `unload_model`, which is the path the desktop's own
+    /// load path takes (its extension pre-evicts through `/models/unload`).
+    /// The victim's slot occupancy is still released here via `dropped`, so
+    /// the residual is a lost cache and a re-prefill, not a cross-thread
+    /// overwrite. Saving here needs the same await-and-persist that
+    /// `unload_model` does, which the registry cannot do while holding its own
+    /// lock -- so it belongs with the caller, as a follow-up. `retire` has the
+    /// same omission.
+    fn make_room(&mut self, incoming: &str) -> Result<(), RegistryError> {
         if self.models_max == 0 {
             return Ok(());
         }
-        while self.loaded.len() >= self.models_max {
-            let Some(victim) = self.lru_idle() else {
+        let incoming_embedding = self.specs.get(incoming).is_some_and(spec_is_embedding);
+        while self.kind_count(incoming_embedding) >= self.kind_capacity(incoming_embedding) {
+            let Some(victim) = self.lru_idle_of_kind(incoming_embedding) else {
                 return Err(RegistryError::Full {
                     models_max: self.models_max,
                 });
             };
             self.loaded.remove(&victim);
             self.dropped.push(victim.clone());
+            eprintln!(
+                "jan-llama-worker: evicted {} model {victim} (LRU idle) to make room for {incoming}",
+                if incoming_embedding { "embedding" } else { "chat" },
+            );
             self.events
                 .emit(&victim, Transition::Unloaded { exit_code: 0 });
         }
         Ok(())
     }
 
-    /// The least-recently-used model with nothing in flight.
-    fn lru_idle(&self) -> Option<String> {
+    /// Resident models of one kind. A loaded model whose spec has since
+    /// disappeared defaults to chat, the dominant kind.
+    fn kind_count(&self, embedding: bool) -> usize {
+        self.loaded
+            .values()
+            .filter(|m| m.is_embedding == embedding)
+            .count()
+    }
+
+    /// Chat models fill `models_max`; the embedding kind owns one reserved
+    /// slot, so at most one embedder is resident regardless of `models_max`.
+    fn kind_capacity(&self, embedding: bool) -> usize {
+        if embedding {
+            1
+        } else {
+            self.models_max
+        }
+    }
+
+    /// The least-recently-used model of one kind with nothing in flight.
+    fn lru_idle_of_kind(&self, embedding: bool) -> Option<String> {
         pick_lru_idle(
             self.loaded
                 .iter()
+                .filter(|(_, m)| m.is_embedding == embedding)
                 .map(|(id, m)| (id.as_str(), m.inflight, m.last_used)),
         )
     }
@@ -466,13 +515,29 @@ impl Registry {
 /// The eviction policy, over plain data so it can be tested without starting an
 /// engine. Busy models are never candidates; among idle ones the oldest tick
 /// wins.
-fn pick_lru_idle<'a>(
-    entries: impl Iterator<Item = (&'a str, usize, u64)>,
-) -> Option<String> {
+fn pick_lru_idle<'a>(entries: impl Iterator<Item = (&'a str, usize, u64)>) -> Option<String> {
     entries
         .filter(|(_, inflight, _)| *inflight == 0)
         .min_by_key(|(_, _, last_used)| *last_used)
         .map(|(id, _, _)| id.to_string())
+}
+
+/// Whether a spec starts llama-server as an embedding model.
+///
+/// Preset sections carry `embeddings = true` (written by Jan's preset
+/// generator); arg specs carry the `--embeddings`/`--embedding` flag. The
+/// answer decides which capacity a model fills: `models_max` for chat, the
+/// single reserved slot for embeddings.
+fn spec_is_embedding(spec: &LoadSpec) -> bool {
+    match spec {
+        LoadSpec::Args(args) => args
+            .iter()
+            .any(|a| a == "--embeddings" || a == "--embedding"),
+        LoadSpec::Preset { body, .. } => body.iter().any(|line| match line.split_once('=') {
+            Some((k, v)) => k.trim() == "embeddings" && v.trim().eq_ignore_ascii_case("true"),
+            None => false,
+        }),
+    }
 }
 
 /// The gguf a spec names, so its size and mtime can join the state guard. The
@@ -501,6 +566,16 @@ mod tests {
         LoadSpec::Args(vec!["llama-server".into(), "-m".into(), n.into()])
     }
 
+    /// An embedding-model spec in the shape the worker actually sees: a preset
+    /// section body (shared block merged in, sorted) with `embeddings = true`.
+    fn embed_spec(n: &str) -> LoadSpec {
+        LoadSpec::Preset {
+            ini_path: "/p.ini".into(),
+            section: n.into(),
+            body: vec!["embeddings = true".into(), format!("model = {n}.gguf")],
+        }
+    }
+
     /// Without the `engine` feature every load fails, which still exercises
     /// the bookkeeping: registration, capacity and eviction order are decided
     /// before an engine is ever started.
@@ -516,14 +591,23 @@ mod tests {
     /// config cannot do: `acquire` always fails there.
     #[cfg(not(feature = "engine"))]
     fn resident(r: &mut Registry, models: &[&str]) {
-        for m in models {
-            r.register(*m, spec(m));
+        resident_as(r, &models.iter().map(|m| (*m, false)).collect::<Vec<_>>());
+    }
+
+    /// Same, with a per-model kind: `true` registers and loads the model as an
+    /// embedding model (its spec carries `embeddings = true`).
+    #[cfg(not(feature = "engine"))]
+    fn resident_as(r: &mut Registry, models: &[(&str, bool)]) {
+        for (m, embedding) in models {
+            let sp = if *embedding { embed_spec(m) } else { spec(m) };
+            r.register((*m).to_string(), sp);
             r.loaded.insert(
                 (*m).to_string(),
                 LoadedModel {
                     engine: Arc::new(Engine::stub()),
                     inflight: 0,
                     last_used: next_tick(),
+                    is_embedding: *embedding,
                 },
             );
         }
@@ -550,7 +634,7 @@ mod tests {
         // than by a caller, which is the path with no async context at all.
         let mut r = Registry::new(1);
         resident(&mut r, &["c"]);
-        assert!(r.make_room().is_ok());
+        assert!(r.make_room("d").is_ok());
         assert_eq!(r.take_dropped(), vec!["c".to_string()]);
 
         let mut r = Registry::new(2);
@@ -595,7 +679,7 @@ mod tests {
     fn models_max_zero_means_unlimited() {
         let r = reg(0, &["a"]);
         assert_eq!(r.models_max(), 0);
-        assert!(!r.is_saturated(), "unlimited must never saturate");
+        assert!(!r.is_saturated("a"), "unlimited must never saturate");
     }
 
     #[test]
@@ -605,6 +689,129 @@ mod tests {
         r.release("a");
         r.release("a");
         assert!(!r.is_loaded("a"));
+    }
+
+    /// Capacity is per kind: a chat arrival evicts the LRU-idle CHAT model,
+    /// never the embedder -- even when the embedder is the older resident.
+    /// This is the local-API "switch" semantics at models_max = 1.
+    #[cfg(not(feature = "engine"))]
+    #[test]
+    fn a_chat_arrival_evicts_a_chat_model_never_the_embedder() {
+        let mut r = Registry::new(1);
+        resident_as(&mut r, &[("chat-a", false), ("embed", true)]);
+        r.loaded.get_mut("chat-a").unwrap().last_used = 1;
+        r.loaded.get_mut("embed").unwrap().last_used = 0; // older than chat-a
+        r.register("chat-b", spec("chat-b"));
+        assert!(r.make_room("chat-b").is_ok());
+        assert_eq!(r.take_dropped(), vec!["chat-a".to_string()]);
+        assert!(r.is_loaded("embed"), "the embedder must not be evicted");
+    }
+
+    /// The same policy from the other side: loading the embedder leaves the
+    /// chat model alone, so a RAG call cannot evict the model being talked to.
+    #[cfg(not(feature = "engine"))]
+    #[test]
+    fn an_embedding_arrival_never_evicts_a_chat_model() {
+        let mut r = Registry::new(1);
+        resident_as(&mut r, &[("chat-a", false)]);
+        r.register("embed", embed_spec("embed"));
+        assert!(r.make_room("embed").is_ok());
+        assert!(r.take_dropped().is_empty());
+        assert!(r.is_loaded("chat-a"));
+    }
+
+    /// At most one embedder is resident: a second embedder replaces the first
+    /// (the reserved slot is 1, independent of `models_max`).
+    #[cfg(not(feature = "engine"))]
+    #[test]
+    fn an_embedding_arrival_replaces_a_resident_idle_embedder() {
+        let mut r = Registry::new(1);
+        resident_as(&mut r, &[("embed-1", true), ("chat-a", false)]);
+        r.register("embed-2", embed_spec("embed-2"));
+        assert!(r.make_room("embed-2").is_ok());
+        assert_eq!(r.take_dropped(), vec!["embed-1".to_string()]);
+        assert!(r.is_loaded("chat-a"));
+    }
+
+    /// A busy chat model cannot be evicted, so a second chat model gets Full
+    /// and waits rather than cancelling a live generation.
+    #[cfg(not(feature = "engine"))]
+    #[test]
+    fn a_busy_chat_model_blocks_a_chat_arrival() {
+        let mut r = Registry::new(1);
+        resident_as(&mut r, &[("chat-a", false)]);
+        r.loaded.get_mut("chat-a").unwrap().inflight = 1;
+        r.register("chat-b", spec("chat-b"));
+        assert!(matches!(
+            r.make_room("chat-b"),
+            Err(RegistryError::Full { models_max: 1 })
+        ));
+    }
+
+    /// Saturation is per kind too: a busy chat model does not saturate the
+    /// registry for an embedding arrival, and vice versa.
+    #[cfg(not(feature = "engine"))]
+    #[test]
+    fn saturation_is_judged_per_kind() {
+        let mut r = Registry::new(1);
+        resident_as(&mut r, &[("chat-a", false), ("embed", true)]);
+        r.loaded.get_mut("chat-a").unwrap().inflight = 1;
+        assert!(r.is_saturated("chat-b"), "chat is full and busy");
+        assert!(!r.is_saturated("embed"), "the embedder slot is free");
+    }
+
+    /// Unlimited keeps its meaning for chat; nothing is evicted at all, as
+    /// before.
+    #[cfg(not(feature = "engine"))]
+    #[test]
+    fn unlimited_evicts_nothing() {
+        let mut r = Registry::new(0);
+        resident_as(&mut r, &[("chat-a", false), ("embed", true)]);
+        assert!(r.make_room("chat-b").is_ok());
+        assert!(r.make_room("embed-2").is_ok());
+        assert!(r.take_dropped().is_empty());
+    }
+
+    #[test]
+    fn a_preset_body_with_embeddings_true_marks_an_embedding_model() {
+        let embed = LoadSpec::Preset {
+            ini_path: "/p.ini".into(),
+            section: "st".into(),
+            body: vec!["embeddings = true".into(), "model = /m/st.gguf".into()],
+        };
+        assert!(spec_is_embedding(&embed));
+        // Shared-block merges and sorting must not hide the flag...
+        let merged = LoadSpec::Preset {
+            ini_path: "/p.ini".into(),
+            section: "st".into(),
+            body: vec![
+                "ctx-size = 4096".into(),
+                "embeddings = true".into(),
+                "model = /m/st.gguf".into(),
+            ],
+        };
+        assert!(spec_is_embedding(&merged));
+        // ...and `embeddings = false` (or its absence) stays a chat model.
+        let chat = LoadSpec::Preset {
+            ini_path: "/p.ini".into(),
+            section: "q".into(),
+            body: vec!["embeddings = false".into(), "model = /m/q.gguf".into()],
+        };
+        assert!(!spec_is_embedding(&chat));
+        assert!(!spec_is_embedding(&spec("q")));
+    }
+
+    #[test]
+    fn an_args_spec_with_the_embeddings_flag_marks_an_embedding_model() {
+        let args = LoadSpec::Args(vec![
+            "llama-server".into(),
+            "-m".into(),
+            "/m/q.gguf".into(),
+            "--embeddings".into(),
+        ]);
+        assert!(spec_is_embedding(&args));
+        let embedding_alias = LoadSpec::Args(vec!["llama-server".into(), "--embedding".into()]);
+        assert!(spec_is_embedding(&embedding_alias));
     }
 
     fn specs(pairs: &[(&str, &str)]) -> HashMap<String, LoadSpec> {

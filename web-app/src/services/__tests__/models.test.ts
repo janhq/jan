@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { DefaultModelsService } from '../models/default'
-import type { HuggingFaceRepo, CatalogModel } from '../models/types'
+import type { HuggingFaceRepo } from '../models/types'
 import { EngineManager, events, DownloadEvent } from '@janhq/core'
 
 const { mockEvents, mockDownloadEvent } = vi.hoisted(() => ({
@@ -15,12 +15,6 @@ vi.mock('@janhq/core', () => ({
 }))
 
 global.fetch = vi.fn()
-
-Object.defineProperty(global, 'MODEL_CATALOG_URL', {
-  value: 'https://example.com/models',
-  writable: true,
-  configurable: true,
-})
 
 describe('DefaultModelsService', () => {
   let modelsService: DefaultModelsService
@@ -56,24 +50,6 @@ describe('DefaultModelsService', () => {
       const mockModels = [{ id: 'model1' }, { id: 'model2' }]
       mockEngine.list.mockResolvedValue(mockModels)
       expect(await modelsService.fetchModels()).toEqual(mockModels)
-    })
-  })
-
-  describe('fetchModelCatalog', () => {
-    it('should fetch model catalog successfully', async () => {
-      const mockCatalog = [{ model_name: 'GPT-4', description: 'LLM' }]
-      ;(fetch as any).mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue(mockCatalog) })
-      expect(await modelsService.fetchModelCatalog()).toEqual(mockCatalog)
-    })
-
-    it('should handle fetch error', async () => {
-      ;(fetch as any).mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found' })
-      await expect(modelsService.fetchModelCatalog()).rejects.toThrow('Failed to fetch model catalog: 404 Not Found')
-    })
-
-    it('should handle network error', async () => {
-      ;(fetch as any).mockRejectedValue(new Error('Network error'))
-      await expect(modelsService.fetchModelCatalog()).rejects.toThrow('Failed to fetch model catalog: Network error')
     })
   })
 

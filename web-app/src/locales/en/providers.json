@@ -116,5 +116,245 @@
     "oneKeyHint": "Optional fallback keys are configured in Advanced.",
     "addKey": "Add key",
     "removeKey": "Remove key"
+  },
+  "llamacppSettings": {
+    "llamacpp_version": {
+      "title": "Version",
+      "description": "llama.cpp release version"
+    },
+    "llamacpp_backend": {
+      "title": "Backend",
+      "description": "Hardware backend for llama.cpp (CUDA, HIP/ROCm, Vulkan, CPU, etc.)"
+    },
+    "llamacpp_env": {
+      "title": "Environmental variables",
+      "description": "Environmental variables for llama.cpp(KEY=VALUE), separated by ';'"
+    },
+    "check_for_updates": {
+      "title": "Check for updates",
+      "description": "Fetch the remote llama.cpp release list. Required for the version dropdown to show releases beyond what's installed locally, and for update notifications."
+    },
+    "auto_update_engine": {
+      "title": "Auto update engine",
+      "description": "Automatically download and switch to the latest llamacpp engine when available. Requires network access on startup."
+    },
+    "verify_backend_deps": {
+      "title": "Verify backend dependencies",
+      "description": "Check that GPU backend shared libraries (CUDA, Vulkan, etc.) resolve on startup"
+    },
+    "models_max": {
+      "title": "Max Concurrently Loaded Chat Models",
+      "description": "Maximum number of chat models the router will keep loaded at once. 0 = unlimited."
+    },
+    "timeout": {
+      "title": "Timeout for llamacpp",
+      "description": "Llamacpp connection and load timeout in seconds"
+    },
+    "fit": {
+      "title": "Fit (auto-adjust to device memory)",
+      "description": "Whether to adjust unset arguments to fit in device memory ('on' or 'off')."
+    },
+    "fit_target": {
+      "title": "Fit Target per Device (MiB)",
+      "description": "Target margin per device for fit, comma-separated list of MiB values."
+    },
+    "fit_ctx": {
+      "title": "Fit Minimum Context Size",
+      "description": "Minimum context size (tokens) that can be set by the auto-fit option."
+    },
+    "threads": {
+      "title": "Threads",
+      "description": "Number of threads to use during generation (-1 for logical cores)."
+    },
+    "threads_batch": {
+      "title": "Threads (Batch)",
+      "description": "Number of threads for batch and prompt processing."
+    },
+    "ctx_shift": {
+      "title": "Context Shift",
+      "description": "Allow model to cut text in the beginning to accommodate new text in its memory"
+    },
+    "n_predict": {
+      "title": "Max Tokens to Predict",
+      "description": "Maximum number of tokens to generate (-1 = infinity)."
+    },
+    "ubatch_size": {
+      "title": "uBatch Size",
+      "description": "Physical maximum batch size for processing prompts."
+    },
+    "device": {
+      "title": "Devices for Offload",
+      "description": "Comma-separated list of devices to use for offloading."
+    },
+    "split_mode": {
+      "title": "GPU Split Mode",
+      "description": "How to split the model across multiple GPUs."
+    },
+    "main_gpu": {
+      "title": "Main GPU Index",
+      "description": "The GPU to use for the model (split-mode=none) or intermediate results."
+    },
+    "flash_attn": {
+      "title": "Flash Attention",
+      "description": "Enable Flash Attention for optimized performance."
+    },
+    "parallel": {
+      "title": "Parallel Sequences",
+      "description": "Number of parallel sequences to decode for your own chat requests."
+    },
+    "cont_batching": {
+      "title": "Continuous Batching",
+      "description": "Enable continuous batching for concurrent requests."
+    },
+    "no_mmap": {
+      "title": "Disable mmap",
+      "description": "Do not memory-map model (slower load but may reduce pageouts if not using mlock)"
+    },
+    "mlock": {
+      "title": "MLock",
+      "description": "Force system to keep model in RAM, preventing swapping/compression."
+    },
+    "cache_type_k": {
+      "title": "KV Cache K Type",
+      "description": "KV cache data type for Keys (default: f16)."
+    },
+    "cache_type_v": {
+      "title": "KV Cache V Type",
+      "description": "KV cache data type for Values (default: f16)."
+    },
+    "rope_scaling": {
+      "title": "RoPE Scaling Method",
+      "description": "RoPE frequency scaling method."
+    },
+    "rope_scale": {
+      "title": "RoPE Scale Factor",
+      "description": "RoPE context scaling factor."
+    },
+    "rope_freq_base": {
+      "title": "RoPE Frequency Base",
+      "description": "RoPE base frequency (0 = loaded from model)."
+    },
+    "rope_freq_scale": {
+      "title": "RoPE Frequency Scale Factor",
+      "description": "RoPE frequency scaling factor."
+    },
+    "cache_ram": {
+      "title": "Prompt Cache RAM (MiB)",
+      "description": "Maximum prompt cache size in MiB. -1 = unlimited, 0 = disabled."
+    },
+    "cache_reuse": {
+      "title": "Cache Reuse",
+      "description": "Min chunk size of matching prefix tokens to reuse from cache. 0 = disabled."
+    },
+    "swa_full": {
+      "title": "Full SWA Cache",
+      "description": "Use full-size KV cache for sliding-window-attention models."
+    },
+    "kv_unified": {
+      "title": "Unified KV Cache",
+      "description": "Use a single unified KV buffer shared across all slots. Saves memory when running multiple sessions."
+    },
+    "keep": {
+      "title": "Keep First N Tokens",
+      "description": "Number of tokens from the initial prompt to keep when context is shifted. -1 = keep everything."
+    },
+    "batch_size": {
+      "title": "Batch Size",
+      "description": "Logical maximum batch size for processing prompts."
+    },
+    "n_cpu_moe": {
+      "title": "MoE Layers on CPU",
+      "description": "Keep the Mixture-of-Experts weights of the first N layers in CPU memory. Lets a large MoE model fit in limited VRAM. 0 disables it."
+    },
+    "no_kv_offload": {
+      "title": "Disable KV Cache Offload",
+      "description": "Keep the KV cache in system RAM instead of GPU memory. Useful when VRAM is scarce, at the cost of speed."
+    },
+    "tensor_split": {
+      "title": "Tensor Split",
+      "description": "Comma-separated proportions for splitting the model across devices, e.g. \"3,1\". Leave empty for an even split."
+    },
+    "no_op_offload": {
+      "title": "Disable Op Offload",
+      "description": "Keep host tensor operations on the CPU instead of offloading them to the accelerator."
+    },
+    "persist_thread_cache": {
+      "title": "Remember Conversations Between Sessions",
+      "description": "Keep each conversation's prompt cache on disk so reopening it does not re-read the whole conversation. Restored only when the model, its settings and the llama.cpp build all match what saved it."
+    },
+    "thread_cache_size": {
+      "title": "Conversation Cache Disk Limit (MiB)",
+      "description": "Disk budget for saved conversation caches (default: 8192). The oldest are dropped first once it is reached. One long conversation can take hundreds of MiB."
+    },
+    "ctx_checkpoints": {
+      "title": "Context Checkpoints",
+      "description": "Maximum context checkpoints kept per slot, which let a shifted context be restored instead of reprocessed."
+    },
+    "checkpoint_min_step": {
+      "title": "Checkpoint Minimum Step",
+      "description": "Minimum number of tokens between context checkpoints."
+    }
+  },
+  "backendArchives": "Backend Archives",
+  "option": {
+    "auto": "Auto",
+    "on": "On",
+    "off": "Off",
+    "none": "None",
+    "layer": "Layer",
+    "full": "Full",
+    "linear": "Linear",
+    "yarn": "YaRN"
+  },
+  "importLlamacpp": {
+    "title": "Import Model",
+    "description": "Import a GGUF model file to add it to your collection. Enable multimodal support to attach an mmproj for image or audio input, or draft model support for speculative decoding. Embedding models are detected automatically.",
+    "multimodal": "Multimodal Support",
+    "multimodalDesc": "Enable if your model uses an mmproj for image or audio input. Modalities are detected from the projector file.",
+    "draft": "Draft Model Support",
+    "draftDesc": "Attach a smaller draft model (including MTP draft heads) for speculative decoding. The draft model must share the main model's tokenizer and vocabulary.",
+    "savedAs": "Model will be saved as:",
+    "modelFile": "Model File (GGUF)",
+    "required": "Required",
+    "requiredForMultimodal": "Required for Multimodal",
+    "requiredForDraft": "Required for Draft Model",
+    "change": "Change",
+    "selectGguf": "Select GGUF File",
+    "selectMmproj": "Select MMPROJ File",
+    "selectDraft": "Select Draft GGUF File",
+    "modelValidationError": "Model Validation Error",
+    "validatingModel": "Validating model file...",
+    "embeddingDetected": "Embedding model detected",
+    "embeddingDetectedDesc": "This model will be imported for embeddings only. Multimodal options are disabled.",
+    "mmprojFile": "MMPROJ File",
+    "mmprojValidationError": "MMProj Validation Error",
+    "validatingMmproj": "Validating MMProj file...",
+    "detected": "Detected:",
+    "vision": "Vision",
+    "audio": "Audio",
+    "draftFile": "Draft Model File (GGUF)",
+    "draftValidationError": "Draft Model Validation Error",
+    "validatingDraft": "Validating draft model file...",
+    "cancel": "Cancel",
+    "importing": "Importing...",
+    "importButton": "Import Model",
+    "clipModelError": "This model has CLIP architecture and cannot be imported as a text generation model. CLIP models are designed for vision tasks and require different handling.",
+    "mmprojArchMismatch": "This MMProj file has \"{{architecture}}\" architecture but should have \"clip\" architecture. MMProj files must be CLIP models for vision or audio processing.",
+    "mmprojReadFailed": "Failed to read MMProj metadata: {{message}}",
+    "readFailed": "Failed to read {{type}} metadata: {{message}}",
+    "draftClipError": "This file has CLIP architecture and cannot be used as a draft model.",
+    "draftValidationFailed": "Draft model validation failed",
+    "draftIncompatible": "Draft model is not compatible with the main model: {{reason}}",
+    "modelValidationFailed": "Model validation failed",
+    "toastSelectModel": "Please select a model file",
+    "toastSelectMmproj": "Please select both model and MMPROJ files for multimodal models",
+    "toastSelectDraft": "Please select a draft model file",
+    "toastNameUndetermined": "Unable to determine model name from file",
+    "toastModelExists": "Model already exists",
+    "toastModelExistsDesc": "{{name}} already imported",
+    "toastImportSuccess": "Model imported successfully",
+    "toastImportSuccessDesc": "{{name}} has been imported",
+    "toastImportFailed": "Failed to import model",
+    "toastUnknownError": "Unknown error occurred"
   }
 }

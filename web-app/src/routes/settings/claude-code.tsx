@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { getMirrorBase } from '@/lib/searchSources'
 import type { CatalogModel } from '@/services/models/types'
 import { JAN_CODE_HF_REPO } from '@/constants/models'
 import { toast } from 'sonner'
@@ -76,9 +77,9 @@ function ClaudeCodeIntegration() {
 
     const startServer = async (): Promise<void> => {
       const helperModelsToStart = [
-        { id: helperModels.big, role: 'Big' },
-        { id: helperModels.medium, role: 'Medium' },
-        { id: helperModels.small, role: 'Small' },
+        { id: helperModels.big, role: t('settings:claudeCode.roleBig') },
+        { id: helperModels.medium, role: t('settings:claudeCode.roleMedium') },
+        { id: helperModels.small, role: t('settings:claudeCode.roleSmall') },
       ]
         .filter((m) => m.id)
         .map((m) => m.id as string)
@@ -172,8 +173,8 @@ function ClaudeCodeIntegration() {
 
     try {
       if (serverStatus === 'stopped') {
-        toast.info('Starting server...', {
-          description: 'Preparing server for Claude Code',
+        toast.info(t('settings:claudeCode.startingServer'), {
+          description: t('settings:claudeCode.preparingServer'),
         })
         await startServer()
       }
@@ -198,7 +199,7 @@ function ClaudeCodeIntegration() {
     } catch (error) {
       console.error('Failed to launch Claude Code:', error)
       const errorMsg = error instanceof Error ? error.message : String(error)
-      toast.error('Failed to configure env vars', {
+      toast.error(t('settings:claudeCode.envVarsFailed'), {
         description: errorMsg,
       })
     }
@@ -239,44 +240,44 @@ function ClaudeCodeIntegration() {
                     <path d="M81 54H90V72H81V54Z" fill="#D77757" />
                   </svg>
                   <h1 className="text-foreground font-studio font-medium text-base">
-                    Claude Code integration
+                    {t('settings:claudeCode.integrationTitle')}
                   </h1>
                 </div>
               }
             >
               <CardItem
-                title="Large Model"
+                title={t('settings:claudeCode.largeModel')}
                 description="Opus"
                 actions={
                   <HelperModelSelector
                     providers={providers}
                     selectedModel={helperModels.big}
                     onSelect={(model) => setHelperModel('big', model)}
-                    placeholder="Select Big Model"
+                    placeholder={t('settings:claudeCode.selectBigModel')}
                   />
                 }
               />
               <CardItem
-                title="Medium Model"
+                title={t('settings:claudeCode.mediumModel')}
                 description="Sonnet"
                 actions={
                   <HelperModelSelector
                     providers={providers}
                     selectedModel={helperModels.medium}
                     onSelect={(model) => setHelperModel('medium', model)}
-                    placeholder="Select Medium Model"
+                    placeholder={t('settings:claudeCode.selectMediumModel')}
                   />
                 }
               />
               <CardItem
-                title="Small Model"
+                title={t('settings:claudeCode.smallModel')}
                 description="Haiku"
                 actions={
                   <HelperModelSelector
                     providers={providers}
                     selectedModel={helperModels.small}
                     onSelect={(model) => setHelperModel('small', model)}
-                    placeholder="Select Small Model"
+                    placeholder={t('settings:claudeCode.selectSmallModel')}
                   />
                 }
                 descriptionOutside={
@@ -296,7 +297,7 @@ function ClaudeCodeIntegration() {
                   onClick={() => setIsCustomCliDialogOpen(true)}
                 >
                   <IconPlus className="text-muted-foreground" size={14} />
-                  Environment Variables
+                  {t('settings:claudeCode.environmentVariables')}
                 </Button>
                 <div className="flex gap-2">
                   <Button
@@ -306,20 +307,18 @@ function ClaudeCodeIntegration() {
                       clearModels()
                       try {
                         await invoke('clear_claude_code_env')
-                        toast.success('Claude Code settings cleared')
+                        toast.success(t('settings:claudeCode.settingsCleared'))
                       } catch (e) {
                         toast.error(`Failed to clear env file: ${e}`)
                       }
                     }}
-                  >
-                    Reset
-                  </Button>
+                  >{t('settings:claudeCode.reset')}</Button>
                   <Button
                     size="sm"
                     onClick={handleLaunchClaudeCode}
                     disabled={isModelLoading}
                   >
-                    {isModelLoading ? 'Loading models...' : 'Save & Enable'}
+                    {isModelLoading ? t('settings:claudeCode.loadingModels') : t('settings:claudeCode.saveAndEnable')}
                   </Button>
                 </div>
               </div>
@@ -361,13 +360,14 @@ function HelperModelSelector({
   providers,
   selectedModel,
   onSelect,
-  placeholder = 'Select a model',
+  placeholder,
 }: {
   providers: ModelProvider[]
   selectedModel: string | null
   onSelect: (modelId: string) => void
   placeholder?: string
 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -450,7 +450,7 @@ function HelperModelSelector({
                       : 'bg-blue-500/10 text-blue-600'
                   )}
                 >
-                  {currentModel.isLocal ? 'Local' : 'Remote'}
+                  {currentModel.isLocal ? t('settings:claudeCode.modelLocal') : t('settings:claudeCode.modelRemote')}
                 </span>
                 <span>{formatModelWithSize(currentModel)}</span>
               </>
@@ -473,7 +473,7 @@ function HelperModelSelector({
               ref={searchInputRef}
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
-              placeholder="Search models..."
+              placeholder={t('settings:claudeCode.searchModelsPlaceholder')}
               className="text-sm font-normal outline-0 w-full"
             />
             {searchValue.length > 0 && (
@@ -564,6 +564,7 @@ function JanCodeRecommendation({
   selectedModel: string | null
   onSelect: (modelId: string) => void
 }) {
+  const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
@@ -574,16 +575,23 @@ function JanCodeRecommendation({
   )
 
   useEffect(() => {
-    serviceHub
-      .models()
-      .fetchHuggingFaceRepo(JAN_CODE_HF_REPO, huggingfaceToken)
-      .then((repo) => {
-        if (repo)
-          setJanCodeCatalog(
-            serviceHub.models().convertHfRepoToCatalogModel(repo)
-          )
-      })
-      .catch(() => {})
+    const load = async () => {
+      // 先 HF 官方;失败(国内无代理)回退 hf-mirror 镜像
+      const repo =
+        (await serviceHub
+          .models()
+          .fetchHuggingFaceRepo(JAN_CODE_HF_REPO, huggingfaceToken)) ||
+        (await fetch(
+          `${getMirrorBase()}/api/models/${JAN_CODE_HF_REPO}?blobs=true`
+        )
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null))
+      if (repo)
+        setJanCodeCatalog(
+          serviceHub.models().convertHfRepoToCatalogModel(repo)
+        )
+    }
+    load()
   }, [serviceHub, huggingfaceToken])
 
   const defaultVariant = useMemo(() => {
@@ -640,7 +648,7 @@ function JanCodeRecommendation({
     <div className="p-2.5 rounded-lg min-h-[54px] border border-primary/20 bg-primary/5 flex items-center justify-between gap-3">
       <div className="flex flex-col gap-0.5">
         <span className="text-xs font-medium text-foreground">
-          Use Jan-Code for a quick start
+          {t('settings:claudeCode.quickStartHint')}
         </span>
       </div>
       <div className="shrink-0">
@@ -692,9 +700,7 @@ function JanCodeRecommendation({
             variant="outline"
             onClick={handleDownload}
             disabled={!defaultVariant}
-          >
-            Setup
-          </Button>
+          >{t('settings:claudeCode.setup')}</Button>
         )}
       </div>
     </div>

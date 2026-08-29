@@ -168,6 +168,32 @@
     }
   }
 
+  /* Tables (README cards/variant tables render with native <table>) */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1em;
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
+  thead th {
+    font-weight: 600;
+    text-align: left;
+    padding: 0.5em 0.75em;
+    border-bottom: 1px solid var(--border);
+  }
+
+  tbody td {
+    padding: 0.5em 0.75em;
+    border-bottom: 1px solid var(--border);
+  }
+
+  tbody tr:hover {
+    background: var(--accent);
+  }
+
   /* Images */
   img {
     max-width: 100%;
@@ -197,4 +223,92 @@
 }
 [data-tool-call-block] + [data-tool-call-block] {
   margin-top: 16px;
+}
+
+/* ==========================================================================
+   README 详情页针对 .markdown-body 的少量微调
+   (GitHub markdown 排版由 github-readme-light/dark.css 负责,这里只补
+    README 详情页需要的容器与 README 特有的细节,不影响聊天消息)。 */
+.markdown-body.readme-detail {
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 0;
+  font-size: var(--text-base);
+  color: var(--foreground);
+}
+
+/* 分组行(作者用 <td colspan> 标注 Knowledge & STEM 等大类):整条强调底 */
+.markdown-body.readme-detail tbody td[colspan],
+.markdown-body.readme-detail tbody th[colspan] {
+  font-weight: 600;
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
+/* README 图片居中 + 圆角(GitHub 默认左对齐) */
+.markdown-body.readme-detail img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.25em auto;
+  border-radius: 8px;
+}
+
+/* 链接下划线更贴合模型卡风格 */
+.markdown-body.readme-detail a {
+  text-decoration: none;
+}
+.markdown-body.readme-detail a:hover {
+  text-decoration: underline;
+}
+
+/* GitHub 样式把代码块背景放在 .highlight 包裹上;react-markdown 输出裸 <pre><code>,
+   需补底色 + 圆角 + 内边距,否则 README 代码块无背景。 */
+.markdown-body.readme-detail pre {
+  padding: 1em 1.1em;
+  border-radius: 8px;
+  background: var(--bgColor-muted);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+}
+.markdown-body.readme-detail pre code {
+  background: transparent;
+}
+
+/* 引用块左边框用主题主色,更贴近模型卡视觉 */
+.markdown-body.readme-detail blockquote {
+  border-left-color: var(--color-primary);
+  color: var(--muted-foreground);
+}
+
+/* GitHub 提示框([!NOTE] 等):强调左边框 + 柔和中背景,边界更清晰。
+   显式给 background 兜底为 transparent,避免不支持 color-mix 时被刷成主色。 */
+.markdown-body.readme-detail .markdown-alert {
+  padding: 0.75em 1em;
+  border-left-width: 0.25em;
+  border-left-style: solid;
+  background: color-mix(in oklch, var(--color-primary) 6%, var(--background));
+}
+.markdown-body.readme-detail .markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-primary);
+}
+.markdown-body.readme-detail .markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-chart-2);
+  background: color-mix(in oklch, var(--color-chart-2) 7%, var(--background));
+}
+.markdown-body.readme-detail .markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-chart-4);
+  background: color-mix(in oklch, var(--color-chart-4) 7%, var(--background));
+}
+.markdown-body.readme-detail .markdown-alert.markdown-alert-warning,
+.markdown-body.readme-detail .markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-chart-1);
+  background: color-mix(in oklch, var(--color-chart-1) 7%, var(--background));
+}
+.markdown-body.readme-detail .markdown-alert .markdown-alert-title {
+  font-weight: 600;
+}
+.markdown-body.readme-detail .markdown-alert .octicon {
+  margin-right: 0.5em;
+  vertical-align: text-bottom;
 }

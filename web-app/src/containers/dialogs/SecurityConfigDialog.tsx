@@ -1,3 +1,4 @@
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useState, useEffect, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
@@ -74,6 +75,7 @@ export function SecurityConfigDialog({
   onClose,
   onSave,
 }: SecurityConfigDialogProps) {
+  const { t } = useTranslation()
   // Tab state
   const [activeTab, setActiveTab] = useState<TabType>('auth')
 
@@ -524,7 +526,7 @@ export function SecurityConfigDialog({
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter password"
+                placeholder={t('common:enterPassword')}
                 className="pr-10"
               />
               <Button
@@ -540,7 +542,7 @@ export function SecurityConfigDialog({
               type={showPassword ? 'text' : 'password'}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Confirm password"
+              placeholder={t('common:confirmPassword')}
             />
             {password && confirmPassword && password !== confirmPassword && (
               <p className="text-sm text-destructive">Passwords do not match</p>
@@ -824,7 +826,7 @@ export function SecurityConfigDialog({
           <DialogHeader>
             <div className="flex items-center gap-2">
               <IconShield size={24} className="text-primary" />
-              <DialogTitle>Security Settings</DialogTitle>
+              <DialogTitle>{t('common:securitySettings')}</DialogTitle>
             </div>
             <DialogDescription>
               Configure authentication, device management, and view access logs

@@ -146,7 +146,6 @@ const PRESET_AFFECTING_KEYS = new Set<string>([
   'checkpoint_min_step',
 ])
 
-
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
  * The class provides methods for initializing and stopping a model, and for making inference requests.
@@ -173,8 +172,7 @@ const SETUP_CONSENT_KEY = 'llamacpp-first-run-setup-started'
 const FALLBACK_EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
 const FALLBACK_EMBEDDING_MODEL_URL =
   'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true'
-const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY =
-  'llamacpp_model_yaml_backfill_v2'
+const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY = 'llamacpp_model_yaml_backfill_v2'
 
 /// The GPU-layers value the old UI shipped as its default. v1 of the backfill
 /// copied it into every model.yml, which pins offload to 100 layers and defeats
@@ -275,8 +273,7 @@ const MODEL_SETTINGS_YAML_MAPPING: Record<
   },
   chat_template: {
     yamlKey: 'chat_template',
-    coerce: (v) =>
-      typeof v === 'string' && v.trim().length > 0 ? v : null,
+    coerce: (v) => (typeof v === 'string' && v.trim().length > 0 ? v : null),
   },
   batch_size: {
     yamlKey: 'batch_size',
@@ -394,7 +391,10 @@ async function findLlamaServerDir(
 //  - lib/
 //    - e.g. libcudart.so.12
 
-export default class llamacpp_extension extends AIEngine implements EmbeddingEngine {
+export default class llamacpp_extension
+  extends AIEngine
+  implements EmbeddingEngine
+{
   provider: string = 'llamacpp'
   timeout: number = 600
   llamacpp_env: string = ''
@@ -424,8 +424,17 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   private presetPath?: string
   private engineStartLock: Promise<void> | null = null
   private userModelsMax: number = 1
-  private engineEmbeddingBonus: number = 0
   private loadedChatOrder: string[] = []
+
+  /**
+   * Closed while onLoad() runs. Boot-time callers (the local API server's
+   * auto-start) can reach ensureEngineReady() while onLoad is still reading
+   * settings, and generatePreset would then see an unset `config` (crashing
+   * on its first read, `kv_unified`). Open by default so callers that arrive
+   * before onLoad even starts (tests, early registration) behave as before.
+   */
+  private readyResolve?: () => void
+  private readyPromise: Promise<void> = Promise.resolve()
 
   // The engine worker spawn runs off the onLoad critical path; awaited via
   // ensureEngineReady() before any model load so inference never races it.
@@ -434,6 +443,20 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   private provisioning?: Promise<void>
 
   override async onLoad(): Promise<void> {
+    // Close the gate for the duration of onLoad; open it in `finally` so a
+    // failed onLoad lets callers through to the real, specific error instead
+    // of hanging.
+    this.readyPromise = new Promise((resolve) => {
+      this.readyResolve = resolve
+    })
+    try {
+      await this.doOnLoad()
+    } finally {
+      this.readyResolve?.()
+    }
+  }
+
+  private async doOnLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
 
     await this.migrateLocalStorageToFile()
@@ -463,7 +486,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
     await this.migrateAutoUnloadToModelsMax()
 
-    this.timeout = asI32(this.config.timeout, DEFAULT_TIMEOUT) || DEFAULT_TIMEOUT
+    this.timeout =
+      asI32(this.config.timeout, DEFAULT_TIMEOUT) || DEFAULT_TIMEOUT
     this.llamacpp_env = this.config.llamacpp_env
 
     // This sets the base directory where model files for this provider are stored.
@@ -820,13 +844,13 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   private async runStartEngine(): Promise<void> {
     const providerPath = await this.getProviderPath()
     const janDataFolderPath = await getJanDataFolderPath()
-    const { path: presetPath, embeddingCount } = await generatePreset(
+    const { path: presetPath } = await generatePreset(
       providerPath,
       janDataFolderPath,
       this.config
     )
 
-    const modelsMax = this.resolveModelsMax(embeddingCount)
+    const modelsMax = this.resolveModelsMax()
 
     // Idempotent in the plugin: a second start returns the running worker
     // rather than orphaning it, so a redundant call is a no-op instead of a
@@ -864,7 +888,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     try {
       return await eraseThreadSlotState({
         threadId,
-        cacheDir: threadCacheDir(await this.getProviderPath()),
+        cacheDir: await threadCacheDir(await this.getProviderPath()),
       })
     } catch (e) {
       logger.warn(`could not drop the saved cache for thread ${threadId}: ${e}`)
@@ -888,14 +912,16 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   }
 
   /**
-   * `models_max` including the embedding slot bonus.
+   * Chat-model capacity for the worker's `models_max`.
    *
-   * Reserves one extra slot when any embedder is installed so loading it does
-   * not evict the user's chat model. Only one embedding model is ever resident
-   * (RAG calls load() once per request), so the bonus is +1 regardless of how
-   * many are installed. 0 (unlimited) stays unlimited.
+   * The worker enforces this cap against chat models only and reserves one
+   * separate slot for the embedder on its own: an embedding model never
+   * evicts -- and is never evicted by -- a chat model. The old +1 bonus that
+   * used to be added here is gone: with it, the router treated a second chat
+   * model as fitting the cap, which is how two chat models ended up resident
+   * together until VRAM ran out. 0 (unlimited) stays unlimited.
    */
-  private resolveModelsMax(embeddingCount: number): number {
+  private resolveModelsMax(): number {
     const raw = (this.config as { models_max?: unknown }).models_max
     let modelsMax = 1
     if (typeof raw === 'number') modelsMax = raw
@@ -904,9 +930,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       if (!Number.isNaN(n) && n >= 0) modelsMax = n
     }
     this.userModelsMax = modelsMax
-    const bonus = modelsMax > 0 && embeddingCount > 0 ? 1 : 0
-    this.engineEmbeddingBonus = bonus
-    return modelsMax + bonus
+    return modelsMax
   }
 
   /**
@@ -915,9 +939,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    * loaded, so an embedder import or a settings write no longer cold-reloads
    * the model the user is talking to.
    *
-   * Unlike the router this also resizes `models_max`, so a change in the
-   * embedding slot bonus no longer needs a restart either -- which was the one
-   * remaining case that evicted a live chat model.
+   * Unlike the router this also resizes `models_max`, so a user-level change
+   * to the chat-model cap no longer needs a restart either. The embedder's
+   * reserved slot lives worker-side, so installing or uninstalling an embedder
+   * changes only the preset, never the cap.
    */
   private async refreshEnginePreset(): Promise<void> {
     if (!(await this.getEngineInfo())) {
@@ -927,7 +952,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
     const providerPath = await this.getProviderPath()
     const janDataFolderPath = await getJanDataFolderPath()
-    const { path: presetPath, embeddingCount } = await generatePreset(
+    const { path: presetPath } = await generatePreset(
       providerPath,
       janDataFolderPath,
       this.config
@@ -937,7 +962,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     try {
       const report = await reloadEngineModels(
         presetPath,
-        this.resolveModelsMax(embeddingCount),
+        this.resolveModelsMax(),
         this.resolveThreadCacheBudget()
       )
       logger.info(
@@ -982,9 +1007,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    * the post-fit value — what `fit_ctx` settled on — so it's the right
    * denominator for the token-usage popup.
    */
-  async getModelProps(
-    modelId: string
-  ): Promise<
+  async getModelProps(modelId: string): Promise<
     | (ModelProps & {
         modalities?: { vision: boolean; video: boolean; audio: boolean }
       })
@@ -1071,9 +1094,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
           })
         )
         ;(this.config as any).models_max = targetValue
-        logger.info(
-          `Migrated auto_unload=${old} -> models_max=${targetValue}`
-        )
+        logger.info(`Migrated auto_unload=${old} -> models_max=${targetValue}`)
       }
     } catch (e) {
       logger.warn('migrateAutoUnloadToModelsMax failed:', e)
@@ -1163,7 +1184,6 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
         const next = mapping.coerce(value)
         if (next === null) continue
-
         ;(cfg as Record<string, unknown>)[mapping.yamlKey] = next
         touched = true
       }
@@ -1183,7 +1203,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    * for models that no longer appear in the persisted provider settings, so
    * iterating the persisted list would miss them.
    */
-  private async stripLegacyNglFromModelYaml(providerPath: string): Promise<void> {
+  private async stripLegacyNglFromModelYaml(
+    providerPath: string
+  ): Promise<void> {
     const modelsDir = await joinPath([providerPath, 'models'])
     if (!(await fs.existsSync(modelsDir))) return
 
@@ -1506,7 +1528,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     try {
       await this.migrateLegacyModels()
     } catch (err) {
-      logger.warn(`list: migrateLegacyModels failed, continuing: ${String(err)}`)
+      logger.warn(
+        `list: migrateLegacyModels failed, continuing: ${String(err)}`
+      )
     }
 
     let modelIds: string[] = []
@@ -1750,7 +1774,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     try {
       await this.refreshEnginePreset()
     } catch (e) {
-      logger.warn(`Router restart after model rename (${modelId} → ${model.id}) failed`, e)
+      logger.warn(
+        `Router restart after model rename (${modelId} → ${model.id}) failed`,
+        e
+      )
     }
   }
 
@@ -1856,9 +1883,13 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       try {
         // emit download update event on progress
         const onProgress = (transferred: number, total: number) => {
+          // total 无效(大小未知,如魔搭 API URL 对 HEAD 返回 404 且探测未命中)
+          // 时不得发 NaN 百分比:NaN 会让前端进度条渲染成任意填充。
+          const percent =
+            total > 0 ? Math.min(transferred / total, 1) : 0
           events.emit(DownloadEvent.onFileDownloadUpdate, {
             modelId,
-            percent: transferred / total,
+            percent,
             size: { transferred, total },
             downloadType: 'Model',
           })
@@ -1971,7 +2002,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       // its head count (the main gguf usually lacks nextn_predict_layers when
       // MTP ships as a separate file).
       if (draftModelPath) {
-        const fullDraftPath = await joinPath([janDataFolderPath, draftModelPath])
+        const fullDraftPath = await joinPath([
+          janDataFolderPath,
+          draftModelPath,
+        ])
         const draftMetadata = await readGgufMetadata(fullDraftPath)
         // Only asked for a DFlash-architecture draft, since that is the one
         // case a tensor decides (DSpark = DFlash + Markov head).
@@ -2178,6 +2212,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   // still isn't up. Safe to call redundantly: start_engine returns the running
   // worker rather than spawning a second one.
   private async ensureEngineReady(): Promise<void> {
+    // Boot-time callers (server auto-start) can arrive before onLoad finished
+    // reading settings; wait for the gate or generatePreset sees no config.
+    await this.readyPromise
     await this.ensureProvisioned().catch(() => undefined)
     if (!(await this.getEngineInfo())) {
       await this.startEngine()
@@ -2528,7 +2565,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     if (!(await fs.existsSync(path))) {
       return { mtp_layers: 0, mtp: false }
     }
-    const cfg = (await invoke<ModelConfig>('read_yaml', { path })) as ModelConfig & {
+    const cfg = (await invoke<ModelConfig>('read_yaml', {
+      path,
+    })) as ModelConfig & {
       mtp_layers?: number
       mtp?: boolean
       spec_draft_n_max?: number
@@ -2562,7 +2601,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     if (!(await fs.existsSync(configPath))) {
       throw new Error(`model.yml not found for ${modelId}`)
     }
-    const cfg = (await invoke<ModelConfig>('read_yaml', { path: configPath })) as ModelConfig & {
+    const cfg = (await invoke<ModelConfig>('read_yaml', {
+      path: configPath,
+    })) as ModelConfig & {
       mtp?: boolean
       spec_draft_n_max?: number
       spec_draft_n_min?: number
@@ -2580,9 +2621,12 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
         cfg[key] = value
       }
     }
-    if ('spec_draft_n_max' in patch) assignNumeric('spec_draft_n_max', patch.spec_draft_n_max)
-    if ('spec_draft_n_min' in patch) assignNumeric('spec_draft_n_min', patch.spec_draft_n_min)
-    if ('spec_draft_p_min' in patch) assignNumeric('spec_draft_p_min', patch.spec_draft_p_min)
+    if ('spec_draft_n_max' in patch)
+      assignNumeric('spec_draft_n_max', patch.spec_draft_n_max)
+    if ('spec_draft_n_min' in patch)
+      assignNumeric('spec_draft_n_min', patch.spec_draft_n_min)
+    if ('spec_draft_p_min' in patch)
+      assignNumeric('spec_draft_p_min', patch.spec_draft_p_min)
 
     await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
 
@@ -2842,7 +2886,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       }
     } catch (e) {
       // Without /props the pinned ubatch is still a valid ceiling.
-      logger.warn('Could not read embedder context size; using the pinned ubatch:', e)
+      logger.warn(
+        'Could not read embedder context size; using the pinned ubatch:',
+        e
+      )
     }
     return budget
   }

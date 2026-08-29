@@ -100,5 +100,15 @@
     "oneKeyHint": "Le chiavi di riserva opzionali si configurano nella sezione Avanzate.",
     "addKey": "Aggiungi chiave",
     "removeKey": "Rimuovi chiave"
+  },
+  "option": {
+    "auto": "Auto",
+    "layer": "Layer",
+    "yarn": "YaRN",
+    "off": "Off",
+    "full": "Full",
+    "none": "None",
+    "linear": "Linear",
+    "on": "On"
   }
 }

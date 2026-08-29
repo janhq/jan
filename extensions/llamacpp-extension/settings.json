@@ -13,8 +13,8 @@
   },
   {
     "key": "models_max",
-    "title": "Max Concurrently Loaded Models",
-    "description": "Maximum number of models the router will keep loaded at once. 0 = unlimited.",
+    "title": "Max Concurrently Loaded Chat Models",
+    "description": "Maximum number of chat models the router will keep loaded at once. 0 = unlimited.",
     "controllerType": "input",
     "controllerProps": {
       "value": 1,

@@ -4,7 +4,10 @@ use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::filesystem::helpers::resolve_path_within_jan_data_folder;
 use crate::core::state::AppState;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
 use tauri::{Runtime, State};
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 #[tauri::command]
@@ -17,6 +20,7 @@ pub async fn download_files<R: Runtime>(
 ) -> Result<(), String> {
     // insert cancel tokens
     let cancel_token = CancellationToken::new();
+    let notify = Arc::new(Notify::new());
     {
         let mut download_manager = state.download_manager.lock().await;
         if let Some(existing_token) = download_manager.cancel_tokens.remove(task_id) {
@@ -26,16 +30,37 @@ pub async fn download_files<R: Runtime>(
         download_manager
             .cancel_tokens
             .insert(task_id.to_string(), cancel_token.clone());
+        download_manager
+            .task_done
+            .insert(task_id.to_string(), notify.clone());
     }
-    let result = _download_files_internal(
-        app.clone(),
-        &items,
-        &headers,
-        task_id,
-        true,
-        cancel_token.clone(),
-    )
-    .await;
+
+    // 全局并发上限:最多 2 个下载任务同时执行(分段任务各占 4 条连接),
+    // 超出的任务在此排队等待空位;排队期间同样可以取消/暂停(走 cancel token)。
+    let permit = tokio::select! {
+        permit = {
+            let slots = state.download_manager.lock().await.download_slots.clone();
+            log::info!("Download task {task_id} waiting for a download slot");
+            slots.acquire_owned()
+        } => Some(permit.map_err(err_to_string)?),
+        _ = cancel_token.cancelled() => None,
+    };
+
+    let result = match permit {
+        Some(_permit) => {
+            _download_files_internal(
+                app.clone(),
+                &items,
+                &headers,
+                task_id,
+                true,
+                cancel_token.clone(),
+            )
+            .await
+        }
+        // 排队期间被取消/暂停:未写入任何数据,走统一的尾部清理
+        None => Err("Download cancelled".to_string()),
+    };
 
     // cleanup
     let paused = {
@@ -55,6 +80,19 @@ pub async fn download_files<R: Runtime>(
                 let _ = std::fs::remove_file(&save_path);
                 let _ = std::fs::remove_file(with_appended_ext(&save_path, "tmp"));
                 let _ = std::fs::remove_file(with_appended_ext(&save_path, "url"));
+                let _ = std::fs::remove_file(with_appended_ext(&save_path, "meta.json"));
+            }
+        }
+    }
+
+    // 任务已收尾,通知等待中的取消/暂停调用方(仅当信号仍是本任务的)
+    {
+        let mut download_manager = state.download_manager.lock().await;
+        if let Some(current) = download_manager.task_done.get(task_id) {
+            if Arc::ptr_eq(current, &notify) {
+                if let Some(notify) = download_manager.task_done.remove(task_id) {
+                    notify.notify_waiters();
+                }
             }
         }
     }
@@ -71,29 +109,46 @@ fn with_appended_ext(path: &std::path::Path, ext: &str) -> std::path::PathBuf {
     }
 }
 
-#[tauri::command]
-pub async fn cancel_download_task(state: State<'_, AppState>, task_id: &str) -> Result<(), String> {
-    // NOTE: might want to add User-Agent header
-    let mut download_manager = state.download_manager.lock().await;
-    download_manager.paused_tasks.remove(task_id);
-    if let Some(token) = download_manager.cancel_tokens.remove(task_id) {
-        token.cancel();
-        log::info!("Cancelled download task: {task_id}");
-        Ok(())
-    } else {
-        Err(format!("No download task: {task_id}"))
+/// 取消/暂停置位后,等待任务真正收尾(子进程退出、文件句柄释放)。
+/// 前端随后会立即删除模型目录/恢复下载,若不等待会撞上文件锁(os error 32)。
+async fn await_task_finished(state: &State<'_, AppState>, task_id: &str) {
+    let notify = {
+        let download_manager = state.download_manager.lock().await;
+        download_manager.task_done.get(task_id).cloned()
+    };
+    if let Some(notify) = notify {
+        let _ = tokio::time::timeout(Duration::from_secs(15), notify.notified()).await;
     }
 }
 
 #[tauri::command]
-pub async fn pause_download_task(state: State<'_, AppState>, task_id: &str) -> Result<(), String> {
-    let mut download_manager = state.download_manager.lock().await;
-    if let Some(token) = download_manager.cancel_tokens.remove(task_id) {
-        download_manager.paused_tasks.insert(task_id.to_string());
-        token.cancel();
-        log::info!("Paused download task: {task_id}");
-        Ok(())
-    } else {
-        Err(format!("No download task: {task_id}"))
+pub async fn cancel_download_task(state: State<'_, AppState>, task_id: &str) -> Result<(), String> {
+    {
+        let mut download_manager = state.download_manager.lock().await;
+        download_manager.paused_tasks.remove(task_id);
+        if let Some(token) = download_manager.cancel_tokens.remove(task_id) {
+            token.cancel();
+            log::info!("Cancelled download task: {task_id}");
+        } else {
+            return Err(format!("No download task: {task_id}"));
+        }
     }
+    await_task_finished(&state, task_id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn pause_download_task(state: State<'_, AppState>, task_id: &str) -> Result<(), String> {
+    {
+        let mut download_manager = state.download_manager.lock().await;
+        if let Some(token) = download_manager.cancel_tokens.remove(task_id) {
+            download_manager.paused_tasks.insert(task_id.to_string());
+            token.cancel();
+            log::info!("Paused download task: {task_id}");
+        } else {
+            return Err(format!("No download task: {task_id}"));
+        }
+    }
+    await_task_finished(&state, task_id).await;
+    Ok(())
 }

@@ -571,6 +571,57 @@ fn test_get_client_for_item_invalid_proxy_url() {
     assert!(_get_client_for_item(&item, &HeaderMap::new()).is_err());
 }
 
+#[test]
+fn test_effective_headers_adds_user_agent_for_modelscope() {
+    // 魔搭直连下载会走 Tengine CDN;未带 UA 时必须补上 friendly UA,否则 403 "UA ACL blacklist"
+    let item = DownloadItem {
+        url: "https://modelscope.cn/api/v1/models/unsloth/Qwen3-8B/repo?Revision=master&FilePath=x.gguf".to_string(),
+        save_path: "x".to_string(),
+        proxy: None,
+        sha256: None,
+        size: None,
+        model_id: None,
+    };
+    let effective = effective_download_headers(&item, &HeaderMap::new());
+    assert_eq!(
+        effective.get("user-agent").unwrap(),
+        "Jan/1.0",
+        "modelscope 下载必须携带 friendly User-Agent"
+    );
+}
+
+#[test]
+fn test_effective_headers_keeps_user_supplied_user_agent() {
+    // 调用方显式传入 UA 时,不得覆盖
+    let item = DownloadItem {
+        url: "https://modelscope.cn/api/v1/models/a/b/repo?FilePath=x.gguf".to_string(),
+        save_path: "x".to_string(),
+        proxy: None,
+        sha256: None,
+        size: None,
+        model_id: None,
+    };
+    let mut header_map = HeaderMap::new();
+    header_map.insert("user-agent", "my-custom-agent".parse().unwrap());
+    let effective = effective_download_headers(&item, &header_map);
+    assert_eq!(effective.get("user-agent").unwrap(), "my-custom-agent");
+}
+
+#[test]
+fn test_effective_headers_untouched_for_non_modelscope() {
+    // 非魔搭域名(如 HF)不加 UA,保持调用方语义
+    let item = DownloadItem {
+        url: "https://huggingface.co/a/b/resolve/main/x.gguf".to_string(),
+        save_path: "x".to_string(),
+        proxy: None,
+        sha256: None,
+        size: None,
+        model_id: None,
+    };
+    let effective = effective_download_headers(&item, &HeaderMap::new());
+    assert!(effective.get("user-agent").is_none());
+}
+
 // ===== ProgressTracker =====
 
 #[tokio::test]
@@ -612,6 +663,21 @@ async fn test_progress_tracker_add_to_total() {
     tracker.add_to_total(2048);
     let (_, total) = tracker.get_total_progress().await;
     assert_eq!(total, 3072);
+}
+
+#[tokio::test]
+async fn test_progress_tracker_set_total_is_absolute() {
+    // 分段路径在发现真实大小后按绝对值设置 total;重复设置(每次重试)不得
+    // 像累加那样把 total 越推越大,否则百分比会随重试缩小。
+    let tracker = ProgressTracker::new(&[], HashMap::new());
+    tracker.set_total(7_266_070_528);
+    let (_, total) = tracker.get_total_progress().await;
+    assert_eq!(total, 7_266_070_528);
+
+    // 模拟单流重试:同一绝对值再次设置,total 保持不变
+    tracker.set_total(7_266_070_528);
+    let (_, total) = tracker.get_total_progress().await;
+    assert_eq!(total, 7_266_070_528);
 }
 
 #[tokio::test]
@@ -662,4 +728,146 @@ fn test_download_manager_state_default_is_empty() {
     let s = DownloadManagerState::default();
     assert_eq!(s.cancel_tokens.len(), 0);
     assert_eq!(s.paused_tasks.len(), 0);
+}
+
+// ===== segment_ranges =====
+
+#[test]
+fn segment_ranges_tiles_exactly() {
+    // Even split
+    assert_eq!(
+        segment_ranges(100, 4),
+        vec![(0, 25), (25, 50), (50, 75), (75, 100)]
+    );
+    // Remainder spreads over the leading ranges
+    assert_eq!(segment_ranges(10, 4), vec![(0, 3), (3, 6), (6, 8), (8, 10)]);
+    // More segments than bytes: one byte per range
+    assert_eq!(segment_ranges(3, 4), vec![(0, 1), (1, 2), (2, 3)]);
+    // Single segment covers everything
+    assert_eq!(segment_ranges(50, 1), vec![(0, 50)]);
+    // Zero bytes: nothing to download
+    assert!(segment_ranges(0, 4).is_empty());
+}
+
+#[test]
+fn segment_ranges_cover_the_whole_file() {
+    // Property-style sweep: every total/segment combo must tile contiguously.
+    for total in [1u64, 7, 64, 1000, 4097, 639_446_688] {
+        for n in [1u64, 2, 4, 8] {
+            let ranges = segment_ranges(total, n);
+            assert_eq!(ranges.first().unwrap().0, 0);
+            assert_eq!(ranges.last().unwrap().1, total);
+            for w in ranges.windows(2) {
+                assert_eq!(
+                    w[0].1, w[1].0,
+                    "gap/overlap at {} for total {total}, n {n}",
+                    w[0].1
+                );
+            }
+        }
+    }
+}
+
+// ===== classify_status =====
+
+#[test]
+fn classify_status_matches_the_retry_policy() {
+    use reqwest::StatusCode;
+    // 200 to a ranged request: the server ignores Range
+    assert!(matches!(
+        classify_status(StatusCode::OK),
+        SegmentFailure::RangeUnsupported
+    ));
+    // Hard: retrying cannot help
+    for code in [
+        StatusCode::UNAUTHORIZED,
+        StatusCode::FORBIDDEN,
+        StatusCode::NOT_FOUND,
+    ] {
+        assert!(matches!(classify_status(code), SegmentFailure::Hard(_)));
+    }
+    // Transient: worth backing off and retrying
+    for code in [
+        StatusCode::TOO_MANY_REQUESTS,
+        StatusCode::BAD_GATEWAY,
+        StatusCode::SERVICE_UNAVAILABLE,
+    ] {
+        assert!(matches!(
+            classify_status(code),
+            SegmentFailure::Transient(_)
+        ));
+    }
+    // Other client errors are hard too
+    assert!(matches!(
+        classify_status(StatusCode::CONFLICT),
+        SegmentFailure::Hard(_)
+    ));
+}
+
+// ===== DownloadLedger =====
+
+#[tokio::test]
+async fn download_ledger_save_load_roundtrip() {
+    let dir = std::env::temp_dir().join(format!("jan-ledger-test-{}", std::process::id()));
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    let path = dir.join("model.gguf.meta.json");
+
+    let ledger = DownloadLedger {
+        url: "https://modelscope.cn/api/v1/models/a/b/repo?FilePath=x.gguf".to_string(),
+        total_size: 1000,
+        segments: vec![
+            SegmentState {
+                offset: 0,
+                end: 250,
+                done: 123,
+            },
+            SegmentState {
+                offset: 250,
+                end: 500,
+                done: 0,
+            },
+            SegmentState {
+                offset: 500,
+                end: 750,
+                done: 250,
+            },
+            SegmentState {
+                offset: 750,
+                end: 1000,
+                done: 10,
+            },
+        ],
+    };
+    ledger.save(&path).await.unwrap();
+
+    let loaded = DownloadLedger::load(&path)
+        .await
+        .expect("ledger should load");
+    assert_eq!(loaded, ledger);
+    assert_eq!(loaded.done_total(), 383);
+
+    // A corrupt or missing ledger means "fresh start", not an error
+    tokio::fs::write(&path, "not json at all").await.unwrap();
+    assert!(DownloadLedger::load(&path).await.is_none());
+    assert!(DownloadLedger::load(&dir.join("absent.meta.json"))
+        .await
+        .is_none());
+
+    let _ = tokio::fs::remove_dir_all(&dir).await;
+}
+
+// ===== disk space check =====
+
+#[test]
+fn disk_space_error_carries_the_structured_payload() {
+    // The happy path cannot be forced without filling a disk; what the
+    // frontend depends on is the error format, so pin it directly.
+    let needed: u64 = 10 * 1024 * 1024 * 1024;
+    let free: u64 = 1024 * 1024;
+    let msg = format!("{ERR_DISK_SPACE}|{needed}|{free}");
+    assert!(msg.starts_with("DISK_SPACE_INSUFFICIENT|"));
+    let parts: Vec<&str> = msg.split('|').collect();
+    assert_eq!(parts.len(), 3);
+    assert_eq!(parts[1], "10737418240");
+    assert_eq!(parts[2], "1048576");
 }

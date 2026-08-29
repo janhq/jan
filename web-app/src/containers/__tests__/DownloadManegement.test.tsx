@@ -93,11 +93,15 @@ vi.mock('@janhq/core', () => ({
 vi.mock('@/components/ui/popover', () => ({
   Popover: ({ children }: any) => <div>{children}</div>,
   PopoverTrigger: ({ children }: any) => <div>{children}</div>,
-  PopoverContent: ({ children }: any) => <div data-testid="popover-content">{children}</div>,
+  PopoverContent: ({ children }: any) => (
+    <div data-testid="popover-content">{children}</div>
+  ),
 }))
 
 vi.mock('@/components/ui/progress', () => ({
-  Progress: ({ value }: any) => <div data-testid="progress" data-value={value} />,
+  Progress: ({ value }: any) => (
+    <div data-testid="progress" data-value={value} />
+  ),
 }))
 
 vi.mock('@/components/ui/button', () => ({
@@ -138,7 +142,7 @@ describe('DownloadManagement', () => {
 
   it('renders empty state when no downloads', () => {
     render(<DownloadManagement />)
-    expect(screen.getByText(/Your download progress/)).toBeInTheDocument()
+    expect(screen.getByText('hub:downloadPlaceholder')).toBeInTheDocument()
   })
 
   it('renders a download item with progress', () => {
@@ -159,7 +163,7 @@ describe('DownloadManagement', () => {
   it('shows initializing when total is 0 and current is 0', () => {
     hoisted.downloadStore.localDownloadingModels = new Set(['model-b'])
     render(<DownloadManagement />)
-    expect(screen.getByText('Initializing download...')).toBeInTheDocument()
+    expect(screen.getByText('initializingDownload')).toBeInTheDocument()
   })
 
   it('shows "Downloading..." when current > 0 but total = 0', () => {
@@ -167,7 +171,7 @@ describe('DownloadManagement', () => {
       'model-c': { name: 'model-c', progress: 0, current: 500, total: 0 },
     }
     render(<DownloadManagement />)
-    expect(screen.getByText('Downloading...')).toBeInTheDocument()
+    expect(screen.getByText('downloadingEllipsis')).toBeInTheDocument()
   })
 
   it('renders App Update progress when updater is downloading', () => {
@@ -182,7 +186,9 @@ describe('DownloadManagement', () => {
     expect(screen.getByText('50%')).toBeInTheDocument()
   })
 
-  it('cancels llamacpp download via extension manager', () => {
+  // ms CLI 时代 llamacpp 前缀 id 走 download-extension 取消的分支已删除:
+  // 现在所有模型下载(裸模型 id)统一走 serviceHub.abortDownload。
+  it('cancels legacy llamacpp-prefixed ids via serviceHub.abortDownload', async () => {
     hoisted.downloadStore.downloads = {
       'llamacpp/foo': {
         name: 'llamacpp/foo',
@@ -194,7 +200,25 @@ describe('DownloadManagement', () => {
     render(<DownloadManagement />)
     const cancelBtn = screen.getByTitle('Cancel download')
     fireEvent.click(cancelBtn.closest('button')!)
-    expect(hoisted.cancelDownloadMock).toHaveBeenCalledWith('llamacpp/foo')
+    await waitFor(() =>
+      expect(hoisted.abortDownloadMock).toHaveBeenCalledWith('llamacpp/foo')
+    )
+    expect(hoisted.cancelDownloadMock).not.toHaveBeenCalled()
+  })
+
+  it('cancels mlx downloads via extension manager', () => {
+    hoisted.downloadStore.downloads = {
+      'mlx/foo': {
+        name: 'mlx/foo',
+        progress: 0.1,
+        current: 1,
+        total: 10,
+      },
+    }
+    render(<DownloadManagement />)
+    const cancelBtn = screen.getByTitle('Cancel download')
+    fireEvent.click(cancelBtn.closest('button')!)
+    expect(hoisted.cancelDownloadMock).toHaveBeenCalledWith('mlx/foo')
   })
 
   it('cancels non-llamacpp download via serviceHub.abortDownload', async () => {
@@ -209,15 +233,10 @@ describe('DownloadManagement', () => {
     render(<DownloadManagement />)
     const cancelBtn = screen.getByTitle('Cancel download')
     fireEvent.click(cancelBtn.closest('button')!)
-    await waitFor(() => expect(hoisted.abortDownloadMock).toHaveBeenCalledWith('cloud-model'))
+    await waitFor(() =>
+      expect(hoisted.abortDownloadMock).toHaveBeenCalledWith('cloud-model')
+    )
   })
-
-
-
-
-
-
-
 
   it('on app update download success, shows success toast', () => {
     render(<DownloadManagement />)
@@ -282,7 +301,8 @@ describe('DownloadManagement', () => {
         'cloud-model',
         'https://hf/model.gguf',
         undefined,
-        'tok'
+        'tok',
+        true
       )
     )
   })
@@ -303,11 +323,20 @@ describe('DownloadManagement', () => {
     expect(hoisted.toastMock.error).toHaveBeenCalled()
   })
 
-
-
-  it('does not show pause/resume for llamacpp direct downloads', () => {
+  // ms 时代的 llamacpp 排除条件已随死代码清理删除:模型下载(id 不带前缀)
+  // 一直显示暂停按钮;现在 llamacpp 前缀也不再隐藏。mlx 保持隐藏。
+  it('shows pause for llamacpp ids (legacy exclusion removed)', () => {
     hoisted.downloadStore.downloads = {
       'llamacpp/foo': { name: 'llamacpp/foo', progress: 0.1, total: 10 },
+    }
+    render(<DownloadManagement />)
+    expect(screen.getByTitle('Pause download')).toBeInTheDocument()
+    expect(screen.getByTitle('Cancel download')).toBeInTheDocument()
+  })
+
+  it('does not show pause/resume for mlx downloads', () => {
+    hoisted.downloadStore.downloads = {
+      'mlx/foo': { name: 'mlx/foo', progress: 0.1, total: 10 },
     }
     render(<DownloadManagement />)
     expect(screen.queryByTitle('Pause download')).not.toBeInTheDocument()

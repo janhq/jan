@@ -10,6 +10,13 @@
 //! Usage:
 //!   jan-llama-worker --preset <router.preset.ini> [--port N] [--models-max N]
 //!
+//! `--models-max` is the cap on concurrently resident CHAT models (0 =
+//! unlimited). Embedding models do not count against it: at most one embedder
+//! resides, in a slot reserved for it, and it is never evicted by -- nor does
+//! it evict -- a chat model. This is what makes a local-API request for a new
+//! chat model unload the outgoing one ("switch") instead of piling models up
+//! until VRAM runs out.
+//!
 //! The bearer token comes from `JAN_LLAMA_API_KEY`, never argv: argv is
 //! readable by any other process on the machine (`ps`, `/proc/<pid>/cmdline`,
 //! Task Manager) and the supervisor logs it.
@@ -57,15 +64,10 @@ fn parse_args() -> Result<Args, String> {
     };
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
-        let mut value = || {
-            it.next()
-                .ok_or_else(|| format!("{flag} needs a value"))
-        };
+        let mut value = || it.next().ok_or_else(|| format!("{flag} needs a value"));
         match flag.as_str() {
             "--preset" => out.preset = Some(value()?),
-            "--port" => {
-                out.port = value()?.parse().map_err(|e| format!("bad --port: {e}"))?
-            }
+            "--port" => out.port = value()?.parse().map_err(|e| format!("bad --port: {e}"))?,
             "--models-max" => {
                 out.models_max = value()?
                     .parse()
@@ -167,14 +169,13 @@ async fn main() {
     std::env::remove_var(API_KEY_ENV);
 
     let registry_for_teardown = Arc::clone(&registry);
-    let (server, listener) =
-        match EngineServer::bind(registry, args.port, api_key).await {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("jan-llama-worker: could not bind: {e}");
-                std::process::exit(5);
-            }
-        };
+    let (server, listener) = match EngineServer::bind(registry, args.port, api_key).await {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("jan-llama-worker: could not bind: {e}");
+            std::process::exit(5);
+        }
+    };
     let server = match slot_store {
         Some(store) => {
             if store.saves_enabled() {

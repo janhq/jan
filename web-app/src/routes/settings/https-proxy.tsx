@@ -141,6 +141,11 @@ function HTTPSProxyContent() {
                   />
                 }
               />
+              {/* 模型市场搜索说明:HF 官方源走系统/应用代理 */}
+              <CardItem
+                title={t('settings:httpsProxy.hubSearchNote')}
+                description={t('settings:httpsProxy.hubSearchNoteDesc')}
+              />
             </Card>
           </div>
         </div>

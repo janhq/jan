@@ -58,5 +58,15 @@
   },
   "addProvider": "Добавить поставщика",
   "addOpenAIProvider": "Добавить поставщика OpenAI",
-  "enterNameForProvider": "Введите имя поставщика"
+  "enterNameForProvider": "Введите имя поставщика",
+  "option": {
+    "auto": "Auto",
+    "layer": "Layer",
+    "yarn": "YaRN",
+    "off": "Off",
+    "full": "Full",
+    "none": "None",
+    "linear": "Linear",
+    "on": "On"
+  }
 }

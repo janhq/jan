@@ -18,6 +18,17 @@ const hoisted = vi.hoisted(() => ({
 
 vi.mock('sonner', () => ({ toast: hoisted.toast }))
 
+// The component now resolves strings via i18n; bind the compat hook to the
+// real setup so the English-text assertions below keep working.
+vi.mock('@/i18n/react-i18next-compat', async () => {
+  const { default: i18n } = await import('@/i18n/setup')
+  return {
+    useTranslation: () => ({
+      t: (key: string, opts?: Record<string, unknown>) => i18n.t(key, opts),
+    }),
+  }
+})
+
 // Override the global useServiceHub mock from setup.ts with a tailored one.
 vi.mock('@/hooks/useServiceHub', () => {
   const hub = {

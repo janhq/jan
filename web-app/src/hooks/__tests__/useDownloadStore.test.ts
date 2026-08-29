@@ -15,7 +15,7 @@ describe('useDownloadStore', () => {
   describe('initial state', () => {
     it('should have empty downloads and localDownloadingModels', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       expect(result.current.downloads).toEqual({})
       expect(result.current.localDownloadingModels).toEqual(new Set())
     })
@@ -24,73 +24,77 @@ describe('useDownloadStore', () => {
   describe('updateProgress', () => {
     it('should add new download progress', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       act(() => {
         result.current.updateProgress('test-id', 50, 'test-model', 500, 1000)
       })
-      
+
       expect(result.current.downloads['test-id']).toEqual({
         name: 'test-model',
         progress: 50,
         current: 500,
         total: 1000,
+        status: 'downloading',
       })
     })
 
     it('should update existing download progress', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       // Add initial download
       act(() => {
         result.current.updateProgress('test-id', 25, 'test-model', 250, 1000)
       })
-      
+
       // Update progress
       act(() => {
         result.current.updateProgress('test-id', 75, undefined, 750)
       })
-      
+
       expect(result.current.downloads['test-id']).toEqual({
         name: 'test-model',
         progress: 75,
         current: 750,
         total: 1000,
+        status: 'downloading',
       })
     })
 
     it('should preserve existing values when not provided', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       // Add initial download
       act(() => {
         result.current.updateProgress('test-id', 25, 'test-model', 250, 1000)
       })
-      
+
       // Update only progress
       act(() => {
         result.current.updateProgress('test-id', 75)
       })
-      
+
       expect(result.current.downloads['test-id']).toEqual({
         name: 'test-model',
         progress: 75,
         current: 250,
         total: 1000,
+        status: 'downloading',
       })
     })
 
     it('should use default values for new download when values not provided', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       act(() => {
         result.current.updateProgress('test-id', 50)
       })
-      
+
       expect(result.current.downloads['test-id']).toEqual({
         name: '',
         progress: 50,
         current: 0,
         total: 0,
+        status: 'downloading',
       })
     })
   })
@@ -98,39 +102,39 @@ describe('useDownloadStore', () => {
   describe('removeDownload', () => {
     it('should remove download from downloads object', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       // Add download
       act(() => {
         result.current.updateProgress('test-id', 50, 'test-model', 500, 1000)
       })
-      
+
       expect(result.current.downloads['test-id']).toBeDefined()
-      
+
       // Remove download
       act(() => {
         result.current.removeDownload('test-id')
       })
-      
+
       expect(result.current.downloads['test-id']).toBeUndefined()
       expect(Object.keys(result.current.downloads)).toHaveLength(0)
     })
 
     it('should not affect other downloads when removing one', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       // Add multiple downloads
       act(() => {
         result.current.updateProgress('test-id-1', 50, 'model-1', 500, 1000)
         result.current.updateProgress('test-id-2', 75, 'model-2', 750, 1000)
       })
-      
+
       expect(Object.keys(result.current.downloads)).toHaveLength(2)
-      
+
       // Remove one download
       act(() => {
         result.current.removeDownload('test-id-1')
       })
-      
+
       expect(result.current.downloads['test-id-1']).toBeUndefined()
       expect(result.current.downloads['test-id-2']).toBeDefined()
       expect(Object.keys(result.current.downloads)).toHaveLength(1)
@@ -138,13 +142,13 @@ describe('useDownloadStore', () => {
 
     it('should handle removing non-existent download gracefully', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       expect(() => {
         act(() => {
           result.current.removeDownload('non-existent-id')
         })
       }).not.toThrow()
-      
+
       expect(result.current.downloads).toEqual({})
     })
   })
@@ -152,22 +156,22 @@ describe('useDownloadStore', () => {
   describe('localDownloadingModels management', () => {
     it('should add model to localDownloadingModels', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       act(() => {
         result.current.addLocalDownloadingModel('model-1')
       })
-      
+
       expect(result.current.localDownloadingModels.has('model-1')).toBe(true)
     })
 
     it('should add multiple models to localDownloadingModels', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       act(() => {
         result.current.addLocalDownloadingModel('model-1')
         result.current.addLocalDownloadingModel('model-2')
       })
-      
+
       expect(result.current.localDownloadingModels.has('model-1')).toBe(true)
       expect(result.current.localDownloadingModels.has('model-2')).toBe(true)
       expect(result.current.localDownloadingModels.size).toBe(2)
@@ -175,62 +179,62 @@ describe('useDownloadStore', () => {
 
     it('should not add duplicate models to localDownloadingModels', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       act(() => {
         result.current.addLocalDownloadingModel('model-1')
         result.current.addLocalDownloadingModel('model-1')
       })
-      
+
       expect(result.current.localDownloadingModels.size).toBe(1)
     })
 
     it('should remove model from localDownloadingModels', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       // Add model first
       act(() => {
         result.current.addLocalDownloadingModel('model-1')
       })
-      
+
       expect(result.current.localDownloadingModels.has('model-1')).toBe(true)
-      
+
       // Remove model
       act(() => {
         result.current.removeLocalDownloadingModel('model-1')
       })
-      
+
       expect(result.current.localDownloadingModels.has('model-1')).toBe(false)
       expect(result.current.localDownloadingModels.size).toBe(0)
     })
 
     it('should handle removing non-existent model gracefully', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       expect(() => {
         act(() => {
           result.current.removeLocalDownloadingModel('non-existent-model')
         })
       }).not.toThrow()
-      
+
       expect(result.current.localDownloadingModels.size).toBe(0)
     })
 
     it('should not affect other models when removing one', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       // Add multiple models
       act(() => {
         result.current.addLocalDownloadingModel('model-1')
         result.current.addLocalDownloadingModel('model-2')
       })
-      
+
       expect(result.current.localDownloadingModels.size).toBe(2)
-      
+
       // Remove one model
       act(() => {
         result.current.removeLocalDownloadingModel('model-1')
       })
-      
+
       expect(result.current.localDownloadingModels.has('model-1')).toBe(false)
       expect(result.current.localDownloadingModels.has('model-2')).toBe(true)
       expect(result.current.localDownloadingModels.size).toBe(1)
@@ -240,23 +244,23 @@ describe('useDownloadStore', () => {
   describe('integration tests', () => {
     it('should work with both downloads and localDownloadingModels simultaneously', () => {
       const { result } = renderHook(() => useDownloadStore())
-      
+
       act(() => {
         // Add download progress
         result.current.updateProgress('download-1', 50, 'model-1', 500, 1000)
-        
+
         // Add local downloading model
         result.current.addLocalDownloadingModel('model-1')
       })
-      
+
       expect(result.current.downloads['download-1']).toBeDefined()
       expect(result.current.localDownloadingModels.has('model-1')).toBe(true)
-      
+
       act(() => {
         // Remove download but keep local downloading model
         result.current.removeDownload('download-1')
       })
-      
+
       expect(result.current.downloads['download-1']).toBeUndefined()
       expect(result.current.localDownloadingModels.has('model-1')).toBe(true)
     })
@@ -289,7 +293,32 @@ describe('useDownloadStore', () => {
         current: 0,
         total: 0,
         paused: true,
+        status: 'paused',
       })
+    })
+
+    it('markRetrying flags a stalled download without losing progress', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.updateProgress('m1', 0.4, 'm1', 400, 1000)
+        result.current.markRetrying('m1')
+      })
+
+      expect(result.current.downloads['m1']).toMatchObject({
+        progress: 0.4,
+        current: 400,
+        total: 1000,
+        status: 'retrying',
+        speed: 0,
+        paused: false,
+      })
+
+      // 字节恢复到达 -> updateProgress 自动回到进行中
+      act(() => {
+        result.current.updateProgress('m1', 0.5, 'm1', 500, 1000)
+      })
+      expect(result.current.downloads['m1'].status).toBe('downloading')
     })
 
     it('setResumeParams stores params and removeDownload clears them', () => {
@@ -310,17 +339,20 @@ describe('useDownloadStore', () => {
   })
 
   describe('persistence', () => {
-    it('persists only paused downloads and their resume params', () => {
+    it('persists paused and in-flight downloads (failed excluded)', () => {
       const { result } = renderHook(() => useDownloadStore())
 
       act(() => {
-        // active download — must NOT be persisted
+        // in-flight download — persisted (restored as paused on next boot)
         result.current.updateProgress('active', 0.2, 'active', 200, 1000)
         result.current.setResumeParams('active', { modelPath: 'a' })
-        // paused download — must be persisted
+        // paused download — persisted
         result.current.updateProgress('paused', 0.6, 'paused', 600, 1000)
         result.current.setResumeParams('paused', { modelPath: 'p' })
         result.current.setPaused('paused', true)
+        // failed download — memory-level, must NOT be persisted
+        result.current.updateProgress('failed', 0.4, 'failed', 400, 1000)
+        result.current.markFailed('failed', 'boom')
       })
 
       const persisted = JSON.parse(
@@ -328,8 +360,12 @@ describe('useDownloadStore', () => {
       )
       expect(persisted.state.downloads['paused']?.paused).toBe(true)
       expect(persisted.state.resumeParams['paused']).toEqual({ modelPath: 'p' })
-      expect(persisted.state.downloads['active']).toBeUndefined()
-      expect(persisted.state.resumeParams['active']).toBeUndefined()
+      // in-flight tasks survive a restart so the dialog can offer resume
+      expect(persisted.state.downloads['active']?.status).toBe('downloading')
+      expect(persisted.state.resumeParams['active']).toEqual({ modelPath: 'a' })
+      // failed entries are memory-level by design
+      expect(persisted.state.downloads['failed']).toBeUndefined()
+      expect(persisted.state.resumeParams['failed']).toBeUndefined()
     })
   })
 })

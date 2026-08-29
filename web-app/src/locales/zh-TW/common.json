@@ -12,7 +12,7 @@
   "modelProviders": "模型提供者",
   "localProviders": "本機",
   "remoteProviders": "遠端",
-  "manageProviders": "Manage providers",
+  "manageProviders": "管理提供者",
   "hiddenProviders": "{{count}} disabled",
   "interface": "外觀",
   "appearance": "外觀",
@@ -77,6 +77,20 @@
   "noThreadsYetDesc": "開始一個新的對話以在此處查看您的對話歷史記錄。",
   "downloads": "下載",
   "downloading": "下載中",
+  "downloadingEllipsis": "下載中...",
+  "retrying": "重試中",
+  "retryingAttempt": "重試中 · 第 {{n}} 次",
+  "tokenSpeed": {
+    "generation": "生成速度",
+    "reading": "讀取速度",
+    "tokens": "Token 數"
+  },
+  "initializingDownload": "正在初始化下載...",
+  "paused": "已暫停",
+  "pausedProgress": "已暫停 · {{percent}}%",
+  "downloadSize": "{{current}} / {{total}} GB",
+  "downloadSizeCurrent": "{{current}} GB",
+  "downloadSpeed": " · {{speed}}/s",
   "uploadingAttachments": "正在上傳附件…",
   "cancelDownload": "取消下載",
   "downloadCancelled": "下載已取消",
@@ -222,9 +236,46 @@
     "delete": "刪除"
   },
   "modelSettings": {
-    "nglDisabledByFit": "Auto-fit is choosing GPU layers. Turn off Auto-fit to set this manually.",
+    "nglDisabledByFit": "自動適配正在選擇 GPU 層。關閉自動適配後可手動設定。",
     "title": "模型設定 - {{modelId}}",
-    "description": "設定模型設定以最佳化效能和行為。"
+    "description": "設定模型設定以最佳化效能和行為。",
+    "samplingDefaults": {
+      "title": "預設采樣參數",
+      "description": "該模型的預設采樣器設定。除非被按助手或按請求的值覆盖,否則均使用此設定。"
+    },
+    "mtp": {
+      "section": "多 Token 預測 (MTP)",
+      "enable": "啟用 MTP",
+      "enableDescription": "使用模型內建的 MTP 頭,每一步草擬多個 Token。当模型带有 MTP 權重時(DeepSeek-V3、GLM-4.5/4.6、MiMo v2.5 等)可加速生成。",
+      "needsUpgrade": "請將 llama.cpp 後端更新到 b9193 或更新版本以啟用 MTP。",
+      "nMax": "最大草稿 Token 數",
+      "nMaxDescription": "每一步最多草擬的 Token 數。預設 16。",
+      "nMin": "最小草稿 Token 數",
+      "nMinDescription": "每一步最少草擬的 Token 數。預設 0。",
+      "pMin": "最小草稿概率",
+      "pMinDescription": "贪心草擬的最小概率(0–1)。預設 0.75。"
+    },
+    "specDraft": {
+      "section": "推測解碼",
+      "enable": "啟用推測解碼",
+      "enableDescription": "每一步草擬多個 Token 並一次性驗證,從而加速生成。使用模型內建的 MTP 頭,或隨模型下載的草稿模型(MTP、Eagle3、DFlash 或 DSpark)。",
+      "nMax": "最大草稿 Token 數",
+      "nMaxDescription": "每一步最多草擬的 Token 數。預設 16。",
+      "nMin": "最小草稿 Token 數",
+      "nMinDescription": "每一步最少草擬的 Token 數。預設 0。",
+      "pMin": "最小草稿機率",
+      "pMinDescription": "貪婪草擬的最小機率(0–1)。預設 0.75。"
+    },
+    "templateKwargs": {
+      "section": "對话範本選項",
+      "description": "該模型對话範本接受的其他選項。每次請求都會作为 chat_template_kwargs 傳送;保留預設值可讓範本自行決定。",
+      "addCustom": "新增自訂選項",
+      "keyPlaceholder": "名稱",
+      "valuePlaceholder": "值",
+      "add": "新增",
+      "cancel": "取消",
+      "remove": "移除"
+    }
   },
   "projects": {
     "title": "專案",
@@ -280,8 +331,22 @@
       "updateButton": "更新",
       "alreadyExists": "專案「{{projectName}}」已存在",
       "createSuccess": "專案「{{projectName}}」已成功建立",
-      "renameSuccess": "專案已從「{{oldName}}」重新命名為「{{newName}}」"
-    }
+      "renameSuccess": "專案已從「{{oldName}}」重新命名為「{{newName}}」",
+      "assistant": "助手",
+      "selectAssistant": "選擇助手(可選)",
+      "noAssistant": "無助手",
+      "addAssistant": "新增助手",
+      "updateSuccess": "项目“{{projectName}}”更新成功"
+    },
+    "selectAssistant": "選擇助手",
+    "noAssistantAssigned": "此项目未分配助手",
+    "files": "檔案",
+    "filesDescription": "新增 PDF、文件或其他文本,供此项目參考。",
+    "conversation": "對话",
+    "instructions": "说明",
+    "setup": "設定",
+    "instructionsDescription": "自訂回答的语氣和風格",
+    "manageInstructions": "管理说明"
   },
   "dialogs": {
     "changeDataFolder": {
@@ -304,6 +369,10 @@
     },
     "messageMetadata": {
       "title": "訊息元資料"
+    },
+    "deleteAllThreadsInProject": {
+      "title": "刪除全部對话",
+      "description": "將刪除“{{projectName}}”中的 {{count}} 條對话。此操作無法撤销。"
     }
   },
   "errorDialog": {
@@ -398,13 +467,138 @@
     "threadRemovedFromProject": {
       "title": "執行緒已移除",
       "description": "執行緒已成功從「{{projectName}}」中移除"
+    },
+    "openSettings": "開啟設定",
+    "downloadTokenRequired": {
+      "title": "需要 Hugging Face Token",
+      "description": "此模型需要 Hugging Face 訪問權杖。請在設定中新增權杖後重試。"
+    },
+    "downloadLicenseRequired": {
+      "title": "請先在 Hugging Face 上接受模型許可",
+      "description": "下載之前,您必須在 Hugging Face 頁面上接受該模型的許可。"
+    },
+    "downloadRateLimited": {
+      "title": "已被 Hugging Face 限流",
+      "description": "您已被限流。新增權杖可以提高速率限制。請稍後重試。"
+    },
+    "diskSpaceInsufficient": {
+      "title": "磁碟空間不足",
+      "description": "下載需要 {{needed}},目標碟僅剩 {{free}}。請清理空間後重試。"
+    },
+    "fileUploaded": {
+      "title": "檔案已處理",
+      "description": "檔案已成功處理并建立索引"
+    },
+    "uploadFailed": {
+      "title": "處理失敗",
+      "description": "檔案處理失敗",
+      "subjectThisFile": "此檔案",
+      "pdfMalformedXref": "{{subject}} 的 PDF 交叉引用表格式異常,無法解析。請尝試用 PDF 阅讀器開啟并重新儲存(檔案 → 列印 → 另存为 PDF),然後重新上傳。",
+      "pdfScanned": "{{subject}} 似乎是掃描版或基于圖片的 PDF。暂不支援 OCR,請上傳文本型 PDF。",
+      "pdfEncrypted": "{{subject}} 受密碼保护。請移除密碼後重試。",
+      "pdfUnsupportedFeature": "{{subject}} 使用了 Jan 尚無法解析的 PDF 特性(例如 PostScript 顏色/著色函數)。請尝試重新儲存(檔案 → 列印 → 另存为 PDF)以將其扁平化,然後重新上傳。",
+      "pdfGeneric": "無法將 {{subject}} 解析为 PDF。檔案可能已損壞或使用了不支援的 PDF 特性。",
+      "fileTooLarge": "{{subject}} 太大。{{message}}。",
+      "unsupportedType": "不支援檔案类型 “{{type}}”。",
+      "ioError": "無法讀取 {{subject}}:{{message}}",
+      "parseGeneric": "無法解析 {{subject}}:{{message}}",
+      "fallback": "處理 {{subject}} 失敗。"
+    },
+    "fileDeleted": {
+      "title": "檔案已刪除",
+      "description": "檔案已從项目中移除"
+    },
+    "deleteFailed": {
+      "title": "刪除失敗",
+      "description": "刪除檔案失敗"
+    },
+    "fileAlreadyExists": {
+      "title": "檔案已存在",
+      "description": "檔案已附加到此项目"
+    },
+    "unsupportedFileType": {
+      "title": "不支援的檔案类型",
+      "description": "项目參考不支援檔案擴展名 “.{{extension}}”。"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "附件已停用",
+      "description": "附件已在設定中停用"
     }
   },
   "llamacppBusyOnExit": {
-    "title": "llama.cpp is still busy",
-    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
-    "forceQuit": "Force quit",
+    "title": "llama.cpp 仍在運行",
+    "description": "一個或多個模型未能及時卸載。強制退出將終止這些任務。",
+    "forceQuit": "強制退出",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
-  }
+  },
+  "htmlArtifact": {
+    "code": "程式碼",
+    "preview": "預覽",
+    "previewStreaming": "生成完成後可用"
+  },
+  "remote_access": "遠程訪問",
+  "integrations": "集成",
+  "claude_code": "Claude Code",
+  "web_search": "网頁搜尋",
+  "hideProvider": "隱藏提供商",
+  "showProvider": "顯示提供商",
+  "analyticsConsentDetail": "我們會收集匿名數据以了解功能使用情況。您的對话和個人資訊绝不會被跟蹤。您可以隨時在“設定 > 隱私”中更改。",
+  "analyticsConsentQuestion": "您願意說明我們改進 Jan 嗎?",
+  "searchThreads": "搜尋對话...",
+  "toNavigate": "導航",
+  "toSelect": "選擇",
+  "toClose": "關閉",
+  "clearRecent": "清除",
+  "dismiss": "忽略",
+  "multimodal": "多模態",
+  "noAssistant": "無助手",
+  "settingUpJan": "正在啟動 Jan…",
+  "registeringExtensions": "正在注冊擴展…",
+  "loadingExtensions": "正在載入擴展… ({{done}}/{{total}})",
+  "continueAiResponse": "繼續 AI 回答",
+  "missingDependenciesDialog": {
+    "title": "缺少系统庫",
+    "description": "{{backend}} 已安裝,但找不到部分必需的系统庫。它可能回退到 CPU 運行或無法正常運行。",
+    "installLabel": "要修復此問題,請安裝以下內容:",
+    "download": "下載",
+    "additionalLibraries": "其他缺失的庫:",
+    "missingLibraries": "缺失的庫:",
+    "showRawLibraries": "顯示 {{count}} 個缺失庫名稱"
+  },
+  "attachmentsIngestion": {
+    "title": "選擇附件的處理方式",
+    "description": "選擇是直接在對话中包含這些檔案,還是將它們作为嵌入向量建立索引。",
+    "inline": "注入到對话",
+    "embeddings": "使用嵌入"
+  },
+  "attachmentInjectedIndicator": "已注入對话",
+  "attachmentEmbeddedIndicator": "已嵌入用于 RAG",
+  "viewInjectedContent": "檢視注入的內容",
+  "injectedContentTitle": "注入的檔案內容",
+  "errors": {
+    "fileTooLarge": "檔案太大",
+    "fileTooLargeDescription": "{{fileName}} 超過了 {{maxFileSizeMB}}MB 的限制"
+  },
+  "files": {
+    "chunksCount": "{{count}} 個塊"
+  },
+  "duration": {
+    "seconds": "{{count}} 秒",
+    "minutes": "{{count}} 分鐘",
+    "hours": "{{count}} 小時"
+  },
+  "modelMarket": "模型市场",
+  "addImages": "新增圖片",
+  "addAudio": "新增音訊",
+  "addVideo": "新增影片",
+  "environmentVariables": "環境變數",
+  "enterCliCommand": "输入自訂 CLI 命令",
+  "keyPlaceholder": "鍵",
+  "valuePlaceholder": "值",
+  "enterDisplayName": "输入顯示名稱",
+  "enterPassword": "输入密碼",
+  "confirmPassword": "確認密碼",
+  "securitySettings": "安全設定",
+  "allFiles": "全部檔案"
 }

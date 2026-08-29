@@ -463,7 +463,7 @@ describe('ChatInput', () => {
     renderInput({ onSubmit: vi.fn() })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
     expect(
-      screen.getByText('Please select a model to start chatting.')
+      screen.getByText('chat:errors.pleaseSelectModel')
     ).toBeInTheDocument()
   })
 
@@ -539,7 +539,7 @@ describe('ChatInput', () => {
     act(() => {
       fireEvent.keyDown(getTextarea(), { key: 'Enter' })
     })
-    const errorNode = screen.getByText('Please select a model to start chatting.')
+    const errorNode = screen.getByText('chat:errors.pleaseSelectModel')
     expect(errorNode).toBeInTheDocument()
     // dismiss icon (svg) sits alongside
     const svg = container.querySelector('.text-destructive svg')

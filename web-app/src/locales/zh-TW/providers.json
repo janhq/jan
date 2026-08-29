@@ -31,7 +31,9 @@
     "description": "您確定要刪除此模型嗎？此操作無法復原。",
     "success": "模型 {{modelId}} 已永久刪除。",
     "cancel": "取消",
-    "delete": "刪除"
+    "delete": "刪除",
+    "importedDescription": "從 Jan 中移除此匯入的模型?磁盤上的本地檔案不會被刪除。",
+    "removeFromJan": "從 Jan 中移除"
   },
   "deleteProvider": {
     "title": "刪除提供者",
@@ -54,9 +56,305 @@
     "warning": {
       "title": "請謹慎操作",
       "description": "修改模型功能可能會影響效能和功能。錯誤的設定可能導致意外行為或錯誤。"
-    }
+    },
+    "audio": "音訊",
+    "video": "影片"
   },
   "addProvider": "新增提供者",
   "addOpenAIProvider": "新增 OpenAI 提供者",
-  "enterNameForProvider": "輸入提供者名稱"
+  "enterNameForProvider": "輸入提供者名稱",
+  "option": {
+    "auto": "自動",
+    "layer": "按層",
+    "yarn": "YaRN",
+    "off": "關閉",
+    "full": "完整",
+    "none": "無",
+    "linear": "線性",
+    "on": "開啟"
+  },
+  "limitedSupport": "此提供商可能未得到完全支援。能力(工具、視觉、音訊)不會自动檢測——請手动新增模型并逐模型設定能力。",
+  "mlxExperimental": "MLX 支援處于實驗階段。嵌入不可用,推理开关尚未完全接通,一些较新的模型架构可能無法載入。請在 GitHub 上報告問題,以便我們确定優先級。",
+  "backendInstalled": "已安裝",
+  "backendHistoryShow": "顯示更新歷史",
+  "backendHistoryHide": "隱藏更新歷史",
+  "backendHistoryLoading": "正在載入更新歷史...",
+  "backendHistoryEmpty": "尚無後端更新記錄。",
+  "backendHistoryNone": "無",
+  "backendHistoryUpdated": "已更新",
+  "backendHistoryRolledBack": "已回滚",
+  "backendHistoryRollbackFailed": "回滚失敗",
+  "backendHistoryFailed": "失敗",
+  "chatModels": "對话模型",
+  "embeddingModels": "嵌入模型",
+  "embeddingModelsDesc": "用于 RAG 和向量搜尋。所選模型將作为生成嵌入時的預設模型。",
+  "embeddingModelDefault": "預設",
+  "embeddingModelSetDefault": "設为預設嵌入模型",
+  "embeddingModelIsDefault": "預設嵌入模型",
+  "imported": "已匯入",
+  "importedTooltip": "從本地檔案匯入。從 Jan 中移除它不會刪除磁盤上的檔案。",
+  "noModelFoundRemoteDesc": "可用模型將列在這裡。使用上面的重新整理按鈕從提供商获取模型,或使用 + 按鈕手动新增一個。",
+  "deleteAllModels": {
+    "button": "全部刪除",
+    "title": "刪除所有已下載的模型?",
+    "description": "這將從磁盤上永久移除 {{count}} 個模型。",
+    "sizeLabel": "將釋放的磁盤空間:",
+    "calculating": "正在計算…",
+    "warning": "此操作無法撤销。",
+    "importedExcluded": "將保留 {{count}} 個匯入的模型(其檔案不是由 Jan 下載的)。",
+    "confirm": "刪除 {{count}} 個模型",
+    "deleting": "正在刪除…",
+    "success": "已刪除 {{count}} 個模型。",
+    "partialFailure": "刪除 {{count}} 個模型失敗。請檢視控制台了解详情。"
+  },
+  "baseUrl": {
+    "title": "Base URL",
+    "azureDescription": "您的 Azure OpenAI 端點。將 YOUR-RESOURCE-NAME 替换为您的 Azure 資源名稱。"
+  },
+  "apiKeys": {
+    "title": "API 金鑰",
+    "description": "输入您的 API 金鑰。您可以在“進階”中新增更多金鑰,某個金鑰失敗時 Jan 會自动尝試下一個。",
+    "placeholder": "sk-…\nsk-…",
+    "primaryPlaceholder": "输入主要 API 金鑰",
+    "keyPlaceholder": "输入 API 金鑰",
+    "primaryBadge": "主要",
+    "test": "測試金鑰",
+    "testing": "正在測試...",
+    "testHint": "使用每個金鑰檢查 /models 并顯示各金鑰狀態。",
+    "advanced": "進階",
+    "hideAdvanced": "隱藏進階",
+    "oneKeyHint": "可選的備用金鑰在“進階”中設定。",
+    "addKey": "新增金鑰",
+    "removeKey": "移除金鑰"
+  },
+  "llamacppSettings": {
+    "llamacpp_version": {
+      "title": "版本",
+      "description": "llama.cpp 發布版本"
+    },
+    "llamacpp_backend": {
+      "title": "後端",
+      "description": "llama.cpp 硬體後端 (CUDA、HIP/ROCm、Vulkan、CPU 等)"
+    },
+    "llamacpp_env": {
+      "title": "環境變數",
+      "description": "llama.cpp 環境變數(KEY=VALUE),以 ';' 分隔"
+    },
+    "check_for_updates": {
+      "title": "檢查更新",
+      "description": "获取遠程 llama.cpp 發布列表。版本下拉框需要它來顯示本地安裝之外的版本,并用于更新通知。"
+    },
+    "auto_update_engine": {
+      "title": "自动更新引擎",
+      "description": "有可用更新時自动下載并切換到最新的 llamacpp 引擎。啟動時需要網路訪問。"
+    },
+    "verify_backend_deps": {
+      "title": "校驗後端依賴",
+      "description": "啟動時檢查 GPU 後端共享庫(CUDA、Vulkan 等)是否可用"
+    },
+    "models_max": {
+      "title": "最大並發載入對話模型數",
+      "description": "路由器同時保持載入的最大對話模型數。0 = 不限制。"
+    },
+    "timeout": {
+      "title": "llamacpp 逾時",
+      "description": "llamacpp 連線与載入逾時(秒)"
+    },
+    "fit": {
+      "title": "自动適配(裝置記憶體)",
+      "description": "是否調整未設定的參數以適配裝置記憶體('on' 或 'off')。"
+    },
+    "fit_target": {
+      "title": "每裝置適配目标 (MiB)",
+      "description": "每個裝置的適配目标余量,逗號分隔的 MiB 值列表。"
+    },
+    "fit_ctx": {
+      "title": "適配最小上下文大小",
+      "description": "自动適配選項可設定的最小上下文大小(token)。"
+    },
+    "threads": {
+      "title": "執行緒數",
+      "description": "生成時使用的執行緒數(-1 表示邏辑核心數)。"
+    },
+    "threads_batch": {
+      "title": "執行緒數(批處理)",
+      "description": "批處理与提示词處理的執行緒數。"
+    },
+    "ctx_shift": {
+      "title": "上下文偏移",
+      "description": "允許模型裁切开頭文本,以便在記憶體中容纳新文本"
+    },
+    "n_predict": {
+      "title": "最大預測 Token 數",
+      "description": "最大生成 Token 數(-1 = 無限)。"
+    },
+    "ubatch_size": {
+      "title": "uBatch 大小",
+      "description": "處理提示词的物理最大批大小。"
+    },
+    "device": {
+      "title": "解除安裝裝置",
+      "description": "用于解除安裝的裝置列表,逗號分隔。"
+    },
+    "split_mode": {
+      "title": "GPU 拆分模式",
+      "description": "如何在多個 GPU 之間拆分模型。"
+    },
+    "main_gpu": {
+      "title": "主 GPU 索引",
+      "description": "用于模型(split-mode=none)或中間结果的 GPU。"
+    },
+    "flash_attn": {
+      "title": "Flash Attention",
+      "description": "啟用 Flash Attention 以获得優化性能。"
+    },
+    "parallel": {
+      "title": "并行序列數",
+      "description": "为自己的聊天請求解碼的并行序列數。"
+    },
+    "cont_batching": {
+      "title": "連续批處理",
+      "description": "为并發請求啟用連续批處理。"
+    },
+    "no_mmap": {
+      "title": "停用 mmap",
+      "description": "不對模型做記憶體映射(載入较慢,但未使用 mlock 時可能減少换頁)"
+    },
+    "mlock": {
+      "title": "MLock",
+      "description": "强制系统將模型保留在記憶體中,防止交换/壓缩。"
+    },
+    "cache_type_k": {
+      "title": "KV 快取 K 类型",
+      "description": "鍵的 KV 快取數据类型(預設 f16)。"
+    },
+    "cache_type_v": {
+      "title": "KV 快取 V 类型",
+      "description": "值的 KV 快取數据类型(預設 f16)。"
+    },
+    "rope_scaling": {
+      "title": "RoPE 縮放方法",
+      "description": "RoPE 频率縮放方法。"
+    },
+    "rope_scale": {
+      "title": "RoPE 縮放系數",
+      "description": "RoPE 上下文縮放系數。"
+    },
+    "rope_freq_base": {
+      "title": "RoPE 频率基數",
+      "description": "RoPE 基礎频率(0 = 從模型載入)。"
+    },
+    "rope_freq_scale": {
+      "title": "RoPE 频率縮放系數",
+      "description": "RoPE 频率縮放系數。"
+    },
+    "cache_ram": {
+      "title": "提示词快取 RAM (MiB)",
+      "description": "提示词快取最大大小(MiB)。-1 = 不限制,0 = 停用。"
+    },
+    "cache_reuse": {
+      "title": "快取復用",
+      "description": "從快取復用匹配前缀 token 的最小塊大小。0 = 停用。"
+    },
+    "swa_full": {
+      "title": "完整 SWA 快取",
+      "description": "为滑动視窗注意力模型使用完整 KV 快取。"
+    },
+    "kv_unified": {
+      "title": "统一 KV 快取",
+      "description": "使用跨所有槽位共享的單個统一 KV 緩衝區。運行多個工作階段時可节省記憶體。"
+    },
+    "keep": {
+      "title": "保留前 N 個 Token",
+      "description": "上下文偏移時保留的初始提示词 Token 數。-1 = 全部保留。"
+    },
+    "batch_size": {
+      "title": "批次大小",
+      "description": "處理提示的邏輯最大批次大小。"
+    },
+    "n_cpu_moe": {
+      "title": "CPU 中的 MoE 層數",
+      "description": "將混合專家（MoE）模型前 N 層的權重保留在 CPU 記憶體中。使大型 MoE 模型能在有限顯示記憶體中執行。0 為停用。"
+    },
+    "no_kv_offload": {
+      "title": "停用 KV 快取卸載",
+      "description": "將 KV 快取保留在系統記憶體中而非 GPU 顯示記憶體。在顯示記憶體不足時有用，但會降低速度。"
+    },
+    "tensor_split": {
+      "title": "張量分割",
+      "description": "以逗號分隔的比例將模型分配到多個裝置，例如 \"3,1\"。留空則平均分配。"
+    },
+    "no_op_offload": {
+      "title": "停用算子卸載",
+      "description": "將主機張量運算保留在 CPU 上，而不是卸載到加速器。"
+    },
+    "persist_thread_cache": {
+      "title": "跨工作階段保留對話",
+      "description": "將每個對話的提示快取保留在磁碟上，這樣重新開啟時無需重新讀取整個對話。僅在模型、其設定和 llama.cpp 版本均與儲存時一致時才會還原。"
+    },
+    "thread_cache_size": {
+      "title": "對話快取磁碟限額 (MiB)",
+      "description": "已儲存對話快取的磁碟配額（預設：8192）。超出時最早儲存的快取將被刪除。一次長對話可能占用數百 MiB。"
+    },
+    "ctx_checkpoints": {
+      "title": "上下文檢查點",
+      "description": "每個插槽保留的最大上下文檢查點數，允許在上下文偏移後還原而非重新處理。"
+    },
+    "checkpoint_min_step": {
+      "title": "檢查點最小步長",
+      "description": "上下文檢查點之間的最小 Token 數。"
+    }
+  },
+  "backendArchives": "後端歸檔",
+  "importLlamacpp": {
+    "title": "匯入模型",
+    "description": "匯入 GGUF 模型檔案以加入你的模型清單。開啟多模態支援可附加 mmproj 檔案用於影像/音訊輸入，或開啟草稿模型支援以使用投機解碼。嵌入模型會自動識別。",
+    "multimodal": "多模態支援",
+    "multimodalDesc": "若你的模型使用 mmproj 檔案處理影像或音訊輸入，請開啟此項。模態類型會從投影檔案自動識別。",
+    "draft": "草稿模型支援",
+    "draftDesc": "附加一個較小的草稿模型（含 MTP 草稿頭）以啟用投機解碼。草稿模型必須與主模型共享分詞器和詞表。",
+    "savedAs": "模型將儲存為：",
+    "modelFile": "模型檔案 (GGUF)",
+    "required": "必需",
+    "requiredForMultimodal": "多模態必需",
+    "requiredForDraft": "草稿模型必需",
+    "change": "更換",
+    "selectGguf": "選擇 GGUF 檔案",
+    "selectMmproj": "選擇 MMPROJ 檔案",
+    "selectDraft": "選擇草稿 GGUF 檔案",
+    "modelValidationError": "模型校驗錯誤",
+    "validatingModel": "正在校驗模型檔案...",
+    "embeddingDetected": "已識別為嵌入模型",
+    "embeddingDetectedDesc": "該模型將僅用於文字嵌入，多模態選項已停用。",
+    "mmprojFile": "MMPROJ 檔案",
+    "mmprojValidationError": "MMPROJ 校驗錯誤",
+    "validatingMmproj": "正在校驗 MMPROJ 檔案...",
+    "detected": "已識別：",
+    "vision": "視覺",
+    "audio": "音訊",
+    "draftFile": "草稿模型檔案 (GGUF)",
+    "draftValidationError": "草稿模型校驗錯誤",
+    "validatingDraft": "正在校驗草稿模型檔案...",
+    "cancel": "取消",
+    "importing": "正在匯入...",
+    "importButton": "匯入模型",
+    "clipModelError": "該模型為 CLIP 架構，無法作為文字生成模型匯入。CLIP 模型用於視覺任務，需要單獨處理。",
+    "mmprojArchMismatch": "該 MMPROJ 檔案的架構為 \"{{architecture}}\"，但應為 \"clip\"。MMPROJ 檔案必須是用於視覺或音訊處理的 CLIP 模型。",
+    "mmprojReadFailed": "讀取 MMPROJ 元資料失敗：{{message}}",
+    "readFailed": "讀取 {{type}} 元資料失敗：{{message}}",
+    "draftClipError": "該檔案為 CLIP 架構，不能用作草稿模型。",
+    "draftValidationFailed": "草稿模型校驗失敗",
+    "draftIncompatible": "草稿模型與主模型不相容：{{reason}}",
+    "modelValidationFailed": "模型校驗失敗",
+    "toastSelectModel": "請先選擇模型檔案",
+    "toastSelectMmproj": "多模態模型需要同時選擇模型和 MMPROJ 檔案",
+    "toastSelectDraft": "請先選擇草稿模型檔案",
+    "toastNameUndetermined": "無法從檔案確定模型名稱",
+    "toastModelExists": "模型已存在",
+    "toastModelExistsDesc": "{{name}} 已匯入過",
+    "toastImportSuccess": "模型匯入成功",
+    "toastImportSuccessDesc": "{{name}} 已匯入",
+    "toastImportFailed": "模型匯入失敗",
+    "toastUnknownError": "未知錯誤"
+  }
 }

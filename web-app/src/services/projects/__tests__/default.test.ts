@@ -86,7 +86,7 @@ describe('DefaultProjectsService', () => {
 
   it('saveToStorage handles localStorage error gracefully', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    const setItemSpy = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
       throw new Error('quota exceeded')
     })
     const svc = new DefaultProjectsService()

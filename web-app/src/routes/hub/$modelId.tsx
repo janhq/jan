@@ -10,9 +10,11 @@ import {
   IconDownload,
   IconClock,
   IconFileCode,
+  IconRefresh,
+  IconCode,
+  IconEye,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
-import { useModelSources } from '@/hooks/useModelSources'
 import { extractModelName, extractDescription } from '@/lib/models'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useEffect, useMemo, useCallback, useState } from 'react'
@@ -28,15 +30,30 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { useTranslation } from '@/i18n'
+import {
+  getMirrorBase,
+  rewriteModelscopeReadme,
+  rewriteReadmeImages,
+  sourceBase,
+  type SearchSource,
+} from '@/lib/searchSources'
+import { buildDetailCatalogModel, type LiveCatalogModel } from '@/lib/liveHub'
+import { startModelDownload } from '@/lib/modelDownloads'
+import { ModelReadme } from '@/containers/ModelReadme'
+import { toast } from 'sonner'
 
 type SearchParams = {
   repo: string
+  source?: SearchSource
 }
+
+type LoadStatus = 'loading' | 'error' | 'notfound' | 'ready'
 
 export const Route = createFileRoute('/hub/$modelId')({
   component: HubModelDetailContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
     repo: search.repo as SearchParams['repo'],
+    source: (search.source as SearchParams['source']) ?? undefined,
   }),
 })
 
@@ -45,7 +62,6 @@ function HubModelDetailContent() {
   const { modelId } = useParams({ from: Route.id })
   const navigate = useNavigate()
   const { huggingfaceToken } = useGeneralSetting()
-  const { sources, fetchSources } = useModelSources()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const search = useSearch({ from: Route.id as any })
   const { getProviderByName } = useModelProvider()
@@ -58,35 +74,70 @@ function HubModelDetailContent() {
   } = useDownloadStore()
   const serviceHub = useServiceHub()
   const [repoData, setRepoData] = useState<CatalogModel | undefined>()
+  const [loadStatus, setLoadStatus] = useState<LoadStatus>('loading')
+
+  // 详情页来源:live 搜索结果带 source 参数;默认走 HF 官方(原版逻辑)
+  const source: SearchSource = search.source ?? 'hf'
+  const isModelScope = source === 'modelscope'
+  const repoId = (search.repo || modelId).replace(/\/+$/, '')
+
+  // 返回 Hub 时带上搜索态(来源 + 搜索词取自会话快照),返回后搜索态/列表/滚动位置完整恢复
+  const backToHub = useCallback(() => {
+    const backSearch: Record<string, unknown> = { source }
+    try {
+      const session = JSON.parse(
+        sessionStorage.getItem('hub-session-v1') || 'null'
+      )
+      if (session?.q) backSearch.q = session.q
+    } catch {
+      // 快照不可用时仅回来源
+    }
+    navigate({ to: route.hub.index, search: backSearch })
+  }, [navigate, source])
 
   // State for README content
   const [readmeContent, setReadmeContent] = useState<string>('')
   const [isLoadingReadme, setIsLoadingReadme] = useState(false)
-
-
-  useEffect(() => {
-    fetchSources()
-  }, [fetchSources])
+  // README 视图:渲染 / 原文
+  const [readmeView, setReadmeView] = useState<'render' | 'raw'>('render')
 
   const fetchRepo = useCallback(async () => {
-    const repoInfo = await serviceHub
-      .models()
-      .fetchHuggingFaceRepo(search.repo || modelId, huggingfaceToken)
-    if (repoInfo) {
-      const repoDetail = serviceHub
+    setLoadStatus('loading')
+    try {
+      if (isModelScope || source === 'hf-mirror') {
+        // 魔搭 / HF 镜像:走三源服务层(URL 与 README 地址跟随对应域名)
+        const detail = await buildDetailCatalogModel(source, repoId)
+        if (detail) {
+          setRepoData(detail)
+          setLoadStatus('ready')
+        } else {
+          setLoadStatus('notfound')
+        }
+        return
+      }
+      // HF 官方(原版逻辑保留)
+      const repoInfo = await serviceHub
         .models()
-        .convertHfRepoToCatalogModel(repoInfo)
-      setRepoData(repoDetail || undefined)
+        .fetchHuggingFaceRepo(repoId, huggingfaceToken)
+      if (repoInfo) {
+        const repoDetail = serviceHub
+          .models()
+          .convertHfRepoToCatalogModel(repoInfo)
+        setRepoData(repoDetail || undefined)
+        setLoadStatus('ready')
+      } else {
+        setLoadStatus('notfound')
+      }
+    } catch (e) {
+      console.error('Failed to fetch model detail:', e)
+      setLoadStatus('error')
     }
-  }, [serviceHub, modelId, search, huggingfaceToken])
+  }, [serviceHub, repoId, huggingfaceToken, isModelScope, source])
 
   useEffect(() => {
     fetchRepo()
   }, [modelId, fetchRepo])
-  // Find the model data from sources
-  const modelData = useMemo(() => {
-    return sources.find((model) => model.model_name === modelId) ?? repoData
-  }, [sources, modelId, repoData])
+  const modelData = repoData
 
   // Speculative draft companions are paired with a real quant at download
   // time, not standalone models — keep them out of the selectable variant list.
@@ -133,23 +184,19 @@ function HubModelDetailContent() {
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
 
     if (diffDays < 7) {
-      return `${diffDays} days ago`
+      return t('hub:relativeDays', { days: diffDays })
     } else if (diffDays < 30) {
-      const weeks = Math.floor(diffDays / 7)
-      return `${weeks} week${weeks > 1 ? 's' : ''} ago`
+      return t('hub:relativeWeeks', { weeks: Math.floor(diffDays / 7) })
     } else if (diffDays < 365) {
-      const months = Math.floor(diffDays / 30)
-      return `${months} month${months > 1 ? 's' : ''} ago`
+      return t('hub:relativeMonths', { months: Math.floor(diffDays / 30) })
     } else {
-      const years = Math.floor(diffDays / 365)
-      return `${years} year${years > 1 ? 's' : ''} ago`
+      return t('hub:relativeYears', { years: Math.floor(diffDays / 365) })
     }
   }
 
   // Extract tags from quants (model variants)
   const tags = useMemo(() => {
     if (!displayQuants.length) return []
-    // Extract unique size indicators from quant names
     const sizePattern = /(\d+b)/i
     const uniqueSizes = new Set<string>()
 
@@ -171,48 +218,89 @@ function HubModelDetailContent() {
   useEffect(() => {
     if (modelData?.readme) {
       setIsLoadingReadme(true)
-      // Try fetching without headers first
-      // There is a weird issue where this HF link will return error when access public repo with auth header
-      fetch(modelData.readme)
-        .then((response) => {
-          if (!response.ok && huggingfaceToken && modelData?.readme) {
-            // Retry with Authorization header if first fetch failed
-            return fetch(modelData.readme, {
-              headers: {
-                Authorization: `Bearer ${huggingfaceToken}`,
-              },
+      const fetchWithAuth = (url: string) =>
+        fetch(url).then((response) => {
+          if (!response.ok && huggingfaceToken) {
+            return fetch(url, {
+              headers: { Authorization: `Bearer ${huggingfaceToken}` },
             })
           }
           return response
         })
+      fetchWithAuth(modelData.readme)
         .then((response) => response.text())
         .then((content) => {
-          setReadmeContent(content)
+          // 相对路径图片重写为绝对地址(魔搭走 master 分支,HF/镜像走 main 分支),
+          // 否则 README 里的 ./assets/x.png 这类图片会 404。
+          let rewritten = content
+          if (isModelScope) {
+            rewritten = rewriteModelscopeReadme(content, repoId)
+          } else {
+            const base = sourceBase(source)
+            rewritten = rewriteReadmeImages(
+              content,
+              `${base}/${repoId}/resolve/main/`
+            )
+          }
+          setReadmeContent(rewritten)
           setIsLoadingReadme(false)
         })
-        .catch((error) => {
-          console.error('Failed to fetch README:', error)
+        .catch(async () => {
+          // HF 官方直连失败(需代理)→ 自动用镜像域名重试一次
+          if (modelData?.readme?.startsWith('https://huggingface.co/')) {
+            try {
+              const mirrorUrl =
+                getMirrorBase() +
+                modelData.readme.slice('https://huggingface.co'.length)
+              const resp = await fetch(mirrorUrl)
+              if (resp.ok) {
+                const content = await resp.text()
+                setReadmeContent(content)
+                setIsLoadingReadme(false)
+                return
+              }
+            } catch {
+              // 镜像也失败则按失败处理
+            }
+          }
+          console.error('Failed to fetch README')
           setIsLoadingReadme(false)
         })
     }
-  }, [modelData?.readme, huggingfaceToken])
+  }, [modelData?.readme, huggingfaceToken, isModelScope, repoId])
 
+  // 加载中 / 加载失败 / 不存在 三态
   if (!modelData) {
     return (
       <div className="flex flex-col h-svh w-full">
         <HeaderPage>
           <Button
-          onClick={() => navigate({ to: route.hub.index })}
-          aria-label="Go back"
-          variant="ghost"
-          size="sm"
-        >
-          <IconArrowLeft size={18} className="text-muted-foreground" />
-          <span className="text-foreground">Back to Hub</span>
-        </Button>
+            onClick={backToHub}
+            aria-label="Go back"
+            variant="ghost"
+            size="sm"
+          >
+            <IconArrowLeft size={18} className="text-muted-foreground" />
+            <span className="text-foreground">{t('hub:backToHub')}</span>
+          </Button>
         </HeaderPage>
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-muted-foreground">Model not found</p>
+        <div className="flex-1 flex items-center justify-center px-6">
+          {loadStatus === 'loading' ? (
+            <div className="flex flex-col items-center gap-3 text-muted-foreground">
+              <IconRefresh className="size-6 animate-spin" />
+              <p>{t('hub:detailLoading')}</p>
+            </div>
+          ) : loadStatus === 'error' ? (
+            <div className="flex flex-col items-center gap-3 text-muted-foreground">
+              <p className="text-center">{t('hub:detailLoadFailed')}</p>
+              <Button variant="secondary" size="sm" onClick={fetchRepo}>
+                <IconRefresh size={14} className="mr-1" />
+                {t('hub:detailRetry')}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">{t('hub:detailNotFound')}</p>
+          )}
         </div>
       </div>
     )
@@ -223,14 +311,14 @@ function HubModelDetailContent() {
       <HeaderPage>
         <div className="flex items-center gap-2 w-full">
           <Button
-            onClick={() => navigate({ to: route.hub.index })}
+            onClick={backToHub}
             aria-label="Go back"
             variant="ghost"
             size="sm"
-            className='relative z-20'
+            className="relative z-20"
           >
             <IconArrowLeft size={18} className="text-muted-foreground" />
-            <span className="text-foreground">Back to Hub</span>
+            <span className="text-foreground">{t('hub:backToHub')}</span>
           </Button>
         </div>
       </HeaderPage>
@@ -243,29 +331,41 @@ function HubModelDetailContent() {
               <h1
                 className="text-2xl font-semibold mb-4 capitalize wrap-break-word line-clamp-2"
                 title={
-                  extractModelName(modelData.model_name) ||
-                  modelData.model_name
+                  extractModelName(modelData.model_name) || modelData.model_name
                 }
               >
-                {extractModelName(modelData.model_name) ||
-                  modelData.model_name}
+                {extractModelName(modelData.model_name) || modelData.model_name}
               </h1>
 
               {/* Stats */}
               <div className="flex items-center gap-4 text-sm text-foreground mb-4 flex-wrap">
+                {/* 来源标签(搜索下载源) */}
+                <span className="text-xs font-medium px-2 py-0.5 rounded bg-secondary text-muted-foreground">
+                  {source === 'modelscope'
+                    ? t('hub:sourceModelScope')
+                    : source === 'hf-mirror'
+                      ? t('hub:sourceHfMirror')
+                      : t('hub:sourceHf')}
+                </span>
                 {modelData.developer && (
                   <>
-                    <span>By {modelData.developer}</span>
+                    <span>
+                      {t('hub:by')} {modelData.developer}
+                    </span>
                   </>
                 )}
                 <div className="flex items-center gap-2">
                   <IconDownload size={16} />
-                  <span>{modelData.downloads || 0} Downloads</span>
+                  <span>
+                    {modelData.downloads || 0} {t('hub:downloads')}
+                  </span>
                 </div>
                 {modelData.created_at && (
                   <div className="flex items-center gap-2">
                     <IconClock size={16} />
-                    <span>Updated {formatDate(modelData.created_at)}</span>
+                    <span>
+                      {t('hub:updated')} {formatDate(modelData.created_at)}
+                    </span>
                   </div>
                 )}
               </div>
@@ -313,7 +413,7 @@ function HubModelDetailContent() {
                 <div className="flex items-center gap-2 mb-4">
                   <IconFileCode size={20} className="text-muted-foreground" />
                   <h2 className="text-lg font-semibold text-foreground">
-                    Variants ({displayQuants.length})
+                    {t('hub:variantsCount', { count: displayQuants.length })}
                   </h2>
                 </div>
 
@@ -322,17 +422,17 @@ function HubModelDetailContent() {
                     <thead>
                       <tr className="border-b ">
                         <th className="text-left py-3 px-2 text-sm font-medium">
-                          Version
+                          {t('hub:version')}
                         </th>
                         <th className="text-left py-3 px-2 text-sm font-medium">
-                          Format
+                          {t('hub:format')}
                         </th>
                         <th className="text-left py-3 px-2 text-sm font-medium">
-                          Size
+                          {t('hub:size')}
                         </th>
                         <th></th>
                         <th className="text-right py-3 px-2 text-sm font-medium">
-                          Action
+                          {t('hub:action')}
                         </th>
                       </tr>
                     </thead>
@@ -351,14 +451,12 @@ function HubModelDetailContent() {
                           (m: { id: string }) => m.id === variant.model_id
                         )
 
-                        // Extract format from model_id
                         const format = variant.model_id
                           .toLowerCase()
                           .includes('tensorrt')
                           ? 'TensorRT'
                           : 'GGUF'
 
-                        // Extract version name (remove format suffix)
                         const versionName = variant.model_id
                           .replace(/_GGUF$/i, '')
                           .replace(/-GGUF$/i, '')
@@ -428,9 +526,30 @@ function HubModelDetailContent() {
                                   <Button
                                     size="sm"
                                     onClick={() => {
-                                      addLocalDownloadingModel(
-                                        variant.model_id
-                                      )
+                                      if (isModelScope) {
+                                        // 魔搭:ms CLI 下载(无 CLI 自动回退直连)
+                                        const mmprojVariant =
+                                          modelData.mmproj_models?.find(
+                                            (e) =>
+                                              e.model_id.toLowerCase() ===
+                                              'mmproj-f16'
+                                          ) || modelData.mmproj_models?.[0]
+                                        startModelDownload({
+                                          model: modelData as LiveCatalogModel,
+                                          variant,
+                                          mmprojVariant,
+                                          huggingfaceToken,
+                                        }).catch((err) => {
+                                          toast.error(t('hub:downloadFailed'), {
+                                            description:
+                                              err instanceof Error
+                                                ? err.message
+                                                : String(err),
+                                          })
+                                        })
+                                        return
+                                      }
+                                      addLocalDownloadingModel(variant.model_id)
                                       const mmprojPath = (
                                         modelData.mmproj_models?.find(
                                           (e) =>
@@ -462,7 +581,7 @@ function HubModelDetailContent() {
                                     className={cn(isDownloading && 'hidden')}
                                     variant="outline"
                                   >
-                                    Download
+                                    {t('hub:download')}
                                   </Button>
                                 )
                               })()}
@@ -479,38 +598,60 @@ function HubModelDetailContent() {
             {/* README Section */}
             {modelData.readme && (
               <div className="mb-8">
-                <div className="flex items-center gap-2 mb-4">
-                  <IconFileCode size={20} className="text-muted-foreground" />
-                  <h2 className="text-lg font-semibold">
-                    README
-                  </h2>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <IconFileCode size={20} className="text-muted-foreground" />
+                    <h2 className="text-lg font-semibold">{t('hub:readme')}</h2>
+                  </div>
+                  {/* 渲染 / 原文 切换 */}
+                  <div className="flex items-center gap-1 p-0.5 rounded bg-secondary">
+                    <button
+                      className={cn(
+                        'flex items-center gap-1 text-xs font-medium px-2 py-1 rounded cursor-pointer',
+                        readmeView === 'render'
+                          ? 'bg-card text-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                      onClick={() => setReadmeView('render')}
+                    >
+                      <IconEye size={13} />
+                      {t('hub:readmeRender')}
+                    </button>
+                    <button
+                      className={cn(
+                        'flex items-center gap-1 text-xs font-medium px-2 py-1 rounded cursor-pointer',
+                        readmeView === 'raw'
+                          ? 'bg-card text-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                      onClick={() => setReadmeView('raw')}
+                    >
+                      <IconCode size={13} />
+                      {t('hub:readmeRaw')}
+                    </button>
+                  </div>
                 </div>
 
                 {isLoadingReadme ? (
                   <div className="flex items-center justify-center py-8">
                     <span className="text-muted-foreground">
-                      Loading README...
+                      {t('hub:readmeLoading')}
                     </span>
                   </div>
                 ) : readmeContent ? (
-                  <div className="prose prose-invert max-w-none">
-                    <RenderMarkdown
-                      components={{
-                        a: ({ ...props }) => (
-                          <a
-                            {...props}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          />
-                        ),
-                      }}
-                      content={readmeContent}
-                    />
-                  </div>
+                  readmeView === 'raw' ? (
+                    <pre className="max-h-[70vh] overflow-auto text-xs leading-relaxed p-4 rounded-lg border border-border bg-secondary">
+                      {readmeContent}
+                    </pre>
+                  ) : (
+                    <div className="markdown-body readme-detail max-w-none overflow-x-auto">
+                      <ModelReadme content={readmeContent} />
+                    </div>
+                  )
                 ) : (
                   <div className="flex items-center justify-center py-8">
                     <span className="text-muted-foreground">
-                      Failed to load README
+                      {t('hub:readmeLoadFailed')}
                     </span>
                   </div>
                 )}

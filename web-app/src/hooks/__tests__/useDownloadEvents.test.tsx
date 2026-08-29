@@ -7,6 +7,7 @@ const hoisted = vi.hoisted(() => ({
     updateProgress: vi.fn(),
     removeDownload: vi.fn(),
     removeLocalDownloadingModel: vi.fn(),
+    markFailed: vi.fn(),
   },
   navigateMock: vi.fn(),
   toastMock: {
@@ -104,7 +105,8 @@ describe('useDownloadEvents', () => {
       0.5,
       'jan-q4',
       100,
-      200
+      200,
+      0
     )
   })
 
@@ -116,7 +118,8 @@ describe('useDownloadEvents', () => {
       0,
       'jan-q4',
       undefined,
-      undefined
+      undefined,
+      0
     )
   })
 
@@ -127,7 +130,31 @@ describe('useDownloadEvents', () => {
       'common:toast.downloadTokenRequired.title',
       expect.any(Object)
     )
-    expect(hoisted.downloadStore.removeDownload).toHaveBeenCalledWith('x')
+    // 失败条目保留(标记而非删除),供下载弹窗展示原因 + 重试
+    expect(hoisted.downloadStore.markFailed).toHaveBeenCalledWith(
+      'x',
+      'HTTP status 401'
+    )
+    expect(hoisted.downloadStore.removeDownload).not.toHaveBeenCalled()
+  })
+
+  it('localizes the structured disk-space error', () => {
+    mount()
+    const needed = String(10 * 1024 * 1024 * 1024)
+    const free = String(1024 * 1024)
+    hoisted.eventHandlers['fde']({
+      modelId: 'd',
+      error: `DISK_SPACE_INSUFFICIENT|${needed}|${free}`,
+    })
+    expect(hoisted.toastMock.error).toHaveBeenCalledWith(
+      'common:toast.diskSpaceInsufficient.title',
+      expect.any(Object)
+    )
+    expect(hoisted.downloadStore.markFailed).toHaveBeenCalledWith(
+      'd',
+      expect.stringContaining('DISK_SPACE_INSUFFICIENT')
+    )
+    expect(hoisted.downloadStore.removeDownload).not.toHaveBeenCalled()
   })
 
   it('handles HTTP 403', () => {

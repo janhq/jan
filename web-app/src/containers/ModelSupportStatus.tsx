@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/tooltip'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useHardware } from '@/hooks/useHardware'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   DEFAULT_CTX_LENGTH,
   estimateModelFit,
@@ -21,14 +22,17 @@ interface ModelSupportStatusProps {
   className?: string
 }
 
-const TIER_STYLES: Record<FitTier, { dot: string; label: string }> = {
-  green: { dot: 'bg-green-500', label: 'Should run comfortably on your device' },
+const TIER_STYLES: Record<FitTier, { dot: string; labelKey: string }> = {
+  green: {
+    dot: 'bg-green-500',
+    labelKey: 'hub:fitFitsDetail',
+  },
   yellow: {
     dot: 'bg-yellow-500',
-    label: 'Will run but leaves little memory headroom',
+    labelKey: 'hub:fitSlowDetail',
   },
-  red: { dot: 'bg-red-500', label: 'Likely exceeds your available memory' },
-  unknown: { dot: 'bg-secondary', label: 'Fit unknown' },
+  red: { dot: 'bg-red-500', labelKey: 'hub:fitNoDetail' },
+  unknown: { dot: 'bg-secondary', labelKey: 'hub:fitUnknownDetail' },
 }
 
 export const ModelSupportStatus = ({
@@ -37,6 +41,7 @@ export const ModelSupportStatus = ({
   contextSize,
   className,
 }: ModelSupportStatusProps) => {
+  const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const hardwareData = useHardware((s) => s.hardwareData)
   const [sizeBytes, setSizeBytes] = useState<number | null>(null)
@@ -75,7 +80,8 @@ export const ModelSupportStatus = ({
   if (tier === 'unknown') return null
 
   const style = TIER_STYLES[tier]
-  const tooltip = `${style.label} (estimated)`
+  const tierLabel = t(style.labelKey)
+  const tooltip = `${tierLabel} ${t('hub:estimated')}`
 
   return (
     <TooltipProvider>
@@ -87,7 +93,7 @@ export const ModelSupportStatus = ({
               style.dot,
               className
             )}
-            aria-label={`Device compatibility: ${tier}`}
+            aria-label={`${t('hub:deviceCompatibility')}: ${tierLabel}`}
           />
         </TooltipTrigger>
         <TooltipContent>

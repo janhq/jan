@@ -1,6 +1,7 @@
 import type { StateStorage } from 'zustand/middleware'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { localStorageKey } from '@/constants/localStorage'
 
 /**
  * Async Zustand `StateStorage` backed by the Rust settings store
@@ -19,14 +20,32 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 // confirmed backend write/read so a failed invoke still retries next time.
 const lastWritten = new Map<string, string>()
 
+// 进度类 key(下载中每秒都在变)的写盘合并:至多每 2s 落盘一次,避免
+// settings.json 每秒全量重写。崩溃最多丢 2s 的 UI 进度显示;磁盘断点账本
+// 由 Rust 实时写(.meta.json),断点续传不受影响。
+const DEBOUNCED_KEYS = new Set<string>([localStorageKey.pausedDownloads])
+const DEBOUNCE_MS = 2000
+const pendingWrites = new Map<
+  string,
+  { value: string; timer: ReturnType<typeof setTimeout> }
+>()
+
+const writeThrough = async (name: string, value: string) => {
+  try {
+    await getServiceHub().core().invoke('settings_set', { key: name, value })
+    lastWritten.set(name, value)
+  } catch (error) {
+    console.error(`settings_set failed for '${name}':`, error)
+  }
+}
+
 export const backendStorage: StateStorage = {
   getItem: async (name) => {
     if (!isPlatformTauri()) return localStorage.getItem(name)
     try {
-      const value = await getServiceHub().core().invoke<string | null>(
-        'settings_get',
-        { key: name }
-      )
+      const value = await getServiceHub()
+        .core()
+        .invoke<string | null>('settings_get', { key: name })
       if (value != null) lastWritten.set(name, value)
       return value ?? null
     } catch (error) {
@@ -40,17 +59,32 @@ export const backendStorage: StateStorage = {
       return
     }
     if (lastWritten.get(name) === value) return
-    try {
-      await getServiceHub().core().invoke('settings_set', { key: name, value })
-      lastWritten.set(name, value)
-    } catch (error) {
-      console.error(`settings_set failed for '${name}':`, error)
+    if (DEBOUNCED_KEYS.has(name)) {
+      // 合并高频写:始终只保留最新值,定时器到点落盘一次
+      const existing = pendingWrites.get(name)
+      if (existing) clearTimeout(existing.timer)
+      const timer = setTimeout(() => {
+        const pending = pendingWrites.get(name)
+        pendingWrites.delete(name)
+        if (pending && lastWritten.get(name) !== pending.value) {
+          void writeThrough(name, pending.value)
+        }
+      }, DEBOUNCE_MS)
+      pendingWrites.set(name, { value, timer })
+      return
     }
+    await writeThrough(name, value)
   },
   removeItem: async (name) => {
     if (!isPlatformTauri()) {
       localStorage.removeItem(name)
       return
+    }
+    // 有待写的合并值时直接丢弃(删除语义优先)
+    const pending = pendingWrites.get(name)
+    if (pending) {
+      clearTimeout(pending.timer)
+      pendingWrites.delete(name)
     }
     try {
       await getServiceHub().core().invoke('settings_remove', { key: name })

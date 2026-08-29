@@ -96,6 +96,20 @@
   "noThreadsYetDesc": "Start a new conversation to see your thread history here.",
   "downloads": "Downloads",
   "downloading": "Downloading",
+  "downloadingEllipsis": "Downloading...",
+  "retrying": "Retrying…",
+  "retryingAttempt": "Retrying… (attempt {{n}})",
+  "tokenSpeed": {
+    "generation": "Generation",
+    "reading": "Reading",
+    "tokens": "Tokens"
+  },
+  "initializingDownload": "Initializing download...",
+  "paused": "Paused",
+  "pausedProgress": "Paused · {{percent}}%",
+  "downloadSize": "{{current}} / {{total}} GB",
+  "downloadSizeCurrent": "{{current}} GB",
+  "downloadSpeed": " · {{speed}}/s",
   "uploadingAttachments": "Uploading attachments…",
   "cancelDownload": "Cancel download",
   "downloadCancelled": "Download Cancelled",
@@ -325,6 +339,7 @@
     "createNewProject": "Create New Project",
     "editProject": "Edit Project",
     "deleteProject": "Delete Project",
+    "deleteProjectConfirm": "Are you sure you want to delete this project? This action cannot be undone.",
     "projectName": "Project Name",
     "enterProjectName": "Enter project name...",
     "noProjectsAvailable": "No projects available",
@@ -364,7 +379,8 @@
       "updateButton": "Update",
       "alreadyExists": "Project \"{{projectName}}\" already exists",
       "createSuccess": "Project \"{{projectName}}\" created successfully",
-      "updateSuccess": "Project \"{{projectName}}\" updated successfully"
+      "updateSuccess": "Project \"{{projectName}}\" updated successfully",
+      "renameSuccess": "Project renamed from \"{{oldName}}\" to \"{{newName}}\""
     },
     "noConversationsIn": "No Conversations in {{projectName}}",
     "startNewConversation": "Start a new conversation with {{projectName}} below",
@@ -456,6 +472,10 @@
     "downloadRateLimited": {
       "title": "Rate limited by Hugging Face",
       "description": "You have been rate-limited. Adding a token can increase rate limits. Please try again later."
+    },
+    "diskSpaceInsufficient": {
+      "title": "Not enough disk space",
+      "description": "The download needs {{needed}}, but only {{free}} is free on the target drive. Free up some space and retry."
     },
     "modelValidationStarted": {
       "title": "Validating Model",
@@ -555,5 +575,18 @@
     "seconds": "{{count}}s",
     "minutes": "{{count}}m",
     "hours": "{{count}}h"
-  }
+  },
+  "modelMarket": "Model Market",
+  "addImages": "Add Images",
+  "addAudio": "Add Audio",
+  "addVideo": "Add Video",
+  "environmentVariables": "Environment Variables",
+  "enterCliCommand": "Enter custom CLI command",
+  "keyPlaceholder": "Key",
+  "valuePlaceholder": "Value",
+  "enterDisplayName": "Enter display name",
+  "enterPassword": "Enter password",
+  "confirmPassword": "Confirm password",
+  "securitySettings": "Security Settings",
+  "allFiles": "All Files"
 }

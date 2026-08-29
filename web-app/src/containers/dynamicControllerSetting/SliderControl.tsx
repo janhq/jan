@@ -2,6 +2,7 @@ import * as React from 'react'
 import { SliderProps } from '@radix-ui/react-slider'
 import { Slider } from '@/components/ui/slider'
 import { Input } from '@/components/ui/input'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 interface SliderControlProps {
   key?: string
@@ -28,6 +29,7 @@ export function SliderControl({
   warnBelow,
   onChange,
 }: SliderControlProps) {
+  const { t } = useTranslation()
   const initialValue =
     Array.isArray(value) && value[0] !== undefined ? value : [min]
   const [currentValue, setCurrentValue] = React.useState<number[]>(initialValue)
@@ -84,9 +86,7 @@ export function SliderControl({
             value={currentValue}
             onValueChange={handleValueChange}
             className={`flex-1 **:[[role=slider]]:h-4 **:[[role=slider]]:w-4 ${
-              isInWarnBand
-                ? '**:[[data-slot=slider-range]]:bg-amber-500'
-                : ''
+              isInWarnBand ? '**:[[data-slot=slider-range]]:bg-amber-500' : ''
             }`}
             aria-label={title}
           />
@@ -106,7 +106,7 @@ export function SliderControl({
       </div>
       {isExceedingMax && (
         <p className="text-xs text-destructive mt-1">
-          Maximum value allowed is <span className="font-medium">{max}</span>
+          {t('settings:sliderMaxExceeded', { max })}
         </p>
       )}
     </div>

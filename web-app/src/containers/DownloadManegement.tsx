@@ -5,6 +5,7 @@ import {
 } from '@/components/ui/popover'
 import { Progress } from '@/components/ui/progress'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { isModelscopeUrl } from '@/lib/modelDownloads'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { events, AppEvent } from '@janhq/core'
@@ -93,6 +94,10 @@ export function DownloadManagement() {
       current: download.current,
       total: download.total,
       paused: download.paused ?? false,
+      speed: download.speed,
+      status: download.status,
+      error: download.error,
+      attempt: download.attempt,
     }))
 
     // Add local downloading models that don't have progress data yet
@@ -105,10 +110,36 @@ export function DownloadManagement() {
         current: 0,
         total: 0,
         paused: false,
+        speed: undefined,
+        status: 'downloading' as const,
+        error: undefined,
       }))
 
     return [...downloadsWithProgress, ...localDownloadsWithoutProgress]
   }, [downloads, localDownloadingModels])
+
+  /** 失败原因展示文本:磁盘空间为结构化前缀(本地化),其余为原始错误串 */
+  const failureReason = useCallback(
+    (status?: string, error?: string) => {
+      if (status !== 'failed') return undefined
+      if (error?.startsWith('DISK_SPACE_INSUFFICIENT|')) {
+        const [, needed, free] = error.split('|')
+        return t('common:toast.diskSpaceInsufficient.description', {
+          needed: formatBytes(Number(needed) || 0),
+          free: formatBytes(Number(free) || 0),
+        })
+      }
+      if (error && error.length > 0) {
+        // Rust err_to_string 与 JS Error.toString 会各自叠一层 "Error: ",
+        // 展示前剥掉重复前缀(截图里出现过的 "Error: Error: …" 即此因)。
+        const clean = error.replace(/^(?:\s*Error\s*:\s*)+/i, '')
+        const shown = clean.length > 140 ? `${clean.slice(0, 140)}…` : clean
+        return shown.length > 0 ? shown : t('common:toast.downloadFailed.title')
+      }
+      return t('common:toast.downloadFailed.title')
+    },
+    [t]
+  )
 
   const downloadCount = useMemo(() => {
     const modelDownloads = downloadProcesses.length
@@ -171,14 +202,14 @@ export function DownloadManagement() {
       setPaused(id, false)
       addLocalDownloadingModel(id)
       try {
-        await serviceHub
-          .models()
-          .pullModelWithMetadata(
-            id,
-            params.modelPath,
-            params.mmprojPath,
-            params.hfToken
-          )
+        await serviceHub.models().pullModelWithMetadata(
+          id,
+          params.modelPath,
+          params.mmprojPath,
+          params.hfToken,
+          // 魔搭任务恢复时继续附带官方 sha256 校验
+          !isModelscopeUrl(params.modelPath)
+        )
       } catch (e) {
         console.error('Failed to resume download:', id, e)
       }
@@ -190,7 +221,7 @@ export function DownloadManagement() {
     (id: string, name: string) => {
       removeDownload(id)
       removeLocalDownloadingModel(id)
-      if (id.startsWith('llamacpp') || id.startsWith('mlx')) {
+      if (id.startsWith('mlx')) {
         const downloadManager = window.core.extensionManager.getByName(
           '@janhq/download-extension'
         )
@@ -209,6 +240,15 @@ export function DownloadManagement() {
       setIsPopoverOpen(false)
     },
     [removeDownload, removeLocalDownloadingModel, serviceHub, t]
+  )
+
+  const handleRemoveFailed = useCallback(
+    (id: string) => {
+      // 移除失败条目(仅清 UI;磁盘断点保留,下次下载自动续传)
+      removeDownload(id)
+      removeLocalDownloadingModel(id)
+    },
+    [removeDownload, removeLocalDownloadingModel]
   )
 
   useEffect(() => {
@@ -234,10 +274,17 @@ export function DownloadManagement() {
     <>
       <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="icon" className="text-muted-foreground z-50 rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 size-7 relative">
-            <DownloadIcon className='text-muted-foreground size-4' />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground z-50 rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 size-7 relative"
+          >
+            <DownloadIcon className="text-muted-foreground size-4" />
             {downloadCount > 0 && (
-              <svg className="absolute inset-0 size-7 -rotate-90" viewBox="0 0 36 36">
+              <svg
+                className="absolute inset-0 size-7 -rotate-90"
+                viewBox="0 0 36 36"
+              >
                 <path
                   className="text-primary/30"
                   stroke="currentColor"
@@ -271,17 +318,13 @@ export function DownloadManagement() {
             {appUpdateState.isDownloading || downloadProcesses.length > 0 ? (
               <>
                 <div className="px-3 pt-2 flex items-center justify-between">
-                  <p>
-                    {t('downloading')}
-                  </p>
+                  <p>{t('downloading')}</p>
                 </div>
                 <div className="p-2 max-h-[300px] overflow-y-auto space-y-2">
                   {appUpdateState.isDownloading && (
                     <div className="rounded-lg p-2 bg-secondary">
                       <div className="flex items-center justify-between">
-                        <p className="truncate">
-                          App Update
-                        </p>
+                        <p className="truncate">App Update</p>
                       </div>
                       <div className="relative z-40">
                         <Progress
@@ -290,8 +333,7 @@ export function DownloadManagement() {
                         />
                         <div className="absolute w-full top-1/2 transform -translate-y-1/2 flex items-center justify-between px-2">
                           <p className="text-xs">
-                            {Math.round(appUpdateState.downloadProgress * 100)}
-                            %
+                            {Math.round(appUpdateState.downloadProgress * 100)}%
                           </p>
                           <p className="text-xs">
                             {`${formatBytes(appUpdateState.downloadedBytes, {
@@ -309,107 +351,187 @@ export function DownloadManagement() {
                       </div>
                     </div>
                   )}
-                  {downloadProcesses.map((download) => (
-                    <div
-                      key={download.id}
-                      className="rounded-lg p-2 bg-secondary"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate">
-                          {download.name}
-                        </p>
-                        <div className="shrink-0 flex items-center space-x-0.5">
-                          {!download.id.startsWith('llamacpp') &&
-                            !download.id.startsWith('mlx') &&
-                            (download.paused ? (
-                              <Button
-                                variant="secondary"
-                                size="icon-xs"
-                                onClick={() =>
-                                  handleResumeDownload(download.id)
-                                }
-                              >
-                                <IconPlayerPlay
-                                  size={16}
-                                  className="text-muted-foreground cursor-pointer"
-                                  title="Resume download"
-                                />
-                              </Button>
+                  {downloadProcesses.map((download) => {
+                    const failed = download.status === 'failed'
+                    const reason = failureReason(
+                      download.status,
+                      download.error
+                    )
+                    return (
+                      <div
+                        key={download.id}
+                        className="rounded-lg p-2 bg-secondary"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="truncate">{download.name}</p>
+                          <div className="shrink-0 flex items-center space-x-0.5">
+                            {failed ? (
+                              <>
+                                <Button
+                                  variant="secondary"
+                                  size="icon-xs"
+                                  onClick={() =>
+                                    handleResumeDownload(download.id)
+                                  }
+                                >
+                                  <IconPlayerPlay
+                                    size={16}
+                                    className="text-muted-foreground cursor-pointer"
+                                    title="Retry download"
+                                  />
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="icon-xs"
+                                  onClick={() =>
+                                    handleRemoveFailed(download.id)
+                                  }
+                                >
+                                  <IconX
+                                    size={16}
+                                    className="text-muted-foreground cursor-pointer"
+                                    title="Remove"
+                                  />
+                                </Button>
+                              </>
                             ) : (
-                              <Button
-                                variant="secondary"
-                                size="icon-xs"
-                                onClick={() => handlePauseDownload(download.id)}
-                              >
-                                <IconPlayerPause
-                                  size={16}
-                                  className="text-muted-foreground cursor-pointer"
-                                  title="Pause download"
-                                />
-                              </Button>
-                            ))}
-                          <Button
-                            variant="secondary"
-                            size="icon-xs"
-                            onClick={() =>
-                              handleCancelDownload(download.id, download.name)
-                            }
-                          >
-                            <IconX
-                              size={16}
-                              className="text-muted-foreground cursor-pointer"
-                              title="Cancel download"
-                            />
-                          </Button>
+                              <>
+                                {!download.id.startsWith('mlx') &&
+                                  (download.paused ? (
+                                    <Button
+                                      variant="secondary"
+                                      size="icon-xs"
+                                      onClick={() =>
+                                        handleResumeDownload(download.id)
+                                      }
+                                    >
+                                      <IconPlayerPlay
+                                        size={16}
+                                        className="text-muted-foreground cursor-pointer"
+                                        title="Resume download"
+                                      />
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      variant="secondary"
+                                      size="icon-xs"
+                                      onClick={() =>
+                                        handlePauseDownload(download.id)
+                                      }
+                                    >
+                                      <IconPlayerPause
+                                        size={16}
+                                        className="text-muted-foreground cursor-pointer"
+                                        title="Pause download"
+                                      />
+                                    </Button>
+                                  ))}
+                                <Button
+                                  variant="secondary"
+                                  size="icon-xs"
+                                  onClick={() =>
+                                    handleCancelDownload(
+                                      download.id,
+                                      download.name
+                                    )
+                                  }
+                                >
+                                  <IconX
+                                    size={16}
+                                    className="text-muted-foreground cursor-pointer"
+                                    title="Cancel download"
+                                  />
+                                </Button>
+                              </>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      <div className="relative z-40">
-                        <Progress
-                          value={download.progress * 100}
-                          className="my-2 h-6 bg-muted-foreground/10 relative rounded-md"
-                        />
-                        <div className="absolute w-full top-1/2 transform -translate-y-1/2 flex items-center justify-between px-2">
-                          <p className="text-xs">
-                            {download.paused
-                              ? download.total > 0
-                                ? `Paused · ${Math.round(download.progress * 100)}%`
-                                : 'Paused'
-                              : download.total > 0
-                                ? `${Math.round(download.progress * 100)}%`
+                        <div className="relative z-40">
+                          <Progress
+                            value={
+                              // 大小未知(total=0)时没有可信百分比:NaN 会渲染
+                              // 成任意填充,固定为不确定态的 0 填充
+                              download.total > 0 ? download.progress * 100 : 0
+                            }
+                            className={
+                              failed
+                                ? 'my-2 h-6 bg-red-500/20 relative rounded-md'
+                                : download.status === 'retrying'
+                                  ? 'my-2 h-6 bg-amber-500/20 relative rounded-md'
+                                  : 'my-2 h-6 bg-muted-foreground/10 relative rounded-md'
+                            }
+                          />
+                          <div className="absolute w-full top-1/2 transform -translate-y-1/2 flex items-center justify-between px-2">
+                            <p
+                              className="text-xs truncate max-w-[60%]"
+                              title={failed ? reason : undefined}
+                            >
+                              {failed
+                                ? reason
+                                : download.status === 'retrying'
+                                  ? download.attempt
+                                    ? t('retryingAttempt', {
+                                        n: download.attempt,
+                                      })
+                                    : t('retrying')
+                                  : download.paused
+                                    ? download.total > 0
+                                      ? t('pausedProgress', {
+                                          percent: Math.round(
+                                            download.progress * 100
+                                          ),
+                                        })
+                                      : t('paused')
+                                    : download.total > 0
+                                      ? `${Math.round(download.progress * 100)}%`
+                                      : download.current > 0
+                                        ? t('downloadingEllipsis')
+                                        : t('initializingDownload')}
+                            </p>
+                            <p className="text-xs">
+                              {download.total > 0
+                                ? t('downloadSize', {
+                                    current: formatBytes(download.current, {
+                                      hideUnit: true,
+                                      minUnit: 'GB',
+                                      decimals: 2,
+                                    }),
+                                    total: formatBytes(download.total, {
+                                      hideUnit: true,
+                                      minUnit: 'GB',
+                                      decimals: 2,
+                                    }),
+                                  })
                                 : download.current > 0
-                                  ? 'Downloading...'
-                                  : 'Initializing download...'}
-                          </p>
-                          <p className="text-xs">
-                            {download.total > 0
-                              ? `${formatBytes(download.current, {
-                                hideUnit: true,
-                                minUnit: 'GB',
-                                decimals: 2,
-                              })} / ${formatBytes(download.total, {
-                                hideUnit: true,
-                                minUnit: 'GB',
-                                decimals: 2,
-                              })} GB`
-                              : download.current > 0 ?
-                                `${formatBytes(download.current, {
-                                  hideUnit: true,
-                                  minUnit: 'GB',
-                                  decimals: 2,
-                                })} GB` : ''
-                            }
-                          </p>
+                                  ? t('downloadSizeCurrent', {
+                                      current: formatBytes(download.current, {
+                                        hideUnit: true,
+                                        minUnit: 'GB',
+                                        decimals: 2,
+                                      }),
+                                    })
+                                  : ''}
+                              {download.speed != null &&
+                              !download.paused &&
+                              !failed &&
+                              download.status !== 'retrying'
+                                ? t('downloadSpeed', {
+                                    speed: formatBytes(download.speed),
+                                  })
+                                : ''}
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </>
             ) : (
               <div className="px-3 py-8 flex flex-col items-center justify-center text-center space-y-2">
                 <DownloadIcon className="text-muted-foreground/50 size-6" />
                 <p className="text-muted-foreground leading-normal">
-                  Your download progress <br /> will appear here
+                  {t('hub:downloadPlaceholder')}
                 </p>
               </div>
             )}

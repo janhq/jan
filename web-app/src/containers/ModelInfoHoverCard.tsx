@@ -1,3 +1,4 @@
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   HoverCard,
   HoverCardContent,
@@ -40,29 +41,29 @@ type TriggerStyle = {
 const TRIGGER_STYLES: Record<FitTier, TriggerStyle> = {
   green: {
     icon: IconCheck,
-    label: 'Fits',
-    detail: 'Should run comfortably on your device',
+    label: 'hub:fitFits',
+    detail: 'hub:fitFitsDetail',
     pill: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
     dot: 'bg-emerald-500',
   },
   yellow: {
     icon: IconAlertTriangle,
-    label: 'May be slow',
-    detail: 'Will run but leaves little memory headroom',
+    label: 'hub:fitSlow',
+    detail: 'hub:fitSlowDetail',
     pill: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
     dot: 'bg-amber-500',
   },
   red: {
     icon: IconX,
-    label: "Won't fit",
-    detail: 'Likely exceeds your available memory',
+    label: 'hub:fitNo',
+    detail: 'hub:fitNoDetail',
     pill: 'bg-red-500/10 text-red-600 dark:text-red-400',
     dot: 'bg-red-500',
   },
   unknown: {
     icon: IconDeviceDesktopQuestion,
-    label: 'Fit unknown',
-    detail: 'Could not estimate memory requirements',
+    label: 'hub:fitUnknown',
+    detail: 'hub:fitUnknownDetail',
     pill: 'bg-secondary text-muted-foreground',
     dot: 'bg-neutral-400',
   },
@@ -75,6 +76,7 @@ export const ModelInfoHoverCard = ({
   defaultModelQuantizations,
   children,
 }: ModelInfoHoverCardProps) => {
+  const { t } = useTranslation()
   const hardwareData = useHardware((s) => s.hardwareData)
 
   const displayVariant = model.is_mlx
@@ -100,10 +102,10 @@ export const ModelInfoHoverCard = ({
         isDefaultVariant ? 'text-xs px-2 py-1' : 'text-[11px] px-1.5 py-0.5',
         style.pill
       )}
-      aria-label={`Device compatibility: ${style.label}`}
+      aria-label={`${t('hub:deviceCompatibility')}: ${t(style.label, { defaultValue: style.label })}`}
     >
       <Icon size={isDefaultVariant ? 14 : 12} />
-      {isDefaultVariant && <span>{style.label}</span>}
+      {isDefaultVariant && <span>{t(style.label, { defaultValue: style.label })}</span>}
     </button>
   )
 
@@ -118,8 +120,8 @@ export const ModelInfoHoverCard = ({
             </h4>
             <p className="text-xs text-muted-foreground mt-1">
               {!isDefaultVariant
-                ? 'Model Variant Information'
-                : 'Model Information'}
+                ? t('hub:modelVariantInformation')
+                : t('hub:modelInformation')}
             </p>
           </div>
 
@@ -127,7 +129,9 @@ export const ModelInfoHoverCard = ({
             {!model.is_mlx && (
               <div>
                 <span className="text-muted-foreground block">
-                  {isDefaultVariant ? 'Default Quantization' : 'Quantization'}
+                  {isDefaultVariant
+                    ? t('hub:defaultQuantization')
+                    : t('hub:quantization')}
                 </span>
                 <span className="font-medium mt-1 inline-block">
                   {extractQuantLabel(displayVariant?.model_id) || 'N/A'}
@@ -137,7 +141,7 @@ export const ModelInfoHoverCard = ({
 
             <div>
               <span className="text-muted-foreground block">
-                Device compatibility
+                {t('hub:deviceCompatibility')}
               </span>
               <div className="flex items-start gap-2 mt-1">
                 <div
@@ -147,13 +151,12 @@ export const ModelInfoHoverCard = ({
                   )}
                 />
                 <div>
-                  <p className="font-medium">{style.label}</p>
-                  <p className="text-muted-foreground mt-0.5">{style.detail}</p>
+                  <p className="font-medium">{t(style.label, { defaultValue: style.label })}</p>
+                  <p className="text-muted-foreground mt-0.5">{t(style.detail, { defaultValue: style.detail })}</p>
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground mt-2 italic">
-                Estimated from file size and your hardware. Actual performance
-                depends on quantization and context length.
+                {t('hub:fitUnknownHint')}
               </p>
             </div>
           </div>
@@ -161,17 +164,17 @@ export const ModelInfoHoverCard = ({
           {((model.num_mmproj ?? 0) > 0 || model.tools) && (
             <div className="border-t pt-3">
               <h5 className="text-xs font-medium text-muted-foreground mb-2">
-                Features
+                {t('hub:features')}
               </h5>
               <div className="flex flex-wrap gap-2">
                 {model.tools && (
                   <div className="flex items-center gap-1.5 px-2 py-1 bg-secondary rounded-sm">
-                    <span className="text-xs font-medium">Tools</span>
+                    <span className="text-xs font-medium">{t('common:tools')}</span>
                   </div>
                 )}
                 {(model.num_mmproj ?? 0) > 0 && (
                   <div className="flex items-center gap-1.5 px-2 py-1 bg-secondary rounded-sm">
-                    <span className="text-xs font-medium">Vision</span>
+                    <span className="text-xs font-medium">{t('common:vision')}</span>
                   </div>
                 )}
               </div>

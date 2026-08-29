@@ -90,7 +90,10 @@ describe('llamacpp_extension', () => {
   describe('resolveThreadCacheBudget', () => {
     const budget = (cfg: Record<string, unknown>): number => {
       // `config` is populated by onLoad, which is not run here.
-      ;(extension as any).config = { ...((extension as any).config ?? {}), ...cfg }
+      ;(extension as any).config = {
+        ...((extension as any).config ?? {}),
+        ...cfg,
+      }
       return (extension as any).resolveThreadCacheBudget()
     }
 
@@ -110,9 +113,9 @@ describe('llamacpp_extension', () => {
 
     it('treats an unusable size as off rather than passing it through', () => {
       for (const thread_cache_size of [0, -1, NaN, undefined, 'lots']) {
-        expect(
-          budget({ persist_thread_cache: true, thread_cache_size })
-        ).toBe(0)
+        expect(budget({ persist_thread_cache: true, thread_cache_size })).toBe(
+          0
+        )
       }
     })
 
@@ -126,12 +129,12 @@ describe('llamacpp_extension', () => {
   describe('getProviderPath', () => {
     it('should return correct provider path', async () => {
       const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp')
 
       const result = await extension.getProviderPath()
-      
+
       expect(result).toBe('/path/to/jan/llamacpp')
     })
   })
@@ -139,7 +142,7 @@ describe('llamacpp_extension', () => {
   describe('list', () => {
     it('should return empty array when models directory does not exist', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/models')
       vi.mocked(fs.existsSync)
@@ -149,21 +152,21 @@ describe('llamacpp_extension', () => {
       vi.mocked(fs.readdirSync).mockResolvedValue([]) // empty directory after creation
 
       const result = await extension.list()
-      
+
       expect(result).toEqual([])
     })
 
     it('should return model list when models exist', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
       const { invoke } = await import('@tauri-apps/api/core')
-      
+
       // Set up providerPath first
       extension['providerPath'] = '/path/to/jan/llamacpp'
-      
+
       const modelsDir = '/path/to/jan/llamacpp/models'
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-      
+
       // Mock joinPath to handle the directory traversal logic
       vi.mocked(joinPath).mockImplementation((paths) => {
         if (paths.length === 1) {
@@ -171,23 +174,26 @@ describe('llamacpp_extension', () => {
         }
         return Promise.resolve(paths.join('/'))
       })
-      
+
       vi.mocked(fs.existsSync)
         .mockResolvedValueOnce(true) // modelsDir exists
         .mockResolvedValueOnce(false) // model.yml doesn't exist at modelsDir level
         .mockResolvedValueOnce(true) // model.yml exists in test-model dir
-      
+
       vi.mocked(fs.readdirSync).mockResolvedValue(['test-model'])
-      vi.mocked(fs.fileStat).mockResolvedValue({ isDirectory: true, size: 1000 })
-      
+      vi.mocked(fs.fileStat).mockResolvedValue({
+        isDirectory: true,
+        size: 1000,
+      })
+
       vi.mocked(invoke).mockResolvedValue({
         model_path: 'test-model/model.gguf',
         name: 'Test Model',
-        size_bytes: 1000000
+        size_bytes: 1000000,
       })
 
       const result = await extension.list()
-      
+
       // Note: There's a bug in the original code where it pushes just the child name
       // instead of the full path, causing the model ID to be empty
       expect(result).toEqual([
@@ -202,26 +208,30 @@ describe('llamacpp_extension', () => {
           imported: false,
           capabilities: undefined,
           template_kwargs: [],
-        }
+        },
       ])
     })
   })
 
   describe('import', () => {
     it('should throw error for invalid modelId', async () => {
-      await expect(extension.import('invalid/model/../id', { modelPath: '/path/to/model' }))
-        .rejects.toThrow('Invalid modelId')
+      await expect(
+        extension.import('invalid/model/../id', { modelPath: '/path/to/model' })
+      ).rejects.toThrow('Invalid modelId')
     })
 
     it('should throw error if model already exists', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-      vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/models/test-model/model.yml')
+      vi.mocked(joinPath).mockResolvedValue(
+        '/path/to/jan/llamacpp/models/test-model/model.yml'
+      )
       vi.mocked(fs.existsSync).mockResolvedValue(true)
 
-      await expect(extension.import('test-model', { modelPath: '/path/to/model' }))
-        .rejects.toThrow('Model test-model already exists')
+      await expect(
+        extension.import('test-model', { modelPath: '/path/to/model' })
+      ).rejects.toThrow('Model test-model already exists')
     })
 
     it('should import model from URL', async () => {
@@ -233,22 +243,26 @@ describe('llamacpp_extension', () => {
         tensor_count: 1,
         metadata: { 'general.architecture': 'llama' },
       } as any)
-      
+
       const mockDownloadManager = {
-        downloadFiles: vi.fn().mockResolvedValue(undefined)
+        downloadFiles: vi.fn().mockResolvedValue(undefined),
       }
-      
-      window.core.extensionManager.getByName = vi.fn().mockReturnValue(mockDownloadManager)
-      
+
+      window.core.extensionManager.getByName = vi
+        .fn()
+        .mockReturnValue(mockDownloadManager)
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-      vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
       vi.mocked(fs.existsSync).mockResolvedValue(false)
       vi.mocked(fs.fileStat).mockResolvedValue({ size: 1000000 })
       vi.mocked(fs.mkdir).mockResolvedValue(undefined)
       vi.mocked(invoke).mockResolvedValue(undefined)
 
-      await extension.import('test-model', { 
-        modelPath: 'https://example.com/model.gguf' 
+      await extension.import('test-model', {
+        modelPath: 'https://example.com/model.gguf',
       })
 
       expect(mockDownloadManager.downloadFiles).toHaveBeenCalled()
@@ -272,7 +286,9 @@ describe('llamacpp_extension', () => {
         return undefined
       })
 
-      await expect(extension.load('test-model')).rejects.toThrow('Model already loaded!!')
+      await expect(extension.load('test-model')).rejects.toThrow(
+        'Model already loaded!!'
+      )
     })
 
     it('should load model successfully', async () => {
@@ -308,14 +324,16 @@ describe('llamacpp_extension', () => {
         rope_freq_scale: 1.0,
         reasoning_budget: 0,
         auto_update_engine: false,
-        auto_unload: true
+        auto_unload: true,
       }
-      
+
       // Set up providerPath
       extension['providerPath'] = '/path/to/jan/llamacpp'
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-      vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
 
       const expectedSession = {
         model_id: 'test-model',
@@ -325,7 +343,9 @@ describe('llamacpp_extension', () => {
       }
 
       const apiModule = await import('@janhq/tauri-plugin-llamacpp-api')
-      vi.mocked(apiModule.loadLlamaModel).mockResolvedValue(expectedSession as any)
+      vi.mocked(apiModule.loadLlamaModel).mockResolvedValue(
+        expectedSession as any
+      )
 
       vi.mocked(invoke).mockImplementation(async (cmd: string) => {
         switch (cmd) {
@@ -360,7 +380,9 @@ describe('llamacpp_extension', () => {
         }
         return undefined
       })
-      await expect(extension.unload('nonexistent-model')).rejects.toThrow('No active session found')
+      await expect(extension.unload('nonexistent-model')).rejects.toThrow(
+        'No active session found'
+      )
     })
 
     it('should unload model successfully', async () => {
@@ -404,10 +426,12 @@ describe('llamacpp_extension', () => {
 
       const request = {
         model: 'nonexistent-model',
-        messages: [{ role: 'user', content: 'Hello' }]
+        messages: [{ role: 'user', content: 'Hello' }],
       }
 
-      await expect(extension.chat(request)).rejects.toThrow('No active session found')
+      await expect(extension.chat(request)).rejects.toThrow(
+        'No active session found'
+      )
     })
 
     it('should handle non-streaming chat request', async () => {
@@ -430,26 +454,28 @@ describe('llamacpp_extension', () => {
         object: 'chat.completion',
         created: Date.now(),
         model: 'test-model',
-        choices: [{
-          index: 0,
-          message: { role: 'assistant', content: 'Hello!' },
-          finish_reason: 'stop'
-        }]
+        choices: [
+          {
+            index: 0,
+            message: { role: 'assistant', content: 'Hello!' },
+            finish_reason: 'stop',
+          },
+        ],
       }
 
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve(mockResponse)
+        json: () => Promise.resolve(mockResponse),
       })
 
       const request = {
         model: 'test-model',
         messages: [{ role: 'user', content: 'Hello' }],
-        stream: false
+        stream: false,
       }
 
       const result = await extension.chat(request)
-      
+
       expect(result).toEqual(mockResponse)
       expect(fetch).toHaveBeenCalledWith(
         'http://localhost:3000/v1/chat/completions',
@@ -457,8 +483,8 @@ describe('llamacpp_extension', () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer test-key'
-          }
+            'Authorization': 'Bearer test-key',
+          },
         })
       )
     })
@@ -467,25 +493,33 @@ describe('llamacpp_extension', () => {
   describe('delete', () => {
     it('should throw error if model does not exist', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-      vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
       vi.mocked(fs.existsSync).mockResolvedValue(false)
 
-      await expect(extension.delete('nonexistent-model')).rejects.toThrow('Model nonexistent-model does not exist')
+      await expect(extension.delete('nonexistent-model')).rejects.toThrow(
+        'Model nonexistent-model does not exist'
+      )
     })
 
     it('should delete model successfully', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-      vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
       vi.mocked(fs.existsSync).mockResolvedValue(true)
       vi.mocked(fs.rm).mockResolvedValue(undefined)
 
       await extension.delete('test-model')
-      
-      expect(fs.rm).toHaveBeenCalledWith('/path/to/jan/llamacpp/models/test-model')
+
+      expect(fs.rm).toHaveBeenCalledWith(
+        '/path/to/jan/llamacpp/models/test-model'
+      )
     })
   })
 
@@ -526,9 +560,15 @@ describe('llamacpp_extension', () => {
 
       await extension['migrateFitOff']()
 
-      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
-      expect(updatedSettings.find((s: any) => s.key === 'fit').controllerProps.value).toBe(false)
-      expect(updatedSettings.find((s: any) => s.key === 'ctx_size').controllerProps.value).toBe(2048)
+      const updatedSettings = vi.mocked(extension['updateSettings']).mock
+        .calls[0][0]
+      expect(
+        updatedSettings.find((s: any) => s.key === 'fit').controllerProps.value
+      ).toBe(false)
+      expect(
+        updatedSettings.find((s: any) => s.key === 'ctx_size').controllerProps
+          .value
+      ).toBe(2048)
       expect(extension['config'].fit).toBe(false)
       expect(setBackendSetting).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
     })
@@ -544,9 +584,16 @@ describe('llamacpp_extension', () => {
 
       await extension['migrateFitOff']()
 
-      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
-      expect(updatedSettings.find((s: any) => s.key === 'fit_target').controllerProps.value).toBe('1024')
-      expect(updatedSettings.find((s: any) => s.key === 'fit_ctx').controllerProps.value).toBe('')
+      const updatedSettings = vi.mocked(extension['updateSettings']).mock
+        .calls[0][0]
+      expect(
+        updatedSettings.find((s: any) => s.key === 'fit_target').controllerProps
+          .value
+      ).toBe('1024')
+      expect(
+        updatedSettings.find((s: any) => s.key === 'fit_ctx').controllerProps
+          .value
+      ).toBe('')
     })
   })
 
@@ -565,7 +612,6 @@ describe('llamacpp_extension', () => {
       expect(result).toEqual(['model1', 'model2'])
     })
   })
-
 })
 
 // The worker is a separate process precisely so a GGML_ASSERT or an OOM kill
@@ -609,9 +655,10 @@ describe('a dead worker is noticed rather than cached', () => {
     await extension.getEngineInfo()
 
     vi.mocked(getEngineInfo).mockResolvedValue(null as never)
-    vi.spyOn(extension as never, 'ensureProvisioned' as never).mockResolvedValue(
-      undefined as never
-    )
+    vi.spyOn(
+      extension as never,
+      'ensureProvisioned' as never
+    ).mockResolvedValue(undefined as never)
     const spawn = vi
       .spyOn(extension as never, 'startEngine' as never)
       .mockResolvedValue(undefined as never)
@@ -620,7 +667,7 @@ describe('a dead worker is noticed rather than cached', () => {
   })
 })
 
-describe('refreshEnginePreset embedding slot reservation', () => {
+describe('refreshEnginePreset chat-model capacity', () => {
   let extension: llamacpp_extension
 
   const setupRunningEngine = (opts: {
@@ -678,14 +725,17 @@ describe('refreshEnginePreset embedding slot reservation', () => {
     })
     await extension['refreshEnginePreset']()
     expect(startEngine).not.toHaveBeenCalled()
+    // models_max is the chat cap verbatim: the embedder's slot is reserved
+    // worker-side, so an embedder appearing must not inflate the cap -- that
+    // used to let a second chat model pile up next to the first.
     expect(reloadEngineModels).toHaveBeenCalledWith(
       '/p/router.preset.ini',
-      2,
+      1,
       expect.any(Number)
     )
   })
 
-  it('reloads when the embedding bonus is unchanged', async () => {
+  it('reloads when the cap is unchanged', async () => {
     const { startEngine, reloadEngineModels } = await setupRunningEngine({
       userModelsMax: 1,
       embeddingCount: 0,
@@ -699,8 +749,9 @@ describe('refreshEnginePreset embedding slot reservation', () => {
     )
   })
 
-  // 0 means unlimited, so the +1 bonus must not turn it into a cap of 1.
-  it('keeps models_max unlimited rather than adding the bonus to it', async () => {
+  // 0 means unlimited, and no bonus is ever added on top of it worker-side or
+  // extension-side.
+  it('keeps models_max unlimited rather than adding anything to it', async () => {
     const { reloadEngineModels } = await setupRunningEngine({
       userModelsMax: 0,
       embeddingCount: 1,
@@ -810,9 +861,13 @@ describe('verifyEmbeddingModel', () => {
       ...(extension.config ?? {}),
       version_backend: 'b6099/linux-cuda-12-common_cpus-x64',
     } as never
-    vi.spyOn(extension as never, 'ensureEmbeddingModelLoaded').mockResolvedValue(
-      { model_id: 'sentence-transformer-mini', port: 1234 } as never
-    )
+    vi.spyOn(
+      extension as never,
+      'ensureEmbeddingModelLoaded'
+    ).mockResolvedValue({
+      model_id: 'sentence-transformer-mini',
+      port: 1234,
+    } as never)
   })
 
   const armEmbed = (embedding: unknown) =>
@@ -826,9 +881,10 @@ describe('verifyEmbeddingModel', () => {
     vi.spyOn(extension as never, 'getEmbedderBootstrapError').mockReturnValue(
       'download failed: HTTP 403' as never
     )
-    vi.spyOn(extension as never, 'ensureEmbeddingModelLoaded').mockRejectedValue(
-      new Error('model not found in router preset') as never
-    )
+    vi.spyOn(
+      extension as never,
+      'ensureEmbeddingModelLoaded'
+    ).mockRejectedValue(new Error('model not found in router preset') as never)
 
     const result = await extension.verifyEmbeddingModel()
 
@@ -875,9 +931,10 @@ describe('verifyEmbeddingModel', () => {
 
   // Warn-never-block: a failed probe must not reject and strand onboarding.
   it('reports a load failure as a warning instead of throwing', async () => {
-    vi.spyOn(extension as never, 'ensureEmbeddingModelLoaded').mockRejectedValue(
-      new Error('router is not running')
-    )
+    vi.spyOn(
+      extension as never,
+      'ensureEmbeddingModelLoaded'
+    ).mockRejectedValue(new Error('router is not running'))
 
     const result = await extension.verifyEmbeddingModel()
 
@@ -915,7 +972,10 @@ describe('verifyGpuOffload', () => {
   // The backend is now read off the device the engine enumerated rather than a
   // setting, so it reports what actually loaded instead of what was chosen.
   it('names the backend from the enumerated device', async () => {
-    await arm([{ id: 'CUDA0', name: 'RTX 4090', mem: 24576, free: 24000 }], [{}])
+    await arm(
+      [{ id: 'CUDA0', name: 'RTX 4090', mem: 24576, free: 24000 }],
+      [{}]
+    )
     const result = await extension.verifyGpuOffload()
     expect(result.status).toBe('ok')
     expect(result.backend).toBe('cuda')
@@ -1137,9 +1197,7 @@ describe('createDownloadTaskId', () => {
   // one id. Rust cancels an in-flight task whose id repeats and deletes its
   // partial file, so downloading one quant destroyed another's.
   it('keeps quants of the same dotted model distinct', () => {
-    expect(taskId('Jan-v3.5-4B-Q4_K_XL')).not.toBe(
-      taskId('Jan-v3.5-4B-Q8_0')
-    )
+    expect(taskId('Jan-v3.5-4B-Q4_K_XL')).not.toBe(taskId('Jan-v3.5-4B-Q8_0'))
   })
 
   it('keeps different versions of the same family distinct', () => {

@@ -92,7 +92,7 @@ export default function AddEditCustomCliDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>Environment Variables</DialogTitle>
+          <DialogTitle>{t('common:environmentVariables')}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -104,7 +104,7 @@ export default function AddEditCustomCliDialog({
             <Input
               value={customCli}
               onChange={(e) => setCustomCli(e.target.value)}
-              placeholder="Enter custom CLI command"
+              placeholder={t('common:enterCliCommand')}
             />
           </div> */}
 
@@ -125,13 +125,13 @@ export default function AddEditCustomCliDialog({
                 <Input
                   value={env.key}
                   onChange={(e) => handleEnvKeyChange(index, e.target.value)}
-                  placeholder="Key"
+                  placeholder={t('common:keyPlaceholder')}
                   className="flex-1"
                 />
                 <Input
                   value={env.value}
                   onChange={(e) => handleEnvValueChange(index, e.target.value)}
-                  placeholder="Value"
+                  placeholder={t('common:valuePlaceholder')}
                   className="flex-1"
                 />
                 {envVars.length > 1 && (

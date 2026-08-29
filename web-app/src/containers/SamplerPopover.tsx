@@ -63,6 +63,9 @@ export function SamplerPopover({
   const updateAssistant = useAssistant((s) => s.updateAssistant)
   const assistantsLoading = useAssistant((s) => s.loading)
   const providers = useModelProvider((s) => s.providers)
+  // Must be declared before any early return so Hooks keep a stable order
+  // (rules-of-hooks). The predefined remote providers branch returns early.
+  const { t } = useTranslation()
 
   const scopedProviders = useMemo(() => {
     if (providerId) {
@@ -153,10 +156,10 @@ export function SamplerPopover({
   if (isPredefinedRemoteProvider(providerId)) return null
 
   const triggerLabel = assistantsLoading
-    ? 'Loading assistant…'
+    ? t('chat:sampling.loadingAssistant')
     : activeAssistant
-      ? `Sampling — ${activeAssistant.name}`
-      : 'Sampling'
+      ? t('chat:sampling.samplingWith', { name: activeAssistant.name })
+      : t('chat:sampling.sampling')
 
   return (
     <Popover>
@@ -166,7 +169,7 @@ export function SamplerPopover({
             <Button
               variant="ghost"
               size="icon-xs"
-              aria-label="Sampling parameters"
+              aria-label={t('chat:sampling.samplingParameters')}
               className="relative"
               disabled={assistantsLoading}
             >
@@ -207,7 +210,7 @@ export function SamplerPopover({
           <div className="flex items-center gap-1 shrink-0">
             {hasOverrides && (
               <Button variant="ghost" size="sm" onClick={handleResetAll}>
-                Reset all
+                {t('chat:sampling.resetAll')}
               </Button>
             )}
             <Tooltip>
@@ -219,7 +222,7 @@ export function SamplerPopover({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Open assistant settings</p>
+                <p>{t('chat:sampling.openAssistantSettings')}</p>
               </TooltipContent>
             </Tooltip>
           </div>
@@ -240,7 +243,7 @@ export function SamplerPopover({
           </div>
         ) : (
           <div className="text-xs text-muted-foreground px-4 py-3">
-            Pick an assistant above to configure sampling.
+            {t('chat:sampling.pickAssistant')}
           </div>
         )}
       </PopoverContent>
@@ -291,10 +294,7 @@ function AssistantHeader({
           <IconChevronDown size={14} className="text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        className="max-h-64 overflow-y-auto"
-      >
+      <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
         <AssistantsMenu
           selectedAssistant={assistantSwitcher.selectedAssistantId}
           setSelectedAssistant={assistantSwitcher.setSelectedAssistantId}
