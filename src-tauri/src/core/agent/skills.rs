@@ -542,6 +542,7 @@ pub(crate) fn user_catalog(root: &Path, enabled: &[String]) -> Vec<SkillMeta> {
 /// the enabled whitelist — the full disk truth. This is what `/reload skills`
 /// diffs against the previous scan, so an edit or install shows up as an
 /// added/removed/changed entry regardless of who may invoke it.
+#[cfg(feature = "cli")]
 pub(crate) fn full_catalog(root: &Path) -> Vec<SkillMeta> {
     side_catalog(root, &[], |_| true)
 }
