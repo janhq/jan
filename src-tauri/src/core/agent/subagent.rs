@@ -282,10 +282,9 @@ fn load_plugin_agents(project_root: &Path, out: &mut Vec<SubagentDefinition>) {
 /// skipping READMEs and dotfiles.
 pub(crate) fn count_plugin_agents(root: &Path, plugin: &str) -> usize {
     let mut count = 0;
-    let base = crate::core::agent::skills::plugins_dir(root)
-        .join(plugin)
-        .join("agents");
-    scan_agent_files(&base, &mut |_, _| count += 1);
+    if let Some(dir) = crate::core::agent::skills::find_plugin_dir(root, plugin) {
+        scan_agent_files(&dir.join("agents"), &mut |_, _| count += 1);
+    }
     count
 }
 
@@ -381,9 +380,10 @@ fn map_claude_tools(tools: &[String]) -> Option<Vec<String>> {
 #[cfg(feature = "cli")]
 pub(crate) fn plugin_agent_metas(root: &Path, plugin: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    let base = crate::core::agent::skills::plugins_dir(root)
-        .join(plugin)
-        .join("agents");
+    let Some(base) = crate::core::agent::skills::find_plugin_dir(root, plugin) else {
+        return out;
+    };
+    let base = base.join("agents");
     scan_agent_files(&base, &mut |_, raw| {
         if let Some((name, description, _, _)) = parse_plugin_agent(raw) {
             out.push((name, description));

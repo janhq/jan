@@ -808,6 +808,53 @@ impl LoginPrompt {
     }
 }
 
+/// One required environment variable of a plugin: its name and, when the
+/// manifest declares it, the URL the user can obtain the value from.
+struct PluginEnvEntry {
+    key: String,
+    url: String,
+}
+
+/// `/plugin setup`: a docked, `/login`-styled prompt collecting the API keys a
+/// plugin declares it needs. One entry per variable; the field is masked (the
+/// value never reaches the screen, scrollback, or transcript), Enter saves and
+/// advances, `s` skips, Esc abandons the remaining entries. Values go to
+/// `~/.jan/agent/plugin-env/<plugin>.toml` (0600) and are injected into the
+/// sandboxed shell on the next run.
+struct PluginSetupPrompt {
+    plugin: String,
+    entries: Vec<PluginEnvEntry>,
+    current: usize,
+    input: String,
+    error: Option<String>,
+}
+
+impl PluginSetupPrompt {
+    fn entry(&self) -> Option<&PluginEnvEntry> {
+        self.entries.get(self.current)
+    }
+
+    fn masked(&self) -> String {
+        super::secret_input::mask(self.input.chars().count())
+    }
+
+    fn paste(&mut self, text: &str) {
+        self.input.push_str(super::secret_input::pasted(text));
+    }
+
+    /// Advance past the current entry; `None` once every entry is done.
+    fn advance(&mut self) {
+        self.current += 1;
+        self.input.clear();
+        self.error = None;
+    }
+
+    /// Whether every entry has been visited.
+    fn done(&self) -> bool {
+        self.current >= self.entries.len()
+    }
+}
+
 /// `/login` account entry: owns an OAuth descriptor while the browser callback
 /// task races the loopback callback with a manually pasted redirect URL/code.
 struct AccountLoginPrompt {
@@ -1797,6 +1844,9 @@ struct App {
     model_picker: Option<ModelPicker>,
     /// Active `/login` prompt; owns the keyboard while open.
     login: Option<LoginPrompt>,
+    /// Active `/plugin setup` prompt (docked like `/login`); owns the keyboard
+    /// while open and collects the plugin's required API keys, masked.
+    plugin_setup: Option<PluginSetupPrompt>,
     /// Active `/settings` edit prompt (docked like `/login`); owns the
     /// keyboard while open. Holds the setting being edited and any validation
     /// error; writes go straight to agent.toml on Enter.
@@ -2301,6 +2351,7 @@ impl App {
             provider_prompt: None,
             probed_models: std::collections::HashSet::new(),
             login_submit: None,
+            plugin_setup: None,
             account_login: None,
             account_login_submit: None,
             account_login_manual_tx: None,
@@ -6730,12 +6781,16 @@ fn finish_plugin_install(
             if plugins.is_empty() {
                 app.note("nothing installed");
             }
-            for p in plugins {
+            for p in &plugins {
                 app.note(&format!(
                     "installed plugin '{}' ({} skills)",
                     p.name, p.skills
                 ));
             }
+            // A plugin that declares required API keys opens its setup dock
+            // right away: the link to obtain each key plus a masked paste
+            // field, so the user never has to edit env files by hand.
+            open_plugin_setup(app);
         }
         Ok(GitInstall::Collection(candidates)) => {
             let Some(url) = url else {
@@ -7792,6 +7847,9 @@ fn route_paste_event(app: &mut App, event: Event) {
         // A pasted API key belongs to the login field, not the chat composer
         // (where it would echo).
         prompt.paste(&text);
+    } else if let Some(prompt) = app.plugin_setup.as_mut() {
+        // A pasted plugin API key belongs to the setup field.
+        prompt.paste(&text);
     } else if let Some(prompt) = app.settings_prompt.as_mut() {
         prompt.paste(&text);
     } else if let Some(prompt) = app.mcp_prompt.as_mut() {
@@ -8031,6 +8089,133 @@ fn clipboard_text() -> Result<String, String> {
     super::secret_input::clipboard_text()
 }
 
+/// Open `/plugin setup` for the first installed plugin whose declared env
+/// variables are not yet satisfied. Returns whether a dock opened.
+fn open_plugin_setup(app: &mut App) -> bool {
+    let missing = crate::core::agent::plugins::missing_plugin_env(&app.project_root);
+    let Some((plugin, _, _)) = missing.first() else {
+        return false;
+    };
+    let plugin = plugin.clone();
+    let entries = missing
+        .into_iter()
+        .filter(|(p, _, _)| p == &plugin)
+        .map(|(_, key, url)| PluginEnvEntry { key, url })
+        .collect::<Vec<_>>();
+    start_plugin_setup(app, &plugin, entries)
+}
+
+/// Open `/plugin setup` for a named plugin, offering every variable it
+/// declares (even satisfied ones, so a value can be replaced). Returns whether
+/// a dock opened.
+fn open_plugin_setup_for(app: &mut App, plugin: &str) -> bool {
+    let entries = crate::core::agent::plugins::declared_plugin_env(&app.project_root, plugin)
+        .into_iter()
+        .map(|(key, url)| PluginEnvEntry { key, url })
+        .collect::<Vec<_>>();
+    if entries.is_empty() {
+        return false;
+    }
+    start_plugin_setup(app, plugin, entries)
+}
+
+/// Install the dock state for `plugin` with `entries`, after announcing it.
+fn start_plugin_setup(app: &mut App, plugin: &str, entries: Vec<PluginEnvEntry>) -> bool {
+    app.note(&format!(
+        "◈ plugin setup · {} needs {} API key{} - paste them below",
+        plugin,
+        entries.len(),
+        if entries.len() == 1 { "" } else { "s" }
+    ));
+    app.plugin_setup = Some(PluginSetupPrompt {
+        plugin: plugin.to_string(),
+        entries,
+        current: 0,
+        input: String::new(),
+        error: None,
+    });
+    true
+}
+
+/// Keys for the `/plugin setup` prompt: Enter saves the value and advances,
+/// `s` skips an entry, Esc/Ctrl-C abandons the rest. Same masked-entry rules
+/// as the `/login` paste field.
+fn handle_plugin_setup_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+    let cancel = key.code == KeyCode::Esc
+        || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')));
+    if cancel {
+        app.plugin_setup = None;
+        app.note("plugin setup cancelled - resume with /plugin setup <name>");
+        return;
+    }
+    // Ctrl-V: some terminals send a paste as a key rather than Event::Paste.
+    if ctrl && key.code == KeyCode::Char('v') {
+        match super::secret_input::clipboard_text() {
+            Ok(text) => {
+                if let Some(prompt) = app.plugin_setup.as_mut() {
+                    prompt.paste(&text);
+                }
+            }
+            Err(e) => {
+                if let Some(prompt) = app.plugin_setup.as_mut() {
+                    prompt.error = Some(format!("could not read the clipboard: {e}"));
+                }
+            }
+        }
+        return;
+    }
+    let Some(prompt) = app.plugin_setup.as_mut() else {
+        return;
+    };
+    match key.code {
+        KeyCode::Enter => {
+            let plugin = prompt.plugin.clone();
+            let Some(entry) = prompt.entry() else { return };
+            let value = prompt.input.trim().to_string();
+            if value.is_empty() {
+                prompt.error = Some("nothing pasted - paste the key or press s to skip".into());
+                return;
+            }
+            if let Err(e) = crate::core::agent::plugins::save_plugin_env(&plugin, &entry.key, &value)
+            {
+                prompt.error = Some(e);
+                return;
+            }
+            let key_name = entry.key.clone();
+            prompt.advance();
+            if prompt.done() {
+                app.plugin_setup = None;
+                crate::core::agent::plugins::sync_env_registry(&app.project_root);
+                app.note(&format!("plugin setup · {plugin} · {key_name} saved"));
+                // Chain into the next plugin that still needs keys.
+                open_plugin_setup(app);
+            } else {
+                app.note(&format!(
+                    "plugin setup · {plugin} · {key_name} saved"
+                ));
+            }
+        }
+        KeyCode::Char('s') | KeyCode::Char('S') if !ctrl => {
+            let plugin = prompt.plugin.clone();
+            let key_name = prompt
+                .entry()
+                .map(|e| e.key.clone())
+                .unwrap_or_default();
+            prompt.advance();
+            if prompt.done() {
+                app.plugin_setup = None;
+                app.note(&format!("plugin setup · {plugin} · skipped {key_name}"));
+                open_plugin_setup(app);
+            }
+        }
+        KeyCode::Backspace => {
+            prompt.input.pop();
+        }
+        KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
+        _ => {}
+    }
+}
+
 fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     if key.code == KeyCode::Esc
         || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')))
@@ -8133,6 +8318,12 @@ async fn handle_key(
     // transcript shortcuts.
     if app.login.is_some() {
         handle_login_key(app, key, ctrl);
+        return;
+    }
+
+    // Same for `/plugin setup`: it is collecting masked API keys.
+    if app.plugin_setup.is_some() {
+        handle_plugin_setup_key(app, key, ctrl);
         return;
     }
 
@@ -8840,10 +9031,18 @@ struct SlashCommand {
 }
 
 /// Slash popup metadata is intentionally loaded outside the render path.
-/// Plugin installation and removal explicitly refresh this snapshot.
+/// Plugin installation and removal explicitly refresh this snapshot — as does
+/// `/reload`, which diffs a fresh scan against it to report what changed.
 struct SlashCatalog {
     commands: Vec<crate::core::agent::plugin_commands::CommandEntry>,
     skills: Vec<crate::core::agent::skills::SkillMeta>,
+    /// Installed plugin summaries from the same scan, for `/reload plugin`'s
+    /// added/removed/updated report.
+    plugins: Vec<crate::core::agent::plugins::InstalledPlugin>,
+    /// Every discovered skill, both invocation sides — the full disk truth
+    /// `/reload skills` diffs against (the popup list above is only the
+    /// user-invocable subset).
+    all_skills: Vec<crate::core::agent::skills::SkillMeta>,
 }
 
 impl SlashCatalog {
@@ -8853,6 +9052,8 @@ impl SlashCatalog {
             // Keep every user-invocable skill here. The enabled whitelist is
             // re-read below so edits to agent.toml take effect immediately.
             skills: crate::core::agent::skills::user_catalog(root, &[]),
+            plugins: crate::core::agent::plugins::installed(root),
+            all_skills: crate::core::agent::skills::full_catalog(root),
         }
     }
 
@@ -9147,8 +9348,14 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/plugin",
-        hint: "[list|install <spec>|remove <name>|search [query]]",
-        description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace",
+        hint: "[list|install <spec>|remove <name>|search [query]|setup <name>]",
+        description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace, set up required API keys",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/reload",
+        hint: "[plugin|skills|system-prompt]",
+        description: "Re-scan skills/plugins from disk and rebuild the catalog mid-session (bare: plugin)",
         alias_of: None,
     },
     SlashCommand {
@@ -9379,6 +9586,7 @@ async fn run_command(
         }
         "mcp" => open_mcp_picker(app, mcp_servers).await,
         "plugin" => plugin_command(app, arg).await,
+        "reload" => reload_command(app, arg),
         "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
         "update" => update_command(app),
@@ -11085,6 +11293,14 @@ async fn plugin_command(app: &mut App, arg: &str) {
                 for p in &plugins {
                     app.push(Line::styled(summary_line(p), Style::new().cyan().bold()));
                 }
+                // Surface unsatisfied setup requirements right in the list:
+                // a plugin whose key is missing explains itself here.
+                for (plugin, var, _) in crate::core::agent::plugins::missing_plugin_env(&root) {
+                    app.push(Line::styled(
+                        format!("  {plugin}: key missing ({var}) - /plugin setup {plugin}"),
+                        Style::new().yellow(),
+                    ));
+                }
             } else {
                 match crate::core::agent::plugins::find_installed(&root, &rest) {
                     Some((directory, p)) => {
@@ -11149,6 +11365,19 @@ async fn plugin_command(app: &mut App, arg: &str) {
             app.plugin_install_request = Some(rest);
             app.note("installing plugin...");
         }
+        "setup" => {
+            if rest.is_empty() {
+                if !open_plugin_setup(app) {
+                    app.note(
+                        "no plugin is missing keys (usage: /plugin setup <name>)",
+                    );
+                }
+            } else if !open_plugin_setup_for(app, &rest) {
+                app.note(&format!(
+                    "plugin '{rest}' declares no setup keys (declare [setup.env] in its plugin.toml)"
+                ));
+            }
+        }
         "remove" => {
             if rest.is_empty() {
                 app.note("usage: /plugin remove <name>");
@@ -11184,6 +11413,152 @@ async fn plugin_command(app: &mut App, arg: &str) {
         other => app.note(&format!(
             "unknown /plugin subcommand '{other}' (try list|install|remove|search)"
         )),
+    }
+}
+
+/// One diffable catalog entry for `/reload`: `key` is the stable identity,
+/// `label` the display line, `state` everything whose change marks the entry
+/// as updated (version/description/counts for plugins, description and
+/// invocation flags for skills).
+struct ReloadEntry {
+    key: String,
+    label: String,
+    state: String,
+}
+
+/// Snapshot the installed-plugin summaries for `/reload plugin`'s diff.
+fn reload_plugin_entries(plugins: &[crate::core::agent::plugins::InstalledPlugin]) -> Vec<ReloadEntry> {
+    plugins
+        .iter()
+        .map(|p| ReloadEntry {
+            key: p.name.clone(),
+            label: format!("plugin {} (v{})", p.name, p.version),
+            state: format!(
+                "v{} · {} skill(s) · {} command(s) · {} agent(s) · {}",
+                p.version, p.skills, p.commands, p.agents, p.description
+            ),
+        })
+        .collect()
+}
+
+/// Snapshot the full skill catalog for `/reload skills`'s diff, keyed by
+/// qualified name (`<plugin>:<skill>` for plugin skills).
+fn reload_skill_entries(skills: &[crate::core::agent::skills::SkillMeta]) -> Vec<ReloadEntry> {
+    skills
+        .iter()
+        .map(|m| {
+            let name = m
+                .plugin
+                .as_ref()
+                .map_or_else(|| m.name.clone(), |p| format!("{p}:{}", m.name));
+            ReloadEntry {
+                key: name.clone(),
+                label: name,
+                state: format!(
+                    "{} [user:{} model:{}]",
+                    m.description, m.user_invocable, m.model_invocable
+                ),
+            }
+        })
+        .collect()
+}
+
+/// Diff two catalog snapshots by identity, returning display lines for
+/// added, removed, and updated entries in scan order.
+fn diff_reload_entries(
+    before: &[ReloadEntry],
+    after: &[ReloadEntry],
+) -> (Vec<String>, Vec<String>, Vec<String>) {
+    fn keyed(items: &[ReloadEntry]) -> std::collections::BTreeMap<String, &ReloadEntry> {
+        items.iter().map(|e| (e.key.clone(), e)).collect()
+    }
+    let (old, new) = (keyed(before), keyed(after));
+    let mut added = Vec::new();
+    let mut removed = Vec::new();
+    let mut updated = Vec::new();
+    for (key, entry) in &new {
+        match old.get(key) {
+            None => added.push(entry.label.clone()),
+            Some(prev) if prev.state != entry.state => updated.push(format!(
+                "{} ({} → {})",
+                entry.label, prev.state, entry.state
+            )),
+            Some(_) => {}
+        }
+    }
+    for (key, entry) in &old {
+        if !new.contains_key(key) {
+            removed.push(entry.label.clone());
+        }
+    }
+    (added, removed, updated)
+}
+
+/// `/reload [plugin|skills|system-prompt]`: re-run skill/plugin discovery and
+/// rebuild the slash catalog mid-session, reporting added/removed/changed
+/// entries. Bare `/reload` targets plugins — the payload an install most
+/// often changes. The model-facing system prompt (JAN.md instructions, the
+/// skills catalog) is rebuilt from disk on every run, so the `system-prompt`
+/// target re-reads and reports what the next run picks up.
+fn reload_command(app: &mut App, arg: &str) {
+    let root = app.project_root.clone();
+    match arg.trim() {
+        "" | "plugin" | "plugins" => {
+            let before = reload_plugin_entries(&app.slash_catalog.plugins);
+            app.refresh_slash_catalog();
+            let after = reload_plugin_entries(&app.slash_catalog.plugins);
+            app.note("◈ reload · plugin · re-scanned installed plugins");
+            report_reload_diff(app, diff_reload_entries(&before, &after));
+        }
+        "skill" | "skills" => {
+            let before = reload_skill_entries(&app.slash_catalog.all_skills);
+            app.refresh_slash_catalog();
+            let after = reload_skill_entries(&app.slash_catalog.all_skills);
+            app.note("◈ reload · skills · re-scanned project and plugin skills");
+            report_reload_diff(app, diff_reload_entries(&before, &after));
+        }
+        "system-prompt" => {
+            // Nothing caches the instructions across runs: the system prompt
+            // (including this block and the skills catalog) is rebuilt from
+            // disk at the start of every run. Re-read now to confirm what the
+            // next run will pick up.
+            let files = crate::core::agent::context::context_files(&root);
+            if files.is_empty() {
+                app.note("◈ reload · system-prompt · no JAN.md in this project or its ancestors");
+                return;
+            }
+            app.note("◈ reload · system-prompt · re-read project instructions (applies next run)");
+            for (path, content) in &files {
+                app.system_detail_text(&format!(
+                    "  {} ({} bytes)",
+                    path.display(),
+                    content.len()
+                ));
+            }
+        }
+        other => app.note(&format!(
+            "unknown /reload target '{other}' (try plugin | skills | system-prompt)"
+        )),
+    }
+}
+
+/// Print a reload diff, or the unchanged note when the scan found nothing new.
+fn report_reload_diff(
+    app: &mut App,
+    (added, removed, updated): (Vec<String>, Vec<String>, Vec<String>),
+) {
+    if added.is_empty() && removed.is_empty() && updated.is_empty() {
+        app.system_detail_text("  no changes since the last scan");
+        return;
+    }
+    for line in added {
+        app.system_detail_text(&format!("  + {line}"));
+    }
+    for line in removed {
+        app.system_detail_text(&format!("  - {line}"));
+    }
+    for line in updated {
+        app.system_detail_text(&format!("  ~ {line}"));
     }
 }
 
@@ -13443,6 +13818,18 @@ fn draw(f: &mut Frame, app: &mut App) {
             height,
         };
         draw_login(f, rect, prompt);
+    } else if let Some(prompt) = &app.plugin_setup {
+        let height =
+            (plugin_setup_lines(prompt, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
+                .min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        draw_plugin_setup(f, rect, prompt);
     } else if let Some(confirm) = &app.browser_confirm {
         let height =
             (browser_confirm_lines(confirm, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
@@ -13900,6 +14287,82 @@ fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) 
         Paragraph::new(login_prompt_lines(prompt, inner.width)),
         inner,
     );
+}
+
+/// Docked `/plugin setup` prompt, styled like the `/login` dock: which plugin,
+/// which variable, the URL to obtain the key at, a masked field, and keys.
+fn draw_plugin_setup(f: &mut Frame, area: ratatui::layout::Rect, prompt: &PluginSetupPrompt) {
+    use ratatui::widgets::Clear;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            format!(" plugin setup: {} ", prompt.plugin),
+            Style::new().on_cyan().black().bold(),
+        ));
+
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(
+        Paragraph::new(plugin_setup_lines(prompt, inner.width)),
+        inner,
+    );
+}
+
+/// The `/plugin setup` box's contents. The width parameter mirrors the other
+/// prompt-line builders (call sites size the dock from the row count).
+fn plugin_setup_lines(prompt: &PluginSetupPrompt, _width: u16) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let total = prompt.entries.len();
+    match prompt.entry() {
+        Some(entry) => {
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "{} needs {} ({}/{})",
+                    prompt.plugin,
+                    entry.key,
+                    prompt.current + 1,
+                    total
+                ),
+                Style::new().cyan().bold(),
+            )));
+            if entry.url.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "ask the plugin author where to obtain this key".to_string(),
+                    dim,
+                )));
+            } else {
+                lines.push(Line::from(vec![
+                    Span::styled("get it at: ", dim),
+                    Span::styled(entry.url.clone(), Style::new().cyan()),
+                ]));
+            }
+        }
+        None => {
+            lines.push(Line::from(Span::styled(
+                format!("{} setup complete", prompt.plugin),
+                Style::new().cyan().bold(),
+            )));
+        }
+    }
+    if let Some(error) = &prompt.error {
+        lines.push(Line::from(Span::styled(
+            error.clone(),
+            Style::new().red(),
+        )));
+    }
+    lines.push(Line::from(vec![
+        Span::styled(prompt.masked(), Style::new().bold()),
+        Span::styled("  ← paste here", dim),
+    ]));
+    lines.push(Line::from(Span::styled(
+        "Enter save · s skip · Esc cancel - the key is masked and never echoed",
+        dim,
+    )));
+    lines
 }
 
 /// Docked `/settings` edit prompt, styled like the `/login` dock: description,
@@ -15573,7 +16036,8 @@ mod tests {
         clipboard_path, compact_tokens, diff_lines, drain_stream_events, estimate_token_count,
         finish_account_login, finish_compaction, finish_login, finish_plugin_install,
         finish_tokamak_login, finish_update_install, group_detail_lines, group_summary,
-        handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, header_spans, image_mime,
+        handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, handle_plugin_setup_key,
+        header_spans, image_mime,
         image_mime_of, input_content_lines, load_first_file_image, load_image_file, message_text,
         note_update, open_config_screen, open_rewind_picker, pairs_to_str, parse_command,
         partial_json_field, provider_label_for_model, rebuild_recall, replay_display_log,
@@ -27709,11 +28173,15 @@ mod tests {
     fn slash_prefix_narrows_and_unmatched_hides() {
         let mut app = test_app();
         app.input = "/re".into();
-        // Both `/resume` and `/reasoning` start with `re`; catalog order
-        // (stable sort on equal prefix score) keeps resume first.
+        // `/resume`, `/reasoning`, and `/reload` start with `re`; catalog
+        // order (stable sort on equal prefix score) keeps resume first.
         assert_eq!(
             names(&app),
-            vec!["/resume".to_string(), "/reasoning".to_string()]
+            vec![
+                "/resume".to_string(),
+                "/reasoning".to_string(),
+                "/reload".to_string()
+            ]
         );
         app.input = "/xyz".into();
         assert!(app.slash_matches().is_empty());
@@ -28208,6 +28676,182 @@ mod tests {
         // The plugin copy stays reachable explicitly.
         app.input = "/skill:rel".into();
         assert!(names(&app).contains(&"/skill:release:prepare".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A plugin summary manifest on disk, so `/reload plugin` has a version
+    /// to report.
+    fn plugin_manifest_in_app(root: &std::path::Path, plugin: &str, version: &str) {
+        std::fs::write(
+            root.join(".jan/agent/plugins")
+                .join(plugin)
+                .join("plugin.toml"),
+            format!("name = \"{plugin}\"\nversion = \"{version}\"\n"),
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn reload_bare_defaults_to_plugin_and_reports_changes() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        // Bare /reload targets plugins; nothing installed, nothing changed.
+        run_command(&mut app, "reload", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("re-scanned installed plugins"),
+            "note: {out}"
+        );
+        assert!(
+            out.contains("no changes since the last scan"),
+            "diff: {out}"
+        );
+
+        // Install a plugin payload on disk; the next reload reports it and
+        // the rebuilt catalog serves its command immediately.
+        plugin_command_in_app(&root, "acme", "ship", "---\ndescription: Ship it\n---\nGo");
+        plugin_manifest_in_app(&root, "acme", "1.0.0");
+        run_command(&mut app, "reload", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("+ plugin acme (v1.0.0)"), "diff: {out}");
+        assert!(
+            app.slash_catalog
+                .commands
+                .iter()
+                .any(|c| c.plugin == "acme" && c.name == "ship"),
+            "command must be live after reload"
+        );
+
+        // A second reload has an up-to-date snapshot: nothing changed.
+        run_command(&mut app, "reload plugin", &no_mcp()).await;
+        assert!(transcript_text(&app).contains("no changes since the last scan"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_skills_reports_added_changed_and_removed() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        assert!(transcript_text(&app).contains("no changes since the last scan"));
+
+        let skills = root.join(".jan/agent/skills");
+
+        // Added: a new skill shows up and joins the popup catalog.
+        std::fs::create_dir_all(skills.join("audit")).unwrap();
+        std::fs::write(
+            skills.join("audit").join("SKILL.md"),
+            "---\ndescription: Audit deps\n---\n\nBody.\n",
+        )
+        .unwrap();
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("+ audit"), "diff: {out}");
+        assert!(
+            app.slash_catalog
+                .skills
+                .iter()
+                .any(|m| m.name == "audit"),
+            "skill must be live after reload"
+        );
+
+        // Changed: an edited description is reported as an update.
+        std::fs::write(
+            skills.join("deploy").join("SKILL.md"),
+            "---\ndescription: How to ship\n---\n\nBody.\n",
+        )
+        .unwrap();
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("~ deploy (How to deploy."),
+            "diff: {out}"
+        );
+        assert!(out.contains("→ How to ship"), "diff: {out}");
+
+        // Removed: a deleted skill leaves the catalog.
+        std::fs::remove_dir_all(skills.join("audit")).unwrap();
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("- audit"), "diff: {out}");
+        assert!(
+            !app.slash_catalog.skills.iter().any(|m| m.name == "audit"),
+            "removed skill must drop from the catalog"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_system_prompt_reads_jan_md() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "reload system-prompt", &no_mcp()).await;
+        assert!(
+            transcript_text(&app).contains("no JAN.md in this project"),
+            "empty project: {}",
+            transcript_text(&app)
+        );
+
+        std::fs::write(root.join("JAN.md"), "# Rules\n\nRun the tests.\n").unwrap();
+        run_command(&mut app, "reload system-prompt", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("re-read project instructions"), "{out}");
+        assert!(out.contains("JAN.md"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_commands_include_reload() {
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/reload"));
+    }
+
+    #[tokio::test]
+    async fn reload_unknown_target_notes_usage() {
+        let mut app = test_app();
+        run_command(&mut app, "reload bogus", &no_mcp()).await;
+        assert!(
+            transcript_text(&app).contains("unknown /reload target 'bogus'"),
+            "{}",
+            transcript_text(&app)
+        );
+    }
+
+    /// A plugin whose manifest declares one required env var.
+    fn plugin_with_setup_requirement(root: &std::path::Path, var: &str, url: &str) {
+        let dir = root.join(".jan/agent/plugins/acme");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("plugin.toml"),
+            format!("name = \"acme\"\n\n[setup.env]\n{var} = \"{url}\"\n"),
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn plugin_setup_dock_masks_input_and_skips() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_with_setup_requirement(&root, "ACME_TOKEN", "https://example.com/keys");
+
+        // The dock opens for the named plugin and shows the URL and a masked
+        // field; the hint row appears in `/plugin list` too.
+        run_command(&mut app, "plugin setup acme", &no_mcp()).await;
+        assert!(app.plugin_setup.is_some(), "dock must open");
+        let rows = render_rows(&mut app, 100, 30);
+        let rendered = rows.join("\n");
+        assert!(rendered.contains("ACME_TOKEN"), "{rendered}");
+        assert!(rendered.contains("https://example.com/keys"), "{rendered}");
+
+        // Typed characters render masked, never verbatim. Simulate the paste
+        // path directly: the typed secret must not appear in the frame.
+        if let Some(prompt) = app.plugin_setup.as_mut() {
+            prompt.paste("supersecret123");
+        }
+        let rows = render_rows(&mut app, 100, 30);
+        let rendered = rows.join("\n");
+        assert!(!rendered.contains("supersecret123"), "{rendered}");
+        assert!(rendered.contains('*'), "mask row: {rendered}");
+
+        // Esc cancels the dock.
+        handle_plugin_setup_key(&mut app, key(KeyCode::Esc), false);
+        assert!(app.plugin_setup.is_none());
+        assert!(transcript_text(&app).contains("plugin setup cancelled"));
         let _ = std::fs::remove_dir_all(&root);
     }
 

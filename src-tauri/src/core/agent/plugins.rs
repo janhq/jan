@@ -124,6 +124,88 @@ struct Manifest {
     version: Option<String>,
     #[serde(default)]
     repo: Option<String>,
+    /// Optional setup requirements: environment variables the plugin needs
+    /// (typically API keys). `plugin.toml`:
+    ///
+    /// ```toml
+    /// [setup.env]
+    /// GITHUB_TOKEN = "https://github.com/settings/tokens"
+    /// ```
+    ///
+    /// The value is the URL the user can obtain the key from (empty when the
+    /// plugin author has no link to share).
+    #[serde(default)]
+    setup: Option<SetupSection>,
+    /// Claude-convention manifests declare their needs indirectly: an
+    /// `.claude-plugin/plugin.json` `mcpServers` block whose env values
+    /// reference `${VAR}`. Those references are collected as required
+    /// variables without a URL.
+    #[serde(default, rename = "mcpServers")]
+    mcp_servers: Option<std::collections::BTreeMap<String, McpServerDecl>>,
+}
+
+/// The `[setup]` manifest section.
+#[derive(Debug, Default, Deserialize)]
+struct SetupSection {
+    #[serde(default)]
+    env: Option<std::collections::BTreeMap<String, String>>,
+}
+
+/// One Claude `mcpServers` entry: only its env block matters here.
+#[derive(Debug, Default, Deserialize)]
+struct McpServerDecl {
+    #[serde(default)]
+    env: Option<std::collections::BTreeMap<String, String>>,
+}
+
+impl Manifest {
+    /// Environment variables this plugin requires, as `(var, url)` pairs —
+    /// the URL the user can obtain the value from, empty when unknown.
+    fn required_env(&self) -> std::collections::BTreeMap<String, String> {
+        let mut out = std::collections::BTreeMap::new();
+        if let Some(setup) = &self.setup {
+            for (key, url) in setup.env.iter().flatten() {
+                if is_env_name(key) {
+                    out.insert(key.clone(), url.trim().to_string());
+                }
+            }
+        }
+        for server in self.mcp_servers.iter().flat_map(|m| m.values()) {
+            for value in server.env.iter().flatten().map(|(_, v)| v) {
+                for var in template_refs(value) {
+                    if is_env_name(&var) {
+                        out.entry(var).or_default();
+                    }
+                }
+            }
+        }
+        out
+    }
+}
+
+/// A plausible environment-variable name (used as a file stem and registry
+/// key, so it must not contain path separators or control characters).
+fn is_env_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !name.chars().next().unwrap().is_ascii_digit()
+}
+
+/// Every `${VAR}` reference in a manifest value.
+fn template_refs(value: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = value;
+    while let Some(start) = rest.find("${") {
+        if let Some(len) = rest[start + 2..].find('}') {
+            out.push(rest[start + 2..start + 2 + len].to_string());
+            rest = &rest[start + 2 + len + 1..];
+        } else {
+            break;
+        }
+    }
+    out
 }
 
 fn client() -> Result<reqwest::Client, String> {
@@ -161,49 +243,204 @@ pub(crate) fn find_installed(root: &Path, query: &str) -> Option<(String, Instal
         .find(|(directory, plugin)| directory == &query || plugin.name == query)
 }
 
-fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
-    let dir = skills::plugins_dir(root);
-    let Ok(rd) = std::fs::read_dir(&dir) else {
-        return Vec::new();
+/// `~/.jan/agent/plugin-env/` — where the setup prompt stores plugin API keys.
+/// Resolved from the home directory directly (not the cli-gated global config
+/// helpers) so the desktop run path syncs the same registry.
+fn plugin_env_dir() -> Result<PathBuf, String> {
+    dirs::home_dir()
+        .map(|home| home.join(".jan").join("agent").join("plugin-env"))
+        .ok_or_else(|| "could not resolve the user's home directory".to_string())
+}
+
+/// `plugin-env/<plugin>.toml` under `dir`.
+fn plugin_env_path(dir: &Path, plugin: &str) -> Result<PathBuf, String> {
+    let stem = crate::core::agent::skills::safe_stem(plugin)?;
+    Ok(dir.join(format!("{stem}.toml")))
+}
+
+/// The stored env values for one plugin, resolved against the real plugin-env
+/// store directory. Missing or malformed file -> empty.
+/// [`stored_plugin_env_in`] is the variant taking an explicit directory (tests).
+pub(crate) fn stored_plugin_env_in(
+    dir: &Path,
+    plugin: &str,
+) -> std::collections::BTreeMap<String, String> {
+    plugin_env_path(dir, plugin)
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|raw| toml::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+/// Persist one env value for a plugin, merging with what is already stored.
+#[cfg(feature = "cli")]
+pub(crate) fn save_plugin_env(plugin: &str, key: &str, value: &str) -> Result<(), String> {
+    save_plugin_env_in(&plugin_env_dir()?, plugin, key, value)
+}
+
+/// [`save_plugin_env`] against an explicit directory (tests).
+#[cfg(any(feature = "cli", test))]
+pub(crate) fn save_plugin_env_in(
+    dir: &Path,
+    plugin: &str,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
+    if !is_env_name(key) {
+        return Err(format!("invalid environment variable name '{key}'"));
+    }
+    let path = plugin_env_path(dir, plugin)?;
+    let mut values: std::collections::BTreeMap<String, String> = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|raw| toml::from_str(&raw).ok())
+        .unwrap_or_default();
+    values.insert(key.to_string(), value.to_string());
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("could not create {parent:?}: {e}"))?;
+    }
+    let serialized = toml::to_string(&values).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    let perms = {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)
     };
-    // Scan each artifact kind once; per-plugin counts filter the shared lists
-    // rather than re-walking the whole plugin tree per plugin.
+    #[cfg(not(unix))]
+    let perms = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&path);
+    perms
+        .and_then(|mut f| f.write_all(serialized.as_bytes()))
+        .map_err(|e| format!("could not write {}: {e}", path.display()))
+}
+
+/// Every env variable one plugin declares as required, as `(var, url)` in
+/// manifest order. Unlike [`missing_plugin_env`] this includes satisfied
+/// entries: an explicit `/plugin setup <name>` re-runs the whole prompt.
+#[cfg(feature = "cli")]
+pub(crate) fn declared_plugin_env(root: &Path, plugin: &str) -> Vec<(String, String)> {
+    skills::find_plugin_dir(root, plugin)
+        .map(|dir| read_manifest(&dir).required_env().into_iter().collect())
+        .unwrap_or_default()
+}
+
+/// Setup requirements that are not yet satisfied: `(plugin, var, url)` in
+/// scan order. A var is satisfied when the user stored a value or the process
+/// environment already provides one (CI, shells, direnv...).
+#[cfg(feature = "cli")]
+pub(crate) fn missing_plugin_env(root: &Path) -> Vec<(String, String, String)> {
+    match plugin_env_dir() {
+        Ok(dir) => missing_plugin_env_in(root, &dir),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// [`missing_plugin_env`] against an explicit store directory (tests).
+#[cfg(any(feature = "cli", test))]
+fn missing_plugin_env_in(root: &Path, env_dir: &Path) -> Vec<(String, String, String)> {
+    let mut out = Vec::new();
+    for (directory, _) in installed_entries(root) {
+        let Some(dir) = skills::find_plugin_dir(root, &directory) else {
+            continue;
+        };
+        let stored = stored_plugin_env_in(env_dir, &directory);
+        for (var, url) in read_manifest(&dir).required_env() {
+            let in_store = stored.get(&var).is_some_and(|v| !v.is_empty());
+            let in_host = std::env::var_os(&var).is_some_and(|v| !v.is_empty());
+            if !in_store && !in_host {
+                out.push((directory.clone(), var, url));
+            }
+        }
+    }
+    out
+}
+
+/// Hand the sandboxed shells their plugin-declared credentials: values stored
+/// via the setup prompt, intersected with the variables the installed
+/// plugins' manifests still declare (a plugin that dropped a requirement
+/// stops receiving it). Runs on every run start via `ensure_project` and
+/// after `/reload`, so install/remove/setup changes are picked up live.
+pub(crate) fn sync_env_registry(root: &Path) {
+    if let Ok(dir) = plugin_env_dir() {
+        sync_env_registry_in(root, &dir);
+    }
+}
+
+/// [`sync_env_registry`] against an explicit store directory (tests).
+fn sync_env_registry_in(root: &Path, env_dir: &Path) {
+    let mut values: std::collections::BTreeMap<String, String> = Default::default();
+    for (directory, _) in installed_entries(root) {
+        let Some(dir) = skills::find_plugin_dir(root, &directory) else {
+            continue;
+        };
+        let stored = stored_plugin_env_in(env_dir, &directory);
+        for var in read_manifest(&dir).required_env().into_keys() {
+            if let Some(value) = stored.get(&var).filter(|v| !v.is_empty()) {
+                values.insert(var, value.clone());
+            }
+        }
+    }
+    tauri_plugin_agent_tools::tools::proc::set_plugin_env(values);
+}
+
+fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
+    // A linked git worktree also sees the main worktree's plugins, the
+    // project-local one shadowing a same-named shared one. Counts come from
+    // the merged discovery above, so shared plugins report real payloads.
+    let mut seen = std::collections::HashSet::new();
     let all_skills = skills::discover_plugins(root);
     let all_commands = crate::core::agent::plugin_commands::discover(root);
     let mut out = Vec::new();
-    for entry in rd.flatten() {
-        let path = entry.path();
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let Some(directory) = path.file_name().and_then(|s| s.to_str()) else {
+    for r in skills::discovery_roots(root) {
+        let dir = skills::plugins_dir(&r);
+        let Ok(rd) = std::fs::read_dir(&dir) else {
             continue;
         };
-        if directory.starts_with(".installing-") {
-            continue;
+        // Scan each artifact kind once; per-plugin counts filter the shared
+        // lists rather than re-walking the whole plugin tree per plugin.
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let Some(directory) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if directory.starts_with(".installing-") {
+                continue;
+            }
+            if !seen.insert(directory.to_string()) {
+                continue;
+            }
+            let manifest = read_manifest(&path);
+            let plugin_skills = all_skills
+                .iter()
+                .filter(|e| e.plugin.as_deref() == Some(directory))
+                .count();
+            let plugin_commands = all_commands
+                .iter()
+                .filter(|e| e.plugin == directory)
+                .count();
+            let plugin_agents = crate::core::agent::subagent::count_plugin_agents(root, directory);
+            out.push((
+                directory.to_string(),
+                InstalledPlugin {
+                    name: manifest.name.unwrap_or_else(|| directory.to_string()),
+                    description: manifest.description.unwrap_or_default(),
+                    version: manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
+                    repo: manifest.repo.unwrap_or_default(),
+                    skills: plugin_skills,
+                    commands: plugin_commands,
+                    agents: plugin_agents,
+                },
+            ));
         }
-        let manifest = read_manifest(&path);
-        let plugin_skills = all_skills
-            .iter()
-            .filter(|e| e.plugin.as_deref() == Some(directory))
-            .count();
-        let plugin_commands = all_commands
-            .iter()
-            .filter(|e| e.plugin == directory)
-            .count();
-        let plugin_agents = crate::core::agent::subagent::count_plugin_agents(root, directory);
-        out.push((
-            directory.to_string(),
-            InstalledPlugin {
-                name: manifest.name.unwrap_or_else(|| directory.to_string()),
-                description: manifest.description.unwrap_or_default(),
-                version: manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
-                repo: manifest.repo.unwrap_or_default(),
-                skills: plugin_skills,
-                commands: plugin_commands,
-                agents: plugin_agents,
-            },
-        ));
     }
     out.sort_by(|a, b| a.1.name.cmp(&b.1.name));
     out
@@ -1628,5 +1865,88 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// An installed plugin (by directory convention) whose manifest declares
+    /// one required env var, plus the store dir tests use instead of `~/.jan`.
+    fn plugin_with_env_requirement(tag: &str, var: &str, url: &str) -> (PathBuf, PathBuf) {
+        let root = unique_root(tag);
+        let dir = root.join(".jan/agent/plugins/acme");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("plugin.toml"),
+            format!("name = \"acme\"\n\n[setup.env]\n{var} = \"{url}\"\n"),
+        )
+        .unwrap();
+        let env_dir = root.join("plugin-env-store");
+        std::fs::create_dir_all(&env_dir).unwrap();
+        (root, env_dir)
+    }
+
+    #[test]
+    fn required_env_reads_setup_section_and_claude_mcp_refs() {
+        let root = unique_root("reqenv");
+        std::fs::create_dir_all(root.join("acme")).unwrap();
+        std::fs::write(
+            root.join("acme/plugin.toml"),
+            "name = \"acme\"\n\n[setup.env]\nACME_TOKEN = \"https://example.com/keys\"\n",
+        )
+        .unwrap();
+        let req = read_manifest(&root.join("acme")).required_env();
+        assert_eq!(
+            req.get("ACME_TOKEN").map(String::as_str),
+            Some("https://example.com/keys")
+        );
+
+        // The Claude convention declares needs indirectly: ${VAR} references
+        // inside an mcpServers env block, with no URL to show.
+        std::fs::create_dir_all(root.join("claude").join(".claude-plugin")).unwrap();
+        std::fs::write(
+            root.join("claude/.claude-plugin/plugin.json"),
+            r#"{"name":"claude","mcpServers":{"gh":{"command":"x","env":{"GITHUB_TOKEN":"${GITHUB_TOKEN}"}}}}"#,
+        )
+        .unwrap();
+        let req = read_manifest(&root.join("claude")).required_env();
+        assert_eq!(req.get("GITHUB_TOKEN").map(String::as_str), Some(""));
+
+        // Malformed names are filtered, not propagated.
+        std::fs::create_dir_all(root.join("bad")).unwrap();
+        std::fs::write(
+            root.join("bad/plugin.toml"),
+            "[setup.env]\n\"../evil\" = \"https://x\"\n\"HAS SPACE\" = \"https://y\"\n",
+        )
+        .unwrap();
+        let req = read_manifest(&root.join("bad")).required_env();
+        assert!(req.is_empty(), "{req:?}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn save_store_and_missing_report_roundtrip() {
+        let (root, env_dir) = plugin_with_env_requirement("envstore", "ACME_TOKEN", "https://x");
+
+        // Nothing stored: the requirement is reported as missing.
+        let missing = missing_plugin_env_in(&root, &env_dir);
+        assert_eq!(
+            missing,
+            vec![("acme".to_string(), "ACME_TOKEN".to_string(), "https://x".to_string())]
+        );
+
+        // Store a value: the requirement is satisfied.
+        save_plugin_env_in(&env_dir, "acme", "ACME_TOKEN", "secret").unwrap();
+        assert_eq!(
+            stored_plugin_env_in(&env_dir, "acme").get("ACME_TOKEN"),
+            Some(&"secret".to_string())
+        );
+        assert!(missing_plugin_env_in(&root, &env_dir).is_empty());
+        assert!(plugin_env_path(&env_dir, "acme").unwrap().exists());
+
+        // Sync registers exactly the declared+stored variable.
+        sync_env_registry_in(&root, &env_dir);
+        let snapshot =
+            tauri_plugin_agent_tools::tools::proc::plugin_env_snapshot();
+        assert_eq!(snapshot.get("ACME_TOKEN").map(String::as_str), Some("secret"));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
