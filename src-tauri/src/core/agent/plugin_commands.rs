@@ -32,39 +32,47 @@ pub(crate) struct ParsedCommand {
 
 /// Every command shipped by installed plugins, sorted by plugin then name.
 /// Discovery is recursive (`commands/**/*.md`), skips `README.md` and
-/// dotfiles, and ignores interrupted `.installing-*` staging directories.
+/// dotfiles, and ignores interrupted `.installing-*` staging directories. A
+/// linked git worktree also sees the main worktree's plugins, project-local
+/// shadowing shared ones (see `skills::discovery_roots`).
 pub(crate) fn discover(root: &Path) -> Vec<CommandEntry> {
-    let dir = crate::core::agent::skills::plugins_dir(root);
-    let Ok(rd) = std::fs::read_dir(&dir) else {
-        return Vec::new();
-    };
+    let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    for entry in rd.flatten() {
-        let path = entry.path();
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
+    for r in crate::core::agent::skills::discovery_roots(root) {
+        let dir = crate::core::agent::skills::plugins_dir(&r);
+        let Ok(rd) = std::fs::read_dir(&dir) else {
             continue;
         };
-        if plugin.starts_with(".installing-") {
-            continue;
-        }
-        crate::core::agent::skills::walk_markdown_files(&path.join("commands"), &mut |path| {
-            let raw = std::fs::read_to_string(path).unwrap_or_default();
-            let name = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or_default();
-            let parsed = parse_command(&raw);
-            out.push(CommandEntry {
-                name: name.to_string(),
-                plugin: plugin.to_string(),
-                description: parsed.description,
-                file: path.to_path_buf(),
-                hints: template_hints(&parsed.body),
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if plugin.starts_with(".installing-") {
+                continue;
+            }
+            if !seen.insert(plugin.to_string()) {
+                continue;
+            }
+            crate::core::agent::skills::walk_markdown_files(&path.join("commands"), &mut |path| {
+                let raw = std::fs::read_to_string(path).unwrap_or_default();
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default();
+                let parsed = parse_command(&raw);
+                out.push(CommandEntry {
+                    name: name.to_string(),
+                    plugin: plugin.to_string(),
+                    description: parsed.description,
+                    file: path.to_path_buf(),
+                    hints: template_hints(&parsed.body),
+                });
             });
-        });
+        }
     }
     out.sort_by(|a, b| (&a.plugin, &a.name).cmp(&(&b.plugin, &b.name)));
     out
