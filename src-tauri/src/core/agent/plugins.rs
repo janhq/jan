@@ -258,16 +258,9 @@ fn plugin_env_path(dir: &Path, plugin: &str) -> Result<PathBuf, String> {
     Ok(dir.join(format!("{stem}.toml")))
 }
 
-/// The stored env values for one plugin. Missing or malformed file -> empty.
-#[cfg(feature = "cli")]
-pub(crate) fn stored_plugin_env(plugin: &str) -> std::collections::BTreeMap<String, String> {
-    match plugin_env_dir() {
-        Ok(dir) => stored_plugin_env_in(&dir, plugin),
-        Err(_) => Default::default(),
-    }
-}
-
-/// [`stored_plugin_env`] against an explicit directory (tests).
+/// The stored env values for one plugin, resolved against the real plugin-env
+/// store directory. Missing or malformed file -> empty.
+/// [`stored_plugin_env_in`] is the variant taking an explicit directory (tests).
 pub(crate) fn stored_plugin_env_in(
     dir: &Path,
     plugin: &str,
