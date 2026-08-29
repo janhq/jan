@@ -17,9 +17,7 @@
 //! ref. The user's `git status`, current branch, and staged changes are never
 //! touched. Shelling out keeps us free of a libgit2 dependency.
 
-use std::path::Path;
-#[cfg(feature = "cli")]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 
@@ -128,7 +126,7 @@ pub(crate) fn current_branch(path: &Path) -> Option<String> {
 /// `--git-common-dir` points at the shared `<main>/.git`; the main worktree
 /// root is its parent. `--path-format=absolute` (git 2.31+) keeps the answer
 /// usable no matter which cwd git would otherwise resolve against.
-pub(crate) fn worktree_primary_root(path: &Path) -> Option<PathBuf> {
+pub(crate) fn worktree_primary_root(path: &Path) -> Option<std::path::PathBuf> {
     let p = path.to_string_lossy();
     let common = git(&[
         "-C",
