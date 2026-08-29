@@ -39,10 +39,11 @@ purpose: context is the size of the request, output is what came back.
 
 Opens a centered overlay on top of the live transcript (the turn keeps running behind it).
 Inside is a rail that shows the fill as a percentage of the window, a visual bar with the
-`^` marker at the current usage point and the `X` auto-compact reserve zone, and a token
-scale, followed by a per-category breakdown: System prompt, System tools, Project context,
-Skills, and Messages. Press <kbd>Esc</kbd>, <kbd>q</kbd>, or <kbd>Ctrl</kbd>+<kbd>C</kbd> to
-close; closing never cancels the turn.
+`^` marker at the current usage point and `╳` marking the auto-compact reserve zone, a
+token scale, and a headroom line (`N tokens available before auto-compact`), followed by a
+per-category breakdown: System prompt, System tools, Project context, Skills, and Messages.
+Press <kbd>Esc</kbd>, <kbd>q</kbd>, or <kbd>Ctrl</kbd>+<kbd>C</kbd> to close; closing never
+cancels the turn.
 
 The headline fill uses the provider's own `prompt_tokens` when available. After a compaction,
 rewind, or resume the provider count is reset, so the number falls back to an estimate
