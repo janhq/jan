@@ -131,6 +131,7 @@ pub enum Decision {
 /// session grant > capability rules. Reads inside the project are silently
 /// allowed; reads that escape the project, and all writes/exec, prompt (unless
 /// already granted this session or pre-approved in agent.toml).
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_decision(
     tool: &BuiltinTool,
     args: &serde_json::Value,

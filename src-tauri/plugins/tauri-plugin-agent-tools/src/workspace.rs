@@ -544,6 +544,7 @@ mod tests {
     /// by age. Nothing else in the temp dir is touched, and a fresh scratch
     /// survives the real 24h threshold.
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn stale_scratch_dirs_are_swept_and_fresh_ones_are_not() {
         let session = format!("sweep-stale-{}", std::process::id());
         let _guard = lock_scratch_namespace();

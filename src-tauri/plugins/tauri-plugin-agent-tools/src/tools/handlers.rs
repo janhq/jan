@@ -3537,6 +3537,7 @@ mod tests {
     /// Renders for real when a browser is present, and returns an image part
     /// rather than a data URL buried in the text.
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn screenshot_returns_an_image_part_when_chrome_is_present() {
         if chrome_binary().is_none() {
             return;
