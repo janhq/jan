@@ -643,6 +643,18 @@ enum ToolsState {
     Failed(String),
 }
 
+/// Overlay state for the `/context` readout. Replaces the old idle-only
+/// transcript row: the report now lands here off the render loop, so `/context`
+/// stays responsive while a turn is running and the readout reads as a popup
+/// the user closes with Esc rather than a line committed to the conversation.
+enum ContextView {
+    /// Requested, not yet computed. The off-loop job for it is in flight (or
+    /// queued behind the loop picking up `context_request`).
+    Loading,
+    /// The computed report, ready to render.
+    Ready(Box<ContextReport>),
+}
+
 /// Off-loop MCP work the detail screen hands to the loop. Everything here
 /// either talks to a peer or waits on a browser, so none of it may run inside
 /// `handle_key`.
@@ -1785,6 +1797,12 @@ struct App {
     thought_for_since: Option<Instant>,
     turn: (u32, u32),
     tokens: u64,
+    /// Whether `tokens`/`turn_prompt_tokens` still describe a conversation the
+    /// provider actually measured. A compaction rewrites the history out from
+    /// under the last reported `usage`, so from that point the counts are the
+    /// local chars/4 estimate until a fresh response lands. `/context` reports
+    /// the difference rather than presenting a stale number as measured.
+    tokens_estimated: bool,
     detail: String,
     /// Outstanding permission requests, oldest first. Several subagents (or a
     /// subagent and the parent) can request approval concurrently; only the
@@ -1801,6 +1819,12 @@ struct App {
     /// keyboard while open. Holds the setting being edited and any validation
     /// error; writes go straight to agent.toml on Enter.
     settings_prompt: Option<SettingsPrompt>,
+    /// Current `/context` overlay, if one is open. `None` when closed.
+    context_view: Option<ContextView>,
+    /// Set by `/context` to ask the loop to compute the report off the render
+    /// loop (it sizes the tool segment, which takes the MCP server lock a turn
+    /// may be holding). Taken once, like `mcp_job_request`.
+    context_request: bool,
     /// Active MCP add/edit wizard (docked); owns the keyboard while open.
     mcp_prompt: Option<McpPrompt>,
     /// The `/mcp` detail screen's data, alongside the `McpServer` picker whose
@@ -2288,6 +2312,7 @@ impl App {
             thought_for_since: None,
             turn: (0, 0),
             tokens: 0,
+            tokens_estimated: false,
             detail: String::new(),
             pending_queue: std::collections::VecDeque::new(),
             ask_queue: std::collections::VecDeque::new(),
@@ -2295,6 +2320,8 @@ impl App {
             model_picker: None,
             login: None,
             settings_prompt: None,
+            context_view: None,
+            context_request: false,
             mcp_prompt: None,
             mcp_detail: None,
             mcp_job_request: None,
@@ -2421,6 +2448,9 @@ impl App {
         self.ask_queue.clear();
         self.pending_images.clear();
         self.tokens = 0;
+        // An empty history is exactly known, not an estimate of anything.
+        self.tokens_estimated = false;
+        self.turn_prompt_tokens = 0;
         self.tokens_per_sec = None;
         self.turn = (0, 0);
         self.detail.clear();
@@ -2435,6 +2465,20 @@ impl App {
         self.last_todo_reminder = None;
         self.reminder_count = 0;
         self.reminder_awaiting_progress = false;
+    }
+
+    /// Drop the provider's token measurement, because the history it measured is
+    /// no longer the history we hold.
+    ///
+    /// Any edit to the conversation behind the model's back -- a compaction, a
+    /// rewind, resuming a different thread -- invalidates the last reported
+    /// `prompt_tokens`: it describes turns that are gone. `/context` then falls
+    /// back to the estimator and says so, rather than presenting a stale count
+    /// as measured. Callers that *empty* the history use [`App::reset_session`]
+    /// instead, where zero is exact rather than an estimate.
+    fn invalidate_token_provenance(&mut self) {
+        self.tokens_estimated = true;
+        self.turn_prompt_tokens = 0;
     }
 
     /// Drop any selection, and with it a copy armed but not yet lifted out of a
@@ -4130,6 +4174,192 @@ impl App {
         }
     }
 
+    /// Build the `/context` breakdown for the current session.
+    ///
+    /// The headline fill prefers the provider's number: `turn_prompt_tokens` is
+    /// the most recent request's `prompt_tokens`, which is by definition what
+    /// the window actually held. It is only authoritative while
+    /// `tokens_estimated` is false -- a compaction rewrites the history the
+    /// provider measured, so its last count describes a conversation that no
+    /// longer exists and the view falls back to the estimator, labelled.
+    ///
+    /// The per-category numbers are always estimates (chars/4 over each
+    /// segment's real serialized text, via the same [`estimate_token_count`]
+    /// path the compaction gauge uses), which is why the section is headed
+    /// "Context breakdown (estimated)" regardless of the headline's source.
+    #[cfg(test)]
+    async fn context_report(&self) -> ContextReport {
+        compute_context_report(self.context_snapshot()).await
+    }
+    /// Owning snapshot of the `App` state the `/context` report is shaded
+    /// from, taken synchronously on the key path. The async computation runs
+    /// on its own task (a spawned task cannot borrow `&App`), and specifically
+    /// off the render loop: sizing the tool segment takes the MCP server lock,
+    /// which a turn executing an MCP tool call holds for up to the tool-call
+    /// timeout. Snapshotting here keeps that await off the key-handling path
+    /// while leaving the numbers exactly what [`Self::context_report`] would
+    /// have produced. The Messages segment's chars/4 estimate over the whole
+    /// history is folded in synchronously (rather than cloning the history into
+    /// the task) precisely so the value is identical either way.
+    fn context_snapshot(&self) -> ContextSnapshot {
+        ContextSnapshot {
+            args: self.args.clone(),
+            model: self.model.clone(),
+            run_mode: self.run_mode,
+            context_window: self.context_window,
+            reserve_tokens: self.reserve_tokens,
+            history_estimate: if self.history.is_empty() {
+                0
+            } else {
+                estimate_token_count(&self.history)
+            },
+            tokens_estimated: self.tokens_estimated,
+            turn_prompt_tokens: self.turn_prompt_tokens,
+        }
+    }
+}
+
+/// Owning snapshot of the `App` state the `/context` report is shaded from,
+/// taken synchronously on the key path (see [`App::context_snapshot`]).
+struct ContextSnapshot {
+    args: Option<Arc<OrchestrationArgs>>,
+    model: String,
+    run_mode: crate::core::agent::plan::RunMode,
+    context_window: u64,
+    reserve_tokens: u64,
+    /// The Messages segment's estimate over the live history, precomputed so
+    /// the off-loop task need not own a clone of the conversation.
+    history_estimate: u64,
+    tokens_estimated: bool,
+    turn_prompt_tokens: u64,
+}
+
+/// The `/context` breakdown for the current session, computed from an owned
+/// [`ContextSnapshot`] so it can run on its own task off the render loop.
+///
+/// The headline fill prefers the provider's number: `turn_prompt_tokens` is
+/// the most recent request's `prompt_tokens`, which is by definition what
+/// the window actually held. It is only authoritative while
+/// `tokens_estimated` is false -- a compaction rewrites the history the
+/// provider measured, so its last count describes a conversation that no
+/// longer exists and the view falls back to the estimator, labelled.
+///
+/// The per-category numbers are always estimates (chars/4 over each
+/// segment's real serialized text, via the same [`estimate_token_count`]
+/// path the compaction gauge uses), which is why the section is headed
+/// "Context breakdown (estimated)" regardless of the headline's source.
+async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
+    let mut segments = Vec::new();
+    let args = snapshot.args.as_ref();
+    let root = args.and_then(|a| a.project_root.clone());
+
+    // The three system-prompt segments are carved out of one build of the
+    // real prompt: the whole thing, minus the JAN.md block, minus the
+    // skills/memory catalogs. Splitting a single build (rather than
+    // re-deriving each piece) is what keeps them summing to what is sent.
+    //
+    // Sized in bytes, not chars, because `estimate_token_count` -- which
+    // sizes the Messages segment below -- divides `str::len` by four. Mixing
+    // the two would make the same non-ASCII text count differently depending
+    // on which segment it landed in.
+    let (mut prompt_bytes, mut context_bytes, mut skills_bytes) = (0usize, 0usize, 0usize);
+    if let (Some(args), Some(root)) = (args, root.as_deref()) {
+        let full = crate::core::agent::r#loop::context_system_prompt_preview(
+            args.system_prompt_override.as_deref(),
+            root,
+            args.session_id.as_deref(),
+            args.subagents_enabled,
+            args.sandbox,
+        )
+        .unwrap_or_default();
+        context_bytes =
+            crate::core::agent::context::load_context_files(root).map_or(0, |s| s.len());
+        skills_bytes = crate::core::agent::context::load_skills(root).map_or(0, |s| s.len())
+            + crate::core::agent::context::load_memory_catalog(root).map_or(0, |s| s.len());
+        prompt_bytes = full.len().saturating_sub(context_bytes + skills_bytes);
+    }
+
+    // Tool schemas as actually advertised, serialized the way they go on
+    // the wire.
+    let tools_bytes = match args {
+        Some(args) => crate::core::agent::r#loop::context_advertised_tools(
+            &args.mcp_servers,
+            &args.mcp_settings,
+            &args.permissions,
+            root.as_deref(),
+            snapshot.run_mode,
+            args.subagents_enabled,
+            args.max_parallel_subagents,
+            args.ask_requests.is_some(),
+            args.todo_registry.is_some(),
+        )
+        .await
+        .iter()
+        .map(|t| t.to_string().len())
+        .sum(),
+        None => 0,
+    };
+
+    // Same divisor as `estimate_token_count`, applied to the same unit.
+    let bytes_to_tokens = |bytes: usize| (bytes / 4) as u64;
+    segments.push(ContextSegment {
+        key: 'P',
+        label: "System prompt",
+        tokens: bytes_to_tokens(prompt_bytes),
+    });
+    segments.push(ContextSegment {
+        key: 'T',
+        label: "System tools",
+        tokens: bytes_to_tokens(tools_bytes),
+    });
+    segments.push(ContextSegment {
+        key: 'C',
+        label: "Project context",
+        tokens: bytes_to_tokens(context_bytes),
+    });
+    segments.push(ContextSegment {
+        key: 'K',
+        label: "Skills",
+        tokens: bytes_to_tokens(skills_bytes),
+    });
+    segments.push(ContextSegment {
+        key: 'M',
+        label: "Messages",
+        tokens: snapshot.history_estimate,
+    });
+
+    // Free space is what is left after the estimated content and the
+    // reserved buffer, so the seven segments partition the window exactly
+    // and the percentages sum to 100.
+    let buffer = snapshot.reserve_tokens.min(snapshot.context_window);
+    let used: u64 = segments.iter().map(|s| s.tokens).sum();
+    let free = snapshot.context_window.saturating_sub(used + buffer);
+    segments.push(ContextSegment {
+        key: '.',
+        label: "Available",
+        tokens: free,
+    });
+    segments.push(ContextSegment {
+        key: 'B',
+        label: "Auto-compact reserve",
+        tokens: buffer,
+    });
+
+    let reported = !snapshot.tokens_estimated && snapshot.turn_prompt_tokens > 0;
+    ContextReport {
+        model_id: snapshot.model,
+        window: snapshot.context_window,
+        fill: if reported {
+            snapshot.turn_prompt_tokens
+        } else {
+            used
+        },
+        fill_reported: reported,
+        segments,
+    }
+}
+
+impl App {
     /// Non-terminal stream events. `Done`/`Error` are handled by the loop since
     /// they mutate history and the run handle.
     fn apply(&mut self, ev: StreamEvent) {
@@ -4474,6 +4704,9 @@ impl App {
                     // Keep the header's context gauge live during the turn
                     // instead of jumping only when the run ends.
                     self.tokens = prompt + usage.completion_tokens.unwrap_or(0);
+                    // A fresh measurement of the *current* history supersedes
+                    // any post-compaction estimate.
+                    self.tokens_estimated = false;
                 }
             }
             StreamEvent::Done { .. } | StreamEvent::Error { .. } => {}
@@ -5105,6 +5338,352 @@ fn estimate_token_count(messages: &[serde_json::Value]) -> u64 {
     }
     let envelope = TOKENS_PER_MESSAGE * messages.len() as u64;
     ((total_chars / 4) as u64 + envelope).max(1)
+}
+
+/// One bank in the `/context` breakdown. `key` is the monochrome-safe category
+/// marker; `label` is the compact uppercase name shown beside its bar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ContextSegment {
+    key: char,
+    label: &'static str,
+    tokens: u64,
+}
+
+/// The full `/context` model: the authoritative window fill, whether that fill
+/// is provider-reported or estimated, and the per-category breakdown.
+#[derive(Debug, Clone)]
+struct ContextReport {
+    /// Bare model id as configured.
+    model_id: String,
+    window: u64,
+    /// Total window fill. Provider-reported when `fill_reported`, else the
+    /// chars/4 estimate over the same history.
+    fill: u64,
+    /// Whether `fill` came from the provider's `usage.prompt_tokens`. False
+    /// makes every number on the headline an estimate, and the view says so.
+    fill_reported: bool,
+    /// Content categories plus free space and the autocompact buffer. Always
+    /// exactly the seven bars rendered by the context view.
+    segments: Vec<ContextSegment>,
+}
+
+impl ContextReport {
+    /// Percentage of the effective whole each bank occupies. Normally the
+    /// segments partition the configured window exactly. If an estimate
+    /// overshoots, normalize over the larger segment total so the banks still
+    /// sum to 100% instead of presenting impossible negative free space.
+    fn percents(&self) -> Vec<f64> {
+        let total: u64 = self.segments.iter().map(|s| s.tokens).sum();
+        let denom = self.window.max(total).max(1) as f64;
+        self.segments
+            .iter()
+            .map(|s| s.tokens as f64 / denom * 100.0)
+            .collect()
+    }
+}
+
+/// Compact token count for display: `6K`, `2.1K`, `950`. Sub-1K counts stay
+/// exact; 1K-10K keeps one decimal so a 2.1K segment is not flattened to `2K`.
+///
+/// Done in integer tenths rather than by formatting an `f64`: the branch and
+/// the displayed digit must come from the same value. The old branch inspected
+/// `k * 10.0`, while the decimal renderer formatted `k` itself. For 2050, `k`
+/// is slightly below 2.05 but `k * 10.0` lands on exactly 20.5, so the branch
+/// selected decimal output while the renderer produced the self-defeating
+/// `2.0K`. Integer math removes that representation mismatch.
+fn format_tokens(tokens: u64) -> String {
+    if tokens < 1_000 {
+        return tokens.to_string();
+    }
+    // Tenths of a thousand, half-up. Exact for every u64 below ~1.8e15.
+    let tenths = (tokens + 50) / 100;
+    if tokens < 10_000 && tenths % 10 != 0 {
+        format!("{}.{}K", tenths / 10, tenths % 10)
+    } else {
+        // 6.0K reads as noise; report it as 6K. Above 10K the decimal is
+        // meaningless precision on an estimate, so it is always dropped.
+        format!("{}K", (tokens + 500) / 1000)
+    }
+}
+
+/// The context window's own size. Lowercase `k`, matching the header gauge and
+/// the way model catalogs advertise a window (`234k`), which keeps it visually
+/// distinct from the uppercase `K` used for live token counts.
+fn format_window(tokens: u64) -> String {
+    format!("{}k", (tokens + 500) / 1000)
+}
+
+const CONTEXT_RAIL_INNER_MAX: usize = 60;
+const CONTEXT_BANK_WIDTH_MAX: usize = 20;
+const CONTEXT_BANK_FRACTIONS: [char; 8] = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
+
+/// Free space (`.`) and the auto-compact reserve (`B`) stay in the report so
+/// the rail and the percentage partition still cover the whole window, but the
+/// breakdown lists only what the conversation actually consumes -- the rail
+/// above already states the remaining and reserved capacity.
+fn is_consumed_segment(segment: &ContextSegment) -> bool {
+    !matches!(segment.key, '.' | 'B')
+}
+
+fn context_segment_style(key: char) -> Style {
+    match key {
+        'M' => Style::new().cyan(),
+        '.' => Style::new().dark_gray(),
+        'B' => Style::new().magenta(),
+        _ => Style::new().yellow(),
+    }
+}
+
+fn context_rail_style(glyph: char) -> Style {
+    match glyph {
+        '=' => Style::new().cyan(),
+        '^' => Style::new().yellow().bold(),
+        '.' => Style::new().dark_gray(),
+        '╳' => Style::new().magenta(),
+        _ => Style::new().dim(),
+    }
+}
+
+/// Place centered labels on a fixed-width scale. Earlier labels win: pass the
+/// live markers (fill, threshold) before the fixed scale ends so a low fill
+/// never loses its annotation to the `0%`/`0K` endpoint. A label that would
+/// collide with an earlier one is omitted; the exact values remain in the
+/// headline, so tight scales never render garbled text.
+fn context_marker_line(width: usize, labels: &[(usize, String)]) -> String {
+    let mut chars = vec![' '; width];
+    for (center, text) in labels {
+        let len = text.chars().count().min(width);
+        let start = center
+            .saturating_sub(len / 2)
+            .min(width.saturating_sub(len));
+        if chars[start..start + len].iter().any(|c| *c != ' ') {
+            continue;
+        }
+        for (offset, ch) in text.chars().take(len).enumerate() {
+            chars[start + offset] = ch;
+        }
+    }
+    chars.into_iter().collect::<String>().trim_end().to_string()
+}
+
+/// One category's share of the full window, rounded to eighth-block precision.
+/// A non-zero share always gets at least the thinnest visible block.
+fn context_bank_bar(percent: f64, width: usize) -> (String, String) {
+    let mut eighths = (percent.clamp(0.0, 100.0) * width as f64 * 8.0 / 100.0).round() as usize;
+    if percent > 0.0 {
+        eighths = eighths.max(1);
+    }
+    eighths = eighths.min(width * 8);
+
+    let full = eighths / 8;
+    let fraction = eighths % 8;
+    let mut filled = "█".repeat(full);
+    if fraction > 0 {
+        filled.push(CONTEXT_BANK_FRACTIONS[fraction]);
+    }
+    let empty = "░".repeat(width.saturating_sub(filled.chars().count()));
+    (filled, empty)
+}
+
+/// Plain `/context` summary: current usage and autocompaction threshold first,
+/// followed by seven equal-scale category bars.
+fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
+    let max = width.max(1);
+    let percents = report.percents();
+    let fill_pct = report.fill as f64 / report.window.max(1) as f64 * 100.0;
+    let window_k = format_window(report.window);
+    let buffer = report
+        .segments
+        .iter()
+        .find(|segment| segment.key == 'B')
+        .map_or(0, |segment| segment.tokens);
+    let compact_at = report.window.saturating_sub(buffer);
+    let compact_pct = compact_at as f64 / report.window.max(1) as f64 * 100.0;
+    let headroom = compact_at.saturating_sub(report.fill);
+    let provenance = if report.fill_reported {
+        "provider"
+    } else {
+        "estimated"
+    };
+
+    if width < 32 {
+        let mut rows = vec![
+            vec![Span::styled(
+                format!(
+                    "{}/{} ({fill_pct:.1}%, {provenance})",
+                    format_tokens(report.fill),
+                    window_k,
+                ),
+                Style::new().bold(),
+            )],
+            vec![Span::styled(
+                format!("{} before auto-compact", format_tokens(headroom)),
+                Style::new().bold(),
+            )],
+            vec![Span::styled(
+                "Context breakdown (estimated)",
+                Style::new().dim(),
+            )],
+        ];
+        for (segment, percent) in report
+            .segments
+            .iter()
+            .zip(&percents)
+            .filter(|(segment, _)| is_consumed_segment(segment))
+        {
+            rows.push(vec![Span::raw(format!(
+                "{} {} ({percent:.1}%)",
+                segment.label,
+                format_tokens(segment.tokens),
+            ))]);
+        }
+        return rows
+            .into_iter()
+            .map(|spans| Line::from(clip_spans(spans, max)))
+            .collect();
+    }
+
+    let mut rows: Vec<Vec<Span<'static>>> = vec![
+        vec![Span::styled(
+            format!(
+                "{} · {} / {} tokens used ({fill_pct:.1}%, {provenance})",
+                report.model_id,
+                format_tokens(report.fill),
+                window_k,
+            ),
+            Style::new().bold(),
+        )],
+        Vec::new(),
+    ];
+
+    let inner = width.saturating_sub(2).min(CONTEXT_RAIL_INNER_MAX);
+    let rail_width = inner + 2;
+    let fill_pos = ((report.fill as f64 / report.window.max(1) as f64 * inner as f64).round()
+        as usize)
+        .clamp(1, inner);
+    let compact_pos = ((compact_at as f64 / report.window.max(1) as f64 * inner as f64).round()
+        as usize)
+        .clamp(1, inner);
+
+    rows.push(vec![Span::styled("Context window", Style::new().dim())]);
+    if width >= 50 {
+        rows.push(vec![Span::styled(
+            context_marker_line(
+                rail_width,
+                &[
+                    (fill_pos, format!("{fill_pct:.1}%")),
+                    (compact_pos, format!("{compact_pct:.0}%")),
+                    (0, "0%".to_string()),
+                    (rail_width - 1, "100%".to_string()),
+                ],
+            ),
+            Style::new().dim(),
+        )]);
+    }
+
+    let mut rail_cells: Vec<char> = (0..inner)
+        .map(|index| {
+            if index < fill_pos {
+                '='
+            } else if index < compact_pos {
+                '.'
+            } else {
+                '╳'
+            }
+        })
+        .collect();
+    rail_cells[compact_pos - 1] = '|';
+    rail_cells[fill_pos - 1] = '^';
+    let mut rail = vec![Span::styled("|", Style::new().dim())];
+    rail.extend(
+        rail_cells
+            .into_iter()
+            .map(|glyph| Span::styled(glyph.to_string(), context_rail_style(glyph))),
+    );
+    rail.push(Span::styled("|", Style::new().dim()));
+    rows.push(rail);
+
+    if width >= 50 {
+        rows.push(vec![Span::styled(
+            context_marker_line(
+                rail_width,
+                &[
+                    (fill_pos, format_tokens(report.fill)),
+                    (compact_pos, format_tokens(compact_at)),
+                    (0, "0K".to_string()),
+                    (rail_width - 1, format_tokens(report.window)),
+                ],
+            ),
+            Style::new().dim(),
+        )]);
+    }
+    rows.push(Vec::new());
+    rows.push(vec![Span::styled(
+        format!(
+            "{} tokens available before auto-compact",
+            format_tokens(headroom)
+        ),
+        Style::new().bold(),
+    )]);
+    rows.push(Vec::new());
+    rows.push(vec![Span::styled(
+        "Context breakdown (estimated)",
+        Style::new().dim(),
+    )]);
+
+    let label_width = report
+        .segments
+        .iter()
+        .filter(|segment| is_consumed_segment(segment))
+        .map(|segment| segment.label.chars().count())
+        .max()
+        .unwrap_or_default();
+    for (segment, percent) in report
+        .segments
+        .iter()
+        .zip(&percents)
+        .filter(|(segment, _)| is_consumed_segment(segment))
+    {
+        let tokens = format_tokens(segment.tokens);
+        let prefix = format!("{:<label_width$} {:>5.1}%  [", segment.label, percent);
+        let suffix = format!("]  {tokens}");
+        let fixed = prefix.chars().count() + suffix.chars().count();
+        let bank_width = width.saturating_sub(fixed).clamp(1, CONTEXT_BANK_WIDTH_MAX);
+        let (filled, empty) = context_bank_bar(*percent, bank_width);
+        let style = context_segment_style(segment.key);
+        rows.push(vec![
+            Span::raw(prefix),
+            Span::styled(filled, style),
+            Span::styled(empty, Style::new().dark_gray()),
+            Span::raw(suffix),
+        ]);
+    }
+
+    rows.into_iter()
+        .map(|spans| Line::from(clip_spans(spans, max)))
+        .collect()
+}
+
+/// Truncate a styled row to `max` columns, counting characters so multi-byte
+/// block glyphs are never cut in the middle of their UTF-8 encoding.
+fn clip_spans(spans: Vec<Span<'static>>, max: usize) -> Vec<Span<'static>> {
+    let mut out = Vec::with_capacity(spans.len());
+    let mut used = 0usize;
+    for span in spans {
+        let len = span.content.chars().count();
+        if used + len <= max {
+            used += len;
+            out.push(span);
+            continue;
+        }
+        let room = max.saturating_sub(used);
+        if room > 0 {
+            let kept: String = span.content.chars().take(room).collect();
+            out.push(Span::styled(kept, span.style));
+        }
+        break;
+    }
+    out
 }
 
 /// Summarize tool output to one transcript line: first non-empty line with its
@@ -6512,6 +7091,21 @@ async fn await_mcp_job(
     joined.ok()
 }
 
+/// Await an in-flight `/context` report, parking forever when none is running
+/// so this can sit in the loop's `select!` unconditionally.
+async fn await_context(
+    task: &mut Option<tokio::task::JoinHandle<ContextReport>>,
+) -> Option<ContextReport> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    // A panicked job is dropped rather than reported: the overlay stays on
+    // its loading state and the user just closes it.
+    joined.ok()
+}
+
 /// Await an in-flight `/login` verification, parking forever when none is
 /// running so this can sit in the loop's `select!` unconditionally.
 async fn await_login(
@@ -7084,7 +7678,10 @@ async fn chat_loop<B: Backend>(
     // round trip to the peer, and an authorization waits on a browser for up to
     // five minutes. One at a time -- the detail screen only ever asks for one.
     let mut mcp_job: Option<tokio::task::JoinHandle<McpJobDone>> = None;
-
+    // `/context` computing the report: takes the MCP server lock (a turn
+    // executing an MCP tool call holds it for up to the tool-call timeout), so
+    // it must never run on the render loop. One at a time.
+    let mut context_task: Option<tokio::task::JoinHandle<ContextReport>> = None;
     // The update check is a network round trip, so it runs off the render loop
     // and notes itself whenever it lands rather than delaying the first frame.
     let mut update_task = Some(tokio::spawn(super::updater::available_update()));
@@ -7210,7 +7807,15 @@ async fn chat_loop<B: Backend>(
                 mcp_job = Some(tokio::spawn(run_mcp_job(job, servers)));
             }
         }
-
+        // `/context` asked for a report. Compute it off the render loop (it
+        // takes the MCP server lock), one at a time. The snapshot carries the
+        // state the computation needs, so nothing borrows `App` across the
+        // spawn.
+        if context_task.is_none() && app.context_request {
+            app.context_request = false;
+            let snapshot = app.context_snapshot();
+            context_task = Some(tokio::spawn(compute_context_report(snapshot)));
+        }
         // A key was submitted at the `/login` prompt: verify it off-loop. One at
         // a time - the prompt is read-only while `verifying`.
         if login_task.is_none() {
@@ -7410,6 +8015,11 @@ async fn chat_loop<B: Backend>(
             }
             Some(done) = await_mcp_job(&mut mcp_job) => {
                 finish_mcp_job(app, done, mcp_servers, &mut mcp_job).await;
+            }
+            Some(report) = await_context(&mut context_task) => {
+                // Only apply a report the user is still looking at: a result
+                // landing after the overlay was closed must not reopen it.
+                finish_context_report(app, report);
             }
             login_res = await_login(&mut login_task) => {
                 let login_ok = login_res.is_ok();
@@ -8149,6 +8759,23 @@ async fn handle_key(
                 }
                 _ => {}
             }
+        }
+        return;
+    }
+    // The `/context` overlay owns the keyboard while open, matching the
+    // pickers: Esc (and `q` when not ctrl) closes it, and Ctrl-C closes it
+    // without cancelling the running turn. Nothing else reaches the input box
+    // or the transcript shortcuts (e.g. a bare `q` must not quit) while it is
+    // up.
+    if app.context_view.is_some() {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
+                app.context_view = None;
+            }
+            _ if ctrl_c => {
+                app.context_view = None;
+            }
+            _ => {}
         }
         return;
     }
@@ -9080,6 +9707,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/context",
+        hint: "",
+        description: "Show what is filling the context window, by category",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/goal",
         hint: "[condition|clear]",
         description: "Keep working until a condition is met (bare: status)",
@@ -9341,6 +9974,7 @@ async fn run_command(
             app.note("started a new session");
         }
         "compact" => compact_command(app),
+        "context" => context_command(app),
         "threads" | "list" => match super::list_threads_in(&app.agent_dir) {
             Ok(threads) if threads.is_empty() => {
                 app.note("no saved threads found");
@@ -9419,6 +10053,23 @@ async fn run_command(
             app.note(&format!("unknown command '/{other}' (try /help)"));
         }
     }
+}
+
+/// Open the `/context` overlay: what currently fills the window, by category.
+/// Read-only -- it inspects the live session state and the same prompt/tool
+/// builders a turn would use, and sends nothing to the provider.
+///
+/// The report is *not* computed here. Sizing the tool segment takes the MCP
+/// server lock, which a turn executing an MCP tool call holds for up to the
+/// tool-call timeout; computing it inline on the key-handling path would
+/// freeze the whole UI. So this only sets the overlay to its loading state and
+/// raises a flag the loop picks up, which computes the report on its own task
+/// and fills the overlay in when it lands. Unlike the old idle-only transcript
+/// row, the readout is a popup the user closes with Esc, so it stays available
+/// mid-turn without ever blocking the render loop.
+fn context_command(app: &mut App) {
+    app.context_view = Some(ContextView::Loading);
+    app.context_request = true;
 }
 
 /// The `/init` prompt. Onboarding a project means producing the three things a
@@ -9545,7 +10196,10 @@ fn finish_compaction(
             app.history = compacted;
             app.persist();
             // Estimate tokens from compacted message content (~4 chars ≈ 1 token).
+            // The provider's last `usage` measured the pre-compaction history, so
+            // it no longer describes this conversation.
             app.tokens = estimate_token_count(&app.history);
+            app.invalidate_token_provenance();
             app.note(&format!(
                 "{} {base_len} -> {} messages (ctx {}K/{}K)",
                 kind.done_label(),
@@ -12253,6 +12907,16 @@ async fn finish_mcp_job(
     }
 }
 
+/// Fold a computed `/context` report into the overlay. Only applied when the
+/// overlay is still open: a report that lands after the user closed it must
+/// not reopen a popup they walked away from (mirrors how `finish_mcp_job`
+/// drops a listing whose screen has been left).
+fn finish_context_report(app: &mut App, report: ContextReport) {
+    if app.context_view.is_some() {
+        app.context_view = Some(ContextView::Ready(Box::new(report)));
+    }
+}
+
 /// Open the add/edit wizard prefilled from a configured server.
 fn edit_mcp_server(app: &mut App, name: &str) {
     match super::mcp::get_server(name) {
@@ -12608,6 +13272,10 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     .0;
 
     app.history.truncate(cut);
+    // The rewound-away turns are exactly what the provider's last `prompt_tokens`
+    // measured, so that count now overstates the window by the removed prefix.
+    app.invalidate_token_provenance();
+    app.tokens = estimate_token_count(&app.history);
     // The journal is keyed by its own user entries, not by history indices: it
     // holds rows (tool calls, reasoning) that history never had.
     app.display_log
@@ -12790,7 +13458,6 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     app.assistant_buf.clear();
     app.reasoning_segs.clear();
     app.turn = (0, 0);
-    app.tokens = 0;
     app.scrollback = 0;
     app.message_queue.clear();
     restore_snapshots(app, thread.get("metadata"));
@@ -12820,6 +13487,11 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     // before journaling (or whose journal was lost).
     let logged = journal::read_journal(&journal::journal_path(&app.agent_dir, full_id));
     app.history = super::rebuild_wire_history(&messages);
+    // A resumed thread was never measured by *this* session's provider calls, and
+    // any count left over from the thread we were on describes a different
+    // conversation entirely. Estimate until a fresh response lands.
+    app.invalidate_token_provenance();
+    app.tokens = estimate_token_count(&app.history);
     let count = app
         .history
         .iter()
@@ -13418,6 +14090,54 @@ fn draw(f: &mut Frame, app: &mut App) {
     }
     f.render_widget(input_box(app).scroll((input_scroll, 0)), chunks[2]);
     f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
+    // The `/context` overlay renders on top of (never instead of) the finished
+    // frame, so the spinner and streamed output keep animating behind it
+    // mid-turn. A centered bordered popup over the body, titled like the
+    // pickers, with the readout re-laid out by the same `context_lines` the
+    // old transcript row used - the numbers and layout are unchanged, only the
+    // surface (a popup the user closes with Esc) differs. The rect is clamped
+    // to the frame and never indexes a zero-width/zero-height area, so it
+    // stays correct at tiny terminal sizes.
+    if let Some(view) = &app.context_view {
+        let body = chunks[1];
+        // The rect is sized before the content, because the readout's height
+        // depends on the width it is laid out at. Borders cost two columns and
+        // two rows, so the content width is the popup's inner width -- laying
+        // out at the popup's *outer* width would push the rail's right edge
+        // under the border and silently clip it.
+        let outer_w = body.width.saturating_sub(2).max(1);
+        let content_w = outer_w.saturating_sub(2).max(1);
+        let lines: Vec<Line<'static>> = match view {
+            ContextView::Loading => vec![Line::raw("computing context...")],
+            ContextView::Ready(report) => context_lines(report, content_w as usize),
+        };
+        // Two rows for the borders. A frame too short to hold the whole readout
+        // gets as much of it as fits rather than nothing.
+        let height = (lines.len() as u16 + 2).min(body.height);
+        let rect = ratatui::layout::Rect {
+            x: body.x + body.width.saturating_sub(outer_w) / 2,
+            y: body.y + body.height.saturating_sub(height) / 2,
+            width: outer_w,
+            height,
+        };
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::new().cyan())
+            .title(Span::styled(
+                " context ",
+                Style::new().on_cyan().black().bold(),
+            ));
+        let inner = block.inner(rect);
+        // A frame with no room for the popup draws nothing -- and must still
+        // fall through to the prompts below, so this never returns from `draw`.
+        if rect.width > 0 && rect.height > 0 {
+            f.render_widget(ratatui::widgets::Clear, rect);
+            f.render_widget(block, rect);
+        }
+        if inner.width > 0 && inner.height > 0 {
+            f.render_widget(Paragraph::new(lines), inner);
+        }
+    }
 
     // Login prompts are modal and user-initiated (only reachable while idle), so
     // they outrank the queues below: nothing else may take keystrokes meant for
@@ -15570,26 +16290,28 @@ mod tests {
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
         apply_resume, apply_stream_event, assistant_is_awaiting_user_answer, assistant_runs,
         autoscroll_selection, await_branch_poll, backgrounded_job_id, brand, build_user_message,
-        clipboard_path, compact_tokens, diff_lines, drain_stream_events, estimate_token_count,
-        finish_account_login, finish_compaction, finish_login, finish_plugin_install,
-        finish_tokamak_login, finish_update_install, group_detail_lines, group_summary,
-        handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, header_spans, image_mime,
-        image_mime_of, input_content_lines, load_first_file_image, load_image_file, message_text,
-        note_update, open_config_screen, open_rewind_picker, pairs_to_str, parse_command,
-        partial_json_field, provider_label_for_model, rebuild_recall, replay_display_log,
-        restore_goal, restore_run_mode, restore_todos, resume_hint, rewind_to, route_paste_event,
-        row_width, run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
+        clipboard_path, compact_tokens, context_lines, diff_lines, drain_stream_events,
+        estimate_token_count, finish_account_login, finish_compaction, finish_context_report,
+        finish_login, finish_plugin_install, finish_tokamak_login, finish_update_install,
+        format_tokens, group_detail_lines, group_summary, handle_ask_key, handle_ask_mouse,
+        handle_key, handle_mouse, header_spans, image_mime, image_mime_of, input_content_lines,
+        load_first_file_image, load_image_file, message_text, note_update, open_config_screen,
+        open_rewind_picker, pairs_to_str, parse_command, partial_json_field,
+        provider_label_for_model, rebuild_recall, replay_display_log, restore_goal,
+        restore_run_mode, restore_todos, resume_hint, rewind_to, route_paste_event, row_width,
+        run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
         split_reasoning, starting_call_lines, startup_modes, strip_system_xml_tags,
         subagent_activity, subagent_name_from_run_id, summarize_result, sync_output_for,
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding, unescape_partial_json_string, user_content_parts, wave_sweep_line,
-        with_wave_glyph, without_think_tags, App, CompactKind, CurrentRun, McpField, McpPrompt,
-        Pending, PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeTarget, Row, RowKind,
-        Selection, SelectionMode, SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE,
-        ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS,
-        DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF, KITTY_KEYS_ON, MAX_IMAGE_BYTES,
-        MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER,
-        SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
+        with_wave_glyph, without_think_tags, App, CompactKind, ContextReport, ContextSegment,
+        ContextView, CurrentRun, McpField, McpPrompt, Pending, PendingImage, PickerKind,
+        ProviderField, ReasoningSeg, ResumeTarget, Row, RowKind, Selection, SelectionMode,
+        SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF, COPY_NOTICE,
+        DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS,
+        KITTY_KEYS_OFF, KITTY_KEYS_ON, MAX_IMAGE_BYTES, MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON,
+        PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS, THINKING_WORDS,
+        WORKING_WORDS,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -25615,6 +26337,418 @@ mod tests {
     #[test]
     fn compact_is_a_registered_command() {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/compact"));
+    }
+
+    #[test]
+    fn context_is_a_registered_command() {
+        let row = SLASH_COMMANDS
+            .iter()
+            .find(|c| c.name == "/context")
+            .expect("/context must be registered");
+        assert_eq!(row.alias_of, None, "/context is canonical");
+    }
+
+    /// Build a report with explicit per-category tokens, free space and buffer
+    /// derived the way [`App::context_report`] derives them, so the tests
+    /// exercise the real partition rather than a hand-balanced one.
+    fn context_report(window: u64, buffer: u64, content: [u64; 5]) -> ContextReport {
+        let labels = [
+            ('P', "System prompt"),
+            ('T', "System tools"),
+            ('C', "Project context"),
+            ('K', "Skills"),
+            ('M', "Messages"),
+        ];
+        let mut segments: Vec<ContextSegment> = labels
+            .iter()
+            .zip(content)
+            .map(|(&(key, label), tokens)| ContextSegment { key, label, tokens })
+            .collect();
+        let used: u64 = content.iter().sum();
+        segments.push(ContextSegment {
+            key: '.',
+            label: "Available",
+            tokens: window.saturating_sub(used + buffer),
+        });
+        segments.push(ContextSegment {
+            key: 'B',
+            label: "Auto-compact reserve",
+            tokens: buffer.min(window),
+        });
+        ContextReport {
+            model_id: "tokamak-1-preview".into(),
+            window,
+            fill: used,
+            fill_reported: false,
+            segments,
+        }
+    }
+
+    #[test]
+    fn context_view_uses_consistent_language_and_aligned_bars() {
+        let mut report = context_report(234_000, 35_000, [6_049, 9_000, 2_149, 8_049, 95_253]);
+        report.fill = 120_490;
+        report.fill_reported = true;
+
+        let text = context_lines(&report, 80)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(text.contains("tokamak-1-preview · 120K / 234k tokens used (51.5%, provider)"));
+        assert!(text.contains("Context window"));
+        assert!(text.contains("|==============================^...................|╳╳╳╳╳╳╳╳╳|"));
+        assert!(text.contains("79K tokens available before auto-compact"));
+        assert!(text.contains("Context breakdown (estimated)"));
+
+        let labels = [
+            "System prompt",
+            "System tools",
+            "Project context",
+            "Skills",
+            "Messages",
+        ];
+        let bar_lines = labels
+            .iter()
+            .map(|label| {
+                text.lines()
+                    .find(|line| line.starts_with(label))
+                    .unwrap_or_else(|| panic!("missing bar {label}: {text}"))
+            })
+            .collect::<Vec<_>>();
+        let bar_column = bar_lines[0].find('[').expect("first bar must render");
+        assert!(
+            bar_lines
+                .iter()
+                .all(|line| line.find('[') == Some(bar_column)),
+            "bars must align: {bar_lines:?}"
+        );
+        for removed in [
+            "CTX CONTROL DECK",
+            "STATUS NOMINAL",
+            "NOW",
+            "= FILLED",
+            "BREAKDOWN //",
+            "FULL-WINDOW BASELINE",
+            "FILL REPORTED //",
+            "Estimated usage",
+            "Available ",
+            "Auto-compact reserve",
+        ] {
+            assert!(!text.contains(removed), "obsolete copy {removed}: {text}");
+        }
+    }
+
+    /// A nearly-empty window still has to say where it stands: the fill marker
+    /// outranks the `0%`/`0K` scale ends, which would otherwise swallow it.
+    #[test]
+    fn context_rail_annotates_a_low_fill() {
+        let report = context_report(200_000, 16_000, [1_500, 3_500, 0, 74, 0]);
+
+        let rows = context_lines(&report, 80)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>();
+        let rail = rows
+            .iter()
+            .position(|line| line.starts_with('|'))
+            .expect("the rail must render");
+
+        assert!(
+            rows[rail - 1].contains("2.5%"),
+            "the percent scale must annotate the fill marker: {:?}",
+            rows[rail - 1]
+        );
+        assert!(
+            rows[rail + 1].contains("5.1K"),
+            "the token scale must annotate the fill marker: {:?}",
+            rows[rail + 1]
+        );
+    }
+
+    /// Free space and the buffer are categories like any other, so the seven
+    /// percentages account for the whole window and nothing is unexplained.
+    #[test]
+    fn context_percentages_sum_to_the_whole_window() {
+        for (window, buffer, content) in [
+            (
+                234_000u64,
+                35_000u64,
+                [6_000u64, 9_000, 2_100, 8_000, 95_000],
+            ),
+            (128_000, 12_800, [1_000, 2_000, 3_000, 4_000, 5_000]),
+            (64_000, 6_400, [0, 0, 0, 0, 0]),
+        ] {
+            let report = context_report(window, buffer, content);
+            let total: f64 = report.percents().iter().sum();
+            assert!(
+                (total - 100.0).abs() < 1e-6,
+                "window {window} percentages sum to {total}, not 100"
+            );
+        }
+    }
+
+    /// The headline must never present a stale or derived number as measured.
+    #[test]
+    fn context_headline_labels_an_estimated_fill() {
+        let mut report = context_report(234_000, 35_000, [6_049, 9_000, 2_149, 8_049, 95_253]);
+        report.fill = 120_490;
+        let text = |value: &ContextReport| {
+            context_lines(value, 200)
+                .iter()
+                .map(line_text)
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let estimated = text(&report);
+        assert!(
+            estimated.contains("tokamak-1-preview · 120K / 234k tokens used (51.5%, estimated)"),
+            "an estimated fill must say so: {estimated}"
+        );
+        assert!(estimated.contains("Context breakdown (estimated)"));
+
+        report.fill_reported = true;
+        let reported = text(&report);
+        assert!(
+            reported.contains("tokamak-1-preview · 120K / 234k tokens used (51.5%, provider)"),
+            "a provider fill is stated plainly: {reported}"
+        );
+        assert!(
+            !reported.contains("tokens used (51.5%, estimated)"),
+            "a provider fill must not be labelled an estimate: {reported}"
+        );
+    }
+
+    /// Every row adapts to the available width rather than clipping a fixed
+    /// control surface at the frame edge.
+    #[test]
+    fn context_view_never_overflows_the_available_width() {
+        let report = context_report(234_000, 35_000, [6_049, 9_000, 2_149, 8_049, 95_253]);
+        for width in [1usize, 2, 8, 20, 31, 32, 42, 60, 70, 80, 200] {
+            let lines = context_lines(&report, width);
+            assert!(!lines.is_empty(), "width {width} rendered nothing");
+            for line in &lines {
+                let w = row_width(line);
+                assert!(
+                    w <= width.max(1),
+                    "width {width}: line of {w} columns: {line:?}"
+                );
+            }
+        }
+    }
+
+    /// The `/context` overlay (not the old transcript row) goes through the
+    /// same frame sizes the rest of the transcript survives. A mid-turn popup
+    /// must never panic on rendering, however narrow or short the terminal.
+    #[test]
+    fn tiny_frames_render_the_context_view_without_panicking() {
+        let mut app = test_app();
+        let report = context_report(234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]);
+        app.context_view = Some(ContextView::Ready(Box::new(report)));
+        for (w, h) in [
+            (1u16, 1u16),
+            (2, 3),
+            (8, 4),
+            (20, 6),
+            (40, 2),
+            (43, 12),
+            (200, 80),
+        ] {
+            render_rows(&mut app, w, h);
+        }
+    }
+
+    /// A compaction invalidates the provider's last measurement: the count is
+    /// an estimate until a fresh response reports one.
+    #[tokio::test]
+    async fn context_fill_is_estimated_after_a_compaction() {
+        let mut app = test_app();
+        app.turn_prompt_tokens = 120_000;
+        assert!(
+            app.context_report().await.fill_reported,
+            "a fresh provider count is authoritative"
+        );
+        app.tokens_estimated = true;
+        assert!(
+            !app.context_report().await.fill_reported,
+            "a post-compaction count must not claim to be measured"
+        );
+        app.apply(StreamEvent::TurnUsage {
+            usage: Usage {
+                prompt_tokens: Some(90_000),
+                completion_tokens: Some(10),
+                total_tokens: Some(90_010),
+            },
+        });
+        assert!(
+            app.context_report().await.fill_reported,
+            "a fresh response restores the measured count"
+        );
+    }
+
+    /// Rewinding drops turns the provider's count measured, so that count now
+    /// overstates the window. It must revert to an estimate.
+    #[tokio::test]
+    async fn context_fill_is_estimated_after_a_rewind() {
+        let mut app = test_app();
+        for i in 0..4 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": "x".repeat(4_000),
+            }));
+        }
+        app.apply(StreamEvent::TurnUsage {
+            usage: Usage {
+                prompt_tokens: Some(120_000),
+                completion_tokens: Some(10),
+                total_tokens: Some(120_010),
+            },
+        });
+        assert!(app.context_report().await.fill_reported);
+        rewind_to(&mut app, 0, false);
+        assert!(
+            !app.context_report().await.fill_reported,
+            "a count measured over rewound-away turns must not read as measured"
+        );
+    }
+
+    /// Resuming a thread swaps the whole conversation; a count measured against
+    /// the previous one describes nothing on screen.
+    #[test]
+    fn resuming_a_thread_invalidates_the_measured_count() {
+        let mut app = test_app();
+        app.tokens_estimated = false;
+        app.turn_prompt_tokens = 120_000;
+        app.invalidate_token_provenance();
+        assert!(app.tokens_estimated, "resumed history is not measured");
+        assert_eq!(
+            app.turn_prompt_tokens, 0,
+            "the stale measurement must be dropped, not kept"
+        );
+    }
+    /// `/context` is now available mid-turn: it must open the overlay into its
+    /// loading state and raise the off-loop request flag, and must never emit
+    /// the old idle-only refusal note (the report is computed on a task, not
+    /// inline on the key path, so no MCP lock is taken here).
+    #[tokio::test]
+    async fn context_opens_the_overlay_mid_turn() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        run_command(&mut app, "context", &no_mcp()).await;
+        assert!(
+            matches!(app.context_view, Some(ContextView::Loading)),
+            "mid-turn /context must open the loading overlay"
+        );
+        assert!(
+            app.context_request,
+            "mid-turn /context must request the off-loop report"
+        );
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(
+            !text.contains("only available while idle"),
+            "no idle refusal may be emitted: {text}"
+        );
+        assert!(
+            app.transcript
+                .iter()
+                .all(|r| matches!(r.kind, RowKind::Line(_) | RowKind::System { .. })),
+            "the readout must not be committed to the transcript as a row"
+        );
+    }
+
+    /// Esc closes the overlay without cancelling the running turn: `status` is
+    /// untouched and the current run handle survives, so a popup dismissal is
+    /// purely cosmetic.
+    #[tokio::test]
+    async fn esc_closes_the_context_overlay_without_cancelling_the_turn() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        app.context_view = Some(ContextView::Loading);
+        app.context_request = true;
+        let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let mcp_servers = no_mcp();
+        let mut current: Option<CurrentRun> = None;
+        handle_key(
+            &mut app,
+            key(KeyCode::Esc),
+            &registry,
+            &mut current,
+            &mcp_servers,
+        )
+        .await;
+        assert!(
+            app.context_view.is_none(),
+            "Esc must close the context overlay"
+        );
+        assert_eq!(app.status, Status::Running, "the turn keeps running");
+        assert!(
+            current.is_none(),
+            "closing the overlay must not spawn a run, let alone cancel one"
+        );
+        // A bare `q` also closes it, outranking the quit shortcut.
+        app.context_view = Some(ContextView::Loading);
+        handle_key(
+            &mut app,
+            key(KeyCode::Char('q')),
+            &registry,
+            &mut current,
+            &mcp_servers,
+        )
+        .await;
+        assert!(app.context_view.is_none(), "q closes when not ctrl");
+        assert!(
+            !app.should_quit,
+            "q must not quit while the overlay is open"
+        );
+    }
+
+    /// A report that lands after the user closed the overlay is discarded: it
+    /// must never reopen a popup the user walked away from. Mirrors how
+    /// `finish_mcp_job` drops a listing whose screen has been left.
+    #[tokio::test]
+    async fn a_context_result_landing_after_close_is_discarded() {
+        let mut app = test_app();
+        app.context_view = None;
+        let report = context_report(128_000, 16_384, [1_000, 2_000, 3_000, 4_000, 5_000]);
+        finish_context_report(&mut app, report);
+        assert!(
+            app.context_view.is_none(),
+            "a result landing after the overlay closed must not reopen it"
+        );
+    }
+
+    /// The whole-number branch exists so `6.0K` never reaches the screen. The
+    /// guard and the digits must agree at every half-way boundary.
+    #[test]
+    fn format_tokens_never_prints_a_zero_decimal() {
+        for tokens in 0..=20_000u64 {
+            let text = format_tokens(tokens);
+            assert!(
+                !text.contains(".0K"),
+                "{tokens} rendered as {text}: a zero decimal is exactly what the \
+                 whole-number branch exists to avoid"
+            );
+        }
+        // Spot-check the boundaries the float path used to get wrong.
+        assert_eq!(format_tokens(2_050), "2.1K");
+        assert_eq!(format_tokens(6_050), "6.1K");
+        assert_eq!(format_tokens(9_950), "10K");
+        assert_eq!(format_tokens(999), "999");
+        assert_eq!(format_tokens(2_100), "2.1K");
+    }
+
+    /// An over-full estimate clamps free space to zero; the category banks
+    /// still normalize to one whole rather than printing more than 100%.
+    #[test]
+    fn context_percentages_stay_whole_when_the_estimate_overshoots() {
+        let report = context_report(100_000, 10_000, [40_000, 40_000, 40_000, 40_000, 40_000]);
+        let total: f64 = report.percents().iter().sum();
+        assert!(
+            (total - 100.0).abs() < 1e-6,
+            "an over-full report's percentages sum to {total}, not 100"
+        );
     }
     #[test]
     fn effort_aliases_are_registered_as_aliases_of_effort() {

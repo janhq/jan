@@ -1069,13 +1069,8 @@ mod enforcement_tests {
     fn temp_dir() -> PathBuf {
         let tmp = std::env::temp_dir();
         #[cfg(target_os = "macos")]
-        {
-            return tmp.canonicalize().unwrap_or(tmp);
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            tmp
-        }
+        let tmp = tmp.canonicalize().unwrap_or(tmp);
+        tmp
     }
 
     fn workspace() -> PathBuf {

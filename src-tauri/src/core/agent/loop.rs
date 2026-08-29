@@ -1237,6 +1237,94 @@ fn retain_advertisable_mcp_tools(
     tool_to_server.retain(|name, _| permissions.advertises_mcp(name));
 }
 
+/// Append the non-MCP tool schemas a run advertises -- built-ins, subagent
+/// dispatch, `ask`, `todo` -- applying the same gates the model sees: agent.toml
+/// denies, the per-request `allowed_tools` allowlist, the project_root gate, and
+/// plan mode's suppression of write/exec built-ins and subagent dispatch.
+///
+/// Shared with the CLI `/context` view, which sizes the "System tools" segment
+/// from exactly this array. A second copy of these gates would report a tool
+/// budget the run does not actually send.
+#[allow(clippy::too_many_arguments)]
+fn advertise_local_tools(
+    openai_tools: &mut Vec<serde_json::Value>,
+    allowed_names: Option<&std::collections::HashSet<String>>,
+    permissions: &tauri_plugin_agent_tools::permissions::ToolPermissions,
+    project_root: Option<&std::path::Path>,
+    run_mode: crate::core::agent::plan::RunMode,
+    subagents_enabled: bool,
+    max_parallel_subagents: u32,
+    ask_enabled: bool,
+    todo_enabled: bool,
+) {
+    let planning = run_mode == crate::core::agent::plan::RunMode::Plan;
+    if project_root.is_some() {
+        // Built-ins are governed by the capability gate at execution time, so here
+        // we only drop tools explicitly denied in agent.toml (and honor allowed_tools
+        // if the request set one). Advertisement is independent of the read-only
+        // default that applies to opaque MCP tools.
+        for schema in tauri_plugin_agent_tools::tools::schema::builtin_tool_schemas() {
+            let name = schema["function"]["name"].as_str().unwrap_or_default();
+            if permissions.is_denied(name) {
+                continue;
+            }
+            // Plan mode advertises only read/net builtins; write/exec are hidden
+            // entirely rather than relying on a prompt or execution-time denial.
+            if planning
+                && tauri_plugin_agent_tools::tools::lookup(name).is_some_and(|t| {
+                    matches!(
+                        t.capability,
+                        tauri_plugin_agent_tools::tools::Capability::Write
+                            | tauri_plugin_agent_tools::tools::Capability::Exec
+                    )
+                })
+            {
+                continue;
+            }
+            if let Some(allow) = allowed_names {
+                if !allow.contains(name) {
+                    continue;
+                }
+            }
+            openai_tools.push(schema);
+        }
+        // Subagent tools are advertised only when this run may dispatch them
+        // (never for a child run, capping recursion depth at one) and the run
+        // isn't in read-only Plan mode (a dispatched subagent could mutate).
+        if subagents_enabled && !planning {
+            if let Some(root) = project_root {
+                let registry = crate::core::agent::subagent::SubagentRegistry::load(root);
+                for schema in crate::core::agent::subagent::subagent_tool_schemas(
+                    &registry,
+                    max_parallel_subagents,
+                ) {
+                    let name = schema["function"]["name"].as_str().unwrap_or_default();
+                    if permissions.is_denied(name) {
+                        continue;
+                    }
+                    if let Some(allow) = allowed_names {
+                        if !allow.contains(name) {
+                            continue;
+                        }
+                    }
+                    openai_tools.push(schema);
+                }
+            }
+        }
+    }
+    // The `ask` tool needs no project (it's an interactive question, not
+    // filesystem access), so it's advertised independent of the project_root
+    // gate above.
+    if ask_enabled && allowed_names.is_none_or(|allowed| allowed.contains("ask")) {
+        openai_tools.push(crate::core::agent::interaction::ask_tool_schema());
+    }
+    // Todo bookkeeping is session metadata, not filesystem access, so like
+    // `ask` it's advertised independent of the project_root gate above.
+    if todo_enabled && allowed_names.is_none_or(|allowed| allowed.contains("todo")) {
+        openai_tools.push(crate::core::agent::todo::todo_tool_schema());
+    }
+}
+
 fn stop_reason_of(completion: &serde_json::Value) -> String {
     completion
         .get("choices")
@@ -1301,6 +1389,75 @@ fn build_run_system_prompt(
         }
         None => base.map(str::to_string),
     }
+}
+
+/// The system prompt the *next* ordinary turn in `project_root` would carry,
+/// built through the exact path a real run takes (`build_run_system_prompt`
+/// with this project's resolved sandbox/scratch). Used by the CLI `/context`
+/// view to size the system segments: routing it through the same builder is
+/// what keeps the reported breakdown from drifting away from what is actually
+/// sent. Excludes the two per-turn additions a run makes on top -- the date
+/// line and query-dependent memory recall -- which are not knowable while idle.
+#[cfg(feature = "cli")]
+pub(crate) fn context_system_prompt_preview(
+    override_prompt: Option<&str>,
+    project_root: &std::path::Path,
+    session_id: Option<&str>,
+    subagents_enabled: bool,
+    sandbox_flag: Option<bool>,
+) -> Option<String> {
+    let settings = resolve_run_settings(project_root, sandbox_flag);
+    build_run_system_prompt(
+        None,
+        override_prompt,
+        Some(project_root),
+        session_id,
+        subagents_enabled,
+        settings.sandbox,
+    )
+}
+
+/// The tool array the *next* ordinary turn would advertise: the MCP tools
+/// currently connected, pruned by policy exactly as a run prunes them, plus the
+/// local tools from [`advertise_local_tools`]. Sizes the "System tools" segment
+/// of the CLI `/context` view from the real schemas rather than a guess.
+///
+/// No per-request `allowed_tools` allowlist is applied: that is set per request
+/// by an API caller, and the interactive TUI never sets one.
+#[cfg(feature = "cli")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn context_advertised_tools(
+    mcp_servers: &SharedMcpServers,
+    mcp_settings: &Arc<Mutex<McpSettings>>,
+    permissions: &tauri_plugin_agent_tools::permissions::ToolPermissions,
+    project_root: Option<&std::path::Path>,
+    run_mode: crate::core::agent::plan::RunMode,
+    subagents_enabled: bool,
+    max_parallel_subagents: u32,
+    ask_enabled: bool,
+    todo_enabled: bool,
+) -> Vec<serde_json::Value> {
+    let (mut tools, mut tool_to_server) =
+        crate::core::agent::upstream::collect_mcp_openai_tools(mcp_servers, mcp_settings)
+            .await
+            .unwrap_or_default();
+    if run_mode == crate::core::agent::plan::RunMode::Plan {
+        tools.clear();
+    } else {
+        retain_advertisable_mcp_tools(&mut tools, &mut tool_to_server, permissions);
+    }
+    advertise_local_tools(
+        &mut tools,
+        None,
+        permissions,
+        project_root,
+        run_mode,
+        subagents_enabled,
+        max_parallel_subagents,
+        ask_enabled,
+        todo_enabled,
+    );
+    tools
 }
 
 /// Where this run's scratch lives. Session-keyed so it persists across turns in
@@ -1582,79 +1739,17 @@ async fn orchestrate_inner(
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect()
         });
-    if project_root.is_some() {
-        // Built-ins are governed by the capability gate at execution time, so here
-        // we only drop tools explicitly denied in agent.toml (and honor allowed_tools
-        // if the request set one). Advertisement is independent of the read-only
-        // default that applies to opaque MCP tools.
-        for schema in tauri_plugin_agent_tools::tools::schema::builtin_tool_schemas() {
-            let name = schema["function"]["name"].as_str().unwrap_or_default();
-            if permissions.is_denied(name) {
-                continue;
-            }
-            // Plan mode advertises only read/net builtins; write/exec are hidden
-            // entirely rather than relying on a prompt or execution-time denial.
-            if run_mode == crate::core::agent::plan::RunMode::Plan
-                && tauri_plugin_agent_tools::tools::lookup(name).is_some_and(|t| {
-                    matches!(
-                        t.capability,
-                        tauri_plugin_agent_tools::tools::Capability::Write
-                            | tauri_plugin_agent_tools::tools::Capability::Exec
-                    )
-                })
-            {
-                continue;
-            }
-            if let Some(allow) = &allowed_names {
-                if !allow.contains(name) {
-                    continue;
-                }
-            }
-            openai_tools.push(schema);
-        }
-        // Subagent tools are advertised only when this run may dispatch them
-        // (never for a child run, capping recursion depth at one) and the run
-        // isn't in read-only Plan mode (a dispatched subagent could mutate).
-        if args.subagents_enabled && run_mode != crate::core::agent::plan::RunMode::Plan {
-            if let Some(root) = project_root {
-                let registry = crate::core::agent::subagent::SubagentRegistry::load(root);
-                for schema in crate::core::agent::subagent::subagent_tool_schemas(
-                    &registry,
-                    *max_parallel_subagents,
-                ) {
-                    let name = schema["function"]["name"].as_str().unwrap_or_default();
-                    if permissions.is_denied(name) {
-                        continue;
-                    }
-                    if let Some(allow) = &allowed_names {
-                        if !allow.contains(name) {
-                            continue;
-                        }
-                    }
-                    openai_tools.push(schema);
-                }
-            }
-        }
-    }
-    // The `ask` tool needs no project (it's an interactive question, not
-    // filesystem access), so it's advertised independent of the project_root
-    // gate above.
-    if ask_requests.is_some()
-        && allowed_names
-            .as_ref()
-            .is_none_or(|allowed| allowed.contains("ask"))
-    {
-        openai_tools.push(crate::core::agent::interaction::ask_tool_schema());
-    }
-    // Todo bookkeeping is session metadata, not filesystem access, so like
-    // `ask` it's advertised independent of the project_root gate above.
-    if todo_registry.is_some()
-        && allowed_names
-            .as_ref()
-            .is_none_or(|allowed| allowed.contains("todo"))
-    {
-        openai_tools.push(crate::core::agent::todo::todo_tool_schema());
-    }
+    advertise_local_tools(
+        &mut openai_tools,
+        allowed_names.as_ref(),
+        permissions,
+        project_root.as_deref(),
+        run_mode,
+        args.subagents_enabled,
+        *max_parallel_subagents,
+        ask_requests.is_some(),
+        todo_registry.is_some(),
+    );
 
     let (upstream_url, session_api_keys) = resolve_upstream_for_model(
         &model_id,
