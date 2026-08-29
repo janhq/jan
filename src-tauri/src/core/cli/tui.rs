@@ -7811,12 +7811,10 @@ async fn chat_loop<B: Backend>(
         // takes the MCP server lock), one at a time. The snapshot carries the
         // state the computation needs, so nothing borrows `App` across the
         // spawn.
-        if context_task.is_none() {
-            if app.context_request {
-                app.context_request = false;
-                let snapshot = app.context_snapshot();
-                context_task = Some(tokio::spawn(compute_context_report(snapshot)));
-            }
+        if context_task.is_none() && app.context_request {
+            app.context_request = false;
+            let snapshot = app.context_snapshot();
+            context_task = Some(tokio::spawn(compute_context_report(snapshot)));
         }
         // A key was submitted at the `/login` prompt: verify it off-loop. One at
         // a time - the prompt is read-only while `verifying`.
