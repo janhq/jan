@@ -808,6 +808,53 @@ impl LoginPrompt {
     }
 }
 
+/// One required environment variable of a plugin: its name and, when the
+/// manifest declares it, the URL the user can obtain the value from.
+struct PluginEnvEntry {
+    key: String,
+    url: String,
+}
+
+/// `/plugin setup`: a docked, `/login`-styled prompt collecting the API keys a
+/// plugin declares it needs. One entry per variable; the field is masked (the
+/// value never reaches the screen, scrollback, or transcript), Enter saves and
+/// advances, `s` skips, Esc abandons the remaining entries. Values go to
+/// `~/.jan/agent/plugin-env/<plugin>.toml` (0600) and are injected into the
+/// sandboxed shell on the next run.
+struct PluginSetupPrompt {
+    plugin: String,
+    entries: Vec<PluginEnvEntry>,
+    current: usize,
+    input: String,
+    error: Option<String>,
+}
+
+impl PluginSetupPrompt {
+    fn entry(&self) -> Option<&PluginEnvEntry> {
+        self.entries.get(self.current)
+    }
+
+    fn masked(&self) -> String {
+        super::secret_input::mask(self.input.chars().count())
+    }
+
+    fn paste(&mut self, text: &str) {
+        self.input.push_str(super::secret_input::pasted(text));
+    }
+
+    /// Advance past the current entry; `None` once every entry is done.
+    fn advance(&mut self) {
+        self.current += 1;
+        self.input.clear();
+        self.error = None;
+    }
+
+    /// Whether every entry has been visited.
+    fn done(&self) -> bool {
+        self.current >= self.entries.len()
+    }
+}
+
 /// `/login` account entry: owns an OAuth descriptor while the browser callback
 /// task races the loopback callback with a manually pasted redirect URL/code.
 struct AccountLoginPrompt {
@@ -1797,6 +1844,9 @@ struct App {
     model_picker: Option<ModelPicker>,
     /// Active `/login` prompt; owns the keyboard while open.
     login: Option<LoginPrompt>,
+    /// Active `/plugin setup` prompt (docked like `/login`); owns the keyboard
+    /// while open and collects the plugin's required API keys, masked.
+    plugin_setup: Option<PluginSetupPrompt>,
     /// Active `/settings` edit prompt (docked like `/login`); owns the
     /// keyboard while open. Holds the setting being edited and any validation
     /// error; writes go straight to agent.toml on Enter.
@@ -2301,6 +2351,7 @@ impl App {
             provider_prompt: None,
             probed_models: std::collections::HashSet::new(),
             login_submit: None,
+            plugin_setup: None,
             account_login: None,
             account_login_submit: None,
             account_login_manual_tx: None,
@@ -6730,12 +6781,16 @@ fn finish_plugin_install(
             if plugins.is_empty() {
                 app.note("nothing installed");
             }
-            for p in plugins {
+            for p in &plugins {
                 app.note(&format!(
                     "installed plugin '{}' ({} skills)",
                     p.name, p.skills
                 ));
             }
+            // A plugin that declares required API keys opens its setup dock
+            // right away: the link to obtain each key plus a masked paste
+            // field, so the user never has to edit env files by hand.
+            open_plugin_setup(app);
         }
         Ok(GitInstall::Collection(candidates)) => {
             let Some(url) = url else {
@@ -7792,6 +7847,9 @@ fn route_paste_event(app: &mut App, event: Event) {
         // A pasted API key belongs to the login field, not the chat composer
         // (where it would echo).
         prompt.paste(&text);
+    } else if let Some(prompt) = app.plugin_setup.as_mut() {
+        // A pasted plugin API key belongs to the setup field.
+        prompt.paste(&text);
     } else if let Some(prompt) = app.settings_prompt.as_mut() {
         prompt.paste(&text);
     } else if let Some(prompt) = app.mcp_prompt.as_mut() {
@@ -8031,6 +8089,133 @@ fn clipboard_text() -> Result<String, String> {
     super::secret_input::clipboard_text()
 }
 
+/// Open `/plugin setup` for the first installed plugin whose declared env
+/// variables are not yet satisfied. Returns whether a dock opened.
+fn open_plugin_setup(app: &mut App) -> bool {
+    let missing = crate::core::agent::plugins::missing_plugin_env(&app.project_root);
+    let Some((plugin, _, _)) = missing.first() else {
+        return false;
+    };
+    let plugin = plugin.clone();
+    let entries = missing
+        .into_iter()
+        .filter(|(p, _, _)| p == &plugin)
+        .map(|(_, key, url)| PluginEnvEntry { key, url })
+        .collect::<Vec<_>>();
+    start_plugin_setup(app, &plugin, entries)
+}
+
+/// Open `/plugin setup` for a named plugin, offering every variable it
+/// declares (even satisfied ones, so a value can be replaced). Returns whether
+/// a dock opened.
+fn open_plugin_setup_for(app: &mut App, plugin: &str) -> bool {
+    let entries = crate::core::agent::plugins::declared_plugin_env(&app.project_root, plugin)
+        .into_iter()
+        .map(|(key, url)| PluginEnvEntry { key, url })
+        .collect::<Vec<_>>();
+    if entries.is_empty() {
+        return false;
+    }
+    start_plugin_setup(app, plugin, entries)
+}
+
+/// Install the dock state for `plugin` with `entries`, after announcing it.
+fn start_plugin_setup(app: &mut App, plugin: &str, entries: Vec<PluginEnvEntry>) -> bool {
+    app.note(&format!(
+        "◈ plugin setup · {} needs {} API key{} - paste them below",
+        plugin,
+        entries.len(),
+        if entries.len() == 1 { "" } else { "s" }
+    ));
+    app.plugin_setup = Some(PluginSetupPrompt {
+        plugin: plugin.to_string(),
+        entries,
+        current: 0,
+        input: String::new(),
+        error: None,
+    });
+    true
+}
+
+/// Keys for the `/plugin setup` prompt: Enter saves the value and advances,
+/// `s` skips an entry, Esc/Ctrl-C abandons the rest. Same masked-entry rules
+/// as the `/login` paste field.
+fn handle_plugin_setup_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+    let cancel = key.code == KeyCode::Esc
+        || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')));
+    if cancel {
+        app.plugin_setup = None;
+        app.note("plugin setup cancelled - resume with /plugin setup <name>");
+        return;
+    }
+    // Ctrl-V: some terminals send a paste as a key rather than Event::Paste.
+    if ctrl && key.code == KeyCode::Char('v') {
+        match super::secret_input::clipboard_text() {
+            Ok(text) => {
+                if let Some(prompt) = app.plugin_setup.as_mut() {
+                    prompt.paste(&text);
+                }
+            }
+            Err(e) => {
+                if let Some(prompt) = app.plugin_setup.as_mut() {
+                    prompt.error = Some(format!("could not read the clipboard: {e}"));
+                }
+            }
+        }
+        return;
+    }
+    let Some(prompt) = app.plugin_setup.as_mut() else {
+        return;
+    };
+    match key.code {
+        KeyCode::Enter => {
+            let plugin = prompt.plugin.clone();
+            let Some(entry) = prompt.entry() else { return };
+            let value = prompt.input.trim().to_string();
+            if value.is_empty() {
+                prompt.error = Some("nothing pasted - paste the key or press s to skip".into());
+                return;
+            }
+            if let Err(e) = crate::core::agent::plugins::save_plugin_env(&plugin, &entry.key, &value)
+            {
+                prompt.error = Some(e);
+                return;
+            }
+            let key_name = entry.key.clone();
+            prompt.advance();
+            if prompt.done() {
+                app.plugin_setup = None;
+                crate::core::agent::plugins::sync_env_registry(&app.project_root);
+                app.note(&format!("plugin setup · {plugin} · {key_name} saved"));
+                // Chain into the next plugin that still needs keys.
+                open_plugin_setup(app);
+            } else {
+                app.note(&format!(
+                    "plugin setup · {plugin} · {key_name} saved"
+                ));
+            }
+        }
+        KeyCode::Char('s') | KeyCode::Char('S') if !ctrl => {
+            let plugin = prompt.plugin.clone();
+            let key_name = prompt
+                .entry()
+                .map(|e| e.key.clone())
+                .unwrap_or_default();
+            prompt.advance();
+            if prompt.done() {
+                app.plugin_setup = None;
+                app.note(&format!("plugin setup · {plugin} · skipped {key_name}"));
+                open_plugin_setup(app);
+            }
+        }
+        KeyCode::Backspace => {
+            prompt.input.pop();
+        }
+        KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
+        _ => {}
+    }
+}
+
 fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     if key.code == KeyCode::Esc
         || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')))
@@ -8133,6 +8318,12 @@ async fn handle_key(
     // transcript shortcuts.
     if app.login.is_some() {
         handle_login_key(app, key, ctrl);
+        return;
+    }
+
+    // Same for `/plugin setup`: it is collecting masked API keys.
+    if app.plugin_setup.is_some() {
+        handle_plugin_setup_key(app, key, ctrl);
         return;
     }
 
@@ -9157,8 +9348,8 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/plugin",
-        hint: "[list|install <spec>|remove <name>|search [query]]",
-        description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace",
+        hint: "[list|install <spec>|remove <name>|search [query]|setup <name>]",
+        description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace, set up required API keys",
         alias_of: None,
     },
     SlashCommand {
@@ -11102,6 +11293,14 @@ async fn plugin_command(app: &mut App, arg: &str) {
                 for p in &plugins {
                     app.push(Line::styled(summary_line(p), Style::new().cyan().bold()));
                 }
+                // Surface unsatisfied setup requirements right in the list:
+                // a plugin whose key is missing explains itself here.
+                for (plugin, var, _) in crate::core::agent::plugins::missing_plugin_env(&root) {
+                    app.push(Line::styled(
+                        format!("  {plugin}: key missing ({var}) - /plugin setup {plugin}"),
+                        Style::new().yellow(),
+                    ));
+                }
             } else {
                 match crate::core::agent::plugins::find_installed(&root, &rest) {
                     Some((directory, p)) => {
@@ -11165,6 +11364,19 @@ async fn plugin_command(app: &mut App, arg: &str) {
             }
             app.plugin_install_request = Some(rest);
             app.note("installing plugin...");
+        }
+        "setup" => {
+            if rest.is_empty() {
+                if !open_plugin_setup(app) {
+                    app.note(
+                        "no plugin is missing keys (usage: /plugin setup <name>)",
+                    );
+                }
+            } else if !open_plugin_setup_for(app, &rest) {
+                app.note(&format!(
+                    "plugin '{rest}' declares no setup keys (declare [setup.env] in its plugin.toml)"
+                ));
+            }
         }
         "remove" => {
             if rest.is_empty() {
@@ -13606,6 +13818,18 @@ fn draw(f: &mut Frame, app: &mut App) {
             height,
         };
         draw_login(f, rect, prompt);
+    } else if let Some(prompt) = &app.plugin_setup {
+        let height =
+            (plugin_setup_lines(prompt, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
+                .min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        draw_plugin_setup(f, rect, prompt);
     } else if let Some(confirm) = &app.browser_confirm {
         let height =
             (browser_confirm_lines(confirm, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
@@ -14063,6 +14287,82 @@ fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) 
         Paragraph::new(login_prompt_lines(prompt, inner.width)),
         inner,
     );
+}
+
+/// Docked `/plugin setup` prompt, styled like the `/login` dock: which plugin,
+/// which variable, the URL to obtain the key at, a masked field, and keys.
+fn draw_plugin_setup(f: &mut Frame, area: ratatui::layout::Rect, prompt: &PluginSetupPrompt) {
+    use ratatui::widgets::Clear;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            format!(" plugin setup: {} ", prompt.plugin),
+            Style::new().on_cyan().black().bold(),
+        ));
+
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(
+        Paragraph::new(plugin_setup_lines(prompt, inner.width)),
+        inner,
+    );
+}
+
+/// The `/plugin setup` box's contents. The width parameter mirrors the other
+/// prompt-line builders (call sites size the dock from the row count).
+fn plugin_setup_lines(prompt: &PluginSetupPrompt, _width: u16) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let total = prompt.entries.len();
+    match prompt.entry() {
+        Some(entry) => {
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "{} needs {} ({}/{})",
+                    prompt.plugin,
+                    entry.key,
+                    prompt.current + 1,
+                    total
+                ),
+                Style::new().cyan().bold(),
+            )));
+            if entry.url.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "ask the plugin author where to obtain this key".to_string(),
+                    dim,
+                )));
+            } else {
+                lines.push(Line::from(vec![
+                    Span::styled("get it at: ", dim),
+                    Span::styled(entry.url.clone(), Style::new().cyan()),
+                ]));
+            }
+        }
+        None => {
+            lines.push(Line::from(Span::styled(
+                format!("{} setup complete", prompt.plugin),
+                Style::new().cyan().bold(),
+            )));
+        }
+    }
+    if let Some(error) = &prompt.error {
+        lines.push(Line::from(Span::styled(
+            error.clone(),
+            Style::new().red(),
+        )));
+    }
+    lines.push(Line::from(vec![
+        Span::styled(prompt.masked(), Style::new().bold()),
+        Span::styled("  ← paste here", dim),
+    ]));
+    lines.push(Line::from(Span::styled(
+        "Enter save · s skip · Esc cancel - the key is masked and never echoed",
+        dim,
+    )));
+    lines
 }
 
 /// Docked `/settings` edit prompt, styled like the `/login` dock: description,
@@ -15736,7 +16036,8 @@ mod tests {
         clipboard_path, compact_tokens, diff_lines, drain_stream_events, estimate_token_count,
         finish_account_login, finish_compaction, finish_login, finish_plugin_install,
         finish_tokamak_login, finish_update_install, group_detail_lines, group_summary,
-        handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, header_spans, image_mime,
+        handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, handle_plugin_setup_key,
+        header_spans, image_mime,
         image_mime_of, input_content_lines, load_first_file_image, load_image_file, message_text,
         note_update, open_config_screen, open_rewind_picker, pairs_to_str, parse_command,
         partial_json_field, provider_label_for_model, rebuild_recall, replay_display_log,
@@ -28510,6 +28811,48 @@ mod tests {
             "{}",
             transcript_text(&app)
         );
+    }
+
+    /// A plugin whose manifest declares one required env var.
+    fn plugin_with_setup_requirement(root: &std::path::Path, var: &str, url: &str) {
+        let dir = root.join(".jan/agent/plugins/acme");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("plugin.toml"),
+            format!("name = \"acme\"\n\n[setup.env]\n{var} = \"{url}\"\n"),
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn plugin_setup_dock_masks_input_and_skips() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_with_setup_requirement(&root, "ACME_TOKEN", "https://example.com/keys");
+
+        // The dock opens for the named plugin and shows the URL and a masked
+        // field; the hint row appears in `/plugin list` too.
+        run_command(&mut app, "plugin setup acme", &no_mcp()).await;
+        assert!(app.plugin_setup.is_some(), "dock must open");
+        let rows = render_rows(&mut app, 100, 30);
+        let rendered = rows.join("\n");
+        assert!(rendered.contains("ACME_TOKEN"), "{rendered}");
+        assert!(rendered.contains("https://example.com/keys"), "{rendered}");
+
+        // Typed characters render masked, never verbatim. Simulate the paste
+        // path directly: the typed secret must not appear in the frame.
+        if let Some(prompt) = app.plugin_setup.as_mut() {
+            prompt.paste("supersecret123");
+        }
+        let rows = render_rows(&mut app, 100, 30);
+        let rendered = rows.join("\n");
+        assert!(!rendered.contains("supersecret123"), "{rendered}");
+        assert!(rendered.contains('*'), "mask row: {rendered}");
+
+        // Esc cancels the dock.
+        handle_plugin_setup_key(&mut app, key(KeyCode::Esc), false);
+        assert!(app.plugin_setup.is_none());
+        assert!(transcript_text(&app).contains("plugin setup cancelled"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]

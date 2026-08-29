@@ -7,9 +7,39 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, RwLock};
 
 use tokio::process::{Child, Command};
+
+/// Plugin-declared environment values, injected into every sandboxed shell on
+/// top of [`SANDBOX_ENV_ALLOW`]. The allowlist is static and minimal exactly
+/// so host secrets cannot leak into a `bash` call; plugin keys are the
+/// deliberate exception — a plugin's skills/commands cannot call the service
+/// they integrate with without their credentials. Only variables an installed
+/// plugin's manifest *declares* (see the host's `plugins::required_env`) may
+/// land here, and only with a value the user typed into the masked setup
+/// prompt; the map is replaced wholesale by the host on every run start.
+static PLUGIN_ENV: OnceLock<RwLock<std::collections::BTreeMap<String, String>>> = OnceLock::new();
+
+/// Replace the plugin-declared environment values handed to sandboxed shells.
+pub fn set_plugin_env(vars: std::collections::BTreeMap<String, String>) {
+    let lock = PLUGIN_ENV.get_or_init(|| RwLock::new(Default::default()));
+    *lock.write().unwrap() = vars;
+}
+
+/// A snapshot of the current plugin-declared environment values.
+fn plugin_env() -> std::collections::BTreeMap<String, String> {
+    PLUGIN_ENV
+        .get()
+        .map(|lock| lock.read().unwrap().clone())
+        .unwrap_or_default()
+}
+
+/// Read back the current plugin env values (tests / diagnostics).
+#[doc(hidden)]
+pub fn plugin_env_snapshot() -> std::collections::BTreeMap<String, String> {
+    plugin_env()
+}
 
 /// How to invoke the host shell. `program` + `args` are fixed; the command
 /// string is appended as the final argv element, or piped to stdin when
@@ -242,6 +272,11 @@ pub async fn spawn(
         if let Some(val) = std::env::var_os(key) {
             cmd.env(key, val);
         }
+    }
+    // Plugin-declared credentials come last so they always win over an
+    // allowlist key of the same name.
+    for (key, val) in plugin_env() {
+        cmd.env(key, val);
     }
     // Point the shell's temp env at the session scratch, overriding the host
     // values the allowlist just copied in. Without this a command that writes
