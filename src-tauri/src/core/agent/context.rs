@@ -30,10 +30,11 @@ its absence means you have everything. A command's `[exit N]` line is the author
 /// by hand or through `/init` -- becomes authoritative project context.
 const CONTEXT_FILE_NAME: &str = "JAN.md";
 
-/// Ingest `JAN.md` from the project root and its ancestors, wrapped in a
-/// `<project_context>` block so the model treats them as authoritative project
-/// instructions. Returns None when none exist.
-pub(crate) fn load_context_files(project_root: &Path) -> Option<String> {
+/// Read every non-empty `JAN.md` from the project root up to the filesystem
+/// root, nearest-first. Shared by the system-prompt builder and the CLI's
+/// `/reload system-prompt` report (which needs paths and sizes, not the
+/// wrapped block).
+pub(crate) fn context_files(project_root: &Path) -> Vec<(std::path::PathBuf, String)> {
     let mut files: Vec<(std::path::PathBuf, String)> = Vec::new();
     let mut dir = Some(project_root);
     while let Some(current) = dir {
@@ -45,12 +46,20 @@ pub(crate) fn load_context_files(project_root: &Path) -> Option<String> {
         }
         dir = current.parent();
     }
-    if files.is_empty() {
-        return None;
-    }
     // Ancestors are collected nearest-first; reverse so the nearest (most
     // specific) instructions appear last and take precedence.
     files.reverse();
+    files
+}
+
+/// Ingest `JAN.md` from the project root and its ancestors, wrapped in a
+/// `<project_context>` block so the model treats them as authoritative project
+/// instructions. Returns None when none exist.
+pub(crate) fn load_context_files(project_root: &Path) -> Option<String> {
+    let files = context_files(project_root);
+    if files.is_empty() {
+        return None;
+    }
     let mut block = String::from(
         "<project_context>\n\nProject-specific instructions and guidelines:\n\n",
     );

@@ -59,6 +59,7 @@ See [Run modes](/docs/agent/run-modes), [Goals and todos](/docs/agent/goals-and-
 | `/effort [low\|medium\|high]` | Set reasoning effort. Bare: show current; `low` is faster, `high` thinks deeper |
 | `/mcp` | List, toggle, add, edit, and remove MCP servers; Enter opens a server's detail screen, where you can list its tools and sign in to it |
 | `/plugin [list\|install <spec>\|remove <name>\|search [query]]` | Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace |
+| `/reload [plugin\|skills\|system-prompt]` | Re-scan skills/plugins from disk and rebuild the catalog mid-session (bare: `plugin`), reporting added/removed/changed entries. `system-prompt` re-reads `JAN.md` and applies on the next run |
 | `/login` | Sign in to Tokamak and save the API key |
 | `/config` | View provider config (`~/.jan/config.toml`) |
 | `/terminal-setup` | Configure this terminal so <kbd>Shift</kbd>+<kbd>Enter</kbd> inserts a newline and, on macOS, <kbd>Option</kbd>+<kbd>Delete</kbd> deletes a word. Writes the terminal's own config where it can (VS Code, kitty, Ghostty, tmux) and prints the manual step where it cannot. Idempotent |
