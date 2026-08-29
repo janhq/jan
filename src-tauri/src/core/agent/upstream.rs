@@ -1002,6 +1002,32 @@ pub(crate) fn describe_request_error(err: &reqwest::Error) -> String {
     msg
 }
 
+/// Best-effort safe URL for logs: strip anything after `?`, where upstream
+/// query credentials (api_key=, access_token=, key=) would live. The path is
+/// the only part of the endpoint that is never a credential.
+pub(crate) fn log_safe_upstream_url(url: &str) -> &str {
+    url.split('?').next().unwrap_or(url)
+}
+
+/// How much of an upstream error is worth recording in a log breadcrumb.
+pub(crate) const LOG_ERR_BUDGET: usize = 200;
+
+/// Bound an upstream error for a log breadcrumb.
+///
+/// Error strings wrap the provider's response body, which is provider-controlled,
+/// unbounded, and sometimes echoes the request -- including the `Authorization`
+/// header -- straight back. Breadcrumbs are persisted to `jan.log` and bundled
+/// into `jan bug-report`, so an unbounded error would write a caller's API key
+/// to disk. Keep enough to identify the failure and cut the rest.
+///
+/// Truncates on a char boundary and marks the cut so a reader knows it happened.
+pub(crate) fn log_brief(err: &str) -> String {
+    match err.char_indices().nth(LOG_ERR_BUDGET) {
+        Some((cut, _)) => format!("{}...", &err[..cut]),
+        None => err.to_string(),
+    }
+}
+
 /// Stream a chat completion for the agent loop.
 ///
 /// A thin delegate to [`super::genai_bridge`], which owns the wire format, SSE
@@ -1023,7 +1049,21 @@ pub(crate) async fn stream_openai_chat_completions(
     body: &serde_json::Value,
     events: &mpsc::UnboundedSender<StreamEvent>,
 ) -> Result<serde_json::Value, String> {
-    super::genai_bridge::stream_chat_completions(
+    // Breadcrumb for a stuck run: which model+endpoint the turn is talking to,
+    // written before any bytes flow so a hang is visible after the fact. The
+    // model id comes from the request body, never a credential.
+    let model = body.get("model").and_then(|v| v.as_str()).unwrap_or("?");
+    log::info!(
+        "stream: model={model} upstream={}",
+        log_safe_upstream_url(upstream_url)
+    );
+
+    // The paired completion line is what makes a hang diagnosable: a start
+    // breadcrumb with no `stream: done` after it pins the stall to this call,
+    // and the elapsed time separates "hung" from "slow provider" without
+    // guessing. Failures are already logged with their cause by the bridge.
+    let started = std::time::Instant::now();
+    let result = super::genai_bridge::stream_chat_completions(
         client,
         upstream_url,
         api_keys,
@@ -1031,7 +1071,13 @@ pub(crate) async fn stream_openai_chat_completions(
         body,
         events,
     )
-    .await
+    .await;
+    log::info!(
+        "stream: done model={model} outcome={} elapsed={}ms",
+        if result.is_ok() { "ok" } else { "error" },
+        started.elapsed().as_millis()
+    );
+    result
 }
 
 /// Streaming counterpart of [`stream_openai_chat_completions`] for providers
@@ -1046,6 +1092,34 @@ pub(crate) async fn stream_openai_chat_completions(
 /// [`resolve_upstream_for_model`]); the base is recovered by stripping that
 /// suffix and the native path appended in its place.
 pub(crate) async fn stream_converted_chat_completions(
+    client: &Client,
+    upstream_url: &str,
+    api_keys: &[String],
+    converter: &dyn UpstreamConverter,
+    body: &serde_json::Value,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+) -> Result<serde_json::Value, String> {
+    // Same start/done breadcrumb pair as the OpenAI path: providers on a native
+    // wire API (Anthropic, Google, Codex) hang the same way, so they need the
+    // same trail. The inner fn has several early returns, so the pair is
+    // wrapped around it rather than repeated at each exit.
+    let model = body.get("model").and_then(|v| v.as_str()).unwrap_or("?");
+    log::info!(
+        "stream: model={model} upstream={} (converted)",
+        log_safe_upstream_url(upstream_url)
+    );
+    let started = std::time::Instant::now();
+    let result = stream_converted_inner(client, upstream_url, api_keys, converter, body, events)
+        .await;
+    log::info!(
+        "stream: done model={model} outcome={} elapsed={}ms (converted)",
+        if result.is_ok() { "ok" } else { "error" },
+        started.elapsed().as_millis()
+    );
+    result
+}
+
+async fn stream_converted_inner(
     client: &Client,
     upstream_url: &str,
     api_keys: &[String],
@@ -1487,6 +1561,40 @@ fn flush_trailing_line(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// Upstream error bodies reach the on-disk log, so the breadcrumb must be
+    /// bounded -- and must not panic when the cut lands inside a UTF-8 char.
+    #[test]
+    fn log_brief_bounds_the_error_on_a_char_boundary() {
+        assert_eq!(log_brief("short"), "short", "short errors pass through");
+
+        let long = "x".repeat(LOG_ERR_BUDGET + 50);
+        let out = log_brief(&long);
+        assert_eq!(out.len(), LOG_ERR_BUDGET + 3, "budget plus the ellipsis");
+        assert!(out.ends_with("..."), "truncation is marked: {out}");
+
+        // Multi-byte chars straddling the cut must not panic or split a char.
+        let wide = "é".repeat(LOG_ERR_BUDGET + 50);
+        let out = log_brief(&wide);
+        assert!(out.ends_with("..."), "wide truncation is marked");
+        assert_eq!(out.chars().count(), LOG_ERR_BUDGET + 3, "counts chars, not bytes");
+    }
+
+    /// Bounding is about size, not secrecy: a 12KB provider body must not fill
+    /// the log, but the breadcrumb still has to name the failure. Removing a
+    /// credential is the log sink's job (`cli::secrets`), because truncation
+    /// only ever hides what happens to sit past the cut.
+    #[test]
+    fn log_brief_keeps_the_failure_and_drops_the_bulk() {
+        let err = format!(
+            "Upstream returned HTTP 400: Web stream error for model 'x'.\nBody: {}",
+            "PAD".repeat(4000)
+        );
+        let out = log_brief(&err);
+        assert!(out.contains("HTTP 400"), "the failure stays identifiable: {out}");
+        assert!(out.chars().count() <= LOG_ERR_BUDGET + 3, "stays within budget");
+        assert!(out.ends_with("..."), "truncation is marked: {out}");
+    }
 
     fn sink() -> (
         mpsc::UnboundedSender<StreamEvent>,

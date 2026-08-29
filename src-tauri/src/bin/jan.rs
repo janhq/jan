@@ -191,6 +191,13 @@ enum Commands {
         #[arg(long, conflicts_with = "check")]
         force: bool,
     },
+    /// Bundle a redacted diagnostics archive for a bug report
+    #[command(display_order = 6)]
+    BugReport {
+        /// Bundle this thread id (default: the most recently updated thread)
+        #[arg(long)]
+        thread: Option<String>,
+    },
 }
 
 /// Tokamak sign-in inspection and control.
@@ -502,14 +509,16 @@ async fn main() {
     tauri_plugin_agent_tools::run_sandbox_helper_if_requested();
 
     // Pre-scan raw args for --verbose / -v before full parse so we can set
-    // the log level before any logging happens.
+    // the log level before any logging happens. The dual logger keeps
+    // stderr exactly where env_logger had it (`warn`, or `info` under -v) and
+    // additionally writes every info+ record to a rotating file under the
+    // data folder, so a hung or misbehaving run leaves a trail on disk
+    // without the user ever having to pass -v.
     let verbose = std::env::args().any(|a| a == "--verbose" || a == "-v");
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(if verbose {
-        "info"
-    } else {
-        "warn"
-    }))
-    .init();
+    app_lib::core::cli::file_log::init(
+        app_lib::core::app::commands::resolve_jan_data_folder(),
+        verbose,
+    );
 
     // Inject the logo at runtime so we can use ANSI styling.
     let logo = make_logo();
@@ -577,6 +586,42 @@ async fn main() {
         }
         Commands::Plugin { cmd } => handle_plugin(cmd).await,
         Commands::Update { check, force } => handle_update(check, force).await,
+        Commands::BugReport { thread } => {
+            // Agent runs (TUI and `jan cli agent run`) persist threads to the
+            // project's `.jan/agent`, while the desktop app uses the global data
+            // folder. Prefer the project store when the cwd actually has one, so
+            // running `jan bug-report` where the run misbehaved reports on that
+            // run rather than an unrelated desktop thread.
+            let project = app_lib::core::cli::agent_dir_for(std::path::Path::new("."));
+            let base = if project.join("threads").is_dir() {
+                project
+            } else {
+                app_lib::core::app::commands::resolve_jan_data_folder()
+            };
+            match app_lib::core::cli::doctor::run_bug_report(&base, thread.as_deref()) {
+                Ok(report) => print_bug_report(&report),
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+}
+
+/// Print where the bug-report archive landed and confirm what was stripped.
+fn print_bug_report(report: &app_lib::core::cli::doctor::BugReport) {
+    println!("Bug report written to: {}", report.archive.display());
+    println!("Attach this file to the issue. Contents: version, environment, thread, and log tail.");
+    if report.redacted_any {
+        // "Known" is load-bearing: the scan is a regex pass over known key
+        // shapes, so claiming bare "secrets stripped" would promise more than
+        // it delivers. The no-match branch below is already honest about this.
+        println!("Known secrets stripped: {}", report.stripped.join(", "));
+    } else {
+        println!(
+            "No known secret patterns matched (best-effort scan; please review before sharing)."
+        );
     }
 }
 
@@ -1202,6 +1247,16 @@ mod tests {
                 cmd: AuthCommands::Logout
             })
         ));
+    }
+
+    #[test]
+    fn bug_report_command_parses_only_thread_flag() {
+        let cli = Cli::parse_from(["jan", "bug-report", "--thread", "abc123"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::BugReport { thread }) if thread.as_deref() == Some("abc123")
+        ));
+        assert!(Cli::try_parse_from(["jan", "bug-report", "--threads-base", "."]).is_err());
     }
 
     /// Parse a `jan cli mcp <cmd> <extra...>` argv and pull out the subcommand.
