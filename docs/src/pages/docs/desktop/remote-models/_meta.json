@@ -20,6 +20,9 @@
   "openrouter": {
     "title": "OpenRouter"
   },
+  "gonkabroker": {
+    "title": "Gonka Broker"
+  },
   "huggingface": {
     "title": "Hugging Face"
   },
