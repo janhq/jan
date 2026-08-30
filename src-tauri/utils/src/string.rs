@@ -1,17 +1,3 @@
-/// Parses 16-byte array to UUID string format
-pub fn parse_uuid(bytes: &[u8; 16]) -> String {
-    // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-    // 4-2-2-2-6 bytes
-    format!(
-        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[0], bytes[1], bytes[2], bytes[3],
-        bytes[4], bytes[5],
-        bytes[6], bytes[7],
-        bytes[8], bytes[9],
-        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
-    )
-}
-
 /// Safely converts C string buffer to Rust String
 pub fn parse_c_string(buf: &[i8]) -> String {
     let bytes: Vec<u8> = buf
@@ -77,31 +63,6 @@ pub fn is_memory_pattern(content: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_uuid() {
-        let uuid_bytes = [
-            0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88
-        ];
-        
-        let uuid_string = parse_uuid(&uuid_bytes);
-        assert_eq!(uuid_string, "12345678-9abc-def0-1122-334455667788");
-    }
-
-    #[test]
-    fn test_parse_uuid_zeros() {
-        let zero_bytes = [0; 16];
-        let uuid_string = parse_uuid(&zero_bytes);
-        assert_eq!(uuid_string, "00000000-0000-0000-0000-000000000000");
-    }
-
-    #[test]
-    fn test_parse_uuid_max_values() {
-        let max_bytes = [0xff; 16];
-        let uuid_string = parse_uuid(&max_bytes);
-        assert_eq!(uuid_string, "ffffffff-ffff-ffff-ffff-ffffffffffff");
-    }
 
     #[test]
     fn test_parse_c_string() {
