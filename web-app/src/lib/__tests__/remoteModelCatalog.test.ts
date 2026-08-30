@@ -130,19 +130,14 @@ describe('fetchTopRemoteModels openai', () => {
     expect(gpt35.capabilities).toEqual(['completion', 'tools'])
   })
 
-  it('sends bearer + x-api-key headers', async () => {
+  it('sends only Authorization (no x-api-key) for OpenAI-compatible providers', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(mkResponse({ data: [] }))
     await fetchTopRemoteModels(mkOpenAIProvider(), fetchImpl)
-    expect(fetchImpl).toHaveBeenCalledWith(
-      'https://api.openai.com/v1/models',
-      expect.objectContaining({
-        method: 'GET',
-        headers: expect.objectContaining({
-          Authorization: 'Bearer sk-test',
-          'x-api-key': 'sk-test',
-        }),
-      })
-    )
+    const headers = fetchImpl.mock.calls[0][1].headers as Record<string, string>
+    expect(headers.Authorization).toBe('Bearer sk-test')
+    // Sending both Authorization and x-api-key breaks upstreams that reject
+    // mixed auth (e.g. AWS Bedrock Mantle returns 401). See issue #8444.
+    expect(headers).not.toHaveProperty('x-api-key')
   })
 
   it('retries with fallback key on 401', async () => {
@@ -230,6 +225,14 @@ describe('fetchTopRemoteModels anthropic', () => {
         }),
       })
     )
+  })
+
+  it('sends only x-api-key (no Authorization) for anthropic providers', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(mkResponse({ data: [] }))
+    await fetchTopRemoteModels(mkAnthropicProvider(), fetchImpl)
+    const headers = fetchImpl.mock.calls[0][1].headers as Record<string, string>
+    expect(headers['x-api-key']).toBe('sk-ant')
+    expect(headers).not.toHaveProperty('Authorization')
   })
 
   it('does not send anthropic headers for openai', async () => {

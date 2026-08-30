@@ -16,7 +16,7 @@ import {
   API_KEY_FALLBACKS_SETTING_KEY,
   providerRemoteApiKeyChain,
 } from '@/lib/provider-api-keys'
-import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
+import { ensureAnthropicHeaders, applyProviderAuthHeader } from '@/lib/remoteModelCatalog'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -170,10 +170,7 @@ export class TauriProvidersService extends DefaultProvidersService {
           headers['Origin'] = 'tauri://localhost'
         }
 
-        if (key) {
-          headers['x-api-key'] = key
-          headers['Authorization'] = `Bearer ${key}`
-        }
+        applyProviderAuthHeader(provider, headers, key)
 
         if (provider.custom_header) {
           provider.custom_header.forEach((header) => {
