@@ -21,14 +21,6 @@ import { segmentReasoningSteps } from '@/lib/reasoning'
 import { ToolCallCard } from './ToolCallCard'
 import { CONTENT_TYPE, isToolPart, type PartEntry } from './types'
 
-// Turn a tool identifier (e.g. "web_search", "exa_search") into a readable
-// label for the streaming step header (e.g. "Web search").
-function humanizeToolName(name: string): string {
-  const spaced = name.replace(/[_-]+/g, ' ').trim()
-  if (!spaced) return 'tool'
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
-}
-
 export type ChainOfThoughtGroupProps = {
   /** Reasoning and tool parts belonging to this trace, in message order. */
   entries: PartEntry[]
@@ -112,10 +104,6 @@ export const ChainOfThoughtGroup = memo(
     const currentStepIsTool = Boolean(
       lastMeaningful && isToolPart(lastMeaningful.part)
     )
-
-    const currentToolLabel = currentStepIsTool
-      ? humanizeToolName(lastMeaningful.part.type.split('-').slice(1).join('-'))
-      : ''
 
     // While streaming, expand for a tool call -- its card carries the live
     // search/address bar and the result, all of which sit inside this
@@ -270,9 +258,12 @@ export const ChainOfThoughtGroup = memo(
         defaultOpen={hasDisplayableContent && !hasFollowingContent}
       >
         <ChainOfThoughtHeader
+          // The tool card rendered right below names the call, its origin and
+          // its elapsed time, so repeating the tool here printed it twice one
+          // row apart. This row speaks for the trace, not the step.
           streamingLabel={
             currentStepIsTool
-              ? t('chat:reasoning.usingTool', { tool: currentToolLabel })
+              ? t('chat:reasoning.working')
               : t('chat:reasoning.thinking')
           }
           completedVariant={hasTools ? 'worked' : 'thought'}
