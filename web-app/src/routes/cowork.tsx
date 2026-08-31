@@ -17,7 +17,20 @@ import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
 import { getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { sessionWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
-import { cn } from '@/lib/utils'
+import {
+  cn,
+  getModelDisplayName,
+  getProviderTitle,
+} from '@/lib/utils'
+import { predefinedProviders } from '@/constants/providers'
+import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
+import { runSlashCommand, SLASH_COMMANDS } from '@/lib/coworkCommands'
+import {
+  compactMessages,
+  type ContextManagerConfig,
+} from '@/lib/context-manager'
+import { ModelFactory } from '@/lib/model-factory'
+import { useMessageQueue } from '@/stores/message-queue-store'
 import {
   useCoworkSessions,
   ensureCurrentSession,
@@ -46,7 +59,11 @@ import { artifactsFromParts } from '@/lib/coworkArtifacts'
 import { CoworkArtifactCard } from '@/containers/CoworkArtifactCard'
 import { CoworkPreviewPanel } from '@/containers/CoworkPreviewPanel'
 import { CoworkDiffPanel } from '@/containers/CoworkDiffPanel'
+import { CoworkTodoPanel } from '@/containers/CoworkTodoPanel'
+import { CoworkTasksPanel } from '@/containers/CoworkTasksPanel'
 import { CoworkChangesChip } from '@/containers/CoworkChangesChip'
+import { CoworkTodoChip } from '@/containers/CoworkTodoChip'
+import { CoworkTasksChip } from '@/containers/CoworkTasksChip'
 import { collectCodeFileDiffs } from '@/lib/coworkDiffs'
 import { CoworkSandboxChip } from '@/containers/CoworkSandboxChip'
 import { CoworkBudgetNotice } from '@/containers/CoworkBudgetNotice'
@@ -84,10 +101,31 @@ export const Route = createFileRoute(route.cowork as any)({
   component: CoworkPage,
 })
 
+// A row in the slash menu — commands and model options share one shape so the
+// keyboard navigation works uniformly across both.
+type MenuItem = {
+  key: string
+  label: string
+  description: string
+  onSelect: () => void
+}
+
+/**
+ * Manual `/compact` budget. Unlike the transport's auto-compact (which uses the
+ * model's real context window and so only fires when genuinely near the limit),
+ * a manual compact means "shrink this now": keep only a recent tail and
+ * summarize everything older, regardless of how big the window is.
+ */
+const MANUAL_COMPACT_CONFIG: ContextManagerConfig = {
+  maxContextTokens: 8192,
+  maxOutputTokens: 2048,
+  autoCompact: true,
+}
+
 function CoworkPage() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const { selectedModel, selectedProvider } = useModelProvider()
+  const { selectedModel, selectedProvider, providers } = useModelProvider()
 
   const sessions = useCoworkSessions((s) => s.sessions)
   const currentId = useCoworkSessions((s) => s.currentId)
@@ -99,6 +137,10 @@ function CoworkPage() {
   const planMode = session?.planMode ?? false
 
   const [running, setRunning] = useState(false)
+  // The session the in-flight run belongs to. The live rows are appended to
+  // that session's transcript only — without this, switching sessions mid-run
+  // rendered the running session's live turns under the viewed one.
+  const [runSid, setRunSid] = useState<string | null>(null)
   const [liveTurns, setLiveTurns] = useState<CoworkTurn[]>([])
   const liveTurnsRef = useRef<CoworkTurn[]>([])
   const [stoppedBy, setStoppedBy] = useState<RunOutcome['stoppedBy'] | null>(
@@ -111,10 +153,14 @@ function CoworkPage() {
   // The step just finished, so the counter tracks a run instead of jumping once
   // at the end. Falls back to the committed usage between runs.
   const [liveUsage, setLiveUsage] = useState<Usage | null>(null)
-  // The rail holds one panel at a time: preview and diff both want the width,
-  // so showing them together starves the transcript (C7).
+  // The rail holds one panel at a time: they all want the width, so showing
+  // two together starves the transcript (C7).
   const [rail, setRail] = useState<
-    { kind: 'preview'; path: string } | { kind: 'diff' } | null
+    | { kind: 'preview'; path: string }
+    | { kind: 'diff' }
+    | { kind: 'todos' }
+    | { kind: 'tasks' }
+    | null
   >(null)
   const showPreview = useCallback(
     (path: string) => setRail({ kind: 'preview', path }),
@@ -188,12 +234,13 @@ function CoworkPage() {
   // `liveTurns` holds only the rows this run has produced — `commitTurns`
   // appends them — so the committed transcript has to be shown alongside it or
   // the conversation disappears the moment a follow-up run starts.
+  const viewingRun = running && runSid === session?.id
   const displayedTurns = useMemo(
     () =>
-      running
+      viewingRun
         ? [...(session?.turns ?? []), ...liveTurns]
         : (session?.turns ?? []),
-    [running, liveTurns, session?.turns]
+    [viewingRun, liveTurns, session?.turns]
   )
   const uiMessages = useMemo(
     () => coworkTurnsToUIMessages(displayedTurns, session?.id ?? 'cowork'),
@@ -219,13 +266,13 @@ function CoworkPage() {
   const liveSubagents = useCoworkRun((s) =>
     session?.id ? s.subagents[session.id] : undefined
   )
+  const subagents = useMemo(
+    () => liveSubagents ?? session?.subagents ?? [],
+    [liveSubagents, session?.subagents]
+  )
   const fileDiffs = useMemo(
-    () =>
-      collectCodeFileDiffs(
-        displayedTurns,
-        liveSubagents ?? session?.subagents ?? []
-      ),
-    [displayedTurns, liveSubagents, session?.subagents]
+    () => collectCodeFileDiffs(displayedTurns, subagents),
+    [displayedTurns, subagents]
   )
 
   const awaitingModel = useMemo(
@@ -261,14 +308,20 @@ function CoworkPage() {
       return
     }
     if (text && current?.title === 'New session')
-      store.setTitle(sid, text.slice(0, 40))
+      // Collapse newlines/runs of whitespace so a pasted multi-line prompt
+      // doesn't become an unreadable sidebar title.
+      store.setTitle(sid, text.trim().replace(/\s+/g, ' ').slice(0, 40))
 
     setStoppedBy(null)
     setRunError(undefined)
     setLiveUsage(null)
     liveTurnsRef.current = text ? [{ role: 'user', content: text }] : []
     setLiveTurns(liveTurnsRef.current)
-    useCoworkRun.getState().resetSubagents(sid)
+    // Marks the session running in the store (and resets its subagent lanes),
+    // so surfaces outside this component — the sidebar's per-session spinner
+    // and its empty-session filter — can see a run this component owns.
+    useCoworkRun.getState().beginRun(sid, crypto.randomUUID(), text ?? '')
+    setRunSid(sid)
     setRunning(true)
 
     // Local models load before the first token, but only on a cold start. Probe
@@ -521,14 +574,35 @@ function CoworkPage() {
           useCoworkRun.getState().subagents[sid] ?? [],
           outcome?.usage ?? undefined
         )
+      useCoworkRun.getState().clearCodeRun(sid)
       liveTurnsRef.current = []
       setLiveTurns([])
       setRunning(false)
+      setRunSid(null)
       abortRef.current = null
       askResolvers.current.clear()
       setAsk(null)
-      setStoppedBy(thrown?.stoppedBy ?? outcome?.stoppedBy ?? null)
+      const stop = thrown?.stoppedBy ?? outcome?.stoppedBy ?? null
+      setStoppedBy(stop)
       setRunError(thrown?.errorText ?? outcome?.errorText)
+
+      // Message queue (ChatInput enqueues while chatStatus is 'streaming',
+      // scoped to this session): a clean finish sends the next queued message;
+      // an error discards the queue, mirroring the chat route — errors mean the
+      // conversation needs attention, not more unattended sends. A stop or
+      // budget halt leaves the queue in place, visible as chips in the input.
+      if (stop === 'error') {
+        useMessageQueue.getState().clearQueue(sid)
+      } else if (stop === 'done') {
+        // Deferred past the re-render so the next runRequest closure sees
+        // running=false; skipped if the user has since switched sessions, since
+        // runRequest always targets the current one.
+        setTimeout(() => {
+          if (useCoworkSessions.getState().currentId !== sid) return
+          const next = useMessageQueue.getState().dequeue(sid)
+          if (next) void runRequestRef.current(next.text)
+        }, 0)
+      }
     }
   }
 
@@ -537,7 +611,169 @@ function CoworkPage() {
   const runRequestRef = useRef(runRequest)
   runRequestRef.current = runRequest
 
-  const handleSubmit = (text: string) => void runRequest(text)
+  /**
+   * `/compact`: summarize everything but the recent tail into one system
+   * message, reusing the transport's auto-compact machinery (context-manager).
+   * The transcript (`turns`) is untouched — compaction rewrites what the model
+   * replays, not what the user reads.
+   */
+  const handleCompact = async () => {
+    const sid = session?.id
+    const msgs = session?.messages ?? []
+    if (!sid || msgs.length === 0) {
+      toast(t('common:cmdNothingToCompact'))
+      return
+    }
+    if (!selectedModel?.id) {
+      toast.error(t('common:selectModel'))
+      return
+    }
+    const provider = providers.find((p) => p.provider === selectedProvider)
+    if (!provider) {
+      toast.error(t('common:selectModel'))
+      return
+    }
+    try {
+      const model = await ModelFactory.createModel(selectedModel.id, provider)
+      const result = await compactMessages(msgs, MANUAL_COMPACT_CONFIG, model)
+      if (result.trimmedCount === 0 || !result.compactedSummary) {
+        toast(t('common:cmdNothingToCompact'))
+        return
+      }
+      useCoworkSessions.getState().setMessages(sid, result.messages)
+      toast.success(
+        t('common:cmdCompacted', {
+          before: msgs.length,
+          after: result.messages.length,
+        })
+      )
+    } catch (e) {
+      toast.error(t('common:cmdCompactFailed', { error: String(e) }))
+    }
+  }
+
+  const handleSubmit = (text: string) => {
+    // Slash commands are client-side actions; they never reach the agent.
+    if (text.trim().startsWith('/')) {
+      runSlashCommand(text, {
+        t,
+        running,
+        currentId,
+        submitTurn: (prompt) => void runRequestRef.current(prompt),
+        openRail: (kind) => setRail({ kind }),
+        compact: () => void handleCompact(),
+      })
+      return
+    }
+    void runRequest(text)
+  }
+
+  // Slash-command menu: the input text lives in the shared usePrompt store, so
+  // the menu (and its keyboard nav) works without touching ChatInput.
+  const prompt = usePrompt((s) => s.prompt)
+  const [menuIndex, setMenuIndex] = useState(0)
+
+  // Switchable models for /models — mirrors DropdownModelProvider's filtering
+  // (active providers, no embedding models, remote providers only with a key),
+  // narrowed to tool-capable models since runRequest refuses the rest anyway.
+  const allModels = useMemo(() => {
+    const items: { providerName: string; id: string; label: string }[] = []
+    providers.forEach((p) => {
+      if (!p.active) return
+      const isPredefined = predefinedProviders.some((e) =>
+        e.provider.includes(p.provider)
+      )
+      if (
+        p.provider !== 'llamacpp' &&
+        !providerHasRemoteApiKeys(p) &&
+        (isPredefined || p.models.length === 0)
+      )
+        return
+      p.models.forEach((m) => {
+        if (!m.capabilities?.includes('tools')) return
+        items.push({
+          providerName: p.provider,
+          id: m.id,
+          label: getModelDisplayName(m),
+        })
+      })
+    })
+    return items
+  }, [providers])
+
+  const switchModel = useCallback(
+    (providerName: string, modelId: string) => {
+      useModelProvider.getState().selectModelProvider(providerName, modelId)
+      usePrompt.getState().setPrompt('')
+      toast.success(t('common:cmdModelSwitched', { name: modelId }))
+    },
+    [t]
+  )
+
+  // Build the current menu: model picker when the text is `/models[ filter]`,
+  // otherwise the command list filtered by the typed `/token`.
+  const menuItems: MenuItem[] = useMemo(() => {
+    const inModelMode = prompt === '/models' || prompt.startsWith('/models ')
+    if (inModelMode) {
+      const filter = prompt.slice('/models'.length).trim().toLowerCase()
+      return allModels
+        .filter((m) => `${m.id} ${m.label}`.toLowerCase().includes(filter))
+        .slice(0, 50)
+        .map((m) => ({
+          key: `${m.providerName}/${m.id}`,
+          label: m.label,
+          description: getProviderTitle(m.providerName),
+          onSelect: () => switchModel(m.providerName, m.id),
+        }))
+    }
+    if (prompt.startsWith('/') && !prompt.includes(' ')) {
+      const q = prompt.slice(1)
+      return SLASH_COMMANDS.filter((c) => c.name.slice(1).startsWith(q)).map(
+        (c) => ({
+          key: c.name,
+          label: c.name,
+          description: t(c.descKey),
+          onSelect: () => {
+            if (c.mode === 'args') {
+              usePrompt.getState().setPrompt(`${c.name} `)
+            } else {
+              usePrompt.getState().setPrompt('')
+              handleSubmit(c.name)
+            }
+          },
+        })
+      )
+    }
+    return []
+    // handleSubmit is recreated every render but only reads refs/stores.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prompt, allModels, switchModel, t])
+
+  // Reset the highlighted row whenever the menu contents change.
+  useEffect(() => setMenuIndex(0), [prompt])
+
+  // Capture-phase keydown so arrows/Enter/Esc drive the menu BEFORE ChatInput's
+  // textarea sees them (no ChatInput changes needed).
+  const onMenuKeyDown = (e: React.KeyboardEvent) => {
+    if (menuItems.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      e.stopPropagation()
+      setMenuIndex((i) => Math.min(i + 1, menuItems.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      e.stopPropagation()
+      setMenuIndex((i) => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      e.stopPropagation()
+      menuItems[Math.min(menuIndex, menuItems.length - 1)]?.onSelect()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      usePrompt.getState().setPrompt('')
+    }
+  }
 
   /**
    * Take the last turn again. Rewinding to the question and resuming is the
@@ -616,7 +852,7 @@ function CoworkPage() {
                         message={message}
                         isFirstMessage={i === 0}
                         isLastMessage={i === uiMessages.length - 1}
-                        status={running ? 'streaming' : 'ready'}
+                        status={viewingRun ? 'streaming' : 'ready'}
                         onRegenerate={handleRegenerate}
                         reasoningContainerRef={reasoningContainerRef}
                         isReasoningAtBottom={isReasoningAtBottom}
@@ -636,7 +872,7 @@ function CoworkPage() {
                       ))}
                     </Fragment>
                   ))}
-                  {running && (
+                  {viewingRun && (
                     // Row wrapper as in the chat route: the transcript is a
                     // column flex, which stretches the indicator's own
                     // `inline-flex` box across the whole column.
@@ -667,7 +903,7 @@ function CoworkPage() {
                   {stoppedBy === 'tokens' && (
                     <CoworkBudgetNotice
                       kind="tokens"
-                      onCompact={() => toast.info(t('common:budget.compact'))}
+                      onCompact={() => void handleCompact()}
                       onNewSession={() =>
                         useCoworkSessions.getState().createSession()
                       }
@@ -690,7 +926,36 @@ function CoworkPage() {
                   />
                 </div>
               )}
-              <ChatInput
+              <div className="relative" onKeyDownCapture={onMenuKeyDown}>
+                {menuItems.length > 0 && (
+                  <div className="absolute left-0 right-0 bottom-full mb-2 z-10 max-h-64 overflow-y-auto rounded-md border bg-popover shadow-md">
+                    {menuItems.map((item, i) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        ref={
+                          i === menuIndex
+                            ? (el) => el?.scrollIntoView({ block: 'nearest' })
+                            : undefined
+                        }
+                        onClick={item.onSelect}
+                        onMouseEnter={() => setMenuIndex(i)}
+                        className={cn(
+                          'flex w-full items-center gap-3 px-3 py-2 text-left text-sm',
+                          i === menuIndex ? 'bg-accent' : 'hover:bg-accent'
+                        )}
+                      >
+                        <span className="font-mono font-medium">
+                          {item.label}
+                        </span>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {item.description}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <ChatInput
                 showSpeedToken={false}
                 initialMessage={true}
                 scopeKey={session?.id}
@@ -717,6 +982,24 @@ function CoworkPage() {
                       onDetach={detachFolder}
                     />
                     <CoworkSandboxChip />
+                    <CoworkTodoChip
+                      todos={session?.todos}
+                      open={rail?.kind === 'todos'}
+                      onToggle={() =>
+                        setRail((r) =>
+                          r?.kind === 'todos' ? null : { kind: 'todos' }
+                        )
+                      }
+                    />
+                    <CoworkTasksChip
+                      subagents={subagents}
+                      open={rail?.kind === 'tasks'}
+                      onToggle={() =>
+                        setRail((r) =>
+                          r?.kind === 'tasks' ? null : { kind: 'tasks' }
+                        )
+                      }
+                    />
                     <CoworkChangesChip
                       files={fileDiffs}
                       open={rail?.kind === 'diff'}
@@ -731,7 +1014,8 @@ function CoworkPage() {
                     </div>
                   </>
                 }
-              />
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -745,6 +1029,15 @@ function CoworkPage() {
         )}
         {rail?.kind === 'diff' && (
           <CoworkDiffPanel files={fileDiffs} onClose={() => setRail(null)} />
+        )}
+        {rail?.kind === 'todos' && (
+          <CoworkTodoPanel
+            todos={session?.todos}
+            onClose={() => setRail(null)}
+          />
+        )}
+        {rail?.kind === 'tasks' && (
+          <CoworkTasksPanel subagents={subagents} onClose={() => setRail(null)} />
         )}
       </div>
     </div>
