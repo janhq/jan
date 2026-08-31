@@ -132,6 +132,26 @@ yarn build
 yarn dev
 ```
 
+### Building on Windows
+
+Run `make dev` from **Git Bash** (installed with Git for Windows) — make dispatches its recipes through `sh`, so a plain `cmd.exe` won't work.
+
+You do **not** need a "Native Tools Command Prompt for VS 2022". The bundled llama.cpp engine builds with Ninja + `clang-cl`, and `clang-cl` locates the MSVC toolchain and Windows SDK on its own. What has to be installed (and on `PATH` for `ninja`/`clang-cl`/`cmake`):
+
+- Visual Studio 2022 Build Tools (MSVC x64 workload + Windows SDK)
+- LLVM (provides `clang-cl`)
+- Ninja
+- CMake
+- CUDA Toolkit — only for `JAN_ENGINE_VARIANT=cuda12`/`cuda13` builds
+
+Engine variants are picked with `JAN_ENGINE_VARIANT` (tokens: `cpu`, `vulkan`, `metal`, `cuda12`, `cuda13`, `hip`/`rocm`, joined by `-`), e.g.:
+
+```bash
+make dev JAN_ENGINE_VARIANT=cuda13
+```
+
+**"nvcc fatal : Could not open output file ...fattn-...cu.obj.d"** during `tauri-plugin-llamacpp(build)` means the build path crossed Windows' 260-character `MAX_PATH` limit — nvcc does not honor the long-path opt-in. The build script now detects this and automatically relocates the llama.cpp build tree to a short directory under `%LOCALAPPDATA%\jan-engine`. If you hit path-length errors anyway, set `JAN_ENGINE_BUILD_DIR` to a short path (e.g. `C:\jb`) or move the checkout closer to the drive root.
+
 ## System Requirements
 
 **Minimum specs for a decent experience:**
