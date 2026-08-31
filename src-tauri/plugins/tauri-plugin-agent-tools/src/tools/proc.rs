@@ -213,7 +213,7 @@ fn confine_limits(cmd: &mut Command) {
             for (resource, limit) in [
                 #[cfg(target_os = "linux")]
                 (nix::libc::RLIMIT_NPROC, 8192_u64),
-                (nix::libc::RLIMIT_NOFILE, 1024_u64),
+                (nix::libc::RLIMIT_NOFILE, 2048_u64),
                 (nix::libc::RLIMIT_FSIZE, 1024_u64 * 1024_u64 * 1024_u64),
             ] {
                 let r = nix::libc::rlimit {
@@ -481,13 +481,13 @@ mod tests {
     #[tokio::test]
     async fn confine_limits_caps_child_file_descriptors() {
         // The rlimit mounting must actually reach the spawned child: NOFILE is
-        // set to 1024, which should be visible inside the sandbox.
+        // set to 2048, which should be visible inside the sandbox.
         let child = spawn(shell(), "ulimit -n", &tmp(), None).await.unwrap();
         let pid = child.id().unwrap();
         let out = child.wait_with_output().await.unwrap();
         unregister(pid);
         let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        assert_eq!(val, "1024", "NOFILE soft limit should be capped, got: {val}");
+        assert_eq!(val, "2048", "NOFILE soft limit should be capped, got: {val}");
     }
 
     #[cfg(target_os = "linux")]
