@@ -94,17 +94,27 @@ type CoworkSessionsState = {
    * history the model sees would disagree. */
   rewindToLastUser: (id: string) => void
   clearSession: (id: string) => void
+  /** Drop sessions that never got a message, except the current one and any in
+   * `keepIds` — callers pass sessions with a run in flight, whose first turns
+   * are still transient in useCoworkRun until the run commits them. */
+  pruneEmptySessions: (keepIds: string[]) => void
 }
 
 const now = () => Date.now()
 
 export const useCoworkSessions = create<CoworkSessionsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       sessions: [],
       currentId: null,
 
       createSession: () => {
+        // Already viewing an untouched session — reuse it instead of piling
+        // up empty ones (e.g. from repeated clicks on "New session").
+        const { currentId, sessions } = get()
+        const current = sessions.find((s) => s.id === currentId)
+        if (current && current.turns.length === 0) return current.id
+
         const id = crypto.randomUUID()
         const session: CoworkSession = {
           id,
@@ -234,6 +244,15 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
               : x
           ),
         })),
+
+      pruneEmptySessions: (keepIds) =>
+        set((s) => {
+          const keep = new Set(keepIds)
+          const sessions = s.sessions.filter(
+            (x) => x.turns.length > 0 || x.id === s.currentId || keep.has(x.id)
+          )
+          return sessions.length === s.sessions.length ? {} : { sessions }
+        }),
     }),
     {
       name: localStorageKey.coworkSessions,
