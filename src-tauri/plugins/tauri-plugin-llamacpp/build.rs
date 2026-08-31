@@ -247,6 +247,10 @@ mod engine {
     /// Measured with a margin for upstream adding a longer instance name.
     const DEEPEST_BUILD_PATH: usize = 150;
 
+    /// Written into OUT_DIR with the (possibly relocated) build root, so
+    /// packaging can find the ggml prefix without repeating the logic below.
+    const BUILD_ROOT_MARKER: &str = "engine-build-root.txt";
+
     /// Windows' classic MAX_PATH. nvcc (and parts of MSVC) still open files
     /// through the 260-char-limited API even when the OS has long paths
     /// enabled, so the limit is real regardless of registry settings.
@@ -262,24 +266,36 @@ mod engine {
     /// by `cargo clean`.
     fn build_root() -> PathBuf {
         let out = PathBuf::from(env::var("OUT_DIR").unwrap());
+        let root = resolve_build_root(&out);
+        // Packaging (build-utils/stage-engine.sh) collects the ggml runtime
+        // from the build trees and cannot guess a relocated root, so record it.
+        fs::write(
+            out.join(BUILD_ROOT_MARKER),
+            root.to_string_lossy().as_bytes(),
+        )
+        .expect("could not record the engine build root");
+        root
+    }
+
+    fn resolve_build_root(out: &Path) -> PathBuf {
         if let Ok(dir) = env::var("JAN_ENGINE_BUILD_DIR") {
             let dir = dir.trim();
             if !dir.is_empty() {
-                let root = PathBuf::from(dir).join(out_dir_key(&out));
+                let root = PathBuf::from(dir).join(out_dir_key(out));
                 fs::create_dir_all(&root).expect("could not create JAN_ENGINE_BUILD_DIR");
                 return root;
             }
         }
         if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() != "windows" {
-            return out;
+            return out.to_path_buf();
         }
         if out.as_os_str().len() + DEEPEST_BUILD_PATH < WINDOWS_MAX_PATH {
-            return out;
+            return out.to_path_buf();
         }
         let base = env::var("LOCALAPPDATA")
             .map(PathBuf::from)
             .unwrap_or_else(|_| env::temp_dir());
-        let root = base.join("jan-engine").join(out_dir_key(&out));
+        let root = base.join("jan-engine").join(out_dir_key(out));
         println!(
             "cargo:warning=OUT_DIR is too long for nvcc/cl on Windows \
              ({} chars); building llama.cpp under {} instead. Set \

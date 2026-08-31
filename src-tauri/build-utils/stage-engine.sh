@@ -44,10 +44,30 @@ mkdir -p "$DEST"
 install -m755 "$WORKER" "$DEST/jan-llama-worker$EXE"
 echo "stage-engine: staged jan-llama-worker$EXE"
 
-# build.rs installs the ggml prefix under the build script's OUT_DIR. Take the
-# newest match so a stale prefix from an earlier variant is never picked.
-PREFIX="$(find "$TARGET_DIR/build" -maxdepth 3 -type d -name ggml-prefix -print0 2>/dev/null \
-  | xargs -0 -r ls -dt 2>/dev/null | head -1 || true)"
+# Newest match only, so a stale artefact from an earlier variant is never
+# picked.
+newest() {
+  find "$TARGET_DIR/build" -maxdepth 3 "$@" -print0 2>/dev/null \
+    | xargs -0 -r ls -dt 2>/dev/null | head -1 || true
+}
+
+# build.rs normally installs the ggml prefix under the build script's OUT_DIR,
+# but on Windows it relocates the cmake trees out of the target tree when
+# OUT_DIR is too close to MAX_PATH. It records the root it chose in OUT_DIR.
+PREFIX="$(newest -type d -name ggml-prefix)"
+if [ -z "$PREFIX" ]; then
+  MARKER="$(newest -type f -name engine-build-root.txt)"
+  if [ -n "$MARKER" ]; then
+    ROOT="$(tr -d '\r\n' < "$MARKER")"
+    # The marker holds a native path; under Git Bash that is `C:\...`.
+    if command -v cygpath >/dev/null 2>&1; then
+      ROOT="$(cygpath -u "$ROOT")"
+    fi
+    if [ -d "$ROOT/ggml-prefix" ]; then
+      PREFIX="$ROOT/ggml-prefix"
+    fi
+  fi
+fi
 if [ -z "$PREFIX" ]; then
   echo "stage-engine: no ggml-prefix found under $TARGET_DIR/build" >&2
   echo "stage-engine: was the worker built with an engine-* feature?" >&2
