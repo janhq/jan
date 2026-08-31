@@ -134,6 +134,87 @@ describe('useCoworkSessions', () => {
   })
 })
 
+describe('useCoworkSessions createSession reuse', () => {
+  beforeEach(reset)
+
+  it('reuses the current session when it is still empty', () => {
+    const first = useCoworkSessions.getState().createSession()
+    const second = useCoworkSessions.getState().createSession()
+    expect(second).toBe(first)
+    expect(useCoworkSessions.getState().sessions).toHaveLength(1)
+  })
+
+  it('creates a fresh session once the current one has turns', () => {
+    const first = useCoworkSessions.getState().createSession()
+    useCoworkSessions
+      .getState()
+      .commitTurns(first, [{ role: 'user', content: 'hi' }], [], [])
+    const second = useCoworkSessions.getState().createSession()
+    expect(second).not.toBe(first)
+    expect(useCoworkSessions.getState().sessions).toHaveLength(2)
+  })
+})
+
+describe('useCoworkSessions pruneEmptySessions', () => {
+  beforeEach(reset)
+
+  const seed = (id: string, turns: CoworkTurn[] = []) => {
+    useCoworkSessions.setState((s) => ({
+      sessions: [
+        {
+          id,
+          title: id,
+          folder: null,
+          turns,
+          messages: [],
+          updated: Date.now(),
+        },
+        ...s.sessions,
+      ],
+    }))
+  }
+
+  it('drops sessions with no turns', () => {
+    seed('empty')
+    seed('full', [{ role: 'user', content: 'hi' }])
+    useCoworkSessions.setState({ currentId: 'full' })
+    useCoworkSessions.getState().pruneEmptySessions([])
+    expect(useCoworkSessions.getState().sessions.map((s) => s.id)).toEqual([
+      'full',
+    ])
+  })
+
+  it('keeps the current session even when empty', () => {
+    seed('stale')
+    seed('current')
+    useCoworkSessions.setState({ currentId: 'current' })
+    useCoworkSessions.getState().pruneEmptySessions([])
+    expect(useCoworkSessions.getState().sessions.map((s) => s.id)).toEqual([
+      'current',
+    ])
+  })
+
+  it('keeps empty sessions named in keepIds (first run still streaming)', () => {
+    seed('stale')
+    seed('running')
+    useCoworkSessions.setState({ currentId: 'stale' })
+    useCoworkSessions.getState().pruneEmptySessions(['running'])
+    expect(useCoworkSessions.getState().sessions.map((s) => s.id)).toEqual([
+      'running',
+      'stale',
+    ])
+  })
+
+  it('is a no-op when nothing qualifies', () => {
+    seed('b', [{ role: 'user', content: 'hi' }])
+    seed('a', [{ role: 'user', content: 'hi' }])
+    useCoworkSessions.setState({ currentId: 'a' })
+    const before = useCoworkSessions.getState().sessions
+    useCoworkSessions.getState().pruneEmptySessions([])
+    expect(useCoworkSessions.getState().sessions).toBe(before)
+  })
+})
+
 describe('useCoworkSessions persist migration', () => {
   // v0 sessions carry `turns` but no `messages`. Losing the tool turns on
   // upgrade would leave the agent replaying a conversation with holes in it.
