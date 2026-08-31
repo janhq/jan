@@ -1000,7 +1000,7 @@ const BANNER_HINTS: &[(&str, &str)] = &[
     ("/init", "onboard this project"),
     ("/model", "switch model"),
     ("/resume", "reopen a session"),
-    ("Ctrl-D", "quit"),
+    ("Ctrl-C/D twice", "quit"),
 ];
 
 fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
@@ -1886,7 +1886,8 @@ struct App {
     view_width: u16,
     last_kind: Kind,
     should_quit: bool,
-    /// A blank idle composer has armed the exit: the first Ctrl-C only warns,
+    /// A blank idle composer has armed the exit: the first Ctrl-C/Ctrl-D only
+    /// warns,
     /// so leaving the TUI always takes a deliberate second one. Cleared by any
     /// key that resumes composing.
     exit_armed: bool,
@@ -8171,21 +8172,18 @@ async fn handle_key(
         return;
     }
 
-    // A pending permission prompt captures y/a/n; Ctrl-C cancels the run and
-    // Ctrl-D quits, so it can't be wedged waiting on an unanswered prompt.
-    // Several subagents can have requests queued at once (see `pending_queue`),
-    // so cancelling/quitting denies all of them, not just the one on screen.
+    // A pending permission prompt captures y/a/n; Ctrl-C or Ctrl-D cancels the
+    // run and denies everything queued, so it can't be wedged waiting on an
+    // unanswered prompt. Several subagents can have requests queued at once
+    // (see `pending_queue`), so cancelling denies all of them, not just the
+    // one on screen. Quitting itself stays with the two-press exit below.
     if !app.pending_queue.is_empty() {
         if ctrl_c || ctrl_d {
             for pending in app.pending_queue.drain(..) {
                 deny(registry, &pending.request_id).await;
             }
             abort_run(current);
-            if ctrl_d {
-                app.should_quit = true;
-            } else {
-                app.cancel_run();
-            }
+            app.cancel_run();
             return;
         }
         let pending = app
@@ -8236,13 +8234,8 @@ async fn handle_key(
         return;
     }
 
-    // Ctrl-D quits from anywhere; Ctrl-C cancels a run, clears a draft, or (on
-    // a blank idle composer, and only on a second press) quits.
-    if ctrl_d {
-        abort_run(current);
-        app.should_quit = true;
-        return;
-    }
+    // Ctrl-C and Ctrl-D both cancel a run, clear a draft, or (on a blank idle
+    // composer, and only on a second press) quit.
 
     // An open picker owns navigation/Enter/Esc. One-shot pickers (thread/model)
     // act and close; the `/mcp` picker toggles the selected row in place.
@@ -8557,7 +8550,7 @@ async fn handle_key(
                 app.picker = None;
                 app.mcp_detail = None;
             }
-            _ if ctrl_c => {
+            _ if ctrl_c || ctrl_d => {
                 app.plugin_collection_url = None;
                 app.picker = None;
                 app.mcp_detail = None;
@@ -8566,7 +8559,7 @@ async fn handle_key(
         }
         return;
     }
-    if ctrl_c {
+    if ctrl_c || ctrl_d {
         if app.status == Status::Running {
             // Cancel-first: an in-flight task is what Ctrl-C interrupts, and
             // the session stays open with the partial turn intact.
@@ -8582,9 +8575,9 @@ async fn handle_key(
         } else if app.exit_armed {
             app.should_quit = true;
         } else {
-            // Blank and idle: leaving takes a deliberate second Ctrl-C.
+            // Blank and idle: leaving takes a deliberate second Ctrl-C/Ctrl-D.
             app.exit_armed = true;
-            app.system(Level::Warn, "press Ctrl-C again to quit");
+            app.system(Level::Warn, "press Ctrl-C or Ctrl-D again to quit");
         }
         return;
     }
@@ -9288,7 +9281,7 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
         "Drag",
         "Select text, copied on release (Alt+drag for a block)",
     ),
-    ("Ctrl-D, or Ctrl-C twice", "Quit"),
+    ("Ctrl-C/Ctrl-D twice", "Quit"),
 ];
 
 /// Split a command line into `(name, arg)`, UTF-8 safe (no byte slicing).
@@ -18821,10 +18814,10 @@ mod tests {
         assert_eq!(app.input, "never submitted", "the draft must be recallable");
     }
 
-    /// Leaving a blank idle TUI takes a deliberate second Ctrl-C; the first
-    /// only arms the exit, and typing again disarms it.
+    /// Leaving a blank idle TUI takes a deliberate second Ctrl-C or Ctrl-D;
+    /// the first only arms the exit, and typing again disarms it.
     #[tokio::test]
-    async fn quitting_a_blank_idle_tui_takes_a_second_ctrl_c() {
+    async fn quitting_a_blank_idle_tui_takes_a_second_ctrl_c_or_ctrl_d() {
         let mut app = test_app();
         press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
         assert!(!app.should_quit, "the first Ctrl-C only arms the exit");
@@ -18839,6 +18832,13 @@ mod tests {
         press(&mut app, KeyCode::Backspace, KeyModifiers::NONE).await;
         press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
         assert!(!app.should_quit, "typing must disarm the pending exit");
+
+        // Ctrl-D shares the same two-press exit as Ctrl-C.
+        let mut app = test_app();
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::CONTROL).await;
+        assert!(!app.should_quit, "the first Ctrl-D only arms the exit");
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::CONTROL).await;
+        assert!(app.should_quit, "the second Ctrl-D quits");
     }
 
     /// The closing hint is copyable as-is and names the same short thread id
