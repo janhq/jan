@@ -190,10 +190,15 @@ const TEMP_ENV_KEYS: &[&str] = &["TMPDIR", "TMP", "TEMP"];
 /// Bound the resource exhaustion a sandboxed command could otherwise trigger on
 /// the host. `bwrap` 0.6.1 (and older) has no `--rlimit`, so instead we clamp the
 /// child's soft limits here, before exec, from the one choke point every backend
-/// funnels through. A fork-bomb is capped by `NPROC`, descriptor exhaustion by
-/// `NOFILE`, and disk fill through the unbounded workspace bind by `FSIZE`. The
-/// bwrap wrapper execs `bwrap` itself, which sets up the namespace and then
-/// execs the real shell, so the limits carry over to every descendant. Linux
+/// funnels through. Descriptor exhaustion is capped by `NOFILE`, and disk fill
+/// through the unbounded workspace bind by `FSIZE`. Linux `NPROC` constrains
+/// fork bombs, but the kernel accounts it per user rather than per shell tree.
+/// Keep it high enough at 8192 that ordinary workstation processes do not
+/// exhaust a tool shell's available process slots. macOS has its own UID-wide
+/// process ceiling (`kern.maxprocperuid`); an unprivileged Jan child cannot raise
+/// that ceiling, so the Linux-specific cap is not applied there. The bwrap
+/// wrapper execs `bwrap` itself, which sets up the namespace and then execs the
+/// real shell, so the remaining limits carry over to every descendant. Unix
 /// only; the Windows AppContainer child is limited by its token.
 #[cfg(unix)]
 fn confine_limits(cmd: &mut Command) {
@@ -206,8 +211,9 @@ fn confine_limits(cmd: &mut Command) {
     unsafe {
         cmd.pre_exec(|| {
             for (resource, limit) in [
-                (nix::libc::RLIMIT_NPROC, 4096_u64),
-                (nix::libc::RLIMIT_NOFILE, 1024_u64),
+                #[cfg(target_os = "linux")]
+                (nix::libc::RLIMIT_NPROC, 8192_u64),
+                (nix::libc::RLIMIT_NOFILE, 2048_u64),
                 (nix::libc::RLIMIT_FSIZE, 1024_u64 * 1024_u64 * 1024_u64),
             ] {
                 let r = nix::libc::rlimit {
@@ -473,21 +479,31 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn confine_limits_caps_the_child_process_count() {
-        // The rlimit mounting must actually reach the spawned child: with NPROC
-        // clamped we still run up to the cap, but a fork-bomb past it fails.
-        let child = spawn(shell(), "exit 0", &tmp(), None).await.unwrap();
-        let pid = child.id().unwrap();
-        child.wait_with_output().await.unwrap();
-        unregister(pid);
-
-        // Spawn a shell that reports its own soft NOFILE limit; confine_limits
-        // sets it to 1024, which should be visible inside the sandbox.
+    async fn confine_limits_caps_child_file_descriptors() {
+        // The rlimit mounting must actually reach the spawned child: NOFILE is
+        // set to 2048, which should be visible inside the sandbox.
         let child = spawn(shell(), "ulimit -n", &tmp(), None).await.unwrap();
         let pid = child.id().unwrap();
         let out = child.wait_with_output().await.unwrap();
         unregister(pid);
         let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        assert_eq!(val, "1024", "NOFILE soft limit should be capped, got: {val}");
+        assert_eq!(val, "2048", "NOFILE soft limit should be capped, got: {val}");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn confine_limits_caps_child_processes() {
+        // NPROC is a per-user Linux limit, so use a higher 8192 ceiling to
+        // preserve the fork-bomb guard without making ordinary workstation
+        // process counts exhaust the child shell's process slots.
+        let child = spawn(shell(), "ulimit -u", &tmp(), None).await.unwrap();
+        let pid = child.id().unwrap();
+        let out = child.wait_with_output().await.unwrap();
+        unregister(pid);
+        let actual = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        assert_eq!(
+            actual, "8192",
+            "NPROC soft limit should be capped at 8192, got: {actual}"
+        );
     }
 }
