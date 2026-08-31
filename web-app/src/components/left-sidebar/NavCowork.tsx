@@ -204,8 +204,10 @@ export function NavCowork() {
         })}
       </SidebarMenu>
 
+      {/* px-0: the group's own p-2 would indent the session rows past the nav
+          rows above it, which share the header's px-1. */}
       {visibleSessions.length > 0 && (
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+        <SidebarGroup className="px-0 group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel>{t('common:sessions')}</SidebarGroupLabel>
           <SidebarMenu>
             {visibleSessions.map((session) => (

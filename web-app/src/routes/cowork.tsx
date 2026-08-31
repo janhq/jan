@@ -843,8 +843,12 @@ function CoworkPage() {
               />
             ) : (
               <Conversation className="absolute inset-0 text-start">
+                {/* pb-4: the scroll viewport ends where the composer begins,
+                    so with no bottom padding the last row -- the live
+                    "Working..." indicator -- rests flush against the input and
+                    reads as tucked behind it. */}
                 <ConversationContent
-                  className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}
+                  className={cn('mx-auto w-full pb-4 md:w-4/5 xl:w-4/6')}
                 >
                   {uiMessages.map((message, i) => (
                     <Fragment key={message.id}>
@@ -915,7 +919,7 @@ function CoworkPage() {
             )}
           </div>
 
-          <div className="pb-4 shrink-0">
+          <div className="py-4 shrink-0">
             <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
               {ask && typeof ask.request !== 'string' && (
                 <div className="px-1 pb-2">
