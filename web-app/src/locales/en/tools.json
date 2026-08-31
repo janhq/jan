@@ -56,6 +56,11 @@
     "pollingJob": "waiting for background job {{id}}",
     "pathPlaceholder": "path",
     "reading": "Reading...",
+    "writing": "Writing...",
+    "editing": "Editing...",
+    "listing": "Listing...",
+    "patternPlaceholder": "pattern",
+    "namePlaceholder": "name",
     "workspaceRoot": "workspace root"
   }
 }

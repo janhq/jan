@@ -133,13 +133,6 @@ export const TerminalWidget = memo(
               {running && <Caret />}
             </span>
           </div>
-          {running && (
-            <div className="mt-1">
-              {/* The command is already on screen above, so the tool-named
-                  `running` string would just repeat it. */}
-              <Shimmer duration={1}>{t('tools:toolCall.working')}</Shimmer>
-            </div>
-          )}
           {!running && body && (
             <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap wrap-break-word text-muted-foreground">
               {body}
@@ -184,6 +177,31 @@ const TOOL_ICONS: Record<string, typeof IconFile> = {
 /** Tools whose whole call is the verb: there is no argument worth a bar. */
 const LISTING_TOOLS = new Set(['memory_list', 'skill_list', 'ls'])
 
+// A workspace call is not always a read: `Reading...` under a `write` is simply
+// wrong, and the verb is the only progress signal the widget has.
+const RUNNING_KEYS: Record<string, string> = {
+  write: 'tools:toolCall.writing',
+  memory_write: 'tools:toolCall.writing',
+  skill_write: 'tools:toolCall.writing',
+  edit: 'tools:toolCall.editing',
+  find: 'tools:toolCall.searching',
+  grep: 'tools:toolCall.searching',
+  ls: 'tools:toolCall.listing',
+  memory_list: 'tools:toolCall.listing',
+  skill_list: 'tools:toolCall.listing',
+}
+
+// find/grep bars carry a pattern and memory/skill an entry name, so `path` is
+// the wrong prompt for both.
+const PLACEHOLDER_KEYS: Record<string, string> = {
+  find: 'tools:toolCall.patternPlaceholder',
+  grep: 'tools:toolCall.patternPlaceholder',
+  memory_read: 'tools:toolCall.namePlaceholder',
+  memory_write: 'tools:toolCall.namePlaceholder',
+  skill_read: 'tools:toolCall.namePlaceholder',
+  skill_write: 'tools:toolCall.namePlaceholder',
+}
+
 export type AgentToolWidgetProps = {
   bar: Extract<ToolCallBar, { variant: 'workspace' }>
   state: ToolUIPart['state']
@@ -217,7 +235,9 @@ export const AgentToolWidget = memo(
         <ToolBar
           icon={<Icon size={16} />}
           value={value}
-          placeholder={t('tools:toolCall.pathPlaceholder')}
+          placeholder={t(
+            PLACEHOLDER_KEYS[bar.tool] ?? 'tools:toolCall.pathPlaceholder'
+          )}
           typing={running}
           mono
           trailing={
@@ -237,7 +257,9 @@ export const AgentToolWidget = memo(
 
         {running && !errorText && (
           <div className="px-2 text-sm">
-            <Shimmer duration={1}>{t('tools:toolCall.reading')}</Shimmer>
+            <Shimmer duration={1}>
+              {t(RUNNING_KEYS[bar.tool] ?? 'tools:toolCall.reading')}
+            </Shimmer>
           </div>
         )}
 

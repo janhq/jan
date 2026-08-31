@@ -22,7 +22,7 @@
   "reasoning": {
     "label": "Reasoning...",
     "thinking": "Thinking",
-    "usingTool": "{{tool}}...",
+    "working": "Working...",
     "showFullTimeline": "Show full timeline",
     "showCurrentStep": "Show current step only",
     "thoughtForAWhile": "Thought for a few seconds",
