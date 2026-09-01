@@ -8217,17 +8217,41 @@ fn selection_text(buf: &Buffer, sel: Selection, area: Rect) -> String {
     sel.spans(area.width)
         .into_iter()
         .filter(|(row, _, _)| *row < area.height)
-        .map(|(row, c0, c1)| {
+        .filter_map(|(row, c0, c1)| {
             // Wide glyphs park an empty symbol in their second cell, so plain
             // concatenation already reconstructs them.
-            let line: String = (c0..=c1)
-                .filter_map(|col| buf.cell((col, row)))
-                .map(|cell| cell.symbol())
-                .collect();
-            line.trim_end().to_string()
+            let cells = (c0..=c1).filter_map(|col| buf.cell((col, row))).collect();
+            copy_selection_line(cells)
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn copy_selection_line(cells: Vec<&ratatui::buffer::Cell>) -> Option<String> {
+    let is_panel_chrome = |cell: &&ratatui::buffer::Cell| {
+        cell.style().fg == Some(ratatui::style::Color::DarkGray)
+            && matches!(cell.symbol(), "│" | "┌" | "└" | "┐" | "┘" | "─" | "┊" | " ")
+    };
+
+    let Some(start) = cells.iter().position(|cell| !is_panel_chrome(cell)) else {
+        let has_corner_or_rule = cells
+            .iter()
+            .any(|cell| matches!(cell.symbol(), "┌" | "└" | "┐" | "┘" | "─"));
+        return if has_corner_or_rule {
+            None
+        } else {
+            Some(String::new())
+        };
+    };
+    let Some(end) = cells.iter().rposition(|cell| !is_panel_chrome(cell)) else {
+        return Some(String::new());
+    };
+    let line: String = cells[start..=end]
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+
+    Some(line.trim_end().to_string())
 }
 
 /// Put a selection on the system clipboard by both routes available to a TUI:
@@ -25275,6 +25299,27 @@ mod tests {
             moved: true,
         };
         assert_eq!(selection_text(&buf, padded, area), "alpha   one");
+    }
+
+    /// Copying a boxed code block should return the code body, not the frame.
+    #[test]
+    fn selection_text_strips_box_frame_from_copied_code() {
+        let area = Rect::new(0, 0, 14, 3);
+        let mut buf = Buffer::empty(area);
+        buf.set_string(0, 0, "│   ┌────────┐", Style::new().dark_gray());
+        buf.set_string(0, 1, "│   ", Style::new().dark_gray());
+        buf.set_string(4, 1, "    echo", Style::new());
+        buf.set_string(0, 2, "│   └────────┘", Style::new().dark_gray());
+
+        let selection = Selection {
+            anchor: (0, 0),
+            head: (13, 2),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+
+        assert_eq!(selection_text(&buf, selection, area), "    echo");
     }
 
     #[test]
