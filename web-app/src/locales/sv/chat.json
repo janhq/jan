@@ -1,0 +1,28 @@
+{
+  "welcome": "Hej, hur är läget?",
+  "description": "Hur kan jag hjälpa dig i dag?",
+  "temporaryChat": "Tillfällig chatt",
+  "temporaryChatDescription": "Starta en tillfällig konversation som inte sparas i chatthistoriken.",
+  "status": { "empty": "Inga chattar hittades" },
+  "sendMessage": "Skicka meddelande",
+  "newConversation": "Ny konversation",
+  "clearHistory": "Rensa historiken",
+  "embeddings": {
+    "title": "Förbereder dina dokument",
+    "description": "Indexerar de bifogade filerna så att de kan sökas och citeras. Det kan ta en stund för stora dokument."
+  },
+  "actions": { "regenerate": "Generera svar på nytt", "continue": "Fortsätt generera" },
+  "done": "Klar",
+  "webSources": "{{count}} källa/källor",
+  "reasoning": {
+    "label": "Resonerar…",
+    "thinking": "Tänker",
+    "usingTool": "{{tool}}…",
+    "showFullTimeline": "Visa hela tidslinjen",
+    "showCurrentStep": "Visa endast aktuellt steg",
+    "thoughtForAWhile": "Tänkte i några sekunder",
+    "thoughtFor": "Tänkte i {{duration}}",
+    "workedForAWhile": "Arbetade i några sekunder",
+    "workedFor": "Arbetade i {{duration}}"
+  }
+}
