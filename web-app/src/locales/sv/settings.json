@@ -166,6 +166,21 @@
     "resetCodeBlockSuccess": "Kodblocksformatet har återställts",
     "resetCodeBlockSuccessDesc": "Kodblocksformatet har återställts till standard."
   },
+  "general": {
+    "couldNotRelocateToRoot": "Det går inte att flytta datamappen till rotkatalogen. Välj en annan plats.",
+    "couldNotResetRootDirectory": "Det går inte att återställa datamappen när den är en rotkatalog. Ta bort datamappen manuellt.",
+    "appVersion": "Programversion",
+    "autoUpdateCheck": "Automatisk uppdateringskontroll",
+    "autoUpdateCheckDesc": "Sök automatiskt efter uppdateringar vid start och med jämna mellanrum.",
+    "keepAppData": "Behåll programdata",
+    "keepAppDataDesc": "Din chatthistorik och dina konversationer bevaras.",
+    "keepModelsAndConfigs": "Behåll alla modeller och konfigurationer",
+    "keepModelsAndConfigsDesc": "Hämtade modeller, motorinställningar och MCP-konfigurationer bevaras.",
+    "clearWebData": "Rensa cachade gränssnittsdata",
+    "clearWebDataDesc": "Tar bort cachad lokal lagring och UI-inställningar som programfönstret sparat. Gränssnittet återställs till standardläge.",
+    "huggingfaceToken": "Hugging Face-token",
+    "huggingfaceTokenDesc": "Din Hugging Face-API-token för åtkomst till modeller."
+  },
   "httpsProxy": {
     "proxy": "Proxy",
     "proxyUrl": "Proxy-URL",
