@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use tauri::{AppHandle, Manager, Runtime, State};
@@ -69,17 +70,39 @@ pub async fn start_server<R: Runtime>(
     )
     .await
     .map_err(|e| e.to_string())?;
+
+    #[cfg(feature = "desktop")]
+    crate::core::setup::show_tray(&app_handle);
+
     Ok(actual_port)
 }
 
 #[tauri::command]
-pub async fn stop_server(state: State<'_, AppState>) -> Result<(), String> {
+pub async fn stop_server<R: Runtime>(
+    app_handle: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let server_handle = state.server_handle.clone();
 
     proxy::stop_server(server_handle)
         .await
         .map_err(|e| e.to_string())?;
+
+    #[cfg(feature = "desktop")]
+    crate::core::setup::remove_tray(&app_handle);
+    #[cfg(not(feature = "desktop"))]
+    let _ = app_handle;
+
     Ok(())
+}
+
+/// Whether closing the main window while the Local API Server runs should hide
+/// the app to the tray instead of quitting (Windows/Linux only).
+pub static SERVER_RUN_IN_BACKGROUND: AtomicBool = AtomicBool::new(true);
+
+#[tauri::command]
+pub fn set_server_run_in_background(enabled: bool) {
+    SERVER_RUN_IN_BACKGROUND.store(enabled, Ordering::SeqCst);
 }
 
 #[tauri::command]

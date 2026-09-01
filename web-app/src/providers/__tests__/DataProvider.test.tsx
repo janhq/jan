@@ -158,6 +158,7 @@ const hubState = vi.hoisted(() => ({
   getAssistants: vi.fn().mockResolvedValue([]),
   fetchThreads: vi.fn().mockResolvedValue([]),
   getServerStatus: vi.fn().mockResolvedValue(false),
+  setServerRunInBackground: vi.fn().mockResolvedValue(undefined),
   startModel: vi.fn().mockResolvedValue(undefined),
   getActiveModels: vi.fn().mockResolvedValue([]),
   startServer: vi.fn().mockResolvedValue(1337),
@@ -179,7 +180,10 @@ vi.mock('@/hooks/useServiceHub', () => {
         return Promise.resolve(hubState.unsubscribe)
       },
     }),
-    app: () => ({ getServerStatus: hubState.getServerStatus }),
+    app: () => ({
+      getServerStatus: hubState.getServerStatus,
+      setServerRunInBackground: hubState.setServerRunInBackground,
+    }),
     models: () => ({
       startModel: hubState.startModel,
       getActiveModels: hubState.getActiveModels,

@@ -248,6 +248,8 @@
     "startupConfiguration": "Startup Configuration",
     "runOnStartup": "Auto start",
     "runOnStartupDesc": "Automatically start the Local API Server when the application launches.",
+    "runInBackground": "Run in background",
+    "runInBackgroundDesc": "Keep the server running in the system tray when the window is closed. When off, closing the window quits Jan and stops the server.",
     "serverConfiguration": "Server Configuration",
     "serverHost": "Server Host",
     "serverHostDesc": "Network address for the server.",
