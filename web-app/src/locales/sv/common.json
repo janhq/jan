@@ -148,5 +148,56 @@
   "askSelectedCount": "{{count}} valda",
   "askSomethingElse": "Något annat",
   "askSomethingElsePlaceholder": "Skriv ditt eget svar",
-  "submit": "Skicka"
+  "submit": "Skicka",
+  "toolApproval": {
+    "title": "Begäran om verktygsbehörighet",
+    "description": "Assistenten vill använda <strong>{{toolName}}</strong>",
+    "securityNotice": "Tillåt endast verktyg som du litar på. Verktyg kan komma åt ditt system och dina data.",
+    "deny": "Neka",
+    "allowOnce": "Tillåt en gång",
+    "alwaysAllow": "Tillåt alltid"
+  },
+  "errorDialog": {
+    "titleFallback": "Något gick fel",
+    "details": "Detaljer"
+  },
+  "missingDependenciesDialog": {
+    "title": "Systembibliotek saknas",
+    "description": "{{backend}} installerades men vissa nödvändiga systembibliotek kunde inte hittas. Den kan falla tillbaka till CPU eller inte fungera korrekt.",
+    "installLabel": "Installera följande för att lösa problemet:",
+    "download": "Hämta",
+    "additionalLibraries": "Ytterligare saknade bibliotek:",
+    "missingLibraries": "Saknade bibliotek:",
+    "showRawLibraries": "Visa {{count}} saknade biblioteksnamn"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp är fortfarande upptagen",
+    "description": "En eller flera modeller hann inte läsas ur. Tvångsavslutning stänger llama.cpp och kan avbryta aktiva svar.",
+    "forceQuit": "Tvinga avslutning",
+    "forcing": "Tvingar avslutning…",
+    "shuttingDown": "Stänger av…"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Byt plats för datamappen",
+      "description": "Är du säker på att du vill byta plats för datamappen? Alla data flyttas till den nya platsen och programmet startas om.",
+      "currentLocation": "Nuvarande plats:",
+      "newLocation": "Ny plats:",
+      "cancel": "Avbryt",
+      "changeLocation": "Byt plats"
+    },
+    "deleteAllThreads": {
+      "title": "Ta bort alla trådar",
+      "description": "Alla trådar tas bort. Åtgärden kan inte ångras."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "Ta bort alla konversationer",
+      "description": "{{count}} konversationer i ”{{projectName}}” tas bort. Åtgärden kan inte ångras."
+    },
+    "deleteThread": {
+      "description": "Är du säker på att du vill ta bort den här tråden? Åtgärden kan inte ångras."
+    },
+    "editMessage": { "title": "Redigera meddelande" },
+    "messageMetadata": { "title": "Meddelandemetadata" }
+  }
 }
