@@ -199,5 +199,22 @@
     },
     "editMessage": { "title": "Redigera meddelande" },
     "messageMetadata": { "title": "Meddelandemetadata" }
+  },
+  "cowork": "Cowork",
+  "coworkEmpty": {
+    "title": "Vad arbetar vi med?",
+    "subtitleSandbox": "Ge Jan en uppgift. Den läser och skriver filer, kör kommandon och arbetar igenom stegen på egen hand.",
+    "subtitleFolder": "Ge Jan en uppgift. Den läser {{folder}} utan att ändra något där och arbetar på egen hand utifrån det.",
+    "try": "Prova",
+    "sandbox": {
+      "first": "Skriv ett Python-skript som byter namn på filer efter datumet de togs",
+      "second": "Bygg en ensidig instrumentpanel från en CSV-fil som jag klistrar in",
+      "third": "Skriv ett utkast till en README för ett projekt som jag beskriver"
+    },
+    "folder": {
+      "first": "Förklara hur {{folder}} är uppbyggd",
+      "second": "Hitta alla TODO i {{folder}} och gruppera dem efter område",
+      "third": "Skriv tester för den del av {{folder}} som jag pekar ut"
+    }
   }
 }
