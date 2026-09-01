@@ -78,7 +78,7 @@ import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
-import { AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
+import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
@@ -102,13 +102,13 @@ function serverForTool(toolName: string): string | undefined {
 }
 
 // Internal tools never prompt: RAG and the native web tools are Jan's own, and
-// the built-in agent tools are gated in Rust (execute_tool refuses anything
-// needing approval), so only workspace-confined calls ever reach here.
+// the built-in shell is gated in Rust (execute_tool refuses anything needing
+// approval), so only workspace-confined calls ever reach here.
 function isAutoAllowedTool(toolName: string): boolean {
   return (
     useAppState.getState().ragToolNames.has(toolName) ||
     WEB_TOOL_NAMES.has(toolName) ||
-    AGENT_TOOL_NAMES.has(toolName)
+    CHAT_AGENT_TOOL_NAMES.has(toolName)
   )
 }
 
@@ -532,7 +532,9 @@ function ThreadDetail() {
 
             if (WEB_TOOL_NAMES.has(toolName)) {
               result = await executeWebTool(toolName, toolCall.input)
-            } else if (AGENT_TOOL_NAMES.has(toolName)) {
+            } else if (CHAT_AGENT_TOOL_NAMES.has(toolName)) {
+              // Chat's shell runs with the sandbox network closed: the default
+              // `allowNetwork = false` is the contract here, not an accident.
               const agentResult = await executeAgentTool(
                 toolName,
                 toolCall.input,

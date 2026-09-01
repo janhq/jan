@@ -10,6 +10,15 @@ const api = {
   memoryRead: vi.fn(),
   memoryWrite: vi.fn(),
   memoryDelete: vi.fn(),
+  // agentWorkspace pulls in agentTools (for invalidateMemory), whose own
+  // imports from this module must exist on the mock even though these tests
+  // never call them.
+  memoryCatalog: vi.fn(),
+  toolSchemas: vi.fn(),
+  executeTool: vi.fn(),
+  sandboxStatus: vi.fn(),
+  threadWorkspaceDelete: vi.fn(),
+  threadWorkspaceSweep: vi.fn(),
 }
 const getJanDataFolder = vi.fn()
 const revealItemInDir = vi.fn()
@@ -66,6 +75,41 @@ describe('agentWorkspace', () => {
     expect(api.skillDelete).toHaveBeenCalledWith('/data', 'deploy')
     expect(api.memoryWrite).toHaveBeenCalledWith('/data', 'prefs', 'y')
     expect(api.memoryDelete).toHaveBeenCalledWith('/data', 'prefs')
+  })
+
+  // ---- the chat Remember action --------------------------------------------
+
+  it('slugs a thread title into a filesystem-safe note name', async () => {
+    const { slugifyMemoryName } = await import('../agentWorkspace')
+    expect(slugifyMemoryName('How to set up CUDA 12?')).toBe(
+      'how-to-set-up-cuda-12'
+    )
+    expect(slugifyMemoryName('  ---  ')).toBe('memory')
+    expect(slugifyMemoryName('')).toBe('memory')
+    expect(slugifyMemoryName('a'.repeat(100))).toHaveLength(60)
+  })
+
+  it('remembers under the thread title, deduplicating taken names', async () => {
+    api.memoryList.mockResolvedValue(['chat-notes', 'chat-notes-2'])
+    const ws = await import('../agentWorkspace')
+    await expect(ws.rememberNote('Chat Notes', 'the fact')).resolves.toBe(
+      'chat-notes-3'
+    )
+    // Suffixing, never overwriting: memory_write replaces by name, and the
+    // existing notes are not this action's to replace.
+    expect(api.memoryWrite).toHaveBeenCalledWith(
+      '/data',
+      'chat-notes-3',
+      'the fact'
+    )
+  })
+
+  it('uses the plain slug when the name is free', async () => {
+    api.memoryList.mockResolvedValue([])
+    const ws = await import('../agentWorkspace')
+    await expect(ws.rememberNote('Fresh Topic', 'body')).resolves.toBe(
+      'fresh-topic'
+    )
   })
 
   /// Unlike a tool call, a failed edit has a user waiting on it, so these throw

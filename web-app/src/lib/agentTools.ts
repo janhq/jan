@@ -4,12 +4,14 @@ import {
   sandboxStatus,
   threadWorkspaceDelete,
   threadWorkspaceSweep,
+  memoryCatalog,
+  memoryRead,
+  type MemoryCatalogEntry,
   type SandboxStatus,
   type ToolSchema,
   type WorkspaceScope,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
-import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
 
 /**
  * The built-in agent tools the desktop can dispatch.
@@ -40,6 +42,13 @@ export const AGENT_TOOL_NAMES = new Set([
   // it built. Read capability: it writes nothing back.
   'screenshot',
 ])
+
+/**
+ * The subset the main chat surface advertises and dispatches: the sandboxed
+ * shell alone, with no network. The full toolset above is Cowork's — chat is a
+ * conversation that occasionally runs a command, not an agent surface.
+ */
+export const CHAT_AGENT_TOOL_NAMES = new Set(['bash'])
 
 /**
  * Tools that only run under an enforcing OS sandbox. They stay in
@@ -107,6 +116,94 @@ export async function getAgentToolSchemas(): Promise<ToolSchema[]> {
   return schemaCache
 }
 
+export type { MemoryCatalogEntry }
+
+/**
+ * Injection caps for the shared memory store. The *store* is unbounded; what
+ * every conversation pays for is not: Cowork's catalog lists at most the 50
+ * most recently modified notes, and chat's digest carries at most 2 KiB of
+ * whole notes. Beyond that, the settings page is the pruning tool.
+ */
+export const MEMORY_CATALOG_MAX_NOTES = 50
+export const MEMORY_DIGEST_BUDGET = 2048
+
+type MemorySnapshot = { catalog: MemoryCatalogEntry[]; digest: string }
+
+let memoryCache: Promise<MemorySnapshot> | null = null
+let digestNow = ''
+
+/**
+ * Drop the cached snapshot so the next run/send re-reads the store. Called from
+ * every in-app write path (the `memory_write` tool, the settings editors, the
+ * chat Remember action); an edit made outside the app is picked up on restart.
+ */
+export function invalidateMemory(): void {
+  memoryCache = null
+}
+
+async function loadMemorySnapshot(): Promise<MemorySnapshot> {
+  const dataFolder = await getServiceHub().app().getJanDataFolder()
+  if (!dataFolder) return { catalog: [], digest: '' }
+  const newestFirst = (await memoryCatalog(dataFolder)).sort(
+    (a, b) => b.mtimeMs - a.mtimeMs
+  )
+  const catalog = newestFirst.slice(0, MEMORY_CATALOG_MAX_NOTES)
+
+  // The digest is self-contained: whole notes only, newest first, under a
+  // strict budget. A note that does not fit is simply absent -- chat has no
+  // memory_read to dereference a truncated one with.
+  let remaining = MEMORY_DIGEST_BUDGET
+  const parts: string[] = []
+  for (const entry of newestFirst) {
+    if (remaining <= 0) break
+    const body = (await memoryRead(dataFolder, entry.name).catch(() => ''))
+      .trim()
+    if (!body) continue
+    const block = `## ${entry.name}\n${body}`
+    // The joiner counts too, or the assembled digest could exceed the budget.
+    const cost = block.length + (parts.length > 0 ? 2 : 0)
+    if (cost > remaining) continue
+    parts.push(block)
+    remaining -= cost
+  }
+  return { catalog, digest: parts.join('\n\n') }
+}
+
+function getMemorySnapshot(): Promise<MemorySnapshot> {
+  memoryCache ??= loadMemorySnapshot()
+    .catch((e) => {
+      console.warn('[agentTools] Failed to load memory:', messageOf(e))
+      return { catalog: [], digest: '' }
+    })
+    .then((snapshot) => {
+      digestNow = snapshot.digest
+      return snapshot
+    })
+  return memoryCache
+}
+
+/**
+ * The memory catalog for prompt injection: the newest notes, capped, then
+ * name-sorted so the block is stable when nothing changed.
+ */
+export async function getMemoryCatalog(): Promise<MemoryCatalogEntry[]> {
+  const { catalog } = await getMemorySnapshot()
+  return [...catalog].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** Ensure the digest is loaded; chat awaits this before building its prompt. */
+export async function refreshMemoryDigest(): Promise<string> {
+  return (await getMemorySnapshot()).digest
+}
+
+/**
+ * Synchronous view of the digest, for the sync prompt builder. `''` until
+ * `refreshMemoryDigest` resolves, which `sendMessages` awaits first.
+ */
+export function memoryDigestNow(): string {
+  return digestNow
+}
+
 type AgentToolResult = {
   content?: unknown
   error?: string
@@ -128,10 +225,8 @@ const messageOf = (e: unknown): string =>
  * the desktop has no project picker yet, so the plugin uses the permanent store
  * in the Jan data folder.
  *
- * `bash` additionally runs under an OS sandbox, whose network access follows the
- * `bashNetworkEnabled` setting. It is read here, per call, rather than captured
- * once, so toggling it takes effect on the next command instead of the next
- * restart.
+ * `bash` additionally runs under an OS sandbox whose network access is closed
+ * unless the caller opens it. Chat never does; Cowork passes its own setting.
  */
 export async function executeAgentTool(
   toolName: string,
@@ -149,7 +244,9 @@ export async function executeAgentTool(
    * where the thread sweep's keep-list can never mention them — and the sweep
    * would delete the only copy of the agent's work.
    */
-  scope: WorkspaceScope = 'thread'
+  scope: WorkspaceScope = 'thread',
+  /** Opens the sandboxed shell's network namespace. Closed by default. */
+  allowNetwork = false
 ): Promise<AgentToolResult> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
@@ -165,11 +262,14 @@ export async function executeAgentTool(
       args,
       undefined,
       undefined,
-      useAgentToolsConfig.getState().bashNetworkEnabled,
+      allowNetwork,
       readOnlyProject ?? undefined,
       scope
     )
     if (result.isError) return { error: result.content }
+    // The store changed, so the recall injections must not keep serving the
+    // snapshot taken before this note existed.
+    if (toolName === 'memory_write') invalidateMemory()
     return { content: result.content, diff: result.diff ?? undefined }
   } catch (e) {
     return { error: messageOf(e) }
