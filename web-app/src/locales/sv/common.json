@@ -421,5 +421,67 @@
       "cancel": "Avbryt",
       "remove": "Ta bort"
     }
+  },
+  "attachmentsIngestion": {
+    "title": "Välj hur bilagor ska läsas in",
+    "description": "Välj om filerna ska inkluderas direkt i chatten eller indexeras som vektorinbäddningar.",
+    "inline": "Infoga i chatten",
+    "embeddings": "Använd vektorinbäddningar"
+  },
+  "errors": {
+    "fileTooLarge": "Filen är för stor",
+    "fileTooLargeDescription": "{{fileName}} överskrider gränsen på {{maxFileSizeMB}} MB"
+  },
+  "files": {
+    "chunksCount": "{{count}} segment"
+  },
+  "duration": {
+    "seconds": "{{count}} s",
+    "minutes": "{{count}} min",
+    "hours": "{{count}} h"
+  },
+  "workspace": {
+    "readsFrom": "Läser från",
+    "readOnly": "skrivskyddad",
+    "footnote": "Agenten läser bara den här mappen. Inget i den ändras någonsin.",
+    "footnoteEmpty": "Anslut en mapp så att agenten kan läsa projektet. Den ändrar fortfarande ingenting i mappen.",
+    "attach": "Anslut en mapp",
+    "change": "Byt mapp",
+    "detach": "Koppla från mapp",
+    "open": "Öppna",
+    "reveal": "Visa",
+    "missing": "Den här mappen finns inte längre. Anslut en annan mapp.",
+    "a11yWithFolder": "Projektmappen {{folder}} är ansluten skrivskyddad. Byt eller koppla från den.",
+    "a11yNoFolder": "Ingen projektmapp är ansluten. Anslut en."
+  },
+  "sandbox": {
+    "noTerminal": "Ingen terminal",
+    "a11y": "Körning av kommandon är avstängd. Detaljer.",
+    "title": "Körning av kommandon är avstängd",
+    "body": "Jan låter agenten köra skalkommandon bara när systemet kan begränsa dem. Ingen sandlåda är tillgänglig här, så agenten kan läsa, skriva och redigera filer i sin sandlåda – men inte köra några kommandon.",
+    "fixLinux": "Linux använder bubblewrap. Installera det och starta sedan om Jan.",
+    "fixMac": "macOS använder den inbyggda sandlådan i /usr/bin/sandbox-exec. Starta om Jan när den är tillgänglig.",
+    "fixWindows": "Windows använder AppContainer. Starta om Jan för att försöka igen.",
+    "recheck": "Kontrollera igen"
+  },
+  "planMode": {
+    "label": "Plan",
+    "tooltipOff": "Planera först – agenten läser och föreslår utan att skriva.",
+    "tooltipOn": "Planerar. Stäng av detta för att låta agenten skriva filer.",
+    "onAnnounce": "Planeringsläge på",
+    "placeholder": "Be om en plan. Agenten ändrar inga filer."
+  },
+  "budget": {
+    "steps": "steg {{step}}/{{max}}",
+    "stoppedSteps": "Stannade efter {{max}} steg. Agenten har inte slutfört uppgiften.",
+    "keepGoing": "Fortsätt",
+    "stoppedTokens": "Stannade – sessionen nådde sin tokengräns.",
+    "compact": "Komprimera",
+    "newSession": "Ny session"
+  },
+  "run": {
+    "stopped": "Stoppad.",
+    "failed": "Körningen avbröts i förtid.",
+    "tryAgain": "Försök igen"
   }
 }
