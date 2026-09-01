@@ -1,4 +1,37 @@
 {
+  "autoDownload": "Hämta nya uppdateringar automatiskt",
+  "checkForUpdates": "Sök efter uppdateringar",
+  "checkForUpdatesDesc": "Kontrollera om en nyare version av Jan finns tillgänglig.",
+  "checkingForUpdates": "Söker efter uppdateringar…",
+  "noUpdateAvailable": "Du använder den senaste versionen",
+  "devVersion": "Utvecklingsversion hittades",
+  "updateError": "Det gick inte att söka efter uppdateringar",
+  "changeLocation": "Byt plats",
+  "copied": "Kopierat",
+  "copyPath": "Kopiera sökväg",
+  "openLogs": "Öppna loggar",
+  "revealLogs": "Visa loggar",
+  "showInFinder": "Visa i Finder",
+  "showInFileExplorer": "Visa i Utforskaren",
+  "openContainingFolder": "Öppna innehållande mapp",
+  "failedToRelocateDataFolder": "Det gick inte att flytta datamappen",
+  "failedToRelocateDataFolderDesc": "Det gick inte att flytta datamappen. Försök igen.",
+  "factoryResetTitle": "Återställ till fabriksinställningar",
+  "factoryResetDesc": "Detta återställer alla programinställningar till standardvärdena. Åtgärden kan inte ångras. Vi rekommenderar den bara om programmet är skadat.",
+  "cancel": "Avbryt",
+  "reset": "Återställ",
+  "dataFolder": {
+    "appData": "Programdata",
+    "appDataDesc": "Plats för meddelanden, hämtade modeller och andra data.",
+    "appLogs": "Programloggar",
+    "appLogsDesc": "Visa detaljerade programloggar."
+  },
+  "others": {
+    "spellCheck": "Stavningskontroll",
+    "spellCheckDesc": "Aktivera stavningskontroll för dina trådar.",
+    "resetFactory": "Återställ till fabriksinställningar",
+    "resetFactoryDesc": "Återställ programmet till ursprungligt tillstånd och radera alla modeller och all chatthistorik. Åtgärden kan inte ångras och rekommenderas bara om programmet är skadat."
+  },
   "httpsProxy": {
     "proxy": "Proxy",
     "proxyUrl": "Proxy-URL",
