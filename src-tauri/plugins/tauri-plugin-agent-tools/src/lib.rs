@@ -47,6 +47,7 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::memory_list,
             commands::memory_read,
             commands::memory_write,
+            commands::memory_catalog,
             commands::memory_delete,
             commands::tool_schemas,
             commands::sandbox_status,

@@ -8,6 +8,7 @@ import {
   abortRun,
   answerAsk,
   isAbortLike,
+  isRetryableSendError,
   isRunning,
   __testing,
   type PendingToolCall,
@@ -314,6 +315,136 @@ describe('isAbortLike', () => {
     const c = new AbortController()
     c.abort()
     expect(isAbortLike(new Error('error sending request'), c.signal)).toBe(true)
+  })
+})
+
+// The failure a long turn invites: while tools run locally no bytes flow, the
+// peer reclaims the idle keep-alive connection, and the next step's request is
+// written into a socket that is already gone. Mirrors the Rust agent's
+// send_with_one_retry — retrying is safe precisely because nothing was
+// received.
+describe('dropped-connection retry', () => {
+  it('retries a dropped send once and the step succeeds', async () => {
+    let first = true
+    const d = deps([textStep('done')])
+    const send = d.sendStep.getMockImplementation()!
+    d.sendStep.mockImplementation(async (...args) => {
+      if (first) {
+        first = false
+        throw new Error('connection reset by peer (os error 104)')
+      }
+      return send(...(args as []))
+    })
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.stoppedBy).toBe('done')
+    expect(d.sendStep).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries exactly once, then reports the failure', async () => {
+    const d = {
+      ...deps([[]]),
+      sendStep: vi.fn(async () => {
+        throw new Error('connection reset by peer')
+      }),
+    }
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.stoppedBy).toBe('error')
+    expect(out.errorText).toContain('connection reset')
+    expect(d.sendStep).toHaveBeenCalledTimes(2)
+  })
+
+  // An error chunk before any delta is the same dropped connection, surfaced
+  // through the stream instead of a rejection — streamText reports transport
+  // failures this way.
+  it('retries an error chunk that arrived before anything streamed', async () => {
+    const d = deps([
+      [
+        {
+          type: 'error',
+          errorText: 'connection closed before message completed',
+        } as UIMessageChunk,
+      ],
+      textStep('done'),
+    ])
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.stoppedBy).toBe('done')
+    expect(d.sendStep).toHaveBeenCalledTimes(2)
+  })
+
+  // Tokens already reached the UI; replaying the request would duplicate them.
+  it('never retries once something has streamed', async () => {
+    const d = deps([
+      [
+        ...textStep('partial'),
+        {
+          type: 'error',
+          errorText: 'connection reset by peer',
+        } as UIMessageChunk,
+      ],
+    ])
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.stoppedBy).toBe('error')
+    expect(d.sendStep).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not retry a timeout: retrying one doubles the wait', async () => {
+    const d = {
+      ...deps([[]]),
+      sendStep: vi.fn(async () => {
+        throw new Error('error sending request: operation timed out')
+      }),
+    }
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.stoppedBy).toBe('error')
+    expect(d.sendStep).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('isRetryableSendError', () => {
+  it('recognises the stale keep-alive family and failed connects', () => {
+    for (const msg of [
+      'connection closed before message completed',
+      'Connection reset by peer (os error 104)',
+      'broken pipe',
+      'connection aborted',
+      'unexpected EOF during handshake',
+      'connection refused',
+      'error sending request for url (http://x/v1/chat/completions)',
+      'TypeError: Failed to fetch',
+    ]) {
+      expect(isRetryableSendError(msg), msg).toBe(true)
+    }
+  })
+
+  it('refuses timeouts, upstream rejections and plain errors', () => {
+    for (const msg of [
+      'error sending request: operation timed out',
+      'Request timeout',
+      '400 Bad Request: model not found',
+      'boom',
+    ]) {
+      expect(isRetryableSendError(msg), msg).toBe(false)
+    }
   })
 })
 

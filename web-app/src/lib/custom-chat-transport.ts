@@ -27,8 +27,13 @@ import {
   WEB_FETCH_DESCRIPTION,
   WEB_FETCH_INPUT_SCHEMA,
 } from '@/lib/webSearchTool'
-import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
-import { getAgentToolSchemas, sandboxEnforces } from '@/lib/agentTools'
+import {
+  CHAT_AGENT_TOOL_NAMES,
+  getAgentToolSchemas,
+  memoryDigestNow,
+  refreshMemoryDigest,
+  sandboxEnforces,
+} from '@/lib/agentTools'
 import { useAppState } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
@@ -881,6 +886,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const raw =
       [
         this.systemMessage,
+        this.buildMemorySystemInstruction(),
         this.buildFilesSystemInstruction(messages),
         this.buildWebSearchSystemInstruction(),
         this.buildAgentToolsSystemInstruction(),
@@ -904,6 +910,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   async refreshTools(abortSignal?: AbortSignal) {
+    // Resolve the memory digest before the prompt is built: the builder is
+    // sync, so it reads the snapshot this await guarantees. Error-safe and
+    // cached inside agentTools, so this is one IPC round-trip per store change.
+    await refreshMemoryDigest()
     if (!this.serviceHub) {
       this.tools = {}
       return
@@ -1063,20 +1073,20 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         } as Tool
       }
 
-      // Built-in agent tools (filesystem reads plus skills/memory), provided by
-      // the agent-tools plugin. Schemas come from Rust so they are never
-      // re-typed here.
-      if (useAgentToolsConfig.getState().agentToolsEnabled) {
-        try {
-          for (const schema of await getAgentToolSchemas()) {
-            toolsRecord[schema.function.name] = {
-              description: schema.function.description,
-              inputSchema: jsonSchema(schema.function.parameters),
-            } as Tool
-          }
-        } catch (error) {
-          console.warn('Failed to load agent tools:', error)
+      // The main chat offers exactly one built-in agent tool: the sandboxed
+      // shell, with no network. The full toolset lives in Cowork. Schemas come
+      // from Rust so they are never re-typed here, and `getAgentToolSchemas`
+      // already withholds bash when no sandbox backend can confine it.
+      try {
+        for (const schema of await getAgentToolSchemas()) {
+          if (!CHAT_AGENT_TOOL_NAMES.has(schema.function.name)) continue
+          toolsRecord[schema.function.name] = {
+            description: schema.function.description,
+            inputSchema: jsonSchema(schema.function.parameters),
+          } as Tool
         }
+      } catch (error) {
+        console.warn('Failed to load agent tools:', error)
       }
     }
 
@@ -1749,38 +1759,42 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * Static instruction describing the isolated agent workspace the built-in
-   * tools operate in. Only added when the toolset is enabled so it doesn't
-   * affect prompt caching for users who keep it off.
+   * Static instruction for the one built-in tool chat offers: the sandboxed
+   * shell. Empty when no sandbox backend enforces, because bash is then
+   * withheld too — stating limits for a tool that is not offered would only
+   * confuse the model, and an empty string keeps the prompt prefix stable.
    */
+  /**
+   * A self-contained digest of the newest memory notes. Chat advertises no
+   * memory tools, so a catalog it cannot dereference would be useless; whole
+   * notes under a strict budget are what fit a conversation surface. Empty when
+   * no note fits, keeping the prompt prefix unchanged for users without memory.
+   */
+  buildMemorySystemInstruction(): string {
+    const digest = memoryDigestNow()
+    if (!digest) return ''
+    return [
+      '# Background Memory',
+      'Notes the user previously chose to keep, from earlier conversations.',
+      'They may be stale; prefer what this conversation itself establishes.',
+      '',
+      digest,
+    ].join('\n')
+  }
+
   buildAgentToolsSystemInstruction(): string {
-    if (!useAgentToolsConfig.getState().agentToolsEnabled) return ''
-    const parts = [
-      '# Workspace',
-      'read, ls, find, grep, write and edit operate on an isolated agent',
-      "workspace, not the user's whole filesystem. Paths are relative to that",
-      'workspace root and cannot escape it. The workspace is scratch space for',
-      'this conversation only and is deleted with it, so do not keep anything',
-      'there that should last. Use memory_write to persist facts worth remembering',
-      'across conversations, and memory_list/memory_read to recall them. Skills',
-      'are reusable instructions: list and read them before a task they cover,',
-      'and record a repeatable procedure with skill_write.',
-    ]
+    if (!sandboxEnforces()) return ''
     // Stating the limits up front is cheaper than letting the model discover
-    // them by having a command refused. Only when bash is actually offered.
-    if (sandboxEnforces()) {
-      parts.push(
-        'bash runs commands in that workspace under an OS sandbox: it starts',
-        'there, can only write there, and cannot read files in the',
-        "user's home directory."
-      )
-      parts.push(
-        useAgentToolsConfig.getState().bashNetworkEnabled
-          ? 'It has network access.'
-          : 'It has no network access, so commands that download or upload will fail.'
-      )
-    }
-    return parts.join(' ')
+    // them by having a command refused.
+    return [
+      '# Shell',
+      'bash runs commands in an isolated scratch workspace under an OS',
+      'sandbox: it starts there, can only write there, and cannot read files',
+      "in the user's home directory. The workspace belongs to this",
+      'conversation alone and is deleted with it, so do not keep anything',
+      'there that should last. It has no network access, so commands that',
+      'download or upload will fail.',
+    ].join(' ')
   }
 
   mapUserInlineAttachments(messages: UIMessage[]): UIMessage[] {

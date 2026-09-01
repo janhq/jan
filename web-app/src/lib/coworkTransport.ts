@@ -1,7 +1,11 @@
 import type { Tool, UIMessage } from 'ai'
 import { CustomChatTransport } from '@/lib/custom-chat-transport'
 import { COWORK_SLOT_ID } from '@/constants/models'
-import { sandboxEnforces } from '@/lib/agentTools'
+import {
+  getMemoryCatalog,
+  sandboxEnforces,
+  type MemoryCatalogEntry,
+} from '@/lib/agentTools'
 import {
   buildCoworkTools,
   coworkToolSignature,
@@ -36,6 +40,12 @@ export class CoworkChatTransport extends CustomChatTransport {
    * pay for a rebuild at every run boundary. */
   private builtTools: Record<string, Tool> | null = null
   private builtSig = ''
+  /**
+   * The memory catalog advertised this run. Snapshotted with the tool freeze,
+   * for the same reason: a mid-run change to the prompt prefix discards the KV
+   * cache on every step. A note written mid-run appears at the next run.
+   */
+  private memoryCatalog: MemoryCatalogEntry[] = []
 
   constructor(sessionId: string, config: CoworkRunConfig) {
     super(undefined, sessionId)
@@ -82,6 +92,7 @@ export class CoworkChatTransport extends CustomChatTransport {
       bashAvailable: sandboxEnforces(),
       subagentNames: this.config.allowSubagents ? this.config.subagentNames : [],
       webSearch: this.config.webSearch,
+      memoryCatalog: this.memoryCatalog,
     })
     const files = this.buildFilesSystemInstruction(messages)
     return files.trim().length > 0 ? `${base}\n\n${files}` : base
@@ -104,6 +115,9 @@ export class CoworkChatTransport extends CustomChatTransport {
       this.tools = this.frozenTools
       return
     }
+    // Run boundary: re-snapshot the catalog even when the tool set is reused,
+    // since memory moves independently of the tool config.
+    this.memoryCatalog = await getMemoryCatalog()
     const sig = coworkToolSignature(this.config, sandboxEnforces())
     // Between runs, skip the rebuild when nothing that shapes the set changed.
     if (this.builtTools && this.builtSig === sig) {

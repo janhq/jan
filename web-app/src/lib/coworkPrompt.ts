@@ -52,6 +52,30 @@ export type CoworkPromptOptions = {
   subagentNames: string[]
   /** Whether `web_search`/`web_fetch` are advertised this run. */
   webSearch: boolean
+  /**
+   * Progressive-disclosure recall: one line per note, dereferenced on demand
+   * with `memory_read`. Snapshotted at the run boundary alongside the frozen
+   * tool set, so the prompt prefix is stable for the run.
+   */
+  memoryCatalog: { name: string; summary: string }[]
+}
+
+/** Mirrors the Rust CLI's `load_memory_catalog` block, one wording for both. */
+function memoryBlock(catalog: { name: string; summary: string }[]): string {
+  const list = catalog
+    .map(({ name, summary }) =>
+      summary ? `- \`${name}\` - ${summary}` : `- \`${name}\` - no summary`
+    )
+    .join('\n')
+  return [
+    '# Available Memories',
+    '',
+    'Durable facts recorded in earlier sessions. Read a note in full with',
+    '`memory_read` when it is relevant to the current task, and record new',
+    'durable facts (not session state) with `memory_write`.',
+    '',
+    list,
+  ].join('\n')
 }
 
 /** Marker text matches chat's, so the same renderer turns it into source chips. */
@@ -99,6 +123,7 @@ function workspaceBlock(opts: CoworkPromptOptions): string {
 
 export function buildCoworkSystemPrompt(opts: CoworkPromptOptions): string {
   const blocks = [IDENTITY, GUIDELINES, workspaceBlock(opts)]
+  if (opts.memoryCatalog.length > 0) blocks.push(memoryBlock(opts.memoryCatalog))
   if (opts.webSearch) blocks.push(WEB_BLOCK)
   if (opts.subagentNames.length > 0 && !opts.planMode) {
     blocks.push(
@@ -127,11 +152,13 @@ export function buildCoworkSystemPrompt(opts: CoworkPromptOptions): string {
  */
 export function buildSubagentSystemPrompt(
   definitionPrompt: string,
-  opts: Omit<CoworkPromptOptions, 'planMode' | 'subagentNames'>
+  // No memory catalog: a child runs one stated errand, so recall is the
+  // dispatching agent's job -- it reads the note and states what matters.
+  opts: Omit<CoworkPromptOptions, 'planMode' | 'subagentNames' | 'memoryCatalog'>
 ): string {
   return [
     definitionPrompt.trim(),
-    workspaceBlock({ ...opts, planMode: false, subagentNames: [] }),
+    workspaceBlock({ ...opts, planMode: false, subagentNames: [], memoryCatalog: [] }),
     ...(opts.webSearch ? [WEB_BLOCK] : []),
     [
       '# Scope',
