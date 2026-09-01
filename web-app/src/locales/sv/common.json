@@ -216,5 +216,23 @@
       "second": "Hitta alla TODO i {{folder}} och gruppera dem efter område",
       "third": "Skriv tester för den del av {{folder}} som jag pekar ut"
     }
-  }
+  },
+  "skillsInContext": "Färdigheter som är tillgängliga för agenten i den här körningen",
+  "skillsTitle": "Hantera färdigheter",
+  "skillsSelectFolder": "Välj först en projektmapp på kodskärmen för att hantera dess färdigheter.",
+  "skillsEmpty": "Inga färdigheter ännu",
+  "skillsPickOrNew": "Välj en färdighet att redigera eller skapa en ny.",
+  "skillNew": "Ny färdighet",
+  "skillDelete": "Ta bort färdighet",
+  "skillSave": "Spara",
+  "skillSaved": "Färdigheten har sparats",
+  "skillNameRequired": "Färdighetsnamn krävs",
+  "skillNamePlaceholder": "färdighetsnamn",
+  "skillContentPlaceholder": "Beskriv den återanvändbara proceduren i Markdown…",
+  "skillHubImport": "Importera från hubben",
+  "skillHubTitle": "Anthropics färdighetshubb",
+  "skillHubEmpty": "Inga färdigheter hittades i hubben",
+  "skillImport": "Importera",
+  "skillReimport": "Importera på nytt",
+  "skillImported": "Importerade {{name}}"
 }
