@@ -152,7 +152,18 @@
     "freeOf": "free of",
     "driverVersion": "Driver Version",
     "computeCapability": "Compute Capability",
-    "systemMonitor": "System Monitor"
+    "systemMonitor": "System Monitor",
+    "backendApi": "Backend API",
+    "apiVersion": "API Version",
+    "refresh": "Refresh",
+    "detectingDevices": "Detecting GPUs...",
+    "deviceListError": "Couldn't read GPU devices",
+    "noDevicesDesc": "No GPUs are visible to the llama.cpp engine. Models will run on the CPU.",
+    "gpuDisabled": "Disabled",
+    "backendApiDesc": "How llama.cpp talks to this GPU",
+    "backendSelectDesc": "Use this API for this GPU",
+    "unifiedMemory": "Unified Memory",
+    "unifiedMemoryDesc": "The GPU shares one memory pool with the CPU — models draw from the same memory as the rest of the system."
   },
   "httpsProxy": {
     "proxy": "Proxy",
