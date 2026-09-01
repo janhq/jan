@@ -483,5 +483,123 @@
     "stopped": "Stoppad.",
     "failed": "Körningen avbröts i förtid.",
     "tryAgain": "Försök igen"
+  },
+  "projects": {
+    "title": "Projekt",
+    "new": "Nya projekt",
+    "addProject": "Lägg till projekt",
+    "addToProject": "Lägg till i projekt",
+    "removeFromProject": "Ta bort från projekt",
+    "createNewProject": "Skapa nytt projekt",
+    "editProject": "Redigera projekt",
+    "deleteProject": "Ta bort projekt",
+    "projectName": "Projektnamn",
+    "enterProjectName": "Ange projektnamn…",
+    "noProjectsAvailable": "Inga projekt tillgängliga",
+    "noProjectsYet": "Inga projekt ännu",
+    "noProjectsYetDesc": "Starta ett nytt projekt genom att klicka på knappen Lägg till projekt.",
+    "projectNotFound": "Projektet hittades inte",
+    "projectNotFoundDesc": "Projektet du letar efter finns inte eller har tagits bort.",
+    "selectAssistant": "Välj assistent",
+    "noAssistantAssigned": "Ingen assistent är tilldelad till det här projektet",
+    "files": "Filer",
+    "filesDescription": "Lägg till PDF-filer, dokument eller annan text att referera till i projektet.",
+    "uploadingFiles": "Bearbetar filer…",
+    "processButton": "Lägg till",
+    "deleteProjectDialog": {
+      "title": "Ta bort projekt",
+      "permanentDelete": "Detta tar bort alla trådar permanent.",
+      "permanentDeleteWarning": "Åtgärden tar bort ALLA trådar i projektet permanent!",
+      "deleteEmptyProject": "Åtgärden tar bort projektet ”{{projectName}}”.",
+      "saveThreadsAdvice": "Flytta trådarna till trådlistan eller ett annat projekt innan du tar bort dem om du vill spara dem.",
+      "starredWarning": "Du har fortfarande favoritmarkerade trådar i projektet.",
+      "deleteButton": "Ta bort",
+      "successWithName": "Projektet ”{{projectName}}” har tagits bort",
+      "successWithoutName": "Projektet har tagits bort",
+      "error": "Det gick inte att ta bort projektet. Försök igen.",
+      "ariaLabel": "Ta bort {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Skapa nytt projekt",
+      "editTitle": "Redigera projekt",
+      "nameLabel": "Projektnamn",
+      "namePlaceholder": "Ange projektnamn…",
+      "assistant": "Assistent",
+      "selectAssistant": "Välj en assistent (valfritt)",
+      "noAssistant": "Ingen assistent",
+      "addAssistant": "Lägg till assistent",
+      "createButton": "Skapa",
+      "updateButton": "Uppdatera",
+      "alreadyExists": "Projektet ”{{projectName}}” finns redan",
+      "createSuccess": "Projektet ”{{projectName}}” har skapats",
+      "updateSuccess": "Projektet ”{{projectName}}” har uppdaterats"
+    },
+    "noConversationsIn": "Inga konversationer i {{projectName}}",
+    "startNewConversation": "Starta en ny konversation med {{projectName}} nedan",
+    "conversationsIn": "Konversationer i {{projectName}}",
+    "conversationsDescription": "Klicka på en konversation för att fortsätta chatta, eller starta en ny nedan.",
+    "conversation": "Konversation",
+    "instructions": "Instruktioner",
+    "setup": "Konfigurering",
+    "instructionsDescription": "Anpassa svarens ton och stil",
+    "manageInstructions": "Hantera instruktioner",
+    "thread": "tråd",
+    "threads": "trådar",
+    "updated": "Uppdaterad:",
+    "collapseProject": "Fäll ihop projekt",
+    "expandProject": "Fäll ut projekt",
+    "update": "Uppdatera",
+    "searchProjects": "Sök projekt…",
+    "noProjectsFound": "Inga projekt hittades",
+    "tryDifferentSearch": "Prova ett annat sökord"
+  },
+  "toast": {
+    "downloadTokenRequired": {
+      "title": "Hugging Face-token krävs",
+      "description": "Den här modellen kräver en åtkomsttoken för Hugging Face. Lägg till token i Inställningar och försök igen."
+    },
+    "downloadLicenseRequired": {
+      "title": "Godkänn modellens licens på Hugging Face",
+      "description": "Du måste godkänna modellens licens på dess Hugging Face-sida innan hämtning."
+    },
+    "downloadRateLimited": {
+      "title": "Hugging Face har begränsat begäranden",
+      "description": "Du har nått en gräns för begäranden. En token kan höja gränsen. Försök igen senare."
+    },
+    "modelValidationStarted": {
+      "title": "Validerar modell",
+      "description": "Modellen ”{{modelId}}” har hämtats. Verifierar integriteten…"
+    },
+    "modelValidationFailed": {
+      "title": "Modellvalideringen misslyckades",
+      "description": "Den hämtade modellen ”{{modelId}}” klarade inte integritetskontrollen och har tagits bort. Filen kan vara skadad eller manipulerad."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Hämtningen är klar",
+      "description": "Modellen ”{{item}}” har hämtats och verifierats"
+    },
+    "uploadFailed": {
+      "title": "Bearbetningen misslyckades",
+      "description": "Det gick inte att bearbeta filen",
+      "subjectThisFile": "Den här filen",
+      "pdfMalformedXref": "{{subject}} har en felaktig korsreferenstabell för PDF och kunde inte tolkas. Öppna den i en PDF-läsare, spara den på nytt (Arkiv → Skriv ut → Spara som PDF) och ladda upp igen.",
+      "pdfScanned": "{{subject}} verkar vara en skannad eller bildbaserad PDF. OCR stöds inte ännu – ladda upp en textbaserad PDF.",
+      "pdfEncrypted": "{{subject}} är lösenordsskyddad. Ta bort lösenordet och försök igen.",
+      "pdfUnsupportedFeature": "{{subject}} använder en PDF-funktion som Jan inte kan tolka ännu (till exempel PostScript-funktioner för färg eller skuggning). Spara den på nytt (Arkiv → Skriv ut → Spara som PDF) för att förenkla den och ladda sedan upp igen.",
+      "pdfGeneric": "{{subject}} kunde inte tolkas som en PDF. Filen kan vara skadad eller använda en PDF-funktion som inte stöds.",
+      "fileTooLarge": "{{subject}} är för stor. {{message}}.",
+      "unsupportedType": "Filtypen ”{{type}}” stöds inte.",
+      "ioError": "Kunde inte läsa {{subject}}: {{message}}",
+      "parseGeneric": "{{subject}} kunde inte tolkas: {{message}}",
+      "fallback": "Det gick inte att bearbeta {{subject}}."
+    },
+    "unsupportedFileType": {
+      "title": "Filtypen stöds inte",
+      "description": "Filtillägget ”.{{extension}}” stöds inte som projektreferens."
+    },
+    "attachmentsDisabledInfo": {
+      "title": "Bilagor är inaktiverade",
+      "description": "Bilagor är inaktiverade i Inställningar"
+    }
   }
 }
