@@ -13,6 +13,7 @@ const COMMANDS: &[&str] = &[
     "memory_list",
     "memory_read",
     "memory_write",
+    "memory_catalog",
     "memory_delete",
     "tool_schemas",
     "sandbox_status",

@@ -29,7 +29,7 @@ import { Route as SettingsExtensionsRouteImport } from './routes/settings/extens
 import { Route as SettingsClaudeCodeRouteImport } from './routes/settings/claude-code'
 import { Route as SettingsAttachmentsRouteImport } from './routes/settings/attachments'
 import { Route as SettingsAssistantRouteImport } from './routes/settings/assistant'
-import { Route as SettingsAgentToolsRouteImport } from './routes/settings/agent-tools'
+import { Route as SettingsCoworkRouteImport } from './routes/settings/cowork'
 import { Route as ProjectProjectIdRouteImport } from './routes/project/$projectId'
 import { Route as LocalApiServerLogsRouteImport } from './routes/local-api-server/logs'
 import { Route as HubModelIdRouteImport } from './routes/hub/$modelId'
@@ -136,9 +136,9 @@ const SettingsAssistantRoute = SettingsAssistantRouteImport.update({
   path: '/settings/assistant',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsAgentToolsRoute = SettingsAgentToolsRouteImport.update({
-  id: '/settings/agent-tools',
-  path: '/settings/agent-tools',
+const SettingsCoworkRoute = SettingsCoworkRouteImport.update({
+  id: '/settings/cowork',
+  path: '/settings/cowork',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
@@ -177,7 +177,7 @@ export interface FileRoutesByFullPath {
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
-  '/settings/agent-tools': typeof SettingsAgentToolsRoute
+  '/settings/cowork': typeof SettingsCoworkRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/claude-code': typeof SettingsClaudeCodeRoute
@@ -205,7 +205,7 @@ export interface FileRoutesByTo {
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
-  '/settings/agent-tools': typeof SettingsAgentToolsRoute
+  '/settings/cowork': typeof SettingsCoworkRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/claude-code': typeof SettingsClaudeCodeRoute
@@ -234,7 +234,7 @@ export interface FileRoutesById {
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
-  '/settings/agent-tools': typeof SettingsAgentToolsRoute
+  '/settings/cowork': typeof SettingsCoworkRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/claude-code': typeof SettingsClaudeCodeRoute
@@ -264,7 +264,7 @@ export interface FileRouteTypes {
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
-    | '/settings/agent-tools'
+    | '/settings/cowork'
     | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/claude-code'
@@ -292,7 +292,7 @@ export interface FileRouteTypes {
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
-    | '/settings/agent-tools'
+    | '/settings/cowork'
     | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/claude-code'
@@ -320,7 +320,7 @@ export interface FileRouteTypes {
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
-    | '/settings/agent-tools'
+    | '/settings/cowork'
     | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/claude-code'
@@ -349,7 +349,7 @@ export interface RootRouteChildren {
   HubModelIdRoute: typeof HubModelIdRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
-  SettingsAgentToolsRoute: typeof SettingsAgentToolsRoute
+  SettingsCoworkRoute: typeof SettingsCoworkRoute
   SettingsAssistantRoute: typeof SettingsAssistantRoute
   SettingsAttachmentsRoute: typeof SettingsAttachmentsRoute
   SettingsClaudeCodeRoute: typeof SettingsClaudeCodeRoute
@@ -511,11 +511,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAssistantRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/agent-tools': {
-      id: '/settings/agent-tools'
-      path: '/settings/agent-tools'
-      fullPath: '/settings/agent-tools'
-      preLoaderRoute: typeof SettingsAgentToolsRouteImport
+    '/settings/cowork': {
+      id: '/settings/cowork'
+      path: '/settings/cowork'
+      fullPath: '/settings/cowork'
+      preLoaderRoute: typeof SettingsCoworkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/project/$projectId': {
@@ -565,7 +565,7 @@ const rootRouteChildren: RootRouteChildren = {
   HubModelIdRoute: HubModelIdRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   ProjectProjectIdRoute: ProjectProjectIdRoute,
-  SettingsAgentToolsRoute: SettingsAgentToolsRoute,
+  SettingsCoworkRoute: SettingsCoworkRoute,
   SettingsAssistantRoute: SettingsAssistantRoute,
   SettingsAttachmentsRoute: SettingsAttachmentsRoute,
   SettingsClaudeCodeRoute: SettingsClaudeCodeRoute,

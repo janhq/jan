@@ -234,7 +234,8 @@ pub(crate) fn load_memory_catalog(project_root: &Path) -> Option<String> {
     }
     let list = entries
         .iter()
-        .map(|(name, description)| {
+        .map(|entry| {
+            let (name, description) = (&entry.name, &entry.summary);
             if description.is_empty() {
                 format!("- `{name}` - no summary")
             } else {

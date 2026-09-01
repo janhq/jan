@@ -6,6 +6,7 @@ import {
   memoryDelete,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { invalidateMemory } from '@/lib/agentTools'
 import * as skillStore from '@/lib/skillStore'
 import type { SkillMeta } from '@/lib/skillStore'
 
@@ -51,10 +52,45 @@ export async function readMemory(name: string): Promise<string> {
 
 export async function writeMemory(name: string, content: string): Promise<void> {
   await memoryWrite(await dataFolder(), name, content)
+  invalidateMemory()
 }
 
 export async function deleteMemory(name: string): Promise<void> {
   await memoryDelete(await dataFolder(), name)
+  invalidateMemory()
+}
+
+/**
+ * A filesystem-safe note name from a thread title. The store's names are file
+ * stems, so everything but `[a-z0-9-]` collapses to hyphens; an unusable title
+ * falls back to a generic stem rather than failing the save.
+ */
+export function slugifyMemoryName(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/, '')
+  return slug || 'memory'
+}
+
+/**
+ * The chat surface's "Remember" action: save `content` as a note named after
+ * the thread title. `memory_write` replaces a note by name, and this is a new
+ * fact rather than a curated topic, so an existing name gets a `-2`, `-3`, ...
+ * suffix instead of silently overwriting it. Returns the name written.
+ */
+export async function rememberNote(
+  title: string,
+  content: string
+): Promise<string> {
+  const base = slugifyMemoryName(title)
+  const taken = new Set(await listMemories())
+  let name = base
+  for (let n = 2; taken.has(name); n++) name = `${base}-${n}`
+  await writeMemory(name, content)
+  return name
 }
 
 /** Open the store in the OS file manager. */

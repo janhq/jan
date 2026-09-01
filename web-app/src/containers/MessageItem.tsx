@@ -23,6 +23,7 @@ import {
   type PartEntry,
 } from './message/types'
 import { CopyButton } from './CopyButton'
+import { RememberButton } from './RememberButton'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { formatDate } from '@/utils/formatDate'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -714,6 +715,7 @@ export const MessageItem = memo(
               >
                 {versionNav}
                 <CopyButton text={getFullTextContent()} />
+                <RememberButton text={getFullTextContent()} />
 
                 {onEdit && !isStreaming && (
                   <EditMessageDialog

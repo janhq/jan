@@ -116,6 +116,41 @@ export function isAbortLike(e: unknown, signal?: AbortSignal): boolean {
   )
 }
 
+/**
+ * True when a failed send can be retried safely: the connection died before any
+ * response arrived, so nothing has been streamed and no upstream side effect is
+ * implied. Port of the Rust agent's `is_retryable_send_error` — the failure a
+ * long turn invites is a keep-alive connection the peer (or its load balancer)
+ * reclaimed while tools ran locally, reported on the *next* request. Matched on
+ * text because the tauri http plugin and the AI SDK both surface transport
+ * failures as message strings. Timeouts are excluded on purpose: retrying one
+ * doubles the wait.
+ */
+export function isRetryableSendError(message: string): boolean {
+  const msg = message.toLowerCase()
+  if (msg.includes('timed out') || msg.includes('timeout')) return false
+  const markers = [
+    // hyper reports a pooled connection the peer had already closed as the
+    // first of these; the rest are the io errors an RST mid-request produces.
+    'connection closed before message completed',
+    'connection reset',
+    'broken pipe',
+    'connection aborted',
+    'unexpected eof',
+    // A refused or failed connect: reqwest via the tauri http plugin, and the
+    // browser fetch in the web build.
+    'connection refused',
+    'error sending request',
+    'failed to fetch',
+    'fetch failed',
+  ]
+  return markers.some((m) => msg.includes(m))
+}
+
+/** Long enough for a load balancer that just recycled a backend to finish,
+ * short enough that the user does not read it as a hang. */
+const SEND_RETRY_DELAY_MS = 250
+
 /** Settle a pending `ask`. Returns false when the request is already gone. */
 export function answerAsk(
   sid: string,
@@ -345,25 +380,79 @@ export async function runTurn(opts: {
     // stream is handed over, and the transport rewrites what it is given
     // (trimming, compaction) without expecting it to move underneath.
     let result: StepResult
-    try {
-      const stream = await deps.sendStep([...messages], signal)
-      result = await consumeStep(stream, deps.sink)
-    } catch (e) {
-      // A transport failure is an outcome, not an exception: throwing here left
-      // the caller with no steps, no usage and nothing to render but the raw
-      // message, and a user-initiated stop arrived down this same path.
-      return {
-        messages,
-        steps: step,
-        usage,
-        sessionTokens: spend.spent,
-        stoppedBy: isAbortLike(e, signal) ? 'aborted' : 'error',
-        errorText: isAbortLike(e, signal)
-          ? undefined
-          : e instanceof Error
-            ? e.message
-            : String(e),
+    let retried = false
+    for (;;) {
+      // Any sink activity means bytes reached the UI; replaying the request
+      // would duplicate them, so a retry is only safe while this stays false.
+      let received = false
+      const sink: StreamSink = {
+        onText: (d) => {
+          received = true
+          deps.sink.onText(d)
+        },
+        onToolStart: (id, name) => {
+          received = true
+          deps.sink.onToolStart(id, name)
+        },
+        onToolArgsDelta: (id, d) => {
+          received = true
+          deps.sink.onToolArgsDelta(id, d)
+        },
+        onToolCall: (c) => {
+          received = true
+          deps.sink.onToolCall(c)
+        },
       }
+      try {
+        const stream = await deps.sendStep([...messages], signal)
+        result = await consumeStep(stream, sink)
+      } catch (e) {
+        if (isAbortLike(e, signal)) {
+          return {
+            messages,
+            steps: step,
+            usage,
+            sessionTokens: spend.spent,
+            stoppedBy: 'aborted',
+          }
+        }
+        const errorText = e instanceof Error ? e.message : String(e)
+        if (!retried && !received && isRetryableSendError(errorText)) {
+          retried = true
+          console.warn(`[coworkRunner] ${errorText} — retrying once`)
+          await new Promise((r) => setTimeout(r, SEND_RETRY_DELAY_MS))
+          continue
+        }
+        // A transport failure is an outcome, not an exception: throwing here
+        // left the caller with no steps, no usage and nothing to render but
+        // the raw message, and a user-initiated stop arrived down this path.
+        return {
+          messages,
+          steps: step,
+          usage,
+          sessionTokens: spend.spent,
+          stoppedBy: 'error',
+          errorText,
+        }
+      }
+      // A dropped connection can also surface as an error chunk — streamText
+      // reports transport failures through the stream — so an error that
+      // arrived before anything else gets the same single retry.
+      if (
+        !retried &&
+        !received &&
+        result.usage === null &&
+        !result.aborted &&
+        !signal.aborted &&
+        result.errorText !== undefined &&
+        isRetryableSendError(result.errorText)
+      ) {
+        retried = true
+        console.warn(`[coworkRunner] ${result.errorText} — retrying once`)
+        await new Promise((r) => setTimeout(r, SEND_RETRY_DELAY_MS))
+        continue
+      }
+      break
     }
     step += 1
     if (result.usage) {

@@ -1,5 +1,6 @@
 import { invoke, Channel } from '@tauri-apps/api/core'
 import {
+  MemoryCatalogEntry,
   SkillMeta,
   ToolOutputChunk,
   ToolResult,
@@ -8,6 +9,7 @@ import {
 } from './types'
 
 export {
+  MemoryCatalogEntry,
   SkillMeta,
   ToolOutputChunk,
   ToolResult,
@@ -191,6 +193,20 @@ export async function memoryWrite(
     project,
     name,
     content,
+  })
+}
+
+/**
+ * Name + summary + mtime for every memory note, name-sorted. The recall
+ * surface: prompt injections list notes from this without reading each body.
+ */
+export async function memoryCatalog(
+  dataFolder: string,
+  project?: string
+): Promise<MemoryCatalogEntry[]> {
+  return await invoke('plugin:agent-tools|memory_catalog', {
+    dataFolder,
+    project,
   })
 }
 

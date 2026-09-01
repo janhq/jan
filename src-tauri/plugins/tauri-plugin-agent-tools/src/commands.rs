@@ -257,6 +257,22 @@ pub async fn memory_write(
     .map_err(Into::into)
 }
 
+/// Name + summary + mtime for every memory note, name-sorted. This is the
+/// recall surface: both desktop chat's digest and Cowork's prompt catalog are
+/// built from it, so neither re-reads the store per note just to list it.
+#[tauri::command]
+pub async fn memory_catalog(
+    data_folder: String,
+    project: Option<String>,
+) -> Result<Vec<memory::CatalogEntry>, AgentToolsError> {
+    let store = resolve_store(&data_folder, project.as_deref());
+    // `catalog` is sync std::fs by design (the CLI calls it from sync context);
+    // keep its directory walk off the async runtime's thread here.
+    tokio::task::spawn_blocking(move || memory::catalog(&store))
+        .await
+        .map_err(|e| AgentToolsError::from(format!("memory catalog failed: {e}")))
+}
+
 /// Delete a memory note. Idempotent: a missing note is Ok.
 #[tauri::command]
 pub async fn memory_delete(
@@ -1256,6 +1272,11 @@ mod tests {
             memory_read(df.clone(), None, "prefs".into()).await.unwrap(),
             "body"
         );
+        let entries = memory_catalog(df.clone(), None).await.unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "prefs");
+        assert_eq!(entries[0].summary, "body");
+        assert!(entries[0].mtime_ms > 0);
         memory_delete(df.clone(), None, "prefs".into())
             .await
             .unwrap();

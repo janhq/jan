@@ -25,6 +25,17 @@ export interface ToolSchema {
   }
 }
 
+/**
+ * One memory-catalog row: enough to advertise a note without its body.
+ * `mtimeMs` is Unix millis (0 when the filesystem withholds it), so callers can
+ * keep the newest notes when they cannot keep them all.
+ */
+export interface MemoryCatalogEntry {
+  name: string
+  summary: string
+  mtimeMs: number
+}
+
 /** Which sandbox namespace an id belongs to. */
 export type WorkspaceScope = 'thread' | 'session'
 

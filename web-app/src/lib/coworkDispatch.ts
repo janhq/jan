@@ -1,4 +1,5 @@
 import { executeAgentTool } from '@/lib/agentTools'
+import { useCoworkConfig } from '@/hooks/useCoworkConfig'
 import {
   ASK_TOOL_NAME,
   PLAN_DENIED_TOOLS,
@@ -85,13 +86,16 @@ export async function dispatchCoworkTool(
 
     // `'session'`, not the default `'thread'`: a Cowork session id lives in its
     // own namespace, and the thread sweep would otherwise delete this sandbox
-    // because no chat thread claims it.
+    // because no chat thread claims it. The network flag follows Cowork's own
+    // setting (on by default), read per call so a toggle in Settings applies to
+    // the next command; chat's shell stays network-closed regardless.
     const result = await executeAgentTool(
       toolName,
       call.input,
       ctx.sessionId,
       ctx.readOnlyFolder,
-      'session'
+      'session',
+      useCoworkConfig.getState().networkEnabled
     )
     if (result.error) return { output: result.error, isError: true }
     return {

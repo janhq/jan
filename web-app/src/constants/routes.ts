@@ -20,7 +20,7 @@ export const route = {
     mcp_servers: '/settings/mcp-servers',
     https_proxy: '/settings/https-proxy',
     web_search: '/settings/web-search',
-    agent_tools: '/settings/agent-tools',
+    cowork: '/settings/cowork',
     hardware: '/settings/hardware',
     assistant: '/settings/assistant',
     claude_code: '/settings/claude-code',

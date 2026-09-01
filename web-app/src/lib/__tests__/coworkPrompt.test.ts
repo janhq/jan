@@ -12,6 +12,7 @@ const opts = (over = {}) => ({
   webSearch: false,
   bashAvailable: true,
   subagentNames: [],
+  memoryCatalog: [],
   ...over,
 })
 
@@ -47,6 +48,27 @@ describe('buildCoworkSystemPrompt', () => {
     expect(p).toContain('Execute plan')
     expect(p).toContain('Keep planning')
     expect(p).toContain('Exit plan mode')
+  })
+
+  // Progressive disclosure: one line per note, `memory_read` for the rest. An
+  // empty store adds nothing, so the prompt prefix is unchanged for users who
+  // never recorded a memory.
+  it('lists memory notes with summaries only when the store has any', () => {
+    const p = buildCoworkSystemPrompt(
+      opts({
+        memoryCatalog: [
+          { name: 'decisions', summary: 'We use Yarn not npm.' },
+          { name: 'empty-note', summary: '' },
+        ],
+      })
+    )
+    expect(p).toContain('# Available Memories')
+    expect(p).toContain('- `decisions` - We use Yarn not npm.')
+    expect(p).toContain('- `empty-note` - no summary')
+    expect(p).toContain('memory_read')
+    expect(buildCoworkSystemPrompt(opts())).not.toContain(
+      '# Available Memories'
+    )
   })
 
   it('describes subagents only when some are available and not planning', () => {
@@ -86,10 +108,12 @@ describe('buildSubagentSystemPrompt', () => {
     expect(out).toContain('cannot dispatch')
   })
 
-  it('never leaks plan mode or a subagent roster into a child', () => {
+  it('never leaks plan mode, a subagent roster, or memory into a child', () => {
     const out = buildSubagentSystemPrompt('p', opts)
     expect(out).not.toContain('PLAN MODE')
     expect(out).not.toContain('# Subagents')
+    // A child runs one stated errand; recall is the dispatcher's job.
+    expect(out).not.toContain('# Available Memories')
   })
 
   // A child whose allowlist dropped the web tools must not be told it has them.

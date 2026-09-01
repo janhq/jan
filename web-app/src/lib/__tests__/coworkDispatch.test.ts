@@ -9,6 +9,11 @@ vi.mock('@/lib/webSearchTool', () => ({
   executeWebTool,
 }))
 
+const coworkConfig = vi.hoisted(() => ({ networkEnabled: true }))
+vi.mock('@/hooks/useCoworkConfig', () => ({
+  useCoworkConfig: { getState: () => coworkConfig },
+}))
+
 import { dispatchCoworkTool } from '../coworkDispatch'
 import type { PendingToolCall } from '../coworkRunner'
 
@@ -46,8 +51,37 @@ describe('dispatchCoworkTool', () => {
       { path: 'a' },
       's1',
       null,
-      'session'
+      'session',
+      true
     )
+  })
+
+  // Cowork's shell network follows the Cowork setting (on by default), read
+  // per call so a Settings toggle applies to the next command.
+  it('passes the cowork network setting through per call', async () => {
+    await dispatchCoworkTool(call('bash', { command: 'curl x' }), ctx())
+    expect(executeAgentTool).toHaveBeenCalledWith(
+      'bash',
+      { command: 'curl x' },
+      's1',
+      null,
+      'session',
+      true
+    )
+    coworkConfig.networkEnabled = false
+    try {
+      await dispatchCoworkTool(call('bash', { command: 'curl x' }), ctx())
+      expect(executeAgentTool).toHaveBeenLastCalledWith(
+        'bash',
+        { command: 'curl x' },
+        's1',
+        null,
+        'session',
+        false
+      )
+    } finally {
+      coworkConfig.networkEnabled = true
+    }
   })
 
   it('routes the client-only tools to their handlers', async () => {
@@ -81,7 +115,8 @@ describe('dispatchCoworkTool', () => {
       {},
       's1',
       '/repo',
-      'session'
+      'session',
+      true
     )
   })
 
