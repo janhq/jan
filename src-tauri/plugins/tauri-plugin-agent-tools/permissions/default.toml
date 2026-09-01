@@ -15,6 +15,7 @@ permissions = [
     "allow-memory-list",
     "allow-memory-read",
     "allow-memory-write",
+    "allow-memory-catalog",
     "allow-memory-delete",
     "allow-tool-schemas",
     "allow-sandbox-status",

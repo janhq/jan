@@ -5,6 +5,8 @@ const executeTool = vi.fn()
 const threadWorkspaceDelete = vi.fn()
 const threadWorkspaceSweep = vi.fn()
 const sandboxStatus = vi.fn()
+const memoryCatalog = vi.fn()
+const memoryRead = vi.fn()
 const getJanDataFolder = vi.fn()
 
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
@@ -13,6 +15,8 @@ vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
   threadWorkspaceDelete: (...args: unknown[]) => threadWorkspaceDelete(...args),
   threadWorkspaceSweep: (...args: unknown[]) => threadWorkspaceSweep(...args),
   sandboxStatus: () => sandboxStatus(),
+  memoryCatalog: (...args: unknown[]) => memoryCatalog(...args),
+  memoryRead: (...args: unknown[]) => memoryRead(...args),
 }))
 
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -34,7 +38,17 @@ describe('agentTools', () => {
     sandboxStatus
       .mockReset()
       .mockResolvedValue({ backend: 'bubblewrap', enforces: true })
+    memoryCatalog.mockReset().mockResolvedValue([])
+    memoryRead.mockReset().mockResolvedValue('')
     getJanDataFolder.mockReset().mockResolvedValue('/data')
+  })
+
+  // The chat surface offers the sandboxed shell alone; everything else is
+  // Cowork's. A chat set that grew a write tool would hand the main interface
+  // an agent toolset it no longer advertises a workspace for.
+  it('restricts the chat subset to bash', async () => {
+    const { CHAT_AGENT_TOOL_NAMES } = await import('../agentTools')
+    expect([...CHAT_AGENT_TOOL_NAMES]).toEqual(['bash'])
   })
 
   it('advertises the workspace tools including writes and bash', async () => {
@@ -120,11 +134,10 @@ describe('agentTools', () => {
     expect(sandboxEnforces()).toBe(false)
   })
 
-  it('passes the network setting through to the plugin', async () => {
+  // Chat's shell runs with the network closed; no global setting can open it.
+  it('keeps the sandbox network closed unless the caller opens it', async () => {
     executeTool.mockResolvedValue({ content: '', diff: null, isError: false })
-    const { useAgentToolsConfig } = await import('@/hooks/useAgentToolsConfig')
     const { executeAgentTool } = await import('../agentTools')
-
     await executeAgentTool('bash', { command: 'ls' }, 'thread-1')
     expect(executeTool).toHaveBeenLastCalledWith(
       '/data',
@@ -137,9 +150,20 @@ describe('agentTools', () => {
       undefined,
       'thread'
     )
+  })
 
-    useAgentToolsConfig.getState().setBashNetworkEnabled(true)
-    await executeAgentTool('bash', { command: 'ls' }, 'thread-1')
+  // Cowork opens the sandbox network per call.
+  it('opens the network when the caller asks', async () => {
+    executeTool.mockResolvedValue({ content: '', diff: null, isError: false })
+    const { executeAgentTool } = await import('../agentTools')
+    await executeAgentTool(
+      'bash',
+      { command: 'ls' },
+      'thread-1',
+      undefined,
+      'thread',
+      true
+    )
     expect(executeTool).toHaveBeenLastCalledWith(
       '/data',
       'thread-1',
@@ -151,7 +175,6 @@ describe('agentTools', () => {
       undefined,
       'thread'
     )
-    useAgentToolsConfig.getState().setBashNetworkEnabled(false)
   })
 
   it('caches the schemas so every turn does not re-cross IPC', async () => {
@@ -264,6 +287,91 @@ describe('agentTools', () => {
       undefined,
       'thread'
     )
+  })
+
+  // ---- shared memory recall ----------------------------------------------
+
+  const note = (name: string, mtimeMs: number, summary = `${name} summary`) => ({
+    name,
+    summary,
+    mtimeMs,
+  })
+
+  it('caps the prompt catalog at the newest notes, then name-sorts it', async () => {
+    const { getMemoryCatalog, MEMORY_CATALOG_MAX_NOTES } = await import(
+      '../agentTools'
+    )
+    const notes = Array.from({ length: MEMORY_CATALOG_MAX_NOTES + 5 }, (_, i) =>
+      note(`n${String(i).padStart(3, '0')}`, i)
+    )
+    memoryCatalog.mockResolvedValue(notes)
+    const catalog = await getMemoryCatalog()
+    expect(catalog).toHaveLength(MEMORY_CATALOG_MAX_NOTES)
+    // The 5 oldest (lowest mtime) fell off, and the survivors are name-sorted
+    // so the prompt block is stable when nothing changed.
+    const names = catalog.map((n) => n.name)
+    expect(names).toEqual([...names].sort())
+    expect(names).not.toContain('n000')
+    expect(names).not.toContain('n004')
+    expect(names).toContain('n005')
+  })
+
+  it('builds a whole-note digest, newest first, under the byte budget', async () => {
+    const { refreshMemoryDigest, memoryDigestNow, MEMORY_DIGEST_BUDGET } =
+      await import('../agentTools')
+    expect(memoryDigestNow()).toBe('')
+    memoryCatalog.mockResolvedValue([
+      note('old', 1),
+      note('huge', 3),
+      note('new', 2),
+    ])
+    const bodies: Record<string, string> = {
+      old: 'user prefers tabs',
+      huge: 'x'.repeat(MEMORY_DIGEST_BUDGET + 1),
+      new: 'project targets Node 22',
+    }
+    memoryRead.mockImplementation(async (_df: string, name: string) => bodies[name])
+    const digest = await refreshMemoryDigest()
+    // Whole notes only: the oversized note is absent, not truncated.
+    expect(digest).not.toContain('xxx')
+    expect(digest).toContain('## new\nproject targets Node 22')
+    expect(digest).toContain('## old\nuser prefers tabs')
+    // Newest first.
+    expect(digest.indexOf('## new')).toBeLessThan(digest.indexOf('## old'))
+    expect(digest.length).toBeLessThanOrEqual(MEMORY_DIGEST_BUDGET)
+    expect(memoryDigestNow()).toBe(digest)
+  })
+
+  it('serves the snapshot from cache until a write invalidates it', async () => {
+    const { getMemoryCatalog, invalidateMemory } = await import('../agentTools')
+    memoryCatalog.mockResolvedValue([note('a', 1)])
+    await getMemoryCatalog()
+    await getMemoryCatalog()
+    expect(memoryCatalog).toHaveBeenCalledTimes(1)
+    invalidateMemory()
+    await getMemoryCatalog()
+    expect(memoryCatalog).toHaveBeenCalledTimes(2)
+  })
+
+  // Cowork's memory_write goes through executeAgentTool, so a note the model
+  // records mid-session must reach the next run/send without a restart.
+  it('invalidates the snapshot when the memory_write tool succeeds', async () => {
+    executeTool.mockResolvedValue({ content: 'ok', diff: null, isError: false })
+    const { executeAgentTool, getMemoryCatalog } = await import('../agentTools')
+    memoryCatalog.mockResolvedValue([])
+    await getMemoryCatalog()
+    await executeAgentTool('memory_write', { name: 'a', content: 'b' }, 't1')
+    await getMemoryCatalog()
+    expect(memoryCatalog).toHaveBeenCalledTimes(2)
+  })
+
+  it('degrades to empty recall when the store is unreachable', async () => {
+    memoryCatalog.mockRejectedValue(new Error('no backend'))
+    const { getMemoryCatalog, refreshMemoryDigest } = await import(
+      '../agentTools'
+    )
+    await expect(getMemoryCatalog()).resolves.toEqual([])
+    await expect(refreshMemoryDigest()).resolves.toBe('')
   })
 
   it('deletes one thread sandbox on cleanup', async () => {
