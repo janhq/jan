@@ -325,5 +325,101 @@
   "pickColorAppDestructive": "Välj varningsfärg för programmet",
   "placeholder": {
     "chatInput": "Fråga mig vad som helst…"
+  },
+  "addModel": {
+    "title": "Lägg till modell",
+    "modelId": "Modell-ID",
+    "enterModelId": "Ange modell-ID",
+    "addModel": "Lägg till modell",
+    "description": "Lägg till en ny modell till leverantören",
+    "exploreModels": "Visa leverantörens modellista"
+  },
+  "mcpServers": {
+    "editServer": "Redigera server",
+    "addServer": "Lägg till server",
+    "serverName": "Servernamn",
+    "enterServerName": "Ange servernamn",
+    "command": "Kommando",
+    "enterCommand": "Ange kommando",
+    "arguments": "Argument",
+    "argument": "Argument {{index}}",
+    "envVars": "Miljövariabler",
+    "key": "Nyckel",
+    "value": "Värde",
+    "save": "Spara"
+  },
+  "deleteServer": {
+    "title": "Ta bort server",
+    "delete": "Ta bort"
+  },
+  "editJson": {
+    "errorParse": "Det gick inte att tolka JSON",
+    "errorPaste": "Det gick inte att klistra in JSON",
+    "errorFormat": "Ogiltigt JSON-format",
+    "titleAll": "Redigera konfigurationen för alla servrar",
+    "placeholder": "Ange JSON-konfiguration…",
+    "save": "Spara"
+  },
+  "editModel": {
+    "title": "Redigera modell: {{modelId}}",
+    "description": "Konfigurera modellens funktioner genom att växla alternativen nedan.",
+    "capabilities": "Funktioner",
+    "tools": "Verktyg",
+    "vision": "Bildanalys",
+    "embeddings": "Vektorinbäddningar",
+    "notAvailable": "Inte tillgängligt ännu"
+  },
+  "outOfContextError": {
+    "truncateInput": "Förkorta indata",
+    "title": "Kontextgränsen har nåtts",
+    "description": "Den här chatten närmar sig AI-modellens minnesgräns, som en whiteboard som fylls. Vi kan utöka minnesfönstret (kontextstorleken) så att modellen minns mer, men det kan använda mer av datorns minne. Vi kan också förkorta indata, vilket gör att en del av chatthistoriken glöms bort för att ge plats åt nya meddelanden.",
+    "increaseContextSizeDescription": "Vill du öka kontextstorleken?",
+    "increaseContextSize": "Öka kontextstorleken"
+  },
+  "deleteModel": {
+    "title": "Ta bort modell: {{modelId}}",
+    "description": "Är du säker på att du vill ta bort den här modellen? Åtgärden kan inte ångras.",
+    "success": "Modellen {{modelId}} har tagits bort permanent.",
+    "cancel": "Avbryt",
+    "delete": "Ta bort"
+  },
+  "deleteProvider": {
+    "title": "Ta bort leverantör",
+    "description": "Ta bort leverantören och alla dess modeller. Åtgärden kan inte ångras.",
+    "success": "Leverantören {{provider}} har tagits bort permanent.",
+    "confirmTitle": "Ta bort leverantör: {{provider}}",
+    "confirmDescription": "Är du säker på att du vill ta bort leverantören? Åtgärden kan inte ångras.",
+    "cancel": "Avbryt",
+    "delete": "Ta bort"
+  },
+  "modelSettings": {
+    "title": "Modellinställningar – {{modelId}}",
+    "description": "Konfigurera modellinställningar för bästa prestanda och beteende.",
+    "nglDisabledByFit": "Automatisk anpassning väljer GPU-lager. Stäng av automatisk anpassning för att ange detta manuellt.",
+    "samplingDefaults": {
+      "title": "Standardparametrar för sampling",
+      "description": "Standardinställningar för den här modellens sampler. Används om de inte åsidosätts per assistent eller begäran."
+    },
+    "specDraft": {
+      "section": "Spekulativ avkodning",
+      "enable": "Aktivera spekulativ avkodning",
+      "enableDescription": "Skapa flera tokenutkast per steg och verifiera dem i en omgång, vilket snabbar upp genereringen. Använder modellens inbyggda MTP-huvuden eller utkastmodellen som hämtades med den (MTP, Eagle3, DFlash eller DSpark).",
+      "nMax": "Högsta antal utkasttoken",
+      "nMaxDescription": "Högsta antal tokenutkast per steg. Standardvärdet är 16.",
+      "nMin": "Lägsta antal utkasttoken",
+      "nMinDescription": "Lägsta antal tokenutkast per steg. Standardvärdet är 0.",
+      "pMin": "Lägsta sannolikhet för utkast",
+      "pMinDescription": "Lägsta sannolikhet för giriga utkast (0–1). Standardvärdet är 0,75."
+    },
+    "templateKwargs": {
+      "section": "Alternativ för chattmall",
+      "description": "Ytterligare alternativ som modellens chattmall stöder. Skickas som chat_template_kwargs i varje begäran; behåll standardvärdet om mallen ska avgöra.",
+      "addCustom": "Lägg till eget alternativ",
+      "keyPlaceholder": "namn",
+      "valuePlaceholder": "värde",
+      "add": "Lägg till",
+      "cancel": "Avbryt",
+      "remove": "Ta bort"
+    }
   }
 }
