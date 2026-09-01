@@ -554,6 +554,55 @@
     "tryDifferentSearch": "Prova ett annat sökord"
   },
   "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Alla trådar har tagits bort från favoriter",
+      "description": "Alla trådar har tagits bort från dina favoriter."
+    },
+    "deleteAllThreads": {
+      "title": "Ta bort alla trådar",
+      "description": "Alla trådar har tagits bort permanent."
+    },
+    "renameThread": {
+      "title": "Byt namn på tråd",
+      "description": "Trådens titel har ändrats till ”{{title}}”"
+    },
+    "deleteThread": {
+      "title": "Ta bort tråd",
+      "description": "Den här tråden har tagits bort permanent."
+    },
+    "errorCopied": {
+      "title": "Kopieringen lyckades",
+      "description": "Felinformationen har kopierats till urklipp."
+    },
+    "errorCopyFailed": {
+      "title": "Det gick inte att kopiera",
+      "description": "Det gick inte att kopiera felinformationen till urklipp."
+    },
+    "editMessage": {
+      "title": "Redigera meddelande",
+      "description": "Meddelandet har redigerats. Vänta på modellens svar."
+    },
+    "appUpdateDownloaded": {
+      "title": "Programuppdateringen har hämtats",
+      "description": "Programuppdateringen har hämtats."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Det gick inte att hämta programuppdateringen",
+      "description": "Det gick inte att hämta programuppdateringen. Försök igen."
+    },
+    "downloadComplete": {
+      "title": "Hämtningen är klar",
+      "description": "{{item}} har hämtats"
+    },
+    "downloadCancelled": {
+      "title": "Hämtningen avbröts",
+      "description": "Hämtningen har avbrutits"
+    },
+    "downloadFailed": {
+      "title": "Hämtningen misslyckades",
+      "description": "Det gick inte att hämta {{item}}"
+    },
+    "openSettings": "Öppna inställningar",
     "downloadTokenRequired": {
       "title": "Hugging Face-token krävs",
       "description": "Den här modellen kräver en åtkomsttoken för Hugging Face. Lägg till token i Inställningar och försök igen."
@@ -600,6 +649,50 @@
     "attachmentsDisabledInfo": {
       "title": "Bilagor är inaktiverade",
       "description": "Bilagor är inaktiverade i Inställningar"
+    },
+    "projectCreated": {
+      "title": "Projektet har skapats",
+      "description": "Projektet ”{{projectName}}” har skapats"
+    },
+    "projectRenamed": {
+      "title": "Projektets namn har ändrats",
+      "description": "Projektet har bytt namn från ”{{oldName}}” till ”{{newName}}”"
+    },
+    "projectDeleted": {
+      "title": "Projektet har tagits bort",
+      "description": "Projektet ”{{projectName}}” har tagits bort"
+    },
+    "projectAlreadyExists": {
+      "title": "Projektet finns redan",
+      "description": "Projektet ”{{projectName}}” finns redan"
+    },
+    "projectDeleteFailed": {
+      "title": "Borttagningen misslyckades",
+      "description": "Det gick inte att ta bort projektet. Försök igen."
+    },
+    "threadAssignedToProject": {
+      "title": "Tråden har tilldelats projektet",
+      "description": "Tråden har tilldelats ”{{projectName}}”"
+    },
+    "threadRemovedFromProject": {
+      "title": "Tråden har tagits bort från projektet",
+      "description": "Tråden har tagits bort från ”{{projectName}}”"
+    },
+    "fileUploaded": {
+      "title": "Filen har bearbetats",
+      "description": "Filen har bearbetats och indexerats."
+    },
+    "fileDeleted": {
+      "title": "Filen har tagits bort",
+      "description": "Filen har tagits bort från projektet"
+    },
+    "deleteFailed": {
+      "title": "Borttagningen misslyckades",
+      "description": "Det gick inte att ta bort filen"
+    },
+    "fileAlreadyExists": {
+      "title": "Filen finns redan",
+      "description": "Filen är redan bifogad till projektet"
     }
   }
 }
