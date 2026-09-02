@@ -67,13 +67,37 @@ pub async fn agent_skill_hub_list() -> Result<Vec<skill_hub::HubSkill>, String> 
     skill_hub::list().await.map_err(ui_error)
 }
 
-/// Download a hub skill (SKILL.md + bundled files) into the project as
-/// `<name>/SKILL.md`. Scaffolds the project on first use.
+/// Download a hub skill (SKILL.md + bundled files) as `<name>/SKILL.md`, into
+/// the project store when a project is given (scaffolded on first use), else
+/// into the permanent store -- Cowork's skills manager works with no folder
+/// attached, and the store is what its agent reads anyway.
 #[tauri::command]
-pub async fn agent_skill_hub_import(project: String, name: String) -> Result<(), String> {
-    let root = std::path::PathBuf::from(&project);
-    ensure_project(&root)?;
-    skill_hub::import(&root, &name).await.map_err(ui_error)
+pub async fn agent_skill_hub_import(
+    project: Option<String>,
+    data_folder: Option<String>,
+    name: String,
+) -> Result<(), String> {
+    let store = match project
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+    {
+        Some(p) => {
+            let root = std::path::PathBuf::from(&p);
+            ensure_project(&root)?;
+            workspace::project_store(&root)
+        }
+        None => {
+            let data = data_folder
+                .filter(|d| !d.trim().is_empty())
+                .ok_or_else(|| {
+                    "ERROR: neither a project nor the data folder was given".to_string()
+                })?;
+            workspace::ensure_permanent_store(std::path::Path::new(&data))
+                .await
+                .map_err(ui_error)?
+        }
+    };
+    skill_hub::import(&store, &name).await.map_err(ui_error)
 }
 
 /// Read the project's enabled-skill whitelist (`[skills].enabled`). An empty
