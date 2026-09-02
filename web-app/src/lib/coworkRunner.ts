@@ -8,6 +8,7 @@ import {
   recordSpend,
   type BudgetStop,
 } from '@/lib/coworkBudget'
+import { attachPings } from '@/lib/coworkPing'
 
 /**
  * The Cowork agent loop.
@@ -317,6 +318,16 @@ export type RunDeps = {
   }) => void
   /** Monotonic ids for the assistant messages this run appends. */
   nextMessageId: () => string
+  /**
+   * Pings from work the model started and is no longer blocked on: a
+   * backgrounded subagent finishing. Omitted by a child run, which cannot
+   * dispatch subagents of its own.
+   */
+  inbox?: {
+    take: () => string[]
+    pending: () => boolean
+    wait: () => Promise<void>
+  }
 }
 
 export type RunOutcome = {
@@ -375,6 +386,11 @@ export async function runTurn(opts: {
         stoppedBy: overBudget,
       }
     }
+
+    // Anything that finished since the last request reaches the model here, as
+    // a marked user turn rather than an invented tool result: nothing was
+    // called this step.
+    attachPings(messages, deps.inbox?.take() ?? [])
 
     // A snapshot, not the live array: the loop pushes to `messages` after the
     // stream is handed over, and the transport rewrites what it is given
@@ -484,8 +500,10 @@ export async function runTurn(opts: {
       }
     }
 
-    // Tools run one at a time: they share a workspace, and the progress
-    // attribution in the UI assumes a single call in flight.
+    // One at a time: tools share a workspace, and the progress attribution in
+    // the UI assumes a single call in flight. A `task` fan-out is not an
+    // exception any more and needs none -- each `task` call returns as soon as
+    // its child has started, so the children overlap whatever this loop does.
     const outcomes = new Map<string, ToolOutcome>()
     for (const call of result.toolCalls) {
       if (signal.aborted) {
@@ -514,6 +532,23 @@ export async function runTurn(opts: {
     }
     // No tool calls means the model answered rather than asked for more work.
     if (result.toolCalls.length === 0) {
+      // Unless a subagent it dispatched is still going: ending here would drop
+      // that answer on the floor. Park, then let the ping drained at the top of
+      // the next step resume the conversation. Re-checked after the wait, which
+      // also returns on cancellation.
+      if (deps.inbox?.pending()) {
+        await deps.inbox.wait()
+        if (signal.aborted) {
+          return {
+            messages,
+            steps: step,
+            usage,
+            sessionTokens: spend.spent,
+            stoppedBy: 'aborted',
+          }
+        }
+        if (deps.inbox.pending()) continue
+      }
       return {
         messages,
         steps: step,

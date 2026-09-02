@@ -145,6 +145,25 @@ impl ToolOutcome {
 #[async_trait]
 pub(crate) trait ToolInvoker: Send + Sync {
     async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String>;
+
+    /// Pings raised by work the model started and is no longer blocked on (a
+    /// backgrounded subagent finishing), oldest first. Folded into the
+    /// conversation as `<SYSTEM>` reminders at the top of the next turn.
+    fn background_notices(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Whether such work is still owed to the model. A cycle that would
+    /// otherwise end waits on this rather than dropping the answer of a child
+    /// that was still running.
+    fn background_pending(&self) -> bool {
+        false
+    }
+
+    /// Park until [`Self::background_notices`] has something, or nothing is
+    /// left to wait for. Only called while `background_pending` holds, so the
+    /// default's immediate return cannot spin.
+    async fn await_background(&self) {}
 }
 
 struct HttpModelInvoker {
@@ -510,6 +529,13 @@ impl CompositeToolInvoker {
         decision
     }
 
+    /// Where a child's answer is spilled, or `None` when this run is
+    /// unconfined: no scratch is in force, so there is nowhere sanctioned to
+    /// write and the answer is delivered inline instead.
+    fn subagent_scratch(&self) -> Option<&std::path::Path> {
+        self.sandbox.then_some(self.scratch_root.as_path())
+    }
+
     /// Execute one subagent tool call, returning the model-facing result string
     /// (an `ERROR:`-prefixed message on failure, matching the tool-result
     /// convention). The registry is loaded fresh from disk each call so a
@@ -519,6 +545,7 @@ impl CompositeToolInvoker {
             await_subagent, format_subagent_list, parse_await_args, parse_create_args,
             parse_dispatch_args, spawn_subagent, subagent_dir_for, SubagentRegistry, SubagentScope,
         };
+        use tauri_plugin_agent_tools::tools::spill::compose_subagent_result;
         let Some(ctx) = &self.subagents else {
             return "ERROR: subagents are not available in this run".to_string();
         };
@@ -542,10 +569,25 @@ impl CompositeToolInvoker {
                         send_reasoning: ctx.send_reasoning,
                     },
                     &self.events,
+                    // Unconfined means no scratch: the tools see the real
+                    // `/tmp`, so there is nowhere sanctioned to spill.
+                    self.subagent_scratch(),
                 ) {
-                    Ok(run_id) => format!(
-                        "Subagent started in the background. run_id={run_id}. Continue working, then call await_subagent with this run_id to collect its result."
-                    ),
+                    Ok(d) => match d.display_path {
+                        Some(path) => format!(
+                            "Subagent started in the background. run_id={}. Its answer will be \
+                             written to {path}; you will be told when it lands, so keep working \
+                             rather than waiting. Read that file when you need the answer, or \
+                             call await_subagent with this run_id to block until it is ready.",
+                            d.run_id
+                        ),
+                        None => format!(
+                            "Subagent started in the background. run_id={}. You will be told when \
+                             it finishes; keep working, then call await_subagent with this run_id \
+                             to collect its result.",
+                            d.run_id
+                        ),
+                    },
                     Err(e) => format!("ERROR: {e}"),
                 }
             }
@@ -555,10 +597,12 @@ impl CompositeToolInvoker {
                     Err(e) => return format!("ERROR: {e}"),
                 };
                 match await_subagent(&ctx.bg, &run_id).await {
-                    Ok(text) if text.trim().is_empty() => {
+                    Ok(c) if c.text.trim().is_empty() => {
                         "The subagent finished but produced no text output.".to_string()
                     }
-                    Ok(text) => text,
+                    // The answer was spilled by the child's own task as it
+                    // finished, so this only names the file, never rewrites it.
+                    Ok(c) => compose_subagent_result(&c.text, c.display_path.as_deref()),
                     Err(e) => format!("ERROR: {e}"),
                 }
             }
@@ -816,6 +860,25 @@ fn plan_mode_read_only_msg(name: &str) -> String {
 
 #[async_trait]
 impl ToolInvoker for CompositeToolInvoker {
+    fn background_notices(&self) -> Vec<String> {
+        self.subagents
+            .as_ref()
+            .map(|ctx| ctx.bg.take_notices())
+            .unwrap_or_default()
+    }
+
+    fn background_pending(&self) -> bool {
+        self.subagents
+            .as_ref()
+            .is_some_and(|ctx| ctx.bg.has_pending_work())
+    }
+
+    async fn await_background(&self) {
+        if let Some(ctx) = &self.subagents {
+            ctx.bg.wait_for_notice().await;
+        }
+    }
+
     async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String> {
         use tauri_plugin_agent_tools::tools::{
             gate::{resolve_decision, Decision, PromptKind},
@@ -2133,6 +2196,20 @@ async fn run_turn_cycle(
             log::warn!("agent: dropped {poisoned} malformed tool call(s) from the live context");
         }
 
+        // Background work that finished since the last request reaches the model
+        // here, as a `<SYSTEM>` reminder rather than an invented tool result:
+        // nothing was called this turn. Several pings fold into one user
+        // message, since `attach` appends to a trailing user turn.
+        let notices = tools.background_notices();
+        if !notices.is_empty() {
+            for notice in &notices {
+                crate::core::agent::reminder::attach(&mut conversation_messages, notice);
+            }
+            let _ = events.send(StreamEvent::MessagesUpdated {
+                messages: conversation_messages.clone(),
+            });
+        }
+
         // On a context-overflow error, compact the conversation and retry.
         // Compaction runs progressively (a smaller kept tail each attempt) and
         // the loop gives up if a pass fails to shrink the message list.
@@ -2248,6 +2325,28 @@ async fn run_turn_cycle(
                              you skipped it). If work genuinely remains, continue it instead."
                         ),
                     );
+                    turn += 1;
+                    continue;
+                }
+            }
+            // The model has nothing left to do, but a subagent it dispatched is
+            // still running -- and its answer has nowhere to go once this cycle
+            // returns. So park here instead of ending: the ping drained at the
+            // top of the next turn is what resumes the conversation. The turn
+            // the model just took has to be recorded first, exactly as the
+            // closeout nudge above records it, or the reminder would attach to
+            // a conversation missing the answer it follows.
+            if tools.background_pending() {
+                tools.await_background().await;
+                // Re-checked rather than assumed: the wait also returns when
+                // there is nothing left to wait for (a cancelled run drops its
+                // queued pings), and resuming on that would spend a turn asking
+                // the model to react to nothing.
+                if tools.background_pending() {
+                    conversation_messages.push(serde_json::json!({
+                        "role": "assistant",
+                        "content": final_text,
+                    }));
                     turn += 1;
                     continue;
                 }
@@ -3470,6 +3569,145 @@ mod tests {
                 .iter()
                 .all(|r| !request_has_nudge(r)),
             "a todo touch partway through must reset the mutation counter"
+        );
+    }
+
+    /// A tool invoker with background work outstanding, standing in for a run
+    /// that dispatched subagents. Each `await_background` releases one queued
+    /// ping, so a test controls exactly how many times the cycle is resumed.
+    struct BackgroundTool {
+        pending: StdMutex<VecDeque<Vec<String>>>,
+        ready: StdMutex<Vec<String>>,
+    }
+    impl BackgroundTool {
+        fn new(rounds: Vec<Vec<String>>) -> Self {
+            Self {
+                pending: StdMutex::new(rounds.into_iter().collect()),
+                ready: StdMutex::new(Vec::new()),
+            }
+        }
+    }
+    #[async_trait]
+    impl ToolInvoker for BackgroundTool {
+        async fn invoke(
+            &self,
+            _tool_calls: &[serde_json::Value],
+        ) -> Result<Vec<ToolOutcome>, String> {
+            Ok(Vec::new())
+        }
+        fn background_notices(&self) -> Vec<String> {
+            std::mem::take(&mut *self.ready.lock().unwrap())
+        }
+        fn background_pending(&self) -> bool {
+            !self.ready.lock().unwrap().is_empty() || !self.pending.lock().unwrap().is_empty()
+        }
+        async fn await_background(&self) {
+            if let Some(round) = self.pending.lock().unwrap().pop_front() {
+                *self.ready.lock().unwrap() = round;
+            }
+        }
+    }
+
+    fn final_answer(text: &str) -> serde_json::Value {
+        json!({ "choices": [{ "message": { "content": text }, "finish_reason": "stop" }] })
+    }
+
+    /// The model stopping is not the end of the run while a child it dispatched
+    /// is still going: its answer would have nowhere to land. The cycle parks,
+    /// then resumes on the ping -- as a `<SYSTEM>`-marked user turn, since no
+    /// tool was called and there is no tool result to attach it to.
+    #[tokio::test]
+    async fn a_finished_subagent_resumes_a_cycle_that_would_have_ended() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            final_answer("dispatched, waiting"),
+            final_answer("here is what it found"),
+        ]);
+        let tool = BackgroundTool::new(vec![vec!["Subagent 'researcher' finished".to_string()]]);
+        let mut budget = SessionBudget::new(None);
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "look into it" })],
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result["choices"][0]["message"]["content"], "here is what it found",
+            "the run continued past the first answer"
+        );
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2, "the ping cost exactly one more turn");
+        let sent = requests[1]["messages"].as_array().unwrap();
+        let last = sent.last().unwrap();
+        assert_eq!(last["role"], "user");
+        assert!(
+            crate::core::agent::reminder::is_reminder_only(&last["content"]),
+            "the ping is marked, so rewind and recall skip it: {last}"
+        );
+        assert!(last["content"]
+            .as_str()
+            .unwrap()
+            .contains("Subagent 'researcher' finished"));
+        // The turn the model just took has to be in the history the ping
+        // follows, or it reads as a reply to the previous user message.
+        assert_eq!(sent[sent.len() - 2]["content"], "dispatched, waiting");
+    }
+
+    /// Two children landing together produce one user turn, not two: `attach`
+    /// folds into a trailing user message, and consecutive user messages are
+    /// rejected outright by some providers.
+    #[tokio::test]
+    async fn pings_arriving_together_are_fused_into_one_turn() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![final_answer("waiting"), final_answer("done")]);
+        let tool = BackgroundTool::new(vec![vec![
+            "Subagent 'alpha' finished".to_string(),
+            "Subagent 'beta' finished".to_string(),
+        ]]);
+        let mut budget = SessionBudget::new(None);
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "go" })],
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        let sent = requests[1]["messages"].as_array().unwrap();
+        let pings: Vec<&serde_json::Value> = sent
+            .iter()
+            .filter(|m| {
+                m["role"] == "user" && crate::core::agent::reminder::is_reminder_only(&m["content"])
+            })
+            .collect();
+        assert_eq!(pings.len(), 1, "one turn carries both: {sent:?}");
+        let text = pings[0]["content"].as_str().unwrap();
+        assert!(
+            text.contains("'alpha'") && text.contains("'beta'"),
+            "{text}"
         );
     }
 

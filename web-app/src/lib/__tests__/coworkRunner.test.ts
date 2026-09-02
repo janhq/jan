@@ -117,6 +117,90 @@ describe('runTurn', () => {
     expect(d.sendStep).toHaveBeenCalledTimes(1)
   })
 
+  /// A dispatched subagent outlives its tool call, so the answer arrives after
+  /// the model has already stopped. Ending there would drop it.
+  it('parks instead of finishing while a subagent is still running', async () => {
+    const d = deps([textStep('dispatched'), textStep('and here it is')])
+    const queue: string[] = []
+    let running = 1
+    let waits = 0
+    const out = await runTurn({
+      messages: [user('go')],
+      signal: new AbortController().signal,
+      deps: {
+        ...d,
+        inbox: {
+          take: () => queue.splice(0, queue.length),
+          pending: () => queue.length > 0 || running > 0,
+          // Standing in for the child finishing while the parent is parked.
+          wait: async () => {
+            waits += 1
+            queue.push("Subagent 'researcher' finished")
+            running -= 1
+          },
+        },
+      },
+    })
+    expect(out.stoppedBy).toBe('done')
+    expect(waits).toBe(1)
+    expect(d.sendStep).toHaveBeenCalledTimes(2)
+    // The second request carries the ping as a marked user turn, after the
+    // answer the model had already given.
+    const sent = d.sendStep.mock.calls[1][0] as UIMessage[]
+    const last = sent[sent.length - 1]
+    expect(last.role).toBe('user')
+    expect((last.parts[0] as { text: string }).text).toBe(
+      "<SYSTEM>\nSubagent 'researcher' finished\n</SYSTEM>"
+    )
+    expect(sent[sent.length - 2].role).toBe('assistant')
+  })
+
+  /// Two children finishing together take one turn: consecutive user messages
+  /// are rejected outright by some providers.
+  it('fuses pings that arrive together into one marked turn', async () => {
+    const d = deps([textStep('a'), textStep('b')])
+    let running = 2
+    const queue: string[] = []
+    await runTurn({
+      messages: [user('go')],
+      signal: new AbortController().signal,
+      deps: {
+        ...d,
+        inbox: {
+          take: () => queue.splice(0, queue.length),
+          pending: () => queue.length > 0 || running > 0,
+          wait: async () => {
+            queue.push('alpha done', 'beta done')
+            running = 0
+          },
+        },
+      },
+    })
+    const sent = d.sendStep.mock.calls[1][0] as UIMessage[]
+    const pings = sent.filter(
+      (m) =>
+        m.role === 'user' &&
+        (m.parts[0] as { text?: string }).text?.startsWith('<SYSTEM>')
+    )
+    expect(pings).toHaveLength(1)
+    expect((pings[0].parts[0] as { text: string }).text).toBe(
+      '<SYSTEM>\nalpha done\nbeta done\n</SYSTEM>'
+    )
+  })
+
+  /// No inbox at all is the subagent path: a child cannot dispatch children, so
+  /// nothing should change for it.
+  it('finishes normally with no inbox', async () => {
+    const d = deps([textStep('done')])
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.stoppedBy).toBe('done')
+    expect(d.sendStep).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps stepping while the model asks for tools', async () => {
     const d = deps([toolStep('read'), toolStep('read', 'c2'), textStep('done')])
     const out = await runTurn({

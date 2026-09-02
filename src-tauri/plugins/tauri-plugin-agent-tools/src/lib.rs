@@ -51,6 +51,8 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::memory_delete,
             commands::tool_schemas,
             commands::sandbox_status,
+            commands::subagent_result_reserve,
+            commands::subagent_result_fill,
             commands::execute_tool,
             commands::execute_tool_streaming
         ])

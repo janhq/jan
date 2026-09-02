@@ -4,6 +4,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { backendStorage } from '@/lib/backendStorage'
 import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
+import { isPingOnly } from '@/lib/coworkPing'
 import type {
   CoworkTurn,
   SubagentRun,
@@ -211,9 +212,15 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
         set((s) => ({
           sessions: s.sessions.map((x) => {
             if (x.id !== id) return x
-            const lastIndexOfUser = (roles: { role: string }[]) => {
+            // A `<SYSTEM>` ping is a user *message* but never a user *turn*:
+            // the transcript has no row for it, so counting it here would cut
+            // the two histories at different points and resume the run from a
+            // note about a subagent instead of from the question.
+            const lastIndexOfUser = (
+              roles: { role: string; parts?: unknown }[]
+            ) => {
               for (let i = roles.length - 1; i >= 0; i--) {
-                if (roles[i].role === 'user') return i
+                if (roles[i].role === 'user' && !isPingOnly(roles[i])) return i
               }
               return -1
             }

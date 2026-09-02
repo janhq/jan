@@ -19,6 +19,8 @@ permissions = [
     "allow-memory-delete",
     "allow-tool-schemas",
     "allow-sandbox-status",
+    "allow-subagent-result-reserve",
+    "allow-subagent-result-fill",
     "allow-execute-tool",
     "allow-execute-tool-streaming",
 ]

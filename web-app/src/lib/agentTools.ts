@@ -6,6 +6,8 @@ import {
   threadWorkspaceSweep,
   memoryCatalog,
   memoryRead,
+  subagentResultReserve,
+  subagentResultFill,
   type MemoryCatalogEntry,
   type SandboxStatus,
   type ToolSchema,
@@ -273,6 +275,46 @@ export async function executeAgentTool(
     return { content: result.content, diff: result.diff ?? undefined }
   } catch (e) {
     return { error: messageOf(e) }
+  }
+}
+
+/** A file claimed for a subagent's answer: the name to fill it by, and the
+ * model-visible path (`/tmp/subagents/<id>.md`, where the scratch is mounted
+ * over `/tmp`) the parent agent can `read`. */
+export type SubagentResultFile = { file: string; path: string }
+
+/**
+ * Claim a file in the session scratch for a subagent's answer.
+ *
+ * Claimed before the child starts, because `task` reports where the answer will
+ * be while it is still working. `null` when no scratch is reachable (the web
+ * build), in which case the caller falls back to delivering the answer inline.
+ */
+export async function reserveSubagentResult(
+  sessionId: string,
+  id: string
+): Promise<SubagentResultFile | null> {
+  try {
+    return await subagentResultReserve(sessionId, id)
+  } catch (e) {
+    console.warn('[agentTools] Failed to claim a result file:', messageOf(e))
+    return null
+  }
+}
+
+/** Write a finished subagent's answer into the file claimed for it. `false`
+ * when it could not be written, so the caller can deliver it inline instead. */
+export async function fillSubagentResult(
+  sessionId: string,
+  file: string,
+  content: string
+): Promise<boolean> {
+  try {
+    await subagentResultFill(sessionId, file, content)
+    return true
+  } catch (e) {
+    console.warn('[agentTools] Failed to save subagent result:', messageOf(e))
+    return false
   }
 }
 

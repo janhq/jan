@@ -120,7 +120,7 @@ function taskTool(subagentNames: string[]): Tool {
     : ''
   return {
     description:
-      'Run a subagent: a nested, isolated agent with its own system prompt and narrowed tools. It does not see this conversation, so state everything it needs in `description`. Returns its final answer.' +
+      'Start a subagent: a nested, isolated agent with its own system prompt and narrowed tools. It does not see this conversation, so state everything it needs in `description`. Runs in the BACKGROUND and returns immediately with the file its answer will be written to; call it several times in one step to fan work out, keep working, and a note tells you the moment each one finishes.' +
       known,
     inputSchema: jsonSchema({
       type: 'object',

@@ -475,6 +475,30 @@
           "markdownDescription": "Denies the skill_write command without any pre-configured scope."
         },
         {
+          "description": "Enables the subagent_result_fill command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-subagent-result-fill",
+          "markdownDescription": "Enables the subagent_result_fill command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the subagent_result_fill command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-subagent-result-fill",
+          "markdownDescription": "Denies the subagent_result_fill command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the subagent_result_reserve command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-subagent-result-reserve",
+          "markdownDescription": "Enables the subagent_result_reserve command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the subagent_result_reserve command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-subagent-result-reserve",
+          "markdownDescription": "Denies the subagent_result_reserve command without any pre-configured scope."
+        },
+        {
           "description": "Enables the thread_workspace_delete command without any pre-configured scope.",
           "type": "string",
           "const": "allow-thread-workspace-delete",
@@ -535,10 +559,10 @@
           "markdownDescription": "Denies the workspace_path command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`",
+          "description": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`"
+          "markdownDescription": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`"
         }
       ]
     }

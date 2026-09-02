@@ -16,6 +16,7 @@ pub mod proc;
 /// kernel-level confinement for spawned commands.
 pub mod sandbox;
 pub mod schema;
+pub mod spill;
 pub mod web;
 
 /// A single OpenAI `image_url` content part: the `data:<mime>;base64,<bytes>`
