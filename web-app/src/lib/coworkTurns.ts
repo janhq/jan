@@ -52,6 +52,19 @@ export function coworkTurnsToUIMessages(
       return
     }
 
+    // A note from the run, not from either party: it ends the assistant's
+    // message for the same reason a question does -- what follows is a reply to
+    // it, not a continuation of what came before.
+    if (turn.role === 'system') {
+      flushAssistant()
+      messages.push({
+        id: `${idPrefix}-sys-${i}`,
+        role: 'system',
+        parts: [{ type: 'text', text: turn.content }],
+      } as any)
+      return
+    }
+
     if (turn.role === 'assistant') {
       // Split out <think>/<thought> reasoning into reasoning parts (same helper
       // the chat loader uses) so the agent's chain-of-thought renders in the
