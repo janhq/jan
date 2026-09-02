@@ -71,6 +71,50 @@ describe('buildCoworkSystemPrompt', () => {
     )
   })
 
+  it('states the environment when gathered and omits the block otherwise', () => {
+    const p = buildCoworkSystemPrompt(
+      opts({
+        environment: {
+          os: 'linux',
+          arch: 'x86_64',
+          appVersion: '0.7.0',
+          locale: 'en-US',
+          date: 'Tue Sep 02 2026',
+        },
+      })
+    )
+    expect(p).toContain('# Environment')
+    expect(p).toContain('- OS: linux (x86_64)')
+    expect(p).toContain('- App: Jan v0.7.0 (desktop)')
+    expect(p).toContain("- Today's date: Tue Sep 02 2026")
+    expect(p).toContain('- User locale: en-US')
+    expect(buildCoworkSystemPrompt(opts())).not.toContain('# Environment')
+  })
+
+  // Web builds gather no OS or version; the block must not print empty lines.
+  it('drops environment lines it has no value for', () => {
+    const p = buildCoworkSystemPrompt(
+      opts({
+        environment: {
+          os: null,
+          arch: null,
+          appVersion: null,
+          locale: null,
+          date: 'Tue Sep 02 2026',
+        },
+      })
+    )
+    expect(p).toContain("- Today's date: Tue Sep 02 2026")
+    expect(p).not.toContain('- OS:')
+    expect(p).not.toContain('- App:')
+    expect(p).not.toContain('- User locale:')
+  })
+
+  it('encourages delegating long jobs to a subagent', () => {
+    const p = buildCoworkSystemPrompt(opts({ subagentNames: ['researcher'] }))
+    expect(p).toMatch(/prefer a subagent for long or repetitive jobs/i)
+  })
+
   it('describes subagents only when some are available and not planning', () => {
     expect(
       buildCoworkSystemPrompt(opts({ subagentNames: ['researcher'] }))
@@ -114,6 +158,23 @@ describe('buildSubagentSystemPrompt', () => {
     expect(out).not.toContain('# Subagents')
     // A child runs one stated errand; recall is the dispatcher's job.
     expect(out).not.toContain('# Available Memories')
+  })
+
+  // A child runs shell commands on the same machine, so it gets the same facts.
+  it('carries the environment through to a child when gathered', () => {
+    const out = buildSubagentSystemPrompt('p', {
+      ...opts,
+      environment: {
+        os: 'macos',
+        arch: 'aarch64',
+        appVersion: '0.7.0',
+        locale: 'en-US',
+        date: 'Tue Sep 02 2026',
+      },
+    })
+    expect(out).toContain('# Environment')
+    expect(out).toContain('- OS: macos (aarch64)')
+    expect(buildSubagentSystemPrompt('p', opts)).not.toContain('# Environment')
   })
 
   // A child whose allowlist dropped the web tools must not be told it has them.

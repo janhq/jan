@@ -53,6 +53,7 @@ const toolStep = (name: string, id = 'c1'): UIMessageChunk[] => [
 
 const noopSink = () => ({
   onText: vi.fn(),
+  onReasoning: vi.fn(),
   onToolStart: vi.fn(),
   onToolArgsDelta: vi.fn(),
   onToolCall: vi.fn(),
@@ -81,6 +82,25 @@ const user = (text: string): UIMessage =>
   ({ id: 'u1', role: 'user', parts: [{ type: 'text', text }] }) as UIMessage
 
 describe('consumeStep', () => {
+  /// Native reasoning arrives as its own chunk type and must neither be
+  /// dropped (nothing on screen while the model thinks) nor folded into
+  /// `text` (which goes back upstream as wire content).
+  it('streams reasoning-delta beside the text, never inside it', async () => {
+    const sink = noopSink()
+    const r = await consumeStep(
+      streamOf([
+        { type: 'reasoning-delta', id: 'r', delta: 'weigh ' } as UIMessageChunk,
+        { type: 'reasoning-delta', id: 'r', delta: 'options' } as UIMessageChunk,
+        ...textStep('answer'),
+      ]),
+      sink
+    )
+    expect(r.reasoning).toBe('weigh options')
+    expect(r.text).toBe('answer')
+    expect(sink.onReasoning).toHaveBeenCalledWith('weigh ')
+    expect(sink.onText).toHaveBeenCalledWith('answer')
+  })
+
   it('folds text, tool calls and usage out of the chunk stream', async () => {
     const sink = noopSink()
     const r = await consumeStep(
@@ -325,12 +345,45 @@ describe('runTurn', () => {
   })
 })
 
+describe('reasoning placement', () => {
+  const step: StepResult = {
+    text: 'answer',
+    reasoning: 'weigh options',
+    toolCalls: [],
+    usage: null,
+    aborted: false,
+  }
+
+  it('leads the assistant message as a reasoning part, ahead of the text', () => {
+    const msg = assistantMessageFor('m0', step, new Map()) as {
+      parts: Array<{ type: string; text?: string }>
+    }
+    expect(msg.parts[0]).toEqual({ type: 'reasoning', text: 'weigh options' })
+    expect(msg.parts[1]).toEqual({ type: 'text', text: 'answer' })
+  })
+
+  it('rides the committed turn beside the content, and a reasoning-only step still gets a row', () => {
+    expect(turnsFor(step, new Map())[0]).toMatchObject({
+      role: 'assistant',
+      content: 'answer',
+      reasoning: 'weigh options',
+    })
+    const thoughtOnly = { ...step, text: '' }
+    expect(turnsFor(thoughtOnly, new Map())[0]).toMatchObject({
+      role: 'assistant',
+      content: '',
+      reasoning: 'weigh options',
+    })
+  })
+})
+
 describe('diff sidecar', () => {
   // A diff is a rendering aid. Sending it to the model doubles the cost of
   // every edit and corrupts the output the tool widget parses.
   it('never reaches the model-facing message', () => {
     const step: StepResult = {
       text: '',
+      reasoning: '',
       toolCalls: [
         { toolCallId: 'c1', toolName: 'edit', input: {} } as PendingToolCall,
       ],

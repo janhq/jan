@@ -8,6 +8,7 @@
  */
 import { jsonSchema, type Tool } from 'ai'
 import { getAgentToolSchemas } from '@/lib/agentTools'
+import { MONITOR_TOOL_NAME, monitorTool } from '@/lib/coworkMonitor'
 import {
   WEB_FETCH_DESCRIPTION,
   WEB_FETCH_INPUT_SCHEMA,
@@ -23,6 +24,8 @@ export const PLAN_DENIED_TOOLS = new Set([
   'memory_write',
   'skill_write',
   'task',
+  // Starting one schedules shell scripts, which is exec-class work.
+  MONITOR_TOOL_NAME,
 ])
 
 /** Named `todo` to match the Rust tool: the plan-mode addendum instructs the
@@ -36,6 +39,7 @@ export const CLIENT_TOOL_NAMES = new Set([
   TODO_TOOL_NAME,
   ASK_TOOL_NAME,
   TASK_TOOL_NAME,
+  MONITOR_TOOL_NAME,
 ])
 
 const todoTool: Tool = {
@@ -241,6 +245,9 @@ export async function buildCoworkTools(
   tools[ASK_TOOL_NAME] = askTool
   if (opts.allowSubagents && !opts.planMode) {
     tools[TASK_TOOL_NAME] = taskTool(opts.subagentNames)
+  }
+  if (!opts.planMode) {
+    tools[MONITOR_TOOL_NAME] = monitorTool()
   }
   return tools
 }

@@ -8,7 +8,12 @@ import {
   memoryRead,
   subagentResultReserve,
   subagentResultFill,
+  startMonitor,
+  stopMonitor,
+  listMonitors,
+  stopSessionMonitors,
   type MemoryCatalogEntry,
+  type MonitorUpdate,
   type SandboxStatus,
   type ToolSchema,
   type WorkspaceScope,
@@ -275,6 +280,70 @@ export async function executeAgentTool(
     return { content: result.content, diff: result.diff ?? undefined }
   } catch (e) {
     return { error: messageOf(e) }
+  }
+}
+
+export type { MonitorUpdate }
+
+/**
+ * Start a file monitor for a Cowork session. `onUpdate` receives every match
+ * (and the terminal all-met/timeout update) as it happens; the returned string
+ * is the model-facing `monitor` tool result. An error comes back as an
+ * `ERROR:`-prefixed output rather than a throw, matching the tool contract.
+ */
+export async function startAgentMonitor(
+  sessionId: string,
+  args: unknown,
+  onUpdate: (update: MonitorUpdate) => void,
+  readOnlyProject?: string | null,
+  allowNetwork = false
+): Promise<{ output: string; isError?: boolean }> {
+  try {
+    const dataFolder = await getServiceHub().app().getJanDataFolder()
+    if (!dataFolder) return { output: 'ERROR: Jan data folder is unavailable', isError: true }
+    const input =
+      args && typeof args === 'object' ? (args as Record<string, unknown>) : {}
+    const output = await startMonitor(dataFolder, sessionId, input, onUpdate, {
+      allowNetwork,
+      readOnlyProject: readOnlyProject ?? undefined,
+      scope: 'session',
+    })
+    return { output }
+  } catch (e) {
+    return { output: `ERROR: ${messageOf(e)}`, isError: true }
+  }
+}
+
+/** Stop one monitor. The result string is model-facing either way. */
+export async function stopAgentMonitor(
+  sessionId: string,
+  monitorId: string
+): Promise<string> {
+  try {
+    return await stopMonitor(sessionId, monitorId)
+  } catch (e) {
+    return `ERROR: ${messageOf(e)}`
+  }
+}
+
+/** One line per active monitor, for `monitor {op:"list"}`. */
+export async function listAgentMonitors(sessionId: string): Promise<string> {
+  try {
+    return await listMonitors(sessionId)
+  } catch (e) {
+    return `ERROR: ${messageOf(e)}`
+  }
+}
+
+/**
+ * Abort every monitor a session still has. Best-effort teardown at run end: a
+ * failure leaves watchers whose updates go nowhere, not user-visible damage.
+ */
+export async function stopAgentSessionMonitors(sessionId: string): Promise<void> {
+  try {
+    await stopSessionMonitors(sessionId)
+  } catch (e) {
+    console.warn('[agentTools] Failed to stop session monitors:', messageOf(e))
   }
 }
 
