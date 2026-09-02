@@ -698,7 +698,6 @@
     "placeholder": "Ask for a plan. The agent won't change any files."
   },
   "budget": {
-    "steps": "step {{step}}/{{max}}",
     "stoppedSteps": "Stopped at {{max}} steps. The agent hasn’t finished.",
     "keepGoing": "Keep going",
     "stoppedTokens": "Stopped — this session hit its token budget.",

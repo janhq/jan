@@ -17,11 +17,7 @@ import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
 import { getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { sessionWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
-import {
-  cn,
-  getModelDisplayName,
-  getProviderTitle,
-} from '@/lib/utils'
+import { cn, getModelDisplayName, getProviderTitle } from '@/lib/utils'
 import { predefinedProviders } from '@/constants/providers'
 import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
 import { runSlashCommand, SLASH_COMMANDS } from '@/lib/coworkCommands'
@@ -41,7 +37,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { MessageItem } from '@/containers/MessageItem'
 import SkillSelector from '@/containers/SkillSelector'
 import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
-import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
+import { useToolCallRuntime, withToolTiming } from '@/hooks/useToolCallRuntime'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useAppState } from '@/hooks/useAppState'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
@@ -429,166 +425,175 @@ function CoworkPage() {
               messageId: undefined,
             } as any),
           dispatch: (call) =>
-            dispatchCoworkTool(call, {
-              sessionId: sid,
-              readOnlyFolder: current?.folder ?? null,
-              planMode: current?.planMode ?? false,
-              webSearch,
-              onTodo: async (input) => {
-                const result = applyTodoOp(
-                  useCoworkSessions
-                    .getState()
-                    .sessions.find((s) => s.id === sid)?.todos,
-                  input
-                )
-                if (result.error) {
-                  return { output: `ERROR: ${result.error}`, isError: true }
-                }
-                useCoworkSessions.getState().setTodos(sid, result.list)
-                return { output: renderTodoResult(result.list) }
-              },
-              onAsk: (callId, input) =>
-                new Promise<ToolOutcome>((resolve) => {
-                  const parsed = parseAskRequest(input)
-                  if (typeof parsed === 'string') {
-                    resolve({ output: `ERROR: ${parsed}`, isError: true })
-                    return
-                  }
-                  setAsk({ requestId: callId, request: parsed })
-                  askResolvers.current.set(callId, (answers) => {
-                    setAsk(null)
-                    resolve(renderAskResult(answers))
-                  })
-                }),
-              onTask: async (callId, input) => {
-                const req = parseSubagentRequest(input)
-                if (typeof req === 'string') {
-                  return { output: `ERROR: ${req}`, isError: true }
-                }
-                const resolved = resolveSubagent(
-                  req,
-                  subagentDefs,
-                  parentToolNames(transport.advertisedTools)
-                )
-                if ('error' in resolved) {
-                  return { output: `ERROR: ${resolved.error}`, isError: true }
-                }
-                if (!transport.model) {
-                  return {
-                    output:
-                      'ERROR: no model is loaded for this run, so no subagent can start',
-                    isError: true,
-                  }
-                }
-                // Claimed before the child starts: the tool call returns now,
-                // so the path it reports has to exist now.
-                const saved = await reserveSubagentResult(
-                  sid,
-                  `${resolved.name}-${callId}`
-                )
-                inbox.begin()
-                const child = runSubagent({
-                  resolved,
-                  description: req.description,
-                  // The parent's instance: a second one would mean a second
-                  // llama-server load for the same model.
-                  model: transport.model,
-                  parentTools: transport.advertisedTools,
-                  system: {
-                    workspacePath,
-                    readOnlyFolder: current?.folder ?? null,
-                    bashAvailable: sandboxEnforces(),
-                  },
-                  signal: controller.signal,
-                  sessionTokens: 0,
-                  // A child never gets `todo`/`ask`/`task`, so these refuse
-                  // rather than execute: a model can still emit a call to a
-                  // tool that was never advertised.
-                  dispatch: (call) =>
-                    dispatchCoworkTool(call, {
-                      sessionId: sid,
-                      readOnlyFolder: current?.folder ?? null,
-                      planMode: current?.planMode ?? false,
-                      webSearch,
-                      onTodo: async () => ({
-                        output:
-                          'The todo list belongs to the agent that dispatched you.',
-                        isError: true,
-                      }),
-                      onAsk: async () => ({
-                        output:
-                          'You cannot ask the user questions. Decide, and say what you assumed.',
-                        isError: true,
-                      }),
-                      onTask: async () => ({
-                        output: 'A subagent cannot dispatch subagents.',
-                        isError: true,
-                      }),
-                    }),
-                  events: {
-                    onQueued: (waiting) =>
-                      useCoworkRun
-                        .getState()
-                        .queueSubagent(sid, callId, resolved.name, waiting),
-                    onStart: () =>
-                      useCoworkRun
-                        .getState()
-                        .startSubagent(sid, callId, resolved.name),
-                    onInner: (event) =>
-                      useCoworkRun
-                        .getState()
-                        .routeIntoSubagent(sid, callId, event),
-                    onEnd: (usage) =>
-                      useCoworkRun.getState().endSubagent(sid, callId, usage),
-                  },
-                })
-                // Detached: the errand outlives its tool call, and the parent
-                // hears about it through the inbox instead.
-                void child
-                  .then(async (done) => {
-                    useCoworkRun
+            // Timed through the shared runtime store, which is what puts a
+            // ticking duration on the tool's own card. Calls run one at a time
+            // here, so each is its own queue of one.
+            withToolTiming(call.toolCallId, () =>
+              dispatchCoworkTool(call, {
+                sessionId: sid,
+                readOnlyFolder: current?.folder ?? null,
+                planMode: current?.planMode ?? false,
+                webSearch,
+                onTodo: async (input) => {
+                  const result = applyTodoOp(
+                    useCoworkSessions
                       .getState()
-                      .attachSubagentOutput(sid, callId, done.output)
-                    // Only a real answer is filed: an error message in the file
-                    // the parent was told to read would be indistinguishable
-                    // from the answer it expected.
-                    const filed =
-                      saved && !done.isError && done.output.trim()
-                        ? await fillSubagentResult(sid, saved.file, done.output)
-                        : false
-                    inbox.finish(
-                      subagentCompletionNotice({
-                        name: resolved.name,
-                        callId,
-                        savedPath: filed && saved ? saved.path : null,
-                        output: done.output,
-                        isError: done.isError,
-                      })
-                    )
-                  })
-                  .catch((e) =>
-                    // `runSubagent` does not throw, so this is the loop itself
-                    // failing. The count still has to come down or the run
-                    // would wait on it forever.
-                    inbox.finish(
-                      subagentCompletionNotice({
-                        name: resolved.name,
-                        callId,
-                        savedPath: null,
-                        output: e instanceof Error ? e.message : String(e),
-                        isError: true,
-                      })
-                    )
+                      .sessions.find((s) => s.id === sid)?.todos,
+                    input
                   )
-                return {
-                  output: dispatchedSubagentResult(
-                    resolved.name,
-                    callId,
-                    saved?.path ?? null
-                  ),
-                }
-              },
-            }),
+                  if (result.error) {
+                    return { output: `ERROR: ${result.error}`, isError: true }
+                  }
+                  useCoworkSessions.getState().setTodos(sid, result.list)
+                  return { output: renderTodoResult(result.list) }
+                },
+                onAsk: (callId, input) =>
+                  new Promise<ToolOutcome>((resolve) => {
+                    const parsed = parseAskRequest(input)
+                    if (typeof parsed === 'string') {
+                      resolve({ output: `ERROR: ${parsed}`, isError: true })
+                      return
+                    }
+                    setAsk({ requestId: callId, request: parsed })
+                    askResolvers.current.set(callId, (answers) => {
+                      setAsk(null)
+                      resolve(renderAskResult(answers))
+                    })
+                  }),
+                onTask: async (callId, input) => {
+                  const req = parseSubagentRequest(input)
+                  if (typeof req === 'string') {
+                    return { output: `ERROR: ${req}`, isError: true }
+                  }
+                  const resolved = resolveSubagent(
+                    req,
+                    subagentDefs,
+                    parentToolNames(transport.advertisedTools)
+                  )
+                  if ('error' in resolved) {
+                    return { output: `ERROR: ${resolved.error}`, isError: true }
+                  }
+                  if (!transport.model) {
+                    return {
+                      output:
+                        'ERROR: no model is loaded for this run, so no subagent can start',
+                      isError: true,
+                    }
+                  }
+                  // Claimed before the child starts: the tool call returns now,
+                  // so the path it reports has to exist now.
+                  const saved = await reserveSubagentResult(
+                    sid,
+                    `${resolved.name}-${callId}`
+                  )
+                  inbox.begin()
+                  const child = runSubagent({
+                    resolved,
+                    description: req.description,
+                    // The parent's instance: a second one would mean a second
+                    // llama-server load for the same model.
+                    model: transport.model,
+                    parentTools: transport.advertisedTools,
+                    system: {
+                      workspacePath,
+                      readOnlyFolder: current?.folder ?? null,
+                      bashAvailable: sandboxEnforces(),
+                    },
+                    signal: controller.signal,
+                    sessionTokens: 0,
+                    // A child never gets `todo`/`ask`/`task`, so these refuse
+                    // rather than execute: a model can still emit a call to a
+                    // tool that was never advertised.
+                    dispatch: (call) =>
+                      dispatchCoworkTool(call, {
+                        sessionId: sid,
+                        readOnlyFolder: current?.folder ?? null,
+                        planMode: current?.planMode ?? false,
+                        webSearch,
+                        onTodo: async () => ({
+                          output:
+                            'The todo list belongs to the agent that dispatched you.',
+                          isError: true,
+                        }),
+                        onAsk: async () => ({
+                          output:
+                            'You cannot ask the user questions. Decide, and say what you assumed.',
+                          isError: true,
+                        }),
+                        onTask: async () => ({
+                          output: 'A subagent cannot dispatch subagents.',
+                          isError: true,
+                        }),
+                      }),
+                    events: {
+                      onQueued: (waiting) =>
+                        useCoworkRun
+                          .getState()
+                          .queueSubagent(sid, callId, resolved.name, waiting),
+                      onStart: () =>
+                        useCoworkRun
+                          .getState()
+                          .startSubagent(sid, callId, resolved.name),
+                      onInner: (event) =>
+                        useCoworkRun
+                          .getState()
+                          .routeIntoSubagent(sid, callId, event),
+                      onEnd: (usage) =>
+                        useCoworkRun.getState().endSubagent(sid, callId, usage),
+                    },
+                  })
+                  // Detached: the errand outlives its tool call, and the parent
+                  // hears about it through the inbox instead.
+                  void child
+                    .then(async (done) => {
+                      useCoworkRun
+                        .getState()
+                        .attachSubagentOutput(sid, callId, done.output)
+                      // Only a real answer is filed: an error message in the file
+                      // the parent was told to read would be indistinguishable
+                      // from the answer it expected.
+                      const filed =
+                        saved && !done.isError && done.output.trim()
+                          ? await fillSubagentResult(
+                              sid,
+                              saved.file,
+                              done.output
+                            )
+                          : false
+                      inbox.finish(
+                        subagentCompletionNotice({
+                          name: resolved.name,
+                          callId,
+                          savedPath: filed && saved ? saved.path : null,
+                          output: done.output,
+                          isError: done.isError,
+                        })
+                      )
+                    })
+                    .catch((e) =>
+                      // `runSubagent` does not throw, so this is the loop itself
+                      // failing. The count still has to come down or the run
+                      // would wait on it forever.
+                      inbox.finish(
+                        subagentCompletionNotice({
+                          name: resolved.name,
+                          callId,
+                          savedPath: null,
+                          output: e instanceof Error ? e.message : String(e),
+                          isError: true,
+                        })
+                      )
+                    )
+                  return {
+                    output: dispatchedSubagentResult(
+                      resolved.name,
+                      callId,
+                      saved?.path ?? null
+                    ),
+                  }
+                },
+              })
+            ),
           sink,
           onStep: ({ result, turns, outcomes }) => {
             if (result.usage) setLiveUsage(result.usage)
@@ -1024,64 +1029,64 @@ function CoworkPage() {
                   </div>
                 )}
                 <ChatInput
-                showSpeedToken={false}
-                initialMessage={true}
-                scopeKey={session?.id}
-                ownsToolSet={false}
-                onSubmit={handleSubmit}
-                onStop={handleStop}
-                chatStatus={running ? 'streaming' : 'ready'}
-                tokenSource={tokenSource}
-                surfaceControls={
-                  <>
-                    <CoworkPlanToggle
-                      planMode={planMode}
-                      onChange={(next) => {
-                        if (session?.id)
-                          useCoworkSessions
-                            .getState()
-                            .setPlanMode(session.id, next)
-                      }}
-                    />
-                    <CoworkWorkspacePill
-                      folder={folder}
-                      gitBranch={gitBranch}
-                      onAttach={() => void attachFolder()}
-                      onDetach={detachFolder}
-                    />
-                    <CoworkSandboxChip />
-                    <CoworkTodoChip
-                      todos={session?.todos}
-                      open={rail?.kind === 'todos'}
-                      onToggle={() =>
-                        setRail((r) =>
-                          r?.kind === 'todos' ? null : { kind: 'todos' }
-                        )
-                      }
-                    />
-                    <CoworkTasksChip
-                      subagents={subagents}
-                      open={rail?.kind === 'tasks'}
-                      onToggle={() =>
-                        setRail((r) =>
-                          r?.kind === 'tasks' ? null : { kind: 'tasks' }
-                        )
-                      }
-                    />
-                    <CoworkChangesChip
-                      files={fileDiffs}
-                      open={rail?.kind === 'diff'}
-                      onToggle={() =>
-                        setRail((r) =>
-                          r?.kind === 'diff' ? null : { kind: 'diff' }
-                        )
-                      }
-                    />
-                    <div className="ml-auto flex items-center">
-                      <SkillSelector folder={folder} />
-                    </div>
-                  </>
-                }
+                  showSpeedToken={false}
+                  initialMessage={true}
+                  scopeKey={session?.id}
+                  ownsToolSet={false}
+                  onSubmit={handleSubmit}
+                  onStop={handleStop}
+                  chatStatus={running ? 'streaming' : 'ready'}
+                  tokenSource={tokenSource}
+                  surfaceControls={
+                    <>
+                      <CoworkPlanToggle
+                        planMode={planMode}
+                        onChange={(next) => {
+                          if (session?.id)
+                            useCoworkSessions
+                              .getState()
+                              .setPlanMode(session.id, next)
+                        }}
+                      />
+                      <CoworkWorkspacePill
+                        folder={folder}
+                        gitBranch={gitBranch}
+                        onAttach={() => void attachFolder()}
+                        onDetach={detachFolder}
+                      />
+                      <CoworkSandboxChip />
+                      <CoworkTodoChip
+                        todos={session?.todos}
+                        open={rail?.kind === 'todos'}
+                        onToggle={() =>
+                          setRail((r) =>
+                            r?.kind === 'todos' ? null : { kind: 'todos' }
+                          )
+                        }
+                      />
+                      <CoworkTasksChip
+                        subagents={subagents}
+                        open={rail?.kind === 'tasks'}
+                        onToggle={() =>
+                          setRail((r) =>
+                            r?.kind === 'tasks' ? null : { kind: 'tasks' }
+                          )
+                        }
+                      />
+                      <CoworkChangesChip
+                        files={fileDiffs}
+                        open={rail?.kind === 'diff'}
+                        onToggle={() =>
+                          setRail((r) =>
+                            r?.kind === 'diff' ? null : { kind: 'diff' }
+                          )
+                        }
+                      />
+                      <div className="ml-auto flex items-center">
+                        <SkillSelector folder={folder} />
+                      </div>
+                    </>
+                  }
                 />
               </div>
             </div>
@@ -1105,7 +1110,10 @@ function CoworkPage() {
           />
         )}
         {rail?.kind === 'tasks' && (
-          <CoworkTasksPanel subagents={subagents} onClose={() => setRail(null)} />
+          <CoworkTasksPanel
+            subagents={subagents}
+            onClose={() => setRail(null)}
+          />
         )}
       </div>
     </div>
