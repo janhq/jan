@@ -135,14 +135,16 @@ export default function SkillsManagerDialog({
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>{t('common:skillsTitle')}</DialogTitle>
+          {/* Name the store being managed: the current session's folder, or the
+              global store every session reads when nothing is attached. */}
+          <p className="text-xs text-muted-foreground">
+            {folder
+              ? t('common:skillsScopeProject', { folder })
+              : t('common:skillsScopeGlobal')}
+          </p>
         </DialogHeader>
 
-        {!folder ? (
-          <div className="py-10 text-center text-sm text-muted-foreground">
-            {t('common:skillsSelectFolder')}
-          </div>
-        ) : (
-          <div className="flex gap-4 h-[60vh] overflow-hidden">
+        <div className="flex gap-4 h-[60vh] overflow-hidden">
             {/* Skill list */}
             <div className="w-1/3 min-h-0 flex flex-col gap-2 border-r pr-3">
               <Button
@@ -294,7 +296,6 @@ export default function SkillsManagerDialog({
               )}
             </div>
           </div>
-        )}
       </DialogContent>
     </Dialog>
   )
