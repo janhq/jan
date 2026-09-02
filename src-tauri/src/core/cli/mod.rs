@@ -1380,9 +1380,10 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::SubagentQueued { name, waiting, .. } => {
             eprintln!("\x1b[2m[subagent:{name}] queued ({waiting} waiting)\x1b[0m")
         }
-        StreamEvent::SubagentEnd { name, .. } => {
-            eprintln!("\x1b[2m[subagent:{name}] finished\x1b[0m")
-        }
+        StreamEvent::SubagentEnd { name, error, .. } => match error {
+            Some(e) => eprintln!("\x1b[2m[subagent:{name}] failed: {e}\x1b[0m"),
+            None => eprintln!("\x1b[2m[subagent:{name}] finished\x1b[0m"),
+        },
         StreamEvent::Subagent { name, event, .. } => {
             if let StreamEvent::ToolCall { name: tool, args, .. } = *event {
                 eprintln!(

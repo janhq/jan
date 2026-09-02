@@ -2170,6 +2170,19 @@ struct SubagentPanel {
     waiting: u32,
 }
 
+/// How a closed child's summary row reads. `Failed` carries the reason the
+/// parent's `<SYSTEM>` ping carries, which is otherwise the only account of it:
+/// a background child reports its failure to the model, not to the screen, so a
+/// row that said "finished" either way left the user reading an answer built on
+/// work that never happened. `Interrupted` is the run ending out from under a
+/// child, which is not the child's failure.
+#[derive(Clone, PartialEq)]
+enum SubagentOutcome {
+    Finished,
+    Failed(String),
+    Interrupted,
+}
+
 /// A committed finished-subagent summary row, folded to one line but retaining
 /// its full tool-call list so the row can expand back to it (like a tool group).
 struct SubagentBlock {
@@ -2722,28 +2735,38 @@ impl App {
     }
 
     /// Fold one finished child into a summary row, retaining its call list so
-    /// the row can expand back to it (like a tool group). `finished` separates a
-    /// clean `SubagentEnd` from a child the run ended out from under.
-    fn push_subagent_summary(&mut self, name: &str, calls: Vec<String>, finished: bool) {
+    /// the row can expand back to it (like a tool group).
+    fn push_subagent_summary(&mut self, name: &str, calls: Vec<String>, outcome: SubagentOutcome) {
         self.display_log.push(DisplayEntry::Subagent {
             name: name.to_string(),
             calls: calls.clone(),
-            finished,
+            finished: !matches!(outcome, SubagentOutcome::Interrupted),
+            error: match &outcome {
+                SubagentOutcome::Failed(e) => Some(e.clone()),
+                _ => None,
+            },
         });
         let total = calls.len();
         let noun = if total == 1 { "call" } else { "calls" };
-        let verb = if finished { "finished" } else { "interrupted" };
-        let style = if finished {
-            Style::new().magenta().dim()
-        } else {
-            Style::new().yellow()
+        let done = format!("({total} tool {noun})");
+        let (verb, style) = match &outcome {
+            SubagentOutcome::Finished => ("finished", Style::new().magenta().dim()),
+            SubagentOutcome::Failed(_) => ("failed", Style::new().red()),
+            SubagentOutcome::Interrupted => ("interrupted", Style::new().yellow()),
+        };
+        let label = match &outcome {
+            SubagentOutcome::Failed(e) => format!("subagent {name} {verb} {done}: {e}"),
+            _ => format!("subagent {name} {verb} {done}"),
         };
         self.gap(Kind::Tool);
         self.push_row(RowKind::Tool {
             tag: "↲".to_string(),
             tag_style: style,
-            label: format!("subagent {name} {verb} ({total} tool {noun})"),
-            label_style: if finished { style } else { Style::new().dim() },
+            label,
+            label_style: match outcome {
+                SubagentOutcome::Finished => style,
+                _ => Style::new().dim(),
+            },
             reserve: TOOL_ROW_RESERVE,
         });
         if total > 0 {
@@ -2760,7 +2783,7 @@ impl App {
     /// accounted for rather than vanishing with the panel.
     fn close_live_subagents(&mut self) {
         for panel in std::mem::take(&mut self.subagents) {
-            self.push_subagent_summary(&panel.name, panel.calls, false);
+            self.push_subagent_summary(&panel.name, panel.calls, SubagentOutcome::Interrupted);
         }
         self.awaiting.clear();
     }
@@ -4679,7 +4702,11 @@ impl App {
                     waiting,
                 });
             }
-            StreamEvent::SubagentEnd { run_id, name } => {
+            StreamEvent::SubagentEnd {
+                run_id,
+                name,
+                error,
+            } => {
                 let calls = self
                     .subagents
                     .iter()
@@ -4688,7 +4715,11 @@ impl App {
                     .unwrap_or_default();
                 self.subagents.retain(|p| p.run_id != run_id);
                 self.awaiting.retain(|(_, r, _)| r != &run_id);
-                self.push_subagent_summary(&name, calls, true);
+                let outcome = match error {
+                    Some(e) => SubagentOutcome::Failed(e),
+                    None => SubagentOutcome::Finished,
+                };
+                self.push_subagent_summary(&name, calls, outcome);
             }
             StreamEvent::Subagent {
                 run_id,
@@ -13354,9 +13385,15 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
                 name,
                 calls,
                 finished,
+                error,
             } => {
                 app.finalize_tool_group();
-                app.push_subagent_summary(name, calls.clone(), *finished);
+                let outcome = match (finished, error) {
+                    (_, Some(e)) => SubagentOutcome::Failed(e.clone()),
+                    (true, None) => SubagentOutcome::Finished,
+                    (false, None) => SubagentOutcome::Interrupted,
+                };
+                app.push_subagent_summary(name, calls.clone(), outcome);
             }
         }
     }
@@ -16286,6 +16323,7 @@ mod tests {
     }
     use super::journal::{self, DisplayEntry};
     use super::SessionLimits;
+    use super::SubagentOutcome;
     use super::{
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
         apply_resume, apply_stream_event, assistant_is_awaiting_user_answer, assistant_runs,
@@ -16998,7 +17036,11 @@ mod tests {
     fn expanded_subagent_detail_wraps_instead_of_eliding() {
         let mut app = test_app();
         let long = "Executing: cargo test --no-default-features --features cli -- cli::tui::tests";
-        app.push_subagent_summary("reviewer", vec![long.to_string()], true);
+        app.push_subagent_summary(
+            "reviewer",
+            vec![long.to_string()],
+            SubagentOutcome::Finished,
+        );
         let block = app.subagent_blocks.last().expect("no subagent block");
         let lines = block.detail_lines(50);
         assert!(lines.len() > 1, "detail was not wrapped: {lines:?}");
@@ -21124,6 +21166,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "sub-reviewer-1".into(),
             name: "reviewer".into(),
+            error: None,
         });
         assert_eq!(
             app.awaiting.len(),
@@ -22760,6 +22803,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            error: None,
         });
         // A collapsed summary row + a retained expandable block.
         assert_eq!(app.subagent_blocks.len(), 1);
@@ -22815,12 +22859,79 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            error: None,
         });
         assert!(app.subagents.iter().all(|p| p.run_id != "r1"));
         assert!(app
             .transcript
             .iter()
             .any(|r| row_text(r).contains("subagent reviewer finished (1 tool call)")));
+    }
+
+    /// A background child reports its failure to the model (the `<SYSTEM>`
+    /// ping) and nowhere else, so the summary row is the user's only account of
+    /// it. Saying "finished" would leave them reading an answer built on work
+    /// that never happened.
+    #[test]
+    fn a_failed_subagent_says_so_and_names_the_reason() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+            task: None,
+        });
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+            error: Some("upstream: 429 rate limited".into()),
+        });
+        let row = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .find(|t| t.contains("subagent reviewer"))
+            .expect("no summary row");
+        assert!(
+            row.contains("failed") && row.contains("429 rate limited"),
+            "row hides the failure: {row}"
+        );
+        assert!(!row.contains("finished"), "row reads as a clean run: {row}");
+    }
+
+    /// The journal replays the outcome too: a resumed session must not turn a
+    /// failure back into a clean finish.
+    #[test]
+    fn a_failed_subagent_survives_a_journal_round_trip() {
+        let entry = DisplayEntry::Subagent {
+            name: "reviewer".into(),
+            calls: Vec::new(),
+            finished: true,
+            error: Some("upstream: 429 rate limited".into()),
+        };
+        let encoded = serde_json::to_string(&entry).unwrap();
+        assert_eq!(
+            serde_json::from_str::<DisplayEntry>(&encoded).unwrap(),
+            entry
+        );
+        let mut app = test_app();
+        super::replay_display_log(&mut app, vec![entry.clone()]);
+        assert!(app
+            .transcript
+            .iter()
+            .any(|r| row_text(r).contains("subagent reviewer failed")));
+        // A journal written before the field existed still replays as a clean
+        // finish rather than being dropped.
+        let old: DisplayEntry =
+            serde_json::from_str(r#"{"kind":"subagent","name":"scout","calls":[]}"#).unwrap();
+        assert_eq!(
+            old,
+            DisplayEntry::Subagent {
+                name: "scout".into(),
+                calls: Vec::new(),
+                finished: true,
+                error: None,
+            }
+        );
     }
 
     #[test]
@@ -25671,6 +25782,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r0".into(),
             name: "alpha".into(),
+            error: None,
         });
         assert!(app.subagents.is_empty(), "live panel closed");
         let rows = render_rows(&mut app, 100, 24);

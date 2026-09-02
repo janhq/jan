@@ -751,6 +751,7 @@ impl BackgroundSubagents {
             let _ = entry.events.send(StreamEvent::SubagentEnd {
                 run_id: entry.run_id,
                 name: entry.name,
+                error: None,
             });
         }
         self.notices.lock().unwrap().clear();
@@ -880,12 +881,16 @@ async fn run_subagent(
     drop(child_tx);
     let _ = forwarder.await;
 
-    let _ = events.send(StreamEvent::SubagentEnd { run_id, name });
-
-    match result {
+    let outcome = match result {
         Ok(completion) => Ok(final_assistant_text(&completion)),
         Err(message) => Err(SubagentError::Upstream(message)),
-    }
+    };
+    let _ = events.send(StreamEvent::SubagentEnd {
+        run_id,
+        name,
+        error: outcome.as_ref().err().map(|e| e.to_string()),
+    });
+    outcome
 }
 
 /// Resolve and start a subagent on a background task, returning its `run_id`
@@ -1912,7 +1917,7 @@ mod tests {
         assert!(bg.inner.lock().unwrap().is_empty(), "abort_all drains the map");
         assert!(handle.await.unwrap_err().is_cancelled(), "child was aborted");
         match ev_rx.try_recv() {
-            Ok(crate::core::agent::events::StreamEvent::SubagentEnd { run_id, name }) => {
+            Ok(crate::core::agent::events::StreamEvent::SubagentEnd { run_id, name, .. }) => {
                 assert_eq!(run_id, "r1");
                 assert_eq!(name, "reviewer");
             }
