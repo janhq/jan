@@ -631,7 +631,17 @@ function CoworkPage() {
             return () => `${sid}-asst-${n++}`
           })(),
           inbox: {
-            take: () => inbox.take(),
+            // Shown as it is delivered, not as it is queued: the transcript
+            // then reads in the order the model saw things, and the turn that
+            // reacts to a subagent finishing has the note it is replying to
+            // directly above it.
+            take: () => {
+              const pings = inbox.take()
+              pushLive(
+                pings.map((content) => ({ role: 'system' as const, content }))
+              )
+              return pings
+            },
             pending: () => inbox.pending(),
             wait: () => inbox.wait(controller.signal),
           },
@@ -1025,11 +1035,6 @@ function CoworkPage() {
                           message.role === 'user'
                             ? handleDeleteQuestion
                             : undefined
-                        }
-                        // Only the last message can show the live subagent row,
-                        // so only it needs the runs.
-                        subagents={
-                          i === uiMessages.length - 1 ? subagents : undefined
                         }
                         reasoningContainerRef={reasoningContainerRef}
                         isReasoningAtBottom={isReasoningAtBottom}
