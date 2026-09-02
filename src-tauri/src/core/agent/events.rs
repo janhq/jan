@@ -114,6 +114,12 @@ pub enum StreamEvent {
         name: String,
         event: Box<StreamEvent>,
     },
+    /// The user-facing headline of a background ping the loop just delivered to
+    /// the model as a `<SYSTEM>` reminder (today: a `monitor` condition
+    /// matching). Emitted at delivery, not when the ping is queued, so the
+    /// transcript reads in the order the model saw things. Display-only and
+    /// transient, like notes: it is never journaled.
+    Notice { text: String },
     /// The loop's compaction reduced the conversation while retrying a
     /// context overflow. The client should replace its session history with
     /// `messages` for subsequent turns.

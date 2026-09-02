@@ -4721,6 +4721,14 @@ impl App {
                 };
                 self.push_subagent_summary(&name, calls, outcome);
             }
+            // A background ping's headline (a monitor condition matching),
+            // emitted as the loop delivers the `<SYSTEM>` text to the model.
+            // Transient like every other note: not journaled.
+            StreamEvent::Notice { text } => {
+                self.finalize_tool_group();
+                self.flush_assistant();
+                self.note(&text);
+            }
             StreamEvent::Subagent {
                 run_id,
                 name,
@@ -6031,8 +6039,39 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         }
         "ask" => "Asking a question".to_string(),
         "todo" => format!("{} {}", todo_op_verb(args, false), todo_target_label(args)),
+        "monitor" => monitor_activity(args, false),
         // Skill/memory tools already produce active labels ("Updating memory: X").
         _ => describe_tool_call(name, args),
+    }
+}
+
+/// Present/past-tense label for a `monitor` tool call, keyed on its `op`.
+/// Without this the row falls through to the raw-JSON fallback, and a start's
+/// condition scripts make that a paragraph, not a label.
+fn monitor_activity(args: &serde_json::Value, past: bool) -> String {
+    let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
+    match (s("op"), past) {
+        ("start", _) => {
+            let file = s("file");
+            let n = args
+                .get("conditions")
+                .and_then(|v| v.as_array())
+                .map(Vec::len)
+                .unwrap_or(0);
+            let verb = if past { "Started" } else { "Starting" };
+            let conditions = format!("({n} condition{})", if n == 1 { "" } else { "s" });
+            if file.is_empty() {
+                format!("{verb} a monitor {conditions}")
+            } else {
+                format!("{verb} a monitor on {file} {conditions}")
+            }
+        }
+        ("stop", false) => format!("Stopping monitor {}", s("monitor_id")),
+        ("stop", true) => format!("Stopped monitor {}", s("monitor_id")),
+        ("list", false) => "Listing monitors".to_string(),
+        ("list", true) => "Listed monitors".to_string(),
+        (_, false) => "Updating monitors".to_string(),
+        (_, true) => "Updated monitors".to_string(),
     }
 }
 
@@ -6163,6 +6202,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         }
         "ask" => "Asked a question".to_string(),
         "todo" => format!("{} {}", todo_op_verb(args, true), todo_target_label(args)),
+        "monitor" => monitor_activity(args, true),
         _ => describe_tool_call(name, args),
     }
 }
@@ -18544,6 +18584,37 @@ mod tests {
             tool_activity("memory_write", &json!({ "name": "decisions" })),
             "Updating memory: decisions"
         );
+    }
+
+    /// A `monitor` call must never fall through to the raw-JSON fallback: a
+    /// start's condition scripts make that a paragraph, not a label.
+    #[test]
+    fn monitor_calls_get_readable_labels() {
+        let start = json!({
+            "op": "start",
+            "file": "build.log",
+            "conditions": [
+                { "name": "ok", "script": "grep OK build.log" },
+                { "name": "fail", "script": "grep FAILED build.log" }
+            ]
+        });
+        assert_eq!(
+            tool_activity("monitor", &start),
+            "Starting a monitor on build.log (2 conditions)"
+        );
+        assert_eq!(
+            tool_finished("monitor", &start),
+            "Started a monitor on build.log (2 conditions)"
+        );
+        assert_eq!(
+            tool_activity("monitor", &json!({ "op": "stop", "monitor_id": "mon-2" })),
+            "Stopping monitor mon-2"
+        );
+        assert_eq!(
+            tool_finished("monitor", &json!({ "op": "stop", "monitor_id": "mon-2" })),
+            "Stopped monitor mon-2"
+        );
+        assert_eq!(tool_activity("monitor", &json!({ "op": "list" })), "Listing monitors");
     }
 
     #[test]

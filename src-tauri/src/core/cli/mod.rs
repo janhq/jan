@@ -1384,6 +1384,9 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
             Some(e) => eprintln!("\x1b[2m[subagent:{name}] failed: {e}\x1b[0m"),
             None => eprintln!("\x1b[2m[subagent:{name}] finished\x1b[0m"),
         },
+        StreamEvent::Notice { text } => {
+            eprintln!("\x1b[2m[notice] {text}\x1b[0m")
+        }
         StreamEvent::Subagent { name, event, .. } => {
             if let StreamEvent::ToolCall { name: tool, args, .. } = *event {
                 eprintln!(

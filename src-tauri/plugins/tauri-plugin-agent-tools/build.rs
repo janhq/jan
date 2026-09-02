@@ -21,6 +21,10 @@ const COMMANDS: &[&str] = &[
     "subagent_result_fill",
     "execute_tool",
     "execute_tool_streaming",
+    "start_monitor",
+    "stop_monitor",
+    "list_monitors",
+    "stop_session_monitors",
 ];
 
 fn main() {

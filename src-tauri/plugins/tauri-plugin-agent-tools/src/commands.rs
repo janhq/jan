@@ -426,6 +426,138 @@ pub async fn subagent_result_fill(
     Ok(())
 }
 
+/// Live monitors per Cowork session, each with the IPC channel its updates are
+/// forwarded over. Process-wide like `bash`'s background jobs: the Cowork loop
+/// runs in the frontend, so nothing host-side scopes a run. The channel slot is
+/// swappable because a session outlives any one run -- each `start_monitor`
+/// installs the current run's channel, and updates always go to the latest.
+struct SessionMonitors {
+    set: std::sync::Arc<crate::tools::monitor::MonitorSet>,
+    channel: MonitorChannelSlot,
+}
+
+type MonitorChannelSlot = std::sync::Arc<
+    std::sync::Mutex<Option<tauri::ipc::Channel<crate::tools::monitor::MonitorUpdate>>>,
+>;
+
+fn session_monitors(
+) -> &'static std::sync::Mutex<std::collections::HashMap<String, SessionMonitors>> {
+    static SETS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, SessionMonitors>>,
+    > = std::sync::OnceLock::new();
+    SETS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Start a file monitor for a Cowork session; updates stream over `on_update`.
+///
+/// Returns the model-facing result string from `MonitorSet::start`. Like
+/// `bash` on this surface, condition scripts run only under an enforcing OS
+/// sandbox -- there is no one to prompt, so unconfined execution is refused
+/// rather than allowed.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn start_monitor(
+    data_folder: String,
+    thread_id: String,
+    args: serde_json::Value,
+    allow_network: Option<bool>,
+    read_only_project: Option<String>,
+    scope: Option<WorkspaceScope>,
+    on_update: tauri::ipc::Channel<crate::tools::monitor::MonitorUpdate>,
+) -> Result<String, AgentToolsError> {
+    use crate::tools::monitor;
+    if !jail::backend().enforces() {
+        return Err(AgentToolsError::from(
+            "monitor is unavailable because no OS sandbox could be established on this system"
+                .to_string(),
+        ));
+    }
+    let spec = monitor::parse_start_args(&args).map_err(AgentToolsError::from)?;
+    let root = scope
+        .unwrap_or_default()
+        .ensure(Path::new(&data_folder), &thread_id)
+        .await?;
+    let scratch = workspace::ensure_scratch_dir(&thread_id).await?;
+    let read_roots: Vec<PathBuf> = match read_only_project.as_deref() {
+        Some(path) => vec![workspace::validate_read_root(
+            Path::new(path),
+            &root,
+            Some(Path::new(&data_folder)),
+        )?],
+        None => Vec::new(),
+    };
+    let ctx = monitor::MonitorCtx {
+        project_root: root,
+        scratch_root: Some(scratch),
+        mask_root: Some(PathBuf::from(&data_folder)),
+        read_roots,
+        allow_network: allow_network.unwrap_or(false),
+        home_readonly: false,
+        sandbox: true,
+    };
+    let set = {
+        let mut sets = session_monitors().lock().unwrap();
+        let entry = sets.entry(thread_id).or_insert_with(|| {
+            let slot: MonitorChannelSlot = std::sync::Arc::new(std::sync::Mutex::new(None));
+            let subscriber_slot = slot.clone();
+            SessionMonitors {
+                set: std::sync::Arc::new(monitor::MonitorSet::subscribed(std::sync::Arc::new(
+                    move |update| {
+                        if let Some(channel) = subscriber_slot.lock().unwrap().as_ref() {
+                            let _ = channel.send(update);
+                        }
+                    },
+                ))),
+                channel: slot,
+            }
+        });
+        *entry.channel.lock().unwrap() = Some(on_update);
+        entry.set.clone()
+    };
+    set.start(spec, ctx).map_err(AgentToolsError::from)
+}
+
+/// Stop one monitor. The result string is model-facing, so an unknown id comes
+/// back as an `ERROR:` result rather than a command failure.
+#[tauri::command]
+pub async fn stop_monitor(
+    thread_id: String,
+    monitor_id: String,
+) -> Result<String, AgentToolsError> {
+    let set = session_monitors()
+        .lock()
+        .unwrap()
+        .get(&thread_id)
+        .map(|entry| entry.set.clone());
+    Ok(match set {
+        Some(set) => set.stop(&monitor_id),
+        None => format!("ERROR: unknown or already-stopped monitor '{monitor_id}'"),
+    })
+}
+
+#[tauri::command]
+pub async fn list_monitors(thread_id: String) -> Result<String, AgentToolsError> {
+    let set = session_monitors()
+        .lock()
+        .unwrap()
+        .get(&thread_id)
+        .map(|entry| entry.set.clone());
+    Ok(match set {
+        Some(set) => set.list(),
+        None => "No active monitors.".to_string(),
+    })
+}
+
+/// Abort every monitor a session still has. Called at run end (and session
+/// teardown), the Cowork counterpart of the run-scoped drop on the CLI.
+#[tauri::command]
+pub async fn stop_session_monitors(thread_id: String) -> Result<(), AgentToolsError> {
+    if let Some(entry) = session_monitors().lock().unwrap().remove(&thread_id) {
+        entry.set.stop_all();
+    }
+    Ok(())
+}
+
 /// Execute one built-in tool.
 ///
 /// The gate decides, not the caller. `write` and `edit` resolve to `Prompt` and

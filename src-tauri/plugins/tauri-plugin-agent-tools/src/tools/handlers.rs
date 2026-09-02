@@ -733,6 +733,61 @@ async fn edit(
     }
 }
 
+/// The shell a confined command launches with: the (possibly jail-wrapped)
+/// shell config, the path the sandbox exposes as its temp dir, and the policy
+/// itself (which `denial_hint` reads even when the shell runs unconfined).
+///
+/// With the sandbox off the shell is spawned bare, the way the user's own
+/// terminal would run it: no wrapper, no policy mounts, the real `$HOME` and
+/// `/tmp`. Only a surface that opted in gets that (the CLI's
+/// `--sandbox`/`sandbox` setting); the desktop never does, so an exec there is
+/// still confined or withheld. Shared by `bash` and the `monitor` condition
+/// scripts so a monitored evaluation runs under exactly the policy a `bash`
+/// call would.
+pub(crate) fn confined_shell(
+    ctx: &ToolContext<'_>,
+) -> Result<(proc::ShellConfig, Option<PathBuf>, jail::Policy), String> {
+    let root = ctx.project_root;
+    let mut policy =
+        jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
+    // While the shell is sandboxed, hide the project's own `.jan` state directory
+    // from it (see [`Policy::with_hide_root`]). When the shell runs unconfined the
+    // hide is both pointless (there is no OS mount to layer it on) and wrong
+    // (the agent should see its own state), so it is only applied when sandboxed.
+    if ctx.sandbox {
+        policy = policy.with_hide_root(&root.join(crate::tools::sandbox::JAN_DIR));
+    }
+    if let Some(mask) = ctx.mask_root {
+        policy = policy.with_mask_root(mask);
+    }
+    if let Some(scratch) = ctx.scratch_root {
+        policy = policy.with_scratch_root(scratch);
+    }
+    if !ctx.read_roots.is_empty() {
+        policy = policy.with_read_roots(ctx.read_roots.to_vec());
+    }
+    let shell = if ctx.sandbox {
+        // No confinement available means no shell: running unsandboxed would give
+        // the command the whole machine, which is never what the caller asked for.
+        let Some(wrapped) = jail::wrap(proc::shell(), &policy) else {
+            return Err(
+                "ERROR: bash is unavailable because no OS sandbox could be established on \
+                 this system. Use the read/ls/find/grep tools instead."
+                    .to_string(),
+            );
+        };
+        wrapped
+    } else {
+        proc::shell().clone()
+    };
+    let sandbox_tmp = if ctx.sandbox {
+        jail::scratch_env_path(jail::backend(), &policy)
+    } else {
+        None
+    };
+    Ok((shell, sandbox_tmp, policy))
+}
+
 async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let Some(command) = arg_str(args, "command").filter(|command| !command.trim().is_empty())
     else {
@@ -752,48 +807,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         );
     }
 
-    let mut policy =
-        jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
-    // While the shell is sandboxed, hide the project's own `.jan` state directory
-    // from it (see [`Policy::with_hide_root`]). When the shell runs unconfined the
-    // hide is both pointless (there is no OS mount to layer it on) and wrong
-    // (the agent should see its own state), so it is only applied when sandboxed.
-    if ctx.sandbox {
-        policy = policy.with_hide_root(&root.join(crate::tools::sandbox::JAN_DIR));
-    }
-    if let Some(mask) = ctx.mask_root {
-        policy = policy.with_mask_root(mask);
-    }
-    if let Some(scratch) = ctx.scratch_root {
-        policy = policy.with_scratch_root(scratch);
-    }
-    if !ctx.read_roots.is_empty() {
-        policy = policy.with_read_roots(ctx.read_roots.to_vec());
-    }
-    // With the sandbox off the shell is spawned bare, the way the user's own
-    // terminal would: no wrapper, no policy, the real `$HOME` and `/tmp`. Only
-    // a surface that opted in gets here (the CLI's `--sandbox`/`sandbox`
-    // setting); the desktop never does, so `bash` there is still confined or
-    // withheld. `policy` is still built either way -- it is what
-    // `denial_hint` reads, and an unconfined command can still hit a plain
-    // filesystem permission error worth explaining.
-    let shell = if ctx.sandbox {
-        // No confinement available means no shell: running unsandboxed would give
-        // the command the whole machine, which is never what the caller asked for.
-        let Some(wrapped) = jail::wrap(proc::shell(), &policy) else {
-            return "ERROR: bash is unavailable because no OS sandbox could be established on \
-                    this system. Use the read/ls/find/grep tools instead."
-                .to_string();
-        };
-        wrapped
-    } else {
-        proc::shell().clone()
-    };
-
-    let sandbox_tmp = if ctx.sandbox {
-        jail::scratch_env_path(jail::backend(), &policy)
-    } else {
-        None
+    let (shell, sandbox_tmp, policy) = match confined_shell(ctx) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
     let child = match proc::spawn(&shell, command, root, sandbox_tmp.as_deref()).await {
         Ok(c) => c,
