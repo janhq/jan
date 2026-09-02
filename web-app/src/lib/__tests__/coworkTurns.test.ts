@@ -10,6 +10,26 @@ const toolPart = (turns: CoworkTurn[]) =>
   )
 
 describe('coworkTurnsToUIMessages', () => {
+  it('renders native reasoning as a reasoning part ahead of the answer', () => {
+    const messages = coworkTurnsToUIMessages([
+      { role: 'user', content: 'q' },
+      { role: 'assistant', content: 'answer', reasoning: 'weigh options' },
+    ])
+    const parts = partsOf(messages, 1)
+    expect(parts[0]).toEqual({ type: 'reasoning', text: 'weigh options' })
+    expect(parts[1]).toEqual({ type: 'text', text: 'answer' })
+  })
+
+  it('a reasoning-only turn still renders (thought, then straight to a tool)', () => {
+    const messages = coworkTurnsToUIMessages([
+      { role: 'user', content: 'q' },
+      { role: 'assistant', content: '', reasoning: 'thinking' },
+    ])
+    expect(partsOf(messages, 1)).toEqual([
+      { type: 'reasoning', text: 'thinking' },
+    ])
+  })
+
   it('starts a new user message and flushes the assistant before it', () => {
     const messages = coworkTurnsToUIMessages([
       { role: 'user', content: 'first' },

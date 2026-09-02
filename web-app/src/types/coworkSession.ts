@@ -17,6 +17,12 @@
 export type CoworkTurn = {
   role: 'user' | 'assistant' | 'tool' | 'system'
   content: string
+  /** Assistant-row only: natively streamed reasoning (`reasoning-*` chunks),
+   * kept beside the answer rather than inline in it -- `content` is what goes
+   * back as wire history, and reasoning must not ride there as text. Inline
+   * `<think>` reasoning stays inside `content` (that is what the model sent)
+   * and is split out at render time instead. */
+  reasoning?: string
   /** User-row only: data URLs of images attached via paste/file picker. */
   images?: string[]
   callId?: string

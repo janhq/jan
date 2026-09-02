@@ -1,4 +1,9 @@
-import { executeAgentTool } from '@/lib/agentTools'
+import {
+  executeAgentTool,
+  listAgentMonitors,
+  startAgentMonitor,
+  stopAgentMonitor,
+} from '@/lib/agentTools'
 import { useCoworkConfig } from '@/hooks/useCoworkConfig'
 import {
   ASK_TOOL_NAME,
@@ -6,6 +11,7 @@ import {
   TASK_TOOL_NAME,
   TODO_TOOL_NAME,
 } from '@/lib/coworkTools'
+import { MONITOR_TOOL_NAME, type MonitorLane } from '@/lib/coworkMonitor'
 import type { PendingToolCall, ToolOutcome } from '@/lib/coworkRunner'
 import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
 
@@ -22,6 +28,9 @@ export type DispatchContext = {
   onAsk: (toolCallId: string, input: unknown) => Promise<ToolOutcome>
   /** Runs a nested subagent to completion. */
   onTask: (toolCallId: string, input: unknown) => Promise<ToolOutcome>
+  /** The run's monitor bookkeeping; `null` for a subagent's dispatch, which
+   * refuses the tool (a child has no inbox for a watcher to ping). */
+  monitors: MonitorLane | null
 }
 
 /**
@@ -40,6 +49,47 @@ function planRefusal(toolName: string): ToolOutcome {
       '`ask` for plan review.',
     isError: true,
   }
+}
+
+/**
+ * One `monitor` op. The watcher runs in Rust; this routes the call and keeps
+ * the run's `MonitorLane` in step so the inbox parks the run while a watcher is
+ * owed work and never double-releases a slot.
+ */
+async function runMonitorOp(
+  input: unknown,
+  ctx: DispatchContext
+): Promise<ToolOutcome> {
+  const monitors = ctx.monitors
+  if (!monitors) {
+    return {
+      output: 'The monitor belongs to the agent that dispatched you.',
+      isError: true,
+    }
+  }
+  const args = (input ?? {}) as { op?: unknown; monitor_id?: unknown }
+  const op = typeof args.op === 'string' ? args.op : ''
+  if (op === 'start') {
+    const started = await startAgentMonitor(
+      ctx.sessionId,
+      input,
+      (update) => monitors.update(update),
+      ctx.readOnlyFolder,
+      useCoworkConfig.getState().networkEnabled
+    )
+    if (!started.isError) monitors.started(started.output)
+    return { output: started.output, isError: started.isError }
+  }
+  if (op === 'stop') {
+    const monitorId = typeof args.monitor_id === 'string' ? args.monitor_id : ''
+    const result = await stopAgentMonitor(ctx.sessionId, monitorId)
+    monitors.stopped(monitorId, result)
+    return { output: result, isError: result.startsWith('ERROR') }
+  }
+  if (op === 'list') {
+    return { output: await listAgentMonitors(ctx.sessionId) }
+  }
+  return { output: `ERROR: unknown monitor op '${op}'`, isError: true }
 }
 
 /**
@@ -63,6 +113,9 @@ export async function dispatchCoworkTool(
     }
     if (toolName === TASK_TOOL_NAME) {
       return await ctx.onTask(call.toolCallId, call.input)
+    }
+    if (toolName === MONITOR_TOOL_NAME) {
+      return await runMonitorOp(call.input, ctx)
     }
 
     if (WEB_TOOL_NAMES.has(toolName)) {

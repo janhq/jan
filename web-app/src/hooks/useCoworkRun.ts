@@ -21,6 +21,7 @@ export type {
 // Owned here because this store is what consumes/dispatches them.
 export type StreamEvent =
   | { type: 'token'; text: string }
+  | { type: 'reasoning'; text: string }
   | { type: 'step'; index: number; max: number }
   | { type: 'tool_call_started'; id: string; name: string }
   | { type: 'tool_call_args_delta'; id: string; delta: string }
@@ -82,6 +83,18 @@ function applyInnerToTurns(turns: CoworkTurn[], inner: StreamEvent): CoworkTurn[
   switch (inner.type) {
     case 'token':
       return appendAssistantToken(turns, inner.text)
+    // Native reasoning, merged like a token but into the row's own `reasoning`
+    // slot: it must not join `content`, which is what the lane treats as the
+    // child's answer text.
+    case 'reasoning': {
+      const last = turns[turns.length - 1]
+      if (last && last.role === 'assistant')
+        return [
+          ...turns.slice(0, -1),
+          { ...last, reasoning: (last.reasoning ?? '') + inner.text },
+        ]
+      return [...turns, { role: 'assistant', content: '', reasoning: inner.text }]
+    }
     case 'tool_call_started': {
       if (turns.some((tn) => tn.role === 'tool' && tn.callId === inner.id)) return turns
       return [

@@ -66,6 +66,7 @@ import { CoworkBudgetNotice } from '@/containers/CoworkBudgetNotice'
 import { CoworkRunNotice } from '@/containers/CoworkRunNotice'
 import { CoworkAskCard } from '@/containers/CoworkAskCard'
 import { CoworkChatTransport } from '@/lib/coworkTransport'
+import { getCoworkEnvironment } from '@/lib/coworkEnv'
 import { dispatchCoworkTool } from '@/lib/coworkDispatch'
 import { applyTodoOp, renderTodoResult } from '@/lib/coworkTodo'
 import { parseAskRequest, renderAskResult } from '@/lib/coworkAsk'
@@ -74,7 +75,9 @@ import {
   sandboxEnforces,
   fillSubagentResult,
   reserveSubagentResult,
+  stopAgentSessionMonitors,
 } from '@/lib/agentTools'
+import { MonitorLane } from '@/lib/coworkMonitor'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { MAX_AGENT_STEPS } from '@/lib/coworkBudget'
 import {
@@ -250,6 +253,15 @@ function CoworkPage() {
     () => coworkTurnsToUIMessages(displayedTurns, session?.id ?? 'cowork'),
     [displayedTurns, session?.id]
   )
+  // While a run streams, the last assistant message is the only one that can
+  // still gain parts; its artifact cards wait until the turn finishes.
+  const streamingMessageIdx = useMemo(() => {
+    if (!viewingRun) return -1
+    for (let i = uiMessages.length - 1; i >= 0; i--) {
+      if (uiMessages[i].role === 'assistant') return i
+    }
+    return -1
+  }, [viewingRun, uiMessages])
 
   const usage = liveUsage ?? session?.lastUsage ?? null
   const tokenSource = useMemo(
@@ -348,6 +360,8 @@ function CoworkPage() {
     // Read once per run, not subscribed: the advertised set is frozen for the
     // run anyway, so a mid-run flip in Settings would only desync the prompt.
     const webSearch = useWebSearchConfig.getState().webSearchEnabled
+    // One snapshot per run, shared with every child this run dispatches.
+    const environment = await getCoworkEnvironment()
     const transport = new CoworkChatTransport(sid, {
       planMode: current?.planMode ?? false,
       subagentNames: subagentDefs.map((d) => d.name),
@@ -365,6 +379,9 @@ function CoworkPage() {
     // Owned by this request: children cannot outlive the run whose signal
     // aborts them, so a fresh inbox per run can never hold a stale ping.
     const inbox = new SubagentInbox()
+    // Bridges Rust monitor updates into the same inbox, so a watcher parks the
+    // run exactly the way a running subagent does.
+    const monitors = new MonitorLane(inbox)
 
     const sink: StreamSink = {
       onText: (delta) => {
@@ -374,6 +391,18 @@ function CoworkPage() {
           setLiveTurns([...liveTurnsRef.current])
         } else {
           pushLive([{ role: 'assistant', content: delta }])
+        }
+      },
+      // Native reasoning streams beside the content, so the collapsible
+      // thinking block fills in live instead of the transcript sitting silent
+      // for the whole chain of thought.
+      onReasoning: (delta) => {
+        const last = liveTurnsRef.current[liveTurnsRef.current.length - 1]
+        if (last && last.role === 'assistant') {
+          last.reasoning = (last.reasoning ?? '') + delta
+          setLiveTurns([...liveTurnsRef.current])
+        } else {
+          pushLive([{ role: 'assistant', content: '', reasoning: delta }])
         }
       },
       onToolStart: (callId, name) =>
@@ -449,6 +478,7 @@ function CoworkPage() {
                 readOnlyFolder: current?.folder ?? null,
                 planMode: current?.planMode ?? false,
                 webSearch,
+                monitors,
                 onTodo: async (input) => {
                   const result = applyTodoOp(
                     useCoworkSessions
@@ -513,6 +543,7 @@ function CoworkPage() {
                       workspacePath,
                       readOnlyFolder: current?.folder ?? null,
                       bashAvailable: sandboxEnforces(),
+                      environment,
                     },
                     signal: controller.signal,
                     sessionTokens: 0,
@@ -525,6 +556,8 @@ function CoworkPage() {
                         readOnlyFolder: current?.folder ?? null,
                         planMode: current?.planMode ?? false,
                         webSearch,
+                        // A child has no inbox for a watcher to ping.
+                        monitors: null,
                         onTodo: async () => ({
                           output:
                             'The todo list belongs to the agent that dispatched you.',
@@ -663,6 +696,9 @@ function CoworkPage() {
             errorText: e instanceof Error ? e.message : String(e),
           }
     } finally {
+      // Watchers are run-scoped, like the children the abort signal covers: an
+      // update landing after this point would have no run to resume.
+      void stopAgentSessionMonitors(sid)
       useAppState.getState().updateLoadingModel(false)
       useCoworkSessions
         .getState()
@@ -1048,15 +1084,19 @@ function CoworkPage() {
                       />
                       {/* Derived from the message's own write parts, so nothing
                         shared with the chat surface needs to know artifacts
-                        exist. */}
-                      {artifactsFromParts(message.parts).map((artifact) => (
-                        <CoworkArtifactCard
-                          key={artifact.path}
-                          artifact={artifact}
-                          root={workspacePath}
-                          onPreview={showPreview}
-                        />
-                      ))}
+                        exist. Held back on the message still streaming: a card
+                        mid-run announces a deliverable the agent may yet
+                        rewrite, and it pushes the live tail around. */}
+                      {i !== streamingMessageIdx &&
+                        artifactsFromParts(message.parts).map((artifact) => (
+                          <CoworkArtifactCard
+                            key={artifact.path}
+                            artifact={artifact}
+                            root={workspacePath}
+                            onPreview={showPreview}
+                            className="my-3"
+                          />
+                        ))}
                     </Fragment>
                   ))}
                   {viewingRun && (

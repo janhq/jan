@@ -66,6 +66,15 @@ export function coworkTurnsToUIMessages(
     }
 
     if (turn.role === 'assistant') {
+      // Natively streamed reasoning rides beside the content (see
+      // `CoworkTurn.reasoning`) and becomes a reasoning part ahead of the text,
+      // matching emission order.
+      if (turn.reasoning) {
+        ensureAssistant(i).parts.push({
+          type: 'reasoning',
+          text: turn.reasoning,
+        })
+      }
       // Split out <think>/<thought> reasoning into reasoning parts (same helper
       // the chat loader uses) so the agent's chain-of-thought renders in the
       // collapsible reasoning UI instead of leaking into the transcript as text.

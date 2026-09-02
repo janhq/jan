@@ -14,6 +14,7 @@ import {
   TASK_TOOL_NAME,
   TODO_TOOL_NAME,
 } from '@/lib/coworkTools'
+import { MONITOR_TOOL_NAME } from '@/lib/coworkMonitor'
 import { MAX_SUBAGENT_STEPS } from '@/lib/coworkBudget'
 import {
   runTurn,
@@ -21,7 +22,10 @@ import {
   type StreamSink,
   type ToolOutcome,
 } from '@/lib/coworkRunner'
-import { buildSubagentSystemPrompt } from '@/lib/coworkPrompt'
+import {
+  buildSubagentSystemPrompt,
+  type CoworkEnvironment,
+} from '@/lib/coworkPrompt'
 import type { StreamEvent } from '@/hooks/useCoworkRun'
 
 /**
@@ -130,6 +134,21 @@ export class SubagentInbox {
     this.wake()
   }
 
+  /** Queue a ping without closing a running slot: a monitor's non-terminal
+   * match, where the watcher is still owed further work. */
+  note(notice: SubagentNotice): void {
+    this.queue.push(notice)
+    this.wake()
+  }
+
+  /** Release a running slot with nothing to report: a start that failed after
+   * `begin`, or a monitor the model stopped itself (its own tool result already
+   * says so). */
+  abandon(): void {
+    this.running -= 1
+    this.wake()
+  }
+
   /** Take every queued ping, oldest first. */
   take(): SubagentNotice[] {
     const out = this.queue
@@ -186,6 +205,10 @@ const WITHHELD_FROM_SUBAGENTS = new Set([
   TASK_TOOL_NAME,
   ASK_TOOL_NAME,
   TODO_TOOL_NAME,
+  // A monitor pings the run's inbox, which belongs to the parent's
+  // conversation; a child has no inbox, so its watcher would report to no one.
+  // (The Rust CLI differs: there a child run owns a registry of its own.)
+  MONITOR_TOOL_NAME,
 ])
 
 export type SubagentRequest = {
@@ -401,6 +424,7 @@ export type RunSubagentOptions = {
     workspacePath: string | null
     readOnlyFolder: string | null
     bashAvailable: boolean
+    environment?: CoworkEnvironment | null
   }
   /** Runs one of the child's tool calls. Same sandbox as the parent. */
   dispatch: (call: PendingToolCall, signal: AbortSignal) => Promise<ToolOutcome>
@@ -489,6 +513,7 @@ export async function runSubagent(
       bashAvailable: opts.system.bashAvailable && 'bash' in tools,
       // Derived, not passed: the intersection above may have dropped them.
       webSearch: 'web_search' in tools,
+      environment: opts.system.environment,
     })
 
     // A fresh history: the child does not see the parent's conversation, so the
@@ -504,6 +529,8 @@ export async function runSubagent(
     let finalText = ''
     const sink: StreamSink = {
       onText: (delta) => events.onInner({ type: 'token', text: delta }),
+      onReasoning: (delta) =>
+        events.onInner({ type: 'reasoning', text: delta }),
       onToolStart: (id, name) =>
         events.onInner({ type: 'tool_call_started', id, name }),
       onToolArgsDelta: (id, delta) =>

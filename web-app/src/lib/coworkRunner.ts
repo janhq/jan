@@ -41,6 +41,11 @@ export type ToolOutcome = {
 /** One model turn's worth of stream, folded into a shape the loop can act on. */
 export type StepResult = {
   text: string
+  /** Natively streamed reasoning (`reasoning-delta` chunks), accumulated apart
+   * from `text`: the answer text becomes wire-history `content`, and reasoning
+   * must never travel there inline. Inline `<think>` reasoning is different --
+   * it IS the content the model sent -- and stays in `text`. */
+  reasoning: string
   toolCalls: PendingToolCall[]
   usage: Usage | null
   errorText?: string
@@ -181,6 +186,10 @@ const usageOf = (meta: unknown): Usage | null => {
 
 export type StreamSink = {
   onText: (delta: string) => void
+  /** A natively streamed reasoning fragment. Dropping these is not an option:
+   * unlike inline `<think>` they never reach `onText`, so a sink without this
+   * would show nothing at all while the model thinks. */
+  onReasoning: (delta: string) => void
   onToolStart: (toolCallId: string, toolName: string) => void
   onToolArgsDelta: (toolCallId: string, delta: string) => void
   onToolCall: (call: PendingToolCall) => void
@@ -198,6 +207,7 @@ export async function consumeStep(
   const reader = stream.getReader()
   const result: StepResult = {
     text: '',
+    reasoning: '',
     toolCalls: [],
     usage: null,
     aborted: false,
@@ -211,6 +221,10 @@ export async function consumeStep(
         case 'text-delta':
           result.text += chunk.delta
           sink.onText(chunk.delta)
+          break
+        case 'reasoning-delta':
+          result.reasoning += chunk.delta
+          sink.onReasoning(chunk.delta)
           break
         case 'tool-input-start':
           sink.onToolStart(chunk.toolCallId, chunk.toolName)
@@ -254,6 +268,9 @@ export function assistantMessageFor(
   outcomes: Map<string, ToolOutcome>
 ): UIMessage {
   const parts: any[] = []
+  // Before the text part, matching emission order -- and as a `reasoning` part,
+  // the same shape chat threads persist, so the transport treats it the same.
+  if (step.reasoning) parts.push({ type: 'reasoning', text: step.reasoning })
   if (step.text) parts.push({ type: 'text', text: step.text })
   for (const call of step.toolCalls) {
     const outcome = outcomes.get(call.toolCallId)
@@ -282,7 +299,15 @@ export function turnsFor(
   outcomes: Map<string, ToolOutcome>
 ): CoworkTurn[] {
   const turns: CoworkTurn[] = []
-  if (step.text) turns.push({ role: 'assistant', content: step.text })
+  // A reasoning-only step (thought, then straight to a tool call) still gets a
+  // row: its reasoning would otherwise vanish from the committed transcript.
+  if (step.text || step.reasoning) {
+    turns.push({
+      role: 'assistant',
+      content: step.text,
+      ...(step.reasoning ? { reasoning: step.reasoning } : {}),
+    })
+  }
   for (const call of step.toolCalls) {
     const outcome = outcomes.get(call.toolCallId)
     turns.push({
@@ -405,6 +430,12 @@ export async function runTurn(opts: {
         onText: (d) => {
           received = true
           deps.sink.onText(d)
+        },
+        // Reasoning bytes on screen count as received too: replaying the
+        // request after them would duplicate the thinking block.
+        onReasoning: (d) => {
+          received = true
+          deps.sink.onReasoning(d)
         },
         onToolStart: (id, name) => {
           received = true
