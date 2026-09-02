@@ -52,15 +52,21 @@ describe('the task result and its completion ping', () => {
     expect(out).toContain('You will be given its answer')
   })
 
-  it('points the ping at the file rather than repeating the answer', () => {
+  /// The row shows the headline and the model gets the instructions after it:
+  /// "read that file when you need it" is addressed to the model alone.
+  it('splits the fact from the instructions that follow it', () => {
     const out = subagentCompletionNotice({
       name: 'researcher',
       callId: 'c1',
       savedPath: '/tmp/subagents/r.md',
       output: 'the findings',
     })
-    expect(out).toContain('/tmp/subagents/r.md')
-    expect(out).not.toContain('the findings')
+    expect(out.headline).toBe("Subagent 'researcher' (c1) finished")
+    expect(out.headline).not.toContain('/tmp/')
+    expect(out.text.startsWith(out.headline)).toBe(true)
+    expect(out.text).toContain('/tmp/subagents/r.md')
+    // The answer is on disk; repeating it here would spend the context twice.
+    expect(out.text).not.toContain('the findings')
   })
 
   // Nothing else would carry it: with no file, the ping is the only delivery.
@@ -72,11 +78,15 @@ describe('the task result and its completion ping', () => {
       savedPath: null,
       output,
     })
-    expect(out).toContain('y'.repeat(SUBAGENT_INLINE_MAX))
-    expect(out.length).toBeLessThan(output.length + 200)
+    expect(out.text).toContain('y'.repeat(SUBAGENT_INLINE_MAX))
+    expect(out.text.length).toBeLessThan(output.length + 200)
+    // Still just the fact: the answer is for the model, not the transcript.
+    expect(out.headline).toBe("Subagent 'researcher' (c1) finished")
   })
 
-  it('reports a failure as one, with no file named', () => {
+  /// A failure has no instructions to strip, so both registers are the reason
+  /// it failed -- which is the one thing here worth reading on screen.
+  it('reports a failure as one, in both registers', () => {
     const out = subagentCompletionNotice({
       name: 'researcher',
       callId: 'c1',
@@ -84,21 +94,24 @@ describe('the task result and its completion ping', () => {
       output: 'the model refused',
       isError: true,
     })
-    expect(out).toContain('failed: the model refused')
+    expect(out.headline).toBe("Subagent 'researcher' (c1) failed: the model refused")
+    expect(out.text).toBe(out.headline)
   })
 })
 
 describe('SubagentInbox', () => {
+  const done = { headline: 'done', text: 'done, in full' }
+
   it('reports work outstanding from dispatch until the ping is taken', async () => {
     const inbox = new SubagentInbox()
     expect(inbox.pending()).toBe(false)
     inbox.begin()
     expect(inbox.pending()).toBe(true)
-    inbox.finish('done')
+    inbox.finish(done)
     // Still pending: the ping has been queued but not delivered, so a run that
     // stopped here would drop it.
     expect(inbox.pending()).toBe(true)
-    expect(inbox.take()).toEqual(['done'])
+    expect(inbox.take()).toEqual([done])
     expect(inbox.take()).toEqual([])
     expect(inbox.pending()).toBe(false)
   })
@@ -112,7 +125,7 @@ describe('SubagentInbox', () => {
     })
     await Promise.resolve()
     expect(woke).toBe(false)
-    inbox.finish('done')
+    inbox.finish(done)
     await waiting
     expect(woke).toBe(true)
   })
