@@ -11,6 +11,9 @@ pub mod gate;
 pub mod handlers;
 pub mod image;
 pub mod jail;
+/// The `monitor` tool's core: file watching + condition-script evaluation.
+/// Loop-dispatched (like the subagent tools), so it is not in `BUILTIN_TOOLS`.
+pub mod monitor;
 pub mod proc;
 /// Path containment for the filesystem tools. Distinct from [`jail`], which is
 /// kernel-level confinement for spawned commands.
