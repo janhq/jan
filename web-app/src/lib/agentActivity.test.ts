@@ -3,7 +3,6 @@ import {
   toolActivityText,
   completedToolLabel,
   usedSkillNames,
-  activeToolPart,
   subagentActivityLabel,
   awaitsModel,
 } from './agentActivity'
@@ -94,42 +93,6 @@ describe('usedSkillNames', () => {
         },
       ])
     ).toEqual(['pptx'])
-  })
-})
-
-describe('activeToolPart', () => {
-  it('returns null when no part is pending', () => {
-    const parts = [
-      { type: 'text', state: undefined },
-      {
-        type: 'tool-write',
-        state: 'output-available',
-        toolCallId: 'c1',
-        input: { path: 'a.ts' },
-      },
-    ]
-    expect(activeToolPart(parts)).toBeNull()
-  })
-
-  it('returns the pending tool part text and id', () => {
-    const parts = [
-      {
-        type: 'tool-write',
-        state: 'input-available',
-        toolCallId: 'c1',
-        input: { path: 'report.html' },
-      },
-    ]
-    expect(activeToolPart(parts)).toEqual({
-      toolCallId: 'c1',
-      toolName: 'write',
-      text: 'Writing report.html',
-    })
-  })
-
-  it('ignores non-tool parts', () => {
-    const parts = [{ type: 'text', state: 'input-available' }]
-    expect(activeToolPart(parts)).toBeNull()
   })
 })
 

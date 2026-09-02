@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
 import { MessageItem } from './MessageItem'
 import type { UIMessage } from 'ai'
+import type { SubagentRun } from '@/types/coworkSession'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
@@ -19,7 +20,7 @@ describe('agent activity status', () => {
     vi.useRealTimers()
   })
 
-  const baseMessage: UIMessage = {
+  const pendingWrite: UIMessage = {
     id: 'm1',
     role: 'assistant',
     parts: [
@@ -32,16 +33,43 @@ describe('agent activity status', () => {
     ],
   } as UIMessage
 
-  it('shows the active tool label and ticks elapsed time', () => {
+  /// The call's own card sits one row above with its name, arguments and a
+  /// ticking duration, so a status row saying "Writing report.html" printed the
+  /// same thing twice.
+  it('leaves a pending tool call to its own card', () => {
     render(
       <MessageItem
-        message={baseMessage}
+        message={pendingWrite}
         isFirstMessage={false}
         isLastMessage={true}
         status="streaming"
       />
     )
-    expect(screen.getByText(/Writing report\.html/)).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  /// A subagent is the exception: it works in a lane of its own, so nothing in
+  /// this turn reports it and the row is the only place it shows.
+  it('reports a running subagent, and ticks its elapsed time', () => {
+    const subagents: SubagentRun[] = [
+      {
+        runId: 'r1',
+        name: 'researcher',
+        status: 'running',
+        startedAt: Date.now(),
+        turns: [],
+      },
+    ]
+    render(
+      <MessageItem
+        message={pendingWrite}
+        isFirstMessage={false}
+        isLastMessage={true}
+        status="streaming"
+        subagents={subagents}
+      />
+    )
+    expect(screen.getByText(/researcher: working/)).toBeInTheDocument()
     expect(screen.getByText(/0ms/)).toBeInTheDocument()
 
     act(() => {
@@ -50,28 +78,25 @@ describe('agent activity status', () => {
     expect(screen.getByText(/3s/)).toBeInTheDocument()
   })
 
-  it('removes the status row once the tool result lands', () => {
-    const doneMessage: UIMessage = {
-      ...baseMessage,
-      parts: [
-        {
-          type: 'tool-write',
-          toolCallId: 'c1',
-          state: 'output-available',
-          input: { path: '/proj/report.html' },
-          output: 'ok',
-        } as never,
-      ],
-    } as UIMessage
-
+  it('drops the row once the subagent finishes', () => {
+    const subagents: SubagentRun[] = [
+      {
+        runId: 'r1',
+        name: 'researcher',
+        status: 'done',
+        startedAt: Date.now(),
+        turns: [],
+      },
+    ]
     render(
       <MessageItem
-        message={doneMessage}
+        message={pendingWrite}
         isFirstMessage={false}
         isLastMessage={true}
-        status="ready"
+        status="streaming"
+        subagents={subagents}
       />
     )
-    expect(screen.queryByText(/Writing report\.html/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })
