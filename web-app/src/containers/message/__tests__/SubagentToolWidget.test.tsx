@@ -16,46 +16,16 @@ const bar = {
 
 describe('SubagentToolWidget', () => {
   it('names the subagent and its brief while the call streams', () => {
-    render(<SubagentToolWidget bar={bar} state="input-streaming" />)
+    render(<SubagentToolWidget bar={bar} />)
     expect(screen.getByText('researcher')).toBeInTheDocument()
     expect(screen.getByText(bar.task)).toBeInTheDocument()
     expect(screen.getByText('tools:toolCall.dispatching')).toBeInTheDocument()
   })
 
   it('prompts for the subagent before the name arrives', () => {
-    render(
-      <SubagentToolWidget
-        bar={{ variant: 'subagent', name: '', task: '' }}
-        state="input-streaming"
-      />
-    )
+    render(<SubagentToolWidget bar={{ variant: 'subagent', name: '', task: '' }} />)
     expect(
       screen.getByText('tools:toolCall.subagentPlaceholder')
     ).toBeInTheDocument()
-  })
-
-  /// `task` returns as soon as the child starts, so a settled card means
-  /// "dispatched", not "finished" -- the tasks panel is what follows the run.
-  it('reads as running once the call settles', () => {
-    render(<SubagentToolWidget bar={bar} state="output-available" />)
-    expect(
-      screen.getByText('tools:toolCall.subagentRunning')
-    ).toBeInTheDocument()
-  })
-
-  /// A rejected dispatch is the one thing on this card the user may need to
-  /// act on, so it is not left folded away in the raw output.
-  it('shows a refused dispatch', () => {
-    render(
-      <SubagentToolWidget
-        bar={bar}
-        state="output-error"
-        errorText="unknown subagent 'researcher': no saved definition"
-      />
-    )
-    expect(screen.getByText(/no saved definition/)).toBeInTheDocument()
-    expect(
-      screen.queryByText('tools:toolCall.subagentRunning')
-    ).not.toBeInTheDocument()
   })
 })

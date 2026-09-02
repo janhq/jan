@@ -58,6 +58,26 @@ describe('AgentToolWidget', () => {
     expect(screen.getByText('2')).toBeInTheDocument()
   })
 
+  /// Same reasoning as the write body: for an `edit` the arguments are the
+  /// work, so they replace the throbber rather than sitting behind it.
+  it('previews an edit as a diff while it streams', () => {
+    render(
+      <AgentToolWidget
+        bar={{
+          variant: 'workspace',
+          tool: 'edit',
+          target: 'a.ts',
+          edits: [{ old_string: 'before', new_string: 'after' }],
+        }}
+        state="input-streaming"
+        toolCallId="tc1"
+      />
+    )
+    expect(screen.queryByText('tools:toolCall.editing')).not.toBeInTheDocument()
+    expect(screen.getByText('-before')).toBeInTheDocument()
+    expect(screen.getByText('+after')).toBeInTheDocument()
+  })
+
   /// Before the body opens there is nothing to preview, and the verb is all
   /// there is to say.
   it('keeps the verb until the body starts arriving', () => {

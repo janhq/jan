@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
+  editPreview,
   writeTail,
   STREAM_TAIL_LINES,
   STREAM_MAX_LINE_CHARS,
-} from '../streamingWrite'
+} from '../streamingArgs'
 
 describe('writeTail', () => {
   it('keeps a short body whole', () => {
@@ -57,5 +58,52 @@ describe('writeTail', () => {
     expect(writeTail(e.repeat(STREAM_MAX_LINE_CHARS + 1)).lines[0]).toContain(
       '\u2026'
     )
+  })
+})
+
+describe('editPreview', () => {
+  it('reads as a diff: what goes out, then what comes in', () => {
+    const { rows, skipped } = editPreview([
+      { old_string: 'a\nb', new_string: 'A' },
+    ])
+    expect(rows).toEqual([
+      { sign: '-', text: 'a' },
+      { sign: '-', text: 'b' },
+      { sign: '+', text: 'A' },
+    ])
+    expect(skipped).toBe(0)
+  })
+
+  /// The pair with no replacement yet is the one being written, which is
+  /// exactly the one worth watching.
+  it('keeps a pair whose replacement has not arrived', () => {
+    const { rows } = editPreview([
+      { old_string: 'one', new_string: '1' },
+      { old_string: 'two' },
+    ])
+    expect(rows.map((r) => r.sign)).toEqual(['-', '+', '-'])
+    expect(rows.at(-1)).toEqual({ sign: '-', text: 'two' })
+  })
+
+  it('windows onto the tail, where the writing is', () => {
+    const edits = Array.from({ length: 10 }, (_, i) => ({
+      old_string: `old ${i}`,
+      new_string: `new ${i}`,
+    }))
+    const { rows, skipped } = editPreview(edits)
+    expect(rows).toHaveLength(STREAM_TAIL_LINES)
+    expect(skipped).toBe(20 - STREAM_TAIL_LINES)
+    expect(rows.at(-1)).toEqual({ sign: '+', text: 'new 9' })
+  })
+
+  it('clamps a long replacement the same way a write body is clamped', () => {
+    const { rows } = editPreview([
+      { old_string: 'x', new_string: 'y'.repeat(STREAM_MAX_LINE_CHARS + 5) },
+    ])
+    expect([...rows[1].text]).toHaveLength(STREAM_MAX_LINE_CHARS + 1)
+  })
+
+  it('has nothing to show before the first pair', () => {
+    expect(editPreview([])).toEqual({ rows: [], skipped: 0 })
   })
 })

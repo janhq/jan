@@ -20,9 +20,10 @@ export type ToolCallBar =
    * for read/ls, the pattern for find/grep, the entry name for memory/skill --
    * with `detail` carrying the secondary argument when there is one.
    *
-   * `body` is a `write`'s file content. It is the one argument worth showing
-   * while it streams: it is the work itself, and a large write takes long
-   * enough that a spinner says nothing about it.
+   * `body` (a `write`'s file content) and `edits` (an `edit`'s replacement
+   * pairs) are the arguments worth showing while they stream: for those two
+   * tools the arguments are the work itself, and a large one takes long enough
+   * that a spinner says nothing about it.
    */
   | {
       variant: 'workspace'
@@ -30,6 +31,7 @@ export type ToolCallBar =
       target: string
       detail?: string
       body?: string
+      edits?: { old_string: string; new_string?: string }[]
     }
   /**
    * `task`. The card answers "which subagent, and what did it just get asked
@@ -47,6 +49,27 @@ export const RAG_RETRIEVE_TOOL = 'retrieve'
 
 const asString = (value: unknown): string =>
   typeof value === 'string' ? value : ''
+
+/** `edit`'s replacement pairs, from settled arguments or a streaming fragment
+ * -- both carry the tool's own shape. A pair whose `new_string` has not arrived
+ * is the one being written, and is kept. */
+const asEdits = (
+  value: unknown
+): { old_string: string; new_string?: string }[] | undefined => {
+  if (!Array.isArray(value)) return undefined
+  const edits = value.flatMap((entry) => {
+    const old = (entry as { old_string?: unknown })?.old_string
+    if (typeof old !== 'string') return []
+    const next = (entry as { new_string?: unknown })?.new_string
+    return [
+      {
+        old_string: old,
+        new_string: typeof next === 'string' ? next : undefined,
+      },
+    ]
+  })
+  return edits.length > 0 ? edits : undefined
+}
 
 /**
  * Build the bar for a native tool call from its arguments. Arguments stream in,
@@ -115,6 +138,7 @@ export function describeNativeToolCall(
       tool: toolName,
       target: asString(args.path) || asString(args.name),
       body: toolName === 'write' ? asString(args.content) : undefined,
+      edits: toolName === 'edit' ? asEdits(args.edits) : undefined,
     }
   }
   return undefined

@@ -18,7 +18,7 @@ import {
   type ToolCallBar,
 } from '@/lib/toolPresentation'
 import { cn } from '@/lib/utils'
-import { writeTail } from '@/lib/streamingWrite'
+import { editPreview, writeTail } from '@/lib/streamingArgs'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { Caret, ToolBar } from './ToolBar'
 
@@ -98,6 +98,37 @@ const WritePreviewBlock = memo(({ body }: { body: string }) => {
 })
 
 WritePreviewBlock.displayName = 'WritePreviewBlock'
+
+/**
+ * An `edit`'s replacements as they arrive: what is going out, what is coming
+ * in. Superseded by the real diff (`DiffBlock`) the moment the call lands --
+ * that one is computed against the file and knows what actually changed, which
+ * the arguments alone cannot say.
+ */
+const EditPreviewBlock = memo(
+  ({ edits }: { edits: { old_string: string; new_string?: string }[] }) => {
+    const { rows } = useMemo(() => editPreview(edits), [edits])
+
+    return (
+      <div className="mt-1.5 max-h-56 overflow-hidden rounded-md border bg-card/40 py-1 font-mono text-xs">
+        {rows.map((row, i) => (
+          <div
+            key={i}
+            className={cn(
+              'whitespace-pre-wrap wrap-break-word px-2',
+              diffLineTone(row.sign)
+            )}
+          >
+            {row.sign}
+            {row.text || ' '}
+          </div>
+        ))}
+      </div>
+    )
+  }
+)
+
+EditPreviewBlock.displayName = 'EditPreviewBlock'
 
 export type TerminalWidgetProps = {
   bar: Extract<ToolCallBar, { variant: 'terminal' }>
@@ -286,10 +317,12 @@ export const AgentToolWidget = memo(
           </div>
         )}
 
-        {/* The body says more than "Writing…" ever could, so it replaces the
-            throbber the moment the first line arrives. */}
+        {/* The arguments say more than "Writing…" ever could, so they replace
+            the throbber the moment the first line arrives. */}
         {running && !errorText && bar.body ? (
           <WritePreviewBlock body={bar.body} />
+        ) : running && !errorText && bar.edits ? (
+          <EditPreviewBlock edits={bar.edits} />
         ) : (
           running &&
           !errorText && (
