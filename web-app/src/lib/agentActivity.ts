@@ -79,28 +79,7 @@ export function completedToolLabel(
 type ToolPartLike = {
   type: string
   state?: string
-  toolCallId?: string
   input?: unknown
-}
-
-const PENDING_STATES = new Set(['input-available', 'submitted'])
-
-/** Finds the first pending tool part; returns its id, name, and activity text. */
-export function activeToolPart(
-  parts: ToolPartLike[]
-): { toolCallId: string; toolName: string; text: string } | null {
-  for (const part of parts) {
-    if (!part.type.startsWith('tool-')) continue
-    if (!part.state || !PENDING_STATES.has(part.state)) continue
-    if (!part.toolCallId) continue
-    const toolName = part.type.slice('tool-'.length)
-    return {
-      toolCallId: part.toolCallId,
-      toolName,
-      text: toolActivityText(toolName, part.input),
-    }
-  }
-  return null
 }
 
 export function usedSkillNames(parts: ToolPartLike[]): string[] {
