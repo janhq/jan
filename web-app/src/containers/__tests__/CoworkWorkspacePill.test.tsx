@@ -37,10 +37,11 @@ describe('CoworkWorkspacePill', () => {
     ).toBeGreaterThan(0)
   })
 
-  // The honesty requirement: whenever a folder is attached, the popover must
-  // name the direction and mark the folder read-only. A regression here would
-  // have the UI implying the agent edits the user's project.
-  it('names the read direction and marks the folder read-only', async () => {
+  // The honesty requirement, inverted from the read-only days: the folder is
+  // mounted writable now, so the popover must say the agent edits it in place.
+  // A regression here would have the UI promising an untouched project while
+  // the agent changes real files.
+  it('names the folder and marks it read & write', async () => {
     render(
       <CoworkWorkspacePill
         folder="/home/u/Projects/jan-app"
@@ -53,8 +54,9 @@ describe('CoworkWorkspacePill', () => {
 
     expect(screen.getByText('common:workspace.readsFrom')).toBeInTheDocument()
     expect(
-      screen.getAllByText('common:workspace.readOnly').length
+      screen.getAllByText('common:workspace.writable').length
     ).toBeGreaterThan(0)
+    expect(screen.queryByText('common:workspace.readOnly')).toBeNull()
     expect(screen.getByText('dev')).toBeInTheDocument()
     expect(screen.getByText('common:workspace.footnote')).toBeInTheDocument()
   })

@@ -462,6 +462,7 @@ pub async fn start_monitor(
     args: serde_json::Value,
     allow_network: Option<bool>,
     read_only_project: Option<String>,
+    project_writable: Option<bool>,
     scope: Option<WorkspaceScope>,
     on_update: tauri::ipc::Channel<crate::tools::monitor::MonitorUpdate>,
 ) -> Result<String, AgentToolsError> {
@@ -486,11 +487,17 @@ pub async fn start_monitor(
         )?],
         None => Vec::new(),
     };
+    let write_roots = if project_writable.unwrap_or(false) {
+        read_roots.clone()
+    } else {
+        Vec::new()
+    };
     let ctx = monitor::MonitorCtx {
         project_root: root,
         scratch_root: Some(scratch),
         mask_root: Some(PathBuf::from(&data_folder)),
         read_roots,
+        write_roots,
         allow_network: allow_network.unwrap_or(false),
         home_readonly: false,
         sandbox: true,
@@ -578,6 +585,7 @@ pub async fn execute_tool(
     enabled_skills: Option<Vec<String>>,
     allow_network: Option<bool>,
     read_only_project: Option<String>,
+    project_writable: Option<bool>,
     scope: Option<WorkspaceScope>,
     call_id: Option<String>,
 ) -> Result<ToolResult, AgentToolsError> {
@@ -590,6 +598,7 @@ pub async fn execute_tool(
         enabled_skills,
         allow_network,
         read_only_project,
+        project_writable,
         scope,
         call_id,
         None,
@@ -613,6 +622,7 @@ pub async fn execute_tool_streaming(
     enabled_skills: Option<Vec<String>>,
     allow_network: Option<bool>,
     read_only_project: Option<String>,
+    project_writable: Option<bool>,
     scope: Option<WorkspaceScope>,
     call_id: Option<String>,
     on_output: tauri::ipc::Channel<ToolOutputChunk>,
@@ -627,6 +637,7 @@ pub async fn execute_tool_streaming(
         enabled_skills,
         allow_network,
         read_only_project,
+        project_writable,
         scope,
         call_id,
         Some(sink),
@@ -644,6 +655,7 @@ async fn execute_tool_inner(
     enabled_skills: Option<Vec<String>>,
     allow_network: Option<bool>,
     read_only_project: Option<String>,
+    project_writable: Option<bool>,
     scope: Option<WorkspaceScope>,
     call_id: Option<String>,
     sink: Option<crate::tools::OutputSink>,
@@ -668,6 +680,13 @@ async fn execute_tool_inner(
         )?],
         None => Vec::new(),
     };
+    // Writable attach: the same validated roots, so the two lists cannot name
+    // different places. Read containment still comes from `read_roots`.
+    let write_roots: Vec<PathBuf> = if project_writable.unwrap_or(false) {
+        read_roots.clone()
+    } else {
+        Vec::new()
+    };
     let tool = lookup(&name)
         .ok_or_else(|| AgentToolsError::from(format!("unknown built-in tool '{name}'")))?;
 
@@ -677,6 +696,7 @@ async fn execute_tool_inner(
         &root,
         Some(&scratch),
         &read_roots,
+        &write_roots,
         &ToolPermissions::default(),
         &SessionGrants::default(),
         true,
@@ -706,6 +726,12 @@ async fn execute_tool_inner(
         // refusing here while `bash` may already write the same files would be a
         // control a sibling tool bypasses.
         //
+        // With `project_writable` the attached folder is in range too. That is
+        // the surface's own opt-in (Cowork's shared folder): the user attached
+        // the folder to be worked on, its UI shows every change as a diff, and
+        // `bash` under the jail can already write there -- so a prompt here
+        // would again be a control a sibling tool bypasses.
+        //
         // A write that *escapes* the sandbox (absolute or `..`) is different:
         // it can reach host files (rc files, ssh keys, LaunchAgents, the store)
         // that the ephemeral-root reasoning does not cover. It is gated as
@@ -716,10 +742,17 @@ async fn execute_tool_inner(
         // model retries the same write until the step budget runs out.
         Decision::Prompt(PromptKind::WriteEscape) => {
             return Err(match read_roots.first() {
-                Some(attached) => format!(
+                // With a writable attach the gate only lands here for a path
+                // outside both roots, so the read-only advice would be wrong.
+                Some(attached) if write_roots.is_empty() => format!(
                     "tool '{name}' cannot write outside the agent workspace. The attached \
                      folder {} is mounted read-only; copy the file into the workspace and \
                      edit it there.",
+                    attached.display()
+                ),
+                Some(attached) => format!(
+                    "tool '{name}' cannot write outside the agent workspace or the attached \
+                     folder {}.",
                     attached.display()
                 ),
                 None => format!(
@@ -742,7 +775,8 @@ async fn execute_tool_inner(
         .with_confined_writes(true)
         .with_mask_root(Path::new(&data_folder))
         .with_scratch_root(&scratch)
-        .with_read_roots(&read_roots);
+        .with_read_roots(&read_roots)
+        .with_write_roots(&write_roots);
     if let Some(id) = call_id.as_deref() {
         ctx = ctx.with_call_id(id);
     }
@@ -842,6 +876,7 @@ mod tests {
     const T_ATTACH_RW: &str = "thread-attach-rw";
     const T_ATTACH_NONE: &str = "thread-attach-none";
     const T_ATTACH_OVERLAP: &str = "thread-attach-overlap";
+    const T_ATTACH_WRITABLE: &str = "thread-attach-writable";
     const T2: &str = "thread-two";
 
     #[test]
@@ -894,6 +929,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("a write inside the sandbox is allowed");
@@ -922,6 +958,7 @@ mod tests {
             None,
             "edit".into(),
             json!({"path": "a.txt", "edits": [{"old_string": "before", "new_string": "after"}]}),
+            None,
             None,
             None,
             None,
@@ -962,6 +999,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect_err("an escaping read must be refused");
@@ -991,6 +1029,7 @@ mod tests {
                 None,
                 "write".into(),
                 json!({"path": path, "content": "x"}),
+                None,
                 None,
                 None,
                 None,
@@ -1035,6 +1074,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("a scratch write is the session scratch and must succeed");
@@ -1052,6 +1092,7 @@ mod tests {
             None,
             "write".into(),
             json!({"path": "ok.txt", "content": "x"}),
+            None,
             None,
             None,
             None,
@@ -1089,6 +1130,7 @@ mod tests {
             None,
             "bash".into(),
             json!({"command": "echo hi"}),
+            None,
             None,
             None,
             None,
@@ -1136,6 +1178,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1168,6 +1211,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1189,6 +1233,7 @@ mod tests {
             None,
             "read".to_string(),
             json!({"path": "a.txt"}),
+            None,
             None,
             None,
             None,
@@ -1233,6 +1278,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect_err("a relative climb-out to a sibling thread must be refused");
@@ -1252,6 +1298,7 @@ mod tests {
             None,
             "read".into(),
             json!({"path": "/tmp/secret.txt"}),
+            None,
             None,
             None,
             None,
@@ -1288,6 +1335,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1304,6 +1352,7 @@ mod tests {
             None,
             "memory_read".into(),
             json!({"name": "prefs"}),
+            None,
             None,
             None,
             None,
@@ -1335,6 +1384,7 @@ mod tests {
             None,
             "read".into(),
             json!({"path": "../../memory/prefs.md"}),
+            None,
             None,
             None,
             None,
@@ -1395,6 +1445,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    None,
                     None
                 )
                 .await
@@ -1422,6 +1473,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect_err("agent config must be hard-denied");
@@ -1443,6 +1495,7 @@ mod tests {
             None,
             "rm_rf".to_string(),
             json!({}),
+            None,
             None,
             None,
             None,
@@ -1529,6 +1582,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1542,6 +1596,7 @@ mod tests {
             None,
             "skill_read".into(),
             json!({"name": "deploy"}),
+            None,
             None,
             None,
             None,
@@ -1576,6 +1631,7 @@ mod tests {
             attached.clone(),
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1593,6 +1649,7 @@ mod tests {
             attached,
             None,
             None,
+            None,
         )
         .await;
         let err = write.expect_err("a write into the attached folder must be refused");
@@ -1605,6 +1662,86 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&data);
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The Cowork opt-in: with `project_writable` the same attached folder
+    /// takes writes and edits in place, and only paths outside both roots stay
+    /// refused.
+    #[tokio::test]
+    async fn a_writable_attachment_takes_writes_in_place() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("rw_writable");
+        std::fs::write(repo.join("main.rs"), b"fn main() {}").unwrap();
+        let attached = Some(repo.to_string_lossy().to_string());
+
+        let write = execute_tool(
+            df.clone(),
+            T_ATTACH_WRITABLE.into(),
+            None,
+            "write".into(),
+            json!({"path": repo.join("notes.md").to_string_lossy(), "content": "hi"}),
+            None,
+            None,
+            attached.clone(),
+            Some(true),
+            None,
+            None,
+        )
+        .await
+        .expect("a write into a writable attachment is allowed");
+        assert!(!write.is_error, "{}", write.content);
+        assert_eq!(
+            std::fs::read_to_string(repo.join("notes.md")).ok(),
+            Some("hi".to_string())
+        );
+
+        let edit = execute_tool(
+            df.clone(),
+            T_ATTACH_WRITABLE.into(),
+            None,
+            "edit".into(),
+            json!({
+                "path": repo.join("main.rs").to_string_lossy(),
+                "edits": [{"old_string": "fn main() {}", "new_string": "fn main() { run() }"}]
+            }),
+            None,
+            None,
+            attached.clone(),
+            Some(true),
+            None,
+            None,
+        )
+        .await
+        .expect("an edit inside a writable attachment is allowed");
+        assert!(!edit.is_error, "{}", edit.content);
+
+        // Outside both roots is still refused, and the message no longer gives
+        // the read-only copy-it advice that would now be wrong.
+        let outside = repo_outside_tmp("rw_writable_outside");
+        let err = execute_tool(
+            df.clone(),
+            T_ATTACH_WRITABLE.into(),
+            None,
+            "write".into(),
+            json!({"path": outside.join("evil.txt").to_string_lossy(), "content": "x"}),
+            None,
+            None,
+            attached,
+            Some(true),
+            None,
+            None,
+        )
+        .await
+        .expect_err("a write outside both roots is refused");
+        let msg = format!("{err:?}");
+        assert!(msg.contains("or the attached"), "{msg}");
+        assert!(!msg.contains("read-only"), "{msg}");
+        assert!(!outside.join("evil.txt").exists());
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 
     /// Without an attached folder nothing outside the sandbox is readable, so
@@ -1622,6 +1759,7 @@ mod tests {
             None,
             "read".into(),
             json!({"path": repo.join("main.rs").to_string_lossy()}),
+            None,
             None,
             None,
             None,
@@ -1656,6 +1794,7 @@ mod tests {
             None,
             None,
             Some(inside.to_string_lossy().to_string()),
+            None,
             None,
             None,
         )

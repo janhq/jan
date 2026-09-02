@@ -65,6 +65,7 @@ pub struct MonitorCtx {
     pub scratch_root: Option<PathBuf>,
     pub mask_root: Option<PathBuf>,
     pub read_roots: Vec<PathBuf>,
+    pub write_roots: Vec<PathBuf>,
     pub allow_network: bool,
     pub home_readonly: bool,
     pub sandbox: bool,
@@ -77,6 +78,7 @@ impl MonitorCtx {
             scratch_root: ctx.scratch_root.map(Path::to_path_buf),
             mask_root: ctx.mask_root.map(Path::to_path_buf),
             read_roots: ctx.read_roots.to_vec(),
+            write_roots: ctx.write_roots.to_vec(),
             allow_network: ctx.allow_network,
             home_readonly: ctx.home_readonly,
             sandbox: ctx.sandbox,
@@ -91,7 +93,8 @@ impl MonitorCtx {
             .with_network(self.allow_network)
             .with_home_readonly(self.home_readonly)
             .with_sandbox(self.sandbox)
-            .with_read_roots(&self.read_roots);
+            .with_read_roots(&self.read_roots)
+            .with_write_roots(&self.write_roots);
         if let Some(mask) = &self.mask_root {
             ctx = ctx.with_mask_root(mask);
         }
@@ -258,9 +261,7 @@ impl MonitorSet {
             let waiter = self.wake.notified();
             tokio::pin!(waiter);
             waiter.as_mut().enable();
-            if !self.notices.lock().unwrap().is_empty()
-                || self.active.load(Ordering::SeqCst) == 0
-            {
+            if !self.notices.lock().unwrap().is_empty() || self.active.load(Ordering::SeqCst) == 0 {
                 return;
             }
             waiter.await;
@@ -287,8 +288,7 @@ impl MonitorSet {
             ));
         }
         let scratch = ctx.scratch_root.as_deref();
-        match sandbox::escapes_read_roots(&ctx.project_root, scratch, &ctx.read_roots, &spec.file)
-        {
+        match sandbox::escapes_read_roots(&ctx.project_root, scratch, &ctx.read_roots, &spec.file) {
             Ok(false) => {}
             Ok(true) => {
                 return Err(format!(
@@ -517,16 +517,11 @@ fn match_update(
 /// which read as "not matched yet" and are retried on the next change.
 async fn eval_condition(ctx: &MonitorCtx, script: &str) -> Option<String> {
     let tool_ctx = ctx.as_tool_context();
-    let (shell, sandbox_tmp, _policy) =
-        crate::tools::handlers::confined_shell(&tool_ctx).ok()?;
-    let mut child = crate::tools::proc::spawn(
-        &shell,
-        script,
-        &ctx.project_root,
-        sandbox_tmp.as_deref(),
-    )
-    .await
-    .ok()?;
+    let (shell, sandbox_tmp, _policy) = crate::tools::handlers::confined_shell(&tool_ctx).ok()?;
+    let mut child =
+        crate::tools::proc::spawn(&shell, script, &ctx.project_root, sandbox_tmp.as_deref())
+            .await
+            .ok()?;
     let pid = child.id();
     let result = tokio::time::timeout(EVAL_TIMEOUT, async {
         let stdout = child.stdout.take();
@@ -635,6 +630,7 @@ mod tests {
             scratch_root: None,
             mask_root: None,
             read_roots: Vec::new(),
+            write_roots: Vec::new(),
             allow_network: false,
             home_readonly: false,
             // Bare shell: these tests exercise the monitor loop, not the jail.
@@ -697,7 +693,10 @@ mod tests {
         );
         let mut low = base.clone();
         low["timeout"] = serde_json::json!(1);
-        assert_eq!(parse_start_args(&low).unwrap().timeout_secs, MIN_TIMEOUT_SECS);
+        assert_eq!(
+            parse_start_args(&low).unwrap().timeout_secs,
+            MIN_TIMEOUT_SECS
+        );
         let mut high = base;
         high["timeout"] = serde_json::json!(1_000_000);
         assert_eq!(
@@ -753,7 +752,11 @@ mod tests {
         assert!(first.text.contains("'one'"), "{}", first.text);
         assert!(!first.done);
         assert!(set.has_pending_work(), "condition 'two' is still owed");
-        assert!(set.list().contains("met: one; unmet: two"), "{}", set.list());
+        assert!(
+            set.list().contains("met: one; unmet: two"),
+            "{}",
+            set.list()
+        );
 
         let mut content = std::fs::read_to_string(&log).unwrap();
         content.push_str("phase two done\n");
@@ -805,10 +808,7 @@ mod tests {
         let dir = unique_root();
         let set = Arc::new(MonitorSet::new());
         let err = set
-            .start(
-                spec("/etc/passwd", &[("x", "true")], 30),
-                ctx_for(&dir),
-            )
+            .start(spec("/etc/passwd", &[("x", "true")], 30), ctx_for(&dir))
             .unwrap_err();
         assert!(err.contains("outside the project"), "{err}");
         assert!(!set.has_pending_work());

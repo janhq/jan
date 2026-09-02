@@ -75,7 +75,9 @@ async function runMonitorOp(
       input,
       (update) => monitors.update(update),
       ctx.readOnlyFolder,
-      useCoworkConfig.getState().networkEnabled
+      useCoworkConfig.getState().networkEnabled,
+      // Cowork mounts the attached folder writable (shared-folder mode).
+      true
     )
     if (!started.isError) monitors.started(started.output)
     return { output: started.output, isError: started.isError }
@@ -142,13 +144,16 @@ export async function dispatchCoworkTool(
     // because no chat thread claims it. The network flag follows Cowork's own
     // setting (on by default), read per call so a toggle in Settings applies to
     // the next command; chat's shell stays network-closed regardless.
+    // The attached folder is writable on this surface: Cowork's shared folder
+    // takes writes and edits in place, unlike chat's read-only attachment.
     const result = await executeAgentTool(
       toolName,
       call.input,
       ctx.sessionId,
       ctx.readOnlyFolder,
       'session',
-      useCoworkConfig.getState().networkEnabled
+      useCoworkConfig.getState().networkEnabled,
+      true
     )
     if (result.error) return { output: result.error, isError: true }
     return {

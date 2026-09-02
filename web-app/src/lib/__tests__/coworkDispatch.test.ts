@@ -52,6 +52,7 @@ describe('dispatchCoworkTool', () => {
       's1',
       null,
       'session',
+      true,
       true
     )
   })
@@ -66,6 +67,7 @@ describe('dispatchCoworkTool', () => {
       's1',
       null,
       'session',
+      true,
       true
     )
     coworkConfig.networkEnabled = false
@@ -77,7 +79,8 @@ describe('dispatchCoworkTool', () => {
         's1',
         null,
         'session',
-        false
+        false,
+        true
       )
     } finally {
       coworkConfig.networkEnabled = true
@@ -116,6 +119,7 @@ describe('dispatchCoworkTool', () => {
       's1',
       '/repo',
       'session',
+      true,
       true
     )
   })

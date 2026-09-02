@@ -106,6 +106,12 @@ pub struct ToolContext<'a> {
     /// attach time; re-canonicalizing per call would be both slower and a
     /// check/use race of its own.
     pub read_roots: &'a [PathBuf],
+    /// The subset of attached folders the caller marked writable: `write`/`edit`
+    /// and the sandboxed shell treat them like the workspace. Every entry must
+    /// also be in `read_roots` (a folder the agent can change but not read back
+    /// is useless), and the default is empty -- attaching stays read-only unless
+    /// a surface opts in.
+    pub write_roots: &'a [PathBuf],
     /// Correlation id echoed on every streamed output chunk.
     ///
     /// Needed because `bash` with `timeout: 0` backgrounds and keeps streaming
@@ -132,6 +138,7 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("sandbox", &self.sandbox)
             .field("on_output", &self.on_output.is_some())
             .field("read_roots", &self.read_roots)
+            .field("write_roots", &self.write_roots)
             .field("call_id", &self.call_id)
             .finish()
     }
@@ -155,6 +162,7 @@ impl<'a> ToolContext<'a> {
             sandbox: true,
             on_output: None,
             read_roots: &[],
+            write_roots: &[],
             call_id: None,
         }
     }
@@ -163,6 +171,13 @@ impl<'a> ToolContext<'a> {
     /// canonical form from [`crate::workspace::validate_read_root`].
     pub fn with_read_roots(mut self, read_roots: &'a [PathBuf]) -> Self {
         self.read_roots = read_roots;
+        self
+    }
+
+    /// Mark attached folders writable. See [`Self::write_roots`]; callers pass
+    /// the same canonical paths they put in `read_roots`.
+    pub fn with_write_roots(mut self, write_roots: &'a [PathBuf]) -> Self {
+        self.write_roots = write_roots;
         self
     }
 

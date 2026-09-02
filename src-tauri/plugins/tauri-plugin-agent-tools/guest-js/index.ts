@@ -307,9 +307,11 @@ export async function sandboxStatus(): Promise<SandboxStatus> {
  * `callId` is echoed on every streamed output chunk, which a backgrounded
  * `bash` needs because it keeps producing output after the tool has returned.
  *
- * `readOnlyProject` attaches a folder the tools may read but never write. It is
- * validated on the Rust side and rejected outright if it overlaps the workspace
- * or the Jan data folder, rather than being silently dropped.
+ * `readOnlyProject` attaches a folder the tools may read. It is validated on
+ * the Rust side and rejected outright if it overlaps the workspace or the Jan
+ * data folder, rather than being silently dropped. By default it is never
+ * written; `projectWritable` opts the same folder into writes and edits in
+ * place (Cowork's shared-folder mode).
  */
 export async function executeTool(
   dataFolder: string,
@@ -320,6 +322,7 @@ export async function executeTool(
   enabledSkills?: string[],
   allowNetwork?: boolean,
   readOnlyProject?: string,
+  projectWritable?: boolean,
   scope?: WorkspaceScope,
   callId?: string
 ): Promise<ToolResult> {
@@ -332,6 +335,7 @@ export async function executeTool(
     enabledSkills,
     allowNetwork,
     readOnlyProject,
+    projectWritable,
     scope,
     callId,
   })
@@ -355,6 +359,7 @@ export async function executeToolStreaming(
     enabledSkills?: string[]
     allowNetwork?: boolean
     readOnlyProject?: string
+    projectWritable?: boolean
     scope?: WorkspaceScope
     callId?: string
   }
@@ -369,6 +374,7 @@ export async function executeToolStreaming(
     enabledSkills: options?.enabledSkills,
     allowNetwork: options?.allowNetwork,
     readOnlyProject: options?.readOnlyProject,
+    projectWritable: options?.projectWritable,
     scope: options?.scope,
     callId: options?.callId,
   })
@@ -390,6 +396,7 @@ export async function startMonitor(
   options?: {
     allowNetwork?: boolean
     readOnlyProject?: string
+    projectWritable?: boolean
     scope?: WorkspaceScope
   }
 ): Promise<string> {
@@ -402,6 +409,7 @@ export async function startMonitor(
     onUpdate: channel,
     allowNetwork: options?.allowNetwork,
     readOnlyProject: options?.readOnlyProject,
+    projectWritable: options?.projectWritable,
     scope: options?.scope,
   })
 }

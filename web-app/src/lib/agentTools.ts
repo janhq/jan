@@ -253,7 +253,10 @@ export async function executeAgentTool(
    */
   scope: WorkspaceScope = 'thread',
   /** Opens the sandboxed shell's network namespace. Closed by default. */
-  allowNetwork = false
+  allowNetwork = false,
+  /** Opt the attached folder into writes and edits in place (Cowork's shared
+   * folder). Off by default, so chat's attachment stays read-only. */
+  projectWritable = false
 ): Promise<AgentToolResult> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
@@ -271,6 +274,7 @@ export async function executeAgentTool(
       undefined,
       allowNetwork,
       readOnlyProject ?? undefined,
+      projectWritable,
       scope
     )
     if (result.isError) return { error: result.content }
@@ -296,7 +300,8 @@ export async function startAgentMonitor(
   args: unknown,
   onUpdate: (update: MonitorUpdate) => void,
   readOnlyProject?: string | null,
-  allowNetwork = false
+  allowNetwork = false,
+  projectWritable = false
 ): Promise<{ output: string; isError?: boolean }> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
@@ -306,6 +311,7 @@ export async function startAgentMonitor(
     const output = await startMonitor(dataFolder, sessionId, input, onUpdate, {
       allowNetwork,
       readOnlyProject: readOnlyProject ?? undefined,
+      projectWritable,
       scope: 'session',
     })
     return { output }

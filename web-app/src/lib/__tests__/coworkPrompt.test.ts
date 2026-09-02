@@ -23,14 +23,17 @@ describe('buildCoworkSystemPrompt', () => {
     expect(p).toContain('No project folder is attached')
   })
 
-  // Without this the model retries the same refused write until the step
-  // budget runs out — the single most expensive thing it can get wrong here.
-  it('spells out that an attached folder is read-only and how to work around it', () => {
+  // The shared folder is writable on this surface. The prompt has to say so —
+  // a model that assumes read-only copies files into the sandbox and hands the
+  // user stale duplicates — and to say it is real user data, since the
+  // sandbox's anything-goes norms no longer apply.
+  it('spells out that an attached folder is writable, in place, and real data', () => {
     const p = buildCoworkSystemPrompt(opts({ readOnlyFolder: '/home/u/repo' }))
     expect(p).toContain('/home/u/repo')
-    expect(p).toContain('READ-ONLY')
-    expect(p).toMatch(/copy it into your workspace/i)
-    expect(p).toMatch(/Do not\s+retry a refused write/i)
+    expect(p).toMatch(/writable/i)
+    expect(p).toMatch(/IN PLACE/)
+    expect(p).toMatch(/real user\s+data/i)
+    expect(p).not.toContain('READ-ONLY')
   })
 
   it('explains a missing shell rather than staying silent about it', () => {
@@ -142,7 +145,8 @@ describe('buildSubagentSystemPrompt', () => {
     // for the CLI (cwd is the project) but leaves a desktop child unable to
     // guess its sandbox path.
     expect(out).toContain('/ws/s1')
-    expect(out).toContain('READ-ONLY')
+    expect(out).toContain('/home/me/repo')
+    expect(out).toMatch(/writable/i)
   })
 
   it('states the three things a child cannot do', () => {

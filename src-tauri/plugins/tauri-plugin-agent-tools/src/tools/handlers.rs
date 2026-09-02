@@ -16,8 +16,8 @@ use crate::skills;
 use crate::tools::jail;
 use crate::tools::proc;
 use crate::tools::sandbox::{
-    escapes_project, in_scratch, is_hidden_jan_path, lexical_normalize, resolve_path,
-    scratch_display_path, symlink_escapes_any_root, symlink_escapes_root,
+    escapes_write_roots, in_scratch, is_hidden_jan_path, lexical_normalize, resolve_path,
+    scratch_display_path, symlink_escapes_any_root,
 };
 use crate::tools::{BuiltinTool, ImageContentPart, ToolContext};
 
@@ -165,8 +165,26 @@ async fn execute_text(
         // readable and unwritable.
         "read" => read(args, project_root, scratch, ctx.read_roots).await.0,
         "ls" => ls(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
-        "write" => write(args, project_root, scratch, ctx.confine_writes).await,
-        "edit" => edit(args, project_root, scratch, ctx.confine_writes).await,
+        "write" => {
+            write(
+                args,
+                project_root,
+                scratch,
+                ctx.confine_writes,
+                ctx.write_roots,
+            )
+            .await
+        }
+        "edit" => {
+            edit(
+                args,
+                project_root,
+                scratch,
+                ctx.confine_writes,
+                ctx.write_roots,
+            )
+            .await
+        }
         "bash" => bash(args, ctx).await,
         "find" => find(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
         "grep" => grep(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
@@ -632,6 +650,7 @@ async fn write(
     root: &Path,
     scratch: Option<&Path>,
     confine: bool,
+    write_roots: &[PathBuf],
 ) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
@@ -642,8 +661,9 @@ async fn write(
     // Defense in depth: when the caller confines writes, re-canonicalize on the
     // canonical root (not the raw argument) so `..` and absolute paths are
     // caught even if the gate's decision was made against a stale view.
+    // `write_roots` widen the confinement exactly as they widened the gate.
     let target = resolve_path(root, scratch, path);
-    if confine && escapes_project(root, scratch, path).unwrap_or(true) {
+    if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
         return format!("ERROR: refused to write outside the agent workspace: {path}");
     }
     // Report the resolved location, not the raw argument: an absolute or `../`
@@ -653,7 +673,7 @@ async fn write(
     // concurrent sandboxed process can swap a path component between the gate
     // decision and this call, and creating the parents first would already have
     // made directories through the swapped link. Fail closed.
-    if symlink_escapes_root(root, scratch, &target) {
+    if symlink_escapes_any_root(root, scratch, write_roots, &target) {
         return format!("ERROR: refused to write through a symlink out of the workspace: {path}");
     }
     if let Some(parent) = target.parent() {
@@ -682,6 +702,7 @@ async fn edit(
     root: &Path,
     scratch: Option<&Path>,
     confine: bool,
+    write_roots: &[PathBuf],
 ) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
@@ -693,13 +714,13 @@ async fn edit(
         return "ERROR: edits must contain at least one replacement".to_string();
     }
     let target = resolve_path(root, scratch, path);
-    if confine && escapes_project(root, scratch, path).unwrap_or(true) {
+    if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
         return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
     let shown = display_path(root, scratch, &target);
     // Re-validate before the final read+write pair so a swapped symlink cannot
     // redirect either the read or the later write.
-    if symlink_escapes_root(root, scratch, &target) {
+    if symlink_escapes_any_root(root, scratch, write_roots, &target) {
         return format!("ERROR: refused to edit through a symlink out of the workspace: {path}");
     }
     let mut content = match tokio::fs::read_to_string(&target).await {
@@ -765,6 +786,9 @@ pub(crate) fn confined_shell(
     }
     if !ctx.read_roots.is_empty() {
         policy = policy.with_read_roots(ctx.read_roots.to_vec());
+    }
+    if !ctx.write_roots.is_empty() {
+        policy = policy.with_write_roots(ctx.write_roots.to_vec());
     }
     let shell = if ctx.sandbox {
         // No confinement available means no shell: running unsandboxed would give
@@ -2556,6 +2580,7 @@ mod tests {
             &root,
             Some(&scratch),
             &[],
+            &[],
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
             true,
@@ -2584,6 +2609,7 @@ mod tests {
             &json!({"path": "/tmp/esc/x.txt", "content": "y"}),
             &root,
             Some(&scratch),
+            &[],
             &[],
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
