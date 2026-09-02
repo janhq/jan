@@ -588,40 +588,31 @@ describe('MessageItem', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('shows child activity while the parent awaits that subagent', () => {
+  /// A note the run folded in, not something either party said: the turn after
+  /// it is a reply to it, and reads as a non sequitur on its own.
+  it('renders a system note as a plain row, with no actions', () => {
     render(
       <MessageItem
         message={
           makeMsg({
+            role: 'system',
             parts: [
-              {
-                type: 'tool-await_subagent',
-                state: 'input-available',
-                toolCallId: 'tc-await',
-                input: { run_id: 'sub-robotics-researcher-1' },
-              },
+              { type: 'text', text: "Subagent 'researcher' (c1) finished." },
             ],
           }) as any
         }
-        isFirstMessage
+        isFirstMessage={false}
         isLastMessage
         status={'ready' as any}
-        subagents={[
-          {
-            runId: 'sub-robotics-researcher-1',
-            name: 'robotics-researcher',
-            status: 'running',
-            startedAt: Date.now() - 1_000,
-            turns: [],
-          },
-        ]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
       />
     )
-
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'robotics-researcher: working'
-    )
-    expect(screen.getByRole('status')).not.toHaveTextContent('Await subagent')
+    expect(
+      screen.getByText("Subagent 'researcher' (c1) finished.")
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('edit-btn')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('delete-btn')).not.toBeInTheDocument()
   })
 
   it('hides progress while a tool call awaits approval', () => {

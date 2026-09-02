@@ -630,6 +630,8 @@
   "todoPanelTitle": "Progress",
   "todoPanelEmpty": "No todo list yet.",
   "backgroundTasks": "Background tasks",
+  "subagentsRunning_one": "{{count}} subagent running",
+  "subagentsRunning_other": "{{count}} subagents running",
   "noBackgroundTasks": "No background tasks yet.",
   "running": "Running",
   "queued": "Queued",

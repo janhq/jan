@@ -3,14 +3,7 @@ import { memo, useState, useCallback, useEffect, useMemo } from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
 import { cn } from '@/lib/utils'
-import { formatDuration } from '@/lib/utils'
-import {
-  subagentActivityLabel,
-  usedSkillNames,
-  type ActivityLabel,
-} from '@/lib/agentActivity'
-import type { SubagentRun } from '@/types/coworkSession'
-import { Loader } from 'lucide-react'
+import { usedSkillNames } from '@/lib/agentActivity'
 
 import { ChainOfThoughtGroup } from './message/ChainOfThoughtGroup'
 import {
@@ -33,6 +26,7 @@ import {
   IconAlertTriangle,
   IconChevronLeft,
   IconChevronRight,
+  IconSparkles,
 } from '@tabler/icons-react'
 import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
@@ -69,9 +63,6 @@ export type MessageItemProps = {
   onRetry?: (messageId: string, text: string) => void
   versionInfo?: { index: number; count: number }
   onSwitchVersion?: (messageId: string, dir: -1 | 1) => void
-  // Cowork only: the session's background subagent runs. Omitted in regular
-  // chat threads, which never spawn subagents.
-  subagents?: SubagentRun[]
   isAnimating?: boolean
   hideActions?: boolean
 }
@@ -84,7 +75,6 @@ export const MessageItem = memo(
     status,
     isAnimating,
     hideActions,
-    subagents,
     reasoningContainerRef,
     isReasoningAtBottom,
     onReasoningScroll,
@@ -175,28 +165,6 @@ export const MessageItem = memo(
       () => usedSkillNames(message.parts as never),
       [message.parts]
     )
-
-    // The activity row reports a running subagent, and only that.
-    //
-    // A tool call is already on screen as its own card one row above, with its
-    // name, its arguments and a ticking duration, so labelling it here printed
-    // the same thing twice a row apart -- the duplication the trace header was
-    // trimmed for earlier. A subagent has no card: it works in a lane of its
-    // own, so this is the only place its progress shows.
-    // Memoized so the reference is stable for the elapsed-time interval effect.
-    const activityLabel = useMemo<ActivityLabel>(() => {
-      if (!subagents || subagents.length === 0) return null
-      return subagentActivityLabel(subagents)
-    }, [subagents])
-
-    // Re-render once a second while a label is showing, purely to advance the
-    // elapsed-time readout -- no state carried, just a tick.
-    const [, forceTick] = useState(0)
-    useEffect(() => {
-      if (!activityLabel) return
-      const id = setInterval(() => forceTick((n) => n + 1), 1000)
-      return () => clearInterval(id)
-    }, [activityLabel])
 
     const isStreaming =
       (isLastMessage &&
@@ -547,6 +515,21 @@ export const MessageItem = memo(
         </div>
       ) : null
 
+    // A note the run folded into the conversation, not something either party
+    // said: no actions, no trace, no timestamp. It is on screen because it is
+    // what the next turn is replying to -- a turn that reacts to a subagent
+    // finishing reads as a non sequitur without it.
+    if (message.role === 'system') {
+      return (
+        <div className="mb-4 flex items-start gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <IconSparkles size={14} className="mt-0.5 shrink-0 text-primary" />
+          <span className="min-w-0 whitespace-pre-wrap">
+            {getFullTextContent()}
+          </span>
+        </div>
+      )
+    }
+
     return (
       <div
         className={cn(
@@ -573,30 +556,15 @@ export const MessageItem = memo(
             </div>
           )}
 
+        {/* Model-load and prompt-reading progress only: a running tool call
+            reports itself on its own card, and a running subagent on the chip
+            beside the composer. */}
         {isLastMessage &&
           message.role === 'assistant' &&
           !awaitingApproval &&
-          (hasPendingToolCall ||
-            status === CHAT_STATUS.SUBMITTED ||
-            activityLabel) && (
+          (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED) && (
             <div className="mt-2">
-              {activityLabel ? (
-                <div
-                  role="status"
-                  aria-live="polite"
-                  className="flex items-center gap-2 text-xs"
-                >
-                  <Loader className="animate-spin w-3.5 h-3.5 text-primary shrink-0" />
-                  <span className="font-medium text-foreground">
-                    {activityLabel.text}
-                  </span>
-                  <span className="text-muted-foreground tabular-nums">
-                    {formatDuration(activityLabel.startedAt)}
-                  </span>
-                </div>
-              ) : (
-                <PromptProgress hideIdle={hasPendingToolCall} />
-              )}
+              <PromptProgress hideIdle={hasPendingToolCall} />
             </div>
           )}
 

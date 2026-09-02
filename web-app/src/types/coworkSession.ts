@@ -8,9 +8,14 @@
  */
 
 /** A single visible transcript entry. `tool` rows are display-only and carry the
- * structured call/result so the UI can render a tool card. */
+ * structured call/result so the UI can render a tool card.
+ *
+ * `system` rows are the out-of-band notes the run folds into the conversation
+ * -- today, a backgrounded subagent reporting that it finished. They are shown
+ * because they change what the agent does next, and reading a turn that reacts
+ * to one is otherwise reading half a conversation. */
 export type CoworkTurn = {
-  role: 'user' | 'assistant' | 'tool'
+  role: 'user' | 'assistant' | 'tool' | 'system'
   content: string
   /** User-row only: data URLs of images attached via paste/file picker. */
   images?: string[]

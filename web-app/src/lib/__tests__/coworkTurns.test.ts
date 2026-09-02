@@ -135,6 +135,26 @@ describe('coworkTurnsToUIMessages', () => {
     expect(part.input).toEqual({ path: 'game.html', content: 'done' })
   })
 
+  /// A note the run folded in ends the assistant's message: what follows is a
+  /// reply to it, not a continuation of what came before.
+  it('gives a system note its own message, closing the assistant one', () => {
+    const msgs = coworkTurnsToUIMessages([
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: 'dispatched' },
+      { role: 'system', content: "Subagent 'researcher' finished." },
+      { role: 'assistant', content: 'here is what it found' },
+    ])
+    expect(msgs.map((m) => m.role)).toEqual([
+      'user',
+      'assistant',
+      'system',
+      'assistant',
+    ])
+    expect((msgs[2].parts[0] as { text: string }).text).toBe(
+      "Subagent 'researcher' finished."
+    )
+  })
+
   it('keeps ids unique across prefixes so committed and live turns can merge', () => {
     const turns: CoworkTurn[] = [{ role: 'user', content: 'hi' }]
     const committed = coworkTurnsToUIMessages(turns, 'c')

@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, act } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
 import { MessageItem } from './MessageItem'
 import type { UIMessage } from 'ai'
-import type { SubagentRun } from '@/types/coworkSession'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
@@ -11,15 +10,7 @@ vi.mock('@tanstack/react-router', () => ({
   useParams: () => ({}),
 }))
 
-describe('agent activity status', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2024, 0, 1, 0, 0, 0))
-  })
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
+describe('what a turn shows besides its messages', () => {
   const pendingWrite: UIMessage = {
     id: 'm1',
     role: 'assistant',
@@ -33,9 +24,10 @@ describe('agent activity status', () => {
     ],
   } as UIMessage
 
-  /// The call's own card sits one row above with its name, arguments and a
-  /// ticking duration, so a status row saying "Writing report.html" printed the
-  /// same thing twice.
+  /// Every kind of progress now reports itself where it happens: a tool call on
+  /// its own card, a subagent on the chip beside the composer. What is left
+  /// here is the model-load and prompt-reading progress, which has nowhere
+  /// else to go.
   it('leaves a pending tool call to its own card', () => {
     render(
       <MessageItem
@@ -48,55 +40,28 @@ describe('agent activity status', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
-  /// A subagent is the exception: it works in a lane of its own, so nothing in
-  /// this turn reports it and the row is the only place it shows.
-  it('reports a running subagent, and ticks its elapsed time', () => {
-    const subagents: SubagentRun[] = [
-      {
-        runId: 'r1',
-        name: 'researcher',
-        status: 'running',
-        startedAt: Date.now(),
-        turns: [],
-      },
-    ]
+  it('renders a system note on its own, with no message chrome', () => {
     render(
       <MessageItem
-        message={pendingWrite}
+        message={
+          {
+            id: 'sys-1',
+            role: 'system',
+            parts: [
+              {
+                type: 'text',
+                text: "Subagent 'researcher' (c1) finished. Its full answer is in /tmp/subagents/r.md",
+              },
+            ],
+          } as UIMessage
+        }
         isFirstMessage={false}
         isLastMessage={true}
-        status="streaming"
-        subagents={subagents}
+        status="ready"
       />
     )
-    expect(screen.getByText(/researcher: working/)).toBeInTheDocument()
-    expect(screen.getByText(/0ms/)).toBeInTheDocument()
-
-    act(() => {
-      vi.advanceTimersByTime(3000)
-    })
-    expect(screen.getByText(/3s/)).toBeInTheDocument()
-  })
-
-  it('drops the row once the subagent finishes', () => {
-    const subagents: SubagentRun[] = [
-      {
-        runId: 'r1',
-        name: 'researcher',
-        status: 'done',
-        startedAt: Date.now(),
-        turns: [],
-      },
-    ]
-    render(
-      <MessageItem
-        message={pendingWrite}
-        isFirstMessage={false}
-        isLastMessage={true}
-        status="streaming"
-        subagents={subagents}
-      />
-    )
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.getByText(/finished/)).toBeInTheDocument()
+    // No copy/remember/regenerate: nobody said it, so there is nothing to act on.
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 })
