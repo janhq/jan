@@ -62,6 +62,11 @@ export type MessageItemProps = {
   onContinue?: (messageId: string) => void
   onEdit?: (messageId: string, newText: string) => void
   onDelete?: (messageId: string) => void
+  /** Ask this question again, unchanged, dropping whatever it produced. Only
+   * offered where re-running from partway up the transcript is meaningful --
+   * the agent surfaces, where a turn is a chain of tool calls rather than a
+   * single reply. */
+  onRetry?: (messageId: string, text: string) => void
   versionInfo?: { index: number; count: number }
   onSwitchVersion?: (messageId: string, dir: -1 | 1) => void
   // Cowork only: the session's background subagent runs. Omitted in regular
@@ -88,6 +93,7 @@ export const MessageItem = memo(
     onContinue,
     onEdit,
     onDelete,
+    onRetry,
     versionInfo,
     onSwitchVersion,
   }: MessageItemProps) => {
@@ -642,6 +648,19 @@ export const MessageItem = memo(
                   imageUrls={imageUrls.length > 0 ? imageUrls : undefined}
                   onSave={handleEdit}
                 />
+              )}
+
+            {onRetry &&
+              status !== CHAT_STATUS.STREAMING &&
+              status !== CHAT_STATUS.SUBMITTED && (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => onRetry(message.id, getFullTextContent())}
+                  title={t('chat:actions.askAgain')}
+                >
+                  <IconRefresh size={16} className="text-muted-foreground" />
+                </Button>
               )}
 
             {onDelete &&

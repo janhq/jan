@@ -292,6 +292,48 @@ describe('MessageItem', () => {
     expect(onDelete).toHaveBeenCalledWith('msg-1')
   })
 
+  /// One click to ask the same question again, from partway up the transcript
+  /// -- an agent turn is a chain of tool calls, so "regenerate" only ever
+  /// applied to the last one.
+  it('fires onRetry with the question text', () => {
+    const onRetry = vi.fn()
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            role: 'user',
+            parts: [{ type: 'text', text: 'ask me again' }],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+        onRetry={onRetry}
+      />
+    )
+    fireEvent.click(screen.getByTitle('chat:actions.askAgain'))
+    expect(onRetry).toHaveBeenCalledWith(
+      'msg-1',
+      expect.stringContaining('ask me again')
+    )
+  })
+
+  /// Offered only where a caller opts in: an ordinary chat has `onRegenerate`
+  /// on the answer and no use for a second way to re-ask.
+  it('offers no retry without a handler', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({ role: 'user', parts: [{ type: 'text', text: 'x' }] }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+      />
+    )
+    expect(screen.queryByTitle('chat:actions.askAgain')).not.toBeInTheDocument()
+  })
+
   it('hides actions when hideActions is set', () => {
     render(
       <MessageItem

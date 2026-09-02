@@ -83,6 +83,59 @@ describe('useCoworkSessions', () => {
     expect(s.messages.map((m) => m.id)).toEqual(['m1'])
   })
 
+  /// Editing or deleting a question partway up the transcript cuts both lists
+  /// at that question. The wire history has messages the transcript has no row
+  /// for, so the cut is counted in questions, not in indices.
+  it('drops a question and everything it produced', () => {
+    const id = useCoworkSessions.getState().createSession()
+    const turns: CoworkTurn[] = [
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'answer one' },
+      { role: 'user', content: 'second' },
+      { role: 'tool', content: '', name: 'read', status: 'done' },
+      { role: 'assistant', content: 'answer two' },
+    ]
+    const msgs = [
+      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'first' }] },
+      { id: 'm2', role: 'assistant', parts: [] },
+      {
+        id: 'ping-2',
+        role: 'user',
+        parts: [{ type: 'text', text: '<SYSTEM>\nalpha done\n</SYSTEM>' }],
+      },
+      { id: 'm3', role: 'user', parts: [{ type: 'text', text: 'second' }] },
+      { id: 'm4', role: 'assistant', parts: [] },
+    ] as never
+    useCoworkSessions.getState().commitTurns(id, turns, msgs, [])
+    useCoworkSessions.getState().dropFromTurn(id, 2)
+
+    const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
+    expect(s.turns.map((t) => t.content)).toEqual(['first', 'answer one'])
+    // The ping belongs to the first question's run, so it survives with it.
+    expect(s.messages.map((m) => m.id)).toEqual(['m1', 'm2', 'ping-2'])
+  })
+
+  /// The answers to a question cannot outlive it, so an assistant or tool turn
+  /// is not a place the transcript can be cut.
+  it('refuses to cut anywhere but a question', () => {
+    const id = useCoworkSessions.getState().createSession()
+    const turns: CoworkTurn[] = [
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'answer' },
+    ]
+    const msgs = [
+      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'first' }] },
+      { id: 'm2', role: 'assistant', parts: [] },
+    ] as never
+    useCoworkSessions.getState().commitTurns(id, turns, msgs, [])
+    useCoworkSessions.getState().dropFromTurn(id, 1)
+    useCoworkSessions.getState().dropFromTurn(id, 9)
+
+    const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
+    expect(s.turns).toHaveLength(2)
+    expect(s.messages).toHaveLength(2)
+  })
+
   // Rewinding a session that has never had a turn would otherwise empty it.
   it('leaves a session with no user turn alone', () => {
     const id = useCoworkSessions.getState().createSession()

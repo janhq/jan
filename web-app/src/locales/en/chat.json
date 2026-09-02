@@ -15,6 +15,7 @@
   },
   "actions": {
     "regenerate": "Regenerate response",
+    "askAgain": "Ask again",
     "continue": "Continue generating",
     "remember": "Remember this",
     "rememberSaved": "Saved to memory as \"{{name}}\"",

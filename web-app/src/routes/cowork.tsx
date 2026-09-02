@@ -855,6 +855,71 @@ function CoworkPage() {
     void runRequestRef.current(null)
   }, [running, session?.id])
 
+  /**
+   * The transcript turn a rendered user message came from.
+   *
+   * Counted rather than parsed out of the message id: the ids are an internal
+   * detail of `coworkTurnsToUIMessages`, and the two lists agree on the order
+   * of the questions whatever those ids look like.
+   */
+  const questionTurnIndex = useCallback(
+    (messageId: string): number => {
+      const ordinal = uiMessages
+        .filter((m) => m.role === 'user')
+        .findIndex((m) => m.id === messageId)
+      if (ordinal < 0) return -1
+      let seen = 0
+      for (let i = 0; i < displayedTurns.length; i++) {
+        if (displayedTurns[i].role !== 'user') continue
+        if (seen === ordinal) return i
+        seen += 1
+      }
+      return -1
+    },
+    [uiMessages, displayedTurns]
+  )
+
+  /**
+   * Edit a question and ask it again.
+   *
+   * The old question and everything it produced are dropped first: an agent
+   * turn is a chain of tool calls against a workspace, so keeping the answers
+   * to a question that was never asked would leave the model reading work it
+   * cannot account for. Same reasoning as `handleRegenerate`, one message
+   * further up.
+   *
+   * The files it touched are *not* rolled back -- there is no checkpoint on this
+   * surface -- so this re-asks, it does not undo.
+   */
+  const handleEditQuestion = useCallback(
+    (messageId: string, newText: string) => {
+      if (running || !session?.id || !newText.trim()) return
+      const index = questionTurnIndex(messageId)
+      if (index < 0) return
+      useCoworkSessions.getState().dropFromTurn(session.id, index)
+      void runRequestRef.current(newText)
+    },
+    [running, session?.id, questionTurnIndex]
+  )
+
+  /** Ask a question again unchanged, from a point partway up the transcript. */
+  const handleRetryQuestion = useCallback(
+    (messageId: string, text: string) => {
+      handleEditQuestion(messageId, text)
+    },
+    [handleEditQuestion]
+  )
+
+  const handleDeleteQuestion = useCallback(
+    (messageId: string) => {
+      if (running || !session?.id) return
+      const index = questionTurnIndex(messageId)
+      if (index < 0) return
+      useCoworkSessions.getState().dropFromTurn(session.id, index)
+    },
+    [running, session?.id, questionTurnIndex]
+  )
+
   const abortRef = useRef<AbortController | null>(null)
   const askResolvers = useRef(
     new Map<string, (answers: AskAnswer[] | null) => void>()
@@ -927,6 +992,30 @@ function CoworkPage() {
                         isLastMessage={i === uiMessages.length - 1}
                         status={viewingRun ? 'streaming' : 'ready'}
                         onRegenerate={handleRegenerate}
+                        // Questions only. Editing the agent's own answer would
+                        // put words in its mouth that its tool calls do not
+                        // support, and deleting one alone would strand the
+                        // results of the calls it made.
+                        onEdit={
+                          message.role === 'user'
+                            ? handleEditQuestion
+                            : undefined
+                        }
+                        onRetry={
+                          message.role === 'user'
+                            ? handleRetryQuestion
+                            : undefined
+                        }
+                        onDelete={
+                          message.role === 'user'
+                            ? handleDeleteQuestion
+                            : undefined
+                        }
+                        // Only the last message can show the live subagent row,
+                        // so only it needs the runs.
+                        subagents={
+                          i === uiMessages.length - 1 ? subagents : undefined
+                        }
                         reasoningContainerRef={reasoningContainerRef}
                         isReasoningAtBottom={isReasoningAtBottom}
                         onReasoningScroll={handleReasoningScroll}
