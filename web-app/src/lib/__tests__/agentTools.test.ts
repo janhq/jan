@@ -21,6 +21,7 @@ vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
   memoryRead: (...args: unknown[]) => memoryRead(...args),
   subagentResultReserve: (...args: unknown[]) => subagentResultReserve(...args),
   subagentResultFill: (...args: unknown[]) => subagentResultFill(...args),
+  attachmentImport: vi.fn(),
 }))
 
 vi.mock('@/hooks/useServiceHub', () => ({

@@ -60,7 +60,7 @@ pub fn open_excl(path: &Path) -> std::io::Result<std::fs::File> {
 /// `[A-Za-z0-9._-]` collapses to `-`, leading dots are stripped so the name
 /// can never be a dotfile or a `..` component, and an unusable id falls back
 /// to a generic stem rather than failing the write.
-fn sanitize_stem(id: &str) -> String {
+pub(crate) fn sanitize_stem(id: &str) -> String {
     let mut stem: String = id
         .chars()
         .map(|c| {
