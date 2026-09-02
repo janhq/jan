@@ -19,8 +19,18 @@ export type ToolCallBar =
    * The workspace tools. `target` is whatever the call is really about -- a path
    * for read/ls, the pattern for find/grep, the entry name for memory/skill --
    * with `detail` carrying the secondary argument when there is one.
+   *
+   * `body` is a `write`'s file content. It is the one argument worth showing
+   * while it streams: it is the work itself, and a large write takes long
+   * enough that a spinner says nothing about it.
    */
-  | { variant: 'workspace'; tool: string; target: string; detail?: string }
+  | {
+      variant: 'workspace'
+      tool: string
+      target: string
+      detail?: string
+      body?: string
+    }
 
 /**
  * Owned by the RAG extension (extensions/rag-extension/src/tools.ts) and not
@@ -48,7 +58,11 @@ export function describeNativeToolCall(
     typeof value === 'number' ? value : undefined
 
   if (origin.kind === 'web-search') {
-    return { variant: 'search', query: asString(args.query), count: asCount(args.count) }
+    return {
+      variant: 'search',
+      query: asString(args.query),
+      count: asCount(args.count),
+    }
   }
   if (origin.kind === 'web-fetch') {
     return { variant: 'address', url: asString(args.url) }
@@ -58,7 +72,9 @@ export function describeNativeToolCall(
       variant: 'documents',
       query: asString(args.query),
       count: asCount(args.top_k),
-      fileCount: Array.isArray(args.file_ids) ? args.file_ids.length : undefined,
+      fileCount: Array.isArray(args.file_ids)
+        ? args.file_ids.length
+        : undefined,
     }
   }
   if (origin.kind === 'agent') {
@@ -85,6 +101,7 @@ export function describeNativeToolCall(
       variant: 'workspace',
       tool: toolName,
       target: asString(args.path) || asString(args.name),
+      body: toolName === 'write' ? asString(args.content) : undefined,
     }
   }
   return undefined
@@ -168,7 +185,7 @@ export function parseWebFetchOutput(output: unknown): WebFetchPage | undefined {
     typeof output === 'string'
       ? output
       : typeof (output as { content?: unknown })?.content === 'string'
-        ? ((output as { content: string }).content)
+        ? (output as { content: string }).content
         : undefined
   if (text === undefined) return undefined
 
