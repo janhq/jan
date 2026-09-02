@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the attachment_import command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-attachment-import",
+          "markdownDescription": "Enables the attachment_import command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the attachment_import command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-attachment-import",
+          "markdownDescription": "Denies the attachment_import command without any pre-configured scope."
+        },
+        {
           "description": "Enables the execute_tool command without any pre-configured scope.",
           "type": "string",
           "const": "allow-execute-tool",
@@ -389,6 +401,30 @@
           "type": "string",
           "const": "deny-memory-write",
           "markdownDescription": "Denies the memory_write command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the preview_register_root command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-preview-register-root",
+          "markdownDescription": "Enables the preview_register_root command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the preview_register_root command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-preview-register-root",
+          "markdownDescription": "Denies the preview_register_root command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the preview_unregister_root command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-preview-unregister-root",
+          "markdownDescription": "Enables the preview_unregister_root command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the preview_unregister_root command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-preview-unregister-root",
+          "markdownDescription": "Denies the preview_unregister_root command without any pre-configured scope."
         },
         {
           "description": "Enables the sandbox_status command without any pre-configured scope.",

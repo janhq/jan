@@ -1171,8 +1171,9 @@ impl ToolInvoker for CompositeToolInvoker {
                     project_root: &self.project_root,
                     scratch: Some(self.scratch_root.as_path()),
                     // The CLI works *in* the project, so it has no separate
-                    // read-only root to attach.
+                    // read-only or writable root to attach.
                     read_roots: &[],
+                    write_roots: &[],
                     hide_jan: self.sandbox,
                 },
                 &self.permissions,
@@ -4173,7 +4174,9 @@ mod tests {
         let requests = model.requests.lock().unwrap();
         let sent = requests[1]["messages"].as_array().unwrap();
         let last = sent.last().unwrap();
-        assert!(crate::core::agent::reminder::is_reminder_only(&last["content"]));
+        assert!(crate::core::agent::reminder::is_reminder_only(
+            &last["content"]
+        ));
         assert!(last["content"].as_str().unwrap().contains("BUILD OK"));
 
         let mut saw_notice = false;
@@ -5980,7 +5983,11 @@ mod tests {
         }
         assert_eq!(notices.len(), 1, "one match, one ping");
         assert!(
-            notices[0].headline.as_deref().unwrap_or("").contains("'ready' matched"),
+            notices[0]
+                .headline
+                .as_deref()
+                .unwrap_or("")
+                .contains("'ready' matched"),
             "{:?}",
             notices[0].headline
         );
