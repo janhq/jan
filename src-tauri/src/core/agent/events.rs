@@ -92,7 +92,18 @@ pub enum StreamEvent {
     },
     /// A backgrounded subagent run finished (success or error). Pairs with the
     /// `SubagentStart` of the same `run_id`.
-    SubagentEnd { run_id: String, name: String },
+    SubagentEnd {
+        run_id: String,
+        name: String,
+        /// Why the child failed, when it did: the same reason the parent's
+        /// `<SYSTEM>` completion ping carries. Carried on the event because a
+        /// background child's answer never reaches a consumer -- only the model
+        /// reads it -- so without this a failed run is indistinguishable from a
+        /// clean one on screen. `None` for a clean finish, and for a child cut
+        /// off at parent teardown, which is not its own failure.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
     /// A backgrounded subagent's own internal event, tagged with its run so a
     /// consumer can attribute it to the right child even when several run
     /// concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/
@@ -445,6 +456,7 @@ mod tests {
         let end = serde_json::to_value(StreamEvent::SubagentEnd {
             run_id: "sub-1".into(),
             name: "rust-reviewer".into(),
+            error: None,
         })
         .unwrap();
         assert_eq!(

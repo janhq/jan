@@ -636,11 +636,16 @@ function CoworkPage() {
             // reacts to a subagent finishing has the note it is replying to
             // directly above it.
             take: () => {
-              const pings = inbox.take()
+              const notices = inbox.take()
+              // The row gets the headline; the model gets the instructions that
+              // follow it, which are addressed to it alone.
               pushLive(
-                pings.map((content) => ({ role: 'system' as const, content }))
+                notices.map((n) => ({
+                  role: 'system' as const,
+                  content: n.headline,
+                }))
               )
-              return pings
+              return notices.map((n) => n.text)
             },
             pending: () => inbox.pending(),
             wait: () => inbox.wait(controller.signal),
