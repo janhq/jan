@@ -73,7 +73,12 @@ import { CoworkChatTransport } from '@/lib/coworkTransport'
 import { dispatchCoworkTool } from '@/lib/coworkDispatch'
 import { applyTodoOp, renderTodoResult } from '@/lib/coworkTodo'
 import { parseAskRequest, renderAskResult } from '@/lib/coworkAsk'
-import { getSandboxStatus, sandboxEnforces } from '@/lib/agentTools'
+import {
+  getSandboxStatus,
+  sandboxEnforces,
+  fillSubagentResult,
+  reserveSubagentResult,
+} from '@/lib/agentTools'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { MAX_AGENT_STEPS } from '@/lib/coworkBudget'
 import {
@@ -91,10 +96,13 @@ import {
   type SubagentDefinition,
 } from '@/lib/coworkSubagentRegistry'
 import {
+  dispatchedSubagentResult,
   parseSubagentRequest,
   resolveSubagent,
   parentToolNames,
   runSubagent,
+  subagentCompletionNotice,
+  SubagentInbox,
 } from '@/lib/coworkSubagent'
 
 export const Route = createFileRoute(route.cowork as any)({
@@ -358,6 +366,9 @@ function CoworkPage() {
 
     const controller = new AbortController()
     abortRef.current = controller
+    // Owned by this request: children cannot outlive the run whose signal
+    // aborts them, so a fresh inbox per run can never hold a stale ping.
+    const inbox = new SubagentInbox()
 
     const sink: StreamSink = {
       onText: (delta) => {
@@ -469,7 +480,14 @@ function CoworkPage() {
                     isError: true,
                   }
                 }
-                const child = await runSubagent({
+                // Claimed before the child starts: the tool call returns now,
+                // so the path it reports has to exist now.
+                const saved = await reserveSubagentResult(
+                  sid,
+                  `${resolved.name}-${callId}`
+                )
+                inbox.begin()
+                const child = runSubagent({
                   resolved,
                   description: req.description,
                   // The parent's instance: a second one would mean a second
@@ -524,10 +542,51 @@ function CoworkPage() {
                       useCoworkRun.getState().endSubagent(sid, callId, usage),
                   },
                 })
-                useCoworkRun
-                  .getState()
-                  .attachSubagentOutput(sid, callId, child.output)
-                return { output: child.output, isError: child.isError }
+                // Detached: the errand outlives its tool call, and the parent
+                // hears about it through the inbox instead.
+                void child
+                  .then(async (done) => {
+                    useCoworkRun
+                      .getState()
+                      .attachSubagentOutput(sid, callId, done.output)
+                    // Only a real answer is filed: an error message in the file
+                    // the parent was told to read would be indistinguishable
+                    // from the answer it expected.
+                    const filed =
+                      saved && !done.isError && done.output.trim()
+                        ? await fillSubagentResult(sid, saved.file, done.output)
+                        : false
+                    inbox.finish(
+                      subagentCompletionNotice({
+                        name: resolved.name,
+                        callId,
+                        savedPath: filed && saved ? saved.path : null,
+                        output: done.output,
+                        isError: done.isError,
+                      })
+                    )
+                  })
+                  .catch((e) =>
+                    // `runSubagent` does not throw, so this is the loop itself
+                    // failing. The count still has to come down or the run
+                    // would wait on it forever.
+                    inbox.finish(
+                      subagentCompletionNotice({
+                        name: resolved.name,
+                        callId,
+                        savedPath: null,
+                        output: e instanceof Error ? e.message : String(e),
+                        isError: true,
+                      })
+                    )
+                  )
+                return {
+                  output: dispatchedSubagentResult(
+                    resolved.name,
+                    callId,
+                    saved?.path ?? null
+                  ),
+                }
               },
             }),
           sink,
@@ -551,6 +610,11 @@ function CoworkPage() {
             let n = baseMessages.length
             return () => `${sid}-asst-${n++}`
           })(),
+          inbox: {
+            take: () => inbox.take(),
+            pending: () => inbox.pending(),
+            wait: () => inbox.wait(controller.signal),
+          },
         },
       })
     } catch (e) {

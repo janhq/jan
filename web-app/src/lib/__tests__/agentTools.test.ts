@@ -7,6 +7,8 @@ const threadWorkspaceSweep = vi.fn()
 const sandboxStatus = vi.fn()
 const memoryCatalog = vi.fn()
 const memoryRead = vi.fn()
+const subagentResultReserve = vi.fn()
+const subagentResultFill = vi.fn()
 const getJanDataFolder = vi.fn()
 
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
@@ -17,6 +19,8 @@ vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
   sandboxStatus: () => sandboxStatus(),
   memoryCatalog: (...args: unknown[]) => memoryCatalog(...args),
   memoryRead: (...args: unknown[]) => memoryRead(...args),
+  subagentResultReserve: (...args: unknown[]) => subagentResultReserve(...args),
+  subagentResultFill: (...args: unknown[]) => subagentResultFill(...args),
 }))
 
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -40,6 +44,8 @@ describe('agentTools', () => {
       .mockResolvedValue({ backend: 'bubblewrap', enforces: true })
     memoryCatalog.mockReset().mockResolvedValue([])
     memoryRead.mockReset().mockResolvedValue('')
+    subagentResultReserve.mockReset()
+    subagentResultFill.mockReset()
     getJanDataFolder.mockReset().mockResolvedValue('/data')
   })
 
@@ -399,5 +405,45 @@ describe('agentTools', () => {
     threadWorkspaceSweep.mockRejectedValue(new Error('nope'))
     const { sweepThreadWorkspaces } = await import('../agentTools')
     await expect(sweepThreadWorkspaces(['a'])).resolves.toBe(0)
+  })
+
+  it('claims a result file and reports the model-visible path', async () => {
+    subagentResultReserve.mockResolvedValue({
+      file: 'researcher-c1.md',
+      path: '/tmp/subagents/researcher-c1.md',
+    })
+    const { reserveSubagentResult } = await import('../agentTools')
+    await expect(
+      reserveSubagentResult('sess-1', 'researcher-c1')
+    ).resolves.toEqual({
+      file: 'researcher-c1.md',
+      path: '/tmp/subagents/researcher-c1.md',
+    })
+    expect(subagentResultReserve).toHaveBeenCalledWith('sess-1', 'researcher-c1')
+  })
+
+  it('fills the claimed file by name', async () => {
+    subagentResultFill.mockResolvedValue(undefined)
+    const { fillSubagentResult } = await import('../agentTools')
+    await expect(
+      fillSubagentResult('sess-1', 'researcher-c1.md', 'findings')
+    ).resolves.toBe(true)
+    expect(subagentResultFill).toHaveBeenCalledWith(
+      'sess-1',
+      'researcher-c1.md',
+      'findings'
+    )
+  })
+
+  /// A value, not a throw: the caller falls back to delivering the answer
+  /// inline, which is what a web build with no scratch has to do anyway.
+  it('reports failure rather than throwing when there is no scratch', async () => {
+    subagentResultReserve.mockRejectedValue(new Error('no scratch'))
+    subagentResultFill.mockRejectedValue(new Error('no scratch'))
+    const { reserveSubagentResult, fillSubagentResult } = await import(
+      '../agentTools'
+    )
+    await expect(reserveSubagentResult('s', 'id')).resolves.toBeNull()
+    await expect(fillSubagentResult('s', 'id.md', 'x')).resolves.toBe(false)
   })
 })

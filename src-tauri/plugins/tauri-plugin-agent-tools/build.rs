@@ -17,6 +17,8 @@ const COMMANDS: &[&str] = &[
     "memory_delete",
     "tool_schemas",
     "sandbox_status",
+    "subagent_result_reserve",
+    "subagent_result_fill",
     "execute_tool",
     "execute_tool_streaming",
 ];

@@ -56,6 +56,33 @@ describe('useCoworkSessions', () => {
     expect(s.messages.map((m) => m.id)).toEqual(['m1', 'm2', 'm3'])
   })
 
+  /// A subagent ping is a user message with no transcript row, so counting it
+  /// as the question would cut the two histories at different points and
+  /// resume the run from a note about a subagent.
+  it('rewinds past a subagent ping to the real question', () => {
+    const id = useCoworkSessions.getState().createSession()
+    const turns: CoworkTurn[] = [
+      { role: 'user', content: 'second' },
+      { role: 'assistant', content: 'answer' },
+    ]
+    const msgs = [
+      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'second' }] },
+      { id: 'm2', role: 'assistant', parts: [] },
+      {
+        id: 'ping-2',
+        role: 'user',
+        parts: [{ type: 'text', text: '<SYSTEM>\nalpha done\n</SYSTEM>' }],
+      },
+      { id: 'm3', role: 'assistant', parts: [] },
+    ] as never
+    useCoworkSessions.getState().commitTurns(id, turns, msgs, [])
+    useCoworkSessions.getState().rewindToLastUser(id)
+
+    const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
+    expect(s.turns.map((t) => t.content)).toEqual(['second'])
+    expect(s.messages.map((m) => m.id)).toEqual(['m1'])
+  })
+
   // Rewinding a session that has never had a turn would otherwise empty it.
   it('leaves a session with no user turn alone', () => {
     const id = useCoworkSessions.getState().createSession()

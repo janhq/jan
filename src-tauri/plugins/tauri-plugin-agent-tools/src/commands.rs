@@ -360,6 +360,72 @@ impl WorkspaceScope {
     }
 }
 
+/// A claimed subagent result file: `path` is the model-visible spelling to hand
+/// back to the model, `file` the name to pass to [`subagent_result_fill`] once
+/// the child has an answer.
+#[derive(serde::Serialize)]
+pub struct ReservedResult {
+    pub file: String,
+    pub path: String,
+}
+
+/// Claim a file in the parent session's scratch for a subagent's answer.
+///
+/// Host-side, not a model tool: the Cowork loop runs in the frontend, where the
+/// scratch is only reachable through this plugin. Claimed at dispatch rather
+/// than written at completion because the `task` tool returns the path
+/// immediately -- the parent is told where the answer will be while the child is
+/// still working. The path is the one spelling both the filesystem tools and the
+/// sandboxed shell resolve, so the parent can `read` it back. An existing name
+/// is suffixed, never overwritten.
+#[tauri::command]
+pub async fn subagent_result_reserve(
+    thread_id: String,
+    id: String,
+) -> Result<ReservedResult, AgentToolsError> {
+    let scratch = workspace::ensure_scratch_dir(&thread_id).await?;
+    let reserved = tokio::task::spawn_blocking(move || {
+        crate::tools::spill::reserve_subagent_result(&scratch, &id).map(|p| ReservedResult {
+            file: p
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+            path: crate::tools::sandbox::scratch_display_path(Some(&scratch), &p),
+        })
+    })
+    .await
+    .map_err(|e| AgentToolsError::from(format!("subagent result reserve failed: {e}")))?;
+    reserved.ok_or_else(|| {
+        AgentToolsError::from("could not claim a file in the session scratch".to_string())
+    })
+}
+
+/// Write a finished subagent's answer into the file that was reserved for it.
+///
+/// Takes the reserved *name*, not a path: it has crossed to the frontend and
+/// back, so it is re-validated and re-resolved under the session's own scratch
+/// rather than trusted (see `spill::fill_named_subagent_result`).
+#[tauri::command]
+pub async fn subagent_result_fill(
+    thread_id: String,
+    file: String,
+    content: String,
+) -> Result<(), AgentToolsError> {
+    let scratch = workspace::ensure_scratch_dir(&thread_id).await?;
+    let filled = tokio::task::spawn_blocking(move || {
+        crate::tools::spill::fill_named_subagent_result(&scratch, &file, &content)
+    })
+    .await
+    .map_err(|e| AgentToolsError::from(format!("subagent result write failed: {e}")))?;
+    if !filled {
+        return Err(AgentToolsError::from(
+            "could not write the reserved result file".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Execute one built-in tool.
 ///
 /// The gate decides, not the caller. `write` and `edit` resolve to `Prompt` and
