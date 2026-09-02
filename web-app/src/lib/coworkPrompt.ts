@@ -2,9 +2,9 @@
  * System prompt for a Cowork run.
  *
  * The workspace block is the load-bearing part. The agent writes into a sandbox
- * and may only *read* an attached project folder, which is an arrangement no
- * model assumes — left unsaid, it retries the same denied write until the step
- * budget runs out.
+ * and, when a project folder is attached, works on it in place (the shared
+ * folder is mounted writable on this surface) — an arrangement no model
+ * assumes, so it is spelled out along with where scratch work belongs.
  */
 
 const IDENTITY =
@@ -56,7 +56,8 @@ export type CoworkEnvironment = {
 export type CoworkPromptOptions = {
   /** The sandbox directory: the only writable location. */
   workspacePath: string | null
-  /** An attached project folder, readable but never writable. */
+  /** An attached project folder. Despite the historical name (it is the
+   * plugin's validated read root), Cowork mounts it writable. */
   readOnlyFolder: string | null
   planMode: boolean
   /** False when no OS sandbox enforces, in which case `bash` is not offered. */
@@ -130,11 +131,12 @@ function workspaceBlock(opts: CoworkPromptOptions): string {
   if (opts.readOnlyFolder) {
     lines.push(
       '',
-      `The user attached a project folder: \`${opts.readOnlyFolder}\`.`,
-      'It is mounted READ-ONLY. You can read, search and list inside it, but every',
-      'write, edit or shell command targeting it will be refused. To work on one of',
-      'its files, copy it into your workspace first and edit the copy there. Do not',
-      'retry a refused write against the original path.'
+      `The user attached a shared project folder: \`${opts.readOnlyFolder}\`.`,
+      'It is writable: read, search, and edit its files IN PLACE with targeted',
+      'edits, and put files that belong to the project directly inside it. Use',
+      'your workspace for scratch work and intermediate files. This is real user',
+      'data with no undo, so re-read a file before editing it and keep changes',
+      'minimal.'
     )
   } else {
     lines.push('', 'No project folder is attached, so there is nothing outside the workspace to read.')

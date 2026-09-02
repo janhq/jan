@@ -99,6 +99,10 @@ pub struct Policy {
     /// masks (so a project under either survives) and before the workspace bind
     /// (so one can never shadow the only writable path).
     pub read_roots: Vec<PathBuf>,
+    /// The subset of attached folders the surface marked writable. Bound (or
+    /// allowed) read-write in the same position as `read_roots`; an entry
+    /// present in both lists is bound once, writable.
+    pub write_roots: Vec<PathBuf>,
 }
 
 impl Policy {
@@ -111,6 +115,7 @@ impl Policy {
             home_readonly: false,
             scratch_root: None,
             read_roots: Vec::new(),
+            write_roots: Vec::new(),
         }
     }
 
@@ -118,6 +123,12 @@ impl Policy {
     /// order relative to the masks and the workspace is load-bearing.
     pub fn with_read_roots(mut self, read_roots: Vec<PathBuf>) -> Self {
         self.read_roots = read_roots;
+        self
+    }
+
+    /// Mark attached roots writable. See [`Policy::write_roots`].
+    pub fn with_write_roots(mut self, write_roots: Vec<PathBuf>) -> Self {
+        self.write_roots = write_roots;
         self
     }
 
@@ -396,8 +407,20 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     // shell does can write into the user's own folder. Not `--ro-bind-try`: a
     // root that vanished should fail loudly rather than silently unmount.
     for root in &policy.read_roots {
+        // A root the surface also marked writable is bound once, below, rw: a
+        // later rw bind would shadow this one anyway, so skipping is the same
+        // mount table with one entry instead of two.
+        if policy.write_roots.contains(root) {
+            continue;
+        }
         let root = root.to_string_lossy();
         push(&mut args, &["--ro-bind", &root, &root]);
+    }
+    // Same position and the same reasoning as the read roots; `--bind` is the
+    // whole difference, which is what makes the attached folder writable.
+    for root in &policy.write_roots {
+        let root = root.to_string_lossy();
+        push(&mut args, &["--bind", &root, &root]);
     }
 
     push(&mut args, &["--bind", &ws, &ws]);
@@ -507,6 +530,14 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
             "(allow file-read* (subpath (param \"READ_ROOT_{i}\")))\n"
         ));
     }
+    // Writable attached roots: read *and* write allowed, same position so the
+    // HOME/MASK denials above are overridden for them too.
+    for i in 0..policy.write_roots.len() {
+        p.push_str(&format!(
+            "(allow file-read* (subpath (param \"WRITE_ROOT_{i}\")))\n\
+             (allow file-write* (subpath (param \"WRITE_ROOT_{i}\")))\n"
+        ));
+    }
     // Last, so it wins over the workspace allow above: the agent's own state
     // directory is neither readable nor writable, however the command spells it.
     if policy.hide_root.is_some() {
@@ -547,6 +578,9 @@ pub fn seatbelt_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     }
     for (i, root) in policy.read_roots.iter().enumerate() {
         args.push(format!("-DREAD_ROOT_{i}={}", root.to_string_lossy()));
+    }
+    for (i, root) in policy.write_roots.iter().enumerate() {
+        args.push(format!("-DWRITE_ROOT_{i}={}", root.to_string_lossy()));
     }
     if let Some(hide) = &policy.hide_root {
         args.push(format!("-DHIDE_ROOT={}", hide.to_string_lossy()));
@@ -624,19 +658,37 @@ pub fn denial_hint(policy: &Policy) -> String {
     let attached = if policy.read_roots.is_empty() {
         String::new()
     } else if backend() == Backend::AppContainer {
-        " The attached folder is readable by the file tools but not by shell \
+        " The attached folder is reachable by the file tools but not by shell \
          commands on this platform."
             .to_string()
     } else {
-        format!(
-            " The attached folder ({}) is readable but not writable.",
-            policy
-                .read_roots
+        let list = |roots: &[PathBuf]| {
+            roots
                 .iter()
                 .map(|r| r.display().to_string())
                 .collect::<Vec<_>>()
                 .join(", ")
-        )
+        };
+        let readonly: Vec<PathBuf> = policy
+            .read_roots
+            .iter()
+            .filter(|r| !policy.write_roots.contains(r))
+            .cloned()
+            .collect();
+        let mut s = String::new();
+        if !policy.write_roots.is_empty() {
+            s.push_str(&format!(
+                " The attached folder ({}) is readable and writable.",
+                list(&policy.write_roots)
+            ));
+        }
+        if !readonly.is_empty() {
+            s.push_str(&format!(
+                " The attached folder ({}) is readable but not writable.",
+                list(&readonly)
+            ));
+        }
+        s
     };
     format!(
         "\n[sandbox: writes are limited to the workspace ({}){scratch}{home}.{net}{attached}]",
@@ -769,6 +821,55 @@ mod tests {
             "never writable: {text}"
         );
         assert!(!joined(&bwrap_args(&policy(), &cfg())).contains(repo));
+    }
+
+    /// The writable-attach opt-in: the root is bound rw, exactly once, in the
+    /// read-root position (after the home mask, before the workspace bind).
+    #[test]
+    fn bwrap_binds_a_write_root_rw_and_never_twice() {
+        let ws = "/data/agent-workspace/threads/t1";
+        let repo = "/home/u/Projects/app";
+        let text = joined(&bwrap_args(
+            &policy()
+                .with_read_roots(vec![PathBuf::from(repo)])
+                .with_write_roots(vec![PathBuf::from(repo)]),
+            &cfg(),
+        ));
+        assert!(text.contains(&format!("--bind {repo} {repo}")), "{text}");
+        assert!(
+            !text.contains(&format!("--ro-bind {repo} {repo}")),
+            "one entry in the mount table, writable: {text}"
+        );
+        let home = home_dir().expect("a home dir");
+        let home_tmpfs = text
+            .find(&format!("--tmpfs {}", home.to_string_lossy()))
+            .expect("home tmpfs");
+        let rw = text
+            .find(&format!("--bind {repo} {repo}"))
+            .expect("write root bind");
+        let ws_bind = text.find(&format!("--bind {ws} {ws}")).expect("ws bind");
+        assert!(home_tmpfs < rw && rw < ws_bind, "{text}");
+    }
+
+    #[test]
+    fn seatbelt_allows_a_write_root_to_write() {
+        let repo = "/Users/u/repo";
+        let p = seatbelt_policy(
+            &policy()
+                .with_read_roots(vec![PathBuf::from(repo)])
+                .with_write_roots(vec![PathBuf::from(repo)]),
+        );
+        assert!(
+            p.contains("(allow file-write* (subpath (param \"WRITE_ROOT_0\")))"),
+            "{p}"
+        );
+        let args = seatbelt_args(
+            &policy()
+                .with_read_roots(vec![PathBuf::from(repo)])
+                .with_write_roots(vec![PathBuf::from(repo)]),
+            &cfg(),
+        );
+        assert!(args.iter().any(|a| a == &format!("-DWRITE_ROOT_0={repo}")));
     }
 
     /// Seatbelt takes the last matching rule, so the read allow has to come
