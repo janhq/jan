@@ -31,6 +31,12 @@ export type ToolCallBar =
       detail?: string
       body?: string
     }
+  /**
+   * `task`. The card answers "which subagent, and what did it just get asked
+   * to do" -- how it is getting on belongs to the tasks panel, which follows
+   * the child for as long as it runs.
+   */
+  | { variant: 'subagent'; name: string; task: string }
 
 /**
  * Owned by the RAG extension (extensions/rag-extension/src/tools.ts) and not
@@ -66,6 +72,13 @@ export function describeNativeToolCall(
   }
   if (origin.kind === 'web-fetch') {
     return { variant: 'address', url: asString(args.url) }
+  }
+  if (origin.kind === 'subagent') {
+    return {
+      variant: 'subagent',
+      name: asString(args.subagent_name),
+      task: asString(args.description),
+    }
   }
   if (origin.kind === 'rag' && toolName === RAG_RETRIEVE_TOOL) {
     return {
