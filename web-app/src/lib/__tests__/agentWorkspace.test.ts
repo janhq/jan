@@ -14,6 +14,8 @@ const api = {
   // imports from this module must exist on the mock even though these tests
   // never call them.
   memoryCatalog: vi.fn(),
+  subagentResultReserve: vi.fn(),
+  subagentResultFill: vi.fn(),
   toolSchemas: vi.fn(),
   executeTool: vi.fn(),
   sandboxStatus: vi.fn(),

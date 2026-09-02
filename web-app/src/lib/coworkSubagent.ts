@@ -39,13 +39,116 @@ import type { StreamEvent } from '@/hooks/useCoworkRun'
  * parent then re-prefills on its next step. Fixing it means a dedicated
  * subagent slot, which is part of the still-open slot-reservation decision.
  *
- * The Rust pair `dispatch_subagent`/`await_subagent` collapses to one blocking
- * `task` call here. The SDK already emits several tool calls per step and the
- * runner dispatches them in order, so a run id to await later buys nothing.
+ * `task` is non-blocking, as `dispatch_subagent` is in Rust: it returns the file
+ * its child's answer will be written to, and the child runs on. Blocking held
+ * the tool call open for the whole errand -- so the transcript sat on a running
+ * frame, and a fan-out could not be reported one child at a time. The parent
+ * hears about each completion through a `<SYSTEM>` ping instead (see
+ * `SubagentInbox`), which is also what lets it keep working meanwhile.
  */
 
 /** Concurrent children, mirroring `DEFAULT_MAX_PARALLEL_SUBAGENTS`. */
 export const MAX_PARALLEL_SUBAGENTS = 3
+
+/**
+ * Characters of a child's answer carried in a ping that has no file to point
+ * at. Anything past this is lost, which is why a file is much preferred.
+ * Mirrors the Rust `SUBAGENT_INLINE_MAX_BYTES`.
+ */
+export const SUBAGENT_INLINE_MAX = 8 * 1024
+
+/** The `task` result for a child that has just been started. */
+export function dispatchedSubagentResult(
+  name: string,
+  callId: string,
+  savedPath: string | null
+): string {
+  const where = savedPath
+    ? `Its answer will be written to ${savedPath}; read that file once you are told it has landed.`
+    : 'You will be given its answer as soon as it finishes.'
+  return (
+    `Subagent '${name}' started in the background (${callId}). ${where} ` +
+    'Keep working rather than waiting for it.'
+  )
+}
+
+/**
+ * The `<SYSTEM>` ping the parent gets when a child finishes. Port of the Rust
+ * `completion_notice`, with one difference: with no file to point at, the answer
+ * itself rides along, since nothing else would carry it.
+ */
+export function subagentCompletionNotice(opts: {
+  name: string
+  callId: string
+  savedPath: string | null
+  output: string
+  isError?: boolean
+}): string {
+  const who = `Subagent '${opts.name}' (${opts.callId})`
+  if (opts.isError) return `${who} failed: ${opts.output}`
+  if (opts.savedPath) {
+    return `${who} finished. Its full answer is in ${opts.savedPath} -- read that file when you need it.`
+  }
+  return `${who} finished. Its answer:\n\n${opts.output.slice(0, SUBAGENT_INLINE_MAX)}`
+}
+
+/**
+ * Completions the parent has not been told about yet, and the count of children
+ * that could still produce one.
+ *
+ * The runner asks this whether to keep the run alive: a model that stops while a
+ * child is still going would otherwise end the run, and the answer would have
+ * nowhere to land. `finish` queues the ping before dropping the running count,
+ * so `pending` can never read false in the window between the two.
+ */
+export class SubagentInbox {
+  private queue: string[] = []
+  private running = 0
+  private waiters: Array<() => void> = []
+
+  begin(): void {
+    this.running += 1
+  }
+
+  finish(notice: string): void {
+    this.queue.push(notice)
+    this.running -= 1
+    this.wake()
+  }
+
+  /** Take every queued ping, oldest first. */
+  take(): string[] {
+    const out = this.queue
+    this.queue = []
+    return out
+  }
+
+  pending(): boolean {
+    return this.queue.length > 0 || this.running > 0
+  }
+
+  /** Resolve when a ping is available, when nothing is left to wait for, or
+   * when the run is cancelled -- never hang past the run that owns it. */
+  wait(signal?: AbortSignal): Promise<void> {
+    if (!this.pending() || this.queue.length > 0 || signal?.aborted) {
+      return Promise.resolve()
+    }
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        signal?.removeEventListener('abort', done)
+        resolve()
+      }
+      this.waiters.push(done)
+      signal?.addEventListener('abort', done, { once: true })
+    })
+  }
+
+  private wake(): void {
+    const waiters = this.waiters
+    this.waiters = []
+    for (const resolve of waiters) resolve()
+  }
+}
 
 /**
  * Always granted to a child, whatever the allowlist says.
@@ -343,9 +446,10 @@ function childStep(opts: {
 /**
  * Run one subagent to completion and return its final answer.
  *
- * Blocking by design: the parent's `task` call resolves with the result, so the
- * model needs no run-id bookkeeping. Never throws — a failed child comes back as
- * an error string the parent can read and work around.
+ * The caller does not await this inline: `task` has already returned, and this
+ * promise is what eventually files a ping with the `SubagentInbox`. Never
+ * throws -- a failed child comes back as an error string the parent can read
+ * and work around.
  */
 export async function runSubagent(
   opts: RunSubagentOptions

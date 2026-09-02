@@ -223,6 +223,43 @@ export async function memoryDelete(
   })
 }
 
+/** A file claimed in a session scratch for a subagent's answer. */
+export type ReservedResult = {
+  /** The reserved name, to pass back to `subagentResultFill`. */
+  file: string
+  /** The model-visible path the parent agent can `read`. */
+  path: string
+}
+
+/**
+ * Claim a file in `threadId`'s session scratch for a subagent's answer
+ * (`<scratch>/subagents/<id>.md`). Claimed at dispatch, not at completion: the
+ * `task` tool reports where the answer will be while the child is still
+ * working. An existing name is suffixed, never overwritten.
+ */
+export async function subagentResultReserve(
+  threadId: string,
+  id: string
+): Promise<ReservedResult> {
+  return await invoke('plugin:agent-tools|subagent_result_reserve', {
+    threadId,
+    id,
+  })
+}
+
+/** Write a finished subagent's answer into the file reserved for it. */
+export async function subagentResultFill(
+  threadId: string,
+  file: string,
+  content: string
+): Promise<void> {
+  return await invoke('plugin:agent-tools|subagent_result_fill', {
+    threadId,
+    file,
+    content,
+  })
+}
+
 /**
  * Function schemas for every built-in tool. Callers pick which subset to
  * advertise; the schemas are never re-typed in TypeScript.
