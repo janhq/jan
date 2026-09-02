@@ -20,11 +20,27 @@ export function partialJsonField(
   raw: string,
   field: string
 ): string | undefined {
+  for (const value of scanJsonStrings(raw, field)) return value
+  return undefined
+}
+
+/**
+ * Every occurrence of a string-valued field, in order.
+ *
+ * `edit` carries an array of `{old_string, new_string}` objects, so its
+ * arguments are only readable as repeated fields -- there is no single value to
+ * pull out the way a `write`'s body is.
+ */
+export function partialJsonStrings(raw: string, field: string): string[] {
+  return [...scanJsonStrings(raw, field)]
+}
+
+function* scanJsonStrings(raw: string, field: string): Generator<string> {
   const needle = `"${field}"`
   let rest = raw
   for (;;) {
     const at = rest.indexOf(needle)
-    if (at === -1) return undefined
+    if (at === -1) return
     const after = rest.slice(at + needle.length)
     const afterColon = after.trimStart()
     // The name can also appear inside an earlier string value; if what follows
@@ -40,14 +56,24 @@ export function partialJsonField(
     }
     const value = opened.slice(1)
     let escaped = false
+    let end = -1
     for (let i = 0; i < value.length; i++) {
       const c = value[i]
       if (escaped) escaped = false
       else if (c === '\\') escaped = true
-      else if (c === '"') return value.slice(0, i)
+      else if (c === '"') {
+        end = i
+        break
+      }
     }
-    // No closing quote: the value is still streaming, so take all of it.
-    return value
+    if (end === -1) {
+      // No closing quote: the value is still streaming, so it is all of the
+      // rest -- and necessarily the last one.
+      yield value
+      return
+    }
+    yield value.slice(0, end)
+    rest = value.slice(end + 1)
   }
 }
 
@@ -79,12 +105,16 @@ export function unescapePartialJsonString(raw: string): string {
 }
 
 /**
- * The string arguments a tool card can be built from, read out of a buffer that
- * is still arriving.
+ * The arguments a tool card can be built from, read out of a buffer that is
+ * still arriving.
  *
- * Only string fields: a number or an id arrives whole or not at all, and half a
- * number is a lie rather than a preview. A field that has not started streaming
- * is absent, which the card renders as an empty bar.
+ * String fields only, plus `edit`'s array of them: a number or an id arrives
+ * whole or not at all, and half a number is a lie rather than a preview. A
+ * field that has not started streaming is absent, which the card renders as an
+ * empty bar.
+ *
+ * The result is shaped like the real arguments, not like a bag of fragments, so
+ * everything downstream reads a streaming call and a settled one the same way.
  */
 const PREVIEW_FIELDS = [
   'path',
@@ -98,11 +128,35 @@ const PREVIEW_FIELDS = [
   'description',
 ] as const
 
-export function partialToolInput(raw: string): Record<string, string> {
-  const out: Record<string, string> = {}
+export type PartialEdit = { old_string: string; new_string?: string }
+
+export function partialToolInput(raw: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
   for (const field of PREVIEW_FIELDS) {
     const value = partialJsonField(raw, field)
     if (value !== undefined) out[field] = unescapePartialJsonString(value)
   }
+  const edits = partialEdits(raw)
+  if (edits.length > 0) out.edits = edits
   return out
+}
+
+/**
+ * `edit`'s replacement pairs, as far as they have arrived.
+ *
+ * The two fields are emitted in order within each array element, so the n-th
+ * `old_string` belongs with the n-th `new_string`; a trailing `old_string` with
+ * no partner is the pair currently streaming, which is exactly the one worth
+ * watching.
+ */
+function partialEdits(raw: string): PartialEdit[] {
+  const olds = partialJsonStrings(raw, 'old_string')
+  const news = partialJsonStrings(raw, 'new_string')
+  return olds.map((old, i) => {
+    const pair: PartialEdit = { old_string: unescapePartialJsonString(old) }
+    if (i < news.length) {
+      pair.new_string = unescapePartialJsonString(news[i])
+    }
+    return pair
+  })
 }

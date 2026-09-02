@@ -11,7 +11,7 @@ import { ToolProgressRow } from '@/components/ai-elements/tool-runtime'
 import { useToolOrigin } from '@/hooks/useToolOrigin'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { completedToolLabel } from '@/lib/agentActivity'
-import { describeNativeToolCall } from '@/lib/toolPresentation'
+import { describeNativeToolCall, isToolRunning } from '@/lib/toolPresentation'
 import { isToolPart, type MessagePartLike } from './types'
 import { RagToolWidget } from './RagToolWidget'
 import { WebToolWidget } from './WebToolWidget'
@@ -61,10 +61,23 @@ export const ToolCallCard = memo(
 
     // `skill_read` reads as a bare tool name otherwise; the label names the
     // skill actually being loaded, which is the only interesting part of it.
+    // A `task` names its subagent for a stronger reason: its widget goes away
+    // once the child is launched, so without this a fan-out collapses to three
+    // identical rows.
     const title =
       toolName === 'skill_read'
         ? completedToolLabel(toolName, part.input, part.state)
-        : toolName
+        : bar?.variant === 'subagent' && bar.name
+          ? `${toolName}: ${bar.name}`
+          : toolName
+
+    // A `task` widget describes a launch, and the launch is over the moment the
+    // call settles: the child then runs for minutes with the tasks panel
+    // following it, so leaving the card open would park a static "Running in
+    // the background" under every dispatch. Every other widget reports its own
+    // call, which is still worth reading afterwards.
+    const showBar =
+      bar && (bar.variant !== 'subagent' || isToolRunning(part.state))
 
     return (
       <Tool
@@ -83,7 +96,7 @@ export const ToolCallCard = memo(
           input={bar ? undefined : part.input}
         />
         <ToolProgressRow toolCallId={part.toolCallId} />
-        {bar && (
+        {showBar && (
           <div className="mt-2">
             {bar.variant === 'documents' ? (
               <RagToolWidget
@@ -102,11 +115,7 @@ export const ToolCallCard = memo(
                 errorText={errorText}
               />
             ) : bar.variant === 'subagent' ? (
-              <SubagentToolWidget
-                bar={bar}
-                state={part.state}
-                errorText={errorText}
-              />
+              <SubagentToolWidget bar={bar} />
             ) : bar.variant === 'workspace' ? (
               <AgentToolWidget
                 bar={bar}
@@ -128,8 +137,10 @@ export const ToolCallCard = memo(
         <ToolContent title={title}>
           {Boolean(part.input) && <ToolInput input={part.input} />}
           <ToolApprovalActions />
-          {/* The widget already presents the result for native tools. */}
-          {!bar &&
+          {/* The widget already presents the result for native tools -- but a
+              `task` has none once it settles, so its outcome (a refusal, most
+              of all) has to stay reachable here. */}
+          {!showBar &&
             (isError ? (
               <ToolOutput
                 output={undefined}
