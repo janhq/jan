@@ -1124,28 +1124,7 @@ fn spill_dir(scratch: Option<&Path>) -> Option<PathBuf> {
     let base = scratch
         .map(Path::to_path_buf)
         .unwrap_or_else(std::env::temp_dir);
-    let dir = base.join("jan-bash");
-    match std::fs::symlink_metadata(&dir) {
-        Ok(meta) if !meta.is_dir() => return None,
-        Ok(_) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // create_dir (not create_dir_all) refuses to follow a planted
-            // symlink in the path it creates.
-            let r = std::fs::create_dir(&dir);
-            if let Err(e) = r {
-                if e.kind() != std::io::ErrorKind::AlreadyExists {
-                    return None;
-                }
-            }
-        }
-        Err(_) => return None,
-    }
-    // Re-verify the node is a real directory, not a symlink a concurrent
-    // process swapped in between the create and this check.
-    match std::fs::symlink_metadata(&dir) {
-        Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() => Some(dir),
-        _ => None,
-    }
+    crate::tools::spill::validated_subdir(&base, "jan-bash")
 }
 
 fn new_temp_path(scratch: Option<&Path>) -> Option<PathBuf> {
@@ -1153,16 +1132,11 @@ fn new_temp_path(scratch: Option<&Path>) -> Option<PathBuf> {
     Some(spill_dir(scratch)?.join(format!("jan-bash-{}-{}.txt", std::process::id(), n)))
 }
 
-/// Open a spill file atomically with `O_EXCL` so we never truncate or write
-/// through an existing symlink the shell planted: `create_new` fails if the
-/// path already exists (as a file or a symlink). Combined with the validated
-/// non-symlink parent from [`spill_dir`], the model-controlled spill bytes
-/// cannot be redirected onto a host file.
+/// Open a spill file atomically; see [`crate::tools::spill::open_excl`].
+/// Combined with the validated non-symlink parent from [`spill_dir`], the
+/// model-controlled spill bytes cannot be redirected onto a host file.
 fn open_spill_file(path: &Path) -> std::io::Result<std::fs::File> {
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
+    crate::tools::spill::open_excl(path)
 }
 
 /// Write `content` to a uniquely named temp file, returning its path on
