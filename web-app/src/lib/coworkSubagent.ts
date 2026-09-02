@@ -73,23 +73,37 @@ export function dispatchedSubagentResult(
 }
 
 /**
- * The `<SYSTEM>` ping the parent gets when a child finishes. Port of the Rust
+ * What a finished child is reported as, in the two registers it needs.
+ *
+ * `text` is the `<SYSTEM>` ping the model gets (port of the Rust
  * `completion_notice`, with one difference: with no file to point at, the answer
- * itself rides along, since nothing else would carry it.
+ * itself rides along, since nothing else would carry it). `headline` is the
+ * transcript row -- the same fact without the instructions, which are addressed
+ * to the model and read as clutter to anyone else.
+ *
+ * Two fields rather than one string the UI trims: the split is a fact about
+ * what was written, and recovering it by cutting at the first full stop would
+ * be guessing at text this module produced.
  */
+export type SubagentNotice = { headline: string; text: string }
+
 export function subagentCompletionNotice(opts: {
   name: string
   callId: string
   savedPath: string | null
   output: string
   isError?: boolean
-}): string {
+}): SubagentNotice {
   const who = `Subagent '${opts.name}' (${opts.callId})`
-  if (opts.isError) return `${who} failed: ${opts.output}`
-  if (opts.savedPath) {
-    return `${who} finished. Its full answer is in ${opts.savedPath} -- read that file when you need it.`
+  if (opts.isError) {
+    const headline = `${who} failed: ${opts.output}`
+    return { headline, text: headline }
   }
-  return `${who} finished. Its answer:\n\n${opts.output.slice(0, SUBAGENT_INLINE_MAX)}`
+  const headline = `${who} finished`
+  const detail = opts.savedPath
+    ? `Its full answer is in ${opts.savedPath} -- read that file when you need it.`
+    : `Its answer:\n\n${opts.output.slice(0, SUBAGENT_INLINE_MAX)}`
+  return { headline, text: `${headline}. ${detail}` }
 }
 
 /**
@@ -102,7 +116,7 @@ export function subagentCompletionNotice(opts: {
  * so `pending` can never read false in the window between the two.
  */
 export class SubagentInbox {
-  private queue: string[] = []
+  private queue: SubagentNotice[] = []
   private running = 0
   private waiters: Array<() => void> = []
 
@@ -110,14 +124,14 @@ export class SubagentInbox {
     this.running += 1
   }
 
-  finish(notice: string): void {
+  finish(notice: SubagentNotice): void {
     this.queue.push(notice)
     this.running -= 1
     this.wake()
   }
 
   /** Take every queued ping, oldest first. */
-  take(): string[] {
+  take(): SubagentNotice[] {
     const out = this.queue
     this.queue = []
     return out

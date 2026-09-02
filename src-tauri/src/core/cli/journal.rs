@@ -52,6 +52,10 @@ pub enum DisplayEntry {
         /// `SubagentEnd`, which the row reports as `interrupted`.
         #[serde(default = "default_true")]
         finished: bool,
+        /// Why a child that ended on its own ended badly. `None` is a clean
+        /// finish; a journal written before this field existed replays as one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
 }
 
@@ -211,6 +215,7 @@ mod tests {
                 name: "scout".into(),
                 calls: vec!["Read a.txt".into()],
                 finished: true,
+                error: None,
             },
             DisplayEntry::Assistant {
                 text: "Done.".into(),
