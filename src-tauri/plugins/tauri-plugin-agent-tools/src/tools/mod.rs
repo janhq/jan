@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 /// Windows-only confinement backend for [`jail`]. Present on every platform so
 /// the argv it builds stays unit-testable.
 pub mod appcontainer;
+/// User attachments copied into a session workspace for the agent to read.
+pub mod attachments;
 pub mod cmdscan;
 pub mod gate;
 pub mod handlers;

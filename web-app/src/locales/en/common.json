@@ -612,7 +612,12 @@
     "fileTooLargeDescription": "{{fileName}} exceeds the {{maxFileSizeMB}}MB limit"
   },
   "files": {
-    "chunksCount": "{{count}} chunks"
+    "chunksCount": "{{count}} chunks",
+    "title": "Files",
+    "empty": "Files you attach and files the agent creates will show up here.",
+    "a11y": "Files: {{count}}",
+    "attachments": "Attachments",
+    "notImported": "not in workspace"
   },
   "llamacppBusyOnExit": {
     "title": "llama.cpp is still busy",

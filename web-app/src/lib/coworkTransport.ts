@@ -1,4 +1,4 @@
-import type { Tool, UIMessage } from 'ai'
+import type { Tool } from 'ai'
 import { CustomChatTransport } from '@/lib/custom-chat-transport'
 import { COWORK_SLOT_ID } from '@/constants/models'
 import {
@@ -88,11 +88,12 @@ export class CoworkChatTransport extends CustomChatTransport {
   /**
    * Cowork's own prompt replaces the chat one wholesale — the agent-tools and
    * web-search blurbs are written for a chat that occasionally reaches for a
-   * tool, not for a run whose whole purpose is tool use. The attached-files
-   * instruction is kept: a pasted document is otherwise never explained.
+   * tool, not for a run whose whole purpose is tool use. Attached documents
+   * need no instruction here either: they are copied into the workspace and
+   * named in the question itself (`withAttachedFiles`).
    */
-  protected override buildSystemPrompt(messages: UIMessage[]): string {
-    const base = buildCoworkSystemPrompt({
+  protected override buildSystemPrompt(): string {
+    return buildCoworkSystemPrompt({
       workspacePath: this.config.workspacePath,
       readOnlyFolder: this.config.readOnlyFolder,
       planMode: this.config.planMode,
@@ -102,8 +103,6 @@ export class CoworkChatTransport extends CustomChatTransport {
       memoryCatalog: this.memoryCatalog,
       environment: this.environment,
     })
-    const files = this.buildFilesSystemInstruction(messages)
-    return files.trim().length > 0 ? `${base}\n\n${files}` : base
   }
 
   /**

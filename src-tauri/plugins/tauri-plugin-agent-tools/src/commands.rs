@@ -426,6 +426,43 @@ pub async fn subagent_result_fill(
     Ok(())
 }
 
+/// An attachment imported into a session workspace: host paths, which are also
+/// the model-visible spelling since the workspace is the tools' root.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedAttachment {
+    pub path: String,
+    pub text_path: Option<String>,
+}
+
+/// Copy a user attachment into the Cowork session workspace, with its extracted
+/// text beside it, so the agent's file tools can reach a file the picker found
+/// outside every root they may read. Host-side rather than a model tool: the
+/// source path is the user's, never the model's to name.
+#[tauri::command]
+pub async fn attachment_import(
+    data_folder: String,
+    session_id: String,
+    source: String,
+    text: Option<String>,
+) -> Result<ImportedAttachment, AgentToolsError> {
+    let workspace =
+        workspace::ensure_session_workspace(Path::new(&data_folder), &session_id).await?;
+    let imported = tokio::task::spawn_blocking(move || {
+        crate::tools::attachments::import_attachment(
+            &workspace,
+            Path::new(&source),
+            text.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| AgentToolsError::from(format!("attachment import failed: {e}")))??;
+    Ok(ImportedAttachment {
+        path: imported.path.to_string_lossy().into_owned(),
+        text_path: imported.text_path.map(|p| p.to_string_lossy().into_owned()),
+    })
+}
+
 /// Live monitors per Cowork session, each with the IPC channel its updates are
 /// forwarded over. Process-wide like `bash`'s background jobs: the Cowork loop
 /// runs in the frontend, so nothing host-side scopes a run. The channel slot is
