@@ -36,6 +36,41 @@ describe('AgentToolWidget', () => {
     expect(screen.getByText(key)).toBeInTheDocument()
   })
 
+  /// The body is the work, and a large write takes long enough that a verb
+  /// says nothing about it -- so the preview takes the throbber's place.
+  it('previews a write body instead of naming the verb', () => {
+    render(
+      <AgentToolWidget
+        bar={{
+          variant: 'workspace',
+          tool: 'write',
+          target: 'game.html',
+          body: '<!doctype html>\n<html>',
+        }}
+        state="input-streaming"
+        toolCallId="tc1"
+      />
+    )
+    expect(screen.queryByText('tools:toolCall.writing')).not.toBeInTheDocument()
+    expect(screen.getByText('<!doctype html>')).toBeInTheDocument()
+    // Numbered, so a window onto a long file says where it sits.
+    expect(screen.getByText('1')).toBeInTheDocument()
+    expect(screen.getByText('2')).toBeInTheDocument()
+  })
+
+  /// Before the body opens there is nothing to preview, and the verb is all
+  /// there is to say.
+  it('keeps the verb until the body starts arriving', () => {
+    render(
+      <AgentToolWidget
+        bar={{ variant: 'workspace', tool: 'write', target: 'game.html' }}
+        state="input-streaming"
+        toolCallId="tc1"
+      />
+    )
+    expect(screen.getByText('tools:toolCall.writing')).toBeInTheDocument()
+  })
+
   it('prompts for a pattern rather than a path on grep', () => {
     renderRunning('grep')
     expect(
