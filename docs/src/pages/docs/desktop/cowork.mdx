@@ -84,13 +84,22 @@ list, and asks you to review it:
 
 ## Progress panels
 
-While the agent works, three panels track the run:
+While the agent works, four panels track the run:
 
 - **Todos** — the canonical task list for the current job, with phases and
   statuses the agent keeps current.
 - **Tasks** — background [subagents](#subagents), their queue position and
   status.
 - **Diffs** — every change the agent made to an attached project folder.
+- **Files** — every file in the session: documents you attached to a question
+  and the artifacts the agent created, grouped by type. Click one to preview it.
+
+### Attaching documents
+
+Attach a PDF, DOCX, or other document with the composer's attach button. The
+file is copied into the session workspace, its text is extracted beside it, and
+the question names both paths, so the agent can read the contents with its file
+tools. The attachment appears as a chip on your message and in the Files panel.
 
 ## Subagents
 

@@ -31,12 +31,24 @@ import {
   useCoworkSessions,
   ensureCurrentSession,
 } from '@/hooks/useCoworkSessions'
-import type { AskAnswer, CoworkTurn, Usage } from '@/types/coworkSession'
+import type {
+  AskAnswer,
+  CoworkAttachedFile,
+  CoworkMediaPart,
+  CoworkTurn,
+  Usage,
+} from '@/types/coworkSession'
+import type { Attachment } from '@/types/attachment'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { MessageItem } from '@/containers/MessageItem'
 import SkillSelector from '@/containers/SkillSelector'
-import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
+import { coworkTurnsToUIMessages, userTurn } from '@/lib/coworkTurns'
+import { extractFilesFromPrompt } from '@/lib/fileMetadata'
+import {
+  importAttachedFiles,
+  withAttachedFiles,
+} from '@/lib/coworkAttachments'
 import { useToolCallRuntime, withToolTiming } from '@/hooks/useToolCallRuntime'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useAppState } from '@/hooks/useAppState'
@@ -51,13 +63,16 @@ import { CoworkPlanToggle } from '@/containers/CoworkPlanToggle'
 import { CoworkEmptyState } from '@/containers/CoworkEmptyState'
 import { usePrompt } from '@/hooks/usePrompt'
 import { awaitsModel } from '@/lib/agentActivity'
-import { artifactsFromParts } from '@/lib/coworkArtifacts'
+import { artifactsFromParts, artifactsFromTurns } from '@/lib/coworkArtifacts'
+import { sessionAttachments } from '@/lib/coworkFiles'
 import { CoworkArtifactCard } from '@/containers/CoworkArtifactCard'
 import { CoworkPreviewPanel } from '@/containers/CoworkPreviewPanel'
 import { CoworkDiffPanel } from '@/containers/CoworkDiffPanel'
 import { CoworkTodoPanel } from '@/containers/CoworkTodoPanel'
 import { CoworkTasksPanel } from '@/containers/CoworkTasksPanel'
 import { CoworkChangesChip } from '@/containers/CoworkChangesChip'
+import { CoworkFilesChip } from '@/containers/CoworkFilesChip'
+import { CoworkFilesPanel } from '@/containers/CoworkFilesPanel'
 import { CoworkTodoChip } from '@/containers/CoworkTodoChip'
 import { CoworkTasksChip } from '@/containers/CoworkTasksChip'
 import { collectCodeFileDiffs } from '@/lib/coworkDiffs'
@@ -74,6 +89,7 @@ import {
   getSandboxStatus,
   sandboxEnforces,
   fillSubagentResult,
+  importAttachment,
   reserveSubagentResult,
   stopAgentSessionMonitors,
 } from '@/lib/agentTools'
@@ -165,6 +181,7 @@ function CoworkPage() {
   const [rail, setRail] = useState<
     | { kind: 'preview'; path: string }
     | { kind: 'diff' }
+    | { kind: 'files' }
     | { kind: 'todos' }
     | { kind: 'tasks' }
     | null
@@ -290,6 +307,14 @@ function CoworkPage() {
     () => collectCodeFileDiffs(displayedTurns, subagents),
     [displayedTurns, subagents]
   )
+  const attachments = useMemo(
+    () => sessionAttachments(displayedTurns),
+    [displayedTurns]
+  )
+  const artifacts = useMemo(
+    () => artifactsFromTurns(displayedTurns, workspacePath),
+    [displayedTurns, workspacePath]
+  )
 
   const awaitingModel = useMemo(
     () => awaitsModel(running, displayedTurns),
@@ -306,7 +331,15 @@ function CoworkPage() {
    * re-runs the committed history rather than re-sending the question, which
    * would leave the model reading it twice.
    */
-  const runRequest = async (text: string | null) => {
+  type CoworkAttachments = {
+    media?: CoworkMediaPart[]
+    files?: CoworkAttachedFile[]
+  }
+
+  const runRequest = async (
+    text: string | null,
+    attachments?: CoworkAttachments
+  ) => {
     if (running) return
     const sid = ensureCurrentSession()
     const store = useCoworkSessions.getState()
@@ -331,12 +364,16 @@ function CoworkPage() {
     setStoppedBy(null)
     setRunError(undefined)
     setLiveUsage(null)
-    liveTurnsRef.current = text ? [{ role: 'user', content: text }] : []
+    liveTurnsRef.current = text
+      ? [userTurn(text, attachments?.media, attachments?.files)]
+      : []
     setLiveTurns(liveTurnsRef.current)
     // Marks the session running in the store (and resets its subagent lanes),
     // so surfaces outside this component — the sidebar's per-session spinner
     // and its empty-session filter — can see a run this component owns.
-    useCoworkRun.getState().beginRun(sid, crypto.randomUUID(), text ?? '')
+    useCoworkRun
+      .getState()
+      .beginRun(sid, crypto.randomUUID(), text ?? '', attachments?.media)
     setRunSid(sid)
     setRunning(true)
 
@@ -352,6 +389,20 @@ function CoworkPage() {
       } catch {
         // Probe failed; skip the card rather than flash it every run.
       }
+    }
+
+    // Documents go into the workspace before the question is sent, so the
+    // paths the question names exist by the time the agent reads them. The
+    // row was shown first: parsing a large PDF takes a moment.
+    let files = attachments?.files
+    if (text && files?.length) {
+      files = await importAttachedFiles(files, {
+        parse: async (path, fileType) =>
+          (await serviceHub.rag().parseDocument?.(path, fileType)) ?? '',
+        importFile: (path, parsed) => importAttachment(sid, path, parsed),
+      })
+      liveTurnsRef.current = [userTurn(text, attachments?.media, files)]
+      setLiveTurns(liveTurnsRef.current)
     }
 
     // Warm the sandbox probe: the transport's prompt and tool set read it
@@ -443,7 +494,10 @@ function CoworkPage() {
           {
             id: `${sid}-user-${baseMessages.length}`,
             role: 'user',
-            parts: [{ type: 'text', text }],
+            parts: [
+              { type: 'text', text: withAttachedFiles(text, files) },
+              ...(attachments?.media ?? []),
+            ],
           } as any,
         ]
       : [...baseMessages]
@@ -787,7 +841,11 @@ function CoworkPage() {
     }
   }
 
-  const handleSubmit = (text: string) => {
+  const handleSubmit = (
+    text: string,
+    files?: CoworkMediaPart[],
+    documents?: Attachment[]
+  ) => {
     // Slash commands are client-side actions; they never reach the agent.
     if (text.trim().startsWith('/')) {
       runSlashCommand(text, {
@@ -800,7 +858,17 @@ function CoworkPage() {
       })
       return
     }
-    void runRequest(text)
+    void runRequest(text, {
+      media: files,
+      files: documents
+        ?.filter((d): d is Attachment & { path: string } => !!d.path)
+        .map((d) => ({
+          name: d.name,
+          path: d.path,
+          fileType: d.fileType,
+          size: d.size,
+        })),
+    })
   }
 
   // Slash-command menu: the input text lives in the shared usePrompt store, so
@@ -959,13 +1027,19 @@ function CoworkPage() {
    */
   const handleEditQuestion = useCallback(
     (messageId: string, newText: string) => {
-      if (running || !session?.id || !newText.trim()) return
+      // The rendered text carries the [ATTACHED_FILES] chips block; the
+      // question itself is what precedes it.
+      const text = extractFilesFromPrompt(newText).cleanPrompt
+      if (running || !session?.id || !text.trim()) return
       const index = questionTurnIndex(messageId)
       if (index < 0) return
+      // The attachments stay with the question: a re-ask without them would
+      // silently ask something else.
+      const { media, files } = displayedTurns[index]
       useCoworkSessions.getState().dropFromTurn(session.id, index)
-      void runRequestRef.current(newText)
+      void runRequestRef.current(text, { media, files })
     },
-    [running, session?.id, questionTurnIndex]
+    [running, session?.id, questionTurnIndex, displayedTurns]
   )
 
   /** Ask a question again unchanged, from a point partway up the transcript. */
@@ -1072,6 +1146,10 @@ function CoworkPage() {
                             ? handleRetryQuestion
                             : undefined
                         }
+                        // A system note (a subagent finishing) splits one agent
+                        // turn into two assistant messages; the first is not
+                        // an answer, so it gets no timestamp or actions row.
+                        hideActions={uiMessages[i + 1]?.role === 'system'}
                         onDelete={
                           message.role === 'user'
                             ? handleDeleteQuestion
@@ -1236,6 +1314,15 @@ function CoworkPage() {
                           )
                         }
                       />
+                      <CoworkFilesChip
+                        count={attachments.length + artifacts.length}
+                        open={rail?.kind === 'files'}
+                        onToggle={() =>
+                          setRail((r) =>
+                            r?.kind === 'files' ? null : { kind: 'files' }
+                          )
+                        }
+                      />
                       <div className="ml-auto flex items-center">
                         <SkillSelector folder={folder} />
                       </div>
@@ -1256,6 +1343,14 @@ function CoworkPage() {
         )}
         {rail?.kind === 'diff' && (
           <CoworkDiffPanel files={fileDiffs} onClose={() => setRail(null)} />
+        )}
+        {rail?.kind === 'files' && (
+          <CoworkFilesPanel
+            attachments={attachments}
+            artifacts={artifacts}
+            onPreview={showPreview}
+            onClose={() => setRail(null)}
+          />
         )}
         {rail?.kind === 'todos' && (
           <CoworkTodoPanel

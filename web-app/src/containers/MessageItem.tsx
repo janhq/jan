@@ -640,7 +640,7 @@ export const MessageItem = memo(
         )}
 
         {/* Message actions for assistant messages (non-tool) */}
-        {message.role === 'assistant' && (
+        {message.role === 'assistant' && !hideActions && (
           <div className="flex items-center gap-2 text-muted-foreground text-xs">
             {!isStreaming && (
               <span className="text-muted-foreground">

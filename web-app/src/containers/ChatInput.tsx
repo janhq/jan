@@ -121,7 +121,10 @@ type ChatInputProps = {
   projectAssistantId?: string
   onSubmit?: (
     text: string,
-    files?: Array<{ type: string; mediaType: string; url: string }>
+    files?: Array<{ type: 'file'; mediaType: string; url: string }>,
+    /** Document attachments, for surfaces that do not read them back out of
+     * the attachments store themselves. */
+    documents?: Attachment[]
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
@@ -595,27 +598,34 @@ const ChatInput = memo(function ChatInput({
       const imageFiles = attachments
         .filter((att) => att.type === 'image' && att.dataUrl)
         .map((att) => ({
-          type: 'file',
+          type: 'file' as const,
           mediaType: att.mimeType ?? 'image/jpeg',
           url: att.dataUrl!,
         }))
       const audioFiles = attachments
         .filter((att) => att.type === 'audio' && att.dataUrl)
         .map((att) => ({
-          type: 'file',
+          type: 'file' as const,
           mediaType: att.audioFormat === 'mp3' ? 'audio/mpeg' : 'audio/wav',
           url: att.dataUrl!,
         }))
       const videoFiles = attachments
         .filter((att) => att.type === 'video' && att.dataUrl)
         .map((att) => ({
-          type: 'file',
+          type: 'file' as const,
           mediaType: att.mimeType ?? 'video/mp4',
           url: att.dataUrl!,
         }))
       const files = [...imageFiles, ...audioFiles, ...videoFiles]
+      const documents = attachments.filter(
+        (att) => att.type === 'document' && att.path
+      )
 
-      onSubmit(effectivePrompt, files.length > 0 ? files : undefined)
+      onSubmit(
+        effectivePrompt,
+        files.length > 0 ? files : undefined,
+        documents.length > 0 ? documents : undefined
+      )
       setPrompt('')
       clearAttachmentsForThread(attachmentsKey)
     } else {

@@ -1,6 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { UIMessage } from 'ai'
-import type { CoworkTurn } from '@/types/coworkSession'
+import type {
+  CoworkAttachedFile,
+  CoworkMediaPart,
+  CoworkTurn,
+} from '@/types/coworkSession'
+import { injectFilesIntoPrompt } from '@/lib/fileMetadata'
 import { reasoningPartsFromText } from '@/lib/messages'
 import { partialToolInput } from '@/lib/partialJson'
 
@@ -18,6 +23,38 @@ import { partialToolInput } from '@/lib/partialJson'
  * real coloured diff by `AgentToolWidget`, keyed on `toolCallId`. Folding it into
  * the output text would also corrupt the output the widget parses.
  */
+/** The transcript row for a question, with whatever was attached to it. */
+export function userTurn(
+  text: string,
+  media?: CoworkMediaPart[],
+  files?: CoworkAttachedFile[]
+): CoworkTurn {
+  const turn: CoworkTurn = { role: 'user', content: text }
+  if (media?.length) turn.media = media
+  if (files?.length) turn.files = files
+  return turn
+}
+
+/**
+ * Attached documents ride in the text as an `[ATTACHED_FILES]` block, which is
+ * what `MessageItem` already parses into chips for the chat surface; media
+ * follow as `file` parts, which it renders as thumbnails.
+ */
+function userMessageParts(turn: CoworkTurn): unknown[] {
+  const text = turn.files?.length
+    ? injectFilesIntoPrompt(
+        turn.content,
+        turn.files.map((f) => ({
+          id: f.path,
+          name: f.name,
+          type: f.fileType,
+          size: f.size,
+        }))
+      )
+    : turn.content
+  return [{ type: 'text', text }, ...(turn.media ?? [])]
+}
+
 export function coworkTurnsToUIMessages(
   turns: CoworkTurn[],
   idPrefix = 'code'
@@ -47,7 +84,7 @@ export function coworkTurnsToUIMessages(
       messages.push({
         id: `${idPrefix}-user-${i}`,
         role: 'user',
-        parts: [{ type: 'text', text: turn.content }],
+        parts: userMessageParts(turn),
       } as any)
       return
     }
