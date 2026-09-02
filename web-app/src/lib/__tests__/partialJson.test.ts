@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   partialJsonField,
+  partialJsonStrings,
   partialToolInput,
   unescapePartialJsonString,
 } from '../partialJson'
@@ -37,6 +38,25 @@ describe('partialJsonField', () => {
   })
 })
 
+/// `edit` carries an array of `{old_string, new_string}`, so its arguments are
+/// only readable as repeated fields.
+describe('partialJsonStrings', () => {
+  it('reads every occurrence in order', () => {
+    const raw = '{"edits":[{"old_string":"a","new_string":"b"},{"old_string":"c"'
+    expect(partialJsonStrings(raw, 'old_string')).toEqual(['a', 'c'])
+    expect(partialJsonStrings(raw, 'new_string')).toEqual(['b'])
+  })
+
+  it('takes the still-open last value, and stops there', () => {
+    const raw = '{"edits":[{"old_string":"a","new_string":"partial'
+    expect(partialJsonStrings(raw, 'new_string')).toEqual(['partial'])
+  })
+
+  it('is empty when the field never appears', () => {
+    expect(partialJsonStrings('{"path":"a"}', 'old_string')).toEqual([])
+  })
+})
+
 describe('unescapePartialJsonString', () => {
   it('survives a cut escape', () => {
     expect(unescapePartialJsonString('a\\nb')).toBe('a\nb')
@@ -69,5 +89,23 @@ describe('partialToolInput', () => {
 
   it('is empty before anything has arrived', () => {
     expect(partialToolInput('{"pa')).toEqual({})
+  })
+
+  /// The result is shaped like the real arguments, so a streaming call and a
+  /// settled one read the same downstream.
+  it('rebuilds the edit pairs, keeping the one still streaming', () => {
+    const raw =
+      '{"path":"a.ts","edits":[{"old_string":"one","new_string":"1"},{"old_string":"two"'
+    expect(partialToolInput(raw)).toEqual({
+      path: 'a.ts',
+      edits: [
+        { old_string: 'one', new_string: '1' },
+        { old_string: 'two' },
+      ],
+    })
+  })
+
+  it('has no edits before the first pair opens', () => {
+    expect(partialToolInput('{"path":"a.ts","edi')).toEqual({ path: 'a.ts' })
   })
 })
