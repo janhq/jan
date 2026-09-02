@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the attachment_import command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-attachment-import",
+          "markdownDescription": "Enables the attachment_import command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the attachment_import command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-attachment-import",
+          "markdownDescription": "Denies the attachment_import command without any pre-configured scope."
+        },
+        {
           "description": "Enables the execute_tool command without any pre-configured scope.",
           "type": "string",
           "const": "allow-execute-tool",
@@ -607,10 +619,10 @@
           "markdownDescription": "Denies the workspace_path command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`\n- `allow-start-monitor`\n- `allow-stop-monitor`\n- `allow-list-monitors`\n- `allow-stop-session-monitors`",
+          "description": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-attachment-import`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`\n- `allow-start-monitor`\n- `allow-stop-monitor`\n- `allow-list-monitors`\n- `allow-stop-session-monitors`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`\n- `allow-start-monitor`\n- `allow-stop-monitor`\n- `allow-list-monitors`\n- `allow-stop-session-monitors`"
+          "markdownDescription": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-attachment-import`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`\n- `allow-start-monitor`\n- `allow-stop-monitor`\n- `allow-list-monitors`\n- `allow-stop-session-monitors`"
         }
       ]
     }

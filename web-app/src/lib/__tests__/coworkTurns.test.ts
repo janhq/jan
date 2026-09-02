@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
+import { coworkTurnsToUIMessages, userTurn } from '@/lib/coworkTurns'
 import type { CoworkTurn } from '@/hooks/useCoworkSessions'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -180,5 +180,46 @@ describe('coworkTurnsToUIMessages', () => {
     const committed = coworkTurnsToUIMessages(turns, 'c')
     const live = coworkTurnsToUIMessages(turns, 'l')
     expect(committed[0].id).not.toBe(live[0].id)
+  })
+
+  describe('user attachments', () => {
+    const png = { type: 'file' as const, mediaType: 'image/png', url: 'data:image/png;base64,AA' }
+    const pdf = { name: 'spec.pdf', path: '/docs/spec.pdf', fileType: 'pdf', size: 1234 }
+
+    it('userTurn keeps media and files beside the question', () => {
+      expect(userTurn('read this', [png], [pdf])).toEqual({
+        role: 'user',
+        content: 'read this',
+        media: [png],
+        files: [pdf],
+      })
+    })
+
+    it('userTurn omits empty attachment lists', () => {
+      expect(userTurn('plain')).toEqual({ role: 'user', content: 'plain' })
+      expect(userTurn('plain', [], [])).toEqual({ role: 'user', content: 'plain' })
+    })
+
+    it('renders attached media as file parts after the text', () => {
+      const parts = partsOf(coworkTurnsToUIMessages([userTurn('look', [png])]))
+      expect(parts).toEqual([{ type: 'text', text: 'look' }, png])
+    })
+
+    it('renders attached documents as the [ATTACHED_FILES] block MessageItem reads', () => {
+      const parts = partsOf(coworkTurnsToUIMessages([userTurn('summarize', undefined, [pdf])]))
+      expect(parts).toHaveLength(1)
+      const text = parts[0].text as string
+      expect(text.startsWith('summarize')).toBe(true)
+      expect(text).toContain('[ATTACHED_FILES]')
+      expect(text).toContain('name: spec.pdf')
+      expect(text).toContain('type: pdf')
+      expect(text).toContain('size: 1234')
+    })
+
+    it('leaves a turn with no attachments as a bare text part', () => {
+      expect(partsOf(coworkTurnsToUIMessages([userTurn('hi')]))).toEqual([
+        { type: 'text', text: 'hi' },
+      ])
+    })
   })
 })

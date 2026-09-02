@@ -1,11 +1,13 @@
 import { create } from 'zustand'
 import type {
+  CoworkMediaPart,
   CoworkTurn,
   SubagentRun,
   Usage,
   TodoList,
   AskRequestPayload,
 } from '@/types/coworkSession'
+import { userTurn } from '@/lib/coworkTurns'
 import type { ModelLoadProgress } from '@/hooks/useAppState'
 
 // The ask shapes live in the store-free types module; re-exported here because
@@ -173,7 +175,7 @@ type CoworkRunState = {
   loadingModels: Record<string, boolean>
   modelLoadProgress: Record<string, ModelLoadProgress>
 
-  beginRun: (sid: string, runId: string, userText: string, images?: string[]) => void
+  beginRun: (sid: string, runId: string, userText: string, media?: CoworkMediaPart[]) => void
   appendToken: (sid: string, text: string) => void
   pushToolTurn: (sid: string, turn: CoworkTurn) => void
   updateToolTurn: (sid: string, callId: string, patch: Partial<CoworkTurn>) => void
@@ -222,12 +224,12 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
   loadingModels: {},
   modelLoadProgress: {},
 
-  beginRun: (sid, runId, userText, images) =>
+  beginRun: (sid, runId, userText, media) =>
     set((s) => ({
       runId: { ...s.runId, [sid]: runId },
       liveTurns: {
         ...s.liveTurns,
-        [sid]: [{ role: 'user', content: userText, images }],
+        [sid]: [userTurn(userText, media)],
       },
       subagents: { ...s.subagents, [sid]: [] },
       pendingAsks: { ...s.pendingAsks, [sid]: [] },

@@ -262,6 +262,33 @@ export async function subagentResultFill(
   })
 }
 
+/** An attachment copied into a session workspace. */
+export type ImportedAttachment = {
+  /** The copy inside the workspace, readable by the agent's file tools. */
+  path: string
+  /** The extracted-text sibling (`<name>.txt`), when text was supplied. */
+  textPath: string | null
+}
+
+/**
+ * Copy a user attachment into `sessionId`'s workspace, writing `text` beside
+ * it when given, so the agent can read a file picked from outside its roots.
+ * Same-named files are suffixed, never overwritten.
+ */
+export async function attachmentImport(
+  dataFolder: string,
+  sessionId: string,
+  source: string,
+  text?: string
+): Promise<ImportedAttachment> {
+  return await invoke('plugin:agent-tools|attachment_import', {
+    dataFolder,
+    sessionId,
+    source,
+    text: text ?? null,
+  })
+}
+
 /**
  * Function schemas for every built-in tool. Callers pick which subset to
  * advertise; the schemas are never re-typed in TypeScript.

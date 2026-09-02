@@ -21,6 +21,7 @@ permissions = [
     "allow-sandbox-status",
     "allow-subagent-result-reserve",
     "allow-subagent-result-fill",
+    "allow-attachment-import",
     "allow-execute-tool",
     "allow-execute-tool-streaming",
     "allow-start-monitor",

@@ -352,6 +352,20 @@ describe('MessageItem', () => {
     expect(screen.queryByTestId('delete-btn')).not.toBeInTheDocument()
   })
 
+  it('hideActions drops the whole assistant row, timestamp included', () => {
+    render(
+      <MessageItem
+        message={makeMsg() as any}
+        isFirstMessage
+        isLastMessage={false}
+        status={'ready' as any}
+        hideActions
+      />
+    )
+    expect(screen.queryByText('2024-01-01')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('token-speed')).not.toBeInTheDocument()
+  })
+
   it('streaming state hides edit/delete and marks token speed streaming', () => {
     render(
       <MessageItem

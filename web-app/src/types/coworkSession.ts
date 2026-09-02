@@ -23,8 +23,11 @@ export type CoworkTurn = {
    * `<think>` reasoning stays inside `content` (that is what the model sent)
    * and is split out at render time instead. */
   reasoning?: string
-  /** User-row only: data URLs of images attached via paste/file picker. */
-  images?: string[]
+  /** User-row only: images/audio/video attached to the question, as the
+   * `file` parts the model received. */
+  media?: CoworkMediaPart[]
+  /** User-row only: documents attached to the question. */
+  files?: CoworkAttachedFile[]
   callId?: string
   name?: string
   args?: unknown
@@ -35,6 +38,26 @@ export type CoworkTurn = {
   isError?: boolean
   diff?: string
   status?: 'running' | 'done'
+}
+
+/** A pasted or picked image/audio/video, shaped as an AI SDK `file` part. */
+export type CoworkMediaPart = {
+  type: 'file'
+  mediaType: string
+  url: string
+}
+
+/** A document the user attached to a question. `path` is where it was picked
+ * from; the session does not copy it. */
+export type CoworkAttachedFile = {
+  name: string
+  path: string
+  fileType?: string
+  size?: number
+  /** The copy inside the session workspace, once imported for the agent. */
+  workspacePath?: string
+  /** Extracted text written beside the copy, for formats `read` cannot open. */
+  textPath?: string
 }
 
 /** Mirrors the Rust `Usage` struct (events.rs). */

@@ -8,6 +8,7 @@ import {
   memoryRead,
   subagentResultReserve,
   subagentResultFill,
+  attachmentImport,
   startMonitor,
   stopMonitor,
   listMonitors,
@@ -390,6 +391,26 @@ export async function fillSubagentResult(
   } catch (e) {
     console.warn('[agentTools] Failed to save subagent result:', messageOf(e))
     return false
+  }
+}
+
+/**
+ * Copy a user attachment into the session workspace, with its extracted text
+ * beside it. `null` when it could not be copied, so the caller can tell the
+ * agent instead of naming a path that is not there.
+ */
+export async function importAttachment(
+  sessionId: string,
+  source: string,
+  text?: string
+): Promise<{ path: string; textPath: string | null } | null> {
+  try {
+    const dataFolder = await getServiceHub().app().getJanDataFolder()
+    if (!dataFolder) return null
+    return await attachmentImport(dataFolder, sessionId, source, text)
+  } catch (e) {
+    console.warn('[agentTools] Failed to import attachment:', messageOf(e))
+    return null
   }
 }
 
