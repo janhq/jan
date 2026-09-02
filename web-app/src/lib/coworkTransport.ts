@@ -11,7 +11,11 @@ import {
   coworkToolSignature,
   type CoworkToolOptions,
 } from '@/lib/coworkTools'
-import { buildCoworkSystemPrompt } from '@/lib/coworkPrompt'
+import {
+  buildCoworkSystemPrompt,
+  type CoworkEnvironment,
+} from '@/lib/coworkPrompt'
+import { getCoworkEnvironment } from '@/lib/coworkEnv'
 
 export type CoworkRunConfig = CoworkToolOptions & {
   workspacePath: string | null
@@ -46,6 +50,9 @@ export class CoworkChatTransport extends CustomChatTransport {
    * cache on every step. A note written mid-run appears at the next run.
    */
   private memoryCatalog: MemoryCatalogEntry[] = []
+  /** Snapshotted with the tool freeze: the date line changing mid-run would
+   * discard the prompt prefix on every step, exactly like a catalog change. */
+  private environment: CoworkEnvironment | null = null
 
   constructor(sessionId: string, config: CoworkRunConfig) {
     super(undefined, sessionId)
@@ -93,6 +100,7 @@ export class CoworkChatTransport extends CustomChatTransport {
       subagentNames: this.config.allowSubagents ? this.config.subagentNames : [],
       webSearch: this.config.webSearch,
       memoryCatalog: this.memoryCatalog,
+      environment: this.environment,
     })
     const files = this.buildFilesSystemInstruction(messages)
     return files.trim().length > 0 ? `${base}\n\n${files}` : base
@@ -118,6 +126,7 @@ export class CoworkChatTransport extends CustomChatTransport {
     // Run boundary: re-snapshot the catalog even when the tool set is reused,
     // since memory moves independently of the tool config.
     this.memoryCatalog = await getMemoryCatalog()
+    this.environment = await getCoworkEnvironment()
     const sig = coworkToolSignature(this.config, sandboxEnforces())
     // Between runs, skip the rebuild when nothing that shapes the set changed.
     if (this.builtTools && this.builtSig === sig) {

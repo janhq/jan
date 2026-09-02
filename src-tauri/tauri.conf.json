@@ -42,6 +42,9 @@
     }
   },
   "plugins": {
+    "opener": {
+      "requireLiteralLeadingDot": false
+    },
     "os": {
       "version": "latest",
       "resolve": true
