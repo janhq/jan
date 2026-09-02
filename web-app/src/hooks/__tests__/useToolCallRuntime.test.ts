@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   findRunningToolCallId,
   useToolCallRuntime,
+  withToolTiming,
 } from '../useToolCallRuntime'
 
 const store = () => useToolCallRuntime.getState()
@@ -156,5 +157,28 @@ describe('useToolCallRuntime', () => {
     store().recordDiff('b', 'second')
     store().recordDiff('a', 'first again')
     expect(store().diffs).toEqual({ a: 'first again', b: 'second' })
+  })
+
+  /// Cowork dispatches serially and has no queue to report, but its cards still
+  /// need a duration -- without a timing entry the header shows a bare spinner.
+  it('times a single call from dispatch to settle', async () => {
+    const during = withToolTiming('a', async () => {
+      expect(store().timings['a']?.startedAt).toBeDefined()
+      expect(store().timings['a']?.endedAt).toBeUndefined()
+      return 'result'
+    })
+    await expect(during).resolves.toBe('result')
+    expect(store().timings['a']?.endedAt).toBeDefined()
+  })
+
+  it('settles the call even when it throws', async () => {
+    await expect(
+      withToolTiming('a', async () => {
+        throw new Error('boom')
+      })
+    ).rejects.toThrow('boom')
+    // Otherwise it holds the running slot forever, and every later call reads
+    // as queued behind a call that is already gone.
+    expect(store().timings['a']?.endedAt).toBeDefined()
   })
 })
