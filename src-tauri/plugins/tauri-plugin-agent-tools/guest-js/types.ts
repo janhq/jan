@@ -47,3 +47,15 @@ export type ToolOutputChunk = {
   callId: string | null
   text: string
 }
+
+/**
+ * One monitor notice, in the two registers a background ping needs: `headline`
+ * for the transcript row, `text` for the `<SYSTEM>` reminder the model gets.
+ * `done` marks the update that also ends the monitor (all met, or timeout).
+ */
+export type MonitorUpdate = {
+  monitorId: string
+  headline: string
+  text: string
+  done: boolean
+}
