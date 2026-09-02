@@ -11,7 +11,13 @@ import type { SubagentRun } from '@/types/coworkSession'
 
 /**
  * Opens the background-tasks rail, and stays out of the way until the agent
- * has dispatched a subagent — the same rule the changes chip follows.
+ * has dispatched a subagent -- the same rule the changes chip follows.
+ *
+ * This is also where "N subagents running" is reported. It used to be a row in
+ * the transcript, which put it in the wrong place twice over: a dispatched
+ * child outlives the turn that started it, so the row went stale under a
+ * conversation that had moved on, and the count belongs next to the thing that
+ * opens the list rather than buried in the scrollback.
  */
 export function CoworkTasksChip({
   subagents,
@@ -34,7 +40,11 @@ export function CoworkTasksChip({
           variant="ghost"
           size="xs"
           aria-pressed={open}
-          aria-label={t('common:backgroundTasks')}
+          aria-label={
+            active > 0
+              ? t('common:subagentsRunning', { count: active })
+              : t('common:backgroundTasks')
+          }
           onClick={onToggle}
           className={cn('shrink-0', open && 'text-primary')}
         >
@@ -48,7 +58,11 @@ export function CoworkTasksChip({
           </span>
         </Button>
       </TooltipTrigger>
-      <TooltipContent>{t('common:backgroundTasks')}</TooltipContent>
+      <TooltipContent>
+        {active > 0
+          ? t('common:subagentsRunning', { count: active })
+          : t('common:backgroundTasks')}
+      </TooltipContent>
     </Tooltip>
   )
 }
