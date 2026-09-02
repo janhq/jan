@@ -94,6 +94,8 @@ const PREVIEW_FIELDS = [
   'url',
   'pattern',
   'name',
+  'subagent_name',
+  'description',
 ] as const
 
 export function partialToolInput(raw: string): Record<string, string> {

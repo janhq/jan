@@ -16,6 +16,7 @@ import { isToolPart, type MessagePartLike } from './types'
 import { RagToolWidget } from './RagToolWidget'
 import { WebToolWidget } from './WebToolWidget'
 import { AgentToolWidget, TerminalWidget } from './AgentToolWidget'
+import { SubagentToolWidget } from './SubagentToolWidget'
 
 const identityResolver = (input: string) => Promise.resolve(input)
 
@@ -45,7 +46,9 @@ export const ToolCallCard = memo(
             ? t('tools:toolCall.originDocuments')
             : origin.kind === 'agent'
               ? t('tools:toolCall.originWorkspace')
-              : origin.detail
+              : origin.kind === 'subagent'
+                ? t('tools:toolCall.originSubagent')
+                : origin.detail
 
     const errorText = isError
       ? part.error || part.errorText || t('tools:toolCall.executionFailed')
@@ -96,6 +99,12 @@ export const ToolCallCard = memo(
                 bar={bar}
                 state={part.state}
                 output={part.output}
+                errorText={errorText}
+              />
+            ) : bar.variant === 'subagent' ? (
+              <SubagentToolWidget
+                bar={bar}
+                state={part.state}
                 errorText={errorText}
               />
             ) : bar.variant === 'workspace' ? (
