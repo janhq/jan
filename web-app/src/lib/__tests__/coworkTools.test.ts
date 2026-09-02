@@ -150,4 +150,39 @@ describe('allowedToolNames', () => {
     const out = allowedToolNames(['read', TASK_TOOL_NAME], opts({ allowSubagents: false }))
     expect(out).toEqual(['read'])
   })
+
+  /// The dispatch that fails is the first one of every fan-out: a model reaches
+  /// for a descriptive name long before it has saved a definition, and a schema
+  /// that mentions `system_prompt` only in passing gets it omitted.
+  describe('the task schema states the one-off rule', () => {
+    it('says which combination fails, on the field filled in first', async () => {
+      const { buildCoworkTools } = await import('../coworkTools')
+      const tools = await buildCoworkTools({
+        planMode: false,
+        subagentNames: [],
+        allowSubagents: true,
+        webSearch: false,
+      })
+      const task = tools['task'] as unknown as {
+        description: string
+        inputSchema: { jsonSchema: { properties: Record<string, { description?: string }> } }
+      }
+      const props = task.inputSchema.jsonSchema.properties
+      expect(props.subagent_name.description).toContain('system_prompt')
+      expect(props.system_prompt.description).toContain('Required')
+      expect(task.description).toContain('No saved subagents yet')
+    })
+
+    it('lists the saved definitions when there are any', async () => {
+      const { buildCoworkTools } = await import('../coworkTools')
+      const tools = await buildCoworkTools({
+        planMode: false,
+        subagentNames: ['reviewer'],
+        allowSubagents: true,
+        webSearch: false,
+      })
+      const task = tools['task'] as unknown as { description: string }
+      expect(task.description).toContain('Saved subagents: reviewer.')
+    })
+  })
 })
