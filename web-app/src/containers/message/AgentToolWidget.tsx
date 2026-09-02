@@ -18,6 +18,7 @@ import {
   type ToolCallBar,
 } from '@/lib/toolPresentation'
 import { cn } from '@/lib/utils'
+import { writeTail } from '@/lib/streamingWrite'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { Caret, ToolBar } from './ToolBar'
 
@@ -68,6 +69,35 @@ const DiffBlock = memo(({ diff }: { diff: string }) => (
 ))
 
 DiffBlock.displayName = 'DiffBlock'
+
+/**
+ * A `write`'s file content as it streams in: a window on the tail, numbered
+ * from where it actually sits in the file, so a long write reads as progress
+ * rather than as a spinner. Mirrors the TUI's streaming-write preview.
+ */
+const WritePreviewBlock = memo(({ body }: { body: string }) => {
+  const { lines, skipped } = useMemo(() => writeTail(body), [body])
+  // Fixed to the widest number in view, so the text does not shift sideways as
+  // the count crosses 10 and 100.
+  const gutter = String(skipped + lines.length).length
+
+  return (
+    <div className="mt-1.5 max-h-56 overflow-hidden rounded-md border bg-card/40 py-1 font-mono text-xs">
+      {lines.map((line, i) => (
+        <div key={i} className="flex gap-2 px-2">
+          <span className="shrink-0 select-none tabular-nums text-muted-foreground/40">
+            {String(skipped + i + 1).padStart(gutter, ' ')}
+          </span>
+          <span className="min-w-0 whitespace-pre-wrap wrap-break-word text-muted-foreground">
+            {line || ' '}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+})
+
+WritePreviewBlock.displayName = 'WritePreviewBlock'
 
 export type TerminalWidgetProps = {
   bar: Extract<ToolCallBar, { variant: 'terminal' }>
@@ -228,7 +258,8 @@ export const AgentToolWidget = memo(
     // `ls` with no path lists the workspace root; show that rather than a bar
     // that reads as though an argument failed to stream.
     const value =
-      bar.target || (LISTING_TOOLS.has(bar.tool) ? t('tools:toolCall.workspaceRoot') : '')
+      bar.target ||
+      (LISTING_TOOLS.has(bar.tool) ? t('tools:toolCall.workspaceRoot') : '')
 
     return (
       <div className="space-y-1.5">
@@ -255,12 +286,19 @@ export const AgentToolWidget = memo(
           </div>
         )}
 
-        {running && !errorText && (
-          <div className="px-2 text-sm">
-            <Shimmer duration={1}>
-              {t(RUNNING_KEYS[bar.tool] ?? 'tools:toolCall.reading')}
-            </Shimmer>
-          </div>
+        {/* The body says more than "Writing…" ever could, so it replaces the
+            throbber the moment the first line arrives. */}
+        {running && !errorText && bar.body ? (
+          <WritePreviewBlock body={bar.body} />
+        ) : (
+          running &&
+          !errorText && (
+            <div className="px-2 text-sm">
+              <Shimmer duration={1}>
+                {t(RUNNING_KEYS[bar.tool] ?? 'tools:toolCall.reading')}
+              </Shimmer>
+            </div>
+          )
         )}
 
         {!running &&

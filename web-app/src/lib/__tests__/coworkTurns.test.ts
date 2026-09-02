@@ -16,11 +16,7 @@ describe('coworkTurnsToUIMessages', () => {
       { role: 'assistant', content: 'answer' },
       { role: 'user', content: 'second' },
     ])
-    expect(messages.map((m) => m.role)).toEqual([
-      'user',
-      'assistant',
-      'user',
-    ])
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
   })
 
   it('maps a tool turn onto a tool-<name> part carrying its input', () => {
@@ -44,7 +40,13 @@ describe('coworkTurnsToUIMessages', () => {
 
   it('leaves a running tool call awaiting output', () => {
     const part = toolPart([
-      { role: 'tool', content: '', callId: 'c', name: 'bash', status: 'running' },
+      {
+        role: 'tool',
+        content: '',
+        callId: 'c',
+        name: 'bash',
+        status: 'running',
+      },
     ])
     expect(part.state).toBe('input-available')
     expect(part.output).toBeUndefined()
@@ -93,6 +95,44 @@ describe('coworkTurnsToUIMessages', () => {
       { role: 'tool', content: 'legacy body', callId: 'c', name: 'read' },
     ])
     expect(part.output).toBe('legacy body')
+  })
+
+  /// A write's body is the work, so the card reads it out of the raw argument
+  /// fragment rather than holding empty until the closing brace lands.
+  it('reads a running call out of its still-streaming arguments', () => {
+    const part = toolPart([
+      {
+        role: 'tool',
+        content: '',
+        callId: 'c',
+        name: 'write',
+        status: 'running',
+        argsLive: '{"path":"game.html","content":"<!doctype html>\\n<htm',
+      },
+    ])
+    expect(part.state).toBe('input-streaming')
+    expect(part.input).toEqual({
+      path: 'game.html',
+      content: '<!doctype html>\n<htm',
+    })
+  })
+
+  /// Once the call is complete its parsed arguments are authoritative: the
+  /// fragment they were read from is a prefix of them.
+  it('prefers the settled arguments over the fragment', () => {
+    const part = toolPart([
+      {
+        role: 'tool',
+        content: '',
+        callId: 'c',
+        name: 'write',
+        status: 'running',
+        argsLive: '{"path":"game.htm',
+        args: { path: 'game.html', content: 'done' },
+      },
+    ])
+    expect(part.state).toBe('input-available')
+    expect(part.input).toEqual({ path: 'game.html', content: 'done' })
   })
 
   it('keeps ids unique across prefixes so committed and live turns can merge', () => {

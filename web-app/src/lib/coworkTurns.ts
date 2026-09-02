@@ -2,6 +2,7 @@
 import type { UIMessage } from 'ai'
 import type { CoworkTurn } from '@/types/coworkSession'
 import { reasoningPartsFromText } from '@/lib/messages'
+import { partialToolInput } from '@/lib/partialJson'
 
 /**
  * Adapts the code screen's flat `CoworkTurn[]` transcript into the AI SDK
@@ -31,7 +32,11 @@ export function coworkTurnsToUIMessages(
 
   const ensureAssistant = (index: number) => {
     if (!assistant) {
-      assistant = { id: `${idPrefix}-asst-${index}`, role: 'assistant', parts: [] }
+      assistant = {
+        id: `${idPrefix}-asst-${index}`,
+        role: 'assistant',
+        parts: [],
+      }
     }
     return assistant
   }
@@ -63,15 +68,22 @@ export function coworkTurnsToUIMessages(
     // tool turn -> a `tool-<name>` part on the current assistant message.
     const name = turn.name ?? 'tool'
     const running = turn.status === 'running'
+    // Arguments arrive as raw JSON text before the call is complete, so a
+    // running turn is read out of that fragment (`input-streaming`). A `write`
+    // is the reason: its body *is* the work, and holding the card empty until
+    // the last byte lands shows nothing for the whole write.
+    const streamed = running && turn.args == null && turn.argsLive
     const part: any = {
       type: `tool-${name}`,
       toolCallId: turn.callId ?? `code-tool-${i}`,
-      input: turn.args,
-      state: running
-        ? 'input-available'
-        : turn.isError
-          ? 'output-error'
-          : 'output-available',
+      input: streamed ? partialToolInput(turn.argsLive as string) : turn.args,
+      state: streamed
+        ? 'input-streaming'
+        : running
+          ? 'input-available'
+          : turn.isError
+            ? 'output-error'
+            : 'output-available',
     }
 
     if (!running) {

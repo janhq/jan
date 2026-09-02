@@ -378,9 +378,24 @@ function CoworkPage() {
       },
       onToolStart: (callId, name) =>
         pushLive([
-          { role: 'tool', content: '', callId, name, status: 'running' },
+          {
+            role: 'tool',
+            content: '',
+            callId,
+            name,
+            status: 'running',
+            argsLive: '',
+          },
         ]),
-      onToolArgsDelta: () => {},
+      // Raw JSON, appended as it arrives. The transcript reads a `write`'s
+      // destination and body straight out of this fragment, so the card fills
+      // in as the model types rather than waiting for the closing brace.
+      onToolArgsDelta: (callId, delta) => {
+        const row = liveTurnsRef.current.find((turn) => turn.callId === callId)
+        if (!row) return
+        row.argsLive = (row.argsLive ?? '') + delta
+        setLiveTurns([...liveTurnsRef.current])
+      },
       onToolCall: (call) => {
         const row = liveTurnsRef.current.find(
           (turn) => turn.callId === call.toolCallId

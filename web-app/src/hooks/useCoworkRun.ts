@@ -164,11 +164,6 @@ type CoworkRunState = {
   appendToken: (sid: string, text: string) => void
   pushToolTurn: (sid: string, turn: CoworkTurn) => void
   updateToolTurn: (sid: string, callId: string, patch: Partial<CoworkTurn>) => void
-  // `tool_call_started`: open a live tool row before any args exist, so the
-  // card shows a spot the user can watch fill as the arguments stream.
-  announceToolCall: (sid: string, id: string, name: string) => void
-  // `tool_call_args_delta`: append raw JSON argument text to the running row.
-  appendToolArgs: (sid: string, id: string, delta: string) => void
   /** Empty a session's subagent lanes at the start of a run, so the panel shows
    * this run's children rather than every child the session ever had. */
   resetSubagents: (sid: string) => void
@@ -243,35 +238,6 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
       const turns = s.liveTurns[sid] ?? []
       const next = mergeToolResult(turns, callId, patch)
       return next === turns ? {} : { liveTurns: { ...s.liveTurns, [sid]: next } }
-    }),
-
-  announceToolCall: (sid, id, name) =>
-    set((s) => {
-      const turns = s.liveTurns[sid] ?? []
-      if (turns.some((tn) => tn.role === 'tool' && tn.callId === id)) return {}
-      return {
-        liveTurns: {
-          ...s.liveTurns,
-          [sid]: [
-            ...turns,
-            { role: 'tool', content: '', callId: id, name, args: null, argsLive: '', status: 'running' },
-          ],
-        },
-      }
-    }),
-
-  appendToolArgs: (sid, id, delta) =>
-    set((s) => {
-      const turns = s.liveTurns[sid] ?? []
-      const idx = turns.findIndex((tn) => tn.role === 'tool' && tn.callId === id)
-      if (idx === -1) return {}
-      const prev = turns[idx].argsLive ?? ''
-      return {
-        liveTurns: {
-          ...s.liveTurns,
-          [sid]: [...turns.slice(0, idx), { ...turns[idx], argsLive: prev + delta }, ...turns.slice(idx + 1)],
-        },
-      }
     }),
 
   resetSubagents: (sid) =>
