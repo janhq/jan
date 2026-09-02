@@ -54,7 +54,11 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::subagent_result_reserve,
             commands::subagent_result_fill,
             commands::execute_tool,
-            commands::execute_tool_streaming
+            commands::execute_tool_streaming,
+            commands::start_monitor,
+            commands::stop_monitor,
+            commands::list_monitors,
+            commands::stop_session_monitors
         ])
         .build()
 }

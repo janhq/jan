@@ -1,6 +1,7 @@
 import { invoke, Channel } from '@tauri-apps/api/core'
 import {
   MemoryCatalogEntry,
+  MonitorUpdate,
   SkillMeta,
   ToolOutputChunk,
   ToolResult,
@@ -10,6 +11,7 @@ import {
 
 export {
   MemoryCatalogEntry,
+  MonitorUpdate,
   SkillMeta,
   ToolOutputChunk,
   ToolResult,
@@ -370,4 +372,58 @@ export async function executeToolStreaming(
     scope: options?.scope,
     callId: options?.callId,
   })
+}
+
+/**
+ * Start a file monitor for a session: condition scripts are evaluated whenever
+ * the watched file changes, and every match is delivered to `onUpdate` (a
+ * callback here; the IPC channel it feeds is built in this layer). Resolves
+ * with the model-facing result string (the monitor id and the ground rules).
+ * Rejects when the args are invalid, the path escapes what the session may
+ * read, or no enforcing OS sandbox is available to run the scripts under.
+ */
+export async function startMonitor(
+  dataFolder: string,
+  threadId: string,
+  args: Record<string, unknown>,
+  onUpdate: (update: MonitorUpdate) => void,
+  options?: {
+    allowNetwork?: boolean
+    readOnlyProject?: string
+    scope?: WorkspaceScope
+  }
+): Promise<string> {
+  const channel = new Channel<MonitorUpdate>()
+  channel.onmessage = onUpdate
+  return await invoke('plugin:agent-tools|start_monitor', {
+    dataFolder,
+    threadId,
+    args,
+    onUpdate: channel,
+    allowNetwork: options?.allowNetwork,
+    readOnlyProject: options?.readOnlyProject,
+    scope: options?.scope,
+  })
+}
+
+/** Stop one monitor. The result string is model-facing (`ERROR: ...` for an
+ * unknown id), matching the `monitor` tool contract. */
+export async function stopMonitor(
+  threadId: string,
+  monitorId: string
+): Promise<string> {
+  return await invoke('plugin:agent-tools|stop_monitor', {
+    threadId,
+    monitorId,
+  })
+}
+
+/** One line per active monitor, for `monitor {op:"list"}`. */
+export async function listMonitors(threadId: string): Promise<string> {
+  return await invoke('plugin:agent-tools|list_monitors', { threadId })
+}
+
+/** Abort every monitor a session still has. Called at run end. */
+export async function stopSessionMonitors(threadId: string): Promise<void> {
+  await invoke('plugin:agent-tools|stop_session_monitors', { threadId })
 }

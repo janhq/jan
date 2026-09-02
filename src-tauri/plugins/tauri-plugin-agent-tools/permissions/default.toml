@@ -23,4 +23,8 @@ permissions = [
     "allow-subagent-result-fill",
     "allow-execute-tool",
     "allow-execute-tool-streaming",
+    "allow-start-monitor",
+    "allow-stop-monitor",
+    "allow-list-monitors",
+    "allow-stop-session-monitors",
 ]

@@ -319,6 +319,18 @@
           "markdownDescription": "Denies the execute_tool_streaming command without any pre-configured scope."
         },
         {
+          "description": "Enables the list_monitors command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-monitors",
+          "markdownDescription": "Enables the list_monitors command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_monitors command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-monitors",
+          "markdownDescription": "Denies the list_monitors command without any pre-configured scope."
+        },
+        {
           "description": "Enables the memory_catalog command without any pre-configured scope.",
           "type": "string",
           "const": "allow-memory-catalog",
@@ -475,6 +487,42 @@
           "markdownDescription": "Denies the skill_write command without any pre-configured scope."
         },
         {
+          "description": "Enables the start_monitor command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-monitor",
+          "markdownDescription": "Enables the start_monitor command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_monitor command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-monitor",
+          "markdownDescription": "Denies the start_monitor command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop_monitor command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-monitor",
+          "markdownDescription": "Enables the stop_monitor command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_monitor command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-monitor",
+          "markdownDescription": "Denies the stop_monitor command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop_session_monitors command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-session-monitors",
+          "markdownDescription": "Enables the stop_session_monitors command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_session_monitors command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-session-monitors",
+          "markdownDescription": "Denies the stop_session_monitors command without any pre-configured scope."
+        },
+        {
           "description": "Enables the subagent_result_fill command without any pre-configured scope.",
           "type": "string",
           "const": "allow-subagent-result-fill",
@@ -559,10 +607,10 @@
           "markdownDescription": "Denies the workspace_path command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`",
+          "description": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`\n- `allow-start-monitor`\n- `allow-stop-monitor`\n- `allow-list-monitors`\n- `allow-stop-session-monitors`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`"
+          "markdownDescription": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`\n- `allow-start-monitor`\n- `allow-stop-monitor`\n- `allow-list-monitors`\n- `allow-stop-session-monitors`"
         }
       ]
     }
