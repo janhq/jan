@@ -114,24 +114,49 @@ const askTool: Tool = {
   }),
 } as Tool
 
+/**
+ * Wording ported from `subagent_tool_schemas` in Rust, and it has to stay that
+ * literal about the one-off rule.
+ *
+ * A name with no saved definition and no `system_prompt` is rejected, and
+ * models reach for a descriptive name (`researcher`, `designer`) long before
+ * they have saved one -- so a schema that mentions `system_prompt` only as
+ * something for "a one-off subagent" reads as optional, gets omitted, and the
+ * first dispatch of every fan-out fails. Saying which combination fails, on the
+ * field the model fills in first, is what stops that.
+ */
 function taskTool(subagentNames: string[]): Tool {
-  const known = subagentNames.length
+  const saved = subagentNames.length
     ? ` Saved subagents: ${subagentNames.join(', ')}.`
-    : ''
+    : ' No saved subagents yet, so every call needs a `system_prompt`.'
   return {
     description:
-      'Start a subagent: a nested, isolated agent with its own system prompt and narrowed tools. It does not see this conversation, so state everything it needs in `description`. Runs in the BACKGROUND and returns immediately with the file its answer will be written to; call it several times in one step to fan work out, keep working, and a note tells you the moment each one finishes.' +
-      known,
+      'Start a subagent: a nested, isolated agent with its own system prompt and narrowed tools. It does not see this conversation, so state everything it needs in `description`. Runs in the BACKGROUND and returns immediately with the file its answer will be written to; call it several times in one step to fan work out, keep working, and a note tells you the moment each one finishes. For a one-off subagent, pass `system_prompt` inline with a descriptive `subagent_name`.' +
+      saved,
     inputSchema: jsonSchema({
       type: 'object',
       properties: {
-        subagent_name: { type: 'string' },
-        description: { type: 'string' },
+        subagent_name: {
+          type: 'string',
+          description:
+            'Name of a saved subagent to run. For a one-off (no saved definition), pick a short descriptive name here AND pass system_prompt in the same call -- an unrecognized name with no system_prompt fails.',
+        },
+        description: {
+          type: 'string',
+          description:
+            'The task for the subagent, as its sole user message. Include everything it needs; it does not see this conversation.',
+        },
         system_prompt: {
           type: 'string',
-          description: 'For a one-off subagent with no saved definition.',
+          description:
+            "Required alongside subagent_name whenever that name isn't already saved -- defines the one-off subagent's role. Omit only when subagent_name matches a saved subagent.",
         },
-        allowed_tools: { type: 'array', items: { type: 'string' } },
+        allowed_tools: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            "Tool allowlist. For a saved subagent this further narrows its own allowed_tools (never widens); for a one-off it is the subagent's toolset.",
+        },
       },
       required: ['subagent_name', 'description'],
       additionalProperties: false,
