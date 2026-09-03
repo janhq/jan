@@ -120,6 +120,19 @@ pub enum StreamEvent {
     /// transcript reads in the order the model saw things. Display-only and
     /// transient, like notes: it is never journaled.
     Notice { text: String },
+    /// The run's active file monitors, as a whole replacing the previous set.
+    /// Emitted whenever the set changes (a `monitor` start or stop, a condition
+    /// matching, a monitor finishing), so a consumer keeps a live view without
+    /// bookkeeping of its own. Display-only and never journaled. Not forwarded
+    /// from a child: a child's monitors are its own.
+    Monitors {
+        monitors: Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot>,
+    },
+    /// The model has finished its turn and the loop is parked on background
+    /// work it started (a subagent still running, a monitor still watching).
+    /// Nothing is being generated until a ping resumes the run, which the next
+    /// `Step` marks. Lets a consumer say "watching" rather than "working".
+    Parked,
     /// The loop's compaction reduced the conversation while retrying a
     /// context overflow. The client should replace its session history with
     /// `messages` for subsequent turns.
