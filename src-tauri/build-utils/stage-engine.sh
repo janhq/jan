@@ -75,6 +75,8 @@ if [ -z "$PREFIX" ]; then
 fi
 
 # Backend modules live in bin/, the core libraries in lib/ (see build.rs).
+# lib64 is a fallback for a stale prefix that installed there before
+# CMAKE_INSTALL_LIBDIR=lib was passed (Fedora/RHEL GNUInstallDirs default).
 #
 # Only Darwin has two distinct extensions; elsewhere a second glob over the same
 # suffix would list every file twice.
@@ -83,7 +85,7 @@ exts=("$LIBEXT")
 
 srcs=()
 for ext in "${exts[@]}"; do
-  srcs+=("$PREFIX"/bin/*."$ext"* "$PREFIX"/lib/libggml*."$ext"*)
+  srcs+=("$PREFIX"/bin/*."$ext"* "$PREFIX"/lib/libggml*."$ext"* "$PREFIX"/lib64/libggml*."$ext"*)
 done
 
 # cp -P, not install: cmake ships libggml.so -> .so.0 -> .so.0.21.0 as symlinks,
