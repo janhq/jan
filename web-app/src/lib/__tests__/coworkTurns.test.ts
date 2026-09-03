@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { coworkTurnsToUIMessages, userTurn } from '@/lib/coworkTurns'
+import {
+  appendLiveMessages,
+  coworkTurnsToUIMessages,
+  userTurn,
+} from '@/lib/coworkTurns'
 import type { CoworkTurn } from '@/hooks/useCoworkSessions'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -221,5 +225,73 @@ describe('coworkTurnsToUIMessages', () => {
         { type: 'text', text: 'hi' },
       ])
     })
+  })
+})
+
+describe('appendLiveMessages', () => {
+  const committed: CoworkTurn[] = [
+    { role: 'user', content: 'q' },
+    { role: 'assistant', content: 'first' },
+  ]
+
+  it('an offset slice mints the ids the whole transcript would', () => {
+    const live: CoworkTurn[] = [
+      { role: 'user', content: 'again' },
+      { role: 'assistant', content: 'second' },
+    ]
+    const whole = coworkTurnsToUIMessages([...committed, ...live], 's')
+    const split = appendLiveMessages(
+      coworkTurnsToUIMessages(committed, 's'),
+      coworkTurnsToUIMessages(live, 's', committed.length)
+    )
+    expect(split).toEqual(whole)
+    expect(split.map((m) => m.id)).toEqual([
+      's-user-0',
+      's-asst-1',
+      's-user-2',
+      's-asst-3',
+    ])
+  })
+
+  it('keeps every committed message identical across a live update', () => {
+    const base = coworkTurnsToUIMessages(committed, 's')
+    const live: CoworkTurn[] = [
+      { role: 'user', content: 'again' },
+      {
+        role: 'tool',
+        content: '',
+        callId: 'c1',
+        name: 'write',
+        status: 'running',
+        argsLive: '{"path":"a.html","content":"<h1>',
+      },
+    ]
+    const out = appendLiveMessages(
+      base,
+      coworkTurnsToUIMessages(live, 's', committed.length)
+    )
+    expect(out[0]).toBe(base[0])
+    expect(out[1]).toBe(base[1])
+    expect(out).toHaveLength(4)
+  })
+
+  it('joins a resumed run onto the committed assistant message', () => {
+    const live: CoworkTurn[] = [{ role: 'assistant', content: 'continued' }]
+    const whole = coworkTurnsToUIMessages([...committed, ...live], 's')
+    const split = appendLiveMessages(
+      coworkTurnsToUIMessages(committed, 's'),
+      coworkTurnsToUIMessages(live, 's', committed.length)
+    )
+    expect(split).toEqual(whole)
+    expect(split).toHaveLength(2)
+    expect(partsOf(split, 1).map((p: any) => p.text)).toEqual([
+      'first',
+      'continued',
+    ])
+  })
+
+  it('returns the committed list itself when nothing is live', () => {
+    const base = coworkTurnsToUIMessages(committed, 's')
+    expect(appendLiveMessages(base, [])).toBe(base)
   })
 })

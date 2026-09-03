@@ -107,3 +107,29 @@ describe('editPreview', () => {
     expect(editPreview([])).toEqual({ rows: [], skipped: 0 })
   })
 })
+
+describe('writeTail windowing', () => {
+  const bySplit = (body: string) => {
+    const all = body.split('\n')
+    const lines = all.slice(Math.max(0, all.length - STREAM_TAIL_LINES))
+    return { lines, skipped: all.length - lines.length }
+  }
+
+  it('matches a whole-body split for every window shape', () => {
+    const bodies = [
+      '',
+      '\n',
+      'a',
+      'a\n',
+      '\n'.repeat(STREAM_TAIL_LINES - 1),
+      '\n'.repeat(STREAM_TAIL_LINES),
+      '\n'.repeat(STREAM_TAIL_LINES + 1),
+      '\n' + 'x\n'.repeat(STREAM_TAIL_LINES),
+      Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n'),
+      Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n') + '\n',
+    ]
+    for (const body of bodies) {
+      expect(writeTail(body), JSON.stringify(body)).toEqual(bySplit(body))
+    }
+  })
+})
