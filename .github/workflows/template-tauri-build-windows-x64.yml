@@ -212,6 +212,10 @@ jobs:
               new_build_version="${base_version}.${t_value}"
           }
           generate_build_version ${{ inputs.new_version }}
+          # The template's File paths are absolute; the workspace differs between
+          # hosted (D:\a\jan\jan) and self-hosted (C:\w\jan\jan) runners.
+          ws='${{ github.workspace }}'
+          sed -i "s|jan_workspace|${ws//\\/\\\\}|g" ./src-tauri/tauri.bundle.windows.nsis.template
           sed -i "s/jan_version/$new_base_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
           sed -i "s/jan_build/$new_build_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
 

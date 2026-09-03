@@ -35,16 +35,16 @@ ${StrLoc}
 !define HOMEPAGE ""
 !define INSTALLMODE "currentUser"
 !define LICENSE ""
-!define INSTALLERICON "D:\a\jan\jan\src-tauri\icons\icon.ico"
+!define INSTALLERICON "jan_workspace\src-tauri\icons\icon.ico"
 !define SIDEBARIMAGE ""
 !define HEADERIMAGE ""
 !define MAINBINARYNAME "jan_mainbinaryname"
-!define MAINBINARYSRCPATH "D:\a\jan\jan\src-tauri\target\release\jan_mainbinaryname.exe"
+!define MAINBINARYSRCPATH "jan_workspace\src-tauri\target\release\jan_mainbinaryname.exe"
 !define BUNDLEID "jan_bundleid"
 !define COPYRIGHT ""
 !define OUTFILE "nsis-output.exe"
 !define ARCH "x64"
-!define ADDITIONALPLUGINSPATH "D:\a\jan\jan\src-tauri\target\release\nsis\x64\Plugins\x86-unicode\additional"
+!define ADDITIONALPLUGINSPATH "jan_workspace\src-tauri\target\release\nsis\x64\Plugins\x86-unicode\additional"
 !define ALLOWDOWNGRADES "true"
 !define DISPLAYLANGUAGESELECTOR "false"
 !define INSTALLWEBVIEW2MODE "downloadBootstrapper"
@@ -452,7 +452,7 @@ FunctionEnd
 ;Languages
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_RESERVEFILE_LANGDLL
-  !include "D:\a\jan\jan\src-tauri\target\release\nsis\x64\English.nsh"
+  !include "jan_workspace\src-tauri\target\release\nsis\x64\English.nsh"
 
 Function .onInit
   ${GetOptions} $CMDLINE "/P" $PassiveMode
@@ -698,11 +698,11 @@ Section Install
     CreateDirectory "$INSTDIR\resources\pre-install"
     CreateDirectory "$INSTDIR\resources\bin"
     SetOutPath $INSTDIR
-    File /a "/oname=LICENSE" "D:\a\jan\jan\src-tauri\resources\LICENSE"
+    File /a "/oname=LICENSE" "jan_workspace\src-tauri\resources\LICENSE"
     SetOutPath "$INSTDIR\resources\pre-install"
-    File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\pre-install\"
+    File /nonfatal /a /r "jan_workspace\src-tauri\resources\pre-install\"
     SetOutPath "$INSTDIR\resources\bin"
-    File /a "/oname=jan.exe" "D:\a\jan\jan\src-tauri\resources\bin\jan.exe"
+    File /a "/oname=jan.exe" "jan_workspace\src-tauri\resources\bin\jan.exe"
     ; The engine. This block is a hand-maintained snapshot of
     ; tauri.windows.conf.json's `bundle.resources`, which the NSIS bundler does
     ; not read once CI points it at this template, so anything added there has
@@ -711,13 +711,16 @@ Section Install
     ; inference permanently unavailable, since there is no runtime backend
     ; download to fall back on, so a build that staged nothing must fail loudly
     ; here the way stage-engine.sh already does.
-    File /a "/oname=jan-llama-worker.exe" "D:\a\jan\jan\src-tauri\resources\bin\jan-llama-worker.exe"
-    File /a "D:\a\jan\jan\src-tauri\resources\bin\ggml*.dll"
+    File /a "/oname=jan-llama-worker.exe" "jan_workspace\src-tauri\resources\bin\jan-llama-worker.exe"
+    File /a "jan_workspace\src-tauri\resources\bin\ggml*.dll"
+    ; CUDA runtime, present only in a cuda variant (stage-engine.sh).
+    File /nonfatal /a "jan_workspace\src-tauri\resources\bin\cudart64_*.dll"
+    File /nonfatal /a "jan_workspace\src-tauri\resources\bin\cublas*.dll"
     SetOutPath $INSTDIR
 
   ; Copy external binaries
-    File /a "/oname=bun.exe" "D:\a\jan\jan\src-tauri\resources\bin\bun-x86_64-pc-windows-msvc.exe"
-    File /a "/oname=uv.exe" "D:\a\jan\jan\src-tauri\resources\bin\uv-x86_64-pc-windows-msvc.exe"
+    File /a "/oname=bun.exe" "jan_workspace\src-tauri\resources\bin\bun-x86_64-pc-windows-msvc.exe"
+    File /a "/oname=uv.exe" "jan_workspace\src-tauri\resources\bin\uv-x86_64-pc-windows-msvc.exe"
 
   ; Create file associations
 
