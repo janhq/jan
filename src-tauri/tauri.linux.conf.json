@@ -27,7 +27,7 @@
       "resources/LICENSE",
       "resources/bin/jan",
       "resources/bin/jan-llama-worker",
-      "resources/bin/libggml*.so*"
+      "resources/bin/lib*.so*"
     ],
     "externalBin": [
       "resources/bin/uv"
