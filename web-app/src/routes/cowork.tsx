@@ -95,6 +95,8 @@ import {
   stopAgentSessionMonitors,
 } from '@/lib/agentTools'
 import { MonitorLane } from '@/lib/coworkMonitor'
+import { CoworkParkedNotice } from '@/containers/CoworkParkedNotice'
+import type { MonitorView } from '@/types/coworkSession'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { MAX_AGENT_STEPS } from '@/lib/coworkBudget'
 import {
@@ -145,6 +147,10 @@ const MANUAL_COMPACT_CONFIG: ContextManagerConfig = {
   maxOutputTokens: 2048,
   autoCompact: true,
 }
+
+// Stable empty set, so a session with no monitors does not re-render on every
+// store write the way a fresh `[]` from the selector would.
+const NO_MONITORS: MonitorView[] = []
 
 function CoworkPage() {
   const { t } = useTranslation()
@@ -348,6 +354,17 @@ function CoworkPage() {
     () => liveSubagents ?? session?.subagents ?? [],
     [liveSubagents, session?.subagents]
   )
+  // Monitors and the parked flag are run-only: a watcher dies with its run.
+  const monitors = useCoworkRun(
+    (s) => (session?.id ? s.monitors[session.id] : undefined) ?? NO_MONITORS
+  )
+  const parked = useCoworkRun((s) =>
+    session?.id ? (s.parked[session.id] ?? false) : false
+  )
+  const watchingCount = useMemo(
+    () => monitors.filter((m) => m.status === 'running').length,
+    [monitors]
+  )
   const fileDiffs = useMemo(
     () => collectCodeFileDiffs(displayedTurns, subagents),
     [displayedTurns, subagents]
@@ -479,8 +496,13 @@ function CoworkPage() {
     // aborts them, so a fresh inbox per run can never hold a stale ping.
     const inbox = new SubagentInbox()
     // Bridges Rust monitor updates into the same inbox, so a watcher parks the
-    // run exactly the way a running subagent does.
-    const monitors = new MonitorLane(inbox)
+    // run exactly the way a running subagent does, and mirrors each one into
+    // the run store for the background-tasks rail.
+    const monitorLane = new MonitorLane(inbox, {
+      started: (view) => useCoworkRun.getState().startMonitor(sid, view),
+      updated: (update) => useCoworkRun.getState().updateMonitor(sid, update),
+      stopped: (id) => useCoworkRun.getState().stopMonitor(sid, id),
+    })
 
     const sink: StreamSink = {
       onText: (delta) => {
@@ -580,7 +602,7 @@ function CoworkPage() {
                 readOnlyFolder: current?.folder ?? null,
                 planMode: current?.planMode ?? false,
                 webSearch,
-                monitors,
+                monitors: monitorLane,
                 onTodo: async (input) => {
                   const result = applyTodoOp(
                     useCoworkSessions
@@ -784,6 +806,9 @@ function CoworkPage() {
             },
             pending: () => inbox.pending(),
             wait: () => inbox.wait(controller.signal),
+            // The model is idle for the whole wait; the transcript says so
+            // instead of showing a "Working…" spinner over nothing.
+            onParked: (p) => useCoworkRun.getState().setParked(sid, p),
           },
         },
       })
@@ -1230,10 +1255,14 @@ function CoworkPage() {
                     // column flex, which stretches the indicator's own
                     // `inline-flex` box across the whole column.
                     <div className="flex flex-row items-center gap-2">
-                      <PromptProgress
-                        hideIdle={!awaitingModel}
-                        stateKey={session?.id}
-                      />
+                      {parked ? (
+                        <CoworkParkedNotice watching={watchingCount} />
+                      ) : (
+                        <PromptProgress
+                          hideIdle={!awaitingModel}
+                          stateKey={session?.id}
+                        />
+                      )}
                     </div>
                   )}
                   {stoppedBy === 'steps' && (
@@ -1346,6 +1375,7 @@ function CoworkPage() {
                       />
                       <CoworkTasksChip
                         subagents={subagents}
+                        monitors={monitors}
                         open={rail?.kind === 'tasks'}
                         onToggle={() =>
                           setRail((r) =>
@@ -1409,6 +1439,7 @@ function CoworkPage() {
         {rail?.kind === 'tasks' && (
           <CoworkTasksPanel
             subagents={subagents}
+            monitors={monitors}
             onClose={() => setRail(null)}
           />
         )}

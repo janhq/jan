@@ -563,7 +563,8 @@ fn resolve_dispatch(
 /// Child stream events are folded into the parent's own stream, except the
 /// child's terminal `Done`/`Error`: the parent must not see the child terminate
 /// its stream. Dispatch turns the child's result into a synthetic tool result
-/// instead, bracketed by `SubagentStart`/`SubagentEnd`.
+/// instead, bracketed by `SubagentStart`/`SubagentEnd`. A child's monitor set
+/// and its parked state describe the child alone, so they stay with it too.
 fn forward_to_parent(ev: &crate::core::agent::events::StreamEvent) -> bool {
     use crate::core::agent::events::StreamEvent;
     !matches!(
@@ -571,6 +572,8 @@ fn forward_to_parent(ev: &crate::core::agent::events::StreamEvent) -> bool {
         StreamEvent::Done { .. }
             | StreamEvent::Error { .. }
             | StreamEvent::MessagesUpdated { .. }
+            | StreamEvent::Monitors { .. }
+            | StreamEvent::Parked
     )
 }
 

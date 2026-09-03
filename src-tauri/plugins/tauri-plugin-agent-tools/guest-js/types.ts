@@ -66,4 +66,7 @@ export type MonitorUpdate = {
   headline: string
   text: string
   done: boolean
+  /** Condition names met so far, and those still outstanding, at this update. */
+  met: string[]
+  unmet: string[]
 }

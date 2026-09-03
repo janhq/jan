@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import type { SubagentRun } from '@/types/coworkSession'
+import type { MonitorView, SubagentRun } from '@/types/coworkSession'
 
 /**
  * Opens the background-tasks rail, and stays out of the way until the agent
@@ -21,17 +21,32 @@ import type { SubagentRun } from '@/types/coworkSession'
  */
 export function CoworkTasksChip({
   subagents,
+  monitors = [],
   open,
   onToggle,
 }: {
   subagents: SubagentRun[]
+  /** The run's file monitors: background work like the children, so they
+   * count here too and open the same rail. */
+  monitors?: MonitorView[]
   open: boolean
   onToggle: () => void
 }) {
   const { t } = useTranslation()
-  if (subagents.length === 0) return null
+  const total = subagents.length + monitors.length
+  if (total === 0) return null
 
-  const active = subagents.filter((s) => s.status !== 'done').length
+  const activeSubagents = subagents.filter((s) => s.status !== 'done').length
+  const activeMonitors = monitors.filter((m) => m.status === 'running').length
+  const active = activeSubagents + activeMonitors
+  const label =
+    active === 0
+      ? t('common:backgroundTasks')
+      : activeMonitors === 0
+        ? t('common:subagentsRunning', { count: active })
+        : activeSubagents === 0
+          ? t('common:monitorsRunning', { count: active })
+          : t('common:backgroundRunning', { count: active })
 
   return (
     <Tooltip>
@@ -40,11 +55,7 @@ export function CoworkTasksChip({
           variant="ghost"
           size="xs"
           aria-pressed={open}
-          aria-label={
-            active > 0
-              ? t('common:subagentsRunning', { count: active })
-              : t('common:backgroundTasks')
-          }
+          aria-label={label}
           onClick={onToggle}
           className={cn('shrink-0', open && 'text-primary')}
         >
@@ -54,15 +65,11 @@ export function CoworkTasksChip({
             <Sparkles className="size-3.5 shrink-0" />
           )}
           <span className="font-mono tabular-nums text-muted-foreground">
-            {active > 0 ? `${active}/${subagents.length}` : subagents.length}
+            {active > 0 ? `${active}/${total}` : total}
           </span>
         </Button>
       </TooltipTrigger>
-      <TooltipContent>
-        {active > 0
-          ? t('common:subagentsRunning', { count: active })
-          : t('common:backgroundTasks')}
-      </TooltipContent>
+      <TooltipContent>{label}</TooltipContent>
     </Tooltip>
   )
 }

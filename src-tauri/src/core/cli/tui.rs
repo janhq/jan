@@ -52,6 +52,7 @@ use crate::core::agent::r#loop::{
 };
 use serde_json::Value;
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot;
 use tauri_plugin_agent_tools::workspace;
 
 /// Mouse tracking, hand-rolled instead of crossterm's `EnableMouseCapture`,
@@ -1917,6 +1918,14 @@ struct App {
     /// Live panels for background subagents currently streaming, one per run.
     /// Several may be active at once; each renders its own rolling window.
     subagents: Vec<SubagentPanel>,
+    /// The run's active file monitors, replaced wholesale by each
+    /// `StreamEvent::Monitors`. Docked beside the fan-out; never a transcript
+    /// row, since a monitor describes now.
+    monitors: Vec<MonitorSnapshot>,
+    /// True from `StreamEvent::Parked` to the next `Step`: the model is done
+    /// and the loop is waiting on background work, so the header says so
+    /// instead of `[working]`.
+    parked: bool,
     /// Committed finished-subagent summary rows, expandable to their full
     /// tool-call list via Ctrl-O (parallel to `groups`/`reasoning_blocks`).
     subagent_blocks: Vec<SubagentBlock>,
@@ -2367,6 +2376,8 @@ impl App {
             should_quit: false,
             exit_armed: false,
             subagents: Vec::new(),
+            monitors: Vec::new(),
+            parked: false,
             subagent_blocks: Vec::new(),
             awaiting: Vec::new(),
             starting: Vec::new(),
@@ -2781,11 +2792,15 @@ impl App {
     /// run -- a stranded block spins in the dock on an idle session -- but a
     /// child that did work still earns its summary row, so the calls it made are
     /// accounted for rather than vanishing with the panel.
-    fn close_live_subagents(&mut self) {
+    fn close_live_background(&mut self) {
         for panel in std::mem::take(&mut self.subagents) {
             self.push_subagent_summary(&panel.name, panel.calls, SubagentOutcome::Interrupted);
         }
         self.awaiting.clear();
+        // Monitors die with the run's invoker, and a run that ended is no
+        // longer parked on anything.
+        self.monitors.clear();
+        self.parked = false;
     }
 
     /// The live shell panel for `group`'s newest unresolved *command*, or no rows
@@ -4440,6 +4455,8 @@ impl App {
                 }
                 self.starting.clear();
                 self.turn = (index, max);
+                // A new turn means a ping resumed the run.
+                self.parked = false;
             }
             StreamEvent::ToolCallStarted { id, name } => {
                 // Commit buffered prose/reasoning so it renders above the
@@ -4729,6 +4746,8 @@ impl App {
                 self.flush_assistant();
                 self.note(&text);
             }
+            StreamEvent::Monitors { monitors } => self.monitors = monitors,
+            StreamEvent::Parked => self.parked = true,
             StreamEvent::Subagent {
                 run_id,
                 name,
@@ -4902,7 +4921,7 @@ impl App {
         // Children cannot outlive the run that dispatched them: their events
         // arrive on its stream. Any panel still open here never got its own
         // `SubagentEnd`.
-        self.close_live_subagents();
+        self.close_live_background();
         // Capture the turn's reasoning before `take_answer` flushes it: native
         // reasoning lives in `reasoning_segs` until the flush, and inline
         // ` thinking` blocks are folded into the buffer. Preserved so the
@@ -5026,7 +5045,7 @@ impl App {
 
     fn on_error(&mut self, code: String, message: String) {
         self.abort_tool_rows();
-        self.close_live_subagents();
+        self.close_live_background();
         self.flush_assistant();
         self.status = Status::Idle;
         self.run_started = None;
@@ -5167,7 +5186,7 @@ impl App {
         // snapshot readiness); otherwise the loop starts it once ready and the
         // cancel is silently undone.
         self.want_start = false;
-        self.close_live_subagents();
+        self.close_live_background();
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
         self.system(Level::Warn, "cancelled");
@@ -15697,6 +15716,15 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         (kind.label().to_string(), Style::new().magenta().bold())
     } else if app.status == Status::Idle {
         ("ready".to_string(), Style::new().green())
+    } else if app.parked {
+        // The model is done and the loop waits on background work; a
+        // `[working]` badge over an idle model would misreport it.
+        let label = if app.monitors.is_empty() {
+            "waiting"
+        } else {
+            "watching"
+        };
+        (label.to_string(), Style::new().cyan())
     } else if !app.show_reasoning {
         // Reasoning folding is on: show the live thought state in place of the
         // generic 'working'. [thinking] while a  block streams; [thought for
@@ -15992,33 +16020,126 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
     // known (configured, catalog, or fallback), so it is always a denominator.
     let context_window = app.context_window;
     let has_todos = !app.todos.is_empty() && !app.todos_expired();
-    let has_agents = !app.subagents.is_empty();
-    match (has_todos, has_agents) {
+    let has_activity = !app.subagents.is_empty() || !app.monitors.is_empty();
+    match (has_todos, has_activity) {
         (false, false) => Vec::new(),
         (true, false) => todo_column(&app.todos, width, rows),
-        (false, true) => agents_column(&mut app.subagents, context_window, width, rows, frame),
+        (false, true) => activity_column(
+            &mut app.subagents,
+            &app.monitors,
+            context_window,
+            width,
+            rows,
+            frame,
+        ),
         (true, true) if width < PANEL_SPLIT_MIN_WIDTH => {
             // Stacked: the plan keeps its head line plus whatever is left after
-            // the agents, which are the thing actually moving.
-            let agents = agents_column(
+            // the activity, which is the thing actually moving.
+            let activity = activity_column(
                 &mut app.subagents,
+                &app.monitors,
                 context_window,
                 width,
                 rows.saturating_sub(1),
                 frame,
             );
-            let mut out = todo_column(&app.todos, width, rows - agents.len());
-            out.extend(agents);
+            let mut out = todo_column(&app.todos, width, rows - activity.len());
+            out.extend(activity);
             out
         }
         (true, true) => {
             let left_w = (width.saturating_sub(PANEL_GUTTER)) / 2;
             let right_w = width.saturating_sub(left_w + PANEL_GUTTER);
             let left = todo_column(&app.todos, left_w, rows);
-            let right = agents_column(&mut app.subagents, context_window, right_w, rows, frame);
+            let right = activity_column(
+                &mut app.subagents,
+                &app.monitors,
+                context_window,
+                right_w,
+                rows,
+                frame,
+            );
             join_columns(left, right, left_w)
         }
     }
+}
+
+/// The right-hand panel column: the live fan-out over the live monitors.
+/// Monitors are laid out first since they are compact (one line each) and
+/// capped at half the budget; the agents take whatever they leave.
+fn activity_column(
+    panels: &mut [SubagentPanel],
+    monitors: &[MonitorSnapshot],
+    context_window: u64,
+    width: u16,
+    rows: usize,
+    frame: &str,
+) -> Vec<Line<'static>> {
+    let monitor_rows = if panels.is_empty() {
+        rows
+    } else {
+        (1 + monitors.len()).min(rows / 2)
+    };
+    let monitors = monitors_column(monitors, width, monitor_rows);
+    let mut out = agents_column(panels, context_window, width, rows - monitors.len(), frame);
+    out.extend(monitors);
+    out
+}
+
+/// The run's active monitors, as a column: one line per monitor (id, watched
+/// file, conditions met so far), plus the still-unmet condition names when the
+/// budget stretches to a second row each.
+fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec<Line<'static>> {
+    if monitors.is_empty() || rows == 0 {
+        return Vec::new();
+    }
+    let dim = Style::new().dark_gray();
+    let max = width.max(8) as usize;
+    let mut out = vec![Line::from(vec![
+        Span::styled("◔ ", Style::new().cyan()),
+        Span::styled(
+            pluralize("monitor", monitors.len()),
+            Style::new().cyan().bold(),
+        ),
+    ])];
+    let body = rows - 1;
+    let (shown, hidden) = if monitors.len() <= body {
+        (monitors.len(), 0)
+    } else {
+        (
+            body.saturating_sub(1),
+            monitors.len() - body.saturating_sub(1),
+        )
+    };
+    let detail = (body - shown).checked_div(shown).is_some_and(|n| n >= 1);
+    for monitor in monitors.iter().take(shown) {
+        let total = monitor.met.len() + monitor.unmet.len();
+        let stats = format!("  {}/{total} met", monitor.met.len());
+        let label = format!("{} {}", monitor.monitor_id, monitor.file);
+        out.push(Line::from(vec![
+            Span::styled("◔ ", Style::new().cyan()),
+            Span::styled(
+                truncate(&label, max.saturating_sub(2 + stats.len())),
+                Style::new().cyan(),
+            ),
+            Span::styled(stats, dim),
+        ]));
+        if detail && !monitor.unmet.is_empty() {
+            let waiting = format!("waiting on {}", monitor.unmet.join(", "));
+            out.push(Line::from(vec![
+                Span::raw("   "),
+                Span::styled(truncate(&waiting, max.saturating_sub(3)), dim),
+            ]));
+        }
+    }
+    if hidden > 0 {
+        out.push(Line::from(vec![Span::styled(
+            format!("  +{hidden} more watching"),
+            dim,
+        )]));
+    }
+    out.truncate(rows);
+    out
 }
 
 /// Max content rows the input box grows to before it scrolls internally.
@@ -16409,6 +16530,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
     use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+    use tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot;
     use unicode_width::UnicodeWidthStr;
 
     /// A bare key press with no modifiers.
@@ -28463,6 +28585,85 @@ mod tests {
             text.contains("Todos · 1/2"),
             "single phase progress: {text}"
         );
+    }
+
+    fn monitor(id: &str, file: &str, met: &[&str], unmet: &[&str]) -> MonitorSnapshot {
+        MonitorSnapshot {
+            monitor_id: id.to_string(),
+            file: file.to_string(),
+            met: met.iter().map(|s| s.to_string()).collect(),
+            unmet: unmet.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    /// Running monitors are live state like the fan-out, so they dock in the
+    /// status panel: one line each with the file and progress, the unmet
+    /// conditions beneath when the budget allows, beside any live agents.
+    #[test]
+    fn running_monitors_dock_in_the_status_panel() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Monitors {
+            monitors: vec![
+                monitor("mon-1", "build.log", &["one"], &["two"]),
+                monitor("mon-2", "test.log", &[], &["green"]),
+            ],
+        });
+        let text = render_rows(&mut app, 100, 24).join("\n");
+        assert!(text.contains("2 monitors"), "{text}");
+        assert!(text.contains("mon-1 build.log"), "{text}");
+        assert!(text.contains("1/2 met"), "{text}");
+        assert!(text.contains("waiting on two"), "{text}");
+        assert!(text.contains("mon-2 test.log"), "{text}");
+
+        start_subagent(&mut app, "r0", "alpha");
+        let text = render_rows(&mut app, 100, 24).join("\n");
+        assert!(text.contains("1 agent"), "{text}");
+        assert!(text.contains("2 monitors"), "{text}");
+
+        // The set is replaced wholesale; an emptied set drops the column.
+        app.apply(StreamEvent::Monitors {
+            monitors: Vec::new(),
+        });
+        let text = render_rows(&mut app, 100, 24).join("\n");
+        assert!(!text.contains("monitor"), "{text}");
+        assert!(text.contains("1 agent"), "{text}");
+    }
+
+    /// A run parked on background work is not working: the header says
+    /// `[watching]` while monitors are up, `[waiting]` otherwise, and goes back
+    /// to `[working]` once a ping starts the next turn. Run end clears both.
+    #[test]
+    fn a_parked_run_is_watching_not_working() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        let header = |app: &mut App| render_rows(app, 100, 24)[0].clone();
+        assert!(header(&mut app).contains("[working]"));
+
+        app.apply(StreamEvent::Monitors {
+            monitors: vec![monitor("mon-1", "build.log", &[], &["ok"])],
+        });
+        app.apply(StreamEvent::Parked);
+        let text = header(&mut app);
+        assert!(text.contains("[watching]"), "{text}");
+        assert!(!text.contains("[working]"), "{text}");
+
+        app.apply(StreamEvent::Step { index: 2, max: 0 });
+        assert!(header(&mut app).contains("[working]"));
+
+        app.apply(StreamEvent::Monitors {
+            monitors: Vec::new(),
+        });
+        app.apply(StreamEvent::Parked);
+        assert!(header(&mut app).contains("[waiting]"));
+
+        app.apply(StreamEvent::Monitors {
+            monitors: vec![monitor("mon-2", "build.log", &[], &["ok"])],
+        });
+        app.on_error("upstream".into(), "gone".into());
+        assert!(app.monitors.is_empty(), "monitors die with the run");
+        assert!(!app.parked);
+        assert!(header(&mut app).contains("[ready]"));
     }
 
     /// A child's panel normally closes on its own `SubagentEnd`. A run that

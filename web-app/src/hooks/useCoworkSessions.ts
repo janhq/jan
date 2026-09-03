@@ -344,6 +344,18 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
   )
 )
 
+/**
+ * Open the start page: a fresh session (or the untouched current one), with the
+ * empty sessions left behind swept out. `runningIds` keeps a session whose
+ * first run is still streaming its turns and so has nothing committed yet.
+ */
+export function startNewSession(runningIds: string[]): string {
+  const store = useCoworkSessions.getState()
+  const id = store.createSession()
+  store.pruneEmptySessions(runningIds)
+  return id
+}
+
 /** Return the current session, creating one if none is selected. */
 export function ensureCurrentSession(): string {
   const { currentId, sessions, createSession } = useCoworkSessions.getState()

@@ -366,6 +366,10 @@ export type RunDeps = {
     take: () => string[]
     pending: () => boolean
     wait: () => Promise<void>
+    /** Brackets the park: `true` as the wait begins, `false` when it ends
+     * (a ping, or the abort). Nothing is generated in between, so a display
+     * can say "watching" rather than "working". */
+    onParked?: (parked: boolean) => void
   }
 }
 
@@ -582,7 +586,12 @@ export async function runTurn(opts: {
       // the next step resume the conversation. Re-checked after the wait, which
       // also returns on cancellation.
       if (deps.inbox?.pending()) {
-        await deps.inbox.wait()
+        deps.inbox.onParked?.(true)
+        try {
+          await deps.inbox.wait()
+        } finally {
+          deps.inbox.onParked?.(false)
+        }
         if (signal.aborted) {
           return {
             messages,

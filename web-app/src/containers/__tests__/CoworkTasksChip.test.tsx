@@ -10,7 +10,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 
 import { CoworkTasksChip } from '../CoworkTasksChip'
-import type { SubagentRun } from '@/types/coworkSession'
+import type { MonitorView, SubagentRun } from '@/types/coworkSession'
 
 const run = (runId: string, status: SubagentRun['status']): SubagentRun => ({
   runId,
@@ -18,6 +18,15 @@ const run = (runId: string, status: SubagentRun['status']): SubagentRun => ({
   status,
   startedAt: 0,
   turns: [],
+})
+
+const monitor = (monitorId: string, status: MonitorView['status']): MonitorView => ({
+  monitorId,
+  file: 'build.log',
+  met: [],
+  unmet: ['ok'],
+  status,
+  startedAt: 0,
 })
 
 describe('CoworkTasksChip', () => {
@@ -43,6 +52,36 @@ describe('CoworkTasksChip', () => {
     expect(screen.getByText('2/3')).toBeInTheDocument()
     expect(
       screen.getByLabelText('common:subagentsRunning 2')
+    ).toBeInTheDocument()
+  })
+
+  /// A watcher is background work like a child: it counts, and it is enough
+  /// on its own to show the chip.
+  it('counts running monitors as background work', () => {
+    render(
+      <CoworkTasksChip
+        subagents={[]}
+        monitors={[monitor('mon-1', 'running'), monitor('mon-2', 'done')]}
+        open={false}
+        onToggle={vi.fn()}
+      />
+    )
+    expect(screen.getByText('1/2')).toBeInTheDocument()
+    expect(screen.getByLabelText('common:monitorsRunning 1')).toBeInTheDocument()
+  })
+
+  it('names both kinds when children and monitors run together', () => {
+    render(
+      <CoworkTasksChip
+        subagents={[run('a', 'running')]}
+        monitors={[monitor('mon-1', 'running')]}
+        open={false}
+        onToggle={vi.fn()}
+      />
+    )
+    expect(screen.getByText('2/2')).toBeInTheDocument()
+    expect(
+      screen.getByLabelText('common:backgroundRunning 2')
     ).toBeInTheDocument()
   })
 

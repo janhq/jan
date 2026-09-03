@@ -176,6 +176,35 @@ describe('runTurn', () => {
     expect(sent[sent.length - 2].role).toBe('assistant')
   })
 
+  /// The park is the one stretch where nothing is generated; the display is
+  /// told when it starts and when it ends, in that order, around the wait.
+  it('brackets the park with onParked so the display can say watching', async () => {
+    const d = deps([textStep('dispatched'), textStep('reacted')])
+    const queue: string[] = []
+    let running = 1
+    const parked: boolean[] = []
+    let parkedDuringWait: boolean | null = null
+    await runTurn({
+      messages: [user('go')],
+      signal: new AbortController().signal,
+      deps: {
+        ...d,
+        inbox: {
+          take: () => queue.splice(0, queue.length),
+          pending: () => queue.length > 0 || running > 0,
+          wait: async () => {
+            parkedDuringWait = parked.at(-1) ?? null
+            queue.push('Monitor mon-1: condition matched')
+            running -= 1
+          },
+          onParked: (p) => parked.push(p),
+        },
+      },
+    })
+    expect(parkedDuringWait).toBe(true)
+    expect(parked).toEqual([true, false])
+  })
+
   /// Two children finishing together take one turn: consecutive user messages
   /// are rejected outright by some providers.
   it('fuses pings that arrive together into one marked turn', async () => {

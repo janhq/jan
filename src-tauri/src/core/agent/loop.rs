@@ -175,6 +175,28 @@ pub(crate) trait ToolInvoker: Send + Sync {
     /// left to wait for. Only called while `background_pending` holds, so the
     /// default's immediate return cannot spin.
     async fn await_background(&self) {}
+
+    /// The run's active file monitors, for [`StreamEvent::Monitors`].
+    fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
+        Vec::new()
+    }
+}
+
+/// Emit [`StreamEvent::Monitors`] when the set differs from what was last
+/// shown. Called wherever the set can have changed: after tool calls (start,
+/// stop), after a ping drain (match, timeout) and after a park.
+fn publish_monitors(
+    tools: &dyn ToolInvoker,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+    shown: &mut Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot>,
+) {
+    let now = tools.monitor_snapshot();
+    if now != *shown {
+        let _ = events.send(StreamEvent::Monitors {
+            monitors: now.clone(),
+        });
+        *shown = now;
+    }
 }
 
 struct HttpModelInvoker {
@@ -977,6 +999,10 @@ impl ToolInvoker for CompositeToolInvoker {
             .as_ref()
             .is_some_and(|ctx| ctx.bg.has_pending_work())
             || self.monitors.has_pending_work()
+    }
+
+    fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
+        self.monitors.snapshot()
     }
 
     async fn await_background(&self) {
@@ -2340,6 +2366,8 @@ async fn run_turn_cycle(
     let mut mid_run_nudge_count: u32 = 0;
     // One-shot: asked the model to close out its todos before handing back.
     let mut closeout_nudged = false;
+    // The monitor set last published as `StreamEvent::Monitors`.
+    let mut shown_monitors = Vec::new();
 
     while unlimited || turn < max_turns {
         let _ = events.send(StreamEvent::Step {
@@ -2378,6 +2406,8 @@ async fn run_turn_cycle(
             let _ = events.send(StreamEvent::MessagesUpdated {
                 messages: conversation_messages.clone(),
             });
+            // A drained ping is how a match or a timeout reaches the display.
+            publish_monitors(tools, events, &mut shown_monitors);
         }
 
         // On a context-overflow error, compact the conversation and retry.
@@ -2507,7 +2537,11 @@ async fn run_turn_cycle(
             // closeout nudge above records it, or the reminder would attach to
             // a conversation missing the answer it follows.
             if tools.background_pending() {
+                // Nothing is generated until a ping lands; the display should
+                // say so rather than keep a working badge on an idle model.
+                let _ = events.send(StreamEvent::Parked);
                 tools.await_background().await;
+                publish_monitors(tools, events, &mut shown_monitors);
                 // Re-checked rather than assumed: the wait also returns when
                 // there is nothing left to wait for (a cancelled run drops its
                 // queued pings), and resuming on that would spend a turn asking
@@ -2712,6 +2746,7 @@ async fn run_turn_cycle(
         // Results are matched to calls by id, so appending the failed calls
         // after the executed ones keeps the protocol intact.
         tool_results.append(&mut error_outcomes);
+        publish_monitors(tools, events, &mut shown_monitors);
 
         // Standard OpenAI tool protocol: each result is a `role: "tool"` message
         // carrying its `tool_call_id` (see note above the assistant push -- the
@@ -3924,6 +3959,19 @@ mod tests {
         async fn await_background(&self) {
             *self.armed.lock().unwrap() = true;
         }
+        fn monitor_snapshot(
+            &self,
+        ) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
+            if *self.delivered.lock().unwrap() {
+                return Vec::new();
+            }
+            vec![tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot {
+                monitor_id: "mon-1".to_string(),
+                file: "build.log".to_string(),
+                met: Vec::new(),
+                unmet: vec!["ok".to_string()],
+            }]
+        }
     }
 
     /// A monitor match is delivered in both registers: the model gets the
@@ -3971,6 +4019,61 @@ mod tests {
             }
         }
         assert!(saw_notice, "the headline must be emitted as a Notice event");
+    }
+
+    /// The display learns about a park and about the monitor set from the
+    /// stream: `Parked` before the wait, the live set once it returns, and the
+    /// emptied set when the delivered ping retires the monitor.
+    #[tokio::test]
+    async fn a_parked_run_publishes_parked_and_its_monitor_set() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![final_answer("watching"), final_answer("reacted")]);
+        let tool = HeadlinedTool {
+            armed: StdMutex::new(false),
+            delivered: StdMutex::new(false),
+        };
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "watch the build" })],
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        let parked = events
+            .iter()
+            .position(|e| matches!(e, StreamEvent::Parked))
+            .expect("Parked before the wait");
+        let live = events
+            .iter()
+            .position(|e| matches!(e, StreamEvent::Monitors { monitors } if monitors.len() == 1))
+            .expect("the live set after the wait");
+        let notice = events
+            .iter()
+            .position(|e| matches!(e, StreamEvent::Notice { .. }))
+            .expect("the match headline");
+        let retired = events
+            .iter()
+            .position(|e| matches!(e, StreamEvent::Monitors { monitors } if monitors.is_empty()))
+            .expect("the emptied set at delivery");
+        assert!(
+            parked < live && live < notice && notice < retired,
+            "{events:?}"
+        );
     }
 
     struct FixedTool {

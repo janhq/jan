@@ -1387,6 +1387,12 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::Notice { text } => {
             eprintln!("\x1b[2m[notice] {text}\x1b[0m")
         }
+        // The snapshot backs a live panel the headless printer has no room
+        // for; `Notice` already reports each match as it lands.
+        StreamEvent::Monitors { .. } => {}
+        StreamEvent::Parked => {
+            eprintln!("\x1b[2m[parked] waiting on background work\x1b[0m")
+        }
         StreamEvent::Subagent { name, event, .. } => {
             if let StreamEvent::ToolCall { name: tool, args, .. } = *event {
                 eprintln!(

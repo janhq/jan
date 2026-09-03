@@ -108,6 +108,8 @@ impl MonitorCtx {
 /// One notice, in the two registers every background ping needs: `headline`
 /// for the transcript row, `text` for the `<SYSTEM>` reminder the model gets.
 /// `done` marks the update that also ends the monitor (all met, or timeout).
+/// `met`/`unmet` snapshot the monitor's progress at the update, so a display
+/// with no other view of the watcher (Cowork) can keep a live panel.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MonitorUpdate {
@@ -115,6 +117,19 @@ pub struct MonitorUpdate {
     pub headline: String,
     pub text: String,
     pub done: bool,
+    pub met: Vec<String>,
+    pub unmet: Vec<String>,
+}
+
+/// Display-only view of one active monitor, for a status panel: what it
+/// watches and how far along its conditions are.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MonitorSnapshot {
+    pub monitor_id: String,
+    pub file: String,
+    pub met: Vec<String>,
+    pub unmet: Vec<String>,
 }
 
 /// Parse and validate a `monitor {op:"start"}` call.
@@ -378,6 +393,25 @@ impl MonitorSet {
         out.trim_end().to_string()
     }
 
+    /// Every active monitor, ordered by id, for a live status display. Same
+    /// source as `list`, so the screen and the model never disagree.
+    pub fn snapshot(&self) -> Vec<MonitorSnapshot> {
+        let inner = self.inner.lock().unwrap();
+        let mut ids: Vec<&String> = inner.keys().collect();
+        ids.sort();
+        ids.into_iter()
+            .map(|id| {
+                let status = inner[id].status.lock().unwrap();
+                MonitorSnapshot {
+                    monitor_id: id.clone(),
+                    file: status.file.clone(),
+                    met: status.met.clone(),
+                    unmet: status.unmet.clone(),
+                }
+            })
+            .collect()
+    }
+
     /// Abort and forget every monitor. Called at owner teardown; nothing is
     /// queued, since no turn is left to read it.
     pub fn stop_all(&self) {
@@ -451,13 +485,17 @@ async fn run_monitor(
             unmet = still_unmet;
             let total = met_now.len();
             for (i, (name, content)) in met_now.into_iter().enumerate() {
-                {
+                let (met, still_unmet) = {
                     let mut s = status.lock().unwrap();
                     s.unmet.retain(|n| n != &name);
                     s.met.push(name.clone());
-                }
+                    (s.met.clone(), s.unmet.clone())
+                };
                 let last = unmet.is_empty() && i + 1 == total;
-                set.push_update(match_update(monitor_id, &spec.file, &name, &content, last));
+                let mut update = match_update(monitor_id, &spec.file, &name, &content, last);
+                update.met = met;
+                update.unmet = still_unmet;
+                set.push_update(update);
             }
             if unmet.is_empty() {
                 return;
@@ -466,6 +504,7 @@ async fn run_monitor(
         let now = tokio::time::Instant::now();
         if now >= deadline {
             let names: Vec<String> = unmet.iter().map(|c| c.name.clone()).collect();
+            let met = status.lock().unwrap().met.clone();
             set.push_update(MonitorUpdate {
                 monitor_id: monitor_id.to_string(),
                 headline: format!("Monitor {monitor_id}: timed out"),
@@ -477,6 +516,8 @@ async fn run_monitor(
                     name_list(&names)
                 ),
                 done: true,
+                met,
+                unmet: names,
             });
             return;
         }
@@ -508,6 +549,8 @@ fn match_update(
         headline,
         text,
         done: last,
+        met: Vec::new(),
+        unmet: Vec::new(),
     }
 }
 
@@ -751,6 +794,8 @@ mod tests {
         let first = next_notice(&set).await;
         assert!(first.text.contains("'one'"), "{}", first.text);
         assert!(!first.done);
+        assert_eq!(first.met, vec!["one".to_string()]);
+        assert_eq!(first.unmet, vec!["two".to_string()]);
         assert!(set.has_pending_work(), "condition 'two' is still owed");
         assert!(
             set.list().contains("met: one; unmet: two"),
@@ -768,6 +813,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn snapshot_lists_active_monitors_with_their_progress() {
+        let dir = unique_root();
+        std::fs::write(dir.join("job.log"), "phase one done\n").unwrap();
+        let set = Arc::new(MonitorSet::new());
+        set.start(
+            spec(
+                "job.log",
+                &[
+                    ("one", "grep 'phase one' job.log"),
+                    ("two", "grep 'phase two' job.log"),
+                ],
+                30,
+            ),
+            ctx_for(&dir),
+        )
+        .unwrap();
+        let _ = next_notice(&set).await;
+        assert_eq!(
+            set.snapshot(),
+            vec![MonitorSnapshot {
+                monitor_id: "mon-1".to_string(),
+                file: "job.log".to_string(),
+                met: vec!["one".to_string()],
+                unmet: vec!["two".to_string()],
+            }]
+        );
+        set.stop("mon-1");
+        assert!(set.snapshot().is_empty());
+    }
+
+    #[tokio::test]
     async fn an_unmet_monitor_times_out_and_names_its_conditions() {
         let dir = unique_root();
         let set = Arc::new(MonitorSet::new());
@@ -782,6 +858,8 @@ mod tests {
         assert!(update.done);
         assert!(update.text.contains("timed out"), "{}", update.text);
         assert!(update.text.contains("ghost"), "{}", update.text);
+        assert!(update.met.is_empty());
+        assert_eq!(update.unmet, vec!["ghost".to_string()]);
     }
 
     #[tokio::test]
