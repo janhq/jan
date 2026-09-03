@@ -490,10 +490,10 @@ fn session_monitors(
     SETS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
-/// Start a file monitor for a Cowork session; updates stream over `on_update`.
+/// Start a monitor for a Cowork session; updates stream over `on_update`.
 ///
 /// Returns the model-facing result string from `MonitorSet::start`. Like
-/// `bash` on this surface, condition scripts run only under an enforcing OS
+/// `bash` on this surface, the polled script runs only under an enforcing OS
 /// sandbox -- there is no one to prompt, so unconfined execution is refused
 /// rather than allowed.
 #[tauri::command]

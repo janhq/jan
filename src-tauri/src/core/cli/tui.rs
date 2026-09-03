@@ -52,7 +52,7 @@ use crate::core::agent::r#loop::{
 };
 use serde_json::Value;
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
-use tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot;
+use tauri_plugin_agent_tools::tools::monitor::{MonitorSet, MonitorSnapshot};
 use tauri_plugin_agent_tools::workspace;
 
 /// Mouse tracking, hand-rolled instead of crossterm's `EnableMouseCapture`,
@@ -1918,10 +1918,17 @@ struct App {
     /// Live panels for background subagents currently streaming, one per run.
     /// Several may be active at once; each renders its own rolling window.
     subagents: Vec<SubagentPanel>,
-    /// The run's active file monitors, replaced wholesale by each
-    /// `StreamEvent::Monitors`. Docked beside the fan-out; never a transcript
-    /// row, since a monitor describes now.
+    /// The session's active file monitors, replaced wholesale by each
+    /// `StreamEvent::Monitors` and re-read from `monitor_set` when a run ends.
+    /// Docked beside the fan-out; never a transcript row, since a monitor
+    /// describes now.
     monitors: Vec<MonitorSnapshot>,
+    /// The session-owned monitor registry, shared with every run through
+    /// `OrchestrationArgs::monitors`. A watcher outlives the turn that started
+    /// it, so the model can answer and the user can keep talking while it
+    /// runs; a match landing between runs starts a turn of its own
+    /// (`submit_monitor_notices`).
+    monitor_set: Arc<MonitorSet>,
     /// True from `StreamEvent::Parked` to the next `Step`: the model is done
     /// and the loop is waiting on background work, so the header says so
     /// instead of `[working]`.
@@ -2377,6 +2384,7 @@ impl App {
             exit_armed: false,
             subagents: Vec::new(),
             monitors: Vec::new(),
+            monitor_set: Arc::new(MonitorSet::new()),
             parked: false,
             subagent_blocks: Vec::new(),
             awaiting: Vec::new(),
@@ -2463,6 +2471,7 @@ impl App {
         self.reasoning_blocks.clear();
         self.subagent_blocks.clear();
         self.subagents.clear();
+        self.stop_monitors();
         self.expanded.clear();
         self.reveal = None;
         self.assistant_buf.clear();
@@ -2797,10 +2806,44 @@ impl App {
             self.push_subagent_summary(&panel.name, panel.calls, SubagentOutcome::Interrupted);
         }
         self.awaiting.clear();
-        // Monitors die with the run's invoker, and a run that ended is no
-        // longer parked on anything.
-        self.monitors.clear();
+        // Session monitors outlive the run, so the dock keeps whatever is
+        // still watching; a run that ended is no longer parked on anything.
+        self.monitors = self.monitor_set.snapshot();
         self.parked = false;
+    }
+
+    /// Stop every session monitor and undock it: the conversation they were
+    /// started for is going away, so a later match would have no turn to join.
+    fn stop_monitors(&mut self) {
+        self.monitor_set.stop_all();
+        self.monitors.clear();
+    }
+
+    /// Deliver monitor pings that landed while no run was active. Each headline
+    /// is noted where the user is looking and each text joins the history as
+    /// the same `<SYSTEM>` reminder the loop attaches mid-run, then one turn
+    /// starts so the model reacts. Nothing is submitted without a model to
+    /// send to; the pings are dropped with a note rather than left to fire the
+    /// moment `/login` completes on a conversation that has moved on.
+    fn submit_monitor_notices(&mut self) {
+        let notices = self.monitor_set.take_notices();
+        self.monitors = self.monitor_set.snapshot();
+        if notices.is_empty() {
+            return;
+        }
+        for notice in &notices {
+            self.note(&notice.headline);
+        }
+        if self.model.is_empty() {
+            self.note("monitor update dropped: not signed in, run /login first");
+            return;
+        }
+        for notice in &notices {
+            crate::core::agent::reminder::attach(&mut self.history, &notice.text);
+        }
+        self.begin_turn();
+        self.want_start = true;
+        self.persist();
     }
 
     /// The live shell panel for `group`'s newest unresolved *command*, or no rows
@@ -6066,23 +6109,21 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
 
 /// Present/past-tense label for a `monitor` tool call, keyed on its `op`.
 /// Without this the row falls through to the raw-JSON fallback, and a start's
-/// condition scripts make that a paragraph, not a label.
+/// script makes that a paragraph, not a label.
 fn monitor_activity(args: &serde_json::Value, past: bool) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
     match (s("op"), past) {
         ("start", _) => {
-            let file = s("file");
-            let n = args
-                .get("conditions")
-                .and_then(|v| v.as_array())
-                .map(Vec::len)
-                .unwrap_or(0);
             let verb = if past { "Started" } else { "Starting" };
-            let conditions = format!("({n} condition{})", if n == 1 { "" } else { "s" });
-            if file.is_empty() {
-                format!("{verb} a monitor {conditions}")
+            let label = match (s("name"), s("script")) {
+                ("", "") => String::new(),
+                ("", script) => script.to_string(),
+                (name, _) => name.to_string(),
+            };
+            if label.is_empty() {
+                format!("{verb} a monitor")
             } else {
-                format!("{verb} a monitor on {file} {conditions}")
+                format!("{verb} a monitor: {label}")
             }
         }
         ("stop", false) => format!("Stopping monitor {}", s("monitor_id")),
@@ -7107,6 +7148,16 @@ fn spawn_run(args: &Arc<OrchestrationArgs>, body: serde_json::Value) -> CurrentR
     CurrentRun { rx, handle }
 }
 
+/// Await a monitor ping the TUI must deliver itself: only between runs, since a
+/// running loop drains the same set at the top of each turn. Parks forever when
+/// a run is active or queued, or when no watcher could still fire.
+async fn await_monitor_ping(set: &Arc<MonitorSet>, idle: bool) {
+    if !idle || !set.has_pending_work() {
+        return pending().await;
+    }
+    set.wait_for_notice().await
+}
+
 /// Await the next event of the active run, or park forever when idle.
 async fn next_event(current: &mut Option<CurrentRun>) -> Option<StreamEvent> {
     match current {
@@ -7475,6 +7526,10 @@ pub async fn run(
     args.ask_requests = Some(ask_requests.clone());
     let todo_registry = crate::core::agent::todo::new_registry();
     args.todo_registry = Some(todo_registry.clone());
+    // Session-owned, so a watcher survives the turn that started it and the
+    // model's answer ends the run instead of parking on it.
+    let monitor_set = Arc::new(MonitorSet::new());
+    args.monitors = Some(monitor_set.clone());
     let session_scratch = args.session_id.clone();
     let args = Arc::new(args);
 
@@ -7516,6 +7571,7 @@ pub async fn run(
     app.smol_model = smol_model;
     app.stream_reasoning = stream_reasoning;
     app.send_reasoning = send_reasoning;
+    app.monitor_set = monitor_set;
     app.args = Some(args.clone());
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
     // shows immediately; a resumed thread overrides this via restore_run_mode.
@@ -7729,6 +7785,9 @@ async fn chat_loop<B: Backend>(
 ) -> Result<(), String> {
     let mut current: Option<CurrentRun> = None;
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
+    // Cloned out of `app` so the select arm below can await it while other
+    // arms borrow `app` mutably.
+    let monitor_set = app.monitor_set.clone();
     // Active MCP servers connect in the background; gate the first run on them
     // so the model's tools (collected once per run) are ready.
     let mut mcp_ready = mcp_task.is_none();
@@ -8079,6 +8138,9 @@ async fn chat_loop<B: Backend>(
                 if branch_task.is_none() {
                     branch_task = Some(spawn_branch_poll(&app.project_root));
                 }
+            }
+            _ = await_monitor_ping(&monitor_set, current.is_none() && !app.want_start) => {
+                app.submit_monitor_notices();
             }
             branch = await_branch_poll(&mut branch_task) => {
                 app.git_branch = branch;
@@ -13549,6 +13611,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     app.pending_rows.clear();
     app.reasoning_blocks.clear();
     app.subagent_blocks.clear();
+    app.stop_monitors();
     app.expanded.clear();
     app.reveal = None;
     app.assistant_buf.clear();
@@ -16086,9 +16149,9 @@ fn activity_column(
     out
 }
 
-/// The run's active monitors, as a column: one line per monitor (id, watched
-/// file, conditions met so far), plus the still-unmet condition names when the
-/// budget stretches to a second row each.
+/// The session's active monitors, as a column: one line per monitor (id, name,
+/// polls so far), plus its script when the budget stretches to a second row
+/// each.
 fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec<Line<'static>> {
     if monitors.is_empty() || rows == 0 {
         return Vec::new();
@@ -16113,9 +16176,8 @@ fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec
     };
     let detail = (body - shown).checked_div(shown).is_some_and(|n| n >= 1);
     for monitor in monitors.iter().take(shown) {
-        let total = monitor.met.len() + monitor.unmet.len();
-        let stats = format!("  {}/{total} met", monitor.met.len());
-        let label = format!("{} {}", monitor.monitor_id, monitor.file);
+        let stats = format!("  {} polls", monitor.polls);
+        let label = format!("{} {}", monitor.monitor_id, monitor.name);
         out.push(Line::from(vec![
             Span::styled("◔ ", Style::new().cyan()),
             Span::styled(
@@ -16124,11 +16186,10 @@ fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec
             ),
             Span::styled(stats, dim),
         ]));
-        if detail && !monitor.unmet.is_empty() {
-            let waiting = format!("waiting on {}", monitor.unmet.join(", "));
+        if detail {
             out.push(Line::from(vec![
                 Span::raw("   "),
-                Span::styled(truncate(&waiting, max.saturating_sub(3)), dim),
+                Span::styled(truncate(&monitor.script, max.saturating_sub(3)), dim),
             ]));
         }
     }
@@ -16488,14 +16549,14 @@ mod tests {
     use super::{
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
         apply_resume, apply_stream_event, assistant_is_awaiting_user_answer, assistant_runs,
-        autoscroll_selection, await_branch_poll, backgrounded_job_id, brand, build_user_message,
-        clipboard_path, compact_tokens, context_lines, diff_lines, drain_stream_events,
-        estimate_token_count, finish_account_login, finish_compaction, finish_context_report,
-        finish_login, finish_plugin_install, finish_tokamak_login, finish_update_install,
-        format_tokens, group_detail_lines, group_summary, handle_ask_key, handle_ask_mouse,
-        handle_key, handle_mouse, header_spans, image_mime, image_mime_of, input_content_lines,
-        load_first_file_image, load_image_file, message_text, note_update, open_config_screen,
-        open_rewind_picker, pairs_to_str, parse_command, partial_json_field,
+        autoscroll_selection, await_branch_poll, await_monitor_ping, backgrounded_job_id, brand,
+        build_user_message, clipboard_path, compact_tokens, context_lines, diff_lines,
+        drain_stream_events, estimate_token_count, finish_account_login, finish_compaction,
+        finish_context_report, finish_login, finish_plugin_install, finish_tokamak_login,
+        finish_update_install, format_tokens, group_detail_lines, group_summary, handle_ask_key,
+        handle_ask_mouse, handle_key, handle_mouse, header_spans, image_mime, image_mime_of,
+        input_content_lines, load_first_file_image, load_image_file, message_text, note_update,
+        open_config_screen, open_rewind_picker, pairs_to_str, parse_command, partial_json_field,
         provider_label_for_model, rebuild_recall, replay_display_log, restore_goal,
         restore_run_mode, restore_todos, resume_hint, rewind_to, route_paste_event, row_width,
         run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
@@ -16504,13 +16565,13 @@ mod tests {
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding, unescape_partial_json_string, user_content_parts, wave_sweep_line,
         with_wave_glyph, without_think_tags, App, CompactKind, ContextReport, ContextSegment,
-        ContextView, CurrentRun, McpField, McpPrompt, Pending, PendingImage, PickerKind,
-        ProviderField, ReasoningSeg, ResumeTarget, Row, RowKind, Selection, SelectionMode,
-        SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF, COPY_NOTICE,
-        DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS,
-        KITTY_KEYS_OFF, KITTY_KEYS_ON, MAX_IMAGE_BYTES, MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON,
-        PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS, THINKING_WORDS,
-        WORKING_WORDS,
+        ContextView, CurrentRun, McpField, McpPrompt, MonitorSet, Pending, PendingImage,
+        PickerKind, ProviderField, ReasoningSeg, ResumeTarget, Row, RowKind, Selection,
+        SelectionMode, SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE,
+        ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS,
+        DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF, KITTY_KEYS_ON, MAX_IMAGE_BYTES,
+        MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER,
+        SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -18709,24 +18770,19 @@ mod tests {
     }
 
     /// A `monitor` call must never fall through to the raw-JSON fallback: a
-    /// start's condition scripts make that a paragraph, not a label.
+    /// start's script makes that a paragraph, not a label.
     #[test]
     fn monitor_calls_get_readable_labels() {
-        let start = json!({
-            "op": "start",
-            "file": "build.log",
-            "conditions": [
-                { "name": "ok", "script": "grep OK build.log" },
-                { "name": "fail", "script": "grep FAILED build.log" }
-            ]
-        });
+        let start = json!({ "op": "start", "name": "build", "script": "grep OK build.log" });
         assert_eq!(
             tool_activity("monitor", &start),
-            "Starting a monitor on build.log (2 conditions)"
+            "Starting a monitor: build"
         );
+        assert_eq!(tool_finished("monitor", &start), "Started a monitor: build");
+        let unnamed = json!({ "op": "start", "script": "test -f done.flag" });
         assert_eq!(
-            tool_finished("monitor", &start),
-            "Started a monitor on build.log (2 conditions)"
+            tool_activity("monitor", &unnamed),
+            "Starting a monitor: test -f done.flag"
         );
         assert_eq!(
             tool_activity("monitor", &json!({ "op": "stop", "monitor_id": "mon-2" })),
@@ -21221,6 +21277,7 @@ mod tests {
                 run_mode: crate::core::agent::plan::RunMode::Normal,
                 session_id: None,
                 sandbox: None,
+                monitors: Some(app.monitor_set.clone()),
             });
             app.args = Some(args.clone());
 
@@ -28587,34 +28644,34 @@ mod tests {
         );
     }
 
-    fn monitor(id: &str, file: &str, met: &[&str], unmet: &[&str]) -> MonitorSnapshot {
+    fn monitor(id: &str, name: &str, script: &str, polls: u64) -> MonitorSnapshot {
         MonitorSnapshot {
             monitor_id: id.to_string(),
-            file: file.to_string(),
-            met: met.iter().map(|s| s.to_string()).collect(),
-            unmet: unmet.iter().map(|s| s.to_string()).collect(),
+            name: name.to_string(),
+            script: script.to_string(),
+            polls,
         }
     }
 
     /// Running monitors are live state like the fan-out, so they dock in the
-    /// status panel: one line each with the file and progress, the unmet
-    /// conditions beneath when the budget allows, beside any live agents.
+    /// status panel: one line each with the name and poll count, the script
+    /// beneath when the budget allows, beside any live agents.
     #[test]
     fn running_monitors_dock_in_the_status_panel() {
         let mut app = test_app();
         app.submit_user("go".into());
         app.apply(StreamEvent::Monitors {
             monitors: vec![
-                monitor("mon-1", "build.log", &["one"], &["two"]),
-                monitor("mon-2", "test.log", &[], &["green"]),
+                monitor("mon-1", "build", "grep OK build.log", 3),
+                monitor("mon-2", "tests", "grep green test.log", 1),
             ],
         });
         let text = render_rows(&mut app, 100, 24).join("\n");
         assert!(text.contains("2 monitors"), "{text}");
-        assert!(text.contains("mon-1 build.log"), "{text}");
-        assert!(text.contains("1/2 met"), "{text}");
-        assert!(text.contains("waiting on two"), "{text}");
-        assert!(text.contains("mon-2 test.log"), "{text}");
+        assert!(text.contains("mon-1 build"), "{text}");
+        assert!(text.contains("3 polls"), "{text}");
+        assert!(text.contains("grep OK build.log"), "{text}");
+        assert!(text.contains("mon-2 tests"), "{text}");
 
         start_subagent(&mut app, "r0", "alpha");
         let text = render_rows(&mut app, 100, 24).join("\n");
@@ -28641,7 +28698,7 @@ mod tests {
         assert!(header(&mut app).contains("[working]"));
 
         app.apply(StreamEvent::Monitors {
-            monitors: vec![monitor("mon-1", "build.log", &[], &["ok"])],
+            monitors: vec![monitor("mon-1", "ok", "grep OK build.log", 1)],
         });
         app.apply(StreamEvent::Parked);
         let text = header(&mut app);
@@ -28658,12 +28715,141 @@ mod tests {
         assert!(header(&mut app).contains("[waiting]"));
 
         app.apply(StreamEvent::Monitors {
-            monitors: vec![monitor("mon-2", "build.log", &[], &["ok"])],
+            monitors: vec![monitor("mon-2", "ok", "grep OK build.log", 1)],
         });
         app.on_error("upstream".into(), "gone".into());
-        assert!(app.monitors.is_empty(), "monitors die with the run");
+        assert!(
+            app.monitors.is_empty(),
+            "run end re-reads the session set, which has nothing running"
+        );
         assert!(!app.parked);
         assert!(header(&mut app).contains("[ready]"));
+    }
+
+    fn session_monitor_spec(script: &str) -> tauri_plugin_agent_tools::tools::monitor::MonitorSpec {
+        tauri_plugin_agent_tools::tools::monitor::MonitorSpec {
+            name: "ready".to_string(),
+            script: script.to_string(),
+            timeout_secs: 60,
+            interval: Duration::from_millis(20),
+        }
+    }
+
+    fn session_monitor_ctx(
+        root: &std::path::Path,
+    ) -> tauri_plugin_agent_tools::tools::monitor::MonitorCtx {
+        tauri_plugin_agent_tools::tools::monitor::MonitorCtx {
+            project_root: root.to_path_buf(),
+            scratch_root: None,
+            mask_root: None,
+            read_roots: Vec::new(),
+            write_roots: Vec::new(),
+            allow_network: false,
+            home_readonly: false,
+            // Bare shell: these exercise the TUI wiring, not the jail.
+            sandbox: false,
+        }
+    }
+
+    /// A session monitor outlives the run that started it: the run ends with
+    /// the header back on `[ready]` while the watcher stays docked, and only a
+    /// session reset (`/clear`, a thread switch) takes it down.
+    #[tokio::test]
+    async fn a_running_session_monitor_outlives_the_run_and_stays_docked() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("boot.log"), "starting\n").unwrap();
+        let mut app = test_app();
+        app.monitor_set
+            .start(
+                session_monitor_spec("grep READY boot.log"),
+                session_monitor_ctx(root.path()),
+            )
+            .unwrap();
+        app.submit_user("go".into());
+        let monitors = app.monitor_set.snapshot();
+        app.apply(StreamEvent::Monitors { monitors });
+        app.on_done("stop".into(), None);
+
+        let header = render_rows(&mut app, 100, 24)[0].clone();
+        assert!(header.contains("[ready]"), "{header}");
+        assert_eq!(app.monitors.len(), 1, "the watcher is still docked");
+        assert_eq!(app.status, Status::Idle);
+
+        app.reset_session();
+        assert!(app.monitors.is_empty());
+        assert!(!app.monitor_set.has_pending_work());
+    }
+
+    /// A match landing between runs is delivered by the TUI itself: the
+    /// headline is noted, the text joins the history as a `<SYSTEM>` reminder
+    /// and one turn is armed, exactly as the loop would have done mid-run.
+    #[tokio::test]
+    async fn a_monitor_ping_between_runs_starts_a_turn() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("boot.log"), "READY on port 1337\n").unwrap();
+        let mut app = test_app();
+        app.history
+            .push(serde_json::json!({ "role": "user", "content": "watch the build" }));
+        app.history
+            .push(serde_json::json!({ "role": "assistant", "content": "watching" }));
+        app.monitor_set
+            .start(
+                session_monitor_spec("grep READY boot.log"),
+                session_monitor_ctx(root.path()),
+            )
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), app.monitor_set.wait_for_notice())
+            .await
+            .expect("the first evaluation matches");
+        assert!(app.monitor_set.has_queued_notices());
+
+        app.submit_monitor_notices();
+
+        assert!(app.want_start, "a ping arms one turn");
+        assert_eq!(app.status, Status::Running);
+        let last = app.history.last().unwrap();
+        assert_eq!(last["role"], "user");
+        assert!(crate::core::agent::reminder::is_reminder_only(
+            &last["content"]
+        ));
+        assert!(last["content"]
+            .as_str()
+            .unwrap()
+            .contains("READY on port 1337"));
+        assert!(
+            transcript_text(&app).contains("'ready' matched"),
+            "{}",
+            transcript_text(&app)
+        );
+        assert!(app.monitors.is_empty(), "matched, so the watcher retired");
+        assert!(!app.monitor_set.has_queued_notices(), "taken");
+    }
+
+    /// The loop drains the set itself while a run is up, so the TUI's wait
+    /// must stay parked then -- and with nothing to wait for -- rather than
+    /// racing the run for the same ping.
+    #[tokio::test]
+    async fn await_monitor_ping_only_fires_between_runs() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("boot.log"), "READY\n").unwrap();
+        let set = Arc::new(MonitorSet::new());
+        let parked =
+            tokio::time::timeout(Duration::from_millis(20), await_monitor_ping(&set, true));
+        assert!(parked.await.is_err(), "nothing could fire, so it parks");
+
+        set.start(
+            session_monitor_spec("grep READY boot.log"),
+            session_monitor_ctx(root.path()),
+        )
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), await_monitor_ping(&set, true))
+            .await
+            .expect("idle: the ping is ours to deliver");
+        let busy = tokio::time::timeout(Duration::from_millis(20), await_monitor_ping(&set, false));
+        assert!(
+            busy.await.is_err(),
+            "a run is active, so the loop drains it"
+        );
     }
 
     /// A child's panel normally closes on its own `SubagentEnd`. A run that

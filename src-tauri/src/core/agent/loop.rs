@@ -108,6 +108,12 @@ pub(crate) struct OrchestrationArgs {
     /// by dispatched subagents via the cloned parent args, so a child shell is
     /// confined exactly as its parent's was.
     pub sandbox: Option<bool>,
+    /// A monitor set owned by the session rather than by this run. When set,
+    /// a running monitor does not park the run: the model's turn ends and the
+    /// owner starts a new turn when a match lands. `None` (a headless run, a
+    /// child) scopes monitors to the run, which then parks on them. Never
+    /// inherited by a child run, which gets its own per-run set.
+    pub monitors: Option<std::sync::Arc<tauri_plugin_agent_tools::tools::monitor::MonitorSet>>,
 }
 
 #[async_trait]
@@ -336,11 +342,16 @@ struct CompositeToolInvoker {
     todo_registry: Option<crate::core::agent::todo::TodoRegistry>,
     grants: std::sync::Mutex<tauri_plugin_agent_tools::tools::gate::SessionGrants>,
     subagents: Option<SubagentContext>,
-    /// This run's file monitors. Scoped to the run like `subagents`: dropping
-    /// the invoker aborts every watcher, and an active monitor keeps the run
+    /// The file monitors this run may start. Run-owned unless
+    /// `OrchestrationArgs::monitors` supplied a session set: dropping the last
+    /// reference aborts every watcher, and an active monitor keeps the run
     /// parked via `background_pending` (bounded, since every monitor has a
     /// deadline).
     monitors: std::sync::Arc<tauri_plugin_agent_tools::tools::monitor::MonitorSet>,
+    /// Whether `monitors` outlives this run. A session-owned set never parks
+    /// the run on a watcher that has not fired: the owner delivers a later
+    /// match as a fresh turn, so the user can keep talking meanwhile.
+    monitors_outlive_run: bool,
     auto_approve: bool,
     run_mode: crate::core::agent::plan::RunMode,
 }
@@ -495,6 +506,17 @@ fn output_sink(
 }
 
 impl CompositeToolInvoker {
+    /// Whether the monitors owe the model something the run must stay alive
+    /// for: any queued ping, plus a still-running watcher when the set dies
+    /// with the run (nothing else could deliver its match).
+    fn monitors_owed(&self) -> bool {
+        if self.monitors_outlive_run {
+            self.monitors.has_queued_notices()
+        } else {
+            self.monitors.has_pending_work()
+        }
+    }
+
     fn tool_context(&self) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
         tauri_plugin_agent_tools::tools::ToolContext::new(
             &self.project_root,
@@ -687,9 +709,9 @@ impl CompositeToolInvoker {
         }
     }
 
-    /// Prompt the user to approve starting a monitor: its condition scripts are
-    /// arbitrary shell commands the watcher will run repeatedly, so starting one
-    /// is an exec-class action even though each later evaluation is unattended.
+    /// Prompt the user to approve starting a monitor: its script is an
+    /// arbitrary shell command the watcher will run repeatedly, so starting one
+    /// is an exec-class action even though each later poll is unattended.
     async fn prompt_monitor_start(
         &self,
         spec: &tauri_plugin_agent_tools::tools::monitor::MonitorSpec,
@@ -700,23 +722,20 @@ impl CompositeToolInvoker {
             .lock()
             .await
             .insert(request_id.clone(), tx);
-        // The prompt's detail shows `command` INSTEAD of `path`, so the watched
-        // file has to ride along here or the user approves scripts with no idea
-        // what triggers them. A shell comment keeps the `$ ` preview honest.
-        let scripts = std::iter::once(format!("# watches {}", spec.file))
-            .chain(
-                spec.conditions
-                    .iter()
-                    .map(|c| format!("{}: {}", c.name, c.script)),
-            )
-            .collect::<Vec<_>>()
-            .join("\n");
+        // The cadence rides along as a shell comment, so the user approves a
+        // script knowing how often it will run; the `$ ` preview stays honest.
+        let command = format!(
+            "# monitor '{}', every {}s\n{}",
+            spec.name,
+            spec.interval.as_secs(),
+            spec.script
+        );
         let _ = self.events.send(StreamEvent::PermissionRequest {
             request_id: request_id.clone(),
             tool_name: tauri_plugin_agent_tools::tools::monitor::MONITOR_TOOL_NAME.to_string(),
             capability: "run".to_string(),
-            path: Some(spec.file.clone()),
-            command: Some(scripts),
+            path: None,
+            command: Some(command),
             diff: None,
             prompt_kind: "monitor".to_string(),
             offers_always: false,
@@ -998,7 +1017,7 @@ impl ToolInvoker for CompositeToolInvoker {
         self.subagents
             .as_ref()
             .is_some_and(|ctx| ctx.bg.has_pending_work())
-            || self.monitors.has_pending_work()
+            || self.monitors_owed()
     }
 
     fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
@@ -1010,6 +1029,8 @@ impl ToolInvoker for CompositeToolInvoker {
         // so an exhausted side must not be selected over: it would win
         // instantly every time and starve the side actually being waited on.
         // The re-check between iterations is what `run_turn_cycle` does anyway.
+        // A session-owned set is still selected while a subagent is awaited: a
+        // match landing then should wake the park like a finished child does.
         let sub_pending = self
             .subagents
             .as_ref()
@@ -1391,6 +1412,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         run_mode: crate::core::agent::plan::RunMode::Normal,
         session_id: None,
         sandbox: None,
+        monitors: None,
     };
     let body = match json_body.get("max_turns") {
         Some(_) => std::borrow::Cow::Borrowed(json_body),
@@ -1798,6 +1820,7 @@ async fn orchestrate_inner(
         auto_approve,
         run_mode,
         session_id,
+        monitors: session_monitors,
         sandbox,
     } = args;
 
@@ -2083,9 +2106,8 @@ async fn orchestrate_inner(
                 tauri_plugin_agent_tools::tools::gate::SessionGrants::default(),
             ),
             subagents,
-            monitors: std::sync::Arc::new(
-                tauri_plugin_agent_tools::tools::monitor::MonitorSet::new(),
-            ),
+            monitors: session_monitors.clone().unwrap_or_default(),
+            monitors_outlive_run: session_monitors.is_some(),
             auto_approve: *auto_approve,
             run_mode,
         };
@@ -2530,9 +2552,11 @@ async fn run_turn_cycle(
                 }
             }
             // The model has nothing left to do, but a subagent it dispatched is
-            // still running -- and its answer has nowhere to go once this cycle
-            // returns. So park here instead of ending: the ping drained at the
-            // top of the next turn is what resumes the conversation. The turn
+            // still running (or a run-owned monitor is) -- and its answer has
+            // nowhere to go once this cycle returns. So park here instead of
+            // ending: the ping drained at the top of the next turn is what
+            // resumes the conversation. A session-owned monitor never parks:
+            // its owner starts a turn when it fires (`monitors_owed`). The turn
             // the model just took has to be recorded first, exactly as the
             // closeout nudge above records it, or the reminder would attach to
             // a conversation missing the answer it follows.
@@ -3967,9 +3991,9 @@ mod tests {
             }
             vec![tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot {
                 monitor_id: "mon-1".to_string(),
-                file: "build.log".to_string(),
-                met: Vec::new(),
-                unmet: vec!["ok".to_string()],
+                name: "ok".to_string(),
+                script: "grep OK build.log".to_string(),
+                polls: 1,
             }]
         }
     }
@@ -4856,6 +4880,7 @@ mod tests {
             monitors: std::sync::Arc::new(
                 tauri_plugin_agent_tools::tools::monitor::MonitorSet::new(),
             ),
+            monitors_outlive_run: false,
             auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
         }
@@ -5789,9 +5814,8 @@ mod tests {
                     "the prompt must show the scripts it approves: {command:?}"
                 );
                 assert!(
-                    shown.contains("# watches boot.log"),
-                    "the prompt shows command INSTEAD of path, so the watched \
-                     file must ride along: {command:?}"
+                    shown.contains("# monitor 'ready', every 5s"),
+                    "the prompt names the monitor and its cadence: {command:?}"
                 );
                 let tx = registry.lock().await.remove(&request_id).unwrap();
                 let _ = tx.send(PermissionDecision::Deny);
@@ -5801,11 +5825,7 @@ mod tests {
         let out = invoker
             .invoke(&[monitor_call(
                 "m1",
-                json!({
-                    "op": "start",
-                    "file": "boot.log",
-                    "conditions": [{ "name": "ready", "script": "grep READY boot.log" }]
-                }),
+                json!({ "op": "start", "name": "ready", "script": "grep READY boot.log" }),
             )])
             .await
             .unwrap();
@@ -5815,7 +5835,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// End to end through the invoker: an auto-approved start whose condition
+    /// End to end through the invoker: an auto-approved start whose script
     /// already holds delivers a merged background notice carrying a headline
     /// and the matched content, and the pending flag clears once all conditions
     /// are met.
@@ -5833,11 +5853,7 @@ mod tests {
         let out = invoker
             .invoke(&[monitor_call(
                 "m1",
-                json!({
-                    "op": "start",
-                    "file": "boot.log",
-                    "conditions": [{ "name": "ready", "script": "grep READY boot.log" }]
-                }),
+                json!({ "op": "start", "name": "ready", "script": "grep READY boot.log" }),
             )])
             .await
             .unwrap();
@@ -5877,6 +5893,57 @@ mod tests {
             !invoker.background_pending(),
             "all conditions met, so the run must not stay parked"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A session-owned set does not hold the run open: a watcher that has not
+    /// fired leaves `background_pending` false (the turn ends and the user can
+    /// keep talking), while a queued match still resumes the run, and taking
+    /// it clears the flag again.
+    #[tokio::test]
+    async fn a_session_owned_monitor_does_not_park_the_run_until_it_fires() {
+        let root = unique_project_root();
+        std::fs::write(root.join("boot.log"), "starting\n").unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.auto_approve = true;
+        invoker.sandbox = false;
+        invoker.monitors_outlive_run = true;
+
+        let out = invoker
+            .invoke(&[monitor_call(
+                "m1",
+                json!({ "op": "start", "name": "ready", "script": "grep READY boot.log" }),
+            )])
+            .await
+            .unwrap();
+        assert!(
+            out[0].content.contains("monitor_id=mon-1"),
+            "{}",
+            out[0].content
+        );
+        assert_eq!(invoker.monitor_snapshot().len(), 1, "the watcher is up");
+        assert!(
+            !invoker.background_pending(),
+            "an unfired session monitor must not park the run"
+        );
+
+        std::fs::write(root.join("boot.log"), "starting\nREADY on port 1337\n").unwrap();
+        for _ in 0..300 {
+            if invoker.background_pending() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(
+            invoker.background_pending(),
+            "a queued match is owed to the model and resumes the run"
+        );
+        let notices = invoker.background_notices();
+        assert_eq!(notices.len(), 1);
+        assert!(notices[0].text.contains("READY on port 1337"));
+        assert!(!invoker.background_pending(), "taken, so nothing is owed");
         let _ = std::fs::remove_dir_all(&root);
     }
 

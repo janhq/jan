@@ -22,9 +22,8 @@ const run = (runId: string, status: SubagentRun['status']): SubagentRun => ({
 
 const monitor = (monitorId: string, status: MonitorView['status']): MonitorView => ({
   monitorId,
-  file: 'build.log',
-  met: [],
-  unmet: ['ok'],
+  name: 'build',
+  script: 'grep OK build.log',
   status,
   startedAt: 0,
 })

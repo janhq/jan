@@ -92,9 +92,8 @@ import {
   fillSubagentResult,
   importAttachment,
   reserveSubagentResult,
-  stopAgentSessionMonitors,
 } from '@/lib/agentTools'
-import { MonitorLane } from '@/lib/coworkMonitor'
+import { monitorLaneFor, type MonitorLane } from '@/lib/coworkMonitor'
 import { CoworkParkedNotice } from '@/containers/CoworkParkedNotice'
 import type { MonitorView } from '@/types/coworkSession'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
@@ -151,6 +150,15 @@ const MANUAL_COMPACT_CONFIG: ContextManagerConfig = {
 // Stable empty set, so a session with no monitors does not re-render on every
 // store write the way a fresh `[]` from the selector would.
 const NO_MONITORS: MonitorView[] = []
+
+/** The session's monitor lane, mirrored into the run store for the rail. */
+function sessionMonitorLane(sid: string): MonitorLane {
+  return monitorLaneFor(sid, () => ({
+    started: (view) => useCoworkRun.getState().startMonitor(sid, view),
+    updated: (update) => useCoworkRun.getState().updateMonitor(sid, update),
+    stopped: (id) => useCoworkRun.getState().stopMonitor(sid, id),
+  }))
+}
 
 function CoworkPage() {
   const { t } = useTranslation()
@@ -354,7 +362,7 @@ function CoworkPage() {
     () => liveSubagents ?? session?.subagents ?? [],
     [liveSubagents, session?.subagents]
   )
-  // Monitors and the parked flag are run-only: a watcher dies with its run.
+  // Monitors are the session's and outlive a run; the parked flag is run-only.
   const monitors = useCoworkRun(
     (s) => (session?.id ? s.monitors[session.id] : undefined) ?? NO_MONITORS
   )
@@ -495,14 +503,9 @@ function CoworkPage() {
     // Owned by this request: children cannot outlive the run whose signal
     // aborts them, so a fresh inbox per run can never hold a stale ping.
     const inbox = new SubagentInbox()
-    // Bridges Rust monitor updates into the same inbox, so a watcher parks the
-    // run exactly the way a running subagent does, and mirrors each one into
-    // the run store for the background-tasks rail.
-    const monitorLane = new MonitorLane(inbox, {
-      started: (view) => useCoworkRun.getState().startMonitor(sid, view),
-      updated: (update) => useCoworkRun.getState().updateMonitor(sid, update),
-      stopped: (id) => useCoworkRun.getState().stopMonitor(sid, id),
-    })
+    // The session's, not the run's: a watcher keeps going after this run has
+    // answered, and its pings are drained by whichever run is up next.
+    const monitorLane = sessionMonitorLane(sid)
 
     const sink: StreamSink = {
       onText: (delta) => {
@@ -793,7 +796,7 @@ function CoworkPage() {
             // reacts to a subagent finishing has the note it is replying to
             // directly above it.
             take: () => {
-              const notices = inbox.take()
+              const notices = [...inbox.take(), ...monitorLane.take()]
               // The row gets the headline; the model gets the instructions that
               // follow it, which are addressed to it alone.
               pushLive(
@@ -804,8 +807,14 @@ function CoworkPage() {
               )
               return notices.map((n) => n.text)
             },
-            pending: () => inbox.pending(),
-            wait: () => inbox.wait(controller.signal),
+            // A running watcher is not pending work: only a queued match is,
+            // so the run ends under a monitor and the user can keep talking.
+            pending: () => inbox.pending() || monitorLane.hasQueued(),
+            wait: () =>
+              Promise.race([
+                inbox.wait(controller.signal),
+                monitorLane.wait(controller.signal),
+              ]),
             // The model is idle for the whole wait; the transcript says so
             // instead of showing a "Working…" spinner over nothing.
             onParked: (p) => useCoworkRun.getState().setParked(sid, p),
@@ -823,9 +832,6 @@ function CoworkPage() {
             errorText: e instanceof Error ? e.message : String(e),
           }
     } finally {
-      // Watchers are run-scoped, like the children the abort signal covers: an
-      // update landing after this point would have no run to resume.
-      void stopAgentSessionMonitors(sid)
       useAppState.getState().updateLoadingModel(false)
       useCoworkSessions
         .getState()
@@ -1167,6 +1173,25 @@ function CoworkPage() {
     setRail({ kind: 'preview', path: pendingPreview.path })
     useCoworkRun.getState().clearPendingPreview()
   }, [pendingPreview, session?.id])
+
+  // A match landing while no run is up starts one: the queued ping is drained
+  // at the top of that run's first step, exactly as a mid-run one would be.
+  // Re-checked whenever the run state flips, since a ping arriving in the gap
+  // between a run ending and this render sees a stale `running`.
+  useEffect(() => {
+    const sid = session?.id
+    if (!sid) return
+    const lane = sessionMonitorLane(sid)
+    const deliver = () => {
+      if (running || !lane.hasQueued()) return
+      void runRequestRef.current(null)
+    }
+    lane.onPing = deliver
+    deliver()
+    return () => {
+      if (lane.onPing === deliver) lane.onPing = null
+    }
+  }, [session?.id, running])
 
   // Nothing to show once the session changes: both panels describe the session
   // they were opened from.

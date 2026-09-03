@@ -1,14 +1,13 @@
-//! The `monitor` tool: watch a file a long-running job streams into and
-//! evaluate custom condition scripts against it, reporting each match to the
-//! agent as an out-of-band notice.
+//! The `monitor` tool: poll one shell script on an interval until it matches,
+//! then report its output to the agent as an out-of-band notice.
 //!
-//! A condition is an arbitrary shell script run from the project root under the
-//! same confinement `bash` gets (`handlers::confined_shell`). Exit 0 means the
-//! condition matched, and its stdout is the matched content. Conditions are
-//! evaluated once at start and again whenever the watched file changes; a met
-//! condition is never re-evaluated. The monitor stops itself when every
-//! condition has matched, when it is stopped explicitly, or at its deadline --
-//! the bound that makes it safe for a run to park on an active monitor.
+//! The script is arbitrary shell run from the project root under the same
+//! confinement `bash` gets (`handlers::confined_shell`). Exit 0 means matched,
+//! and its stdout is the matched content; anything else means "not yet" and
+//! the poll repeats. A monitor is one-shot: the first match ends it, as does an
+//! explicit stop or its deadline -- the bound that makes it safe for a
+//! run-owned set to park a run on an active monitor. One script per monitor
+//! keeps the call shape small enough for local models to emit reliably.
 //!
 //! Delivery is the caller's: a [`MonitorSet`] either queues [`MonitorUpdate`]s
 //! for the agent loop to drain into `<SYSTEM>` reminders (the CLI/desktop run
@@ -20,40 +19,36 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::tools::{sandbox, ToolContext};
+use crate::tools::ToolContext;
 
 pub const MONITOR_TOOL_NAME: &str = "monitor";
 
-/// Active monitors per set. A run fanning out more watchers than this is
-/// polling, not monitoring, and each one holds a background task.
+/// Active monitors per set. Each one holds a background task, and a run
+/// fanning out more than this is doing the job's work itself.
 pub const MAX_MONITORS: usize = 8;
-/// Conditions per monitor.
-pub const MAX_CONDITIONS: usize = 16;
 pub const DEFAULT_TIMEOUT_SECS: u64 = 1800;
 pub const MAX_TIMEOUT_SECS: u64 = 7200;
 const MIN_TIMEOUT_SECS: u64 = 10;
-/// How often the watched file is re-checked for changes.
-const POLL_INTERVAL: Duration = Duration::from_secs(2);
-/// A condition script that runs longer than this is killed and treated as
-/// unmet; a matcher is a check, not a job of its own.
+pub const DEFAULT_INTERVAL_SECS: u64 = 5;
+const MIN_INTERVAL_SECS: u64 = 1;
+const MAX_INTERVAL_SECS: u64 = 300;
+/// A script that runs longer than this is killed and treated as unmatched; a
+/// poll is a check, not a job of its own.
 const EVAL_TIMEOUT: Duration = Duration::from_secs(60);
+/// Cap on the label derived from a script when no `name` is given.
+const DEFAULT_NAME_CHARS: usize = 60;
 /// Cap on the matched content a notice carries into the conversation.
 const MATCH_MAX_BYTES: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MonitorCondition {
-    pub name: String,
-    pub script: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct MonitorSpec {
-    /// The watched path as the model wrote it; resolved against the project
-    /// root and scratch at start.
-    pub file: String,
-    pub conditions: Vec<MonitorCondition>,
+    /// Short label quoted back in every notice; the script itself when the
+    /// model gave none.
+    pub name: String,
+    /// Run from the project root on every poll; exit 0 = matched.
+    pub script: String,
     pub timeout_secs: u64,
-    /// Poll cadence. Not model-settable; tests shorten it.
+    /// Poll cadence, model-settable within [`MIN_INTERVAL_SECS`, `MAX_INTERVAL_SECS`].
     pub interval: Duration,
 }
 
@@ -107,83 +102,71 @@ impl MonitorCtx {
 
 /// One notice, in the two registers every background ping needs: `headline`
 /// for the transcript row, `text` for the `<SYSTEM>` reminder the model gets.
-/// `done` marks the update that also ends the monitor (all met, or timeout).
-/// `met`/`unmet` snapshot the monitor's progress at the update, so a display
-/// with no other view of the watcher (Cowork) can keep a live panel.
+/// Every update is terminal (a match or the timeout), so it also closes the
+/// monitor on any display that tracks it; `matched` tells the two apart.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MonitorUpdate {
     pub monitor_id: String,
+    pub name: String,
     pub headline: String,
     pub text: String,
-    pub done: bool,
-    pub met: Vec<String>,
-    pub unmet: Vec<String>,
+    pub matched: bool,
 }
 
-/// Display-only view of one active monitor, for a status panel: what it
-/// watches and how far along its conditions are.
+/// Display-only view of one active monitor, for a status panel.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MonitorSnapshot {
     pub monitor_id: String,
-    pub file: String,
-    pub met: Vec<String>,
-    pub unmet: Vec<String>,
+    pub name: String,
+    pub script: String,
+    pub polls: u64,
 }
 
 /// Parse and validate a `monitor {op:"start"}` call.
 pub fn parse_start_args(args: &serde_json::Value) -> Result<MonitorSpec, String> {
-    let file = args
-        .get("file")
+    let script = args
+        .get("script")
         .and_then(|v| v.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .ok_or("start requires 'file': the path the job streams its output to")?
+        .ok_or("start requires 'script': a shell command that exits 0 once the thing you are waiting for has happened")?
         .to_string();
-    let raw = args
-        .get("conditions")
-        .and_then(|v| v.as_array())
-        .filter(|a| !a.is_empty())
-        .ok_or("start requires a non-empty 'conditions' array of {name, script}")?;
-    if raw.len() > MAX_CONDITIONS {
-        return Err(format!("at most {MAX_CONDITIONS} conditions per monitor"));
-    }
-    let mut conditions = Vec::with_capacity(raw.len());
-    for c in raw {
-        let name = c
-            .get("name")
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .ok_or("every condition needs a non-empty 'name'")?;
-        let script = c
-            .get("script")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.trim().is_empty())
-            .ok_or("every condition needs a non-empty 'script'")?;
-        if conditions
-            .iter()
-            .any(|existing: &MonitorCondition| existing.name == name)
-        {
-            return Err(format!("duplicate condition name '{name}'"));
-        }
-        conditions.push(MonitorCondition {
-            name: name.to_string(),
-            script: script.to_string(),
-        });
-    }
+    let name = args
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| default_name(&script));
     let timeout_secs = args
         .get("timeout")
         .and_then(|v| v.as_u64())
         .unwrap_or(DEFAULT_TIMEOUT_SECS)
         .clamp(MIN_TIMEOUT_SECS, MAX_TIMEOUT_SECS);
+    let interval_secs = args
+        .get("interval")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(DEFAULT_INTERVAL_SECS)
+        .clamp(MIN_INTERVAL_SECS, MAX_INTERVAL_SECS);
     Ok(MonitorSpec {
-        file,
-        conditions,
+        name,
+        script,
         timeout_secs,
-        interval: POLL_INTERVAL,
+        interval: Duration::from_secs(interval_secs),
     })
+}
+
+/// The script, flattened to one line and capped, as the label when the model
+/// gave none.
+fn default_name(script: &str) -> String {
+    let flat: String = script.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() <= DEFAULT_NAME_CHARS {
+        return flat;
+    }
+    let head: String = flat.chars().take(DEFAULT_NAME_CHARS - 3).collect();
+    format!("{head}...")
 }
 
 pub fn parse_stop_args(args: &serde_json::Value) -> Result<String, String> {
@@ -195,12 +178,13 @@ pub fn parse_stop_args(args: &serde_json::Value) -> Result<String, String> {
         .ok_or_else(|| "stop requires 'monitor_id'".to_string())
 }
 
-/// Shared, mutable view of one monitor's progress, read by `list` and written
-/// by the monitor's own task.
+/// Shared view of one monitor, read by `list` and the snapshot and written by
+/// the monitor's own task.
 struct MonitorStatus {
-    file: String,
-    met: Vec<String>,
-    unmet: Vec<String>,
+    name: String,
+    script: String,
+    interval: Duration,
+    polls: u64,
 }
 
 struct Entry {
@@ -265,7 +249,15 @@ impl MonitorSet {
     /// queued update not yet delivered. Safe to park on -- every monitor
     /// terminates (all met, stopped, or its deadline).
     pub fn has_pending_work(&self) -> bool {
-        !self.notices.lock().unwrap().is_empty() || self.active.load(Ordering::SeqCst) > 0
+        self.has_queued_notices() || self.active.load(Ordering::SeqCst) > 0
+    }
+
+    /// Whether an update is queued and not yet taken. Unlike
+    /// [`Self::has_pending_work`] this says nothing about running monitors: a
+    /// set that outlives its run consults it to decide whether the model has
+    /// something to react to *now*.
+    pub fn has_queued_notices(&self) -> bool {
+        !self.notices.lock().unwrap().is_empty()
     }
 
     /// Park until an update is queued, or nothing is left to wait for. The
@@ -293,44 +285,30 @@ impl MonitorSet {
         self.wake.notify_waiters();
     }
 
-    /// Start a monitor, returning the model-facing result string. The watched
-    /// path must sit where a read may reach (project, scratch, or an attached
-    /// read-only root); the file itself may not exist yet.
+    /// Start a monitor, returning the model-facing result string.
     pub fn start(self: &Arc<Self>, spec: MonitorSpec, ctx: MonitorCtx) -> Result<String, String> {
         if self.inner.lock().unwrap().len() >= MAX_MONITORS {
             return Err(format!(
                 "at most {MAX_MONITORS} monitors may be active; stop one first"
             ));
         }
-        let scratch = ctx.scratch_root.as_deref();
-        match sandbox::escapes_read_roots(&ctx.project_root, scratch, &ctx.read_roots, &spec.file) {
-            Ok(false) => {}
-            Ok(true) => {
-                return Err(format!(
-                    "'{}' is outside the project; a monitor can only watch files the run can read",
-                    spec.file
-                ))
-            }
-            Err(e) => return Err(format!("cannot resolve '{}': {e}", spec.file)),
-        }
-        let watch_path = sandbox::resolve_path(&ctx.project_root, scratch, &spec.file);
         let monitor_id = format!("mon-{}", self.seq.fetch_add(1, Ordering::Relaxed));
-
         let status = Arc::new(Mutex::new(MonitorStatus {
-            file: spec.file.clone(),
-            met: Vec::new(),
-            unmet: spec.conditions.iter().map(|c| c.name.clone()).collect(),
+            name: spec.name.clone(),
+            script: spec.script.clone(),
+            interval: spec.interval,
+            polls: 0,
         }));
-        let condition_count = spec.conditions.len();
+        let name = spec.name.clone();
         let timeout_secs = spec.timeout_secs;
-        let file = spec.file.clone();
+        let interval_secs = spec.interval.as_secs();
 
         self.active.fetch_add(1, Ordering::SeqCst);
         let set = self.clone();
         let id_task = monitor_id.clone();
         let status_task = status.clone();
         let handle = tokio::spawn(async move {
-            run_monitor(&set, &id_task, spec, ctx, watch_path, status_task).await;
+            run_monitor(&set, &id_task, spec, ctx, status_task).await;
             // The terminal update (queued inside run_monitor) precedes both the
             // entry removal and the count release.
             set.inner.lock().unwrap().remove(&id_task);
@@ -344,13 +322,11 @@ impl MonitorSet {
                 status,
             },
         );
-        let plural = if condition_count == 1 { "" } else { "s" };
         Ok(format!(
-            "Monitor started (monitor_id={monitor_id}) watching {file} with {condition_count} \
-             condition{plural}. Conditions are checked now and whenever the file changes; each \
-             match arrives as a <SYSTEM> note carrying the matched content. The monitor stops \
-             when every condition has matched, when you stop it, or after {timeout_secs}s. Keep \
-             working meanwhile."
+            "Monitor started (monitor_id={monitor_id}): '{name}' runs every {interval_secs}s. \
+             When it exits 0 you get a <SYSTEM> note with its output and the monitor stops; it \
+             also stops if you stop it or after {timeout_secs}s without a match. Keep working \
+             meanwhile."
         ))
     }
 
@@ -366,9 +342,9 @@ impl MonitorSet {
         self.wake.notify_waiters();
         let status = entry.status.lock().unwrap();
         format!(
-            "Monitor {monitor_id} stopped. Conditions met: {}; unmet: {}.",
-            name_list(&status.met),
-            name_list(&status.unmet)
+            "Monitor {monitor_id} ('{}') stopped after {} without a match.",
+            status.name,
+            pluralize_polls(status.polls)
         )
     }
 
@@ -384,10 +360,11 @@ impl MonitorSet {
         for id in ids {
             let status = inner[id].status.lock().unwrap();
             out.push_str(&format!(
-                "{id}: watching {} (met: {}; unmet: {})\n",
-                status.file,
-                name_list(&status.met),
-                name_list(&status.unmet)
+                "{id}: '{}' every {}s, {} so far ({})\n",
+                status.name,
+                status.interval.as_secs(),
+                pluralize_polls(status.polls),
+                status.script
             ));
         }
         out.trim_end().to_string()
@@ -404,9 +381,9 @@ impl MonitorSet {
                 let status = inner[id].status.lock().unwrap();
                 MonitorSnapshot {
                     monitor_id: id.clone(),
-                    file: status.file.clone(),
-                    met: status.met.clone(),
-                    unmet: status.unmet.clone(),
+                    name: status.name.clone(),
+                    script: status.script.clone(),
+                    polls: status.polls,
                 }
             })
             .collect()
@@ -435,18 +412,12 @@ impl Drop for MonitorSet {
     }
 }
 
-fn name_list(names: &[String]) -> String {
-    if names.is_empty() {
-        "none".to_string()
+fn pluralize_polls(n: u64) -> String {
+    if n == 1 {
+        "1 poll".to_string()
     } else {
-        names.join(", ")
+        format!("{n} polls")
     }
-}
-
-/// The change signature polling keys off. Length plus mtime rather than either
-/// alone: an append changes the length, an in-place rewrite the mtime.
-fn file_signature(meta: &std::fs::Metadata) -> (u64, Option<std::time::SystemTime>) {
-    (meta.len(), meta.modified().ok())
 }
 
 async fn run_monitor(
@@ -454,70 +425,30 @@ async fn run_monitor(
     monitor_id: &str,
     spec: MonitorSpec,
     ctx: MonitorCtx,
-    watch_path: PathBuf,
     status: Arc<Mutex<MonitorStatus>>,
 ) {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(spec.timeout_secs);
-    let mut unmet = spec.conditions;
-    // `None` until the file exists; the first sighting triggers an evaluation,
-    // as does a start over a file that already has content.
-    let mut last_sig: Option<(u64, Option<std::time::SystemTime>)> = None;
-    let mut first_pass = true;
     loop {
-        let sig = tokio::fs::metadata(&watch_path)
-            .await
-            .ok()
-            .map(|m| file_signature(&m));
-        // The very first pass evaluates even with no file yet: a condition
-        // script need not read the watched file at all.
-        let changed = (sig.is_some() && sig != last_sig) || first_pass;
-        first_pass = false;
-        if changed {
-            last_sig = sig;
-            let mut still_unmet = Vec::with_capacity(unmet.len());
-            let mut met_now: Vec<(String, String)> = Vec::new();
-            for cond in unmet {
-                match eval_condition(&ctx, &cond.script).await {
-                    Some(content) => met_now.push((cond.name, content)),
-                    None => still_unmet.push(cond),
-                }
-            }
-            unmet = still_unmet;
-            let total = met_now.len();
-            for (i, (name, content)) in met_now.into_iter().enumerate() {
-                let (met, still_unmet) = {
-                    let mut s = status.lock().unwrap();
-                    s.unmet.retain(|n| n != &name);
-                    s.met.push(name.clone());
-                    (s.met.clone(), s.unmet.clone())
-                };
-                let last = unmet.is_empty() && i + 1 == total;
-                let mut update = match_update(monitor_id, &spec.file, &name, &content, last);
-                update.met = met;
-                update.unmet = still_unmet;
-                set.push_update(update);
-            }
-            if unmet.is_empty() {
-                return;
-            }
+        status.lock().unwrap().polls += 1;
+        if let Some(content) = eval_script(&ctx, &spec.script).await {
+            set.push_update(match_update(monitor_id, &spec.name, &content));
+            return;
         }
         let now = tokio::time::Instant::now();
         if now >= deadline {
-            let names: Vec<String> = unmet.iter().map(|c| c.name.clone()).collect();
-            let met = status.lock().unwrap().met.clone();
+            let polls = status.lock().unwrap().polls;
             set.push_update(MonitorUpdate {
                 monitor_id: monitor_id.to_string(),
-                headline: format!("Monitor {monitor_id}: timed out"),
+                name: spec.name.clone(),
+                headline: format!("Monitor {monitor_id}: '{}' timed out", spec.name),
                 text: format!(
-                    "Monitor '{monitor_id}' timed out after {}s watching {}. Unmet conditions: \
-                     {}. It has stopped.",
+                    "Monitor '{monitor_id}' ('{}') timed out after {}s and {} without a match. \
+                     It has stopped.",
+                    spec.name,
                     spec.timeout_secs,
-                    spec.file,
-                    name_list(&names)
+                    pluralize_polls(polls)
                 ),
-                done: true,
-                met,
-                unmet: names,
+                matched: false,
             });
             return;
         }
@@ -525,40 +456,26 @@ async fn run_monitor(
     }
 }
 
-fn match_update(
-    monitor_id: &str,
-    file: &str,
-    name: &str,
-    content: &str,
-    last: bool,
-) -> MonitorUpdate {
+fn match_update(monitor_id: &str, name: &str, content: &str) -> MonitorUpdate {
     let body = if content.is_empty() {
-        "(the condition script matched with no output)".to_string()
+        " (the script exited 0 with no output)".to_string()
     } else {
         format!(":\n{content}")
     };
-    let mut text = format!("Monitor '{monitor_id}' condition '{name}' matched on {file}{body}");
-    let headline = if last {
-        text.push_str("\n\nAll conditions for this monitor have now matched; it has stopped.");
-        format!("Monitor {monitor_id}: condition '{name}' matched; all conditions met")
-    } else {
-        format!("Monitor {monitor_id}: condition '{name}' matched")
-    };
     MonitorUpdate {
         monitor_id: monitor_id.to_string(),
-        headline,
-        text,
-        done: last,
-        met: Vec::new(),
-        unmet: Vec::new(),
+        name: name.to_string(),
+        headline: format!("Monitor {monitor_id}: '{name}' matched"),
+        text: format!("Monitor '{monitor_id}' ('{name}') matched{body}\n\nIt has stopped."),
+        matched: true,
     }
 }
 
-/// Run one condition script under the same confinement `bash` gets.
-/// `Some(content)` when it exits 0 (its stdout, bounded); `None` for a nonzero
-/// exit, a spawn failure, or a script that outran [`EVAL_TIMEOUT`] -- all of
-/// which read as "not matched yet" and are retried on the next change.
-async fn eval_condition(ctx: &MonitorCtx, script: &str) -> Option<String> {
+/// Run the script once under the same confinement `bash` gets. `Some(content)`
+/// when it exits 0 (its stdout, bounded); `None` for a nonzero exit, a spawn
+/// failure, or a script that outran [`EVAL_TIMEOUT`] -- all of which read as
+/// "not yet" and are retried on the next poll.
+async fn eval_script(ctx: &MonitorCtx, script: &str) -> Option<String> {
     let tool_ctx = ctx.as_tool_context();
     let (shell, sandbox_tmp, _policy) = crate::tools::handlers::confined_shell(&tool_ctx).ok()?;
     let mut child =
@@ -625,25 +542,15 @@ pub fn monitor_tool_schema() -> serde_json::Value {
         "type": "function",
         "function": {
             "name": MONITOR_TOOL_NAME,
-            "description": "Watch a file a long-running job streams output into (e.g. a backgrounded bash job redirecting to a log) and evaluate condition scripts against it. Each condition is a shell script run from the project root whenever the file changes; exit 0 means the condition matched and its stdout is the matched content. You get a <SYSTEM> note per match, so start the monitor and keep working. The monitor stops when every condition has matched, on stop, or at its timeout. A met condition is never re-checked.",
+            "description": "Wait for something in the background: poll a shell script on an interval until it exits 0, then get its stdout as a <SYSTEM> note while you keep working. Use it to wait on a backgrounded job, e.g. script \"grep -m1 'BUILD FAILED' build.log\" or \"test -f done.flag\". The script runs from the project root on every poll; a nonzero exit means not yet. The first match ends the monitor, as does its timeout. Start one monitor per thing you are waiting for.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "op": { "type": "string", "enum": ["start", "stop", "list"] },
-                    "file": { "type": "string", "description": "For start: the file to watch, relative to the project root (or under /tmp). It may not exist yet." },
-                    "conditions": {
-                        "type": "array",
-                        "description": "For start: the conditions to watch for. Scripts should be cheap checks (e.g. grep -m1 'BUILD FAILED' build.log), not jobs.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "name": { "type": "string", "description": "Short unique label, quoted back to you when it matches." },
-                                "script": { "type": "string", "description": "Shell script; exit 0 = matched, stdout = the matched content." }
-                            },
-                            "required": ["name", "script"]
-                        }
-                    },
-                    "timeout": { "type": "integer", "description": "For start: seconds before the monitor gives up and reports its unmet conditions (default 1800, max 7200)." },
+                    "script": { "type": "string", "description": "For start: a cheap shell check that exits 0 once the thing has happened; its stdout is what you get back." },
+                    "name": { "type": "string", "description": "For start: optional short label quoted back to you when it matches (defaults to the script)." },
+                    "interval": { "type": "integer", "description": "For start: seconds between polls (default 5, min 1, max 300)." },
+                    "timeout": { "type": "integer", "description": "For start: seconds before the monitor gives up (default 1800, max 7200)." },
                     "monitor_id": { "type": "string", "description": "For stop: the id returned by start." }
                 },
                 "required": ["op"]
@@ -681,16 +588,10 @@ mod tests {
         }
     }
 
-    fn spec(file: &str, conditions: &[(&str, &str)], timeout_secs: u64) -> MonitorSpec {
+    fn spec(name: &str, script: &str, timeout_secs: u64) -> MonitorSpec {
         MonitorSpec {
-            file: file.to_string(),
-            conditions: conditions
-                .iter()
-                .map(|(name, script)| MonitorCondition {
-                    name: name.to_string(),
-                    script: script.to_string(),
-                })
-                .collect(),
+            name: name.to_string(),
+            script: script.to_string(),
             timeout_secs,
             interval: Duration::from_millis(25),
         }
@@ -707,189 +608,144 @@ mod tests {
     }
 
     #[test]
-    fn parse_rejects_a_call_with_no_conditions() {
-        assert!(parse_start_args(&serde_json::json!({"op": "start", "file": "a.log"})).is_err());
-        assert!(parse_start_args(
-            &serde_json::json!({"op": "start", "file": "a.log", "conditions": []})
-        )
-        .is_err());
-        assert!(parse_start_args(&serde_json::json!({
-            "op": "start", "conditions": [{"name": "x", "script": "true"}]
+    fn parse_requires_a_script_and_labels_it_by_default() {
+        assert!(parse_start_args(&serde_json::json!({"op": "start"})).is_err());
+        assert!(parse_start_args(&serde_json::json!({"op": "start", "script": "  "})).is_err());
+        let spec = parse_start_args(&serde_json::json!({
+            "op": "start", "script": "grep -m1   FAILED\n build.log"
         }))
-        .is_err());
-        assert!(parse_start_args(&serde_json::json!({
-            "op": "start", "file": "a.log",
-            "conditions": [{"name": "x", "script": "true"}, {"name": "x", "script": "false"}]
+        .unwrap();
+        assert_eq!(spec.name, "grep -m1 FAILED build.log", "flattened script");
+        let named = parse_start_args(&serde_json::json!({
+            "op": "start", "script": "true", "name": " build "
         }))
-        .is_err());
+        .unwrap();
+        assert_eq!(named.name, "build");
+        let long = "x".repeat(200);
+        let spec = parse_start_args(&serde_json::json!({ "op": "start", "script": long })).unwrap();
+        assert_eq!(spec.name.chars().count(), DEFAULT_NAME_CHARS);
+        assert!(spec.name.ends_with("..."));
     }
 
     #[test]
-    fn parse_clamps_the_timeout_and_defaults_it() {
-        let base = serde_json::json!({
-            "op": "start", "file": "a.log",
-            "conditions": [{"name": "x", "script": "true"}]
-        });
-        assert_eq!(
-            parse_start_args(&base).unwrap().timeout_secs,
-            DEFAULT_TIMEOUT_SECS
-        );
+    fn parse_clamps_the_timeout_and_interval_and_defaults_them() {
+        let base = serde_json::json!({ "op": "start", "script": "true" });
+        let spec = parse_start_args(&base).unwrap();
+        assert_eq!(spec.timeout_secs, DEFAULT_TIMEOUT_SECS);
+        assert_eq!(spec.interval, Duration::from_secs(DEFAULT_INTERVAL_SECS));
         let mut low = base.clone();
         low["timeout"] = serde_json::json!(1);
-        assert_eq!(
-            parse_start_args(&low).unwrap().timeout_secs,
-            MIN_TIMEOUT_SECS
-        );
+        low["interval"] = serde_json::json!(0);
+        let spec = parse_start_args(&low).unwrap();
+        assert_eq!(spec.timeout_secs, MIN_TIMEOUT_SECS);
+        assert_eq!(spec.interval, Duration::from_secs(MIN_INTERVAL_SECS));
         let mut high = base;
         high["timeout"] = serde_json::json!(1_000_000);
-        assert_eq!(
-            parse_start_args(&high).unwrap().timeout_secs,
-            MAX_TIMEOUT_SECS
-        );
+        high["interval"] = serde_json::json!(1_000_000);
+        let spec = parse_start_args(&high).unwrap();
+        assert_eq!(spec.timeout_secs, MAX_TIMEOUT_SECS);
+        assert_eq!(spec.interval, Duration::from_secs(MAX_INTERVAL_SECS));
     }
 
     #[tokio::test]
-    async fn a_condition_matching_at_start_reports_its_content_and_stops() {
+    async fn a_script_matching_at_start_reports_its_output_and_stops() {
         let dir = unique_root();
         std::fs::write(dir.join("build.log"), "warm up\nBUILD OK line\n").unwrap();
         let set = Arc::new(MonitorSet::new());
         let result = set
-            .start(
-                spec("build.log", &[("ok", "grep 'BUILD OK' build.log")], 30),
-                ctx_for(&dir),
-            )
+            .start(spec("ok", "grep 'BUILD OK' build.log", 30), ctx_for(&dir))
             .unwrap();
         assert!(result.contains("monitor_id=mon-1"), "{result}");
+        assert!(result.contains("'ok'"), "{result}");
         let update = next_notice(&set).await;
-        assert!(update.done, "single condition: the match ends the monitor");
+        assert!(update.matched);
+        assert_eq!(update.name, "ok");
+        assert!(
+            update.headline.contains("'ok' matched"),
+            "{}",
+            update.headline
+        );
         assert!(update.text.contains("BUILD OK line"), "{}", update.text);
-        assert!(update.text.contains("all conditions") || update.text.contains("All conditions"));
+        assert!(update.text.contains("It has stopped"));
         for _ in 0..100 {
             if !set.has_pending_work() {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        panic!("the set still reports pending work after the final match");
+        panic!("the set still reports pending work after the match");
     }
 
     #[tokio::test]
-    async fn a_later_append_meets_the_second_condition() {
+    async fn a_later_change_is_caught_by_a_following_poll() {
         let dir = unique_root();
         let log = dir.join("job.log");
         std::fs::write(&log, "phase one done\n").unwrap();
         let set = Arc::new(MonitorSet::new());
-        set.start(
-            spec(
-                "job.log",
-                &[
-                    ("one", "grep 'phase one' job.log"),
-                    ("two", "grep 'phase two' job.log"),
-                ],
-                30,
-            ),
-            ctx_for(&dir),
-        )
-        .unwrap();
-        let first = next_notice(&set).await;
-        assert!(first.text.contains("'one'"), "{}", first.text);
-        assert!(!first.done);
-        assert_eq!(first.met, vec!["one".to_string()]);
-        assert_eq!(first.unmet, vec!["two".to_string()]);
-        assert!(set.has_pending_work(), "condition 'two' is still owed");
-        assert!(
-            set.list().contains("met: one; unmet: two"),
-            "{}",
-            set.list()
-        );
+        set.start(spec("two", "grep 'phase two' job.log", 30), ctx_for(&dir))
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        assert!(set.take_notices().is_empty(), "nothing matched yet");
+        assert!(set.has_pending_work());
+        let listed = set.list();
+        assert!(listed.contains("mon-1: 'two' every 0s"), "{listed}");
+        assert!(listed.contains("grep 'phase two' job.log"), "{listed}");
 
         let mut content = std::fs::read_to_string(&log).unwrap();
         content.push_str("phase two done\n");
         std::fs::write(&log, content).unwrap();
-        let second = next_notice(&set).await;
-        assert!(second.text.contains("'two'"), "{}", second.text);
-        assert!(second.text.contains("phase two done"));
-        assert!(second.done);
+        let update = next_notice(&set).await;
+        assert!(update.matched);
+        assert!(update.text.contains("phase two done"), "{}", update.text);
     }
 
     #[tokio::test]
-    async fn snapshot_lists_active_monitors_with_their_progress() {
+    async fn snapshot_lists_active_monitors_with_their_poll_count() {
         let dir = unique_root();
-        std::fs::write(dir.join("job.log"), "phase one done\n").unwrap();
         let set = Arc::new(MonitorSet::new());
-        set.start(
-            spec(
-                "job.log",
-                &[
-                    ("one", "grep 'phase one' job.log"),
-                    ("two", "grep 'phase two' job.log"),
-                ],
-                30,
-            ),
-            ctx_for(&dir),
-        )
-        .unwrap();
-        let _ = next_notice(&set).await;
-        assert_eq!(
-            set.snapshot(),
-            vec![MonitorSnapshot {
-                monitor_id: "mon-1".to_string(),
-                file: "job.log".to_string(),
-                met: vec!["one".to_string()],
-                unmet: vec!["two".to_string()],
-            }]
-        );
+        set.start(spec("never", "false", 30), ctx_for(&dir))
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        let snap = set.snapshot();
+        assert_eq!(snap.len(), 1);
+        assert_eq!(snap[0].monitor_id, "mon-1");
+        assert_eq!(snap[0].name, "never");
+        assert_eq!(snap[0].script, "false");
+        assert!(snap[0].polls >= 2, "polled repeatedly: {}", snap[0].polls);
         set.stop("mon-1");
         assert!(set.snapshot().is_empty());
     }
 
     #[tokio::test]
-    async fn an_unmet_monitor_times_out_and_names_its_conditions() {
+    async fn an_unmatched_monitor_times_out() {
         let dir = unique_root();
         let set = Arc::new(MonitorSet::new());
         // Timeout of zero: the deadline has passed by the first re-check, so
         // the test never waits out a real timeout.
-        set.start(
-            spec("never.log", &[("ghost", "grep ghost never.log")], 0),
-            ctx_for(&dir),
-        )
-        .unwrap();
+        set.start(spec("ghost", "grep ghost never.log", 0), ctx_for(&dir))
+            .unwrap();
         let update = next_notice(&set).await;
-        assert!(update.done);
+        assert!(!update.matched);
         assert!(update.text.contains("timed out"), "{}", update.text);
-        assert!(update.text.contains("ghost"), "{}", update.text);
-        assert!(update.met.is_empty());
-        assert_eq!(update.unmet, vec!["ghost".to_string()]);
+        assert!(update.text.contains("'ghost'"), "{}", update.text);
+        assert!(update.text.contains("1 poll"), "{}", update.text);
     }
 
     #[tokio::test]
-    async fn stop_reports_progress_and_frees_the_slot() {
+    async fn stop_reports_the_poll_count_and_frees_the_slot() {
         let dir = unique_root();
         let set = Arc::new(MonitorSet::new());
         let result = set
-            .start(
-                spec("never.log", &[("ghost", "false")], 3600),
-                ctx_for(&dir),
-            )
+            .start(spec("ghost", "false", 3600), ctx_for(&dir))
             .unwrap();
         assert!(result.contains("mon-1"));
         assert!(set.has_pending_work());
         let stopped = set.stop("mon-1");
-        assert!(stopped.contains("unmet: ghost"), "{stopped}");
+        assert!(stopped.contains("('ghost') stopped after"), "{stopped}");
+        assert!(stopped.contains("without a match"), "{stopped}");
         assert!(!set.has_pending_work());
         assert!(set.stop("mon-1").starts_with("ERROR"));
         assert_eq!(set.list(), "No active monitors.");
-    }
-
-    #[tokio::test]
-    async fn a_watched_path_outside_the_project_is_refused() {
-        let dir = unique_root();
-        let set = Arc::new(MonitorSet::new());
-        let err = set
-            .start(spec("/etc/passwd", &[("x", "true")], 30), ctx_for(&dir))
-            .unwrap_err();
-        assert!(err.contains("outside the project"), "{err}");
-        assert!(!set.has_pending_work());
     }
 
     #[tokio::test]
@@ -897,11 +753,10 @@ mod tests {
         let dir = unique_root();
         let set = Arc::new(MonitorSet::new());
         for _ in 0..MAX_MONITORS {
-            set.start(spec("a.log", &[("x", "false")], 3600), ctx_for(&dir))
-                .unwrap();
+            set.start(spec("x", "false", 3600), ctx_for(&dir)).unwrap();
         }
         let err = set
-            .start(spec("a.log", &[("x", "false")], 3600), ctx_for(&dir))
+            .start(spec("x", "false", 3600), ctx_for(&dir))
             .unwrap_err();
         assert!(err.contains("at most"), "{err}");
         set.stop_all();
@@ -913,11 +768,8 @@ mod tests {
         let dir = unique_root();
         let log = dir.join("late.log");
         let set = Arc::new(MonitorSet::new());
-        set.start(
-            spec("late.log", &[("hit", "grep hit late.log")], 30),
-            ctx_for(&dir),
-        )
-        .unwrap();
+        set.start(spec("hit", "grep hit late.log", 30), ctx_for(&dir))
+            .unwrap();
         let waiter = {
             let set = set.clone();
             tokio::spawn(async move {
@@ -943,16 +795,13 @@ mod tests {
         let set = Arc::new(MonitorSet::subscribed(Arc::new(move |u| {
             let _ = tx.send(u);
         })));
-        set.start(
-            spec("s.log", &[("hit", "grep hit s.log")], 30),
-            ctx_for(&dir),
-        )
-        .unwrap();
+        set.start(spec("hit", "grep hit s.log", 30), ctx_for(&dir))
+            .unwrap();
         let update = tokio::time::timeout(Duration::from_secs(5), rx.recv())
             .await
             .expect("no subscriber update")
             .unwrap();
-        assert!(update.done);
+        assert!(update.matched);
         assert!(set.take_notices().is_empty(), "queue must stay empty");
     }
 }

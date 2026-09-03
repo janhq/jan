@@ -144,11 +144,12 @@ function omitKey<T>(map: Record<string, T>, key: string): Record<string, T> {
 type CoworkRunState = {
   liveTurns: Record<string, CoworkTurn[]>
   subagents: Record<string, SubagentRun[]>
-  // The run's file monitors, per session. Transient like the subagent lanes,
-  // but never committed: a watcher dies with its run.
+  // The session's file monitors. Unlike the subagent lanes they survive the
+  // run: a watcher keeps going after the model has answered, and a later
+  // match starts a turn of its own. Dropped with the session (`clearMonitors`).
   monitors: Record<string, MonitorView[]>
-  // True while the run is parked on background work (a subagent still
-  // running, a monitor still watching) with the model idle.
+  // True while the run is parked on a subagent still running with the model
+  // idle. A running monitor never parks a run.
   parked: Record<string, boolean>
   runId: Record<string, string>
   // In-flight `ask` tool questions per session. A subagent's wrapped ask is
@@ -197,10 +198,12 @@ type CoworkRunState = {
   routeIntoSubagent: (sid: string, runId: string, inner: StreamEvent) => void
   attachSubagentOutput: (sid: string, runId: string, content: string) => void
   startMonitor: (sid: string, view: MonitorView) => void
-  /** Advance a monitor from a Rust update; a `done` one closes it. */
+  /** Close a monitor from its Rust update (a match or the timeout). */
   updateMonitor: (sid: string, update: MonitorUpdate) => void
   /** An explicit `stop`: closed with the progress it had. */
   stopMonitor: (sid: string, monitorId: string) => void
+  /** Session teardown: the watchers are stopped in Rust alongside. */
+  clearMonitors: (sid: string) => void
   setParked: (sid: string, parked: boolean) => void
   setUsage: (sid: string, usage: Usage | null) => void
   requestPreview: (sessionId: string, path: string) => void
@@ -248,7 +251,6 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
         [sid]: [userTurn(userText, media)],
       },
       subagents: { ...s.subagents, [sid]: [] },
-      monitors: { ...s.monitors, [sid]: [] },
       parked: omitKey(s.parked, sid),
       pendingAsks: { ...s.pendingAsks, [sid]: [] },
     })),
@@ -371,14 +373,12 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
       monitors: {
         ...s.monitors,
         [sid]: (s.monitors[sid] ?? []).map((m) =>
-          m.monitorId === update.monitorId
+          m.monitorId === update.monitorId && m.status === 'running'
             ? {
                 ...m,
-                met: update.met,
-                unmet: update.unmet,
-                ...(update.done && m.status === 'running'
-                  ? { status: 'done' as const, endedAt: Date.now() }
-                  : {}),
+                status: 'done' as const,
+                outcome: update.matched ? ('matched' as const) : ('timeout' as const),
+                endedAt: Date.now(),
               }
             : m
         ),
@@ -391,11 +391,18 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
         ...s.monitors,
         [sid]: (s.monitors[sid] ?? []).map((m) =>
           m.monitorId === monitorId && m.status === 'running'
-            ? { ...m, status: 'done' as const, endedAt: Date.now() }
+            ? {
+                ...m,
+                status: 'done' as const,
+                outcome: 'stopped' as const,
+                endedAt: Date.now(),
+              }
             : m
         ),
       },
     })),
+
+  clearMonitors: (sid) => set((s) => ({ monitors: omitKey(s.monitors, sid) })),
 
   setParked: (sid, parked) =>
     set((s) => ({
@@ -466,13 +473,9 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
     const subs = (get().subagents[sid] ?? []).map((r) =>
       r.status !== 'done' ? { ...r, status: 'done' as const, endedAt: Date.now() } : r
     )
-    const mons = (get().monitors[sid] ?? []).map((m) =>
-      m.status !== 'done' ? { ...m, status: 'done' as const, endedAt: Date.now() } : m
-    )
     set((s) => ({
       liveTurns: { ...s.liveTurns, [sid]: turns },
       subagents: { ...s.subagents, [sid]: subs },
-      monitors: { ...s.monitors, [sid]: mons },
       parked: omitKey(s.parked, sid),
     }))
     return { turns, subagents: subs }
@@ -482,7 +485,6 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
     set((s) => ({
       liveTurns: omitKey(s.liveTurns, sid),
       subagents: omitKey(s.subagents, sid),
-      monitors: omitKey(s.monitors, sid),
       parked: omitKey(s.parked, sid),
       runId: omitKey(s.runId, sid),
       pendingAsks: omitKey(s.pendingAsks, sid),

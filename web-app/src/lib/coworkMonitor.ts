@@ -12,7 +12,7 @@ import type { MonitorView } from '@/types/coworkSession'
  * `MonitorUpdate`. What lives here is the client half: the transcribed schema
  * (like `task`/`todo`), and the bookkeeping that turns updates into inbox pings
  * so a match reaches the model as the same `<SYSTEM>` note a finished subagent
- * sends -- and keeps the run alive while a watcher is still owed work.
+ * sends, whether a run is up to drain it or one has to be started for it.
  */
 
 export const MONITOR_TOOL_NAME = 'monitor'
@@ -22,41 +22,30 @@ export const MONITOR_TOOL_NAME = 'monitor'
 export function monitorTool(): Tool {
   return {
     description:
-      'Watch a file a long-running job streams output into (e.g. a backgrounded bash job redirecting to a log) and evaluate condition scripts against it. Each condition is a shell script run from the project root whenever the file changes; exit 0 means the condition matched and its stdout is the matched content. You get a <SYSTEM> note per match, so start the monitor and keep working. The monitor stops when every condition has matched, on stop, or at its timeout. A met condition is never re-checked.',
+      'Wait for something in the background: poll a shell script on an interval until it exits 0, then get its stdout as a <SYSTEM> note while you keep working. Use it to wait on a backgrounded job, e.g. script "grep -m1 \'BUILD FAILED\' build.log" or "test -f done.flag". The script runs from the project root on every poll; a nonzero exit means not yet. The first match ends the monitor, as does its timeout. Start one monitor per thing you are waiting for.',
     inputSchema: jsonSchema({
       type: 'object',
       properties: {
         op: { type: 'string', enum: ['start', 'stop', 'list'] },
-        file: {
+        script: {
           type: 'string',
           description:
-            'For start: the file to watch, relative to the project root (or under /tmp). It may not exist yet.',
+            'For start: a cheap shell check that exits 0 once the thing has happened; its stdout is what you get back.',
         },
-        conditions: {
-          type: 'array',
+        name: {
+          type: 'string',
           description:
-            "For start: the conditions to watch for. Scripts should be cheap checks (e.g. grep -m1 'BUILD FAILED' build.log), not jobs.",
-          items: {
-            type: 'object',
-            properties: {
-              name: {
-                type: 'string',
-                description:
-                  'Short unique label, quoted back to you when it matches.',
-              },
-              script: {
-                type: 'string',
-                description:
-                  'Shell script; exit 0 = matched, stdout = the matched content.',
-              },
-            },
-            required: ['name', 'script'],
-          },
+            'For start: optional short label quoted back to you when it matches (defaults to the script).',
+        },
+        interval: {
+          type: 'integer',
+          description:
+            'For start: seconds between polls (default 5, min 1, max 300).',
         },
         timeout: {
           type: 'integer',
           description:
-            'For start: seconds before the monitor gives up and reports its unmet conditions (default 1800, max 7200).',
+            'For start: seconds before the monitor gives up (default 1800, max 7200).',
         },
         monitor_id: {
           type: 'string',
@@ -75,21 +64,19 @@ export function parseMonitorId(startResult: string): string | null {
 }
 
 /** What a `start` call asked for, as the panel shows it before any update. */
-export type MonitorSpec = { file: string; conditions: string[] }
+export type MonitorSpec = { name: string; script: string }
 
-/** The watched file and condition names out of a `start` call's arguments. */
+/** The name and script out of a `start` call's arguments. The name falls back
+ * to the script, as Rust's parser does. */
 export function monitorSpecFromArgs(input: unknown): MonitorSpec {
   const args =
     input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
-  const file = typeof args.file === 'string' ? args.file : ''
-  const conditions = Array.isArray(args.conditions)
-    ? args.conditions.flatMap((c) => {
-        const name =
-          c && typeof c === 'object' ? (c as { name?: unknown }).name : null
-        return typeof name === 'string' ? [name] : []
-      })
-    : []
-  return { file, conditions }
+  const script = typeof args.script === 'string' ? args.script.trim() : ''
+  const name =
+    typeof args.name === 'string' && args.name.trim()
+      ? args.name.trim()
+      : script
+  return { name, script }
 }
 
 /**
@@ -104,71 +91,107 @@ export type MonitorViewSink = {
 }
 
 /**
- * What the run's inbox needs to hear about monitors. Structurally what
- * `SubagentInbox` provides, so the two kinds of background work share one
- * inbox and one park/resume path.
- */
-export type MonitorInbox = {
-  begin: () => void
-  finish: (notice: SubagentNotice) => void
-  note: (notice: SubagentNotice) => void
-  abandon: () => void
-}
-
-/**
- * One run's view of its monitors, bridging Rust updates to the inbox.
+ * One session's monitors, outliving any single run.
  *
- * The open-set exists because the inbox's running count is shared with the
- * subagents: `finish`/`abandon` must fire exactly once per started monitor, and
- * a stop racing the monitor's own terminal update would otherwise decrement
- * twice -- reading `pending()` false while a subagent is still running.
+ * A watcher does not hold a run open: the model answers, the run ends and the
+ * user keeps talking. Matches queue here as the same `<SYSTEM>` pings a
+ * finished subagent sends. A running loop drains them at the top of its next
+ * step; while no run is up, `onPing` lets the route start one. The open-set is
+ * display bookkeeping only (`watching`, the rail's view).
  */
 export class MonitorLane {
   private open = new Set<string>()
+  private queue: SubagentNotice[] = []
+  private waiters: Array<() => void> = []
+  /** Fired on every queued ping, so an idle session can start a turn for it. */
+  onPing: (() => void) | null = null
 
-  constructor(
-    private readonly inbox: MonitorInbox,
-    private readonly view?: MonitorViewSink
-  ) {}
+  constructor(private readonly view?: MonitorViewSink) {}
 
-  /** Record a successful start (its result names the id) and claim a running
-   * slot, so the run parks on the watcher instead of ending under it. */
+  /** Record a successful start (its result names the id). */
   started(startResult: string, spec?: MonitorSpec): void {
     const id = parseMonitorId(startResult)
     if (!id) return
     this.open.add(id)
-    this.inbox.begin()
     this.view?.started({
       monitorId: id,
-      file: spec?.file ?? '',
-      met: [],
-      unmet: spec?.conditions ?? [],
+      name: spec?.name ?? '',
+      script: spec?.script ?? '',
       status: 'running',
       startedAt: Date.now(),
     })
   }
 
-  /** Route one Rust update: a terminal one closes the slot, any other is a
-   * ping the model reacts to while the watcher keeps going. */
+  /** Route one Rust update: shown in the rail, queued for the model. Every
+   * update ends its monitor (a match or the timeout). */
   update(update: MonitorUpdate): void {
     this.view?.updated(update)
-    const notice: SubagentNotice = {
-      headline: update.headline,
-      text: update.text,
-    }
-    if (update.done && this.open.delete(update.monitorId)) {
-      this.inbox.finish(notice)
-      return
-    }
-    this.inbox.note(notice)
+    this.open.delete(update.monitorId)
+    this.queue.push({ headline: update.headline, text: update.text })
+    this.wake()
+    this.onPing?.()
   }
 
-  /** Account for an explicit `stop`: the slot is released with no ping, since
-   * the model's own tool result already reports the outcome. */
+  /** Account for an explicit `stop`. No ping: the model's own tool result
+   * already reports the outcome. */
   stopped(monitorId: string, stopResult: string): void {
     if (!stopResult.startsWith('ERROR') && this.open.delete(monitorId)) {
-      this.inbox.abandon()
       this.view?.stopped(monitorId)
     }
   }
+
+  /** Monitors still running. */
+  watching(): number {
+    return this.open.size
+  }
+
+  hasQueued(): boolean {
+    return this.queue.length > 0
+  }
+
+  /** Take every queued ping, oldest first. */
+  take(): SubagentNotice[] {
+    const out = this.queue
+    this.queue = []
+    return out
+  }
+
+  /** Resolve when a ping is queued or the run waiting on it is cancelled. */
+  wait(signal?: AbortSignal): Promise<void> {
+    if (this.hasQueued() || signal?.aborted) return Promise.resolve()
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        signal?.removeEventListener('abort', done)
+        resolve()
+      }
+      this.waiters.push(done)
+      signal?.addEventListener('abort', done, { once: true })
+    })
+  }
+
+  private wake(): void {
+    const waiters = this.waiters
+    this.waiters = []
+    for (const resolve of waiters) resolve()
+  }
+}
+
+const lanes = new Map<string, MonitorLane>()
+
+/** The session's lane, created on first use with `view` when given. */
+export function monitorLaneFor(
+  sessionId: string,
+  view?: () => MonitorViewSink
+): MonitorLane {
+  let lane = lanes.get(sessionId)
+  if (!lane) {
+    lane = new MonitorLane(view?.())
+    lanes.set(sessionId, lane)
+  }
+  return lane
+}
+
+/** Forget a session's lane; its Rust watchers are stopped separately. */
+export function dropMonitorLane(sessionId: string): void {
+  lanes.delete(sessionId)
 }

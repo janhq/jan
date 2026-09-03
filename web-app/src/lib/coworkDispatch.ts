@@ -32,8 +32,8 @@ export type DispatchContext = {
   onAsk: (toolCallId: string, input: unknown) => Promise<ToolOutcome>
   /** Runs a nested subagent to completion. */
   onTask: (toolCallId: string, input: unknown) => Promise<ToolOutcome>
-  /** The run's monitor bookkeeping; `null` for a subagent's dispatch, which
-   * refuses the tool (a child has no inbox for a watcher to ping). */
+  /** The session's monitor lane; `null` for a subagent's dispatch, which
+   * refuses the tool (a child has no turn of its own for a match to start). */
   monitors: MonitorLane | null
 }
 
@@ -57,8 +57,8 @@ function planRefusal(toolName: string): ToolOutcome {
 
 /**
  * One `monitor` op. The watcher runs in Rust; this routes the call and keeps
- * the run's `MonitorLane` in step so the inbox parks the run while a watcher is
- * owed work and never double-releases a slot.
+ * the session's `MonitorLane` in step, so matches queue as pings and the rail
+ * tracks each watcher.
  */
 async function runMonitorOp(
   input: unknown,

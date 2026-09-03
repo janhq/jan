@@ -22,6 +22,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { stopAgentSessionMonitors } from '@/lib/agentTools'
+import { dropMonitorLane } from '@/lib/coworkMonitor'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -173,7 +175,15 @@ export function NavCowork() {
   ]
 
   const confirmDelete = () => {
-    if (pendingDelete) useCoworkSessions.getState().deleteSession(pendingDelete.id)
+    if (pendingDelete) {
+      const sid = pendingDelete.id
+      // Watchers are the session's, so they go with it: stopped in Rust, their
+      // lane forgotten, their rail entries dropped.
+      void stopAgentSessionMonitors(sid)
+      dropMonitorLane(sid)
+      useCoworkRun.getState().clearMonitors(sid)
+      useCoworkSessions.getState().deleteSession(sid)
+    }
     setPendingDelete(null)
   }
 
