@@ -29,6 +29,7 @@ pub mod web;
 /// file, and the agent loop threads into the tool-result message so a vision
 /// model sees the image.
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ImageContentPart {
     /// `data:image/png;base64,...` URL, ready to embed in an `image_url` part.
     pub data_url: String,
