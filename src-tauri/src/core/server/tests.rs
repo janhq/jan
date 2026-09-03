@@ -308,7 +308,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["properties"]["url"]["type"], json!("string"));
     }
@@ -319,7 +319,7 @@ mod server_tests {
             "type": "object"
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["properties"], json!({}));
     }
@@ -349,11 +349,17 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
-        assert_eq!(schema["properties"]["payload"]["properties"]["title"]["type"], json!("string"));
+        assert_eq!(
+            schema["properties"]["payload"]["properties"]["title"]["type"],
+            json!("string")
+        );
         assert_eq!(schema["properties"]["filters"]["properties"], json!({}));
-        assert_eq!(schema["properties"]["items"]["items"]["properties"], json!({}));
+        assert_eq!(
+            schema["properties"]["items"]["items"]["properties"],
+            json!({})
+        );
     }
 
     #[test]
@@ -376,7 +382,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["properties"]["name"]["type"], json!("integer"));
         assert!(schema["properties"]["container"].get("type").is_none());
@@ -396,7 +402,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["properties"]["name"], json!({"type": "string"}));
         assert_eq!(schema["properties"]["count"], json!({"type": "integer"}));
@@ -411,7 +417,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(
             schema["properties"]["tags"]["items"],
@@ -428,7 +434,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(
             schema["properties"]["value"]["anyOf"],
@@ -445,7 +451,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(
             schema["properties"]["mode"]["enum"],
@@ -471,7 +477,7 @@ mod server_tests {
         });
 
         let original = schema.clone();
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema, original);
     }
@@ -494,11 +500,14 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["properties"]["count"]["type"], json!("integer"));
         assert_eq!(schema["properties"]["title"]["type"], json!("string"));
-        assert_eq!(schema["properties"]["metadata"]["description"], json!("Optional metadata"));
+        assert_eq!(
+            schema["properties"]["metadata"]["description"],
+            json!("Optional metadata")
+        );
         assert_eq!(schema["properties"]["metadata"]["properties"], json!({}));
     }
 
@@ -513,7 +522,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert!(schema["properties"]["start"].get("format").is_none());
         assert!(schema["properties"]["stop"].get("format").is_none());
@@ -531,7 +540,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["properties"]["id"]["format"], json!("uuid"));
         assert_eq!(schema["properties"]["url"]["format"], json!("uri"));
@@ -547,7 +556,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert!(schema["properties"]["when"].get("pattern").is_none());
         assert_eq!(schema["properties"]["alpha"]["pattern"], json!("^[A-Z]+$"));
@@ -563,7 +572,7 @@ mod server_tests {
             }
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert!(schema["properties"]["until"].get("format").is_none());
         assert_eq!(schema["properties"]["until"]["type"], json!("string"));
@@ -575,12 +584,22 @@ mod server_tests {
     #[test]
     fn http_status_indicates_api_key_retry_matrix() {
         use hyper::StatusCode;
-        assert!(proxy::http_status_indicates_api_key_retry(StatusCode::UNAUTHORIZED));
-        assert!(proxy::http_status_indicates_api_key_retry(StatusCode::FORBIDDEN));
-        assert!(proxy::http_status_indicates_api_key_retry(StatusCode::TOO_MANY_REQUESTS));
-        assert!(!proxy::http_status_indicates_api_key_retry(StatusCode::OK));
-        assert!(!proxy::http_status_indicates_api_key_retry(StatusCode::BAD_REQUEST));
-        assert!(!proxy::http_status_indicates_api_key_retry(StatusCode::INTERNAL_SERVER_ERROR));
+        assert!(crate::core::openai_schema::http_status_indicates_api_key_retry(
+            StatusCode::UNAUTHORIZED
+        ));
+        assert!(crate::core::openai_schema::http_status_indicates_api_key_retry(
+            StatusCode::FORBIDDEN
+        ));
+        assert!(crate::core::openai_schema::http_status_indicates_api_key_retry(
+            StatusCode::TOO_MANY_REQUESTS
+        ));
+        assert!(!crate::core::openai_schema::http_status_indicates_api_key_retry(StatusCode::OK));
+        assert!(!crate::core::openai_schema::http_status_indicates_api_key_retry(
+            StatusCode::BAD_REQUEST
+        ));
+        assert!(!crate::core::openai_schema::http_status_indicates_api_key_retry(
+            StatusCode::INTERNAL_SERVER_ERROR
+        ));
     }
 
     #[test]
@@ -620,7 +639,10 @@ mod server_tests {
             {"type": "text", "text": "second"},
             {"type": "image", "source": {}}
         ]);
-        assert_eq!(proxy::extract_tool_result_content(Some(&v)), "first\nsecond");
+        assert_eq!(
+            proxy::extract_tool_result_content(Some(&v)),
+            "first\nsecond"
+        );
     }
 
     #[test]
@@ -649,7 +671,10 @@ mod server_tests {
         proxy::convert_media_block(&block, &mut parts);
         assert_eq!(parts.len(), 1);
         assert_eq!(parts[0]["type"], "image_url");
-        assert_eq!(parts[0]["image_url"]["url"], "data:image/png;base64,BASE64DATA");
+        assert_eq!(
+            parts[0]["image_url"]["url"],
+            "data:image/png;base64,BASE64DATA"
+        );
     }
 
     #[test]
@@ -876,8 +901,18 @@ mod server_tests {
     }
 
     #[test]
-    fn parse_openai_messages_non_string_content_errors() {
-        let msgs = json!([{"role": "user", "content": [{"type": "text", "text": "hi"}]}]);
+    fn parse_openai_messages_passes_multimodal_array_through() {
+        let msgs = json!([{"role": "user", "content": [
+            {"type": "text", "text": "hi"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA"}},
+        ]}]);
+        let out = proxy::parse_openai_messages(&msgs).unwrap();
+        assert_eq!(out[0]["content"], msgs[0]["content"]);
+    }
+
+    #[test]
+    fn parse_openai_messages_non_string_non_array_content_errors() {
+        let msgs = json!([{"role": "user", "content": 42}]);
         assert!(proxy::parse_openai_messages(&msgs).is_err());
     }
 
@@ -987,7 +1022,7 @@ mod server_tests {
                 }
             }]
         });
-        proxy::normalize_openai_tools_in_chat_body(&mut body);
+        crate::core::openai_schema::normalize_openai_tools_in_chat_body(&mut body);
         assert_eq!(
             body["tools"][0]["function"]["parameters"]["properties"]["url"]["type"],
             json!("string")
@@ -998,7 +1033,7 @@ mod server_tests {
     fn normalize_openai_tools_in_chat_body_no_tools_is_noop() {
         let mut body = json!({"messages": []});
         let original = body.clone();
-        proxy::normalize_openai_tools_in_chat_body(&mut body);
+        crate::core::openai_schema::normalize_openai_tools_in_chat_body(&mut body);
         assert_eq!(body, original);
     }
 
@@ -1012,7 +1047,9 @@ mod server_tests {
             "http://localhost:3000",
             &trusted,
         );
-        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
+        let resp = builder
+            .body(http_body_util::Empty::<hyper::body::Bytes>::new())
+            .unwrap();
         let h = resp.headers();
         assert!(h.contains_key("access-control-allow-methods"));
         assert!(h.contains_key("access-control-allow-headers"));
@@ -1034,7 +1071,9 @@ mod server_tests {
             "http://evil.example.com",
             &trusted,
         );
-        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
+        let resp = builder
+            .body(http_body_util::Empty::<hyper::body::Bytes>::new())
+            .unwrap();
         let h = resp.headers();
         assert!(h.contains_key("access-control-allow-methods"));
         assert!(!h.contains_key("access-control-allow-origin"));
@@ -1045,13 +1084,11 @@ mod server_tests {
     fn add_cors_headers_with_empty_origin_omits_origin() {
         let trusted = vec![vec!["localhost".to_string()]];
         let builder = hyper::Response::builder();
-        let builder = proxy::add_cors_headers_with_host_and_origin(
-            builder,
-            "localhost",
-            "",
-            &trusted,
-        );
-        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
+        let builder =
+            proxy::add_cors_headers_with_host_and_origin(builder, "localhost", "", &trusted);
+        let resp = builder
+            .body(http_body_util::Empty::<hyper::body::Bytes>::new())
+            .unwrap();
         let h = resp.headers();
         assert!(!h.contains_key("access-control-allow-origin"));
     }
@@ -1102,7 +1139,7 @@ mod server_tests {
             ]
         });
 
-        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+        crate::core::openai_schema::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["anyOf"][0]["properties"], json!({}));
         assert_eq!(schema["anyOf"][1]["type"], json!("string"));
@@ -1150,7 +1187,10 @@ mod server_tests {
         assert_eq!(body["system"], json!(PROMPT));
         assert_eq!(body["messages"][0]["content"], json!("first"));
         // Only the first message is touched.
-        assert_eq!(body["messages"][1]["content"], json!(format!("{header}second")));
+        assert_eq!(
+            body["messages"][1]["content"],
+            json!(format!("{header}second"))
+        );
     }
 
     #[test]

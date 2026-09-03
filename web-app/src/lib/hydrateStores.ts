@@ -20,6 +20,8 @@ import { useJanModelPromptDismissed } from '@/hooks/useJanModelPrompt'
 import { useDefaultEmbeddingModel } from '@/hooks/useDefaultEmbeddingModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
 
 /**
  * Stores persisted through `backendStorage` set `skipHydration: true` so they
@@ -51,6 +53,8 @@ const secondaryStores = [
   useDefaultEmbeddingModel,
   useAgentMode,
   useWebSearchConfig,
+  useCoworkSessions,
+  useAgentToolsConfig,
 ] as const
 
 export async function hydrateBackendStores(): Promise<void> {

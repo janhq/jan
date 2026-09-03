@@ -40,7 +40,7 @@ ${StrLoc}
 !define HEADERIMAGE ""
 !define MAINBINARYNAME "jan_mainbinaryname"
 !define MAINBINARYSRCPATH "D:\a\jan\jan\src-tauri\target\release\jan_mainbinaryname.exe"
-!define BUNDLEID "jan_mainbinaryname.ai.app"
+!define BUNDLEID "jan_bundleid"
 !define COPYRIGHT ""
 !define OUTFILE "nsis-output.exe"
 !define ARCH "x64"
@@ -702,7 +702,7 @@ Section Install
     SetOutPath "$INSTDIR\resources\pre-install"
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\pre-install\"
     SetOutPath "$INSTDIR\resources\bin"
-    File /a "/oname=jan-cli.exe" "D:\a\jan\jan\src-tauri\resources\bin\jan-cli.exe"
+    File /a "/oname=jan.exe" "D:\a\jan\jan\src-tauri\resources\bin\jan.exe"
     ; The engine. This block is a hand-maintained snapshot of
     ; tauri.windows.conf.json's `bundle.resources`, which the NSIS bundler does
     ; not read once CI points it at this template, so anything added there has

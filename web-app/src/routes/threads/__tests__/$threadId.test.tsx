@@ -815,6 +815,60 @@ describe('ThreadDetail route', () => {
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
     })
 
+    // A tool result is injected into conversation history verbatim, so an
+    // uncapped one can exhaust the context on its own (#8557). The budget the
+    // model's own window affords is handed to the backend, which enforces it.
+    it('caps the tool result against the active model context window', async () => {
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
+      hub.mcp = () => ({ callTool }) as never
+      renderComponent()
+
+      const onToolCall = (
+        h as { capturedOnToolCall: (arg: unknown) => Promise<void> }
+      ).capturedOnToolCall
+      await act(async () => {
+        await onToolCall(toolCall('tc5'))
+      })
+      await act(async () => {
+        await finishWithToolCalls()
+      })
+
+      const { maxOutputChars } = callTool.mock.calls[0][0]
+      // 4096-token window in the harness: a fraction of it, not the whole thing.
+      expect(maxOutputChars).toBeGreaterThan(0)
+      expect(maxOutputChars).toBeLessThan(4096 * 3.5)
+    })
+
+    it('omits the cap when the model reports no context window', async () => {
+      // Remote providers often don't; the user's configured ceiling then governs
+      // alone rather than an invented budget silently clipping output.
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      const previousSettings = h.modelProviderState.selectedModel.settings
+      h.modelProviderState.selectedModel.settings = {}
+      const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
+      hub.mcp = () => ({ callTool }) as never
+
+      try {
+        renderComponent()
+        const onToolCall = (
+          h as { capturedOnToolCall: (arg: unknown) => Promise<void> }
+        ).capturedOnToolCall
+        await act(async () => {
+          await onToolCall(toolCall('tc6'))
+        })
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+
+        expect(callTool.mock.calls[0][0].maxOutputChars).toBeUndefined()
+      } finally {
+        h.modelProviderState.selectedModel.settings = previousSettings
+      }
+    })
+
     // A model can request several tools in one turn. They arrive together but
     // are executed one at a time, which is what the queue display depends on.
     describe('several tool calls in one turn', () => {

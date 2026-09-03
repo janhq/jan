@@ -6,17 +6,24 @@ authors = ["Jan <service@jan.ai>"]
 license = "MIT"
 repository = "https://github.com/janhq/jan"
 edition = "2021"
-rust-version = "1.77.2"
+# 1.85 is the floor: `genai` (the OpenAI upstream client) is edition 2024.
+# Below that the previous floor was 1.82, for `Option::is_none_or` in agent/loop.rs.
+rust-version = "1.85"
 resolver = "2"
-default-run = "Jan"
+default-run = "Jan-Desktop"
 
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "jan-cli"
-path = "src/bin/jan-cli.rs"
+name = "Jan-Desktop"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[[bin]]
+name = "jan"
+path = "src/bin/jan.rs"
 required-features = ["cli"]
 
 [features]
@@ -38,14 +45,45 @@ deep-link = ["dep:tauri-plugin-deep-link"]
 desktop = [
     "deep-link",
     "hardware",
+    "tauri-app",
+]
+# Everything that makes this crate a Tauri application: the framework, its
+# plugins, and the native GUI helpers (file dialogs, GTK, D-Bus). The headless
+# `jan` CLI builds without this feature and links no GUI crate -- gtk/gdk enter
+# the graph through `tauri` itself (via muda), so the dependency must be absent,
+# not merely unused.
+tauri-app = [
+    "dep:tauri",
+    "dep:tauri-build",
+    "dep:tauri-plugin-http",
+    "dep:tauri-plugin-llamacpp",
+    "dep:tauri-plugin-log",
+    "dep:tauri-plugin-opener",
+    "dep:tauri-plugin-os",
+    "dep:tauri-plugin-rag",
+    "dep:tauri-plugin-shell",
+    "dep:tauri-plugin-store",
+    "dep:tauri-plugin-mlx",
+    "dep:tauri-plugin-updater",
+    "dep:tauri-plugin-single-instance",
+    "dep:tauri-plugin-dialog",
+    "dep:fix-path-env",
+    "dep:rfd",
+    "dep:gtk",
+    "dep:zbus",
+    "tauri-plugin-vector-db/tauri",
+    "tauri-plugin-websearch/tauri",
+    "tauri-plugin-agent-tools/tauri",
 ]
 mobile = [
     "tauri/protocol-asset",
     "tauri/test",
     "tauri/wry",
     "dep:sqlx",
+    "tauri-app",
 ]
 test-tauri = [
+    "tauri-app",
     "tauri/wry",
     "tauri/x11",
     "tauri/protocol-asset",
@@ -55,18 +93,19 @@ test-tauri = [
     "deep-link",
     "hardware",
 ]
-cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console"]
+cli = ["dep:env_logger", "dep:indicatif", "dep:console", "dep:ratatui", "dep:unicode-width", "dep:pulldown-cmark", "dep:syntect", "dep:comfy-table", "dep:arboard", "dep:png"]
 
 [build-dependencies]
-tauri-build = { version = "2.0.2", features = [] }
+tauri-build = { version = "2.0.2", features = [], optional = true }
 serde_json = "1.0"
 
 [dependencies]
 dirs = "6.0.0"
 async-trait = "0.1"
 env = "1.0.1"
-fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
+fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs", optional = true }
 flate2 = "1.0"
+form_urlencoded = "1.2"
 futures-util = "0.3.31"
 hex = "0.4"
 hmac = "0.12"
@@ -77,8 +116,12 @@ tokio-stream = "0.1"
 jan-utils = { path = "./utils" }
 libloading = "0.8.7"
 log = "0.4"
+# Pulled in by rmcp's `auth` feature; used directly for `TokenResponse`
+# accessors on the persisted token record (`core::mcp::oauth`).
+oauth2 = "5.0"
 rand = "0.8"
 rmcp = { version = "0.8.5", features = [
+    "auth",
     "client",
     "transport-sse-client",
     "transport-sse-client-reqwest",
@@ -91,21 +134,26 @@ rmcp = { version = "0.8.5", features = [
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9.34"
+toml = "0.8"
+toml_edit = "0.23"
 sha2 = "0.10"
 tar = "0.4"
 zip = "0.6"
 tauri-plugin-deep-link = { version = "2", optional = true }
 tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = true }
-tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp" }
-tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db" }
-tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag" }
-tauri-plugin-websearch = { path = "./plugins/tauri-plugin-websearch" }
+tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp", optional = true }
+# The CLI consumes only these plugins' tauri-free cores (`db`, `provider`, the
+# agent toolset); the desktop feature turns their Tauri command surface back on.
+tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db", default-features = false }
+tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag", optional = true }
+tauri-plugin-websearch = { path = "./plugins/tauri-plugin-websearch", default-features = false }
+tauri-plugin-agent-tools = { path = "./plugins/tauri-plugin-agent-tools", default-features = false }
 # `default-features = false` drops the plugin's default `rustls-tls` (bundled
 # Mozilla roots) so `native-tls` reads the OS trust store instead. Other
 # features re-list the plugin's defaults so behaviour is otherwise unchanged.
 # `macos-system-configuration` is reqwest's legacy alias for `system-proxy` —
 # cross-platform-safe; native deps are target-gated by Cargo.
-tauri-plugin-http = { version = "2", default-features = false, features = [
+tauri-plugin-http = { version = "2", optional = true, default-features = false, features = [
   "native-tls",
   "http2",
   "charset",
@@ -113,18 +161,18 @@ tauri-plugin-http = { version = "2", default-features = false, features = [
   "cookies",
   "unsafe-headers",
 ] }
-tauri-plugin-log = "2.0.0-rc"
-tauri-plugin-opener = "2.2.7"
-tauri-plugin-os = "2.2.1"
-tauri-plugin-shell = "2.2.0"
-tauri-plugin-store = "2"
+tauri-plugin-log = { version = "2.0.0-rc", optional = true }
+tauri-plugin-opener = { version = "2.2.7", optional = true }
+tauri-plugin-os = { version = "2.2.1", optional = true }
+tauri-plugin-shell = { version = "2.2.0", optional = true }
+tauri-plugin-store = { version = "2", optional = true }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"], optional = true }
 thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7.14"
 url = "2.5"
 uuid = { version = "1.7", features = ["v4"] }
-rfd = { version = "0.15.4", default-features = false, features = [
+rfd = { version = "0.15.4", optional = true, default-features = false, features = [
   "tokio",
   "xdg-portal",
   "common-controls-v6",
@@ -135,22 +183,56 @@ futures = "0.3"
 hostname = "0.4"
 base64 = "0.22"
 glob = "0.3"
+regex = "1"
+ignore = "0.4"
 clap = { version = "4", features = ["derive"] }
-dialoguer = { version = "0.11", optional = true }
 env_logger = { version = "0.11", optional = true }
 indicatif = { version = "0.17", optional = true }
 console = { version = "0.15", optional = true }
+# The Secret Service backend must be `async-secret-service` (zbus, pure Rust),
+# not `sync-secret-service`: the latter pulls `libdbus-sys`, whose `DT_NEEDED`
+# on libdbus-1.so.3 is resolved before `main`, so a headless host without the
+# D-Bus runtime cannot even exec `jan` -- the encrypted-file fallback in
+# `core::server::provider_secrets` never gets a chance to run. `async-io`
+# rather than `tokio`: zbus's `tokio` `block_on` drives a runtime of its own,
+# which panics when called from inside one, and the keyring is read from async
+# CLI paths.
 keyring = { version = "3", features = [
     "apple-native",
     "windows-native",
-    "sync-secret-service",
+    "async-secret-service",
+    "async-io",
     "crypto-rust",
 ] }
 aes-gcm = "0.10"
 machine-uid = "0.5"
+ratatui = { version = "0.30", optional = true, features = ["unstable-rendered-line-info"] }
+# Display width for the TUI's own truncation: a CJK glyph or emoji is two
+# cells wide, so counting chars overflows a bordered panel. Already in the graph
+# via ratatui; named here because this crate calls it directly.
+unicode-width = { version = "0.2", optional = true }
+# Grapheme clusters for the `wave` glyph cap: `👁️‍🗨️` is one thing a person sees
+# but five `char`s, so the 3-glyph limit has to count clusters or it rejects a
+# single emoji. Not optional -- `global_config` builds for desktop too. Already
+# compiled in both graphs via ratatui/comfy-table, so this adds no build cost.
+unicode-segmentation = "1"
+pulldown-cmark = { version = "0.13", optional = true, default-features = false }
+# `regex-fancy` keeps this pure Rust: the default `onig` backend links libonig,
+# which the headless CLI must not pull in. The raw `.sublime-syntax`/`.tmTheme`
+# loaders (plist, yaml-rust, html) are off -- only the bundled dumps are used.
+syntect = { version = "5.3", optional = true, default-features = false, features = [
+    "parsing",
+    "default-syntaxes",
+    "default-themes",
+    "regex-fancy",
+] }
+comfy-table = { version = "7.2", default-features = false, optional = true }
+arboard = { version = "3", optional = true, features = ["wayland-data-control"] }
+png = { version = "0.17", optional = true }
 
 [dependencies.tauri]
 version = "2.8.5"
+optional = true
 default-features = false
 features = ["protocol-asset", "macos-private-api", "test"]
 
@@ -162,8 +244,8 @@ nix = { version = "=0.30.1", features = ["signal", "process", "resource"] }
 libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-zbus = { version = "5", default-features = false, features = ["tokio"] }
-gtk = "0.18"
+zbus = { version = "5", default-features = false, features = ["tokio"], optional = true }
+gtk = { version = "0.18", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 libc = "0.2.172"
@@ -171,23 +253,32 @@ windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
 
 # MLX runs only on Apple Silicon, so the plugin is built solely for macOS.
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri-plugin-mlx = { path = "./plugins/tauri-plugin-mlx" }
+tauri-plugin-mlx = { path = "./plugins/tauri-plugin-mlx", optional = true }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 reqwest = { version = "0.12", features = ["json", "blocking", "stream", "native-tls"] }
-tauri-plugin-updater = "2"
+# TLS backend must track `reqwest` above: reqwest features are additive across the
+# graph, so letting genai default to rustls would link both backends here.
+genai = { version = "=0.7.0-beta.19", default-features = false, features = ["native-tls"] }
+# genai is on reqwest 0.13 while the rest of the app is on 0.12, so its client
+# type is a distinct crate. Aliased here solely to build the pool-tuned client
+# `agent_http_client` hands to genai (see core/agent/upstream.rs).
+reqwest13 = { package = "reqwest", version = "0.13", default-features = false, features = ["json", "stream", "charset", "http2", "system-proxy", "native-tls"] }
+tauri-plugin-updater = { version = "2", optional = true }
 once_cell = "1.18"
-tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"], optional = true }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 reqwest = { version = "0.12", features = ["json", "blocking", "stream", "rustls-tls"], default-features = false }
-tauri-plugin-dialog = { version = "2.2.1", default-features = false }
-tauri-plugin-http = { version = "2", default-features = false }
-tauri-plugin-log = { version = "2.0.0-rc", default-features = false }
-tauri-plugin-opener = { version = "2.2.7", default-features = false }
-tauri-plugin-os = { version = "2.2.1", default-features = false }
-tauri-plugin-shell = { version = "2.2.0", default-features = false }
-tauri-plugin-store = { version = "2", default-features = false }
+genai = { version = "=0.7.0-beta.19", default-features = false, features = ["rustls-tls"] }
+reqwest13 = { package = "reqwest", version = "0.13", default-features = false, features = ["json", "stream", "charset", "http2", "rustls"] }
+tauri-plugin-dialog = { version = "2.2.1", default-features = false, optional = true }
+tauri-plugin-http = { version = "2", default-features = false, optional = true }
+tauri-plugin-log = { version = "2.0.0-rc", default-features = false, optional = true }
+tauri-plugin-opener = { version = "2.2.7", default-features = false, optional = true }
+tauri-plugin-os = { version = "2.2.1", default-features = false, optional = true }
+tauri-plugin-shell = { version = "2.2.0", default-features = false, optional = true }
+tauri-plugin-store = { version = "2", default-features = false, optional = true }
 
 # Release profile optimizations for minimal binary size
 [profile.release]

@@ -648,11 +648,17 @@ fn test_mcp_settings_default_matches_constants() {
         s.max_restart_delay_ms,
         constants::DEFAULT_MCP_MAX_RESTART_DELAY_MS
     );
-    assert!((s.backoff_multiplier - constants::DEFAULT_MCP_BACKOFF_MULTIPLIER).abs() < f64::EPSILON);
+    assert!(
+        (s.backoff_multiplier - constants::DEFAULT_MCP_BACKOFF_MULTIPLIER).abs() < f64::EPSILON
+    );
     assert!(s.enable_smart_tool_routing);
     assert!(!s.use_lightweight_router_model);
     assert!(s.router_model_provider.is_empty());
     assert!(s.router_model_id.is_empty());
+    assert_eq!(
+        s.max_tool_output_chars,
+        constants::DEFAULT_MCP_MAX_TOOL_OUTPUT_CHARS
+    );
 }
 
 #[test]
@@ -667,6 +673,40 @@ fn test_mcp_settings_tool_call_timeout_duration_enforces_minimum() {
     assert_eq!(s.tool_call_timeout_duration(), Duration::from_secs(5));
     s.tool_call_timeout_seconds = 600;
     assert_eq!(s.tool_call_timeout_duration(), Duration::from_secs(600));
+}
+
+#[test]
+fn test_mcp_settings_tool_output_cap_takes_the_tighter_of_setting_and_override() {
+    use super::models::McpSettings;
+    let s = McpSettings {
+        max_tool_output_chars: 40_000,
+        ..McpSettings::default()
+    };
+
+    // No caller budget: the user's setting governs.
+    assert_eq!(s.tool_output_cap(None), 40_000);
+    // A tighter model-derived budget wins.
+    assert_eq!(s.tool_output_cap(Some(8_000)), 8_000);
+    // A looser one cannot raise the user's ceiling.
+    assert_eq!(s.tool_output_cap(Some(500_000)), 40_000);
+    // A 0 override means "no derived budget", not "uncapped".
+    assert_eq!(s.tool_output_cap(Some(0)), 40_000);
+}
+
+#[test]
+fn test_mcp_settings_zero_max_tool_output_chars_disables_capping() {
+    use super::models::McpSettings;
+    let s = McpSettings {
+        max_tool_output_chars: 0,
+        ..McpSettings::default()
+    };
+
+    assert_eq!(s.tool_output_cap(None), 0);
+    assert_eq!(
+        s.tool_output_cap(Some(8_000)),
+        0,
+        "an explicit opt-out is not overridden by a derived budget"
+    );
 }
 
 #[test]
@@ -694,6 +734,7 @@ impl PartialEq for super::models::McpSettings {
             && self.use_lightweight_router_model == other.use_lightweight_router_model
             && self.router_model_provider == other.router_model_provider
             && self.router_model_id == other.router_model_id
+            && self.max_tool_output_chars == other.max_tool_output_chars
     }
 }
 
@@ -758,113 +799,6 @@ fn test_server_summary_round_trip() {
     assert_eq!(parsed.name, "fs");
     assert_eq!(parsed.capabilities, vec!["filesystem", "files"]);
     assert_eq!(parsed.description, "Read files");
-}
-
-// ============================================================================
-// helpers.rs pure-function tests: extract_command_args / extract_active_status
-// ============================================================================
-
-#[test]
-fn test_extract_command_args_minimal_config() {
-    use super::helpers::extract_command_args;
-    let cfg = serde_json::json!({
-        "command": "npx",
-        "args": ["-y", "server"]
-    });
-    let parsed = extract_command_args(&cfg).expect("should parse");
-    assert_eq!(parsed.command, "npx");
-    assert_eq!(parsed.args.len(), 2);
-    assert_eq!(parsed.args[0], "-y");
-    assert!(parsed.url.is_none());
-    assert!(parsed.transport_type.is_none());
-    assert!(parsed.timeout.is_none());
-    assert!(parsed.envs.is_empty());
-    assert!(parsed.headers.is_empty());
-}
-
-#[test]
-fn test_extract_command_args_full_config() {
-    use super::helpers::extract_command_args;
-    let cfg = serde_json::json!({
-        "command": "",
-        "args": [],
-        "type": "http",
-        "url": "https://mcp.example.com/mcp",
-        "timeout": 45,
-        "env": {"API_KEY": "abc", "DEBUG": "1"},
-        "headers": {"Authorization": "Bearer xyz"}
-    });
-    let parsed = extract_command_args(&cfg).expect("should parse");
-    assert_eq!(parsed.command, "");
-    assert_eq!(parsed.transport_type.as_deref(), Some("http"));
-    assert_eq!(parsed.url.as_deref(), Some("https://mcp.example.com/mcp"));
-    assert_eq!(parsed.timeout, Some(Duration::from_secs(45)));
-    assert_eq!(parsed.envs.get("API_KEY").and_then(|v| v.as_str()), Some("abc"));
-    assert_eq!(parsed.envs.get("DEBUG").and_then(|v| v.as_str()), Some("1"));
-    assert_eq!(
-        parsed.headers.get("Authorization").and_then(|v| v.as_str()),
-        Some("Bearer xyz")
-    );
-}
-
-#[test]
-fn test_extract_command_args_returns_none_when_required_fields_missing() {
-    use super::helpers::extract_command_args;
-    // Missing command
-    let cfg = serde_json::json!({"args": []});
-    assert!(extract_command_args(&cfg).is_none());
-    // Missing args
-    let cfg = serde_json::json!({"command": "npx"});
-    assert!(extract_command_args(&cfg).is_none());
-    // Not an object
-    let cfg = serde_json::json!(["a", "b"]);
-    assert!(extract_command_args(&cfg).is_none());
-    // command not a string
-    let cfg = serde_json::json!({"command": 123, "args": []});
-    assert!(extract_command_args(&cfg).is_none());
-    // args not an array
-    let cfg = serde_json::json!({"command": "npx", "args": "oops"});
-    assert!(extract_command_args(&cfg).is_none());
-}
-
-#[test]
-fn test_extract_command_args_parses_default_mcp_config_servers() {
-    use super::constants::DEFAULT_MCP_CONFIG;
-    use super::helpers::extract_command_args;
-    let value: serde_json::Value = serde_json::from_str(DEFAULT_MCP_CONFIG).unwrap();
-    for (name, cfg) in value["mcpServers"].as_object().unwrap() {
-        let parsed = extract_command_args(cfg)
-            .unwrap_or_else(|| panic!("default config server '{name}' should parse"));
-        // command may be empty for HTTP transports
-        if name == "exa" {
-            assert_eq!(parsed.transport_type.as_deref(), Some("http"));
-            assert!(parsed.url.is_some());
-        } else {
-            assert!(!parsed.command.is_empty(), "{name} should have a command");
-        }
-    }
-}
-
-#[test]
-fn test_extract_active_status_variants() {
-    use super::helpers::extract_active_status;
-    assert_eq!(
-        extract_active_status(&serde_json::json!({"active": true})),
-        Some(true)
-    );
-    assert_eq!(
-        extract_active_status(&serde_json::json!({"active": false})),
-        Some(false)
-    );
-    // Missing
-    assert_eq!(extract_active_status(&serde_json::json!({})), None);
-    // Wrong type
-    assert_eq!(
-        extract_active_status(&serde_json::json!({"active": "yes"})),
-        None
-    );
-    // Not an object
-    assert_eq!(extract_active_status(&serde_json::json!(true)), None);
 }
 
 // ============================================================================
@@ -965,19 +899,25 @@ async fn test_check_and_cleanup_stale_lock_no_lock_returns_false() {
     let app = mock_app();
     let port: u16 = 53_114;
     let _ = delete_lock_file(app.handle(), port);
-    let cleaned = check_and_cleanup_stale_lock(app.handle(), port).await.unwrap();
+    let cleaned = check_and_cleanup_stale_lock(app.handle(), port)
+        .await
+        .unwrap();
     assert!(!cleaned);
 }
 
 #[tokio::test]
 async fn test_check_and_cleanup_stale_lock_keeps_live_lock() {
-    use super::lockfile::{check_and_cleanup_stale_lock, create_lock_file, delete_lock_file, read_lock_file};
+    use super::lockfile::{
+        check_and_cleanup_stale_lock, create_lock_file, delete_lock_file, read_lock_file,
+    };
     let app = mock_app();
     let port: u16 = 53_115;
     let _ = delete_lock_file(app.handle(), port);
     create_lock_file(app.handle(), port, "live", std::process::id()).unwrap();
     // Lock pid is the current process (alive) → must NOT be removed
-    let cleaned = check_and_cleanup_stale_lock(app.handle(), port).await.unwrap();
+    let cleaned = check_and_cleanup_stale_lock(app.handle(), port)
+        .await
+        .unwrap();
     assert!(!cleaned);
     assert!(read_lock_file(app.handle(), port).is_some());
     let _ = delete_lock_file(app.handle(), port);
@@ -1006,7 +946,10 @@ async fn test_check_and_cleanup_stale_lock_removes_dead_pid_lock() {
         hostname: "x".to_string(),
     };
     std::fs::write(&lock_path, serde_json::to_string(&lock).unwrap()).unwrap();
-    assert!(read_lock_file(app.handle(), port).is_some(), "seed lock readable");
+    assert!(
+        read_lock_file(app.handle(), port).is_some(),
+        "seed lock readable"
+    );
 
     let cleaned = check_and_cleanup_stale_lock(app.handle(), port)
         .await

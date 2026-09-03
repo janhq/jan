@@ -1,8 +1,15 @@
 name: Rust Check
 on:
   workflow_dispatch:
-  pull_request:
+  # Caches are branch-scoped and only the default branch's are readable from
+  # anywhere, so main has to run this to leave anything worth restoring.
+  push:
     branches:
+      - main
+  pull_request:
+    # PRs open against main; the dev-only filter left this to manual dispatch.
+    branches:
+      - main
       - dev
 
 concurrency:
@@ -26,11 +33,12 @@ jobs:
             features: test-tauri
             targets: --all-targets
             tauri: true
-          # Test targets are only exercised in the desktop config, and a
-          # headless runner cannot link them here anyway.
+          # --all-targets matters here: modules like core::agent::global_config
+          # are #[cfg(feature = "cli")], so their tests exist in no other config
+          # and --lib --bins would leave them unlinted.
           - name: cli
             features: cli
-            targets: --lib --bins
+            targets: --all-targets
             tauri: false
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -43,6 +51,9 @@ jobs:
         with:
           workspaces: src-tauri
           key: ${{ matrix.name }}
+          # Branches restore but never save: one 3.5GB cache set on main
+          # rather than one per branch, which is what breached the 10GB cap.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Tauri dependencies
         if: matrix.tauri
@@ -94,6 +105,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri/${{ matrix.crate }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Tauri dependencies
         run: |

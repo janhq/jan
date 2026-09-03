@@ -1,5 +1,15 @@
-pub mod core;
+// The headless `jan` CLI and the desktop app are mutually exclusive builds: the
+// `cli` feature gates off every Tauri-dependent module, so pairing it with the
+// Tauri stack leaves the desktop entry points without their subsystems. Note
+// that `--features cli` alone still implies `default` (and therefore
+// `desktop`); the CLI must be built with `--no-default-features`.
+#[cfg(all(feature = "cli", feature = "tauri-app"))]
+compile_error!(
+    "features `cli` and `tauri-app`/`desktop` are mutually exclusive; \
+     build the CLI with `cargo build --no-default-features --features cli --bin jan`"
+);
 
+pub mod core;
 
 #[cfg(not(feature = "cli"))]
 use core::{
@@ -60,7 +70,6 @@ macro_rules! invoke_commands_with_extras {
         // System commands
         core::system::commands::relaunch,
         core::system::commands::open_app_directory,
-        core::system::commands::open_file_explorer,
         core::system::commands::factory_reset,
         core::system::commands::take_pending_webdata_reset,
         core::system::commands::read_logs,
@@ -74,6 +83,22 @@ macro_rules! invoke_commands_with_extras {
         core::server::commands::start_server,
         core::server::commands::stop_server,
         core::server::commands::get_server_status,
+        core::server::commands::set_server_run_in_background,
+        // Agent commands
+        core::agent::commands::agent_skill_list,
+        core::agent::commands::agent_skill_read,
+        core::agent::commands::agent_skill_write,
+        core::agent::commands::agent_skill_delete,
+        core::agent::commands::agent_skill_hub_list,
+        core::agent::commands::agent_skill_hub_import,
+        core::agent::commands::agent_skill_enabled_get,
+        core::agent::commands::agent_skill_enabled_set,
+        core::agent::commands::agent_plugin_list,
+        core::agent::commands::agent_plugin_install,
+        core::agent::commands::agent_plugin_remove,
+        core::agent::commands::agent_plugin_search,
+        core::agent::commands::agent_git_branch,
+        core::agent::commands::agent_subagent_list,
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
@@ -94,6 +119,9 @@ macro_rules! invoke_commands_with_extras {
         core::mcp::commands::get_mcp_configs,
         core::mcp::commands::activate_mcp_server,
         core::mcp::commands::deactivate_mcp_server,
+        core::mcp::commands::get_mcp_auth_status,
+        core::mcp::commands::authorize_mcp_server,
+        core::mcp::commands::clear_mcp_auth,
         core::mcp::commands::check_jan_browser_extension_connected,
         // Threads
         core::threads::commands::list_threads,
@@ -182,6 +210,9 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
     exit_code: i32,
 ) {
     use std::sync::atomic::Ordering;
+    // Reap any still-running agent bash command trees before we tear down, so
+    // no shell (or child it spawned) outlives the app.
+    tauri_plugin_agent_tools::tools::proc::kill_all();
     let mut emitted = false;
     loop {
         if SHUTTING_DOWN.load(Ordering::SeqCst) {
@@ -246,7 +277,8 @@ pub fn run() {
         .plugin(tauri_plugin_llamacpp::init())
         .plugin(tauri_plugin_vector_db::init())
         .plugin(tauri_plugin_rag::init())
-        .plugin(tauri_plugin_websearch::init());
+        .plugin(tauri_plugin_websearch::init())
+        .plugin(tauri_plugin_agent_tools::init());
 
     #[cfg(feature = "deep-link")]
     {
@@ -339,9 +371,9 @@ pub fn run() {
             // Migration completed
 
             #[cfg(feature = "desktop")]
-            if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
+            if setup::tray_always_visible() {
                 log::info!("Enabling system tray icon");
-                let _ = setup::setup_tray(app);
+                let _ = setup::setup_tray(app.handle());
             }
 
             #[cfg(all(feature = "deep-link", any(windows, target_os = "linux")))]
@@ -391,12 +423,16 @@ pub fn run() {
                     return;
                 }
                 // Windows/Linux: hide to tray only while the Local API Server is
-                // running; otherwise fall through to the normal quit-on-close.
+                // running and the user opted into keeping it alive in the
+                // background; otherwise fall through to the normal quit-on-close.
                 // The llamacpp engine is not a reason to keep the app resident
                 // (normal chat usage keeps it alive), so it gets torn down via
                 // the ExitRequested path on quit.
                 #[cfg(not(target_os = "macos"))]
-                if is_proxy_server_running(app) {
+                if is_proxy_server_running(app)
+                    && core::server::commands::SERVER_RUN_IN_BACKGROUND
+                        .load(Ordering::SeqCst)
+                {
                     api.prevent_close();
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.hide();
@@ -434,7 +470,7 @@ pub fn run() {
             let app_handle = app.clone();
 
             // Drain any debounced settings writes before the process dies so
-            // jan-cli never reads a stale settings.json.
+            // jan CLI never reads a stale settings.json.
             core::app::settings_store::flush_settings();
 
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -491,7 +527,6 @@ pub fn run() {
                             log::info!("MLX processes cleaned up successfully");
                         }
                     }
-
 
                     log::info!("App cleanup completed");
                 });

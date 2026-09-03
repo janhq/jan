@@ -2,55 +2,51 @@
 //!
 //! This module is only compiled when the `cli` feature is enabled.
 
+pub mod auth;
+pub mod brand;
+pub mod browser;
+pub mod device_auth;
+pub mod journal;
+pub mod login;
+pub mod mcp;
+mod model_capabilities;
+mod path_refs;
+pub mod run_report;
+pub mod providers;
+mod secret_input;
+pub mod telemetry;
+pub mod terminal_setup;
+pub mod tokamak;
+mod tui;
+pub mod updater;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::core::app::commands::{resolve_config_file_path, resolve_jan_data_folder};
-use crate::core::server::proxy;
-use crate::core::state::AppState;
+use crate::core::app::commands::resolve_jan_data_folder;
 use crate::core::threads::{
     constants::THREADS_FILE,
-    helpers::read_messages_from_file,
-    utils::{ensure_data_dirs, get_data_dir, get_thread_dir, get_thread_metadata_path},
+    helpers::{read_messages_from_file, update_thread_metadata, write_messages_to_file},
+    utils::{
+        ensure_data_dirs, get_data_dir, get_messages_path, get_thread_dir,
+        get_thread_metadata_path,
+    },
 };
-use tauri_plugin_llamacpp::state::LlamacppState;
-#[cfg(target_os = "macos")]
-use tauri_plugin_mlx::state::MlxState;
-
-#[cfg(target_os = "macos")]
-pub use tauri_plugin_mlx::{load_mlx_model_impl, MlxConfig};
-#[cfg(target_os = "macos")]
-pub use tauri_plugin_mlx::state::SessionInfo;
-
-// ── State constructors ─────────────────────────────────────────────────────
-
-pub fn init_llamacpp_state() -> LlamacppState {
-    LlamacppState::new()
-}
-
-#[cfg(target_os = "macos")]
-pub fn init_mlx_state() -> MlxState {
-    MlxState::new()
-}
 
 // ── Thread operations ──────────────────────────────────────────────────────
 
-/// List all threads from the Jan data folder.
-pub async fn cli_list_threads() -> Result<Vec<serde_json::Value>, String> {
+/// List thread metadata under `<base>/threads/`. `base` is the Jan data folder
+/// (desktop store) or a project's `.jan/agent` dir (TUI store).
+pub fn list_threads_in(base: &std::path::Path) -> Result<Vec<serde_json::Value>, String> {
     use std::fs;
 
-    let data_folder = resolve_jan_data_folder();
-    ensure_data_dirs(&data_folder)?;
-    let data_dir = get_data_dir(&data_folder);
+    let data_dir = get_data_dir(base);
     let mut threads = Vec::new();
-
     if !data_dir.exists() {
         return Ok(threads);
     }
-
     for entry in fs::read_dir(&data_dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
+        let path = entry.map_err(|e| e.to_string())?.path();
         if path.is_dir() {
             let metadata_path = path.join(THREADS_FILE);
             if metadata_path.exists() {
@@ -61,8 +57,127 @@ pub async fn cli_list_threads() -> Result<Vec<serde_json::Value>, String> {
             }
         }
     }
-
     Ok(threads)
+}
+
+/// List all threads from the Jan data folder (desktop store).
+pub async fn cli_list_threads() -> Result<Vec<serde_json::Value>, String> {
+    let data_folder = resolve_jan_data_folder();
+    ensure_data_dirs(&data_folder)?;
+    list_threads_in(&data_folder)
+}
+
+/// Which saved thread a `--resume` / `--continue` / `/resume` request refers to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ResumeTarget {
+    /// Most recently updated thread for the project.
+    Latest,
+    /// A full thread id or a unique prefix of one.
+    Id(String),
+}
+
+impl ResumeTarget {
+    /// Build a target from the CLI flag pair: `--resume [ID]` and `--continue`/`-c`
+    /// (an alias for a bare `--resume`). `None` means "do not resume".
+    pub fn from_flags(resume: Option<Option<String>>, continue_session: bool) -> Option<Self> {
+        match resume {
+            Some(Some(id)) if !id.trim().is_empty() => Some(Self::Id(id.trim().to_string())),
+            Some(_) => Some(Self::Latest),
+            None if continue_session => Some(Self::Latest),
+            None => None,
+        }
+    }
+}
+
+/// Recency sort key for a saved thread (`updated`, falling back to `created`).
+pub fn thread_recency(t: &serde_json::Value) -> f64 {
+    t.get("updated")
+        .or_else(|| t.get("created"))
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.0)
+}
+
+/// Sort threads most-recent-first (by `updated`/`created`).
+pub fn sort_threads_recent(threads: &mut [serde_json::Value]) {
+    threads.sort_by(|a, b| {
+        thread_recency(b)
+            .partial_cmp(&thread_recency(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+}
+
+/// Message shown when there is nothing to resume; the caller then starts fresh.
+pub const NO_SESSION_TO_RESUME: &str = "No session to resume";
+
+/// Resolve a resume target against `<base>/threads/`, returning the thread
+/// metadata. Threads whose `thread.json` is unparsable are skipped by
+/// `list_threads_in`, so a corrupted neighbour never blocks a resume.
+pub fn find_resume_thread(
+    base: &std::path::Path,
+    target: &ResumeTarget,
+) -> Result<serde_json::Value, String> {
+    let mut threads = list_threads_in(base)?;
+    match target {
+        ResumeTarget::Latest => {
+            sort_threads_recent(&mut threads);
+            threads
+                .into_iter()
+                .next()
+                .ok_or_else(|| NO_SESSION_TO_RESUME.to_string())
+        }
+        ResumeTarget::Id(id) => {
+            let mut matches: Vec<serde_json::Value> = threads
+                .into_iter()
+                .filter(|t| {
+                    t.get("id")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|full| full == id || full.starts_with(id.as_str()))
+                })
+                .collect();
+            match matches.len() {
+                0 => Err(format!("no thread matches '{id}'")),
+                1 => Ok(matches.remove(0)),
+                n => Err(format!("'{id}' is ambiguous ({n} matches)")),
+            }
+        }
+    }
+}
+
+/// Read a thread's messages, tolerating a truncated or malformed line (a crash
+/// mid-append leaves one). Returns the parsed records and the skipped count, so
+/// a resume degrades to "lost the tail" instead of failing outright.
+pub fn cli_read_messages_lenient(
+    base: &std::path::Path,
+    thread_id: &str,
+) -> Result<(Vec<serde_json::Value>, usize), String> {
+    use std::io::BufRead;
+
+    let path = get_messages_path(base, thread_id);
+    if !path.exists() {
+        return Ok((Vec::new(), 0));
+    }
+    let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+    let mut messages = Vec::new();
+    let mut skipped = 0;
+    for line in std::io::BufReader::new(file).lines() {
+        let line = line.map_err(|e| e.to_string())?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str(&line) {
+            Ok(v) => messages.push(v),
+            Err(_) => skipped += 1,
+        }
+    }
+    Ok((messages, skipped))
+}
+
+/// Read a thread's messages from `<base>/threads/<id>/messages.jsonl`.
+pub fn cli_list_messages_in(
+    base: &std::path::Path,
+    thread_id: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    read_messages_from_file(base, thread_id)
 }
 
 /// List messages for a thread.
@@ -80,6 +195,7 @@ pub fn cli_delete_thread(thread_id: &str) -> Result<(), String> {
     if thread_dir.exists() {
         fs::remove_dir_all(thread_dir).map_err(|e| e.to_string())?;
     }
+    crate::core::agent::git::cleanup_snapshot_index(thread_id);
     Ok(())
 }
 
@@ -94,510 +210,1755 @@ pub fn cli_get_thread(thread_id: &str) -> Result<serde_json::Value, String> {
     serde_json::from_str(&data).map_err(|e| e.to_string())
 }
 
-// ── Server operations ──────────────────────────────────────────────────────
-
-/// Stop the running proxy server.
-pub async fn cli_stop_server(app_state: Arc<AppState>) -> Result<(), String> {
-    proxy::stop_server(app_state.server_handle.clone())
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// Check whether the proxy server is currently running.
-pub async fn cli_is_server_running(app_state: Arc<AppState>) -> bool {
-    proxy::is_server_running(app_state.server_handle.clone()).await
-}
-
-// ── Model discovery ───────────────────────────────────────────────────────
-
-/// Parsed representation of a `model.yml` file.
-#[derive(Debug, serde::Deserialize)]
-pub struct ModelYml {
-    pub model_path: String,
-    pub name: Option<String>,
-    #[serde(default)]
-    pub size_bytes: u64,
-    #[serde(default)]
-    pub embedding: bool,
-    pub mmproj_path: Option<String>,
-    #[serde(default)]
-    pub capabilities: Vec<String>,
-}
-
-/// A discovered model entry: `(model_id, yml)`.
-pub type ModelEntry = (String, ModelYml);
-
-/// Scan `<data_folder>/<engine>/models/` for `model.yml` files.
-///
-/// `engine` is `"llamacpp"` or `"mlx"`. Returns one entry per model found.
-pub fn list_models(engine: &str) -> Vec<ModelEntry> {
-    use std::fs;
-
-    let data_folder = resolve_jan_data_folder();
-    let models_root = data_folder.join(engine).join("models");
-
-    if !models_root.exists() {
-        return Vec::new();
+/// Persist a TUI conversation as a desktop-compatible thread so it appears in
+/// `/resume` and the desktop app. `history` is OpenAI-shaped (`{role, content}`);
+/// it is written as `thread.message` records plus `thread.json` metadata. Pass
+/// an existing `thread_id` to update that thread, or `None` to create one
+/// (returns the id). Title/created are preserved when updating.
+pub fn cli_save_thread(
+    base: &std::path::Path,
+    thread_id: Option<&str>,
+    model: &str,
+    history: &[serde_json::Value],
+    metadata: Option<serde_json::Value>,
+) -> Result<String, String> {
+    if history.is_empty() {
+        return Err("empty conversation".to_string());
     }
+    ensure_data_dirs(base)?;
+    let id = thread_id
+        .map(str::to_string)
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(get_thread_dir(base, &id)).map_err(|e| e.to_string())?;
 
-    let mut results = Vec::new();
-    let mut stack = vec![models_root.clone()];
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let now_ms = now.as_millis() as i64;
+    let now_secs = now.as_secs_f64();
 
-    while let Some(dir) = stack.pop() {
-        let yml_path = dir.join("model.yml");
-        if yml_path.exists() {
-            if let Ok(content) = fs::read_to_string(&yml_path) {
-                if let Ok(yml) = serde_yaml::from_str::<ModelYml>(&content) {
-                    // model_id = path relative to models_root
-                    let model_id = dir
-                        .strip_prefix(&models_root)
-                        .unwrap_or(&dir)
-                        .to_string_lossy()
-                        .into_owned();
-                    results.push((model_id, yml));
-                    continue; // don't recurse into a model directory
-                }
-            }
-        }
-        // Recurse into subdirectories
-        if let Ok(entries) = fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                if entry.path().is_dir() {
-                    stack.push(entry.path());
-                }
-            }
-        }
-    }
-
-    results.sort_by(|a, b| a.0.cmp(&b.0));
-    results
-}
-
-/// Detect which engine owns `model_id` by probing the data folder, and
-/// resolve its paths.  Tries `llamacpp` first, then `mlx`.
-/// Returns `(engine, model_path, mmproj_path)`.
-pub fn resolve_model_engine(
-    model_id: &str,
-) -> Result<(String, PathBuf, Option<PathBuf>), String> {
-    let data_folder = resolve_jan_data_folder();
-    for engine in &["llamacpp", "mlx"] {
-        let yml_path = data_folder
-            .join(engine)
-            .join("models")
-            .join(model_id)
-            .join("model.yml");
-        if yml_path.exists() {
-            let (model_path, mmproj_path) = resolve_model_by_id(model_id, engine)?;
-            return Ok((engine.to_string(), model_path, mmproj_path));
-        }
-    }
-    Err(format!(
-        "Model '{}' not found for any engine. \
-        Run `jan models list` to see available models.",
-        model_id
-    ))
-}
-
-/// Resolve the absolute model file path (and optional mmproj path) for a
-/// given model ID and engine.
-///
-/// `model_path` in the YAML can be:
-///   - absolute (`/…` or `C:\…`) — used verbatim
-///   - relative — joined with the Jan data folder
-pub fn resolve_model_by_id(
-    model_id: &str,
-    engine: &str,
-) -> Result<(PathBuf, Option<PathBuf>), String> {
-    let data_folder = resolve_jan_data_folder();
-    let yml_path = data_folder
-        .join(engine)
-        .join("models")
-        .join(model_id)
-        .join("model.yml");
-
-    if !yml_path.exists() {
-        return Err(format!(
-            "Model '{}' not found for engine '{}'. \
-            Run `jan models list` to see available models.",
-            model_id, engine
-        ));
-    }
-
-    let content = std::fs::read_to_string(&yml_path).map_err(|e| e.to_string())?;
-    let yml: ModelYml = serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
-
-    let resolve_path = |p: &str| -> PathBuf {
-        let pb = PathBuf::from(p);
-        if pb.is_absolute() {
-            pb
-        } else {
-            data_folder.join(p)
-        }
-    };
-
-    let model_path = resolve_path(&yml.model_path);
-    let mmproj_path = yml.mmproj_path.as_deref().map(resolve_path);
-
-    Ok((model_path, mmproj_path))
-}
-
-// ── Binary auto-discovery ──────────────────────────────────────────────────
-
-/// Find the mlx-server binary.
-///
-/// Checks standard locations in order:
-///   1. `/Applications/Jan.app/Contents/Resources/bin/mlx-server` (installed app)
-///   2. Next to the running binary (for dev/custom installs)
-#[cfg(target_os = "macos")]
-pub fn discover_mlx_binary() -> Option<PathBuf> {
-    // 1. Standard macOS app bundle locations (try both path variants)
-    for candidate in &[
-        "/Applications/Jan.app/Contents/Resources/resources/bin/mlx-server",
-        "/Applications/Jan.app/Contents/Resources/bin/mlx-server",
-    ] {
-        let p = PathBuf::from(candidate);
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
-    // 2. Next to the current executable (useful for dev builds / custom installs)
-    if let Ok(exe_dir) = std::env::current_exe().map(|p| p.parent().map(|d| d.to_path_buf()).unwrap_or_default()) {
-        let next_to_bin = exe_dir.join("mlx-server");
-        if next_to_bin.exists() {
-            return Some(next_to_bin);
-        }
-    }
-
-    None
-}
-
-// ── HuggingFace download ───────────────────────────────────────────────────
-
-/// A single file entry from a HuggingFace repository.
-#[derive(Debug, Clone)]
-pub struct HfFileInfo {
-    /// Original filename in the repo (e.g. `qwen3-30b.Q4_K_M.gguf`)
-    pub filename: String,
-    /// Total size in bytes (from HF metadata or LFS pointer)
-    pub size: u64,
-    /// SHA-256 from the LFS pointer, used for integrity validation
-    pub sha256: Option<String>,
-    /// Direct download URL (`https://huggingface.co/{repo}/resolve/main/{file}`)
-    pub download_url: String,
-}
-
-/// Return `true` if `s` looks like a HuggingFace repo ID (`owner/repo`).
-///
-/// A valid HF repo ID has exactly one `/`, both parts non-empty, no
-/// filesystem path markers, and only alphanumeric / `-` / `_` / `.` chars.
-pub fn looks_like_hf_repo(s: &str) -> bool {
-    if s.starts_with('/') || s.starts_with('.') || s.starts_with('~') {
-        return false;
-    }
-    let Some((owner, name)) = s.split_once('/') else {
-        return false;
-    };
-    if owner.is_empty() || name.is_empty() || name.contains('/') {
-        return false;
-    }
-    let ok = |c: char| c.is_alphanumeric() || matches!(c, '-' | '_' | '.');
-    owner.chars().all(ok) && name.chars().all(ok)
-}
-
-/// Fetch the list of GGUF files available in a HuggingFace repository.
-///
-/// Results are sorted by size ascending so smaller quantizations appear first.
-/// Passes `hf_token` as a Bearer token when provided.
-pub async fn fetch_hf_gguf_files(
-    repo_id: &str,
-    hf_token: Option<&str>,
-) -> Result<Vec<HfFileInfo>, String> {
-    let url = format!(
-        "https://huggingface.co/api/models/{}?blobs=true&files_metadata=true",
-        repo_id
-    );
-
-    let client = reqwest::Client::new();
-    let mut req = client.get(&url);
-    if let Some(tok) = hf_token {
-        req = req.bearer_auth(tok);
-    }
-
-    let resp = req.send().await.map_err(|e| e.to_string())?;
-    let status = resp.status();
-
-    if !status.is_success() {
-        return Err(match status.as_u16() {
-            401 | 403 => format!(
-                "HuggingFace returned {status} for '{repo_id}'. \
-                The repo may be gated — set the HF_TOKEN environment variable."
-            ),
-            404 => format!(
-                "HuggingFace repo '{repo_id}' not found. \
-                Check the repo ID or run `jan models list` to see local models."
-            ),
-            _ => format!("HuggingFace API error {status} for '{repo_id}'."),
-        });
-    }
-
-    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-
-    let siblings = body["siblings"]
-        .as_array()
-        .ok_or_else(|| "Unexpected HuggingFace API response format".to_string())?;
-
-    let mut files: Vec<HfFileInfo> = siblings
+    let messages: Vec<serde_json::Value> = history
         .iter()
-        .filter_map(|s| {
-            let name = s["rfilename"].as_str()?;
-            if !name.to_lowercase().ends_with(".gguf") {
-                return None;
+        .filter_map(|m| {
+            let role = m.get("role").and_then(|v| v.as_str())?;
+            let content = openai_content_text(m.get("content"));
+            let mut record = serde_json::json!({
+                "id": uuid::Uuid::new_v4().to_string(),
+                "object": "thread.message",
+                "thread_id": id,
+                "role": role,
+                "type": "text",
+                "status": "ready",
+                "created_at": now_ms,
+                "completed_at": now_ms,
+                "content": [{ "type": "text", "text": { "value": content, "annotations": [] } }],
+            });
+            // Carry the wire fields the text form cannot express, so a resumed
+            // conversation still shows the model the tools it ran. Extra keys on
+            // a `thread.message`; the desktop reads `role` and `content`.
+            for key in ["tool_calls", "tool_call_id"] {
+                if let Some(v) = m.get(key) {
+                    record[key] = v.clone();
+                }
             }
-            // Prefer LFS size, fall back to top-level size field
-            let size = s["lfs"]["size"]
-                .as_u64()
-                .or_else(|| s["size"].as_u64())
-                .unwrap_or(0);
-            let sha256 = s["lfs"]["sha256"].as_str().map(str::to_owned);
-            let download_url = format!(
-                "https://huggingface.co/{}/resolve/main/{}",
-                repo_id, name
-            );
-            Some(HfFileInfo {
-                filename: name.to_owned(),
-                size,
-                sha256,
-                download_url,
+            Some(record)
+        })
+        .collect();
+    write_messages_to_file(&messages, &get_messages_path(base, &id))?;
+
+    let existing: Option<serde_json::Value> =
+        std::fs::read_to_string(get_thread_metadata_path(base, &id))
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok());
+    let created = existing
+        .as_ref()
+        .and_then(|e| e.get("created").and_then(serde_json::Value::as_f64))
+        .unwrap_or(now_secs);
+    let title = existing
+        .as_ref()
+        .and_then(|e| e.get("title").and_then(|v| v.as_str()))
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| default_thread_title(history));
+
+    // Preserve prior metadata when the caller passes none (e.g. a plain save with
+    // no worktree state), so an update never drops isolation bookkeeping.
+    let metadata = metadata
+        .or_else(|| existing.as_ref().and_then(|e| e.get("metadata").cloned()))
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    let thread = serde_json::json!({
+        "id": id,
+        "object": "thread",
+        "title": title,
+        "created": created,
+        "updated": now_secs,
+        "model": { "id": model, "provider": "" },
+        "metadata": metadata,
+    });
+    update_thread_metadata(base, &id, &thread)?;
+    Ok(id)
+}
+
+/// Persist a TUI `/model` choice to the project's `agent.toml` `[agent].model`,
+/// so it is remembered on the next session (agent.toml wins over the desktop
+/// default in the model-resolution order). `agent_dir` is `<project>/.jan/agent`.
+pub fn cli_set_project_model(agent_dir: &std::path::Path, model: &str) -> Result<(), String> {
+    set_model_in_agent_toml(&agent_dir.join("agent.toml"), model)
+}
+
+/// Stands in for a tool result that never reached disk, so the call it answers
+/// stays valid. Says what happened rather than inventing an outcome.
+pub(crate) const MISSING_TOOL_RESULT: &str =
+    "(result not saved: the session ended before this call's output was recorded)";
+
+/// Rebuild the wire conversation from persisted `thread.message` records: the
+/// user/assistant text plus the tool calls and results that text cannot express,
+/// so a resumed model sees the work it did instead of only its own answers.
+///
+/// Tool pairing is enforced, because an OpenAI-compatible upstream rejects a
+/// conversation where it is broken: a result whose call is gone is dropped, and a
+/// call whose result is missing (a crash between the two) gets the placeholder
+/// above. Roles the agent owns (`system`) and messages carrying neither text nor
+/// calls are left out.
+pub(crate) fn rebuild_wire_history(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    fn answer_open(out: &mut Vec<serde_json::Value>, open: &mut Vec<String>) {
+        for id in open.drain(..) {
+            out.push(serde_json::json!({
+                "role": "tool",
+                "tool_call_id": id,
+                "content": MISSING_TOOL_RESULT,
+            }));
+        }
+    }
+
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    let mut open: Vec<String> = Vec::new();
+    for m in messages {
+        let role = m.get("role").and_then(|v| v.as_str()).unwrap_or_default();
+        let text = thread_message_text(m);
+        if role == "tool" {
+            let id = m
+                .get("tool_call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            if let Some(pos) = open.iter().position(|open_id| open_id == id) {
+                open.remove(pos);
+                out.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": id,
+                    "content": text,
+                }));
+            }
+            continue;
+        }
+        if !matches!(role, "user" | "assistant") {
+            continue;
+        }
+        // A new turn: whatever the previous assistant left unanswered is closed
+        // out first, so calls and results stay adjacent and paired.
+        answer_open(&mut out, &mut open);
+        let calls = m
+            .get("tool_calls")
+            .filter(|v| v.as_array().is_some_and(|a| !a.is_empty()));
+        if text.is_empty() && calls.is_none() {
+            continue;
+        }
+        let mut msg = serde_json::json!({ "role": role, "content": text });
+        if let Some(calls) = calls {
+            msg["tool_calls"] = calls.clone();
+            open = calls
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|c| c.get("id").and_then(|v| v.as_str()))
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+        }
+        out.push(msg);
+    }
+    answer_open(&mut out, &mut open);
+    out
+}
+
+/// Text of a persisted `thread.message` (content parts carry `text.value`) or of
+/// an OpenAI-shaped message (`content` is a plain string or `text` parts), so
+/// the same reader works on both sides of a save/resume round trip.
+pub(crate) fn thread_message_text(msg: &serde_json::Value) -> String {
+    match msg.get("content") {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(serde_json::Value::Array(parts)) => parts
+            .iter()
+            .filter_map(|p| {
+                p.get("text")
+                    .and_then(|t| t.get("value"))
+                    .and_then(|v| v.as_str())
+                    .or_else(|| p.get("text").and_then(|t| t.as_str()))
+                    .or_else(|| p.as_str())
+            })
+            .collect::<Vec<_>>()
+            .join(""),
+        _ => String::new(),
+    }
+}
+
+/// Text of an OpenAI-shaped message `content`: the string as-is, or the joined
+/// `text` parts of a multimodal content array (image parts contribute nothing).
+fn openai_content_text(content: Option<&serde_json::Value>) -> String {
+    match content {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(serde_json::Value::Array(parts)) => parts
+            .iter()
+            .filter(|p| p.get("type").and_then(|v| v.as_str()) == Some("text"))
+            .filter_map(|p| p.get("text").and_then(|v| v.as_str()))
+            .collect::<Vec<_>>()
+            .join(""),
+        _ => String::new(),
+    }
+}
+
+/// If `text` is a machine-generated skill or plugin-command invocation message
+/// (the `[IMPORTANT: You have invoked the "<name>" <kind> - follow its
+/// instructions...]` wrapper produced by `skills::build_invocation_message` and
+/// `commands::build_message`), return the compact transcript label
+/// (`[skill:<name>]` or `[command:<name>]`). `None` for any other text, so a
+/// user who types that prefix verbatim still renders normally.
+pub fn invocation_label(text: &str) -> Option<String> {
+    const PREFIX: &str = "[IMPORTANT: You have invoked the \"";
+    let rest = text.strip_prefix(PREFIX)?;
+    let (name, rest) = rest.split_once('"')?;
+    if name.is_empty() {
+        return None;
+    }
+    let kind = if rest.starts_with(" skill - follow its instructions") {
+        "skill"
+    } else if rest.starts_with(" command - follow its instructions") {
+        "command"
+    } else {
+        return None;
+    };
+    Some(format!("[{kind}:{name}]"))
+}
+
+/// Fallback thread title: the first user message, whitespace-collapsed and
+/// truncated. Used only when no summarized title exists yet.
+fn default_thread_title(history: &[serde_json::Value]) -> String {
+    let first_user = history
+        .iter()
+        .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+        .map(|m| openai_content_text(m.get("content")))
+        .unwrap_or_default();
+    if let Some(label) = invocation_label(&first_user) {
+        return label;
+    }
+    let collapsed = first_user.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() {
+        return "Agent chat".to_string();
+    }
+    if collapsed.chars().count() > 50 {
+        format!("{}…", collapsed.chars().take(49).collect::<String>())
+    } else {
+        collapsed
+    }
+}
+
+// ── Agent operations ───────────────────────────────────────────────────────
+
+use crate::core::agent::events::StreamEvent;
+use crate::core::agent::project::{
+    ensure_project, load_agent_config, permissions_from, set_model_in_agent_toml,
+};
+use crate::core::agent::r#loop::{
+    run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
+};
+use tauri_plugin_agent_tools::workspace;
+use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
+use crate::core::cli::run_report::{OutputFormat, RunReport};
+use crate::core::mcp::models::McpSettings;
+use std::collections::HashMap;
+use std::io::Write as _;
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+use tokio::sync::{mpsc, Mutex};
+
+/// Token-spend ceiling for one agent run when `agent.toml [budget].max_tokens`
+/// is unset. There is no turn cap: the agent takes as many turns as the task
+/// needs and this budget (or cancellation) is what stops a runaway loop. `0`
+/// disables the ceiling entirely. Counted marginally by `SessionBudget`, so
+/// this bounds real new spend, not the context replayed on every turn.
+const DEFAULT_MAX_SESSION_TOKENS: u64 = 128_000;
+
+/// Resolve the `--project` flag (default `"."`) to an absolute path. The raw
+/// value is what the model would otherwise see verbatim in the system prompt's
+/// working-directory block, so a bare "." must become the real cwd rather than
+/// being sent to the model as-is. Falls back to the raw (possibly relative)
+/// path if canonicalization fails (e.g. the directory doesn't exist yet).
+fn resolve_project_root(project: &str) -> PathBuf {
+    PathBuf::from(project)
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(project))
+}
+
+/// Resolved-config + provider snapshot for `jan cli agent status`.
+pub fn cli_agent_status(
+    project: &str,
+    overrides: &ProviderOverrides,
+) -> Result<serde_json::Value, String> {
+    let project_root = resolve_project_root(project);
+    ensure_project(&project_root)?;
+    let cfg = load_agent_config(&project_root)?;
+    let provider_configs = load_provider_configs(Some(&project_root), overrides)?;
+
+    // Only providers this build can reach: local-engine entries inherited from
+    // the desktop store have no upstream here (see `is_cli_reachable`).
+    let mut providers: Vec<serde_json::Value> = provider_configs
+        .values()
+        .filter(|c| crate::core::cli::providers::is_cli_reachable(c))
+        .map(|c| {
+            serde_json::json!({
+                "provider": c.provider,
+                "base_url": c.base_url,
+                "has_api_key": crate::core::cli::providers::has_credential(c),
+                "models": c.models.len(),
             })
         })
         .collect();
+    providers.sort_by(|a, b| a["provider"].as_str().cmp(&b["provider"].as_str()));
 
-    if files.is_empty() {
+    Ok(serde_json::json!({
+        "project": project_root.to_string_lossy(),
+        "data_folder": resolve_jan_data_folder().to_string_lossy(),
+        "model": cfg.agent.model,
+        "max_session_tokens": cfg.budget.max_tokens.unwrap_or(DEFAULT_MAX_SESSION_TOKENS),
+        "tools": {
+            "default": cfg.tools.default,
+            "allow": cfg.tools.allow,
+            "deny": cfg.tools.deny,
+            "allow_write": cfg.tools.allow_write,
+            "allow_network": cfg.tools.allow_network,
+            "allow_home_read": cfg.tools.allow_home_read,
+            "sandbox": cfg.tools.sandbox,
+        },
+        // What `bash` will actually do, with the config files already resolved
+        // (the `--sandbox` flag is per-invocation and so cannot be reported
+        // here). `backend` names the confinement that would be used and is
+        // `none` where none can be established -- with `enabled` true that
+        // combination is what withholds `bash` entirely.
+        "sandbox": {
+            "enabled": crate::core::agent::r#loop::effective_sandbox(&project_root),
+            "backend": tauri_plugin_agent_tools::tools::jail::backend().as_str(),
+        },
+        "providers": providers,
+    }))
+}
+
+/// Set (create or merge) a provider entry in the global `~/.jan/config.toml`,
+/// the standalone-agent credential store. Returns the config path so the caller
+/// can report where the value landed. Headless: no Desktop app required.
+pub fn cli_agent_config_set(
+    provider: &str,
+    api_key: Option<String>,
+    base_url: Option<String>,
+    models: Option<Vec<String>>,
+    api_type: Option<String>,
+) -> Result<PathBuf, String> {
+    crate::core::agent::global_config::set_provider(
+        provider,
+        crate::core::agent::global_config::ProviderUpdate {
+            api_key,
+            clear_api_key: false,
+            base_url,
+            models,
+            api_type,
+            ..Default::default()
+        },
+    )
+}
+
+/// Remove a provider entry from `~/.jan/config.toml`. `Ok(false)` means it was
+/// already absent.
+pub fn cli_agent_config_unset(provider: &str) -> Result<bool, String> {
+    crate::core::agent::global_config::remove_provider(provider)
+}
+
+/// The global config file path, scaffolding a commented template if it doesn't
+/// exist yet so `jan config path` always points at a real file.
+pub fn cli_agent_config_path() -> Result<PathBuf, String> {
+    crate::core::agent::global_config::ensure_global_config()
+}
+
+/// Providers configured in `~/.jan/config.toml`, as JSON with API keys redacted.
+/// Reflects only the global store (what the user set), not Desktop inherit.
+pub fn cli_agent_config_list() -> Result<serde_json::Value, String> {
+    let configs = crate::core::agent::global_config::load_global_config()?;
+    let mut providers: Vec<serde_json::Value> = configs
+        .values()
+        .map(|c| {
+            serde_json::json!({
+                "provider": c.provider,
+                "base_url": c.base_url,
+                "has_api_key": c.api_key.is_some(),
+                "api_type": c.api_type,
+                "models": c.models,
+            })
+        })
+        .collect();
+    providers.sort_by(|a, b| a["provider"].as_str().cmp(&b["provider"].as_str()));
+    Ok(serde_json::json!({
+        "config_path": crate::core::agent::global_config::global_config_path()?.to_string_lossy(),
+        "providers": providers,
+    }))
+}
+
+/// List plugins installed for a project.
+pub fn cli_plugin_list(project: &str) -> Vec<crate::core::agent::plugins::InstalledPlugin> {
+    crate::core::agent::plugins::installed(&resolve_project_root(project))
+}
+
+/// Install git or marketplace plugin(s) for a project.
+///
+/// This is the interactive CLI path: a multi-plugin collection prompts the user
+/// to choose which plugins to install (it has an owning terminal, unlike the
+/// TUI render loop which reads stdin itself and so uses the non-interactive
+/// listing-error behavior). Returns every plugin actually installed.
+pub async fn cli_plugin_install(
+    project: &str,
+    spec: &str,
+) -> Result<Vec<crate::core::agent::plugins::InstalledPlugin>, String> {
+    crate::core::agent::plugins::install_interactive(&resolve_project_root(project), spec).await
+}
+
+/// Remove a plugin from a project.
+pub fn cli_plugin_remove(project: &str, name: &str) -> Result<(), String> {
+    crate::core::agent::plugins::remove(&resolve_project_root(project), name)
+}
+
+/// Search the configured plugin marketplace for a project.
+pub async fn cli_plugin_search(
+    project: &str,
+    query: &str,
+) -> Result<Vec<crate::core::agent::plugins::MarketEntry>, String> {
+    crate::core::agent::plugins::search(&resolve_project_root(project), query).await
+}
+
+/// Autonomous run: as many turns as the task needs, bounded only by the
+/// session token budget.
+#[allow(clippy::too_many_arguments)]
+pub async fn cli_agent_run(
+    project: &str,
+    task: &str,
+    model: Option<String>,
+    overrides: ProviderOverrides,
+    flags: SessionFlags,
+    resume: Option<ResumeTarget>,
+    format: OutputFormat,
+) -> Result<(), String> {
+    run_agent_loop(project, task, model, false, overrides, flags, resume, format).await
+}
+
+/// Single-turn run for debugging: the one place a turn cap is still applied,
+/// and it is not user-configurable.
+pub async fn cli_agent_step(
+    project: &str,
+    task: &str,
+    model: Option<String>,
+    overrides: ProviderOverrides,
+    flags: SessionFlags,
+) -> Result<(), String> {
+    run_agent_loop(
+        project,
+        task,
+        model,
+        true,
+        overrides,
+        flags,
+        None,
+        OutputFormat::Text,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_cli_orchestration_args(
+    project_root: PathBuf,
+    permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
+    provider_configs: HashMap<String, crate::core::state::ProviderConfig>,
+    mcp_servers: crate::core::state::SharedMcpServers,
+    mcp_settings: McpSettings,
+    permission_requests: PermissionRegistry,
+    auto_approve: bool,
+    plan: bool,
+    max_parallel_subagents: u32,
+    sandbox: Option<bool>,
+) -> OrchestrationArgs {
+    OrchestrationArgs {
+        client: crate::core::agent::upstream::agent_http_client(),
+        provider_configs: Arc::new(Mutex::new(provider_configs)),
+        mcp_servers,
+        mcp_settings: Arc::new(Mutex::new(mcp_settings)),
+        jan_data_folder: resolve_jan_data_folder().to_string_lossy().into_owned(),
+        permissions,
+        project_root: Some(project_root),
+        permission_requests,
+        ask_requests: None,
+        todo_registry: None,
+        system_prompt_override: None,
+        subagents_enabled: true,
+        max_parallel_subagents,
+        auto_approve,
+        run_mode: if plan {
+            crate::core::agent::plan::RunMode::Plan
+        } else {
+            crate::core::agent::plan::RunMode::Normal
+        },
+        // Key the persistent bash `/tmp` scratch to this session. Generated per
+        // run/session: a one-shot CLI wipes it after its single run; the TUI
+        // reuses `args` across turns and wipes it when the interactive session
+        // ends.
+        session_id: Some(uuid::Uuid::new_v4().to_string()),
+        // `--sandbox` only when passed; unset falls through to the project's
+        // `[tools].sandbox` and then the user's global `sandbox`.
+        sandbox,
+    }
+}
+
+/// Everything needed to drive one agent run: the engine handle, request body,
+/// and the shared permission registry. Built once and consumed by either the
+/// plain CLI printer or the TUI renderer.
+pub(crate) struct PreparedRun {
+    pub args: OrchestrationArgs,
+    pub body: serde_json::Value,
+    pub permission_requests: PermissionRegistry,
+    /// Background connect of `active` MCP servers, awaited before the first turn.
+    pub mcp_task: Option<tokio::task::JoinHandle<mcp::ConnectOutcome>>,
+    /// Where to write the conversation once the run finishes.
+    persist: PersistTarget,
+}
+
+/// Bookkeeping for writing a non-interactive run to the project's thread store,
+/// so `--resume` can pick it up later. `thread_id` is `None` for a new session.
+struct PersistTarget {
+    agent_dir: PathBuf,
+    thread_id: Option<String>,
+    model: String,
+    history: Vec<serde_json::Value>,
+}
+
+/// Per-run limits resolved from agent.toml. Grouped rather than passed as a
+/// run of bare numbers, which would be trivial to transpose at a call site.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SessionLimits {
+    /// Context window limit in tokens for the model. Resolution order is the
+    /// configured `[agent].context_window` override, then the built-in model
+    /// catalog, then a 128K fallback. Used to display `ctx N/K` in the header
+    /// and trigger compaction.
+    pub context_window: u64,
+    /// Where `context_window` came from: configured override, catalog, or fallback.
+    pub context_window_source: crate::core::cli::model_capabilities::ContextWindowSource,
+    /// Tokens reserved for the model's response. Defaults to 16K if unset.
+    /// Compaction triggers at `context_window - reserve_tokens`.
+    pub reserve_tokens: u64,
+    /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
+    /// `None` omits the field (model default).
+    pub max_tokens: Option<u64>,
+    /// `[budget].max_tokens`: marginal token-spend ceiling for one run, the
+    /// only cap on run length. `0` is unbounded.
+    pub max_session_tokens: u64,
+}
+
+/// Resolved engine handle for a chat session: the args are built once and the
+/// request body is assembled per turn (the TUI reuses this across many turns;
+/// the plain CLI builds a single body). `model`/`limits` seed each body.
+pub(crate) struct AgentSession {
+    pub args: OrchestrationArgs,
+    pub permission_requests: PermissionRegistry,
+    pub model: String,
+    /// Fast model for the `smol` role (goal evaluation). Falls back to `model`.
+    pub smol_model: String,
+    pub limits: SessionLimits,
+    /// Whether the TUI expands `<think>` reasoning blocks (default false).
+    pub show_reasoning: bool,
+    /// Whether the TUI streams reasoning into the live tail while it folds
+    /// (`stream_reasoning` in `~/.jan/config.toml`, default true). Independent
+    /// of `show_reasoning`, which unfolds it for good.
+    pub stream_reasoning: bool,
+    /// Whether to resend a prior assistant turn's reasoning to the model
+    /// (default true). False drops `reasoning_content` from outgoing assistant
+    /// messages; the display journal still keeps reasoning for a resume.
+    pub send_reasoning: bool,
+    /// Shared MCP connection map (same Arc held by `args`), so the TUI can
+    /// connect/disconnect servers live via `/mcp` and later turns pick them up.
+    pub mcp_servers: crate::core::state::SharedMcpServers,
+    /// Background connect of `active` MCP servers, awaited before the first turn.
+    /// `None` when no server is active. Resolves to the connected server names.
+    pub mcp_task: Option<tokio::task::JoinHandle<mcp::ConnectOutcome>>,
+}
+
+impl AgentSession {
+    /// Build a streaming request body for the given conversation history.
+    pub(crate) fn body(&self, messages: serde_json::Value) -> serde_json::Value {
+        let mut body = serde_json::json!({
+            "model": self.model,
+            "messages": messages,
+            "max_session_tokens": self.limits.max_session_tokens,
+            "stream": true,
+        });
+        // Forward the per-request output cap only when configured; it flows to
+        // the upstream via `copy_optional_chat_params`.
+        if let Some(max) = self.limits.max_tokens {
+            body["max_tokens"] = serde_json::json!(max);
+        }
+        // Reasoning resend policy: the request-level flag the loop reads to
+        // decide whether prior assistant `reasoning_content` goes back out.
+        body["send_reasoning"] = serde_json::json!(self.send_reasoning);
+        body
+    }
+}
+
+/// The per-invocation switches a session starts with.
+///
+/// A struct rather than a run of positional `bool`s: `(.., false, false, true)`
+/// at a call site names none of them, and the compiler cannot catch two of them
+/// being swapped.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SessionFlags {
+    /// Skip the permission prompt for writes, shell, and MCP calls.
+    pub auto_approve: bool,
+    /// Start in read-only plan mode.
+    pub plan: bool,
+    /// Fail when no model resolves instead of launching with an empty one. The
+    /// TUI leaves this off so `/login` can fill the model in later.
+    pub require_model: bool,
+    /// `--sandbox`: run `bash` under OS confinement. `None` (not passed) defers
+    /// to `[tools].sandbox`, then the global `sandbox`, then the CLI default of
+    /// off.
+    pub sandbox: Option<bool>,
+}
+
+/// The desktop app's currently-selected model, adopted only when signed in to
+/// Tokamak. Split out from the resolution chain so the rule is testable without
+/// a `settings.json` on disk; see the note at the call site for why the sign-in
+/// gates it.
+fn inherit_desktop_model(
+    signed_in: bool,
+    selection: crate::core::cli::providers::DesktopSelection,
+) -> Option<String> {
+    signed_in.then_some(selection.model).flatten()
+}
+
+/// Resolve project config + credentials into a ready-to-run engine handle.
+/// Shared by `run_agent_loop` (plain CLI) and `cli_agent_ui` (TUI).
+fn prepare_agent_session(
+    project: &str,
+    model_override: Option<String>,
+    overrides: ProviderOverrides,
+    flags: SessionFlags,
+) -> Result<AgentSession, String> {
+    let project_root = resolve_project_root(project);
+    ensure_project(&project_root)?;
+    if let Err(e) = crate::core::agent::global_config::ensure_global_config() {
+        log::warn!("Agent: could not scaffold ~/.jan/config.toml: {e}");
+    }
+    let cfg = load_agent_config(&project_root)?;
+    let permissions = permissions_from(&cfg);
+
+    // Resolution order: --model flag, then agent.toml [agent].model, then the
+    // standalone global config (~/.jan/config.toml default_model / first provider
+    // model), then the desktop app's currently-selected model (settings.json
+    // inherit). Global config outranks desktop so a standalone agent is
+    // self-sufficient without a desktop install.
+    //
+    // The desktop inherit is the last resort and applies only when signed in to
+    // Tokamak. Without a sign-in, silently adopting whatever model the desktop
+    // app last had selected starts the session on a provider the user never
+    // chose here -- and hides the sign-in notice that would otherwise fire,
+    // because a non-empty model reads as "configured". Leaving it unset surfaces
+    // the notice instead. An explicit --model, agent.toml, or ~/.jan default is
+    // unaffected: all three outrank this.
+    let explicit = model_override.is_some() || overrides.api_key.is_some();
+    let model = model_override
+        .or_else(|| cfg.agent.model.clone())
+        .or_else(|| crate::core::agent::global_config::default_model().ok().flatten())
+        .or_else(|| {
+            inherit_desktop_model(
+                crate::core::cli::tokamak::auth_status().signed_in,
+                crate::core::cli::providers::desktop_selection(),
+            )
+        });
+    // A project or global default can name a model with nobody around to serve
+    // it (e.g. this repo's own agent.toml pins one, but a fresh `~/.jan` has no
+    // credentials for anything). Trust it only when the user was explicit
+    // (--model/--api-key) or some provider can actually be reached; otherwise
+    // treat it as unset so the TUI's sign-in notice fires instead of failing on
+    // the first message.
+    let model = if !flags.require_model
+        && !explicit
+        && !crate::core::cli::providers::has_usable_provider(Some(&project_root))
+    {
+        String::new()
+    } else {
+        model.unwrap_or_default()
+    };
+    if model.is_empty() && flags.require_model {
+        return Err(
+            "no model specified: run `jan login` to sign in to Tokamak, or pass --model, set [agent].model in agent.toml, set default_model in ~/.jan/config.toml, or select a model in the desktop app"
+                .to_string(),
+        );
+    }
+    // The `smol` role (used by /goal evaluation): an explicit smol_model in
+    // ~/.jan/config.toml, else reuse the main model so evaluation always works.
+    let smol_model = crate::core::agent::global_config::smol_model()
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| model.clone());
+
+    let provider_configs = load_provider_configs(Some(&project_root), &overrides)?;
+
+    // Reject a model whose only provider is a local engine descriptor before any
+    // setup work: the CLI cannot start an engine itself, so this would otherwise
+    // fail mid-run with a far vaguer message. Local models are still runnable
+    // over HTTP -- via the desktop app's API server -- which is what the hint
+    // points at; a provider entry with a base_url never reaches this branch.
+    if let Some(local) =
+        crate::core::cli::providers::unreachable_local_provider(&provider_configs, &model)
+    {
         return Err(format!(
-            "No GGUF files found in HuggingFace repo '{repo_id}'. \
-            For MLX/safetensors repos use `jan models load-mlx`."
+            "model '{model}' is only offered by '{local}', a local engine the Jan CLI cannot \
+             start itself. To use it, run the model in the Jan desktop app with its API server \
+             enabled and point a provider at it:\n  \
+             jan config set --provider jan --base-url http://localhost:1337/v1 --model {model}\n\
+             Or pick a model from `jan cli models list`."
         ));
     }
 
-    // Smaller quantizations first
-    files.sort_by_key(|f| f.size);
-    Ok(files)
-}
+    // MCP servers marked `active` in mcp_config.json connect off-thread so setup/
+    // render isn't blocked on a cold stdio spawn. The caller awaits `mcp_task`
+    // before the first turn (tools are collected once per run), so a race with
+    // the first message can't leave the model without its MCP tools. `None` when
+    // no server is active.
+    let mcp_servers: crate::core::state::SharedMcpServers =
+        Arc::new(Mutex::new(HashMap::new()));
+    let mcp_settings = mcp::read_settings();
+    let mcp_task = if mcp::active_count() > 0 {
+        let servers = mcp_servers.clone();
+        Some(tokio::spawn(
+            async move { mcp::connect_active(&servers).await },
+        ))
+    } else {
+        None
+    };
 
-/// Download one GGUF file from HuggingFace and write a `model.yml` for it.
-///
-/// The model is stored at:
-/// `<data_folder>/llamacpp/models/<repo_id>/<filename>`
-///
-/// `on_progress(downloaded, total)` is called after each chunk.
-/// Returns the local model ID (same as `repo_id`).
-pub async fn download_hf_model(
-    repo_id: &str,
-    file: &HfFileInfo,
-    hf_token: Option<&str>,
-    on_progress: impl Fn(u64, u64) + Send,
-) -> Result<String, String> {
-    use futures_util::StreamExt;
-    use tokio::io::AsyncWriteExt;
+    // `think_tags` is user-wide and read from free rendering functions, so it is
+    // applied to the process here, the one path every agent surface takes.
+    tui::set_think_tags_parsed(crate::core::agent::global_config::think_tags_enabled());
 
-    let data_folder = resolve_jan_data_folder();
-    let model_dir = data_folder
-        .join("llamacpp")
-        .join("models")
-        .join(repo_id);
-    tokio::fs::create_dir_all(&model_dir)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let dest_path = model_dir.join(&file.filename);
-
-    // ── Download ──────────────────────────────────────────────────────────
-    let client = reqwest::Client::new();
-    let mut req = client.get(&file.download_url);
-    if let Some(tok) = hf_token {
-        req = req.bearer_auth(tok);
-    }
-
-    let resp = req.send().await.map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!("Download request failed: {}", resp.status()));
-    }
-
-    // Use the server-reported content-length, fall back to metadata size
-    let total = resp.content_length().unwrap_or(file.size);
-    let mut downloaded: u64 = 0;
-
-    let mut dest = tokio::fs::File::create(&dest_path)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| e.to_string())?;
-        dest.write_all(&chunk).await.map_err(|e| e.to_string())?;
-        downloaded += chunk.len() as u64;
-        on_progress(downloaded, total);
-    }
-    dest.flush().await.map_err(|e| e.to_string())?;
-
-    // ── Write model.yml ───────────────────────────────────────────────────
-    // model_path is relative to the Jan data folder
-    let rel_path = format!(
-        "llamacpp/models/{}/{}",
-        repo_id, file.filename
+    let permission_requests: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+    let max_parallel_subagents = cfg
+        .agent
+        .max_parallel_subagents
+        .unwrap_or(crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS);
+    let args = build_cli_orchestration_args(
+        project_root,
+        permissions,
+        provider_configs,
+        mcp_servers.clone(),
+        mcp_settings,
+        permission_requests.clone(),
+        flags.auto_approve,
+        flags.plan,
+        max_parallel_subagents,
+        flags.sandbox,
     );
-    let display_name = repo_id.split('/').next_back().unwrap_or(repo_id);
 
-    let mut yml = format!(
-        "model_path: {rel_path}\nname: {display_name}\nsize_bytes: {}\nembedding: false\n",
-        file.size
+    // Resolution order: configured `[agent].context_window` override, then the
+    // built-in model catalog, then the 128K fallback.
+    let resolved_window =
+        crate::core::cli::model_capabilities::resolve_context_window(&model, cfg.agent.context_window);
+
+    Ok(AgentSession {
+        args,
+        permission_requests,
+        model,
+        smol_model,
+        limits: SessionLimits {
+            context_window: resolved_window.tokens,
+            context_window_source: resolved_window.source,
+            reserve_tokens: cfg.agent.compaction_reserve_tokens.unwrap_or(16_384),
+            max_tokens: cfg.agent.max_tokens,
+            max_session_tokens: cfg.budget.max_tokens.unwrap_or(DEFAULT_MAX_SESSION_TOKENS),
+        },
+        show_reasoning: cfg.agent.show_reasoning.unwrap_or(false),
+        stream_reasoning: crate::core::agent::global_config::stream_reasoning_enabled(),
+        send_reasoning: cfg.agent.send_reasoning.unwrap_or(true),
+        mcp_servers,
+        mcp_task,
+    })
+}
+
+/// The prior conversation a non-interactive `--resume` run continues, in
+/// OpenAI `{role, content}` shape (the wire format the engine expects).
+struct ResumedSession {
+    thread_id: String,
+    history: Vec<serde_json::Value>,
+}
+
+/// Load a saved thread's conversation for continuation, tool calls and results
+/// included (see `rebuild_wire_history`), matching `/resume` in the TUI. Errors
+/// describe why nothing could be resumed; the caller starts fresh.
+fn load_resume_history(
+    agent_dir: &std::path::Path,
+    target: &ResumeTarget,
+) -> Result<ResumedSession, String> {
+    let thread = find_resume_thread(agent_dir, target)?;
+    let thread_id = thread
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "saved thread has no id".to_string())?
+        .to_string();
+    let (messages, skipped) = cli_read_messages_lenient(agent_dir, &thread_id)?;
+    if skipped > 0 {
+        eprintln!("(skipped {skipped} unreadable message(s) in the resumed session)");
+    }
+    let history = rebuild_wire_history(&messages);
+    Ok(ResumedSession { thread_id, history })
+}
+
+fn prepare_agent_run(
+    project: &str,
+    task: &str,
+    model_override: Option<String>,
+    single_turn: bool,
+    overrides: ProviderOverrides,
+    flags: SessionFlags,
+    resume: Option<ResumeTarget>,
+) -> Result<PreparedRun, String> {
+    // Non-interactive runs (`agent run`/`step`) have no plan-review handoff, so
+    // plan mode stays a TUI-only startup option, and a run with no model has no
+    // terminal to recover in, so it must fail rather than launch empty.
+    let session = prepare_agent_session(
+        project,
+        model_override,
+        overrides,
+        SessionFlags {
+            plan: false,
+            require_model: true,
+            ..flags
+        },
+    )?;
+    let project_root = resolve_project_root(project);
+    let (clean_task, injected) = path_refs::resolve_references(task, &project_root);
+    let final_task = if injected.is_empty() {
+        clean_task
+    } else {
+        format!("{clean_task}\n\n---\nReferenced file contents:\n\n{injected}")
+    };
+
+    // A failed resume is not fatal: report it and run the prompt in a new session.
+    let resumed = resume.and_then(|target| {
+        match load_resume_history(&agent_dir_for(&project_root), &target) {
+            Ok(r) => {
+                eprintln!("(resumed session {} with {} message(s))", short_id(&r.thread_id), r.history.len());
+                Some(r)
+            }
+            Err(e) => {
+                eprintln!("{e}; starting a new session");
+                None
+            }
+        }
+    });
+
+    let mut history = resumed.as_ref().map(|r| r.history.clone()).unwrap_or_default();
+    history.push(serde_json::json!({ "role": "user", "content": final_task }));
+    let mut body = session.body(serde_json::json!(history.clone()));
+    if single_turn {
+        body["max_turns"] = serde_json::json!(1);
+    }
+    // Emit resolved references stderr so the user sees what was injected
+    if !injected.is_empty() {
+        eprintln!("(resolved @path references)");
+    }
+    Ok(PreparedRun {
+        args: session.args,
+        body,
+        permission_requests: session.permission_requests,
+        mcp_task: session.mcp_task,
+        // Non-interactive runs persist into the same per-project store the TUI
+        // uses, so a run can later be continued with --resume from either side.
+        persist: PersistTarget {
+            agent_dir: agent_dir_for(&project_root),
+            thread_id: resumed.map(|r| r.thread_id),
+            model: session.model,
+            history,
+        },
+    })
+}
+
+/// First 8 chars of a thread id, the form the TUI shows in `/threads`.
+fn short_id(id: &str) -> String {
+    id.chars().take(8).collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_agent_loop(
+    project: &str,
+    task: &str,
+    model_override: Option<String>,
+    single_turn: bool,
+    overrides: ProviderOverrides,
+    flags: SessionFlags,
+    resume: Option<ResumeTarget>,
+    format: OutputFormat,
+) -> Result<(), String> {
+    let started = std::time::Instant::now();
+    let prepared = prepare_agent_run(
+        project,
+        task,
+        model_override,
+        single_turn,
+        overrides,
+        flags,
+        resume,
     );
-    if let Some(sha) = &file.sha256 {
-        yml.push_str(&format!("model_sha256: {sha}\n"));
+    // A setup failure never reaches the event stream, so a JSON consumer would
+    // otherwise get an empty stdout and have to parse the human error off stderr.
+    let PreparedRun {
+        args,
+        body,
+        permission_requests,
+        mcp_task,
+        persist,
+    } = match prepared {
+        Ok(prepared) => prepared,
+        Err(e) => {
+            if format.is_json() {
+                print_report(RunReport::setup_failure(&e).finish(
+                    None,
+                    "",
+                    started.elapsed().as_millis(),
+                    None,
+                ));
+            }
+            return Err(e);
+        }
+    };
+
+    // Block until active MCP servers connect, so tools (collected once per run)
+    // are present on the first turn.
+    if let Some(task) = mcp_task {
+        match task.await {
+            Ok(outcome) => {
+                if !outcome.connected.is_empty() {
+                    log::info!("MCP: connected {}", outcome.connected.join(", "));
+                }
+                // Headless has no transcript to note into, so these stay logs.
+                for failure in &outcome.failed {
+                    log::warn!("MCP: {failure}");
+                }
+                // Signing in needs a browser and a keypress, neither of which
+                // exists here, so the fix is named rather than attempted.
+                if !outcome.needs_auth.is_empty() {
+                    log::warn!(
+                        "MCP: {} need authentication - run `jan` and use /mcp to sign in",
+                        outcome.needs_auth.join(", ")
+                    );
+                }
+            }
+            Err(e) => log::warn!("MCP connect task failed: {e}"),
+        }
     }
 
-    tokio::fs::write(model_dir.join("model.yml"), yml)
-        .await
-        .map_err(|e| e.to_string())?;
+    let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
+    // The report is folded in both formats from the same stream the printer
+    // reads, so the JSON envelope can never disagree with the text output.
+    let printer = tokio::spawn(async move {
+        let mut report = RunReport::default();
+        while let Some(ev) = rx.recv().await {
+            report.observe(&ev);
+            if format.is_json() {
+                resolve_permission_silently(ev, &permission_requests).await;
+            } else {
+                print_event(ev, &permission_requests).await;
+            }
+        }
+        report
+    });
 
-    Ok(repo_id.to_string())
-}
+    let result = run_orchestration_streamed(&tx, &body, &args).await;
+    drop(tx);
+    let report = printer.await.unwrap_or_default();
 
-// ── App config ────────────────────────────────────────────────────────────
-
-pub fn cli_get_data_folder() -> PathBuf {
-    resolve_jan_data_folder()
-}
-
-pub fn cli_get_config() -> Result<serde_json::Value, String> {
-    let path = resolve_config_file_path();
-    if !path.exists() {
-        return Err(format!("Config file not found at: {}", path.display()));
+    // Write the turn back so the session stays continuable with --resume.
+    let PersistTarget {
+        agent_dir,
+        thread_id,
+        model,
+        mut history,
+    } = persist;
+    let mut session_id = thread_id.clone();
+    let mut final_text = None;
+    if let Ok(completion) = result.as_ref() {
+        final_text = completion_text(completion);
+        if let Some(text) = final_text.as_ref() {
+            history.push(serde_json::json!({ "role": "assistant", "content": text.clone() }));
+        }
+        match cli_save_thread(&agent_dir, thread_id.as_deref(), &model, &history, None) {
+            Ok(id) => {
+                if !format.is_json() {
+                    eprintln!(
+                        "\x1b[2m[session {} - resume with `jan --resume={}`]\x1b[0m",
+                        short_id(&id),
+                        short_id(&id)
+                    );
+                }
+                session_id = Some(id);
+            }
+            Err(e) => eprintln!("(could not save session: {e})"),
+        }
     }
-    let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&data).map_err(|e| e.to_string())
+    if format.is_json() {
+        print_report(report.finish(
+            session_id.as_deref().map(short_id).as_deref(),
+            &model,
+            started.elapsed().as_millis(),
+            final_text.as_deref(),
+        ));
+    }
+    // The one-shot CLI runs exactly one turn, so its session ends here: wipe
+    // the persistent bash `/tmp` scratch this run used.
+    if let Some(session) = args.session_id.as_deref() {
+        let _ = workspace::remove_scratch_dir(session).await;
+    }
+    result.map(|_| ())
+}
+
+/// Write the result envelope to stdout, the only thing `--output-format json`
+/// puts there. Pretty-printed: these are read by people at least as often as by
+/// programs, and `jq` does not care either way.
+fn print_report(report: run_report::RunResult) {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).unwrap_or_default()
+    );
+}
+
+/// Answer a permission request without printing progress, for the JSON format.
+/// Leaving it unanswered would wedge the run: the loop waits on the reply.
+/// Every other event is silent -- stdout belongs to the envelope.
+async fn resolve_permission_silently(ev: StreamEvent, registry: &PermissionRegistry) {
+    if let StreamEvent::PermissionRequest {
+        request_id,
+        tool_name,
+        capability,
+        path,
+        command,
+        ..
+    } = ev
+    {
+        let detail = command
+            .map(|c| format!(" ({c})"))
+            .or_else(|| path.map(|p| format!(" on {p}")))
+            .unwrap_or_default();
+        let decision = prompt_permission(tool_name, capability, detail).await;
+        if let Some(sender) = registry.lock().await.remove(&request_id) {
+            let _ = sender.send(decision);
+        }
+    }
+}
+
+/// Assistant text of a chat-completion response, if any.
+fn completion_text(completion: &serde_json::Value) -> Option<String> {
+    let text = completion
+        .get("choices")?
+        .get(0)?
+        .get("message")?
+        .get("content")
+        .and_then(|v| v.as_str())?;
+    (!text.is_empty()).then(|| text.to_string())
+}
+
+/// Launch the interactive chat console (bare `jan`). An optional `task`
+/// seeds the first turn; otherwise the user types the first message. Shares the
+/// engine with `run_agent_loop` via `AgentSession` — only presentation differs.
+#[allow(clippy::too_many_arguments)]
+pub async fn cli_agent_ui(
+    project: &str,
+    task: Option<String>,
+    model: Option<String>,
+    images: Vec<String>,
+    overrides: ProviderOverrides,
+    flags: SessionFlags,
+    resume: Option<ResumeTarget>,
+) -> Result<(), String> {
+    let project_root = resolve_project_root(project);
+    // A non-interactive invocation with nothing configured has no terminal to
+    // show the sign-in notice in, so it fails fast with instructions instead.
+    // Bypassed by an explicit --api-key/env key.
+    if overrides.api_key.is_none() {
+        login::reject_headless_without_provider(Some(&project_root))?;
+    }
+    // Fresh install with a terminal attached: launch with no model rather than
+    // forcing sign-in here. The TUI shows a one-line notice and `/login` (or
+    // `jan login`) picks a model up once the user is ready.
+    let session = prepare_agent_session(
+        project,
+        model,
+        overrides,
+        SessionFlags {
+            require_model: false,
+            ..flags
+        },
+    )?;
+    // TUI threads persist under the project's .jan/agent dir, separate from the
+    // desktop store, so continuing here never mutates desktop threads.
+    let agent_dir = agent_dir_for(&project_root);
+    tui::run(session, agent_dir, project_root, task, images, resume).await
+}
+
+/// Where the TUI persists a project's threads (`<project>/.jan/agent`).
+pub fn agent_dir_for(project_root: &std::path::Path) -> PathBuf {
+    project_root.join(".jan").join("agent")
+}
+
+/// Render one `StreamEvent` for the terminal. Content tokens go to stdout so a
+/// run can be piped; progress/diagnostics go to stderr. `PermissionRequest` is
+/// resolved via the terminal (deny when non-interactive).
+async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
+    if crate::core::cli::auth::account::take_claude_alias_engaged() {
+        eprintln!(
+            "\x1b[33m[warning] {}\x1b[0m",
+            crate::core::cli::auth::account::CLAUDE_ALIAS_NOTICE
+        );
+    }
+    match ev {
+        StreamEvent::Token { text } => {
+            print!("{text}");
+            let _ = std::io::stdout().flush();
+        }
+        // A command's live output is progress, not answer: it goes to stderr so a
+        // piped stdout still holds only the model's completion. The full output
+        // arrives again with the tool result, which is what the model sees; this
+        // is purely so a long command is not silent in a headless run.
+        StreamEvent::ToolOutputDelta { delta, .. } => {
+            eprint!("\x1b[2m{delta}\x1b[0m");
+            let _ = std::io::stderr().flush();
+        }
+        // Reasoning is progress, not answer: dimmed on stderr so piping stdout
+        // yields only the real completion.
+        StreamEvent::Reasoning { text } => {
+            eprint!("\x1b[2m{text}\x1b[0m");
+            let _ = std::io::stderr().flush();
+        }
+        StreamEvent::Step { index, max } => match max {
+            0 => eprintln!("\n\x1b[2m[turn {index}]\x1b[0m"),
+            m => eprintln!("\n\x1b[2m[turn {index}/{m}]\x1b[0m"),
+        },
+        // In-progress signal is for the live TUI; the piped log stays quiet
+        // until the full call (with args) arrives just below.
+        // Headless prints one line per completed call; the in-progress signal
+        // and its argument deltas have nothing to render into.
+        StreamEvent::ToolCallStarted { .. } | StreamEvent::ToolCallArgsDelta { .. } => {}
+        // Headless reports totals once, from the terminal `Done`.
+        StreamEvent::TurnUsage { .. } => {}
+        StreamEvent::ToolCall { name, args, .. } => eprintln!(
+            "\x1b[2m[tool] {}\x1b[0m",
+            crate::core::agent::events::describe_tool_call(&name, &args)
+        ),
+        StreamEvent::ToolResult {
+            content, is_error, ..
+        } => {
+            let tag = if is_error {
+                "tool-error"
+            } else {
+                "tool-result"
+            };
+            eprintln!("\x1b[2m[{tag}] {content}\x1b[0m");
+        }
+        StreamEvent::SubagentStart { name, .. } => {
+            eprintln!("\x1b[2m[subagent:{name}] started (background)\x1b[0m")
+        }
+        StreamEvent::SubagentQueued { name, waiting, .. } => {
+            eprintln!("\x1b[2m[subagent:{name}] queued ({waiting} waiting)\x1b[0m")
+        }
+        StreamEvent::SubagentEnd { name, .. } => {
+            eprintln!("\x1b[2m[subagent:{name}] finished\x1b[0m")
+        }
+        StreamEvent::Subagent { name, event, .. } => {
+            if let StreamEvent::ToolCall { name: tool, args, .. } = *event {
+                eprintln!(
+                    "\x1b[2m[subagent:{name}] {}\x1b[0m",
+                    crate::core::agent::events::describe_tool_call(&tool, &args)
+                );
+            }
+        }
+        StreamEvent::Done { stop_reason, usage } => {
+            let tokens = usage.and_then(|u| u.total_tokens).unwrap_or(0);
+            eprintln!("\n\x1b[2m[done] stop_reason={stop_reason} tokens={tokens}\x1b[0m");
+        }
+        StreamEvent::Error { code, message } => {
+            eprintln!("\n\x1b[31m[error] {code}: {message}\x1b[0m")
+        }
+        StreamEvent::AskRequest { .. } => {
+            eprintln!("\n\x1b[31m[error] interactive ask requires `jan agent ui`\x1b[0m")
+        }
+        // Headless never renders an ask prompt, so there is nothing to dismiss.
+        StreamEvent::AskResolved { .. } => {}
+        // The non-interactive CLI doesn't persist session state; a todo update
+        // is silently dropped here (mirrors MessagesUpdated below).
+        StreamEvent::TodoUpdate { .. } => {}
+        // The non-interactive CLI doesn't persist session state, so
+        // MessagesUpdated is a no-op here.
+        StreamEvent::MessagesUpdated { .. } => {}
+        StreamEvent::PermissionRequest {
+            request_id,
+            tool_name,
+            capability,
+            path,
+            command,
+            diff,
+            ..
+        } => {
+            let detail = command
+                .map(|c| format!(" ({c})"))
+                .or_else(|| path.map(|p| format!(" on {p}")))
+                .unwrap_or_default();
+            if let Some(diff) = diff {
+                eprintln!("\x1b[2m{diff}\x1b[0m");
+            }
+            let decision = prompt_permission(tool_name, capability, detail).await;
+            if let Some(sender) = registry.lock().await.remove(&request_id) {
+                let _ = sender.send(decision);
+            }
+        }
+    }
+}
+
+/// Ask the terminal to approve a gated tool call. Non-interactive stdin (pipe,
+/// CI) auto-denies, matching the headless "safe default" contract; blocking
+/// stdin is confined to a blocking thread so the loop task keeps running.
+async fn prompt_permission(
+    tool_name: String,
+    capability: String,
+    detail: String,
+) -> PermissionDecision {
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() {
+        eprintln!("\x1b[33m[permission] auto-denied {capability} via '{tool_name}' (non-interactive)\x1b[0m");
+        return PermissionDecision::Deny;
+    }
+    tokio::task::spawn_blocking(move || {
+        eprint!("\x1b[33m[permission] allow {capability} via '{tool_name}'{detail}? [y/N] \x1b[0m");
+        let _ = std::io::stderr().flush();
+        let mut line = String::new();
+        if std::io::stdin().read_line(&mut line).is_err() {
+            return PermissionDecision::Deny;
+        }
+        match line.trim().to_ascii_lowercase().as_str() {
+            "y" | "yes" => PermissionDecision::AllowOnce,
+            _ => PermissionDecision::Deny,
+        }
+    })
+    .await
+    .unwrap_or(PermissionDecision::Deny)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // ── looks_like_hf_repo ─────────────────────────────────────────────────
-
+    /// Signing in to Tokamak is what unlocks the desktop inherit. Without it the
+    /// model stays unset so the TUI's sign-in notice fires, instead of the
+    /// session silently starting on whatever the desktop app last had selected.
     #[test]
-    fn hf_repo_valid_basic() {
-        assert!(looks_like_hf_repo("janhq/Jan-code-4b-gguf"));
-        assert!(looks_like_hf_repo("openai/whisper"));
-        assert!(looks_like_hf_repo("a/b"));
-    }
-
-    #[test]
-    fn hf_repo_valid_with_dots_dashes_underscores() {
-        assert!(looks_like_hf_repo("user.name/repo-name"));
-        assert!(looks_like_hf_repo("user_name/repo.v2"));
-        assert!(looks_like_hf_repo("Org-1/Model_2.gguf"));
-    }
-
-    #[test]
-    fn hf_repo_rejects_paths() {
-        assert!(!looks_like_hf_repo("/abs/path"));
-        assert!(!looks_like_hf_repo("./relative"));
-        assert!(!looks_like_hf_repo("~/home"));
-    }
-
-    #[test]
-    fn hf_repo_rejects_no_slash() {
-        assert!(!looks_like_hf_repo("noslashhere"));
-    }
-
-    #[test]
-    fn hf_repo_rejects_empty_components() {
-        assert!(!looks_like_hf_repo("/repo"));
-        assert!(!looks_like_hf_repo("owner/"));
-        assert!(!looks_like_hf_repo("/"));
-    }
-
-    #[test]
-    fn hf_repo_rejects_multiple_slashes() {
-        assert!(!looks_like_hf_repo("owner/repo/extra"));
-    }
-
-    #[test]
-    fn hf_repo_rejects_invalid_chars() {
-        assert!(!looks_like_hf_repo("owner/repo name"));
-        assert!(!looks_like_hf_repo("own*er/repo"));
-        assert!(!looks_like_hf_repo("owner/re@po"));
-    }
-
-    // ── ModelYml deserialization ──────────────────────────────────────────
-
-    #[test]
-    fn model_yml_minimal_required_field() {
-        let yml = "model_path: /tmp/x.gguf\n";
-        let parsed: ModelYml = serde_yaml::from_str(yml).unwrap();
-        assert_eq!(parsed.model_path, "/tmp/x.gguf");
-        assert_eq!(parsed.size_bytes, 0);
-        assert!(!parsed.embedding);
-        assert!(parsed.name.is_none());
-        assert!(parsed.mmproj_path.is_none());
-        assert!(parsed.capabilities.is_empty());
-    }
-
-    #[test]
-    fn model_yml_full() {
-        let yml = "model_path: relative/model.gguf\n\
-                   name: My Model\n\
-                   size_bytes: 1024\n\
-                   embedding: true\n\
-                   mmproj_path: relative/mmproj.gguf\n\
-                   capabilities:\n  - vision\n  - tools\n";
-        let parsed: ModelYml = serde_yaml::from_str(yml).unwrap();
-        assert_eq!(parsed.model_path, "relative/model.gguf");
-        assert_eq!(parsed.name.as_deref(), Some("My Model"));
-        assert_eq!(parsed.size_bytes, 1024);
-        assert!(parsed.embedding);
-        assert_eq!(parsed.mmproj_path.as_deref(), Some("relative/mmproj.gguf"));
-        assert_eq!(parsed.capabilities, vec!["vision", "tools"]);
-    }
-
-    #[test]
-    fn model_yml_missing_model_path_errors() {
-        let yml = "name: bad\n";
-        let parsed: Result<ModelYml, _> = serde_yaml::from_str(yml);
-        assert!(parsed.is_err());
-    }
-
-    // ── HfFileInfo construction ───────────────────────────────────────────
-
-    #[test]
-    fn hf_file_info_clone() {
-        let f = HfFileInfo {
-            filename: "x.gguf".into(),
-            size: 100,
-            sha256: Some("abc".into()),
-            download_url: "https://hf.co/x".into(),
+    fn desktop_model_is_inherited_only_when_signed_in() {
+        let selection = crate::core::cli::providers::DesktopSelection {
+            provider: Some("llamacpp".into()),
+            model: Some("gemma-4-E2B-it-IQ4_XS".into()),
         };
-        let c = f.clone();
-        assert_eq!(c.filename, "x.gguf");
-        assert_eq!(c.size, 100);
-        assert_eq!(c.sha256.as_deref(), Some("abc"));
+        assert_eq!(
+            inherit_desktop_model(true, selection.clone()).as_deref(),
+            Some("gemma-4-E2B-it-IQ4_XS"),
+        );
+        assert_eq!(
+            inherit_desktop_model(false, selection),
+            None,
+            "a signed-out session does not adopt the desktop's selection"
+        );
     }
 
-    // ── State constructors ────────────────────────────────────────────────
-
+    /// Signed in but the desktop has no selection (or no desktop at all) is not
+    /// an error -- it just contributes nothing to the chain.
     #[test]
-    fn state_constructors_do_not_panic() {
-        let _ = init_llamacpp_state();
-        #[cfg(target_os = "macos")]
-        let _ = init_mlx_state();
+    fn an_empty_desktop_selection_contributes_nothing() {
+        assert_eq!(
+            inherit_desktop_model(true, crate::core::cli::providers::DesktopSelection::default()),
+            None
+        );
     }
 
-    // ── cli_get_data_folder returns a path ────────────────────────────────
+    // ── resume ─────────────────────────────────────────────────────────────
 
     #[test]
-    fn cli_get_data_folder_returns_non_empty_path() {
-        let p = cli_get_data_folder();
-        assert!(!p.as_os_str().is_empty());
+    fn resume_target_from_flags() {
+        assert_eq!(ResumeTarget::from_flags(None, false), None);
+        assert_eq!(ResumeTarget::from_flags(None, true), Some(ResumeTarget::Latest));
+        assert_eq!(
+            ResumeTarget::from_flags(Some(None), false),
+            Some(ResumeTarget::Latest)
+        );
+        // A blank --resume value behaves like a bare --resume.
+        assert_eq!(
+            ResumeTarget::from_flags(Some(Some("  ".into())), false),
+            Some(ResumeTarget::Latest)
+        );
+        assert_eq!(
+            ResumeTarget::from_flags(Some(Some(" 3f7a ".into())), false),
+            Some(ResumeTarget::Id("3f7a".into()))
+        );
+    }
+
+    /// Write a thread with the given id/recency and a single user message.
+    fn seed_thread(base: &std::path::Path, id: &str, updated: f64) {
+        std::fs::create_dir_all(get_thread_dir(base, id)).unwrap();
+        std::fs::write(
+            get_thread_metadata_path(base, id),
+            serde_json::json!({ "id": id, "title": id, "updated": updated }).to_string(),
+        )
+        .unwrap();
+        std::fs::write(
+            get_messages_path(base, id),
+            serde_json::json!({
+                "role": "user",
+                "content": [{ "type": "text", "text": { "value": id, "annotations": [] } }],
+            })
+            .to_string()
+                + "\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn find_resume_thread_latest_and_by_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        assert_eq!(
+            find_resume_thread(base, &ResumeTarget::Latest).unwrap_err(),
+            NO_SESSION_TO_RESUME
+        );
+
+        seed_thread(base, "aaaa1111", 100.0);
+        seed_thread(base, "bbbb2222", 300.0);
+        seed_thread(base, "bbbb3333", 200.0);
+
+        let latest = find_resume_thread(base, &ResumeTarget::Latest).unwrap();
+        assert_eq!(latest["id"], "bbbb2222");
+
+        let by_prefix = find_resume_thread(base, &ResumeTarget::Id("aaaa".into())).unwrap();
+        assert_eq!(by_prefix["id"], "aaaa1111");
+
+        assert!(find_resume_thread(base, &ResumeTarget::Id("zz".into()))
+            .unwrap_err()
+            .contains("no thread matches"));
+        assert!(find_resume_thread(base, &ResumeTarget::Id("bbbb".into()))
+            .unwrap_err()
+            .contains("ambiguous"));
+    }
+
+    #[test]
+    fn find_resume_thread_skips_corrupted_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        seed_thread(base, "good1111", 100.0);
+        let bad = "bad02222";
+        std::fs::create_dir_all(get_thread_dir(base, bad)).unwrap();
+        std::fs::write(get_thread_metadata_path(base, bad), "{not json").unwrap();
+
+        let latest = find_resume_thread(base, &ResumeTarget::Latest).unwrap();
+        assert_eq!(latest["id"], "good1111");
+    }
+
+    #[test]
+    fn read_messages_lenient_skips_truncated_tail() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        seed_thread(base, "aaaa1111", 100.0);
+        let mut raw = std::fs::read_to_string(get_messages_path(base, "aaaa1111")).unwrap();
+        raw.push_str("{\"role\":\"assist");
+        std::fs::write(get_messages_path(base, "aaaa1111"), raw).unwrap();
+
+        let (messages, skipped) = cli_read_messages_lenient(base, "aaaa1111").unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(skipped, 1);
+        // The strict reader used elsewhere still rejects the same file.
+        assert!(cli_list_messages_in(base, "aaaa1111").is_err());
+    }
+
+    #[test]
+    fn read_messages_lenient_on_missing_thread_is_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let (messages, skipped) = cli_read_messages_lenient(dir.path(), "nope").unwrap();
+        assert!(messages.is_empty());
+        assert_eq!(skipped, 0);
+    }
+
+    #[test]
+    fn resume_cycle_preserves_thread_id_and_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let history = vec![
+            serde_json::json!({ "role": "user", "content": "first" }),
+            serde_json::json!({ "role": "assistant", "content": "reply" }),
+        ];
+        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
+
+        let resumed = load_resume_history(base, &ResumeTarget::Latest).unwrap();
+        assert_eq!(resumed.thread_id, id);
+        assert_eq!(resumed.history, history);
+
+        // Continue the session and save back: same thread, appended turns.
+        let mut extended = resumed.history;
+        extended.push(serde_json::json!({ "role": "user", "content": "second" }));
+        let same = cli_save_thread(base, Some(&id), "m", &extended, None).unwrap();
+        assert_eq!(same, id);
+        assert_eq!(list_threads_in(base).unwrap().len(), 1);
+        assert_eq!(
+            load_resume_history(base, &ResumeTarget::Id(id[..8].to_string()))
+                .unwrap()
+                .history,
+            extended
+        );
+    }
+
+    fn call(id: &str, name: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "type": "function",
+            "function": { "name": name, "arguments": "{\"path\":\"a.txt\"}" },
+        })
+    }
+
+    #[test]
+    fn tool_calls_and_results_survive_a_save_resume_cycle() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let history = vec![
+            serde_json::json!({ "role": "user", "content": "do it" }),
+            serde_json::json!({ "role": "assistant", "content": "", "tool_calls": [call("c1", "write")] }),
+            serde_json::json!({ "role": "tool", "tool_call_id": "c1", "content": "wrote 1 line" }),
+            serde_json::json!({ "role": "assistant", "content": "Done." }),
+        ];
+        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
+
+        let resumed = load_resume_history(base, &ResumeTarget::Latest).unwrap();
+        assert_eq!(resumed.thread_id, id);
+        assert_eq!(
+            resumed.history, history,
+            "the model must see the tools it ran, not just its own text"
+        );
+    }
+
+    #[test]
+    fn a_call_whose_result_was_never_saved_gets_one() {
+        // A crash between the call and its result leaves the pair broken, and an
+        // OpenAI-compatible upstream rejects an unanswered `tool_call_id`.
+        let messages = vec![
+            serde_json::json!({ "role": "assistant", "content": "", "tool_calls": [call("c1", "write"), call("c2", "read")] }),
+            serde_json::json!({ "role": "tool", "tool_call_id": "c1", "content": "ok" }),
+            serde_json::json!({ "role": "user", "content": "next" }),
+        ];
+        let out = rebuild_wire_history(&messages);
+        assert_eq!(out.len(), 4);
+        assert_eq!(out[2]["role"], "tool");
+        assert_eq!(out[2]["tool_call_id"], "c2");
+        assert!(
+            out[2]["content"].as_str().unwrap().contains("not saved"),
+            "the gap is stated, not invented: {}",
+            out[2]["content"]
+        );
+        assert_eq!(out[3]["role"], "user");
+    }
+
+    #[test]
+    fn an_orphan_tool_message_is_dropped() {
+        let messages = vec![
+            serde_json::json!({ "role": "tool", "tool_call_id": "gone", "content": "stale" }),
+            serde_json::json!({ "role": "user", "content": "hi" }),
+        ];
+        let out = rebuild_wire_history(&messages);
+        assert_eq!(out.len(), 1, "a result with no call would be rejected");
+        assert_eq!(out[0]["role"], "user");
+    }
+
+    #[test]
+    fn rebuild_drops_messages_that_carry_nothing() {
+        let messages = vec![
+            serde_json::json!({ "role": "assistant", "content": "" }),
+            serde_json::json!({ "role": "user", "content": "hi" }),
+            serde_json::json!({ "role": "system", "content": "ignored" }),
+        ];
+        let out = rebuild_wire_history(&messages);
+        assert_eq!(out, vec![serde_json::json!({ "role": "user", "content": "hi" })]);
+    }
+
+    #[test]
+    fn completion_text_extracts_assistant_content() {
+        let completion =
+            serde_json::json!({ "choices": [{ "message": { "content": "hello" } }] });
+        assert_eq!(completion_text(&completion).as_deref(), Some("hello"));
+        assert_eq!(completion_text(&serde_json::json!({})), None);
+        assert_eq!(
+            completion_text(&serde_json::json!({ "choices": [{ "message": { "content": "" } }] })),
+            None
+        );
+    }
+
+    // ── invocation_label / default_thread_title ────────────────────────────
+
+    #[test]
+    fn invocation_label_recognizes_skill_and_command_wrappers() {
+        assert_eq!(
+            invocation_label(
+                "[IMPORTANT: You have invoked the \"deploy\" skill - follow its instructions. The full skill content is loaded below.]\n\nBody."
+            ),
+            Some("[skill:deploy]".to_string())
+        );
+        assert_eq!(
+            invocation_label(
+                "[IMPORTANT: You have invoked the \"feature-dev\" command - follow its instructions. The full command content is loaded below.]\n\nBuild: $ARGUMENTS"
+            ),
+            Some("[command:feature-dev]".to_string())
+        );
+        // Anything that is not the exact machine wrapper stays None.
+        assert_eq!(invocation_label("deploy"), None);
+        assert_eq!(
+            invocation_label("[IMPORTANT: You have invoked the \"\" skill - x"),
+            None
+        );
+        assert_eq!(
+            invocation_label("[IMPORTANT: You have invoked the \"deploy\" skill"), // truncated wrapper
+            None
+        );
+        assert_eq!(
+            invocation_label("[IMPORTANT: You have invoked the \"deploy\""), // no kind
+            None
+        );
+    }
+
+    #[test]
+    fn default_thread_title_uses_invocation_label_for_first_message() {
+        let history = serde_json::json!([{
+            "role": "user",
+            "content": "[IMPORTANT: You have invoked the \"feature-dev\" command - follow its instructions. The full command content is loaded below.]\n\nBuild: auth"
+        }]);
+        assert_eq!(
+            default_thread_title(history.as_array().unwrap()),
+            "[command:feature-dev]"
+        );
+    }
+
+    #[test]
+    fn default_thread_title_uses_first_user_message() {
+        let history = serde_json::json!([
+            { "role": "user", "content": "Explain   the  buffer\nlogic" },
+            { "role": "assistant", "content": "sure" },
+        ]);
+        assert_eq!(
+            default_thread_title(history.as_array().unwrap()),
+            "Explain the buffer logic"
+        );
+    }
+
+    #[test]
+    fn openai_content_text_reads_multimodal_array() {
+        let content = serde_json::json!([
+            { "type": "text", "text": "describe" },
+            { "type": "image_url", "image_url": { "url": "data:image/png;base64,AA" } },
+        ]);
+        assert_eq!(openai_content_text(Some(&content)), "describe");
+        assert_eq!(openai_content_text(Some(&serde_json::json!("plain"))), "plain");
+    }
+
+    #[test]
+    fn default_thread_title_uses_multimodal_user_text() {
+        let history = serde_json::json!([{
+            "role": "user",
+            "content": [
+                { "type": "text", "text": "look at this" },
+                { "type": "image_url", "image_url": { "url": "data:image/png;base64,AA" } },
+            ],
+        }]);
+        assert_eq!(
+            default_thread_title(history.as_array().unwrap()),
+            "look at this"
+        );
+    }
+
+    #[test]
+    fn default_thread_title_truncates_and_falls_back() {
+        let long = "x".repeat(80);
+        let history = serde_json::json!([{ "role": "user", "content": long }]);
+        let title = default_thread_title(history.as_array().unwrap());
+        assert_eq!(title.chars().count(), 50);
+        assert!(title.ends_with('…'));
+
+        let no_user = serde_json::json!([{ "role": "assistant", "content": "hi" }]);
+        assert_eq!(default_thread_title(no_user.as_array().unwrap()), "Agent chat");
+    }
+
+    // ── cli_save_thread metadata (snapshot bookkeeping) ────────────────────
+
+    #[test]
+    fn save_thread_persists_and_preserves_snapshot_metadata() {
+        let base = std::env::temp_dir().join(format!(
+            "jan_savethread_{}_{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let history = serde_json::json!([
+            { "role": "user", "content": "hi" },
+            { "role": "assistant", "content": "hello" },
+        ]);
+        let meta = serde_json::json!({
+            "base_snapshot": "abc",
+            "checkpoints": [{ "user_index": 0, "preview": "hi", "sha": "def" }],
+        });
+
+        let id = cli_save_thread(
+            &base,
+            None,
+            "m",
+            history.as_array().unwrap(),
+            Some(meta.clone()),
+        )
+        .expect("save");
+
+        let raw = std::fs::read_to_string(get_thread_metadata_path(&base, &id)).expect("read");
+        let stored: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(stored["metadata"]["base_snapshot"], "abc");
+        assert_eq!(stored["metadata"]["checkpoints"][0]["sha"], "def");
+
+        // A follow-up save with no metadata must preserve the prior snapshot block.
+        cli_save_thread(&base, Some(&id), "m", history.as_array().unwrap(), None).expect("resave");
+        let raw = std::fs::read_to_string(get_thread_metadata_path(&base, &id)).expect("read2");
+        let stored: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(stored["metadata"]["base_snapshot"], "abc");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // ── prepare_agent_session model resolution ────────────────────────────
+
+    /// A project's `agent.toml` naming a model must not paper over "nothing can
+    /// actually serve it": with no provider configured (this repo's own
+    /// agent.toml pins `tokamak-1-preview`, but a fresh `~/.jan` has no
+    /// credentials for it), the TUI path must still come back with an empty
+    /// model so its sign-in notice fires instead of a first-message failure.
+    #[test]
+    fn tui_session_ignores_a_project_model_with_no_usable_provider() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(
+                dir.path().join("agent.toml"),
+                "[agent]\nmodel = \"tokamak-1-preview\"\n",
+            )
+            .unwrap();
+
+            let session = prepare_agent_session(
+                dir.path().to_str().unwrap(),
+                None,
+                ProviderOverrides::default(),
+                SessionFlags::default(),
+            )
+            .expect("TUI session prep must not fail with nothing configured");
+            assert_eq!(session.model, "");
+        });
+    }
+
+    /// End-to-end for the sign-in gate, arranged so the pre-existing
+    /// "nothing usable is configured" guard cannot mask it: a usable non-Tokamak
+    /// provider is present (so the guard passes) but names no models (so
+    /// `default_model` contributes nothing), leaving the desktop inherit as the
+    /// only thing that could supply a model. Signed out, it must not.
+    #[test]
+    fn a_signed_out_session_does_not_adopt_the_desktop_model() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            crate::core::agent::global_config::set_provider(
+                "openai",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("sk-test".into()),
+                    base_url: Some("https://api.openai.com/v1".into()),
+                    models: Some(vec![]),
+                    ..Default::default()
+                },
+            )
+            .expect("seed provider");
+
+            let data = home.join("jan-data");
+            std::fs::create_dir_all(&data).unwrap();
+            std::fs::write(
+                data.join("settings.json"),
+                r#"{"model-provider":"{\"state\":{\"selectedProvider\":\"llamacpp\",\"selectedModel\":{\"id\":\"gemma-4-E2B-it-IQ4_XS\"}}}"}"#,
+            )
+            .unwrap();
+            std::env::set_var("JAN_DATA_FOLDER", &data);
+
+            // Sanity: the desktop selection really is readable, so a passing
+            // assertion below means the gate fired, not that the fixture is dead.
+            assert_eq!(
+                crate::core::cli::providers::desktop_selection().model.as_deref(),
+                Some("gemma-4-E2B-it-IQ4_XS")
+            );
+            assert!(!crate::core::cli::tokamak::auth_status().signed_in);
+
+            let dir = tempfile::tempdir().unwrap();
+            let session = prepare_agent_session(
+                dir.path().to_str().unwrap(),
+                None,
+                ProviderOverrides::default(),
+                SessionFlags::default(),
+            )
+            .expect("session prep");
+            std::env::remove_var("JAN_DATA_FOLDER");
+
+            assert_eq!(
+                session.model, "",
+                "signed out, the desktop's last selection must not become the session model"
+            );
+        });
+    }
+
+    /// The same project config, once a provider is actually usable, must be
+    /// trusted again.
+    #[test]
+    fn tui_session_honors_a_project_model_once_a_provider_is_usable() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "tokamak",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("tk".into()),
+                    clear_api_key: false,
+                    base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
+                    models: Some(vec!["tokamak-1-preview".into()]),
+                    api_type: None,
+                                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(
+                dir.path().join("agent.toml"),
+                "[agent]\nmodel = \"tokamak-1-preview\"\n",
+            )
+            .unwrap();
+
+            let session = prepare_agent_session(
+                dir.path().to_str().unwrap(),
+                None,
+                ProviderOverrides::default(),
+                SessionFlags::default(),
+            )
+            .expect("session prep");
+            assert_eq!(session.model, "tokamak-1-preview");
+        });
     }
 }

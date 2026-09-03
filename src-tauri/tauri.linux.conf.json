@@ -25,7 +25,7 @@
     ],
     "resources": [
       "resources/LICENSE",
-      "resources/bin/jan-cli",
+      "resources/bin/jan",
       "resources/bin/jan-llama-worker",
       "resources/bin/libggml*.so*"
     ],

@@ -352,6 +352,26 @@ export function formatDuration(startTime: number, endTime?: number): string {
   }
 }
 
+/** Compact token count for badges and labels, e.g. 24567 -> "24.6K". */
+export function formatTokenCount(num: number): string {
+  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`
+  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`
+  return num.toString()
+}
+
+/**
+ * Elide the middle of a path so both ends stay readable. The tail identifies
+ * which file or session it is, so truncating from the end (CSS ellipsis) hides
+ * the only part worth reading.
+ */
+export function truncateMiddle(value: string, max: number): string {
+  if (value.length <= max) return value
+  const keep = max - 1
+  const head = Math.ceil(keep / 2)
+  const tail = Math.floor(keep / 2)
+  return `${value.slice(0, head)}…${value.slice(value.length - tail)}`
+}
+
 export function sanitizeModelId(modelId: string): string {
   return modelId.replace(/[^a-zA-Z0-9/_\-.]/g, '').replace(/\./g, '_')
 }
