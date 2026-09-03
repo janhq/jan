@@ -2,6 +2,7 @@
 //!
 //! This module is only compiled when the `cli` feature is enabled.
 
+mod agent_status;
 pub mod auth;
 pub mod brand;
 pub mod browser;
