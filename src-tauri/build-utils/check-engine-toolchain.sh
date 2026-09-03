@@ -42,7 +42,13 @@ if has_token hip || has_token rocm; then
     echo "error: JAN_ENGINE_VARIANT=$VARIANT needs hipcc on PATH (install ROCm)" >&2
     exit 1
   }
-  echo "engine toolchain: hipcc found"
+  rocm="${ROCM_PATH:-${HIP_PATH:-/opt/rocm}}"
+  [ -f "$rocm/include/rocwmma/rocwmma.hpp" ] || {
+    echo "error: the hip backend builds with GGML_HIP_ROCWMMA_FATTN and needs rocwmma-dev" >&2
+    echo "       (no $rocm/include/rocwmma/rocwmma.hpp; set ROCM_PATH if ROCm lives elsewhere)" >&2
+    exit 1
+  }
+  echo "engine toolchain: hipcc and rocwmma found"
 fi
 
 command -v cmake >/dev/null 2>&1 || {
