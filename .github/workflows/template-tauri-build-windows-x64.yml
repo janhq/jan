@@ -98,8 +98,9 @@ jobs:
           ref: ${{ inputs.ref }}
 
       # The self-hosted CUDA images have Git for Windows off PATH (or absent) and
-      # no make, and every later step (dtolnay's included) is bash.
-      - name: Provision Git Bash and make on Windows
+      # no make; every later step (dtolnay's included) is bash, and make runs
+      # recipes like `mkdir -p` through the coreutils in Git's usr\bin.
+      - name: Provision Git Bash, make and dotnet on Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -108,9 +109,15 @@ jobs:
           }
           Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\cmd'
           Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\bin'
+          Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\usr\bin'
           if (-not (Get-Command make -ErrorAction SilentlyContinue)) {
             choco install make -y --no-progress
             Add-Content $env:GITHUB_PATH 'C:\ProgramData\chocolatey\bin'
+          }
+          if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+            choco install dotnet-8.0-sdk -y --no-progress
+            Add-Content $env:GITHUB_PATH 'C:\Program Files\dotnet'
+            Add-Content $env:GITHUB_PATH "$env:USERPROFILE\.dotnet\tools"
           }
 
       - name: Replace Icons for Beta Build
