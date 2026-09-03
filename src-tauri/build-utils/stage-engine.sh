@@ -106,68 +106,62 @@ echo "stage-engine: staged $staged ggml libraries ($modules backend modules) int
 
 [ -n "$cuda_module" ] || exit 0
 
-# The runtime comes from the toolkit that compiled the module, so the major
-# matches by construction.
-cuda_root() {
-  local d nvcc
-  for d in "${CUDA_PATH:-}" "${CUDA_HOME:-}"; do
-    if [ -n "$d" ] && [ -d "$d" ]; then echo "$d"; return 0; fi
-  done
-  nvcc="$(command -v nvcc 2>/dev/null || true)"
-  [ -n "$nvcc" ] || return 1
-  (cd "$(dirname "$nvcc")/.." && pwd)
-}
+# The module's own import names say which runtime it needs and with which
+# major; they are plain strings in the binary (ELF .dynstr, PE import table),
+# so no objdump/dumpbin is needed. cublasLt is reached through cublas, hence
+# the closure over what has been staged.
+if [ "$LIBEXT" = "dll" ]; then
+  import_re='(cudart|cublas|cublasLt)64_[0-9]+\.dll'
+  libdirs_of() { echo "$1/bin/x64" "$1/bin"; }
+else
+  import_re='libcu(dart|blas|blasLt)\.so\.[0-9]+'
+  libdirs_of() { echo "$1/lib64" "$1/lib" "$1"/targets/*/lib; }
+fi
+imports_of() { tr -d '\0' < "$1" | grep -aoE "$import_re" | sort -u; }
 
-ROOT="$(cuda_root)" || {
-  echo "stage-engine: staged $(basename "$cuda_module") but found no CUDA toolkit" >&2
-  echo "stage-engine: set CUDA_PATH/CUDA_HOME or put nvcc on PATH" >&2
+needed="$(imports_of "$cuda_module")"
+[ -n "$needed" ] || {
+  echo "stage-engine: $(basename "$cuda_module") imports no CUDA runtime library" >&2
   exit 1
 }
 
-# CUDA 13 moved the Windows DLLs to bin/x64. lib64 is a symlink to
-# targets/<arch>/lib, so only the first directory holding cudart is used.
-if [ "$LIBEXT" = "dll" ]; then
-  candidates=("$ROOT/bin/x64" "$ROOT/bin")
-  runtime_globs=('cudart64_*.dll' 'cublas64_*.dll' 'cublasLt64_*.dll')
-else
-  candidates=("$ROOT/lib64" "$ROOT"/targets/*/lib)
-  runtime_globs=('libcudart.so.[0-9]*' 'libcublas.so.[0-9]*' 'libcublasLt.so.[0-9]*')
-fi
-
+first="$(echo "$needed" | head -1)"
 LIBDIR=""
-for d in "${candidates[@]}"; do
-  if compgen -G "$d/${runtime_globs[0]}" >/dev/null; then LIBDIR="$d"; break; fi
+nvcc="$(command -v nvcc 2>/dev/null || true)"
+for root in "${CUDA_PATH:-}" "${CUDA_HOME:-}" "${nvcc:+$(cd "$(dirname "$nvcc")/.." && pwd)}"; do
+  [ -n "$root" ] && [ -d "$root" ] || continue
+  for d in $(libdirs_of "$root"); do
+    if [ -e "$d/$first" ] || [ -L "$d/$first" ]; then LIBDIR="$d"; break 2; fi
+  done
 done
 [ -n "$LIBDIR" ] || {
-  echo "stage-engine: no ${runtime_globs[0]} under $ROOT (looked in: ${candidates[*]})" >&2
+  echo "stage-engine: $(basename "$cuda_module") needs $first, found in no CUDA toolkit" >&2
+  echo "stage-engine: looked under CUDA_PATH, CUDA_HOME and nvcc's parent" >&2
   exit 1
 }
 
 runtime=0
-for pat in "${runtime_globs[@]}"; do
-  matched=0
-  for src in "$LIBDIR"/$pat; do
-    [ -e "$src" ] || [ -L "$src" ] || continue
-    stage_lib "$src"
-    matched=$((matched + 1))
+staged_names=""
+queue="$needed"
+while [ -n "$queue" ]; do
+  next=""
+  for name in $queue; do
+    case " $staged_names " in *" $name "*) continue ;; esac
+    matched=0
+    for src in "$LIBDIR/$name"*; do
+      [ -e "$src" ] || [ -L "$src" ] || continue
+      stage_lib "$src"
+      matched=$((matched + 1))
+    done
+    if [ "$matched" -eq 0 ]; then
+      echo "stage-engine: $name is imported but missing from $LIBDIR" >&2
+      exit 1
+    fi
+    runtime=$((runtime + matched))
+    staged_names="$staged_names $name"
+    next="$next $(imports_of "$DEST/$name")"
   done
-  if [ "$matched" -eq 0 ]; then
-    echo "stage-engine: $LIBDIR has no $pat; the CUDA module would not load without it" >&2
-    exit 1
-  fi
-  runtime=$((runtime + matched))
+  queue="$next"
 done
-
-# The globs are a guess at what the module wants; its NEEDED list is the fact.
-if [ "$LIBEXT" = "so" ] && command -v objdump >/dev/null 2>&1; then
-  missing=""
-  while read -r needed; do
-    [ -e "$DEST/$needed" ] || missing="$missing $needed"
-  done < <(objdump -p "$cuda_module" | awk '/NEEDED/ && $2 ~ /^libcu(dart|blas)/ {print $2}')
-  if [ -n "$missing" ]; then
-    echo "stage-engine: $(basename "$cuda_module") needs$missing, not staged from $LIBDIR" >&2
-    exit 1
-  fi
-fi
 
 echo "stage-engine: staged $runtime CUDA runtime libraries from $LIBDIR"

@@ -15,8 +15,10 @@ inputs:
     required: true
   ccache-max:
     description: >
-      ccache size limit. 25G rather than the 5G default because CUDA objects are
-      large and a smaller cache thrashes instead of rolling over.
+      ccache size limit on self-hosted runners. 25G rather than the 5G default
+      because CUDA objects are large and a smaller cache thrashes instead of
+      rolling over. GitHub-hosted runners are capped at 2G, the actions/cache
+      upload budget for a Vulkan plus CPU-variant build.
     required: false
     default: '25G'
 
@@ -37,7 +39,11 @@ runs:
         else
           echo "CCACHE_DIR=${HOME}/.ccache" >> "$GITHUB_ENV"
         fi
-        echo "CCACHE_MAXSIZE=${{ inputs.ccache-max }}" >> "$GITHUB_ENV"
+        if [ "$RUNNER_ENVIRONMENT" = "github-hosted" ]; then
+          echo "CCACHE_MAXSIZE=2G" >> "$GITHUB_ENV"
+        else
+          echo "CCACHE_MAXSIZE=${{ inputs.ccache-max }}" >> "$GITHUB_ENV"
+        fi
         echo "CCACHE_NOHASHDIR=1" >> "$GITHUB_ENV"
 
     # GitHub-hosted images have no ccache and no persistent disk.
@@ -55,17 +61,16 @@ runs:
         Windows) choco install ccache -y --no-progress ;;
         esac
 
-    # build.rs holds the llama.cpp pin and cmake flags; the sha suffix makes
-    # every run save, since actions/cache writes only on an exact-key miss.
+    # build.rs holds the llama.cpp pin and cmake flags, so the cache is rebuilt
+    # when they change and an exact hit saves nothing; a per-commit key would
+    # upload on every run and churn the repo's 10 GB quota.
     - name: Restore the ccache directory
       if: runner.environment == 'github-hosted'
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ env.CCACHE_DIR }}
-        key: ccache-${{ runner.os }}-${{ inputs.variant }}-${{ hashFiles('src-tauri/plugins/tauri-plugin-llamacpp/build.rs') }}-${{ github.sha }}
-        restore-keys: |
-          ccache-${{ runner.os }}-${{ inputs.variant }}-${{ hashFiles('src-tauri/plugins/tauri-plugin-llamacpp/build.rs') }}-
-          ccache-${{ runner.os }}-${{ inputs.variant }}-
+        key: ccache-${{ runner.os }}-${{ inputs.variant }}-${{ hashFiles('src-tauri/plugins/tauri-plugin-llamacpp/build.rs') }}
+        restore-keys: ccache-${{ runner.os }}-${{ inputs.variant }}-
 
     # No GitHub-hosted image ships a Vulkan shader compiler, and the desktop
     # templates default to the vulkan variant on one. Guarded on glslc rather

@@ -112,6 +112,8 @@ jobs:
       - name: Install jq
         uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
 
+      - uses: dtolnay/rust-toolchain@stable
+
       - name: Install ctoml
         run: |
           cargo install ctoml

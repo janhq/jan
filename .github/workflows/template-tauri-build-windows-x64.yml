@@ -97,17 +97,17 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
-      # The self-hosted CUDA images carry neither Git for Windows nor make, and
-      # every later step (dtolnay's included) is bash. No-op on hosted images.
+      # The self-hosted CUDA images have Git for Windows off PATH (or absent) and
+      # no make, and every later step (dtolnay's included) is bash.
       - name: Provision Git Bash and make on Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           if (-not (Test-Path 'C:\Program Files\Git\bin\bash.exe')) {
             choco install git -y --no-progress
-            Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\cmd'
-            Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\bin'
           }
+          Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\cmd'
+          Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\bin'
           if (-not (Get-Command make -ErrorAction SilentlyContinue)) {
             choco install make -y --no-progress
             Add-Content $env:GITHUB_PATH 'C:\ProgramData\chocolatey\bin'
@@ -126,6 +126,8 @@ jobs:
 
       - name: Install jq
         uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Install ctoml
         run: |
