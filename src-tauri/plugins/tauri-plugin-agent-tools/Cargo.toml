@@ -20,6 +20,7 @@ tauri = ["dep:tauri", "dep:tauri-plugin"]
 [dependencies]
 base64 = "0.22"
 glob = "0.3"
+percent-encoding = "2"
 ignore = "0.4"
 regex = "1"
 similar = "2.6"

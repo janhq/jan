@@ -148,5 +148,23 @@ export function resolveInRoot(root: string, path: string): string | null {
   return inRoot ? abs : null
 }
 
+/**
+ * The `preview://` URL for `abs`. `sampleUrl` is what `convertFileSrc` produced
+ * for any path under that scheme, which is how the platform's spelling of the
+ * origin (`preview://localhost` on macOS, `http://preview.localhost` elsewhere)
+ * is learned without hard-coding it.
+ *
+ * Deliberately not `convertFileSrc(abs, 'preview')`: that encodes the whole
+ * path as one segment, so a relative `assets/a.png` in the page would resolve
+ * against the scheme root and miss. Real slashes keep the file's directory as
+ * the base URL. A Windows drive path gets a leading slash; `preview.rs` strips
+ * it back off.
+ */
+export function previewUrlFor(abs: string, sampleUrl: string): string {
+  const origin = /^[a-z][a-z0-9+.-]*:\/\/[^/]*/i.exec(sampleUrl)?.[0] ?? ''
+  const path = abs.replace(/\\/g, '/').replace(/^\/+/, '')
+  return `${origin}/${path.split('/').map(encodeURIComponent).join('/')}`
+}
+
 /** Guard before reading, so an oversized file fails fast instead of hanging. */
 export const MAX_PREVIEW_BYTES = 2 * 1024 * 1024
