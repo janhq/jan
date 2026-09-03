@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const writtenFiles: Record<string, string> = {}
 const modelYamls: Record<string, unknown> = {}
+const existingPaths = new Set<string>()
 
 vi.mock('@janhq/core', () => ({
   logger: {
@@ -11,7 +12,10 @@ vi.mock('@janhq/core', () => ({
     error: vi.fn(),
   },
   fs: {
-    existsSync: vi.fn(async (p: string) => p === '/p/models' || p in modelYamls),
+    existsSync: vi.fn(
+      async (p: string) =>
+        p === '/p/models' || p in modelYamls || existingPaths.has(p)
+    ),
     mkdir: vi.fn(async () => undefined),
     readdirSync: vi.fn(async (dir: string) => {
       if (dir === '/p/models') {
@@ -50,6 +54,7 @@ const CONFIG = {} as any
 beforeEach(() => {
   for (const k of Object.keys(writtenFiles)) delete writtenFiles[k]
   for (const k of Object.keys(modelYamls)) delete modelYamls[k]
+  existingPaths.clear()
 })
 
 function setupModel(id: string, yaml: Record<string, unknown>) {
@@ -699,6 +704,56 @@ describe('generatePreset chat template', () => {
     setupModel('glm', { chat_template: '   ' })
     await generatePreset('/p', '/jan', CONFIG)
     expect(writtenFiles['/p/router.preset.ini']).not.toContain('chat-template')
+  })
+
+  it('passes an absolute path to an existing file straight through', async () => {
+    existingPaths.add('/home/u/templates/custom.jinja')
+    setupModel('glm', { chat_template: '/home/u/templates/custom.jinja' })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('chat-template-file = /home/u/templates/custom.jinja')
+    expect(writtenFiles['/p/models/glm/chat_template.jinja']).toBeUndefined()
+  })
+
+  // A path that resolves to nothing is not silently trusted; it falls back to
+  // the inline-body path so the value still reaches llama.cpp somehow.
+  it('treats an absolute path to a missing file as an inline body', async () => {
+    setupModel('glm', { chat_template: '/nope/custom.jinja' })
+    await generatePreset('/p', '/jan', CONFIG)
+    expect(writtenFiles['/p/models/glm/chat_template.jinja']).toBe(
+      '/nope/custom.jinja'
+    )
+    expect(writtenFiles['/p/router.preset.ini']).toContain(
+      'chat-template-file = /p/models/glm/chat_template.jinja'
+    )
+  })
+})
+
+// GBNF uses `#` for comments, so an inline grammar can never survive the ini;
+// it always reaches llama.cpp as a file.
+describe('generatePreset grammar', () => {
+  it('writes an inline grammar to a file and points the preset at it', async () => {
+    const grammar = '# yes/no only\nroot ::= "yes" | "no"'
+    setupModel('glm', { grammar })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('grammar-file = /p/models/glm/grammar.gbnf')
+    expect(writtenFiles['/p/models/glm/grammar.gbnf']).toBe(grammar)
+  })
+
+  it('passes an absolute path to an existing file straight through', async () => {
+    existingPaths.add('/home/u/grammars/json.gbnf')
+    setupModel('glm', { grammar: '/home/u/grammars/json.gbnf' })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('grammar-file = /home/u/grammars/json.gbnf')
+    expect(writtenFiles['/p/models/glm/grammar.gbnf']).toBeUndefined()
+  })
+
+  it('emits nothing for a blank grammar', async () => {
+    setupModel('glm', { grammar: '   ' })
+    await generatePreset('/p', '/jan', CONFIG)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('grammar')
   })
 })
 

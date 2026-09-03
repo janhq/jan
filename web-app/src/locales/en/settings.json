@@ -152,7 +152,18 @@
     "freeOf": "free of",
     "driverVersion": "Driver Version",
     "computeCapability": "Compute Capability",
-    "systemMonitor": "System Monitor"
+    "systemMonitor": "System Monitor",
+    "backendApi": "Backend API",
+    "apiVersion": "API Version",
+    "refresh": "Refresh",
+    "detectingDevices": "Detecting GPUs...",
+    "deviceListError": "Couldn't read GPU devices",
+    "noDevicesDesc": "No GPUs are visible to the llama.cpp engine. Models will run on the CPU.",
+    "gpuDisabled": "Disabled",
+    "backendApiDesc": "How llama.cpp talks to this GPU",
+    "backendSelectDesc": "Use this API for this GPU",
+    "unifiedMemory": "Unified Memory",
+    "unifiedMemoryDesc": "The GPU shares one memory pool with the CPU — models draw from the same memory as the rest of the system."
   },
   "httpsProxy": {
     "proxy": "Proxy",
@@ -237,6 +248,8 @@
     "startupConfiguration": "Startup Configuration",
     "runOnStartup": "Auto start",
     "runOnStartupDesc": "Automatically start the Local API Server when the application launches.",
+    "runInBackground": "Run in background",
+    "runInBackgroundDesc": "Keep the server running in the system tray when the window is closed. When off, closing the window quits Jan and stops the server.",
     "serverConfiguration": "Server Configuration",
     "serverHost": "Server Host",
     "serverHostDesc": "Network address for the server.",

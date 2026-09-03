@@ -21,6 +21,7 @@ import type { LlamacppConfig, ModelConfig } from '@janhq/tauri-plugin-llamacpp-a
 // `chat_template` that aren't yet in the strict typing.
 type ModelYaml = ModelConfig & {
   chat_template?: string
+  grammar?: string
   ctx_size?: number
   n_gpu_layers?: number
   flash_attn?: string
@@ -114,6 +115,25 @@ const DEFAULT_SPEC_TYPE = 'draft-mtp'
  * `{`, whitespace or a newline, none of which match here.
  */
 const BUILTIN_TEMPLATE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+
+// Absolute paths only: a relative one would resolve against llama.cpp's cwd,
+// which is not something the user can predict. Covers POSIX, drive-letter and
+// UNC forms.
+const ABSOLUTE_PATH_RE = /^(?:\/|[A-Za-z]:[\\/]|\\\\)/
+
+/**
+ * When a setting value is an absolute path to an existing file, the preset
+ * passes it through to the corresponding `*-file` flag instead of treating it
+ * as an inline body.
+ */
+async function existingFilePath(value: string): Promise<string | null> {
+  if (!ABSOLUTE_PATH_RE.test(value)) return null
+  try {
+    return (await fs.existsSync(value)) ? value : null
+  } catch {
+    return null
+  }
+}
 
 function escapeIniValue(v: string): string {
   // INI values for llama-server are read as strings; trim surrounding whitespace
@@ -479,13 +499,17 @@ export async function generatePreset(
     }
 
     // A template body cannot survive the ini: values have no line
-    // continuation, and `#`/`;` anywhere in one starts a comment. So only a
-    // built-in name goes inline; anything else is written beside model.yml and
-    // passed by path, which llama.cpp reads verbatim.
+    // continuation, and `#`/`;` anywhere in one starts a comment. So an
+    // absolute path to an existing file passes through as-is, a built-in name
+    // goes inline, and anything else is written beside model.yml and passed by
+    // path, which llama.cpp reads verbatim.
     const chatTemplate =
       typeof mc.chat_template === 'string' ? mc.chat_template.trim() : ''
     if (chatTemplate.length > 0) {
-      if (BUILTIN_TEMPLATE_NAME_RE.test(chatTemplate)) {
+      const templateFile = await existingFilePath(chatTemplate)
+      if (templateFile) {
+        lines.push(`chat-template-file = ${escapeIniValue(templateFile)}`)
+      } else if (BUILTIN_TEMPLATE_NAME_RE.test(chatTemplate)) {
         lines.push(`chat-template = ${chatTemplate}`)
       } else {
         const templatePath = await joinPath([
@@ -495,6 +519,20 @@ export async function generatePreset(
         ])
         await fs.writeFileSync(templatePath, chatTemplate)
         lines.push(`chat-template-file = ${escapeIniValue(templatePath)}`)
+      }
+    }
+
+    // GBNF uses `#` for comments and is usually multi-line, so an inline body
+    // can never go through the ini; it always reaches llama.cpp as a file.
+    const grammar = typeof mc.grammar === 'string' ? mc.grammar.trim() : ''
+    if (grammar.length > 0) {
+      const grammarFile = await existingFilePath(grammar)
+      if (grammarFile) {
+        lines.push(`grammar-file = ${escapeIniValue(grammarFile)}`)
+      } else {
+        const grammarPath = await joinPath([modelsDir, modelId, 'grammar.gbnf'])
+        await fs.writeFileSync(grammarPath, grammar)
+        lines.push(`grammar-file = ${escapeIniValue(grammarPath)}`)
       }
     }
 

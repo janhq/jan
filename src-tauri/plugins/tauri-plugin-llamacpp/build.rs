@@ -13,10 +13,10 @@
 // vendor/llama.cpp and with engine::PINNED_* on the Rust side; the shim
 // re-exports llama_version()/llama_build_number() so a mismatch is caught at
 // runtime instead of producing a silently wrong engine.
-pub const LLAMA_CPP_TAG: &str = "b10582";
-pub const LLAMA_CPP_BUILD_NUMBER: u32 = 10582;
-pub const LLAMA_CPP_COMMIT: &str = "e85caa81ea2b65797396018c179b87ad61fa38ab";
-pub const LLAMA_CPP_VERSION: &str = "0.2.0";
+pub const LLAMA_CPP_TAG: &str = "b10621";
+pub const LLAMA_CPP_BUILD_NUMBER: u32 = 10621;
+pub const LLAMA_CPP_COMMIT: &str = "c1d0e7a004015f23bc0233470b747b596f29b264";
+pub const LLAMA_CPP_VERSION: &str = "0.3.0";
 
 const COMMANDS: &[&str] = &[
     // Cleanup command
@@ -186,6 +186,7 @@ mod engine {
         println!("cargo:rerun-if-env-changed=JAN_LLAMA_CPP_DIR");
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_CUDA_ARCHS");
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_BUILD_LOG");
+        println!("cargo:rerun-if-env-changed=JAN_ENGINE_BUILD_DIR");
 
         // Headers are always needed: the shim is our code and is compiled
         // here even when the archives come prebuilt, so it cannot drift from
@@ -209,8 +210,9 @@ mod engine {
                 );
                 (vec![lib], inc, dir.join("backends"))
             } else {
-                let ggml = build_ggml(&src);
-                let llama = build_llama(&src, &ggml);
+                let root = build_root();
+                let ggml = build_ggml(&src, &root);
+                let llama = build_llama(&src, &ggml, &root);
                 let mut dirs = ARCHIVE_DIRS
                     .iter()
                     .map(|d| llama.join(d))
@@ -237,6 +239,85 @@ mod engine {
         );
     }
 
+    /// The deepest path a cmake build tree here creates, relative to the root
+    /// the trees live under: nvcc's depfile for the longest-named CUDA
+    /// template instance,
+    /// `ggml-build/ggml/src/ggml-cuda/CMakeFiles/ggml-cuda.dir/Release/
+    /// template-instances/fattn-mma-f16-instance-ncols1_1-ncols2_16.cu.obj.d`.
+    /// Measured with a margin for upstream adding a longer instance name.
+    const DEEPEST_BUILD_PATH: usize = 150;
+
+    /// Written into OUT_DIR with the (possibly relocated) build root, so
+    /// packaging can find the ggml prefix without repeating the logic below.
+    const BUILD_ROOT_MARKER: &str = "engine-build-root.txt";
+
+    /// Windows' classic MAX_PATH. nvcc (and parts of MSVC) still open files
+    /// through the 260-char-limited API even when the OS has long paths
+    /// enabled, so the limit is real regardless of registry settings.
+    const WINDOWS_MAX_PATH: usize = 260;
+
+    /// Where the cmake build trees go. Normally OUT_DIR -- but on Windows a
+    /// cargo OUT_DIR (`...\target\release\build\tauri-plugin-llamacpp-<hash>\
+    /// out`) is easily 130+ chars, and nvcc then dies with "Could not open
+    /// output file ...fattn-...cu.obj.d" because the depfile crosses MAX_PATH.
+    /// When that would happen, the trees move to a short per-OUT_DIR directory
+    /// under %LOCALAPPDATA% instead. `JAN_ENGINE_BUILD_DIR` overrides the
+    /// location outright, on every platform. Relocated trees are not removed
+    /// by `cargo clean`.
+    fn build_root() -> PathBuf {
+        let out = PathBuf::from(env::var("OUT_DIR").unwrap());
+        let root = resolve_build_root(&out);
+        // Packaging (build-utils/stage-engine.sh) collects the ggml runtime
+        // from the build trees and cannot guess a relocated root, so record it.
+        fs::write(
+            out.join(BUILD_ROOT_MARKER),
+            root.to_string_lossy().as_bytes(),
+        )
+        .expect("could not record the engine build root");
+        root
+    }
+
+    fn resolve_build_root(out: &Path) -> PathBuf {
+        if let Ok(dir) = env::var("JAN_ENGINE_BUILD_DIR") {
+            let dir = dir.trim();
+            if !dir.is_empty() {
+                let root = PathBuf::from(dir).join(out_dir_key(out));
+                fs::create_dir_all(&root).expect("could not create JAN_ENGINE_BUILD_DIR");
+                return root;
+            }
+        }
+        if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() != "windows" {
+            return out.to_path_buf();
+        }
+        if out.as_os_str().len() + DEEPEST_BUILD_PATH < WINDOWS_MAX_PATH {
+            return out.to_path_buf();
+        }
+        let base = env::var("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| env::temp_dir());
+        let root = base.join("jan-engine").join(out_dir_key(out));
+        println!(
+            "cargo:warning=OUT_DIR is too long for nvcc/cl on Windows \
+             ({} chars); building llama.cpp under {} instead. Set \
+             JAN_ENGINE_BUILD_DIR to choose the location.",
+            out.as_os_str().len(),
+            root.display()
+        );
+        fs::create_dir_all(&root).expect("could not create the short engine build dir");
+        root
+    }
+
+    /// A stable short key for one OUT_DIR, so debug/release and per-feature
+    /// builds relocated out of the target tree cannot share (and corrupt) one
+    /// cmake cache. DefaultHasher::new() uses fixed keys, so the value is
+    /// stable across runs.
+    fn out_dir_key(out: &Path) -> String {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        out.hash(&mut h);
+        format!("{:016x}", h.finish())
+    }
+
     /// Stage 1: ggml as shared libraries with runtime-loaded backend modules.
     ///
     /// Separate from stage 2 because `GGML_CPU_ALL_VARIANTS` requires
@@ -249,11 +330,10 @@ mod engine {
     /// configuring ggml as the top-level project sets `GGML_STANDALONE=ON`,
     /// which then requires `tests/`, `examples/` and `ggml.pc.in` that the
     /// copy vendored inside llama.cpp does not ship.
-    fn build_ggml(src: &Path) -> PathBuf {
-        let out = PathBuf::from(env::var("OUT_DIR").unwrap());
-        let wrapper = out.join("ggml-project");
-        let build = out.join("ggml-build");
-        let prefix = out.join("ggml-prefix");
+    fn build_ggml(src: &Path, root: &Path) -> PathBuf {
+        let wrapper = root.join("ggml-project");
+        let build = root.join("ggml-build");
+        let prefix = root.join("ggml-prefix");
         fs::create_dir_all(&wrapper).expect("could not create the ggml wrapper dir");
         fs::write(
             wrapper.join("CMakeLists.txt"),
@@ -278,7 +358,7 @@ mod engine {
         // MSVC-frontend compiler instead puts it back on /showIncludes, which
         // needs no such file -- and needs no vcvars either, since clang-cl
         // finds the MSVC headers and libraries by itself.
-        let host_toolchain = out.join("vulkan-shaders-gen-host.cmake");
+        let host_toolchain = root.join("vulkan-shaders-gen-host.cmake");
         if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() == "windows" {
             fs::write(
                 &host_toolchain,
@@ -399,8 +479,8 @@ mod engine {
     }
 
     /// Stage 2: everything above ggml, statically, against stage 1's ggml.
-    fn build_llama(src: &Path, ggml_prefix: &Path) -> PathBuf {
-        let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("llama-build");
+    fn build_llama(src: &Path, ggml_prefix: &Path, root: &Path) -> PathBuf {
+        let out = root.join("llama-build");
         discard_foreign_cache(&out, src);
         fs::create_dir_all(&out).expect("could not create the cmake build dir");
 
