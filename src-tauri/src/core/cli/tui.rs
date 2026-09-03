@@ -41,6 +41,7 @@ use markdown::{
     format_markdown_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
 };
 
+use super::agent_status::AgentStatusReporter;
 use super::brand;
 use super::journal::{self, DisplayEntry, ReasoningSeg};
 use super::mcp::McpServerEntry;
@@ -1833,6 +1834,9 @@ struct App {
     /// Set by Esc to dismiss the path-hint popup; cleared on next char edit.
     path_hint_dismissed: bool,
     status: Status,
+    /// Orca-integration status emitter (OSC 9999 + terminal titles). Inert
+    /// until `run` enables it, so test-driven state machines write nothing.
+    agent_status: AgentStatusReporter,
     /// Wall-clock start of the current reasoning `<think>` block while it is
     /// open (the model is actively reasoning). `None` between blocks.
     thinking_since: Option<Instant>,
@@ -2396,6 +2400,7 @@ impl App {
             path_hint_selected: 0,
             path_hint_dismissed: false,
             status: Status::Idle,
+            agent_status: AgentStatusReporter::new(),
             thinking_since: None,
             thought_for: None,
             thought_for_since: None,
@@ -4859,22 +4864,27 @@ impl App {
                     selected: 0,
                     subagent: None,
                 });
+                self.publish_agent_status();
             }
             StreamEvent::AskRequest {
                 request_id,
                 request,
                 timeout_secs,
                 ..
-            } => self.ask_queue.push_back(PendingAsk::new(
-                request_id,
-                request,
-                timeout_secs.map(std::time::Duration::from_secs),
-            )),
+            } => {
+                self.ask_queue.push_back(PendingAsk::new(
+                    request_id,
+                    request,
+                    timeout_secs.map(std::time::Duration::from_secs),
+                ));
+                self.publish_agent_status();
+            }
             // The loop auto-answered a timed-out ask; drop its now-dead prompt.
             // A user answer clears the queue in `resolve_front_ask` instead, so
             // this only fires for the timeout path.
             StreamEvent::AskResolved { request_id } => {
                 self.ask_queue.retain(|ask| ask.request_id != request_id);
+                self.publish_agent_status();
             }
             StreamEvent::SubagentStart { run_id, name, task } => {
                 // A queued dispatch already opened a panel for this run; promote
@@ -5043,6 +5053,7 @@ impl App {
                     selected: 0,
                     subagent: Some(name.to_string()),
                 });
+                self.publish_agent_status();
             }
             // Each child request bumps its counter, so the panel shows work
             // happening even during a long think with no tool calls.
@@ -5066,6 +5077,30 @@ impl App {
         }
     }
 
+    /// Recompute and publish the Orca-visible agent status from primary state
+    /// (turn status plus pending prompts). The reporter dedupes, so calling
+    /// this after every transition is cheap. The prompt preview carries the
+    /// pending permission summary (what Jan is blocked on) or the active
+    /// subagent task, matching Orca's card fields.
+    fn publish_agent_status(&mut self) {
+        use super::agent_status::AgentStatusState as S;
+        let state = match self.status {
+            Status::Idle => S::Done,
+            Status::Running if !self.pending_queue.is_empty() => S::Blocked,
+            Status::Running if !self.ask_queue.is_empty() => S::Waiting,
+            Status::Running => S::Working,
+        };
+        let prompt = match state {
+            S::Waiting => self
+                .ask_queue
+                .front()
+                .and_then(|ask| ask.request.questions.first())
+                .map(|q| q.question.clone()),
+            _ => None,
+        };
+        self.agent_status.set_state(state, prompt.as_deref());
+    }
+
     /// Arm the per-turn state shared by a user submit and a reminder
     /// continuation. Both paths start a run, so both must reset every
     /// turn-scoped counter -- keeping two hand-maintained copies in sync is how
@@ -5087,6 +5122,7 @@ impl App {
         // A call cancelled before its result would otherwise leave its path
         // behind for the life of the session.
         self.diff_paths.clear();
+        self.publish_agent_status();
     }
 
     /// Current throbber frame. `spinner_frame` is advanced on a fixed cadence
@@ -5178,6 +5214,7 @@ impl App {
         self.run_started = None;
         self.detail = format!("stop_reason={stop_reason}");
         self.scrollback = 0;
+        self.publish_agent_status();
         // Surface abnormal completions in the timeline, not just the footer: a
         // truncated/filtered finish, or a "stop" that yielded no answer (an
         // empty/malformed upstream completion defaults to stop_reason=stop).
@@ -5256,6 +5293,7 @@ impl App {
         } else {
             format!("{code}: {message}")
         };
+        self.publish_agent_status();
         self.system(Level::Error, &format!("error: {message}"));
         // A context overflow is the one error the session can recover from by
         // itself: compact, then resume the turn that failed. The goal loop and
@@ -5389,6 +5427,7 @@ impl App {
         // cancel is silently undone.
         self.want_start = false;
         self.close_live_background();
+        self.publish_agent_status();
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
         self.system(Level::Warn, "cancelled");
@@ -7807,6 +7846,9 @@ pub async fn run(
             Err(e) => app.note(&format!("could not attach image: {e}")),
         }
     }
+    // From here on the terminal is ours: status sequences reach the real PTY.
+    app.agent_status.enable();
+    app.publish_agent_status();
     let res = chat_loop(
         &mut terminal,
         &args,
@@ -8300,6 +8342,9 @@ async fn chat_loop<B: Backend>(
                 // Advance the throbber at its own fixed cadence, catching up
                 // whole frames if a tick stalled (a burst of deltas / slow term).
                 app.advance_spinner(Instant::now());
+                // Animate the working-title spinner on the same cadence; the
+                // OSC 9999 payload is not re-sent, only the title frame.
+                app.agent_status.animate();
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     match event::read() {
                         Ok(Event::Key(key)) => {
@@ -8671,6 +8716,7 @@ async fn resolve_front_ask(
     let Some(ask) = app.ask_queue.pop_front() else {
         return;
     };
+    app.publish_agent_status();
     // Reserved plan-review ask: a single question with the exact id drives the
     // mode transition. Capture the chosen label before `answers` is moved into
     // the outcome. Skipped on cancel so a cancelled review never changes mode.
@@ -9304,6 +9350,9 @@ async fn handle_key(
             if let Some(sender) = registry.lock().await.remove(&pending.request_id) {
                 let _ = sender.send(d);
             }
+            // The run resumes now that a prompt was answered (unless more are
+            // queued) — publish the recomputed status either way.
+            app.publish_agent_status();
         }
         return;
     }
