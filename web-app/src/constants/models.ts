@@ -73,12 +73,12 @@ export const providerModels = {
     supportsN: true,
   },
   mistral: {
-    models: ['mistral-large-2411', 'magistral-medium-2509', 'magistral-small-2509', 'pixtral-large-2411', 'pixtral-12b-2409', 'codestral-2508', 'mistral-small-2506', 'mistral-nemo-2407'],
+    models: ['mistral-large-2411', 'magistral-medium-2509', 'magistral-small-2509', 'pixtral-large-2411', 'pixtral-12b-2409', 'codestral-2508', 'mistral-small-2506', 'mistral-nemo-2407', 'mistral-small-latest', 'mistral-medium-latest'],
     supportsCompletion: true,
-    supportsStreaming: ['mistral-large-2411', 'magistral-medium-2509', 'magistral-small-2509', 'pixtral-large-2411', 'pixtral-12b-2409', 'codestral-2508', 'mistral-small-2506', 'mistral-nemo-2407'],
+    supportsStreaming: ['mistral-large-2411', 'magistral-medium-2509', 'magistral-small-2509', 'pixtral-large-2411', 'pixtral-12b-2409', 'codestral-2508', 'mistral-small-2506', 'mistral-nemo-2407', 'mistral-small-latest', 'mistral-medium-latest'],
     supportsJSON: ['mistral-large-2411', 'codestral-2508'],
-    supportsImages: ['magistral-medium-2509', 'magistral-small-2509', 'pixtral-large-2411', 'pixtral-12b-2409', 'mistral-small-2506'],
-    supportsToolCalls: ['mistral-large-2411', 'mistral-small-2506'],
+    supportsImages: ['magistral-medium-2509', 'magistral-small-2509', 'pixtral-large-2411', 'pixtral-12b-2409', 'mistral-small-2506', 'mistral-small-latest', 'mistral-medium-latest'],
+    supportsToolCalls: ['mistral-large-2411', 'mistral-small-2506', 'mistral-small-latest', 'mistral-medium-latest'],
     supportsN: true,
   },
   groq: {
