@@ -33,6 +33,9 @@ const EXA_REST_CONTENTS_URL: &str = "https://api.exa.ai/contents";
 const TAVILY_SEARCH_URL: &str = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL: &str = "https://api.tavily.com/extract";
 
+const YOU_COM_SEARCH_URL: &str = "https://ydc-index.io/v1/search";
+const YOU_COM_CONTENTS_URL: &str = "https://ydc-index.io/v1/contents";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SearchResult {
     pub title: String,
@@ -70,6 +73,9 @@ pub fn create_provider(
         None | Some("") | Some("exa") => Ok(Box::new(ExaProvider::new(api_key)?)),
         Some("tavily") => Ok(Box::new(TavilyProvider::new(api_key)?)),
         Some("searxng") => Ok(Box::new(SearxngProvider::new(endpoint)?)),
+        Some("you") | Some("youdotcom") | Some("you.com") => {
+            Ok(Box::new(YouComProvider::new(api_key)?))
+        }
         Some(other) => Err(format!("Unknown web search provider '{other}'")),
     }
 }
@@ -545,6 +551,150 @@ fn normalize_tavily_extract(body: &Value, requested_url: &str) -> Result<Fetched
     })
 }
 
+/// You.com backend (key-only). Uses the structured `/v1/search` and
+/// `/v1/contents` REST endpoints, authenticated with the `X-API-Key`
+/// header (the canonical auth scheme per You.com's OpenAPI spec; the
+/// `api.you.com` MCP gateway also forwards `Authorization: Bearer` for
+/// backward compatibility, but the canonical REST server at
+/// `ydc-index.io` only documents `X-API-Key`).
+///
+/// `search` returns web results; results lacking the `web` array (e.g.
+/// news-only or empty pages) normalize to an empty `SearchResult` list rather
+/// than fall back to news, since `web` is what jan consumers ask for.
+///
+/// `fetch` calls `/v1/contents` with the single requested URL; the response is
+/// an array (not wrapped in `results`), so we index it directly and prefer
+/// `markdown` over `html`.
+pub struct YouComProvider {
+    api_key: String,
+    client: reqwest::Client,
+}
+
+impl YouComProvider {
+    pub fn new(api_key: Option<String>) -> Result<Self, String> {
+        Ok(Self {
+            api_key: require_key("You.com", api_key)?,
+            client: build_http_client("You.com")?,
+        })
+    }
+
+    async fn post(&self, url: &str, body: Value) -> Result<Value, String> {
+        let resp = self
+            .client
+            .post(url)
+            .header("X-API-Key", &self.api_key)
+            .header("content-type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("You.com request failed: {e}"))?;
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("You.com: failed to read response body: {e}"))?;
+        if !status.is_success() {
+            return Err(format!(
+                "You.com failed with HTTP {}: {}",
+                status.as_u16(),
+                text.chars().take(400).collect::<String>()
+            ));
+        }
+        serde_json::from_str(&text).map_err(|e| format!("You.com: invalid JSON response: {e}"))
+    }
+}
+
+#[async_trait]
+impl SearchProvider for YouComProvider {
+    async fn search(&self, query: &str, count: u32) -> Result<Vec<SearchResult>, String> {
+        let parsed = self
+            .post(
+                YOU_COM_SEARCH_URL,
+                json!({ "query": query, "count": count }),
+            )
+            .await?;
+        Ok(normalize_youcom_search(&parsed))
+    }
+
+    async fn fetch(&self, url: &str) -> Result<FetchedPage, String> {
+        let parsed = self
+            .post(
+                YOU_COM_CONTENTS_URL,
+                json!({ "urls": [url], "formats": ["markdown"] }),
+            )
+            .await?;
+        normalize_youcom_contents(&parsed, url)
+    }
+}
+
+fn normalize_youcom_search(body: &Value) -> Vec<SearchResult> {
+    let Some(web) = body
+        .get("results")
+        .and_then(|r| r.get("web"))
+        .and_then(|v| v.as_array())
+    else {
+        return Vec::new();
+    };
+    web.iter()
+        .map(|r| {
+            let title = r.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            let url = r.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            let snippet = r
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(|s| clip_chars(s, 500))
+                .or_else(|| {
+                    r.get("snippets")
+                        .and_then(|v| v.as_array())
+                        .and_then(|a| a.first())
+                        .and_then(|v| v.as_str())
+                        .map(|s| clip_chars(s, 500))
+                })
+                .unwrap_or_default();
+            let published_at = r
+                .get("page_age")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            SearchResult {
+                title: title.to_string(),
+                url: url.to_string(),
+                snippet,
+                published_at,
+            }
+        })
+        .collect()
+}
+
+fn normalize_youcom_contents(body: &Value, requested_url: &str) -> Result<FetchedPage, String> {
+    let first = body
+        .as_array()
+        .and_then(|a| a.first())
+        .ok_or_else(|| format!("You.com returned no content for {requested_url}"))?;
+    let url = first
+        .get("url")
+        .and_then(|v| v.as_str())
+        .unwrap_or(requested_url)
+        .to_string();
+    let title = first
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let raw = first
+        .get("markdown")
+        .and_then(|v| v.as_str())
+        .or_else(|| first.get("html").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    let (content, truncated) = bound_text(raw);
+    Ok(FetchedPage {
+        url,
+        title,
+        content,
+        truncated,
+    })
+}
+
 /// SearXNG backend (self-hosted, key-less). Queries a user-supplied instance's
 /// JSON search API. SearXNG has no content-extraction endpoint, so `fetch` does
 /// a plain HTTP GET of the URL and returns the bounded raw response body.
@@ -941,5 +1091,135 @@ mod tests {
     #[test]
     fn normalize_exa_rest_fetch_no_results_errors() {
         assert!(normalize_exa_rest_fetch(&json!({"results": []}), "u").is_err());
+    }
+
+    #[test]
+    fn create_provider_youcom_requires_key() {
+        match create_provider(Some("you"), None, None) {
+            Ok(_) => panic!("expected You.com to require a key"),
+            Err(e) => assert!(e.contains("You.com")),
+        }
+        assert!(
+            create_provider(Some("youdotcom"), Some("ydc-key".into()), None).is_ok(),
+            "youdotcom alias must work"
+        );
+        assert!(
+            create_provider(Some("YOU.COM"), Some("ydc-key".into()), None).is_ok(),
+            "you.com alias must accept a key"
+        );
+        match create_provider(Some("you.com"), None, None) {
+            Ok(_) => panic!("expected you.com alias to also require a key"),
+            Err(e) => assert!(e.contains("You.com")),
+        }
+    }
+
+    #[test]
+    fn normalize_youcom_search_maps_contract() {
+        // Fixture mirrors the canonical `ydc-index.io/v1/search` response
+        // verbatim (including `thumbnail_url`, `original_thumbnail_url`, and
+        // `favicon_url` which the normalizer intentionally ignores).
+        let body = json!({
+            "results": {
+                "web": [
+                    {
+                        "url": "https://example.com",
+                        "title": "Example",
+                        "description": "A short summary.",
+                        "snippets": ["first excerpt", "second excerpt"],
+                        "thumbnail_url": "https://cdn.example.com/img.jpg",
+                        "original_thumbnail_url": "https://cdn.example.com/img.jpg",
+                        "favicon_url": "https://example.com/favicon.ico",
+                        "page_age": "2024-05-01T00:00:00.000Z"
+                    },
+                    {
+                        "url": "https://example.org",
+                        "title": "No description",
+                        "snippets": ["only snippets"]
+                    }
+                ]
+            }
+        });
+        let results = normalize_youcom_search(&body);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].url, "https://example.com");
+        assert_eq!(results[0].snippet, "A short summary.");
+        assert_eq!(
+            results[0].published_at.as_deref(),
+            Some("2024-05-01T00:00:00.000Z")
+        );
+        // Description takes priority over snippets.
+        assert!(results[1].snippet.starts_with("only snippets"));
+        assert!(results[1].published_at.is_none());
+    }
+
+    #[test]
+    fn normalize_youcom_search_falls_back_to_snippet_when_no_description() {
+        let body = json!({
+            "results": {
+                "web": [
+                    {
+                        "url": "https://example.com",
+                        "title": "Example",
+                        "snippets": ["passage one", "passage two"]
+                    }
+                ]
+            }
+        });
+        let results = normalize_youcom_search(&body);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].snippet, "passage one");
+    }
+
+    #[test]
+    fn normalize_youcom_search_empty_or_news_only_is_empty() {
+        // No web key: don't fall back to news.
+        let news_only = json!({
+            "results": {
+                "news": [{ "url": "https://x", "title": "X" }]
+            }
+        });
+        assert!(normalize_youcom_search(&news_only).is_empty());
+        assert!(normalize_youcom_search(&json!({})).is_empty());
+        assert!(normalize_youcom_search(&json!({"results": {}})).is_empty());
+        assert!(normalize_youcom_search(&json!({"results": {"web": []}})).is_empty());
+    }
+
+    #[test]
+    fn normalize_youcom_contents_reads_markdown() {
+        let body = json!([
+            { "url": "https://example.com", "title": "T", "markdown": "hello world" }
+        ]);
+        let page = normalize_youcom_contents(&body, "https://example.com").unwrap();
+        assert_eq!(page.title, "T");
+        assert_eq!(page.url, "https://example.com");
+        assert_eq!(page.content, "hello world");
+        assert!(!page.truncated);
+    }
+
+    #[test]
+    fn normalize_youcom_contents_falls_back_to_html() {
+        let body = json!([
+            { "url": "https://example.com", "title": "T", "html": "<p>hi</p>" }
+        ]);
+        let page = normalize_youcom_contents(&body, "https://example.com").unwrap();
+        assert_eq!(page.content, "<p>hi</p>");
+    }
+
+    #[test]
+    fn normalize_youcom_contents_truncates_and_marks_truncated() {
+        let big = "a".repeat(FETCH_MAX_CHARS + 100);
+        let body = json!([
+            { "url": "https://example.com", "title": "T", "markdown": big }
+        ]);
+        let page = normalize_youcom_contents(&body, "https://example.com").unwrap();
+        assert!(page.truncated);
+        assert_eq!(page.content.chars().count(), FETCH_MAX_CHARS);
+    }
+
+    #[test]
+    fn normalize_youcom_contents_no_results_errors() {
+        assert!(normalize_youcom_contents(&json!([]), "u").is_err());
+        // Body that is not an array (defensive) errors instead of panicking.
+        assert!(normalize_youcom_contents(&json!({"results": []}), "u").is_err());
     }
 }
