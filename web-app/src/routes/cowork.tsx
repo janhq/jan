@@ -43,12 +43,13 @@ import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { MessageItem } from '@/containers/MessageItem'
 import SkillSelector from '@/containers/SkillSelector'
-import { coworkTurnsToUIMessages, userTurn } from '@/lib/coworkTurns'
-import { extractFilesFromPrompt } from '@/lib/fileMetadata'
 import {
-  importAttachedFiles,
-  withAttachedFiles,
-} from '@/lib/coworkAttachments'
+  appendLiveMessages,
+  coworkTurnsToUIMessages,
+  userTurn,
+} from '@/lib/coworkTurns'
+import { extractFilesFromPrompt } from '@/lib/fileMetadata'
+import { importAttachedFiles, withAttachedFiles } from '@/lib/coworkAttachments'
 import { useToolCallRuntime, withToolTiming } from '@/hooks/useToolCallRuntime'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useAppState } from '@/hooks/useAppState'
@@ -166,6 +167,32 @@ function CoworkPage() {
   const [runSid, setRunSid] = useState<string | null>(null)
   const [liveTurns, setLiveTurns] = useState<CoworkTurn[]>([])
   const liveTurnsRef = useRef<CoworkTurn[]>([])
+  const liveFrameRef = useRef<number | null>(null)
+  // Every stream delta mutates `liveTurnsRef` in place; the state behind the
+  // transcript is refreshed from it at most once per frame. A large `write`
+  // arrives as thousands of deltas, and re-rendering the transcript for each
+  // one is what made the card lag behind the model.
+  const syncLive = useCallback(() => {
+    if (liveFrameRef.current != null) {
+      cancelAnimationFrame(liveFrameRef.current)
+      liveFrameRef.current = null
+    }
+    setLiveTurns([...liveTurnsRef.current])
+  }, [])
+  const scheduleLiveSync = useCallback(() => {
+    if (liveFrameRef.current != null) return
+    liveFrameRef.current = requestAnimationFrame(() => {
+      liveFrameRef.current = null
+      setLiveTurns([...liveTurnsRef.current])
+    })
+  }, [])
+  useEffect(
+    () => () => {
+      if (liveFrameRef.current != null)
+        cancelAnimationFrame(liveFrameRef.current)
+    },
+    []
+  )
   const [stoppedBy, setStoppedBy] = useState<RunOutcome['stoppedBy'] | null>(
     null
   )
@@ -266,9 +293,27 @@ function CoworkPage() {
         : (session?.turns ?? []),
     [viewingRun, liveTurns, session?.turns]
   )
+  // Committed and live rows are converted separately so a streamed delta
+  // rebuilds only the live tail; the committed messages keep their identity
+  // and `MessageItem` skips them.
+  const committedMessages = useMemo(
+    () =>
+      coworkTurnsToUIMessages(session?.turns ?? [], session?.id ?? 'cowork'),
+    [session?.turns, session?.id]
+  )
   const uiMessages = useMemo(
-    () => coworkTurnsToUIMessages(displayedTurns, session?.id ?? 'cowork'),
-    [displayedTurns, session?.id]
+    () =>
+      viewingRun
+        ? appendLiveMessages(
+            committedMessages,
+            coworkTurnsToUIMessages(
+              liveTurns,
+              session?.id ?? 'cowork',
+              session?.turns?.length ?? 0
+            )
+          )
+        : committedMessages,
+    [viewingRun, committedMessages, liveTurns, session?.id, session?.turns]
   )
   // While a run streams, the last assistant message is the only one that can
   // still gain parts; its artifact cards wait until the turn finishes.
@@ -321,10 +366,13 @@ function CoworkPage() {
     [running, displayedTurns]
   )
 
-  const pushLive = useCallback((turns: CoworkTurn[]) => {
-    liveTurnsRef.current = [...liveTurnsRef.current, ...turns]
-    setLiveTurns(liveTurnsRef.current)
-  }, [])
+  const pushLive = useCallback(
+    (turns: CoworkTurn[]) => {
+      liveTurnsRef.current = [...liveTurnsRef.current, ...turns]
+      syncLive()
+    },
+    [syncLive]
+  )
 
   /**
    * Drive one request. `text` is null for a resume — a retry after a failure
@@ -367,7 +415,7 @@ function CoworkPage() {
     liveTurnsRef.current = text
       ? [userTurn(text, attachments?.media, attachments?.files)]
       : []
-    setLiveTurns(liveTurnsRef.current)
+    syncLive()
     // Marks the session running in the store (and resets its subagent lanes),
     // so surfaces outside this component — the sidebar's per-session spinner
     // and its empty-session filter — can see a run this component owns.
@@ -402,7 +450,7 @@ function CoworkPage() {
         importFile: (path, parsed) => importAttachment(sid, path, parsed),
       })
       liveTurnsRef.current = [userTurn(text, attachments?.media, files)]
-      setLiveTurns(liveTurnsRef.current)
+      syncLive()
     }
 
     // Warm the sandbox probe: the transport's prompt and tool set read it
@@ -439,7 +487,7 @@ function CoworkPage() {
         const last = liveTurnsRef.current[liveTurnsRef.current.length - 1]
         if (last && last.role === 'assistant') {
           last.content += delta
-          setLiveTurns([...liveTurnsRef.current])
+          scheduleLiveSync()
         } else {
           pushLive([{ role: 'assistant', content: delta }])
         }
@@ -451,7 +499,7 @@ function CoworkPage() {
         const last = liveTurnsRef.current[liveTurnsRef.current.length - 1]
         if (last && last.role === 'assistant') {
           last.reasoning = (last.reasoning ?? '') + delta
-          setLiveTurns([...liveTurnsRef.current])
+          scheduleLiveSync()
         } else {
           pushLive([{ role: 'assistant', content: '', reasoning: delta }])
         }
@@ -474,7 +522,7 @@ function CoworkPage() {
         const row = liveTurnsRef.current.find((turn) => turn.callId === callId)
         if (!row) return
         row.argsLive = (row.argsLive ?? '') + delta
-        setLiveTurns([...liveTurnsRef.current])
+        scheduleLiveSync()
       },
       onToolCall: (call) => {
         const row = liveTurnsRef.current.find(
@@ -482,7 +530,7 @@ function CoworkPage() {
         )
         if (row) {
           row.args = call.input
-          setLiveTurns([...liveTurnsRef.current])
+          syncLive()
         }
       },
     }
@@ -765,7 +813,7 @@ function CoworkPage() {
         )
       useCoworkRun.getState().clearCodeRun(sid)
       liveTurnsRef.current = []
-      setLiveTurns([])
+      syncLive()
       setRunning(false)
       setRunSid(null)
       abortRef.current = null
