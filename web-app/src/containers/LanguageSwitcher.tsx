@@ -22,6 +22,7 @@ const LANGUAGES = [
   { value: 'zh-CN', label: '简体中文' },
   { value: 'zh-TW', label: '繁體中文' },
   { value: 'de-DE', label: 'Deutsch' },
+  { value: 'he', label: 'עברית' },
   { value: 'cs', label: 'Čeština' },
   { value: 'pt-BR', label: 'Português (Brasil)' },
   { value: 'ko', label: '한국어' },
