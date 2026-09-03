@@ -121,7 +121,7 @@ jobs:
       - name: Install Tauri dependencies
         run: |
           sudo apt update
-          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 libappindicator3-dev xdg-utils
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 libappindicator3-dev xdg-utils pkg-config file desktop-file-utils
 
       # `make build` compiles jan-llama-worker, which the deb and the AppImage
       # both bundle. The default variant is vulkan because it covers AMD, Intel
@@ -217,10 +217,7 @@ jobs:
           --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
           "$APP_IMAGE"
 
-        # linuxdeploy is an AppImage; a runner container without FUSE cannot
-        # mount it, and tauri reports only `failed to run linuxdeploy`.
         env:
-          APPIMAGE_EXTRACT_AND_RUN: '1'
           RELEASE_CHANNEL: '${{ inputs.channel }}'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
@@ -240,9 +237,8 @@ jobs:
       # Publish app
 
       # tauri reports a linuxdeploy failure as `failed to run linuxdeploy` and
-      # discards its output, so ask the tool itself. `--version` alone separates
-      # the two candidates: a tool that cannot run at all is an AppImage that
-      # could not mount, anything else is the AppDir it was handed.
+      # discards its output, so re-run the exact command it ran (bundler
+      # linux/appimage/linuxdeploy.rs) and let the tool speak.
       - name: Diagnose the AppImage bundler
         if: failure()
         run: |
@@ -253,9 +249,10 @@ jobs:
           appdir=$(ls -d src-tauri/target/release/bundle/appimage/*.AppDir 2>/dev/null | head -1)
           [ -n "$appdir" ] || { echo "no AppDir left behind; the build failed before bundling"; exit 0; }
           echo "--- engine binaries tauri staged into the AppDir"
-          find "$appdir" \( -name '*.so*' -o -name 'jan-llama-worker' \) | head -40
-          echo "--- linuxdeploy over that AppDir"
-          "$tool" --appdir "$appdir" || true
+          find "$appdir" \( -name 'libggml*' -o -name 'libcu*' -o -name 'jan-llama-worker' \) | head -40
+          echo "--- tauri's linuxdeploy command over that AppDir"
+          OUTPUT="$PWD/diagnose.AppImage" ARCH=x86_64 PATH="$PWD/.cache/tauri:$PATH" \
+            "$tool" --appimage-extract-and-run --appdir "$appdir" --plugin gtk --output appimage || echo "exit $?"
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
 

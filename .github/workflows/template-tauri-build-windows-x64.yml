@@ -109,7 +109,9 @@ jobs:
           }
           Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\cmd'
           Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\bin'
-          Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\usr\bin'
+          # Appended, not prepended: usr\bin also holds GNU link, which must
+          # not shadow MSVC's link.exe for rustc.
+          Add-Content $env:GITHUB_ENV "PATH=$env:PATH;C:\Program Files\Git\usr\bin"
           if (-not (Get-Command make -ErrorAction SilentlyContinue)) {
             choco install make -y --no-progress
             Add-Content $env:GITHUB_PATH 'C:\ProgramData\chocolatey\bin'
