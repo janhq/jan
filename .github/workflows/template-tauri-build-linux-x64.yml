@@ -225,6 +225,13 @@ jobs:
           AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
           TAURI_TRAY: libappindicator3
+
+      - name: Report ccache statistics
+        if: success() || failure()
+        shell: bash
+        run: |
+          if command -v ccache >/dev/null 2>&1; then ccache -s; else echo "ccache not available"; fi
+
       # Publish app
 
       # tauri reports a linuxdeploy failure as `failed to run linuxdeploy` and

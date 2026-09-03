@@ -276,6 +276,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
 
+      - name: Report ccache statistics
+        if: success() || failure()
+        shell: bash
+        run: |
+          if command -v ccache >/dev/null 2>&1; then ccache -s; else echo "ccache not available"; fi
+
       # The engine build is fifteen minutes of cmake whose output cargo only
       # surfaces as a tail. When it fails, the whole log is the artifact worth
       # having.

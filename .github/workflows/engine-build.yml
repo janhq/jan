@@ -140,6 +140,12 @@ jobs:
       - name: Compile the engine-gated test suites
         run: make check-engine-tests
 
+      - name: Report ccache statistics
+        if: success() || failure()
+        shell: bash
+        run: |
+          if command -v ccache >/dev/null 2>&1; then ccache -s; else echo "ccache not available"; fi
+
       # --version proves the worker starts and resolves libggml through the
       # rpath; --list-devices additionally exercises the shim and the pinned
       # llama.cpp assert. Device enumeration is best-effort because a headless
