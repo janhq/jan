@@ -112,10 +112,8 @@ echo "stage-engine: staged $staged ggml libraries ($modules backend modules) int
 # the closure over what has been staged.
 if [ "$LIBEXT" = "dll" ]; then
   import_re='(cudart|cublas|cublasLt)64_[0-9]+\.dll'
-  libdirs_of() { echo "$1/bin/x64" "$1/bin"; }
 else
   import_re='libcu(dart|blas|blasLt)\.so\.[0-9]+'
-  libdirs_of() { echo "$1/lib64" "$1/lib" "$1"/targets/*/lib; }
 fi
 imports_of() { tr -d '\0' < "$1" | grep -aoE "$import_re" | sort -u; }
 
@@ -125,18 +123,22 @@ needed="$(imports_of "$cuda_module")"
   exit 1
 }
 
+# Toolkit layouts differ (lib64, lib, targets/<arch>/lib; bin or bin/x64, with
+# nvcc itself under bin/x64 on newer Windows toolkits), so the runtime is
+# searched for by name under each candidate root rather than by fixed path.
 first="$(echo "$needed" | head -1)"
-LIBDIR=""
 nvcc="$(command -v nvcc 2>/dev/null || true)"
-for root in "${CUDA_PATH:-}" "${CUDA_HOME:-}" "${nvcc:+$(cd "$(dirname "$nvcc")/.." && pwd)}"; do
+roots=("${CUDA_PATH:-}" "${CUDA_HOME:-}")
+[ -n "$nvcc" ] && roots+=("$(dirname "$nvcc")/.." "$(dirname "$nvcc")/../..")
+LIBDIR=""
+for root in "${roots[@]}"; do
   [ -n "$root" ] && [ -d "$root" ] || continue
-  for d in $(libdirs_of "$root"); do
-    if [ -e "$d/$first" ] || [ -L "$d/$first" ]; then LIBDIR="$d"; break 2; fi
-  done
+  hit="$(find "$root" -maxdepth 3 -iname "$first" -print -quit 2>/dev/null)"
+  if [ -n "$hit" ]; then LIBDIR="$(dirname "$hit")"; break; fi
 done
 [ -n "$LIBDIR" ] || {
   echo "stage-engine: $(basename "$cuda_module") needs $first, found in no CUDA toolkit" >&2
-  echo "stage-engine: looked under CUDA_PATH, CUDA_HOME and nvcc's parent" >&2
+  echo "stage-engine: CUDA_PATH='${CUDA_PATH:-}' CUDA_HOME='${CUDA_HOME:-}' nvcc='${nvcc}'" >&2
   exit 1
 }
 
