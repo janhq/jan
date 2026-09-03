@@ -1,6 +1,7 @@
 // Renderer selection and load-state modelling for the Cowork preview pane
 // (jan-internal #242). Kept pure and separate from the component so the state
 // machine and the security checks are testable without a DOM.
+import { countUnresolvedAssetRefs } from '@/lib/htmlAssets'
 
 /** How a given file should be shown. `file` is the fallback card. */
 export type PreviewKind = 'html' | 'svg' | 'markdown' | 'image' | 'video' | 'audio' | 'text' | 'file'
@@ -25,6 +26,8 @@ export type PreviewState =
       assetUrl?: string
       /** Relative refs the sandbox cannot resolve — see `unresolvedRefs`. */
       unresolvedRefs?: number
+      /** `http(s)` refs blocked while network is off — see `externalRefs`. */
+      externalRefs?: number
     }
   | { status: 'unsupported'; path: string }
   | { status: 'failed'; path: string; reason: string }
@@ -93,27 +96,21 @@ export function basenameOf(path: string): string {
 }
 
 /**
- * `HtmlArtifact` renders into an opaque-origin sandbox via `srcDoc`, so there is
- * no base URL: a relative `src`/`href` cannot resolve and the asset silently
- * fails to load. Count those so the pane can say so instead of presenting a
- * visibly broken page as if it were correct.
- *
- * Absolute URLs, `data:`/`blob:`, protocol-relative URLs, anchors and inline
- * handlers are all fine and not counted.
+ * Relative `src`/`href` the opaque-origin sandbox cannot resolve (no base URL).
+ * One implementation with the chat artifact card, so the two previews agree on
+ * what is broken.
  */
-export function unresolvedRefs(html: string): number {
+export const unresolvedRefs = countUnresolvedAssetRefs
+
+/**
+ * `http(s)` `src`/`href` that the sandbox blocks while network is off: a page
+ * built on a CDN script (Phaser, Three.js) renders nothing until the user
+ * flips the toggle, so the pane tells them.
+ */
+export function externalRefs(html: string): number {
   let count = 0
   for (const m of html.matchAll(/\b(?:src|href)\s*=\s*("([^"]*)"|'([^']*)')/gi)) {
-    const value = (m[2] ?? m[3] ?? '').trim()
-    if (!value) continue
-    if (
-      /^[a-z][a-z0-9+.-]*:/i.test(value) || // any scheme: http:, data:, mailto:
-      value.startsWith('//') || // protocol-relative
-      value.startsWith('#') // in-page anchor
-    ) {
-      continue
-    }
-    count += 1
+    if (/^https?:\/\//i.test((m[2] ?? m[3] ?? '').trim())) count += 1
   }
   return count
 }

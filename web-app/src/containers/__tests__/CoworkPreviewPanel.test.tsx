@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -102,6 +102,74 @@ describe('CoworkPreviewPanel', () => {
     view('page.html')
 
     await screen.findByText('common:preview.unresolvedRefs#1')
+  })
+
+  // A page built on a CDN script renders nothing while network is off; the
+  // pane says why and names the toggle, and the notice goes once it is on.
+  it('says when web resources are blocked, until network is allowed', async () => {
+    respondWith('<script src="https://cdn.example/phaser.js"></script><canvas></canvas>')
+    view('game.html')
+
+    await screen.findByText('common:preview.externalRefs#1')
+    fireEvent.click(screen.getByLabelText('common:preview.allowNetwork'))
+    await waitFor(() =>
+      expect(screen.queryByText('common:preview.externalRefs#1')).toBeNull()
+    )
+  })
+
+  it('does not mention blocked resources for a self-contained page', async () => {
+    respondWith('<canvas></canvas><script>run()</script>')
+    view('game.html')
+
+    await screen.findByTitle('game.html')
+    expect(screen.queryByText(/externalRefs/)).toBeNull()
+  })
+
+  // The sandbox swallows exceptions; the shim posts them and the pane shows
+  // the first, deduplicated, so a blank page comes with a reason.
+  it('surfaces errors the page reports through the shim', async () => {
+    respondWith('<script>throw new Error("boom")</script>')
+    view('game.html')
+
+    const frame = (await screen.findByTitle('game.html')) as HTMLIFrameElement
+    expect(frame.srcdoc).toContain('jan-preview-shim')
+    const report = (message: string) =>
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: { source: 'jan-preview-shim', type: 'error', message },
+            source: frame.contentWindow,
+          })
+        )
+      })
+    report('boom')
+    report('boom')
+    await screen.findByRole('alert')
+    expect(screen.getByRole('alert').textContent).toBe(
+      'common:preview.scriptErrors#1'
+    )
+    report('later')
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe(
+        'common:preview.scriptErrors#2'
+      )
+    )
+  })
+
+  it('ignores a report from a window that is not the previewed frame', async () => {
+    respondWith('<p>ok</p>')
+    view('page.html')
+
+    await screen.findByTitle('page.html')
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: { source: 'jan-preview-shim', type: 'error', message: 'x' },
+          source: window,
+        })
+      )
+    })
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('renders markdown through the shared renderer', async () => {

@@ -5,6 +5,7 @@ import {
   basenameOf,
   isAssetKind,
   unresolvedRefs,
+  externalRefs,
   resolveInRoot,
 } from '@/lib/coworkPreview'
 
@@ -63,7 +64,6 @@ describe('unresolvedRefs', () => {
   it('does not count anything that resolves on its own', () => {
     expect(unresolvedRefs('<img src="data:image/png;base64,AAA">')).toBe(0)
     expect(unresolvedRefs('<script src="https://cdn.example/x.js">')).toBe(0)
-    expect(unresolvedRefs('<img src="//cdn.example/x.png">')).toBe(0)
     expect(unresolvedRefs('<a href="#section">x</a>')).toBe(0)
     expect(unresolvedRefs('<img src="blob:abc">')).toBe(0)
   })
@@ -75,6 +75,25 @@ describe('unresolvedRefs', () => {
 
   it('ignores empty values', () => {
     expect(unresolvedRefs('<img src="">')).toBe(0)
+  })
+
+  // about:srcdoc has no scheme or host to inherit, so `//cdn` is as dead as
+  // `./x.png`.
+  it('counts protocol-relative refs, which have nothing to inherit from', () => {
+    expect(unresolvedRefs('<img src="//cdn.example/x.png">')).toBe(1)
+  })
+})
+
+describe('externalRefs', () => {
+  it('counts http(s) refs and nothing else', () => {
+    expect(
+      externalRefs(
+        '<script src="https://cdn.example/phaser.js"></script>' +
+          '<link href="http://x.dev/a.css"><img src="data:image/png;base64,AA">' +
+          '<img src="./local.png"><a href="#top">x</a>'
+      )
+    ).toBe(2)
+    expect(externalRefs('<canvas></canvas><script>run()</script>')).toBe(0)
   })
 })
 

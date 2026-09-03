@@ -145,7 +145,11 @@
     "reload": "Reload",
     "allowNetwork": "Allow network",
     "unresolvedRefs_one": "1 file this page links to can't load in the preview. Open it to see it in a browser.",
-    "unresolvedRefs_other": "{{count}} files this page links to can't load in the preview. Open it to see it in a browser."
+    "unresolvedRefs_other": "{{count}} files this page links to can't load in the preview. Open it to see it in a browser.",
+    "externalRefs_one": "1 resource this page loads from the web is blocked. Turn on \"Allow network\" to load it.",
+    "externalRefs_other": "{{count}} resources this page loads from the web are blocked. Turn on \"Allow network\" to load them.",
+    "scriptErrors_one": "The page reported an error: {{message}}",
+    "scriptErrors_other": "The page reported {{count}} errors. First: {{message}}"
   },
   "changes": {
     "title": "Agent changes",
