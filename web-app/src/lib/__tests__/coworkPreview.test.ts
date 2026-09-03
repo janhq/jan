@@ -6,6 +6,7 @@ import {
   isAssetKind,
   unresolvedRefs,
   externalRefs,
+  previewUrlFor,
   resolveInRoot,
 } from '@/lib/coworkPreview'
 
@@ -94,6 +95,23 @@ describe('externalRefs', () => {
       )
     ).toBe(2)
     expect(externalRefs('<canvas></canvas><script>run()</script>')).toBe(0)
+  })
+})
+
+describe('previewUrlFor', () => {
+  it('keeps the directory structure so relative assets resolve', () => {
+    expect(
+      previewUrlFor('/home/me/proj/index.html', 'http://preview.localhost/%2F')
+    ).toBe('http://preview.localhost/home/me/proj/index.html')
+    expect(previewUrlFor('/a/b.html', 'preview://localhost/%2F')).toBe(
+      'preview://localhost/a/b.html'
+    )
+  })
+
+  it('encodes segments and normalizes a windows path', () => {
+    expect(
+      previewUrlFor('C:\\Users\\me\\my game\\index.html', 'http://preview.localhost/x')
+    ).toBe('http://preview.localhost/C%3A/Users/me/my%20game/index.html')
   })
 })
 
