@@ -130,6 +130,11 @@ runs:
         fi
 
 
+    # nvcc on Windows accepts only cl as its host compiler and finds it on PATH.
+    - name: Enter the MSVC developer environment for nvcc
+      if: runner.os == 'Windows' && contains(inputs.variant, 'cuda')
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+
     # Asserts the image, not the steps above: a mis-provisioned runner fails
     # here in seconds instead of five minutes into `make build`.
     # Stats zeroed so the post-build report covers this build only.

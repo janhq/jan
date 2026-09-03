@@ -65,10 +65,14 @@ MINGW* | MSYS* | CYGWIN*)
     echo "error: the engine build needs clang on PATH on Windows (install LLVM)" >&2
     exit 1
   }
-  command -v cl >/dev/null 2>&1 || {
+  if ! command -v cl >/dev/null 2>&1; then
+    if [ -n "$want" ]; then
+      echo "error: nvcc needs cl on PATH on Windows; run from a Visual Studio developer prompt" >&2
+      exit 1
+    fi
     echo "warning: cl is not on PATH; run from a Visual Studio developer prompt" >&2
     echo "         if the build cannot find the MSVC headers and libraries." >&2
-  }
+  fi
   echo "engine toolchain: ninja and clang found"
   ;;
 esac

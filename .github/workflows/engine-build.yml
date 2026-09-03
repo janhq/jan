@@ -84,6 +84,22 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
+      # The self-hosted CUDA images carry neither Git for Windows nor make, and
+      # every later step (dtolnay's included) is bash. No-op on hosted images.
+      - name: Provision Git Bash and make on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'C:\Program Files\Git\bin\bash.exe')) {
+            choco install git -y --no-progress
+            Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\cmd'
+            Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\bin'
+          }
+          if (-not (Get-Command make -ErrorAction SilentlyContinue)) {
+            choco install make -y --no-progress
+            Add-Content $env:GITHUB_PATH 'C:\ProgramData\chocolatey\bin'
+          }
+
       - uses: dtolnay/rust-toolchain@stable
 
       # The plugin depends on tauri, so building its binary needs the GUI
