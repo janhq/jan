@@ -37,7 +37,11 @@ import {
   MessageCircleIcon,
   type MessageCircleIconHandle,
 } from '@/components/animated-icon/message-circle'
-import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
+import {
+  startNewSession,
+  useCoworkSessions,
+  type CoworkSession,
+} from '@/hooks/useCoworkSessions'
 import { useCoworkRun, useIsSessionActive } from '@/hooks/useCoworkRun'
 import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import SkillsManagerDialog from '@/containers/dialogs/SkillsManagerDialog'
@@ -143,8 +147,7 @@ export function NavCowork() {
   const goCowork = useCallback(() => navigate({ to: route.cowork }), [navigate])
   const newSessionIconRef = useRef<MessageCircleIconHandle>(null)
   const newSession = () => {
-    useCoworkSessions.getState().createSession()
-    pruneEmpty()
+    startNewSession(Object.keys(useCoworkRun.getState().runId))
     goCowork()
   }
   const selectSession = useCallback(

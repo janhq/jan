@@ -1,9 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronDown, Loader2, Sparkles } from 'lucide-react'
+import { ChevronLeft, ChevronDown, Eye, Loader2, Sparkles } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn, formatDuration, formatTokenCount } from '@/lib/utils'
-import type { CoworkTurn, SubagentRun } from '@/types/coworkSession'
+import type {
+  CoworkTurn,
+  MonitorView,
+  SubagentRun,
+} from '@/types/coworkSession'
 import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
 import { MessageItem } from '@/containers/MessageItem'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
@@ -50,6 +54,43 @@ function TaskRow({ run, onSelect }: { run: SubagentRun; onSelect: () => void }) 
         </span>
       )}
     </button>
+  )
+}
+
+/** One file monitor: what it watches, how far along its conditions are. */
+function MonitorRow({ monitor }: { monitor: MonitorView }) {
+  const { t } = useTranslation()
+  const running = monitor.status === 'running'
+  const total = monitor.met.length + monitor.unmet.length
+  return (
+    <div
+      data-testid="cowork-monitor-row"
+      className="flex w-full flex-col gap-1 rounded-lg border bg-main-view-fg/2 px-3 py-2.5 text-left"
+    >
+      <div className="flex items-center gap-2">
+        {running ? (
+          <Loader2 size={14} className="shrink-0 animate-spin text-accent" />
+        ) : (
+          <Eye size={14} className="shrink-0 text-main-view-fg/50" />
+        )}
+        <span className="truncate text-sm font-medium">
+          {monitor.file || monitor.monitorId}
+        </span>
+        <span className="ml-auto shrink-0 font-mono text-xs text-main-view-fg/50">
+          {monitor.monitorId}
+        </span>
+      </div>
+      <span className="pl-6 font-mono text-xs tabular-nums text-main-view-fg/50">
+        {t('common:monitorConditionsMet', { met: monitor.met.length, total })}
+        {' · '}
+        {formatDuration(monitor.startedAt, monitor.endedAt)}
+      </span>
+      {running && monitor.unmet.length > 0 && (
+        <span className="truncate pl-6 text-xs text-main-view-fg/50">
+          {t('common:monitorWaitingOn', { names: monitor.unmet.join(', ') })}
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -155,9 +196,13 @@ function Section({
  */
 export function CoworkTasksPanel({
   subagents,
+  monitors = [],
   onClose,
 }: {
   subagents: SubagentRun[]
+  /** The run's file monitors. Transient: they die with the run, so unlike
+   * finished children they never come back from the session. */
+  monitors?: MonitorView[]
   onClose: () => void
 }) {
   const { t } = useTranslation()
@@ -167,7 +212,9 @@ export function CoworkTasksPanel({
   // Skipped while a detail view is open — that view doesn't render the
   // duration text, so ticking would just re-render the mounted transcript.
   const [, tick] = useState(0)
-  const anyRunning = subagents.some((s) => s.status === 'running')
+  const anyRunning =
+    subagents.some((s) => s.status === 'running') ||
+    monitors.some((m) => m.status === 'running')
   useEffect(() => {
     if (!anyRunning || selectedRunId) return
     const id = setInterval(() => tick((n) => n + 1), 1000)
@@ -202,12 +249,19 @@ export function CoworkTasksPanel({
         <TaskDetail run={selected} />
       ) : (
         <div className="flex h-full flex-col gap-4 overflow-y-auto p-3">
-          {subagents.length === 0 ? (
+          {subagents.length === 0 && monitors.length === 0 ? (
             <p className="px-1 py-6 text-center text-sm text-main-view-fg/50">
               {t('common:noBackgroundTasks')}
             </p>
           ) : (
             <>
+              {monitors.length > 0 && (
+                <Section label={t('common:monitors')} count={monitors.length}>
+                  {monitors.map((monitor) => (
+                    <MonitorRow key={monitor.monitorId} monitor={monitor} />
+                  ))}
+                </Section>
+              )}
               {runningRuns.length > 0 && (
                 <Section label={t('common:running')} count={runningRuns.length}>
                   {runningRuns.map((run) => (

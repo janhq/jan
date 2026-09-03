@@ -11,7 +11,11 @@ import {
   TASK_TOOL_NAME,
   TODO_TOOL_NAME,
 } from '@/lib/coworkTools'
-import { MONITOR_TOOL_NAME, type MonitorLane } from '@/lib/coworkMonitor'
+import {
+  MONITOR_TOOL_NAME,
+  monitorSpecFromArgs,
+  type MonitorLane,
+} from '@/lib/coworkMonitor'
 import type { PendingToolCall, ToolOutcome } from '@/lib/coworkRunner'
 import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
 
@@ -79,7 +83,8 @@ async function runMonitorOp(
       // Cowork mounts the attached folder writable (shared-folder mode).
       true
     )
-    if (!started.isError) monitors.started(started.output)
+    if (!started.isError)
+      monitors.started(started.output, monitorSpecFromArgs(input))
     return { output: started.output, isError: started.isError }
   }
   if (op === 'stop') {

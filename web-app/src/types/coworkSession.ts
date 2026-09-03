@@ -86,6 +86,20 @@ export type SubagentRun = {
   usage?: Usage
 }
 
+/**
+ * One file monitor the run started, for the background-tasks rail. Transient:
+ * a watcher dies with its run, so nothing here is committed onto the session.
+ */
+export type MonitorView = {
+  monitorId: string
+  file: string
+  met: string[]
+  unmet: string[]
+  status: 'running' | 'done'
+  startedAt: number
+  endedAt?: number
+}
+
 /** Mirrors the Rust `TodoItem`/`TodoPhase`/`TodoList` structs (todo.rs). */
 export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'abandoned'
 

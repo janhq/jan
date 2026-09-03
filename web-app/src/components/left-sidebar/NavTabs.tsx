@@ -3,13 +3,21 @@ import { Handshake, HomeIcon } from 'lucide-react'
 import { route, isCoworkRoute } from '@/constants/routes'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { startNewSession } from '@/hooks/useCoworkSessions'
+import { useCoworkRun } from '@/hooks/useCoworkRun'
 
 type TabItem = {
   label: string
   to: string
   icon: typeof HomeIcon
   isActive: boolean
+  onClick?: () => void
 }
+
+// The tab is the start page, like Home: it opens a fresh session rather than
+// landing on whichever one was viewed last. Sessions are picked from the list.
+const openCoworkStart = () =>
+  startNewSession(Object.keys(useCoworkRun.getState().runId))
 
 export function NavTabs() {
   const { t } = useTranslation()
@@ -24,7 +32,13 @@ export function NavTabs() {
 
   const tabs: TabItem[] = [
     { label: t('common:home'), to: route.home, icon: HomeIcon, isActive: isHome },
-    { label: t('common:cowork'), to: route.cowork, icon: Handshake, isActive: isCowork },
+    {
+      label: t('common:cowork'),
+      to: route.cowork,
+      icon: Handshake,
+      isActive: isCowork,
+      onClick: openCoworkStart,
+    },
   ]
 
   return (
@@ -35,6 +49,7 @@ export function NavTabs() {
           <Link
             key={tab.to}
             to={tab.to}
+            onClick={tab.onClick}
             className={cn(
               'flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium transition-colors',
               tab.isActive
