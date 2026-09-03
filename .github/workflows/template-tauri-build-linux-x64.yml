@@ -217,7 +217,10 @@ jobs:
           --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
           "$APP_IMAGE"
 
+        # linuxdeploy is an AppImage; a runner container without FUSE cannot
+        # mount it, and tauri reports only `failed to run linuxdeploy`.
         env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
           RELEASE_CHANNEL: '${{ inputs.channel }}'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}

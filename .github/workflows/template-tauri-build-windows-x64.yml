@@ -117,8 +117,8 @@ jobs:
           if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
             choco install dotnet-8.0-sdk -y --no-progress
             Add-Content $env:GITHUB_PATH 'C:\Program Files\dotnet'
-            Add-Content $env:GITHUB_PATH "$env:USERPROFILE\.dotnet\tools"
           }
+          Add-Content $env:GITHUB_PATH "$env:USERPROFILE\.dotnet\tools"
 
       - name: Replace Icons for Beta Build
         if: inputs.channel != 'stable'
@@ -259,9 +259,13 @@ jobs:
           echo "---------nsis.template---------"
           cat ./src-tauri/tauri.bundle.windows.nsis.template
 
+      # A persistent runner may already carry a newer AzureSignTool, and
+      # installing an older version over it is an error.
       - name: Install AzureSignTool
         run: |
-          dotnet tool install --global --version 6.0.0 AzureSignTool
+          if (-not (Get-Command AzureSignTool -ErrorAction SilentlyContinue)) {
+            dotnet tool install --global --version 6.0.0 AzureSignTool
+          }
 
       - name: Config Yarn
         run: |
