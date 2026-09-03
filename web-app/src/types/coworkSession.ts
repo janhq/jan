@@ -87,15 +87,17 @@ export type SubagentRun = {
 }
 
 /**
- * One file monitor the run started, for the background-tasks rail. Transient:
- * a watcher dies with its run, so nothing here is committed onto the session.
+ * One monitor the session started, for the background-tasks rail. Kept in the
+ * run store only: a watcher dies with the app, so nothing here is committed
+ * onto the session.
  */
 export type MonitorView = {
   monitorId: string
-  file: string
-  met: string[]
-  unmet: string[]
+  name: string
+  script: string
   status: 'running' | 'done'
+  /** How a done monitor ended. */
+  outcome?: 'matched' | 'timeout' | 'stopped'
   startedAt: number
   endedAt?: number
 }

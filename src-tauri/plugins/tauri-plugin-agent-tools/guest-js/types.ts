@@ -59,14 +59,13 @@ export type ToolOutputChunk = {
 /**
  * One monitor notice, in the two registers a background ping needs: `headline`
  * for the transcript row, `text` for the `<SYSTEM>` reminder the model gets.
- * `done` marks the update that also ends the monitor (all met, or timeout).
+ * Every update is terminal (the script matched, or the monitor timed out), so
+ * it also closes the monitor; `matched` tells the two apart.
  */
 export type MonitorUpdate = {
   monitorId: string
+  name: string
   headline: string
   text: string
-  done: boolean
-  /** Condition names met so far, and those still outstanding, at this update. */
-  met: string[]
-  unmet: string[]
+  matched: boolean
 }

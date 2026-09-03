@@ -855,6 +855,9 @@ async fn run_subagent(
     // Subagents cannot read or mutate the parent's todo list (isolated child
     // context, matching ask_requests above).
     child_args.todo_registry = None;
+    // A child's monitors are its own and die with it; nothing would pick up a
+    // match left in the session set once the child has returned.
+    child_args.monitors = None;
 
     let body = child_body(&resolved, &description, &parent);
 
@@ -2048,6 +2051,7 @@ mod tests {
             subagents_enabled: true,
             max_parallel_subagents: 1,
             auto_approve: false,
+            monitors: None,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
             sandbox: None,

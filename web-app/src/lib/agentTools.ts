@@ -350,8 +350,9 @@ export async function listAgentMonitors(sessionId: string): Promise<string> {
 }
 
 /**
- * Abort every monitor a session still has. Best-effort teardown at run end: a
- * failure leaves watchers whose updates go nowhere, not user-visible damage.
+ * Abort every monitor a session still has. Best-effort teardown when the
+ * session is deleted: a failure leaves watchers whose updates go nowhere, not
+ * user-visible damage.
  */
 export async function stopAgentSessionMonitors(sessionId: string): Promise<void> {
   try {
