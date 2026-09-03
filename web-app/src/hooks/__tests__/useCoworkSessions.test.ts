@@ -8,7 +8,7 @@ vi.mock('@/lib/backendStorage', () => ({
   },
 }))
 
-import { useCoworkSessions } from '../useCoworkSessions'
+import { startNewSession, useCoworkSessions } from '../useCoworkSessions'
 import type { CoworkTurn, SubagentRun } from '@/types/coworkSession'
 
 const reset = () =>
@@ -20,6 +20,50 @@ const sub = (runId: string, name: string): SubagentRun => ({
   status: 'done',
   startedAt: 0,
   turns: [],
+})
+
+describe('startNewSession', () => {
+  beforeEach(reset)
+
+  /// The Cowork tab is the start page: it must not land on the session viewed
+  /// last, but it also must not pile up empties on repeated clicks.
+  it('opens a fresh session when the current one has a conversation', () => {
+    const store = useCoworkSessions.getState()
+    const used = store.createSession()
+    store.commitTurns(used, [{ role: 'user', content: 'hi' }], [], [])
+    const fresh = startNewSession([])
+    expect(fresh).not.toBe(used)
+    expect(useCoworkSessions.getState().currentId).toBe(fresh)
+    expect(useCoworkSessions.getState().sessions.map((s) => s.id)).toEqual([
+      fresh,
+      used,
+    ])
+  })
+
+  it('reuses an untouched current session', () => {
+    const empty = useCoworkSessions.getState().createSession()
+    expect(startNewSession([])).toBe(empty)
+    expect(useCoworkSessions.getState().sessions).toHaveLength(1)
+  })
+
+  it('sweeps abandoned empties but keeps one whose first run is streaming', () => {
+    const store = useCoworkSessions.getState()
+    const used = store.createSession()
+    store.commitTurns(used, [{ role: 'user', content: 'hi' }], [], [])
+    useCoworkSessions.setState((s) => ({
+      sessions: [
+        { ...s.sessions[0], id: 'abandoned', turns: [] },
+        { ...s.sessions[0], id: 'streaming', turns: [] },
+        ...s.sessions,
+      ],
+    }))
+    const fresh = startNewSession(['streaming'])
+    const ids = useCoworkSessions.getState().sessions.map((s) => s.id)
+    expect(ids).toContain(fresh)
+    expect(ids).toContain('streaming')
+    expect(ids).toContain(used)
+    expect(ids).not.toContain('abandoned')
+  })
 })
 
 describe('useCoworkSessions', () => {

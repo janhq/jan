@@ -1,6 +1,7 @@
 import { jsonSchema, type Tool } from 'ai'
 import type { MonitorUpdate } from '@/lib/agentTools'
 import type { SubagentNotice } from '@/lib/coworkSubagent'
+import type { MonitorView } from '@/types/coworkSession'
 
 /**
  * The `monitor` tool on the Cowork surface.
@@ -73,6 +74,35 @@ export function parseMonitorId(startResult: string): string | null {
   return match ? match[1] : null
 }
 
+/** What a `start` call asked for, as the panel shows it before any update. */
+export type MonitorSpec = { file: string; conditions: string[] }
+
+/** The watched file and condition names out of a `start` call's arguments. */
+export function monitorSpecFromArgs(input: unknown): MonitorSpec {
+  const args =
+    input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
+  const file = typeof args.file === 'string' ? args.file : ''
+  const conditions = Array.isArray(args.conditions)
+    ? args.conditions.flatMap((c) => {
+        const name =
+          c && typeof c === 'object' ? (c as { name?: unknown }).name : null
+        return typeof name === 'string' ? [name] : []
+      })
+    : []
+  return { file, conditions }
+}
+
+/**
+ * The display's view of the run's monitors: opened on a successful start,
+ * advanced by every update, closed by an explicit stop. Optional, since a
+ * headless run has no panel to feed.
+ */
+export type MonitorViewSink = {
+  started: (view: MonitorView) => void
+  updated: (update: MonitorUpdate) => void
+  stopped: (monitorId: string) => void
+}
+
 /**
  * What the run's inbox needs to hear about monitors. Structurally what
  * `SubagentInbox` provides, so the two kinds of background work share one
@@ -96,20 +126,32 @@ export type MonitorInbox = {
 export class MonitorLane {
   private open = new Set<string>()
 
-  constructor(private readonly inbox: MonitorInbox) {}
+  constructor(
+    private readonly inbox: MonitorInbox,
+    private readonly view?: MonitorViewSink
+  ) {}
 
   /** Record a successful start (its result names the id) and claim a running
    * slot, so the run parks on the watcher instead of ending under it. */
-  started(startResult: string): void {
+  started(startResult: string, spec?: MonitorSpec): void {
     const id = parseMonitorId(startResult)
     if (!id) return
     this.open.add(id)
     this.inbox.begin()
+    this.view?.started({
+      monitorId: id,
+      file: spec?.file ?? '',
+      met: [],
+      unmet: spec?.conditions ?? [],
+      status: 'running',
+      startedAt: Date.now(),
+    })
   }
 
   /** Route one Rust update: a terminal one closes the slot, any other is a
    * ping the model reacts to while the watcher keeps going. */
   update(update: MonitorUpdate): void {
+    this.view?.updated(update)
     const notice: SubagentNotice = {
       headline: update.headline,
       text: update.text,
@@ -126,6 +168,7 @@ export class MonitorLane {
   stopped(monitorId: string, stopResult: string): void {
     if (!stopResult.startsWith('ERROR') && this.open.delete(monitorId)) {
       this.inbox.abandon()
+      this.view?.stopped(monitorId)
     }
   }
 }
