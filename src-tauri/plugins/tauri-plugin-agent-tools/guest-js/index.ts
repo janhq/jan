@@ -13,6 +13,7 @@ export {
   MemoryCatalogEntry,
   MonitorUpdate,
   SkillMeta,
+  ToolImage,
   ToolOutputChunk,
   ToolResult,
   ToolSchema,
