@@ -97,10 +97,16 @@ runs:
           sudo apt-get install -y vulkan-sdk
           ;;
         Windows)
-          curl -fL -o "$RUNNER_TEMP/vulkan-sdk.exe" \
-            https://sdk.lunarg.com/sdk/download/latest/windows/vulkan_sdk.exe
-          "$RUNNER_TEMP/vulkan-sdk.exe" --root 'C:\VulkanSDK' \
-            --accept-licenses --default-answer --confirm-command install
+          # A persistent runner keeps the last run's install, and the installer
+          # refuses to install over it.
+          if [ -x /c/VulkanSDK/Bin/glslc.exe ]; then
+            echo "engine toolchain: reusing the Vulkan SDK in C:\VulkanSDK"
+          else
+            curl -fL -o "$RUNNER_TEMP/vulkan-sdk.exe" \
+              https://sdk.lunarg.com/sdk/download/latest/windows/vulkan_sdk.exe
+            "$RUNNER_TEMP/vulkan-sdk.exe" --root 'C:\VulkanSDK' \
+              --accept-licenses --default-answer --confirm-command install
+          fi
           echo 'VULKAN_SDK=C:\VulkanSDK' >> "$GITHUB_ENV"
           echo 'C:\VulkanSDK\Bin' >> "$GITHUB_PATH"
           ;;
@@ -139,6 +145,18 @@ runs:
     - name: Enter the MSVC developer environment for nvcc
       if: runner.os == 'Windows' && contains(inputs.variant, 'cuda')
       uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+
+    # Inside a VS developer environment rustc takes link.exe from PATH, and make
+    # runs its recipes through Git's sh.exe, whose MSYS runtime prepends its own
+    # usr/bin -- where GNU coreutils `link` lives. Pin the linker by full path.
+    - name: Pin cargo's linker to MSVC link.exe
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        if (-not $env:VCToolsInstallDir) { Write-Host "no VS developer environment; rustc locates link.exe itself"; exit 0 }
+        $link = Join-Path $env:VCToolsInstallDir 'bin\Hostx64\x64\link.exe'
+        if (-not (Test-Path $link)) { throw "link.exe not found at $link" }
+        Add-Content $env:GITHUB_ENV "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$link"
 
     # Asserts the image, not the steps above: a mis-provisioned runner fails
     # here in seconds instead of five minutes into `make build`.
