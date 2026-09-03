@@ -37,6 +37,7 @@ use serde::Serialize;
 
 use crate::memory;
 use crate::permissions::ToolPermissions;
+use crate::preview::{self, PreviewRoots};
 use crate::skills::{self, SkillMeta};
 use crate::tools::gate::{self, Decision, PromptKind, SessionGrants};
 use crate::tools::jail;
@@ -833,6 +834,55 @@ async fn execute_tool_inner(
         is_error,
         images: images.unwrap_or_default(),
     })
+}
+
+/// Let the `preview://` scheme serve files under `root`, with `allow_network`
+/// as the page policy. Re-registering the same root replaces the flag.
+#[tauri::command]
+pub fn preview_register_root(
+    roots: tauri::State<'_, PreviewRoots>,
+    root: String,
+    allow_network: bool,
+) -> Result<(), AgentToolsError> {
+    roots.register(Path::new(&root), allow_network)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn preview_unregister_root(roots: tauri::State<'_, PreviewRoots>, root: String) {
+    roots.unregister(Path::new(&root));
+}
+
+/// One `preview://` request. Anything not resolvable to a file under a
+/// registered root is a 404 with no detail: the requester is model markup.
+pub fn preview_response<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    request_path: &str,
+) -> tauri::http::Response<Vec<u8>> {
+    use tauri::http::{header, Response, StatusCode};
+    use tauri::Manager;
+    let not_found = || {
+        Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Vec::new())
+            .expect("static response")
+    };
+    let Some(served) = app.state::<PreviewRoots>().resolve(request_path) else {
+        return not_found();
+    };
+    let Ok(body) = std::fs::read(&served.path) else {
+        return not_found();
+    };
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, preview::mime_for(&served.path))
+        .header(
+            header::CONTENT_SECURITY_POLICY,
+            preview::csp(served.allow_network),
+        )
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(body)
+        .unwrap_or_else(|_| not_found())
 }
 
 /// Build the live-output sink.

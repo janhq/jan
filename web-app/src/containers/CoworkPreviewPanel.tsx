@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FolderOpen, Globe, RotateCw, SquareArrowOutUpRight } from 'lucide-react'
+import {
+  FolderOpen,
+  Globe,
+  RotateCw,
+  ShieldOff,
+  SquareArrowOutUpRight,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -12,6 +18,11 @@ import { getServiceHub, useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { buildSrcDoc } from '@/lib/htmlSandbox'
 import { previewShimError } from '@/lib/previewShim'
+import {
+  previewUrl,
+  registerPreviewRoot,
+  unregisterPreviewRoot,
+} from '@/lib/previewProtocol'
 import { cn } from '@/lib/utils'
 import {
   MAX_PREVIEW_BYTES,
@@ -51,6 +62,9 @@ export function CoworkPreviewPanel({ root, path, onClose }: Props) {
   // mid-interaction in a document or a running page.
   const [nonce, setNonce] = useState(0)
   const [allowNetwork, setAllowNetwork] = useState(false)
+  // Off by default: the srcdoc sandbox is the safe path. On, the page is served
+  // from `preview://` with an origin of its own (see previewProtocol.ts).
+  const [unsandboxed, setUnsandboxed] = useState(false)
 
   const abs = useMemo(
     () => (root ? resolveInRoot(root, path) : null),
@@ -111,6 +125,19 @@ export function CoworkPreviewPanel({ root, path, onClose }: Props) {
 
   const reload = useCallback(() => setNonce((n) => n + 1), [])
 
+  // The scheme serves nothing until the root is registered, and the network
+  // flag rides on the registration, so a toggle re-registers. Closing the
+  // panel or leaving the mode withdraws the root.
+  const live = unsandboxed && kind === 'html' && !!root
+  useEffect(() => {
+    if (!live || !root) return
+    void registerPreviewRoot(root, allowNetwork).catch(() => {
+      // A failed registration leaves the frame 404ing; the reload button
+      // retries it by re-running this effect.
+    })
+    return () => void unregisterPreviewRoot(root).catch(() => {})
+  }, [live, root, allowNetwork, nonce])
+
   const iconButton = (
     label: string,
     Icon: typeof RotateCw,
@@ -143,13 +170,23 @@ export function CoworkPreviewPanel({ root, path, onClose }: Props) {
       onClose={onClose}
       summary={
         <div className="flex shrink-0 items-center gap-0.5">
-          {state.status === 'ready' && state.kind === 'html' &&
-            iconButton(
-              t('common:preview.allowNetwork'),
-              Globe,
-              () => setAllowNetwork((v) => !v),
-              allowNetwork
-            )}
+          {state.status === 'ready' && state.kind === 'html' && (
+            <>
+              {iconButton(
+                t('common:preview.allowNetwork'),
+                Globe,
+                () => setAllowNetwork((v) => !v),
+                allowNetwork
+              )}
+              {root &&
+                iconButton(
+                  t('common:preview.unsandboxed'),
+                  ShieldOff,
+                  () => setUnsandboxed((v) => !v),
+                  unsandboxed
+                )}
+            </>
+          )}
           {iconButton(t('common:preview.reload'), RotateCw, reload)}
           {abs && (
             <>
@@ -168,7 +205,11 @@ export function CoworkPreviewPanel({ root, path, onClose }: Props) {
         </div>
       }
     >
-      <PreviewBody state={state} allowNetwork={allowNetwork} />
+      <PreviewBody
+        state={state}
+        allowNetwork={allowNetwork}
+        liveUrl={live && abs ? previewUrl(abs) : null}
+      />
     </CoworkSidePanel>
   )
 }
@@ -179,9 +220,11 @@ const MAX_REPORTED_ERRORS = 5
 function HtmlFrame({
   state,
   allowNetwork,
+  liveUrl,
 }: {
   state: Extract<PreviewState, { status: 'ready' }>
   allowNetwork: boolean
+  liveUrl: string | null
 }) {
   const { t } = useTranslation()
   const frame = useRef<HTMLIFrameElement>(null)
@@ -214,9 +257,11 @@ function HtmlFrame({
 
   const blocked = allowNetwork ? 0 : (state.externalRefs ?? 0)
   const notice = 'border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground'
+  const frameClass = 'min-h-0 w-full flex-1 border-0 bg-white'
   return (
     <div className="flex h-full flex-col">
-      {(state.unresolvedRefs ?? 0) > 0 && (
+      {/* Served by URL, relative refs resolve; served inline, they cannot. */}
+      {!liveUrl && (state.unresolvedRefs ?? 0) > 0 && (
         <p className={notice}>
           {t('common:preview.unresolvedRefs', { count: state.unresolvedRefs })}
         </p>
@@ -234,13 +279,25 @@ function HtmlFrame({
           })}
         </p>
       )}
-      <iframe
-        ref={frame}
-        title={state.path}
-        srcDoc={srcDoc}
-        sandbox={scripts ? 'allow-scripts' : ''}
-        className="min-h-0 w-full flex-1 border-0 bg-white"
-      />
+      {liveUrl ? (
+        // `allow-same-origin` is safe here because the origin is the scheme's,
+        // not the app's; it is what makes storage and relative assets work.
+        <iframe
+          key={liveUrl}
+          title={state.path}
+          src={liveUrl}
+          sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-modals"
+          className={frameClass}
+        />
+      ) : (
+        <iframe
+          ref={frame}
+          title={state.path}
+          srcDoc={srcDoc}
+          sandbox={scripts ? 'allow-scripts' : ''}
+          className={frameClass}
+        />
+      )}
     </div>
   )
 }
@@ -256,9 +313,12 @@ function Notice({ children }: { children: React.ReactNode }) {
 function PreviewBody({
   state,
   allowNetwork,
+  liveUrl,
 }: {
   state: PreviewState
   allowNetwork: boolean
+  /** Set when the page is served unsandboxed from `preview://`. */
+  liveUrl: string | null
 }) {
   const { t } = useTranslation()
 
@@ -280,7 +340,9 @@ function PreviewBody({
   switch (state.kind) {
     case 'html':
     case 'svg':
-      return <HtmlFrame state={state} allowNetwork={allowNetwork} />
+      return (
+        <HtmlFrame state={state} allowNetwork={allowNetwork} liveUrl={liveUrl} />
+      )
     case 'markdown':
       return (
         <div className="h-full overflow-auto px-4 py-3">

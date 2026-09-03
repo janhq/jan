@@ -144,6 +144,7 @@
     "tooLarge": "Too big to preview. Open it to see it in another app.",
     "reload": "Reload",
     "allowNetwork": "Allow network",
+    "unsandboxed": "Run unsandboxed: saved data and local files work",
     "unresolvedRefs_one": "1 file this page links to can't load in the preview. Open it to see it in a browser.",
     "unresolvedRefs_other": "{{count}} files this page links to can't load in the preview. Open it to see it in a browser.",
     "externalRefs_one": "1 resource this page loads from the web is blocked. Turn on \"Allow network\" to load it.",

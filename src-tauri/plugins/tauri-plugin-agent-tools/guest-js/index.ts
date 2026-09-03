@@ -81,6 +81,25 @@ export async function threadWorkspaceSweep(
 }
 
 /** The Cowork session sandbox, created if absent. */
+/**
+ * Let the `preview://` scheme serve files under `root` to the unsandboxed
+ * preview frame. `allowNetwork` becomes the served page's CSP; registering
+ * again replaces it. Unregister when the frame goes away.
+ */
+export async function previewRegisterRoot(
+  root: string,
+  allowNetwork: boolean
+): Promise<void> {
+  await invoke('plugin:agent-tools|preview_register_root', {
+    root,
+    allowNetwork,
+  })
+}
+
+export async function previewUnregisterRoot(root: string): Promise<void> {
+  await invoke('plugin:agent-tools|preview_unregister_root', { root })
+}
+
 export async function sessionWorkspacePath(
   dataFolder: string,
   sessionId: string

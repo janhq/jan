@@ -28,4 +28,6 @@ permissions = [
     "allow-stop-monitor",
     "allow-list-monitors",
     "allow-stop-session-monitors",
+    "allow-preview-register-root",
+    "allow-preview-unregister-root",
 ]
