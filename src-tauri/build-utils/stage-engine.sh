@@ -133,7 +133,7 @@ roots=("${CUDA_PATH:-}" "${CUDA_HOME:-}")
 LIBDIR=""
 for root in "${roots[@]}"; do
   [ -n "$root" ] && [ -d "$root" ] || continue
-  hit="$(find "$root" -maxdepth 3 -iname "$first" -print -quit 2>/dev/null)"
+  hit="$(find -H "$root" -maxdepth 3 -iname "$first" -print -quit 2>/dev/null)"
   if [ -n "$hit" ]; then LIBDIR="$(dirname "$hit")"; break; fi
 done
 [ -n "$LIBDIR" ] || {
