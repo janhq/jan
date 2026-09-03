@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - dev
+      - main
     paths:
       - .github/workflows/engine-build.yml
       - .github/actions/setup-engine-toolchain/action.yml
