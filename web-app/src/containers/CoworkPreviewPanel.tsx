@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FolderOpen, Globe, RotateCw, SquareArrowOutUpRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,10 +11,12 @@ import { CoworkSidePanel } from '@/containers/CoworkSidePanel'
 import { getServiceHub, useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { buildSrcDoc } from '@/lib/htmlSandbox'
+import { previewShimError } from '@/lib/previewShim'
 import { cn } from '@/lib/utils'
 import {
   MAX_PREVIEW_BYTES,
   basenameOf,
+  externalRefs,
   isAssetKind,
   previewKindFor,
   resolveInRoot,
@@ -90,6 +92,7 @@ export function CoworkPreviewPanel({ root, path, onClose }: Props) {
           kind,
           content,
           unresolvedRefs: kind === 'html' ? unresolvedRefs(content) : undefined,
+          externalRefs: kind === 'html' ? externalRefs(content) : undefined,
         })
       } catch (e) {
         if (!alive) return
@@ -170,6 +173,78 @@ export function CoworkPreviewPanel({ root, path, onClose }: Props) {
   )
 }
 
+/** Reports past this many are dropped: the first ones name the cause. */
+const MAX_REPORTED_ERRORS = 5
+
+function HtmlFrame({
+  state,
+  allowNetwork,
+}: {
+  state: Extract<PreviewState, { status: 'ready' }>
+  allowNetwork: boolean
+}) {
+  const { t } = useTranslation()
+  const frame = useRef<HTMLIFrameElement>(null)
+  const [errors, setErrors] = useState<string[]>([])
+  // SVG is static markup, so it runs no scripts; HTML gets them, because an
+  // artifact that draws a chart is inert without them.
+  const scripts = state.kind === 'html'
+  const srcDoc = buildSrcDoc(state.content ?? '', allowNetwork, scripts)
+
+  // A new document starts with a clean slate; the old page's errors are not
+  // this one's.
+  useEffect(() => setErrors([]), [srcDoc])
+
+  // The shim inside the frame posts what the sandbox would otherwise swallow.
+  // Matched on the frame's own window so another preview's report is ignored.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== frame.current?.contentWindow) return
+      const message = previewShimError(e.data)
+      if (!message) return
+      setErrors((prev) =>
+        prev.includes(message) || prev.length >= MAX_REPORTED_ERRORS
+          ? prev
+          : [...prev, message]
+      )
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+
+  const blocked = allowNetwork ? 0 : (state.externalRefs ?? 0)
+  const notice = 'border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground'
+  return (
+    <div className="flex h-full flex-col">
+      {(state.unresolvedRefs ?? 0) > 0 && (
+        <p className={notice}>
+          {t('common:preview.unresolvedRefs', { count: state.unresolvedRefs })}
+        </p>
+      )}
+      {blocked > 0 && (
+        <p className={notice}>
+          {t('common:preview.externalRefs', { count: blocked })}
+        </p>
+      )}
+      {errors.length > 0 && (
+        <p className={cn(notice, 'text-destructive')} role="alert">
+          {t('common:preview.scriptErrors', {
+            count: errors.length,
+            message: errors[0],
+          })}
+        </p>
+      )}
+      <iframe
+        ref={frame}
+        title={state.path}
+        srcDoc={srcDoc}
+        sandbox={scripts ? 'allow-scripts' : ''}
+        className="min-h-0 w-full flex-1 border-0 bg-white"
+      />
+    </div>
+  )
+}
+
 function Notice({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
@@ -204,28 +279,8 @@ function PreviewBody({
 
   switch (state.kind) {
     case 'html':
-    case 'svg': {
-      // SVG is static markup, so it runs no scripts; HTML gets them, because an
-      // artifact that draws a chart is inert without them.
-      const scripts = state.kind === 'html'
-      return (
-        <div className="flex h-full flex-col">
-          {(state.unresolvedRefs ?? 0) > 0 && (
-            <p className="border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              {t('common:preview.unresolvedRefs', {
-                count: state.unresolvedRefs,
-              })}
-            </p>
-          )}
-          <iframe
-            title={state.path}
-            srcDoc={buildSrcDoc(state.content ?? '', allowNetwork, scripts)}
-            sandbox={scripts ? 'allow-scripts' : ''}
-            className="min-h-0 w-full flex-1 border-0 bg-white"
-          />
-        </div>
-      )
-    }
+    case 'svg':
+      return <HtmlFrame state={state} allowNetwork={allowNetwork} />
     case 'markdown':
       return (
         <div className="h-full overflow-auto px-4 py-3">
