@@ -57,11 +57,20 @@ function TaskRow({ run, onSelect }: { run: SubagentRun; onSelect: () => void }) 
   )
 }
 
-/** One file monitor: what it watches, how far along its conditions are. */
+const MONITOR_OUTCOME_KEYS = {
+  matched: 'common:monitorMatched',
+  timeout: 'common:monitorTimedOut',
+  stopped: 'common:monitorStopped',
+} as const
+
+/** One monitor: its name, how it ended (or that it is still polling), and the
+ * script it polls. */
 function MonitorRow({ monitor }: { monitor: MonitorView }) {
   const { t } = useTranslation()
   const running = monitor.status === 'running'
-  const total = monitor.met.length + monitor.unmet.length
+  const state = running
+    ? t('common:monitorPolling')
+    : t(MONITOR_OUTCOME_KEYS[monitor.outcome ?? 'stopped'])
   return (
     <div
       data-testid="cowork-monitor-row"
@@ -74,20 +83,20 @@ function MonitorRow({ monitor }: { monitor: MonitorView }) {
           <Eye size={14} className="shrink-0 text-main-view-fg/50" />
         )}
         <span className="truncate text-sm font-medium">
-          {monitor.file || monitor.monitorId}
+          {monitor.name || monitor.monitorId}
         </span>
         <span className="ml-auto shrink-0 font-mono text-xs text-main-view-fg/50">
           {monitor.monitorId}
         </span>
       </div>
       <span className="pl-6 font-mono text-xs tabular-nums text-main-view-fg/50">
-        {t('common:monitorConditionsMet', { met: monitor.met.length, total })}
+        {state}
         {' · '}
         {formatDuration(monitor.startedAt, monitor.endedAt)}
       </span>
-      {running && monitor.unmet.length > 0 && (
-        <span className="truncate pl-6 text-xs text-main-view-fg/50">
-          {t('common:monitorWaitingOn', { names: monitor.unmet.join(', ') })}
+      {monitor.script && (
+        <span className="truncate pl-6 font-mono text-xs text-main-view-fg/50">
+          {monitor.script}
         </span>
       )}
     </div>
