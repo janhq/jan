@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { UIMessage, UIMessageChunk } from 'ai'
 import type { AskAnswer, CoworkTurn, Usage } from '@/types/coworkSession'
+import type { ToolImage } from '@/lib/agentTools'
 import {
   MAX_AGENT_STEPS,
   budgetExceeded,
@@ -9,6 +10,7 @@ import {
   type BudgetStop,
 } from '@/lib/coworkBudget'
 import { attachPings } from '@/lib/coworkPing'
+import { encodeToolImageSentinel } from '@/lib/tool-image-sentinel'
 
 /**
  * The Cowork agent loop.
@@ -36,6 +38,11 @@ export type ToolOutcome = {
   isError?: boolean
   /** Display-only unified diff. Never reaches the model. */
   diff?: string
+  /** Images the tool returned (`read` of an image, `screenshot`). They reach
+   * the model inside the tool result, as `image_url` parts on the `role: tool`
+   * message (see `tool-image-sentinel.ts`), and are never persisted: a
+   * screenshot is megabytes of base64 and the session store is `settings.json`. */
+  images?: ToolImage[]
 }
 
 /** One model turn's worth of stream, folded into a shape the loop can act on. */
@@ -261,6 +268,13 @@ export async function consumeStep(
   return result
 }
 
+/** The model-facing tail of a tool output: one sentinel per returned image. */
+function toolImageSentinels(outcome: ToolOutcome): string {
+  return (outcome.images ?? [])
+    .map((img) => encodeToolImageSentinel(img.dataUrl))
+    .join('')
+}
+
 /** Assemble the assistant message for a completed step, results included. */
 export function assistantMessageFor(
   id: string,
@@ -286,7 +300,7 @@ export function assistantMessageFor(
     }
     if (outcome) {
       if (outcome.isError) part.errorText = outcome.output
-      else part.output = outcome.output
+      else part.output = outcome.output + toolImageSentinels(outcome)
     }
     parts.push(part)
   }

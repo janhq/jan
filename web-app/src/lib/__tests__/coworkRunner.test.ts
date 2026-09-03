@@ -16,6 +16,7 @@ import {
   type ToolOutcome,
 } from '../coworkRunner'
 import { MAX_SESSION_TOKENS } from '../coworkBudget'
+import { encodeToolImageSentinel } from '../tool-image-sentinel'
 
 const streamOf = (chunks: UIMessageChunk[]): ReadableStream<UIMessageChunk> =>
   new ReadableStream({
@@ -397,6 +398,68 @@ describe('diff sidecar', () => {
     expect(JSON.stringify(msg)).not.toContain('+ new')
     // …but it does reach the transcript row the UI renders.
     expect(turnsFor(step, outcomes)[0].diff).toBe('- old\n+ new')
+  })
+})
+
+describe('tool images', () => {
+  const png = 'data:image/png;base64,iVBORw0KGgo='
+  const step: StepResult = {
+    text: '',
+    reasoning: '',
+    toolCalls: [
+      {
+        toolCallId: 'c1',
+        toolName: 'screenshot',
+        input: { path: 'index.html' },
+      } as PendingToolCall,
+    ],
+    usage: null,
+    aborted: false,
+  }
+  const outcomes = new Map<string, ToolOutcome>([
+    [
+      'c1',
+      {
+        output: 'Screenshot of index.html (1280x960)',
+        images: [{ dataUrl: png, name: 'index.html' }],
+      },
+    ],
+  ])
+
+  // The image rides in the tool part's output as a sentinel the request fetch
+  // decodes into `image_url` parts on the `role: tool` message, the shape the
+  // CLI loop sends for a `read` of an image.
+  it('appends the image sentinel to the model-facing tool output', () => {
+    const msg = assistantMessageFor('m0', step, outcomes)
+    const part = msg.parts[0] as { output: string }
+    expect(part.output).toBe(
+      `Screenshot of index.html (1280x960)${encodeToolImageSentinel(png)}`
+    )
+  })
+
+  it('keeps the image out of the persisted transcript row', () => {
+    const [row] = turnsFor(step, outcomes)
+    expect(row.result).toBe('Screenshot of index.html (1280x960)')
+    expect(JSON.stringify(row)).not.toContain('iVBOR')
+  })
+
+  it('is sent to the model on the next step inside the tool result', async () => {
+    const d = deps(
+      [toolStep('screenshot'), textStep('looks right')],
+      vi.fn(async (): Promise<ToolOutcome> => ({
+        output: 'Screenshot of a.txt (1280x960)',
+        images: [{ dataUrl: png, name: 'a.txt' }],
+      }))
+    )
+    await runTurn({
+      messages: [user('render it')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    const sent = d.sendStep.mock.calls[1][0] as UIMessage[]
+    expect(sent.map((m) => m.role)).toEqual(['user', 'assistant'])
+    const tool = (sent[1].parts as any[]).find((p) => p.type === 'tool-screenshot')
+    expect(tool.output).toContain(encodeToolImageSentinel(png))
   })
 })
 

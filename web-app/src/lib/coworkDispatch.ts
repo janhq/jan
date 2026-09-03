@@ -162,6 +162,7 @@ export async function dispatchCoworkTool(
           ? result.content
           : JSON.stringify(result.content ?? ''),
       diff: result.diff,
+      images: result.images,
     }
   } catch (e) {
     return {

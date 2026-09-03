@@ -134,6 +134,17 @@ describe('dispatchCoworkTool', () => {
     expect(out.diff).toBe('- a\n+ b')
   })
 
+  it('carries returned images beside the output', async () => {
+    const images = [{ dataUrl: 'data:image/png;base64,AA', name: 'a.html' }]
+    executeAgentTool.mockResolvedValue({
+      content: 'Screenshot of a.html (1280x960)',
+      images,
+    })
+    const out = await dispatchCoworkTool(call('screenshot'), ctx())
+    expect(out.output).toBe('Screenshot of a.html (1280x960)')
+    expect(out.images).toEqual(images)
+  })
+
   // A rejection would abort the whole run; the model can usually recover if it
   // is simply told what failed.
   it('turns a tool error into a result instead of throwing', async () => {

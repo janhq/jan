@@ -16,6 +16,7 @@ import {
   type MemoryCatalogEntry,
   type MonitorUpdate,
   type SandboxStatus,
+  type ToolImage,
   type ToolSchema,
   type WorkspaceScope,
 } from '@janhq/tauri-plugin-agent-tools-api'
@@ -124,7 +125,7 @@ export async function getAgentToolSchemas(): Promise<ToolSchema[]> {
   return schemaCache
 }
 
-export type { MemoryCatalogEntry }
+export type { MemoryCatalogEntry, ToolImage }
 
 /**
  * Injection caps for the shared memory store. The *store* is unbounded; what
@@ -217,6 +218,8 @@ type AgentToolResult = {
   error?: string
   /** Unified diff from `write`/`edit`. Display-only; never sent to the model. */
   diff?: string
+  /** Images the tool returned, for a vision model to see. */
+  images?: ToolImage[]
 }
 
 const messageOf = (e: unknown): string =>
@@ -282,7 +285,11 @@ export async function executeAgentTool(
     // The store changed, so the recall injections must not keep serving the
     // snapshot taken before this note existed.
     if (toolName === 'memory_write') invalidateMemory()
-    return { content: result.content, diff: result.diff ?? undefined }
+    return {
+      content: result.content,
+      diff: result.diff ?? undefined,
+      images: result.images?.length ? result.images : undefined,
+    }
   } catch (e) {
     return { error: messageOf(e) }
   }

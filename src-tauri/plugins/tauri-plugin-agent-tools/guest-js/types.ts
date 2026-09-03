@@ -4,12 +4,20 @@ export interface SkillMeta {
   description: string
 }
 
+/** An image a tool returned, as a `data:` URL plus its display name. */
+export interface ToolImage {
+  dataUrl: string
+  name: string
+}
+
 /** Outcome of a built-in tool execution. */
 export interface ToolResult {
   content: string
   /** Display-only diff for write/edit; never part of model context. */
   diff: string | null
   isError: boolean
+  /** Present when the tool returned images (`read` of an image, `screenshot`). */
+  images?: ToolImage[]
 }
 
 /**

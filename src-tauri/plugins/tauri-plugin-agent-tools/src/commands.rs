@@ -40,7 +40,7 @@ use crate::permissions::ToolPermissions;
 use crate::skills::{self, SkillMeta};
 use crate::tools::gate::{self, Decision, PromptKind, SessionGrants};
 use crate::tools::jail;
-use crate::tools::{handlers, lookup, schema, ToolContext};
+use crate::tools::{handlers, lookup, schema, ImageContentPart, ToolContext};
 use crate::workspace;
 
 #[derive(Debug, Clone, Serialize, thiserror::Error)]
@@ -70,6 +70,10 @@ pub struct ToolResult {
     /// Display-only diff for `write`/`edit`; never part of model context.
     pub diff: Option<String>,
     pub is_error: bool,
+    /// Images the tool returned (`read` of an image, `screenshot`), for the
+    /// caller to put in front of a vision model.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<ImageContentPart>,
 }
 
 /// The permanent store root holding `memory/` and `skills/`.
@@ -820,13 +824,14 @@ async fn execute_tool_inner(
     if let Some(sink) = sink {
         ctx = ctx.with_output_sink(sink);
     }
-    let (content, diff, _images) = handlers::execute_builtin_with_diff(tool, &args, &ctx).await;
+    let (content, diff, images) = handlers::execute_builtin_with_diff(tool, &args, &ctx).await;
     let is_error =
         content.starts_with("ERROR") || (name == "bash" && handlers::bash_result_failed(&content));
     Ok(ToolResult {
         content,
         diff,
         is_error,
+        images: images.unwrap_or_default(),
     })
 }
 

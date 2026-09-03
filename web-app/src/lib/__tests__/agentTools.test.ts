@@ -113,6 +113,25 @@ describe('agentTools', () => {
     expect(result.diff).toBeUndefined()
   })
 
+  it('passes returned images through, dropping an empty list', async () => {
+    const images = [{ dataUrl: 'data:image/png;base64,AA', name: 'a.html' }]
+    executeTool.mockResolvedValue({
+      content: 'Screenshot of a.html (1280x960)',
+      diff: null,
+      isError: false,
+      images,
+    })
+    const { executeAgentTool } = await import('../agentTools')
+    expect(
+      (await executeAgentTool('screenshot', { path: 'a.html' }, 'thread-1'))
+        .images
+    ).toEqual(images)
+    executeTool.mockResolvedValue({ content: 'x', diff: null, isError: false })
+    expect(
+      (await executeAgentTool('read', { path: 'a.txt' }, 'thread-1')).images
+    ).toBeUndefined()
+  })
+
   it('offers bash when the sandbox can enforce', async () => {
     toolSchemas.mockResolvedValue([schemaFor('read'), schemaFor('bash')])
     const { getAgentToolSchemas } = await import('../agentTools')

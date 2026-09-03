@@ -12,6 +12,10 @@ import {
   InvalidToolInputError,
 } from 'ai'
 import { repairToolArgs } from './toolCallRepair'
+import {
+  hasToolImageSentinel,
+  stripToolImageSentinels,
+} from './tool-image-sentinel'
 import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
@@ -493,25 +497,41 @@ export function stripUnsupportedImageParts(
       return message
     }
     let touched = false
-    const nextParts = message.parts.filter((part) => {
-      const type = (part as { type?: string }).type
-      if (type === 'image') {
-        touched = true
-        return false
-      }
-      if (type === 'file') {
-        const mediaType = (part as { mediaType?: string }).mediaType
-        if (typeof mediaType === 'string' && mediaType.startsWith('image/')) {
+    const nextParts = message.parts
+      .filter((part) => {
+        const type = (part as { type?: string }).type
+        if (type === 'image') {
           touched = true
           return false
         }
-      }
-      return true
-    })
+        if (type === 'file') {
+          const mediaType = (part as { mediaType?: string }).mediaType
+          if (typeof mediaType === 'string' && mediaType.startsWith('image/')) {
+            touched = true
+            return false
+          }
+        }
+        return true
+      })
+      .map((part) => {
+        // A tool image (see tool-image-sentinel.ts) would decode into an
+        // image_url part on the tool message; a text-only model rejects that.
+        const output = (part as { output?: unknown }).output
+        if (typeof output !== 'string' || !hasToolImageSentinel(output)) {
+          return part
+        }
+        touched = true
+        return {
+          ...part,
+          output: stripToolImageSentinels(output, TOOL_IMAGE_OMITTED),
+        } as typeof part
+      })
     if (!touched) return message
     return { ...message, parts: nextParts } as UIMessage
   })
 }
+
+const TOOL_IMAGE_OMITTED = ' (image omitted: the model has no vision)'
 
 const RESOLVED_TOOL_STATES = new Set([
   'output-available',
