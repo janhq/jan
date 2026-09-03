@@ -222,7 +222,17 @@ mod engine {
                 if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() == "windows" {
                     dirs.extend(ARCHIVE_DIRS.iter().map(|d| llama.join(d).join(CONFIG)));
                 }
-                dirs.push(ggml.join("lib"));
+                // CMAKE_INSTALL_LIBDIR=lib is the intended layout. Fall back to
+                // lib64 for a stale prefix that already installed there
+                // (Fedora/RHEL GNUInstallDirs default).
+                let ggml_lib = ggml.join("lib");
+                if ggml_lib.is_dir() {
+                    dirs.push(ggml_lib);
+                } else if ggml.join("lib64").is_dir() {
+                    dirs.push(ggml.join("lib64"));
+                } else {
+                    dirs.push(ggml_lib);
+                }
                 (dirs, llama, ggml.join("bin"))
             };
 
@@ -380,6 +390,9 @@ mod engine {
             src.join("ggml").display()
         ));
         cfg.arg(format!("-DCMAKE_INSTALL_PREFIX={}", prefix.display()));
+        // GNUInstallDirs defaults to lib64 on Fedora/RHEL; link search and
+        // stage-engine.sh both assume lib/.
+        cfg.arg("-DCMAKE_INSTALL_LIBDIR=lib");
         cfg.args([
             "-DCMAKE_BUILD_TYPE=Release",
             "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
