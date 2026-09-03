@@ -8,7 +8,15 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   }),
 }))
 
-const convertFileSrc = vi.fn((p: string) => `asset://${p}`)
+const convertFileSrc = vi.fn((p: string, protocol?: string) =>
+  protocol ? `${protocol}://localhost${p}` : `asset://${p}`
+)
+const previewRegisterRoot = vi.fn(async () => {})
+const previewUnregisterRoot = vi.fn(async () => {})
+vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
+  previewRegisterRoot: (...a: unknown[]) => previewRegisterRoot(...a),
+  previewUnregisterRoot: (...a: unknown[]) => previewUnregisterRoot(...a),
+}))
 const openPath = vi.fn()
 const revealItemInDir = vi.fn()
 const hub = {
@@ -48,6 +56,8 @@ const view = (path: string) =>
 describe('CoworkPreviewPanel', () => {
   beforeEach(() => {
     convertFileSrc.mockClear()
+    previewRegisterRoot.mockClear()
+    previewUnregisterRoot.mockClear()
     vi.unstubAllGlobals()
   })
 
@@ -170,6 +180,43 @@ describe('CoworkPreviewPanel', () => {
       )
     })
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  // The unsandboxed mode trades the srcdoc sandbox for the scheme's own
+  // origin. The scheme serves nothing until the pane registers the root, the
+  // network flag travels with that registration, and closing withdraws it.
+  it('serves the page from preview:// with its own origin when unsandboxed', async () => {
+    respondWith('<canvas></canvas><script>run()</script>')
+    const { unmount } = view('game.html')
+    await screen.findByTitle('game.html')
+
+    fireEvent.click(screen.getByLabelText('common:preview.unsandboxed'))
+    const frame = (await waitFor(() => {
+      const f = screen.getByTitle('game.html') as HTMLIFrameElement
+      expect(f.getAttribute('src')).toBeTruthy()
+      return f
+    })) as HTMLIFrameElement
+    expect(frame.getAttribute('src')).toBe(`preview://localhost${ROOT}/game.html`)
+    expect(frame.getAttribute('sandbox')).toContain('allow-same-origin')
+    expect(frame.srcdoc).toBe('')
+    await waitFor(() =>
+      expect(previewRegisterRoot).toHaveBeenLastCalledWith(ROOT, false)
+    )
+
+    fireEvent.click(screen.getByLabelText('common:preview.allowNetwork'))
+    await waitFor(() =>
+      expect(previewRegisterRoot).toHaveBeenLastCalledWith(ROOT, true)
+    )
+
+    unmount()
+    expect(previewUnregisterRoot).toHaveBeenCalledWith(ROOT)
+  })
+
+  it('registers nothing while the sandbox is in use', async () => {
+    respondWith('<p>ok</p>')
+    view('page.html')
+    await screen.findByTitle('page.html')
+    expect(previewRegisterRoot).not.toHaveBeenCalled()
   })
 
   it('renders markdown through the shared renderer', async () => {
