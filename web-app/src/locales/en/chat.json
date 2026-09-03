@@ -19,6 +19,7 @@
     "continue": "Continue generating",
     "remember": "Remember this",
     "rememberSaved": "Saved to memory as \"{{name}}\"",
+    "rememberExists": "Already in memory as \"{{name}}\"",
     "rememberFailed": "Could not save to memory"
   },
   "done": "Done",

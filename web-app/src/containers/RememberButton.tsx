@@ -25,10 +25,17 @@ export const RememberButton = ({ text }: { text: string }) => {
     setSaving(true)
     try {
       const title = useThreads.getState().getCurrentThread()?.title ?? ''
-      const name = await rememberNote(title, text)
+      const { name, duplicate } = await rememberNote(title, text)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
-      toast.success(t('chat:actions.rememberSaved', { name }))
+      toast.success(
+        t(
+          duplicate
+            ? 'chat:actions.rememberExists'
+            : 'chat:actions.rememberSaved',
+          { name }
+        )
+      )
     } catch {
       toast.error(t('chat:actions.rememberFailed'))
     } finally {
