@@ -33,6 +33,23 @@ const EXA_REST_CONTENTS_URL: &str = "https://api.exa.ai/contents";
 const TAVILY_SEARCH_URL: &str = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL: &str = "https://api.tavily.com/extract";
 
+const YOU_COM_HOSTED_URL: &str = "https://api.you.com/mcp?profile=free";
+// Identifies the calling application to You.com, per the convention its other
+// integrations follow. Carries no user or query data beyond the request itself,
+// and is sent only on requests to You.com.
+const YOU_COM_USER_AGENT: &str = concat!(
+    "jan-websearch/",
+    env!("CARGO_PKG_VERSION"),
+    " (https://github.com/janhq/jan)"
+);
+const YOU_COM_CLIENT_INFO: &str = concat!(
+    "sdk; client=jan-websearch/",
+    env!("CARGO_PKG_VERSION"),
+    "; ua=rust/unknown"
+);
+const YOU_COM_SEARCH_URL: &str = "https://ydc-index.io/v1/search";
+const YOU_COM_CONTENTS_URL: &str = "https://ydc-index.io/v1/contents";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SearchResult {
     pub title: String,
@@ -70,6 +87,7 @@ pub fn create_provider(
         None | Some("") | Some("exa") => Ok(Box::new(ExaProvider::new(api_key)?)),
         Some("tavily") => Ok(Box::new(TavilyProvider::new(api_key)?)),
         Some("searxng") => Ok(Box::new(SearxngProvider::new(endpoint)?)),
+        Some("you") => Ok(Box::new(YouComProvider::new(api_key)?)),
         Some(other) => Err(format!("Unknown web search provider '{other}'")),
     }
 }
@@ -151,7 +169,7 @@ impl ExaProvider {
                 text.chars().take(400).collect::<String>()
             ));
         }
-        parse_hosted_result_text(&text)
+        parse_hosted_result_text(&text, "Exa")
     }
 }
 
@@ -248,39 +266,41 @@ impl SearchProvider for ExaProvider {
     }
 }
 
-fn parse_hosted_result_text(body: &str) -> Result<String, String> {
-    let json_str = body
+/// Pull the tool payload out of an MCP `tools/call` response. Streamable HTTP
+/// answers with either a bare JSON-RPC object or an SSE stream, and a stream may
+/// carry progress notifications ahead of the answer, so the frame holding
+/// `result` or `error` is the one to read.
+fn parse_hosted_result_text(body: &str, provider: &str) -> Result<String, String> {
+    let envelope = match body
         .lines()
-        .find_map(|l| l.strip_prefix("data:").map(str::trim))
-        .unwrap_or_else(|| body.trim());
-    let parsed: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Exa: invalid response payload: {e}"))?;
-    if let Some(err) = parsed.get("error") {
-        return Err(format!("Exa returned an error: {err}"));
+        .filter_map(|l| l.strip_prefix("data:").map(str::trim))
+        .filter_map(|frame| serde_json::from_str::<Value>(frame).ok())
+        .find(|v| v.get("result").is_some() || v.get("error").is_some())
+    {
+        Some(frame) => frame,
+        None => serde_json::from_str::<Value>(body.trim())
+            .map_err(|e| format!("{provider}: invalid response payload: {e}"))?,
+    };
+    if let Some(err) = envelope.get("error") {
+        return Err(format!("{provider} returned an error: {err}"));
     }
-    let result = parsed
+    let result = envelope
         .get("result")
-        .ok_or("Exa response missing 'result'")?;
-    if result.get("isError").and_then(|v| v.as_bool()) == Some(true) {
-        return Err(format!(
-            "Exa tool call failed: {}",
-            result
-                .get("content")
-                .and_then(|c| c.as_array())
-                .and_then(|a| a.first())
-                .and_then(|c| c.get("text"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown error")
-        ));
-    }
+        .ok_or_else(|| format!("{provider} response missing 'result'"))?;
     let text = result
         .get("content")
         .and_then(|c| c.as_array())
         .and_then(|a| a.first())
         .and_then(|c| c.get("text"))
-        .and_then(|v| v.as_str())
-        .ok_or("Exa response had no text content")?;
-    Ok(text.to_string())
+        .and_then(|v| v.as_str());
+    if result.get("isError").and_then(|v| v.as_bool()) == Some(true) {
+        return Err(format!(
+            "{provider} tool call failed: {}",
+            text.unwrap_or("unknown error")
+        ));
+    }
+    text.map(str::to_string)
+        .ok_or_else(|| format!("{provider} response had no text content"))
 }
 
 fn parse_hosted_search_text(text: &str) -> Vec<SearchResult> {
@@ -545,6 +565,199 @@ fn normalize_tavily_extract(body: &Value, requested_url: &str) -> Result<Fetched
     })
 }
 
+/// Which You.com transport the adapter uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum YouComMode {
+    Hosted,
+    Rest(String),
+}
+
+/// You.com backend. Defaults to the keyless hosted endpoint; upgrades to the
+/// structured REST API when a key is supplied.
+///
+/// * Keyless (default): the hosted MCP endpoint answers `you-search` with no
+///   credentials. `web_fetch` has no keyless counterpart, so it falls back to a
+///   direct GET, the same way [`SearxngProvider`] handles a backend with no
+///   extraction endpoint.
+/// * Keyed (opt-in): the structured REST API at `https://ydc-index.io`, which
+///   adds `/v1/contents` for real content extraction and lifts the free tier's
+///   request cap.
+///
+/// Both transports return the same search payload, so one normalizer serves
+/// both.
+pub struct YouComProvider {
+    mode: YouComMode,
+    client: reqwest::Client,
+}
+
+impl YouComProvider {
+    pub fn new(api_key: Option<String>) -> Result<Self, String> {
+        let mode = match normalize_key(api_key) {
+            Some(key) => YouComMode::Rest(key),
+            None => YouComMode::Hosted,
+        };
+        Ok(Self {
+            mode,
+            client: build_http_client("You.com")?,
+        })
+    }
+
+    /// Send a prepared request and return the body, mapping transport and HTTP
+    /// failures into one message shape for both transports.
+    async fn send(&self, request: reqwest::RequestBuilder) -> Result<String, String> {
+        let resp = request
+            .header("content-type", "application/json")
+            .header("user-agent", YOU_COM_USER_AGENT)
+            .header("x-client-info", YOU_COM_CLIENT_INFO)
+            .send()
+            .await
+            .map_err(|e| format!("You.com request failed: {e}"))?;
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("You.com: failed to read response body: {e}"))?;
+        if !status.is_success() {
+            return Err(format!(
+                "You.com failed with HTTP {}: {}",
+                status.as_u16(),
+                text.chars().take(400).collect::<String>()
+            ));
+        }
+        Ok(text)
+    }
+
+    /// Keyed transport: plain JSON POST authenticated with `X-API-Key`.
+    async fn post_rest(&self, url: &str, key: &str, body: Value) -> Result<Value, String> {
+        let text = self
+            .send(self.client.post(url).header("X-API-Key", key).json(&body))
+            .await?;
+        serde_json::from_str(&text).map_err(|e| format!("You.com: invalid JSON response: {e}"))
+    }
+
+    /// Keyless transport: one MCP `tools/call` for `you-search`, the only tool
+    /// the free profile exposes. The tool payload is the same JSON the REST
+    /// endpoint returns, so the caller can hand it to the same normalizer.
+    async fn hosted_search(&self, arguments: Value) -> Result<Value, String> {
+        let text = self
+            .send(
+                self.client
+                    .post(YOU_COM_HOSTED_URL)
+                    .header("accept", "application/json, text/event-stream")
+                    .json(&json!({
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/call",
+                        "params": { "name": "you-search", "arguments": arguments }
+                    })),
+            )
+            .await?;
+        let payload = parse_hosted_result_text(&text, "You.com")?;
+        serde_json::from_str(&payload)
+            .map_err(|e| format!("You.com: invalid JSON in tool result: {e}"))
+    }
+}
+
+#[async_trait]
+impl SearchProvider for YouComProvider {
+    async fn search(&self, query: &str, count: u32) -> Result<Vec<SearchResult>, String> {
+        let args = json!({ "query": query, "count": count });
+        let parsed = match &self.mode {
+            YouComMode::Hosted => self.hosted_search(args).await?,
+            YouComMode::Rest(key) => self.post_rest(YOU_COM_SEARCH_URL, key, args).await?,
+        };
+        Ok(normalize_youcom_search(&parsed))
+    }
+
+    async fn fetch(&self, url: &str) -> Result<FetchedPage, String> {
+        match &self.mode {
+            // No keyless content endpoint, so read the page directly.
+            YouComMode::Hosted => fetch_url_direct(&self.client, url, "You.com").await,
+            YouComMode::Rest(key) => {
+                let parsed = self
+                    .post_rest(
+                        YOU_COM_CONTENTS_URL,
+                        key,
+                        json!({ "urls": [url], "formats": ["markdown"] }),
+                    )
+                    .await?;
+                normalize_youcom_contents(&parsed, url)
+            }
+        }
+    }
+}
+
+/// `/v1/search` groups results into sections. `web` is the section jan's
+/// `web_search` contract maps to, so a response carrying no `web` section
+/// (news-only, or empty) yields no results rather than falling back to `news`.
+fn normalize_youcom_search(body: &Value) -> Vec<SearchResult> {
+    let Some(web) = body
+        .get("results")
+        .and_then(|r| r.get("web"))
+        .and_then(|v| v.as_array())
+    else {
+        return Vec::new();
+    };
+    web.iter()
+        .map(|r| {
+            let title = r.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            let url = r.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            // `description` is the whole-result summary; `snippets` are keyword
+            // fragments, used only when a result carries no description.
+            let snippet = r
+                .get("description")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .or_else(|| {
+                    r.get("snippets")
+                        .and_then(|v| v.as_array())
+                        .and_then(|a| a.first())
+                        .and_then(|v| v.as_str())
+                })
+                .map(|s| clip_chars(s, 500))
+                .unwrap_or_default();
+            let published_at = r
+                .get("page_age")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            SearchResult {
+                title: title.to_string(),
+                url: url.to_string(),
+                snippet,
+                published_at,
+            }
+        })
+        .collect()
+}
+
+/// `/v1/contents` answers with a bare array, one entry per requested URL.
+/// The request asks for `markdown`, so that is the only content field read.
+fn normalize_youcom_contents(body: &Value, requested_url: &str) -> Result<FetchedPage, String> {
+    let first = body
+        .as_array()
+        .and_then(|a| a.first())
+        .ok_or_else(|| format!("You.com returned no content for {requested_url}"))?;
+    let url = first
+        .get("url")
+        .and_then(|v| v.as_str())
+        .unwrap_or(requested_url)
+        .to_string();
+    let title = first
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let raw = first.get("markdown").and_then(|v| v.as_str()).unwrap_or("");
+    let (content, truncated) = bound_text(raw);
+    Ok(FetchedPage {
+        url,
+        title,
+        content,
+        truncated,
+    })
+}
+
 /// SearXNG backend (self-hosted, key-less). Queries a user-supplied instance's
 /// JSON search API. SearXNG has no content-extraction endpoint, so `fetch` does
 /// a plain HTTP GET of the URL and returns the bounded raw response body.
@@ -600,31 +813,7 @@ impl SearchProvider for SearxngProvider {
     }
 
     async fn fetch(&self, url: &str) -> Result<FetchedPage, String> {
-        let resp = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| format!("SearXNG fetch request failed: {e}"))?;
-        let status = resp.status();
-        let body = resp
-            .text()
-            .await
-            .map_err(|e| format!("SearXNG fetch: failed to read response body: {e}"))?;
-        if !status.is_success() {
-            return Err(format!(
-                "SearXNG fetch failed with HTTP {}",
-                status.as_u16()
-            ));
-        }
-        let title = extract_html_title(&body).unwrap_or_default();
-        let (content, truncated) = bound_text(&body);
-        Ok(FetchedPage {
-            url: url.to_string(),
-            title,
-            content,
-            truncated,
-        })
+        fetch_url_direct(&self.client, url, "SearXNG").await
     }
 }
 
@@ -656,6 +845,40 @@ fn normalize_searxng_search(body: &Value, count: u32) -> Vec<SearchResult> {
             }
         })
         .collect()
+}
+
+/// Fetch a URL directly and return its bounded body, titled from its `<title>`.
+/// Used by backends that have no content-extraction endpoint on the active
+/// transport, so `web_fetch` still answers instead of erroring.
+async fn fetch_url_direct(
+    client: &reqwest::Client,
+    url: &str,
+    provider: &str,
+) -> Result<FetchedPage, String> {
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("{provider} fetch request failed: {e}"))?;
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("{provider} fetch: failed to read response body: {e}"))?;
+    if !status.is_success() {
+        return Err(format!(
+            "{provider} fetch failed with HTTP {}",
+            status.as_u16()
+        ));
+    }
+    let title = extract_html_title(&body).unwrap_or_default();
+    let (content, truncated) = bound_text(&body);
+    Ok(FetchedPage {
+        url: url.to_string(),
+        title,
+        content,
+        truncated,
+    })
 }
 
 fn extract_html_title(html: &str) -> Option<String> {
@@ -834,21 +1057,23 @@ mod tests {
     #[test]
     fn parse_hosted_result_text_reads_sse_frame() {
         let sse = "event: message\ndata: {\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}}\n\n";
-        assert_eq!(parse_hosted_result_text(sse).unwrap(), "hello");
+        assert_eq!(parse_hosted_result_text(sse, "Exa").unwrap(), "hello");
     }
 
     #[test]
     fn parse_hosted_result_text_reads_raw_json() {
         let raw = "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}}";
-        assert_eq!(parse_hosted_result_text(raw).unwrap(), "hi");
+        assert_eq!(parse_hosted_result_text(raw, "Exa").unwrap(), "hi");
     }
 
     #[test]
     fn parse_hosted_result_text_surfaces_errors() {
         let err = "{\"error\":{\"code\":-32000,\"message\":\"boom\"}}";
-        assert!(parse_hosted_result_text(err).is_err());
+        assert!(parse_hosted_result_text(err, "Exa").is_err());
         let tool_err = "{\"result\":{\"isError\":true,\"content\":[{\"type\":\"text\",\"text\":\"bad\"}]}}";
-        assert!(parse_hosted_result_text(tool_err).unwrap_err().contains("bad"));
+        assert!(parse_hosted_result_text(tool_err, "Exa")
+            .unwrap_err()
+            .contains("bad"));
     }
 
     #[test]
@@ -941,5 +1166,226 @@ mod tests {
     #[test]
     fn normalize_exa_rest_fetch_no_results_errors() {
         assert!(normalize_exa_rest_fetch(&json!({"results": []}), "u").is_err());
+    }
+
+    #[test]
+    fn youcom_attribution_follows_the_client_info_grammar() {
+        // `<source>; client=<name>/<version>; ua=<runtime>/<version>`
+        let segments: Vec<&str> = YOU_COM_CLIENT_INFO.split("; ").collect();
+        assert_eq!(segments.len(), 3, "unexpected segment count");
+        assert_eq!(segments[0], "sdk");
+        let client = segments[1]
+            .strip_prefix("client=")
+            .expect("second segment names the client");
+        let (name, version) = client.split_once('/').expect("client carries a version");
+        assert_eq!(name, "jan-websearch");
+        assert!(!version.is_empty(), "client version must not be empty");
+        assert!(segments[2].starts_with("ua="));
+        // Values are interpolated verbatim; a stray delimiter would corrupt
+        // the segment split on the receiving side.
+        assert!(segments.iter().all(|s| !s.contains(';')));
+        assert!(YOU_COM_USER_AGENT.starts_with("jan-websearch/"));
+        assert!(YOU_COM_USER_AGENT.contains("github.com/janhq/jan"));
+    }
+
+    #[test]
+    fn youcom_key_selects_transport() {
+        assert_eq!(YouComProvider::new(None).unwrap().mode, YouComMode::Hosted);
+        assert_eq!(
+            YouComProvider::new(Some("   ".into())).unwrap().mode,
+            YouComMode::Hosted
+        );
+        assert_eq!(
+            YouComProvider::new(Some("ydc-key".into())).unwrap().mode,
+            YouComMode::Rest("ydc-key".into())
+        );
+    }
+
+    #[test]
+    fn create_provider_youcom_works_with_and_without_key() {
+        assert!(create_provider(Some("you"), None, None).is_ok());
+        assert!(create_provider(Some("you"), Some("ydc-key".into()), None).is_ok());
+    }
+
+    #[test]
+    fn parse_hosted_result_text_youcom_skips_notification_frames() {
+        // The hosted endpoint emits a progress notification ahead of the
+        // answer, so the result is not the first `data:` frame.
+        let payload = json!({
+            "results": {
+                "web": [
+                    { "url": "https://example.com", "title": "T", "description": "D" }
+                ]
+            }
+        });
+        let sse = format!(
+            "event: message\ndata: {}\n\nevent: message\ndata: {}\n\n",
+            json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/message",
+                "params": { "level": "info", "data": "searching" }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": { "content": [{ "type": "text", "text": payload.to_string() }] }
+            })
+        );
+        let text = parse_hosted_result_text(&sse, "You.com").expect("result frame must be found");
+        // The hosted payload is the same shape the REST endpoint returns, so
+        // the REST normalizer reads it unchanged.
+        let parsed: Value = serde_json::from_str(&text).expect("tool payload is JSON");
+        let results = normalize_youcom_search(&parsed);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].url, "https://example.com");
+        assert_eq!(results[0].snippet, "D");
+    }
+
+    #[test]
+    fn parse_hosted_result_text_youcom_reads_bare_json_body() {
+        let raw = json!({"result": {"content": [{"type": "text", "text": "hi"}]}}).to_string();
+        assert_eq!(parse_hosted_result_text(&raw, "You.com").unwrap(), "hi");
+    }
+
+    #[test]
+    fn parse_hosted_result_text_youcom_surfaces_errors() {
+        let err = json!({"error": {"code": -32000, "message": "boom"}}).to_string();
+        assert!(parse_hosted_result_text(&err, "You.com")
+            .unwrap_err()
+            .contains("boom"));
+
+        let tool_err = json!({
+            "result": {
+                "isError": true,
+                "content": [{"type": "text", "text": "quota exceeded"}]
+            }
+        })
+        .to_string();
+        assert!(parse_hosted_result_text(&tool_err, "You.com")
+            .unwrap_err()
+            .contains("quota exceeded"));
+
+        // A stream that never carries an answer must error rather than
+        // silently returning the notification.
+        let only_notification = format!(
+            "event: message\ndata: {}\n\n",
+            json!({"jsonrpc": "2.0", "method": "notifications/message", "params": {}})
+        );
+        assert!(parse_hosted_result_text(&only_notification, "You.com").is_err());
+    }
+
+    #[test]
+    fn normalize_youcom_search_maps_contract() {
+        // Field set mirrors a live `ydc-index.io/v1/search` web result,
+        // including the thumbnail and favicon keys the normalizer ignores.
+        let body = json!({
+            "results": {
+                "web": [
+                    {
+                        "url": "https://example.com",
+                        "title": "Example",
+                        "description": "A short summary.",
+                        "snippets": ["first excerpt", "second excerpt"],
+                        "thumbnail_url": "https://cdn.example.com/img.jpg",
+                        "original_thumbnail_url": "https://cdn.example.com/img.jpg",
+                        "favicon_url": "https://example.com/favicon.ico",
+                        "page_age": "2024-05-01T00:00:00.000Z"
+                    },
+                    { "url": "https://example.org", "title": "No date", "description": "Body." }
+                ]
+            }
+        });
+        let results = normalize_youcom_search(&body);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].url, "https://example.com");
+        // Description wins over snippets when both are present.
+        assert_eq!(results[0].snippet, "A short summary.");
+        assert_eq!(
+            results[0].published_at.as_deref(),
+            Some("2024-05-01T00:00:00.000Z")
+        );
+        assert!(results[1].published_at.is_none());
+    }
+
+    #[test]
+    fn normalize_youcom_search_falls_back_to_snippet_when_no_description() {
+        let body = json!({
+            "results": {
+                "web": [
+                    {
+                        "url": "https://example.com",
+                        "title": "Missing",
+                        "snippets": ["passage one", "passage two"]
+                    },
+                    {
+                        "url": "https://example.org",
+                        "title": "Empty",
+                        "description": "",
+                        "snippets": ["passage three"]
+                    }
+                ]
+            }
+        });
+        let results = normalize_youcom_search(&body);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].snippet, "passage one");
+        // An empty description falls through to snippets rather than
+        // yielding an empty snippet.
+        assert_eq!(results[1].snippet, "passage three");
+    }
+
+    #[test]
+    fn normalize_youcom_search_clips_long_snippet() {
+        let body = json!({
+            "results": {
+                "web": [
+                    { "url": "https://example.com", "description": "x".repeat(900) }
+                ]
+            }
+        });
+        let results = normalize_youcom_search(&body);
+        assert_eq!(results[0].snippet.chars().count(), 500);
+    }
+
+    #[test]
+    fn normalize_youcom_search_empty_or_news_only_is_empty() {
+        // A news-only response must not be reported as web results.
+        let news_only = json!({
+            "results": { "news": [{ "url": "https://x", "title": "X" }] }
+        });
+        assert!(normalize_youcom_search(&news_only).is_empty());
+        assert!(normalize_youcom_search(&json!({})).is_empty());
+        assert!(normalize_youcom_search(&json!({"results": {}})).is_empty());
+        assert!(normalize_youcom_search(&json!({"results": {"web": []}})).is_empty());
+    }
+
+    #[test]
+    fn normalize_youcom_contents_reads_markdown() {
+        let body = json!([
+            { "url": "https://example.com", "title": "T", "markdown": "hello world" }
+        ]);
+        let page = normalize_youcom_contents(&body, "https://example.com").unwrap();
+        assert_eq!(page.title, "T");
+        assert_eq!(page.url, "https://example.com");
+        assert_eq!(page.content, "hello world");
+        assert!(!page.truncated);
+    }
+
+    #[test]
+    fn normalize_youcom_contents_truncates_and_marks_truncated() {
+        let big = "a".repeat(FETCH_MAX_CHARS + 100);
+        let body = json!([
+            { "url": "https://example.com", "title": "T", "markdown": big }
+        ]);
+        let page = normalize_youcom_contents(&body, "https://example.com").unwrap();
+        assert!(page.truncated);
+        assert_eq!(page.content.chars().count(), FETCH_MAX_CHARS);
+    }
+
+    #[test]
+    fn normalize_youcom_contents_no_results_errors() {
+        assert!(normalize_youcom_contents(&json!([]), "u").is_err());
+        // A non-array body must error rather than panic.
+        assert!(normalize_youcom_contents(&json!({"results": []}), "u").is_err());
     }
 }
