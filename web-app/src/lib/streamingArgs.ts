@@ -36,13 +36,24 @@ export type WritePreview = {
  * dropping it makes the preview look stalled.
  */
 export function writeTail(body: string): WritePreview {
-  const all = body.split('\n')
-  const lines = all.slice(Math.max(0, all.length - STREAM_TAIL_LINES))
+  // Walk back from the end instead of splitting the whole body: this runs on
+  // every frame of the write, and the body only grows.
+  // `cut` is the newline just before the window, -1 when the body is shorter.
+  let cut = body.length
+  for (let n = 0; n < STREAM_TAIL_LINES && cut !== -1; n++) {
+    cut = cut === 0 ? -1 : body.lastIndexOf('\n', cut - 1)
+  }
+  const lines = body.slice(cut + 1).split('\n')
+  let skipped = 0
+  for (let at = body.indexOf('\n'); at !== -1 && at <= cut; ) {
+    skipped++
+    at = body.indexOf('\n', at + 1)
+  }
   // The last line is the one still being written; the rest are finished.
   const open = lines.length - 1
   return {
     lines: lines.map((line, i) => clampPreviewLine(line, i === open)),
-    skipped: all.length - lines.length,
+    skipped,
   }
 }
 
@@ -73,9 +84,11 @@ export function editPreview(
 ): EditPreview {
   const all: EditRow[] = []
   for (const edit of edits) {
-    for (const text of edit.old_string.split('\n')) all.push({ sign: '-', text })
+    for (const text of edit.old_string.split('\n'))
+      all.push({ sign: '-', text })
     if (edit.new_string === undefined) continue
-    for (const text of edit.new_string.split('\n')) all.push({ sign: '+', text })
+    for (const text of edit.new_string.split('\n'))
+      all.push({ sign: '+', text })
   }
   const rows = all.slice(Math.max(0, all.length - STREAM_TAIL_LINES))
   // The last row is the one still being written.
