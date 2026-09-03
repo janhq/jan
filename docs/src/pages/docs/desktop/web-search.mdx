@@ -11,6 +11,7 @@ keywords:
     Exa,
     Tavily,
     SearXNG,
+    You.com,
     tool use,
     online search,
   ]
@@ -64,13 +65,14 @@ use. On by default. Works with no API key.
 
 ### Search Provider
 
-Choose the backend that answers `web_search` and `web_fetch`. Three providers are available:
+Choose the backend that answers `web_search` and `web_fetch`. Four providers are available:
 
 | Provider | API key | Notes |
 |----------|---------|-------|
 | **Exa** (default) | Optional | Uses a free, keyless endpoint out of the box. Add a key for higher rate limits and structured results. |
 | **Tavily** | Required | Needs a [Tavily](https://tavily.com) API key to return results. |
 | **SearXNG** | Optional | Self-hosted. Point Jan at your own [SearXNG](https://searxng.org) instance URL (with the JSON API enabled). |
+| **You.com** | Optional | Keyless search works out of the box, subject to a daily request cap. A [You.com](https://you.com/platform) API key lifts the cap and gives `web_fetch` extracted page content instead of raw HTML. |
 
 ### Exa API Key (optional)
 
