@@ -179,12 +179,19 @@ mod engine {
         ("engine-metal", "-DGGML_METAL=ON"),
     ];
 
+    /// The GPUs a HIP build targets when JAN_ENGINE_HIP_TARGETS is unset: the
+    /// list janhq/llama.cpp's menlo-build.yml shipped for the previous engine.
+    /// Without an explicit list cmake asks `rocm_agent_enumerator`, which on a
+    /// GPU-less build host yields nothing or the compiler's single default.
+    const HIP_TARGETS: &str = "gfx908;gfx90a;gfx942;gfx1030;gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1200;gfx1201";
+
     pub fn build() {
         println!("cargo:rerun-if-changed=shim/jan_llama_shim.cpp");
         println!("cargo:rerun-if-changed=shim/jan_llama_shim.h");
         println!("cargo:rerun-if-env-changed=JAN_LLAMA_PREBUILT_DIR");
         println!("cargo:rerun-if-env-changed=JAN_LLAMA_CPP_DIR");
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_CUDA_ARCHS");
+        println!("cargo:rerun-if-env-changed=JAN_ENGINE_HIP_TARGETS");
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_BUILD_LOG");
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_BUILD_DIR");
 
@@ -453,6 +460,19 @@ mod engine {
                 println!("cargo:rerun-if-env-changed=JAN_ENGINE_CUDA_ARCHS");
                 cfg.arg(format!("-DCMAKE_CUDA_ARCHITECTURES={archs}"));
             }
+        }
+        if feature_enabled("engine-hip") {
+            let targets = env::var("JAN_ENGINE_HIP_TARGETS").unwrap_or_default();
+            let targets = targets.trim();
+            let targets = if targets.is_empty() {
+                HIP_TARGETS
+            } else {
+                targets
+            };
+            cfg.arg(format!("-DGPU_TARGETS={targets}"));
+            // rocWMMA flash attention, as the previous engine shipped it; needs
+            // rocwmma-dev, which check-engine-toolchain.sh asserts.
+            cfg.arg("-DGGML_HIP_ROCWMMA_FATTN=ON");
         }
         if feature_enabled("engine-cuda") {
             // NCCL is multi-GPU collective communication for distributed

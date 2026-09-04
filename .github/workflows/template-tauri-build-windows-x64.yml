@@ -97,6 +97,31 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      # The self-hosted CUDA images have Git for Windows off PATH (or absent) and
+      # no make; every later step (dtolnay's included) is bash, and make runs
+      # recipes like `mkdir -p` through the coreutils in Git's usr\bin.
+      - name: Provision Git Bash, make and dotnet on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'C:\Program Files\Git\bin\bash.exe')) {
+            choco install git -y --no-progress
+          }
+          Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\cmd'
+          Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\bin'
+          # Appended, not prepended: usr\bin also holds GNU link, which must
+          # not shadow MSVC's link.exe for rustc.
+          Add-Content $env:GITHUB_ENV "PATH=$env:PATH;C:\Program Files\Git\usr\bin"
+          if (-not (Get-Command make -ErrorAction SilentlyContinue)) {
+            choco install make -y --no-progress
+            Add-Content $env:GITHUB_PATH 'C:\ProgramData\chocolatey\bin'
+          }
+          if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+            choco install dotnet-8.0-sdk -y --no-progress
+            Add-Content $env:GITHUB_PATH 'C:\Program Files\dotnet'
+          }
+          Add-Content $env:GITHUB_PATH "$env:USERPROFILE\.dotnet\tools"
+
       - name: Replace Icons for Beta Build
         if: inputs.channel != 'stable'
         shell: bash
@@ -110,6 +135,8 @@ jobs:
 
       - name: Install jq
         uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Install ctoml
         run: |
@@ -185,6 +212,10 @@ jobs:
               new_build_version="${base_version}.${t_value}"
           }
           generate_build_version ${{ inputs.new_version }}
+          # The template's File paths are absolute; the workspace differs between
+          # hosted (D:\a\jan\jan) and self-hosted (C:\w\jan\jan) runners.
+          ws='${{ github.workspace }}'
+          sed -i "s|jan_workspace|${ws//\\/\\\\}|g" ./src-tauri/tauri.bundle.windows.nsis.template
           sed -i "s/jan_version/$new_base_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
           sed -i "s/jan_build/$new_build_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
 
@@ -234,9 +265,13 @@ jobs:
           echo "---------nsis.template---------"
           cat ./src-tauri/tauri.bundle.windows.nsis.template
 
+      # A persistent runner may already carry a newer AzureSignTool, and
+      # installing an older version over it is an error.
       - name: Install AzureSignTool
         run: |
-          dotnet tool install --global --version 6.0.0 AzureSignTool
+          if (-not (Get-Command AzureSignTool -ErrorAction SilentlyContinue)) {
+            dotnet tool install --global --version 6.0.0 AzureSignTool
+          }
 
       - name: Config Yarn
         run: |
@@ -275,6 +310,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
+
+      - name: Report ccache statistics
+        if: success() || failure()
+        shell: bash
+        run: |
+          if command -v ccache >/dev/null 2>&1; then ccache -s; else echo "ccache not available"; fi
 
       # The engine build is fifteen minutes of cmake whose output cargo only
       # surfaces as a tail. When it fails, the whole log is the artifact worth

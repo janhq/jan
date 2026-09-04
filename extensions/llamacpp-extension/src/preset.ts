@@ -87,7 +87,22 @@ export const DEFAULT_EMBEDDING_UBATCH = 2048
  * definition.
  */
 export function threadCacheDir(providerPath: string): string {
-  return `${providerPath}/thread-cache`
+  const sep = isWindowsPath(providerPath) ? '\\' : '/'
+  return `${providerPath.replace(/[\\/]+$/, '')}${sep}thread-cache`
+}
+
+/**
+ * Whether a path is rooted the Windows way: a drive letter, a UNC share, or an
+ * extended `\\?\` prefix.
+ *
+ * Tested on the root rather than on "contains a backslash" because `\` is a
+ * legal filename character on Linux. Win32 normalizes `/` to `\` for the first
+ * two, but *not* for an extended path, where a `/` is a literal name character
+ * -- `create_dir_all` then fails with ERROR_INVALID_NAME and the worker exits
+ * before it serves anything.
+ */
+function isWindowsPath(p: string): boolean {
+  return /^(?:[A-Za-z]:|\\\\)/.test(p)
 }
 
 // Fallback context size when the user hasn't set one, to avoid loading a

@@ -35,16 +35,16 @@ ${StrLoc}
 !define HOMEPAGE ""
 !define INSTALLMODE "currentUser"
 !define LICENSE ""
-!define INSTALLERICON "D:\a\jan\jan\src-tauri\icons\icon.ico"
+!define INSTALLERICON "jan_workspace\src-tauri\icons\icon.ico"
 !define SIDEBARIMAGE ""
 !define HEADERIMAGE ""
 !define MAINBINARYNAME "jan_mainbinaryname"
-!define MAINBINARYSRCPATH "D:\a\jan\jan\src-tauri\target\release\jan_mainbinaryname.exe"
+!define MAINBINARYSRCPATH "jan_workspace\src-tauri\target\release\jan_mainbinaryname.exe"
 !define BUNDLEID "jan_bundleid"
 !define COPYRIGHT ""
 !define OUTFILE "nsis-output.exe"
 !define ARCH "x64"
-!define ADDITIONALPLUGINSPATH "D:\a\jan\jan\src-tauri\target\release\nsis\x64\Plugins\x86-unicode\additional"
+!define ADDITIONALPLUGINSPATH "jan_workspace\src-tauri\target\release\nsis\x64\Plugins\x86-unicode\additional"
 !define ALLOWDOWNGRADES "true"
 !define DISPLAYLANGUAGESELECTOR "false"
 !define INSTALLWEBVIEW2MODE "downloadBootstrapper"
@@ -66,6 +66,138 @@ Var UpdateMode
 Var NoShortcutMode
 Var WixMode
 Var OldMainBinaryName
+Var LockedFile
+
+; Waits for a bundled sidecar to exit, killing it once it has had its grace.
+;
+; `CheckIfAppIsRunning` covers the main binary only, and its `Sleep 500` is far
+; short of what jan-llama-worker needs: killing Jan closes the stdin the worker
+; treats as "stop", but unwinding then drains in-flight requests for up to
+; DRAIN_TIMEOUT (10s), saves each resident slot and frees every model, all with
+; ggml*.dll still mapped. Nothing reaps it either -- there is no job object
+; around it, and `kill_on_drop` is a destructor TerminateProcess skips -- so a
+; force-quit Jan leaves it running on its own.
+;
+; Hence poll for the exit rather than sleep a guessed interval, and leave it
+; STOP_GRACE polls to unwind before killing: a kill costs the user the slot save
+; the teardown exists to do. Killing is still reached, because a worker orphaned
+; by an earlier crash has no stdin left to close and will never exit on its own.
+!define STOP_GRACE 12
+!define STOP_LIMIT 60
+!macro StopBundledProcess exe
+  StrCpy $R4 0
+  ${Do}
+    !if "${INSTALLMODE}" == "currentUser"
+      nsis_tauri_utils::FindProcessCurrentUser "${exe}"
+    !else
+      nsis_tauri_utils::FindProcess "${exe}"
+    !endif
+    Pop $R5
+    ${If} $R5 <> 0
+      ${ExitDo}
+    ${EndIf}
+    ${If} $R4 >= ${STOP_GRACE}
+      !if "${INSTALLMODE}" == "currentUser"
+        nsis_tauri_utils::KillProcessCurrentUser "${exe}"
+      !else
+        nsis_tauri_utils::KillProcess "${exe}"
+      !endif
+      Pop $R5
+    ${EndIf}
+    IntOp $R4 $R4 + 1
+    ${If} $R4 >= ${STOP_LIMIT}
+      ${ExitDo}
+    ${EndIf}
+    Sleep 500
+  ${Loop}
+!macroend
+
+; Frees one path that a still-running process may have mapped.
+;
+; Windows refuses to overwrite a mapped image, which is how an update fails with
+; "Error opening file for writing" -- `File` is fatal, so the whole install
+; aborts. A mapped image can still be renamed on the same volume, which is the
+; replacement MSDN's "Dynamic-Link Library Updates" prescribes: the old copy
+; keeps serving whoever holds it and the new one is written over the freed name.
+; The leftover is deleted by the next install, or by the uninstaller's
+; `RMDir /r`; scheduling it with /REBOOTOK instead would raise the reboot flag on
+; a per-user install that cannot honour it.
+;
+; A failure is recorded in $LockedFile rather than swallowed, so the install can
+; stop before it has written anything instead of dying part-extracted.
+!macro UnlockBundledBinary path
+  ${If} ${FileExists} "${path}"
+    StrCpy $R6 0
+    ${Do}
+      ClearErrors
+      Delete "${path}"
+      ${IfNot} ${Errors}
+        ${ExitDo}
+      ${EndIf}
+      ClearErrors
+      Delete "${path}.old"
+      ClearErrors
+      Rename "${path}" "${path}.old"
+      ${IfNot} ${Errors}
+        ${ExitDo}
+      ${EndIf}
+      IntOp $R6 $R6 + 1
+      ${If} $R6 >= 5
+        StrCpy $LockedFile "${path}"
+        ${ExitDo}
+      ${EndIf}
+      Sleep 200
+    ${Loop}
+    ClearErrors
+  ${EndIf}
+!macroend
+
+; The same, over a wildcard: the runtime DLLs are staged by variant, so the
+; installer knows them only as the globs its `File` directives use.
+;
+; Rescanned until a pass finds nothing, because the renames mutate the directory
+; being enumerated and FindNext may skip an entry across that; `.old` does not
+; match a `*.dll` pattern, so a pass cannot see its own leftovers.
+!macro UnlockBundledPattern dir pattern
+  StrCpy $R2 0
+  ${Do}
+    FindFirst $R8 $R9 "${dir}\${pattern}"
+    ${Do}
+      ${If} $R9 == ""
+        ${ExitDo}
+      ${EndIf}
+      StrCpy $R7 "${dir}\$R9"
+      !insertmacro UnlockBundledBinary "$R7"
+      FindNext $R8 $R9
+    ${Loop}
+    FindClose $R8
+    IntOp $R2 $R2 + 1
+    ${If} $R2 >= 3
+    ${OrIf} $LockedFile != ""
+      ${ExitDo}
+    ${EndIf}
+  ${Loop}
+!macroend
+
+; Everything a previous install may still have mapped, freed before the first
+; `File` write so a lock aborts with the app's own message instead of NSIS's
+; mid-extraction one. bun and uv are not stopped by name: the user's own bun may
+; be running and is not ours to kill, so those rely on the rename alone.
+!macro FreeBundledFiles
+  !insertmacro StopBundledProcess "jan-llama-worker.exe"
+  !insertmacro UnlockBundledBinary "$INSTDIR\resources\bin\jan.exe"
+  !insertmacro UnlockBundledBinary "$INSTDIR\resources\bin\jan-llama-worker.exe"
+  !insertmacro UnlockBundledPattern "$INSTDIR\resources\bin" "ggml*.dll"
+  !insertmacro UnlockBundledPattern "$INSTDIR\resources\bin" "cudart64_*.dll"
+  !insertmacro UnlockBundledPattern "$INSTDIR\resources\bin" "cublas*.dll"
+  !insertmacro UnlockBundledBinary "$INSTDIR\bun.exe"
+  !insertmacro UnlockBundledBinary "$INSTDIR\uv.exe"
+  ${If} $LockedFile != ""
+    nsis_tauri_utils::StrReplace "$(failedToKillApp)" "{{product_name}}" "${PRODUCTNAME}"
+    Pop $R3
+    Abort "$R3$\n$LockedFile"
+  ${EndIf}
+!macroend
 
 Name "${PRODUCTNAME}"
 BrandingText "${COPYRIGHT}"
@@ -452,7 +584,7 @@ FunctionEnd
 ;Languages
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_RESERVEFILE_LANGDLL
-  !include "D:\a\jan\jan\src-tauri\target\release\nsis\x64\English.nsh"
+  !include "jan_workspace\src-tauri\target\release\nsis\x64\English.nsh"
 
 Function .onInit
   ${GetOptions} $CMDLINE "/P" $PassiveMode
@@ -689,6 +821,7 @@ Section Install
   !endif
 
   !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+  !insertmacro FreeBundledFiles
 
   ; Copy main executable
   File "${MAINBINARYSRCPATH}"
@@ -698,11 +831,11 @@ Section Install
     CreateDirectory "$INSTDIR\resources\pre-install"
     CreateDirectory "$INSTDIR\resources\bin"
     SetOutPath $INSTDIR
-    File /a "/oname=LICENSE" "D:\a\jan\jan\src-tauri\resources\LICENSE"
+    File /a "/oname=LICENSE" "jan_workspace\src-tauri\resources\LICENSE"
     SetOutPath "$INSTDIR\resources\pre-install"
-    File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\pre-install\"
+    File /nonfatal /a /r "jan_workspace\src-tauri\resources\pre-install\"
     SetOutPath "$INSTDIR\resources\bin"
-    File /a "/oname=jan.exe" "D:\a\jan\jan\src-tauri\resources\bin\jan.exe"
+    File /a "/oname=jan.exe" "jan_workspace\src-tauri\resources\bin\jan.exe"
     ; The engine. This block is a hand-maintained snapshot of
     ; tauri.windows.conf.json's `bundle.resources`, which the NSIS bundler does
     ; not read once CI points it at this template, so anything added there has
@@ -711,13 +844,16 @@ Section Install
     ; inference permanently unavailable, since there is no runtime backend
     ; download to fall back on, so a build that staged nothing must fail loudly
     ; here the way stage-engine.sh already does.
-    File /a "/oname=jan-llama-worker.exe" "D:\a\jan\jan\src-tauri\resources\bin\jan-llama-worker.exe"
-    File /a "D:\a\jan\jan\src-tauri\resources\bin\ggml*.dll"
+    File /a "/oname=jan-llama-worker.exe" "jan_workspace\src-tauri\resources\bin\jan-llama-worker.exe"
+    File /a "jan_workspace\src-tauri\resources\bin\ggml*.dll"
+    ; CUDA runtime, present only in a cuda variant (stage-engine.sh).
+    File /nonfatal /a "jan_workspace\src-tauri\resources\bin\cudart64_*.dll"
+    File /nonfatal /a "jan_workspace\src-tauri\resources\bin\cublas*.dll"
     SetOutPath $INSTDIR
 
   ; Copy external binaries
-    File /a "/oname=bun.exe" "D:\a\jan\jan\src-tauri\resources\bin\bun-x86_64-pc-windows-msvc.exe"
-    File /a "/oname=uv.exe" "D:\a\jan\jan\src-tauri\resources\bin\uv-x86_64-pc-windows-msvc.exe"
+    File /a "/oname=bun.exe" "jan_workspace\src-tauri\resources\bin\bun-x86_64-pc-windows-msvc.exe"
+    File /a "/oname=uv.exe" "jan_workspace\src-tauri\resources\bin\uv-x86_64-pc-windows-msvc.exe"
 
   ; Create file associations
 
@@ -829,6 +965,7 @@ Section Uninstall
   !endif
 
   !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+  !insertmacro StopBundledProcess "jan-llama-worker.exe"
 
   ; Delete the app directory and its content from disk
   ; Copy main executable
@@ -847,7 +984,9 @@ Section Uninstall
 
   ; Delete external binaries
     Delete "$INSTDIR\bun.exe"
+    Delete "$INSTDIR\bun.exe.old"
     Delete "$INSTDIR\uv.exe"
+    Delete "$INSTDIR\uv.exe.old"
 
   ; Delete app associations
 
