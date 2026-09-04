@@ -379,7 +379,7 @@ describe('useModelProvider - coverage', () => {
         expect(migrated.providers[0].models[0].settings.cpu_moe).toBeDefined()
         expect(migrated.providers[0].models[0].settings.n_cpu_moe).toBeDefined()
       }],
-      [18, 'v19 seeds ctx_len on remote models, leaves llamacpp alone', {]
+      [18, 'v19 seeds ctx_len on remote models, leaves llamacpp alone', {
         providers: [
           { provider: 'custom-ollama', models: [{ id: 'llama3', capabilities: [], settings: {} }], settings: [] },
           { provider: 'llamacpp', models: [{ id: 'local', capabilities: [], settings: { ctx_len: { controller_props: { value: 4096 } } } }], settings: [] },
