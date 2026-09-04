@@ -59,7 +59,8 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { invoke } from '@tauri-apps/api/core'
 import { findSessionByModel } from '@janhq/tauri-plugin-llamacpp-api'
 import { SessionInfo } from '@janhq/core'
-import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { fetch as tauriHttpFetch } from '@tauri-apps/plugin-http'
+import { fetchWithoutTauriWebviewOrigin, headersWithoutTauriWebviewOrigin } from '@/lib/omitTauriWebviewOrigin'
 import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
 import { hasVideoSentinel, splitVideoSentinels } from './video-sentinel'
 import { filterDefaultSseEvents } from './sseEventTypeFilter'
@@ -80,6 +81,10 @@ import { i18n } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
+
+const httpFetch = fetchWithoutTauriWebviewOrigin(
+  tauriHttpFetch as typeof globalThis.fetch
+)
 
 /**
  * Llama.cpp timings structure from the response
@@ -511,6 +516,10 @@ export function createCustomFetch(
   }
 
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    init = {
+      ...init,
+      headers: headersWithoutTauriWebviewOrigin(init?.headers),
+    }
     let rawBody: Record<string, unknown> | null = null
     if (init?.method === 'POST' || !init?.method) {
       try {
@@ -1033,7 +1042,6 @@ export class ModelFactory {
       provider: 'llamacpp',
       headers: () => ({
         Authorization: `Bearer ${sessionInfo.api_key}`,
-        Origin: 'tauri://localhost',
       }),
       url: ({ path }) => {
         const url = new URL(`http://localhost:${sessionInfo.port}/v1${path}`)
@@ -1083,7 +1091,6 @@ export class ModelFactory {
     const baseUrl = `http://localhost:${sessionInfo.port}`
     const authHeaders = {
       Authorization: `Bearer ${sessionInfo.api_key}`,
-      Origin: 'tauri://localhost',
     }
 
     // Share the common fetch (param normalisation + error-body cleaning that
