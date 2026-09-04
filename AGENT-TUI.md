@@ -189,7 +189,7 @@ The TUI supports non-blocking input — the user can type even while the agent i
 | Ctrl-O | Toggle expand/collapse all regions |
 | Ctrl-V | Attach clipboard image |
 | Ctrl-C / Esc | Cancel current run |
-| Ctrl-D | Quit TUI |
+| Ctrl-C / Ctrl-D (press twice) | Quit TUI |
 | Tab | Autocomplete / cycle slash commands |
 
 Motion and kills are **line-wise**, not buffer-wise, since the composer is
