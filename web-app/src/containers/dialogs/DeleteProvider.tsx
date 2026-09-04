@@ -39,10 +39,14 @@ const DeleteProvider = ({ provider }: Props) => {
 
   const removeProvider = async () => {
     // Remove favorite models that belong to this provider
-    const providerModelIds = provider.models.map((model) => model.id)
+    const providerModelIds = new Set(provider.models.map((model) => model.id))
     favoriteModels.forEach((favoriteModel) => {
-      if (providerModelIds.includes(favoriteModel.id)) {
-        removeFavorite(favoriteModel.id)
+      const belongsToProvider =
+        favoriteModel.provider === provider.provider ||
+        // legacy favorites without provider: fall back to model-id membership
+        (!favoriteModel.provider && providerModelIds.has(favoriteModel.id))
+      if (belongsToProvider) {
+        removeFavorite(favoriteModel.id, provider.provider)
       }
     })
 

@@ -309,10 +309,14 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     })
   }, [searchableItems])
 
-  // Get favorite models that are currently available
+  // Get favorite models that are currently available (provider-scoped)
   const favoriteItems = useMemo(() => {
     return searchableItems.filter((item) =>
-      favoriteModels.some((fav) => fav.id === item.model.id)
+      favoriteModels.some(
+        (fav) =>
+          fav.id === item.model.id &&
+          (!fav.provider || fav.provider === item.provider.provider)
+      )
     )
   }, [searchableItems, favoriteModels])
 
@@ -386,7 +390,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       }
 
       // When not searching, exclude favorite models from regular provider sections
-      const isFavorite = favoriteModels.some((fav) => fav.id === item.model.id)
+      const isFavorite = favoriteModels.some(
+        (fav) =>
+          fav.id === item.model.id &&
+          (!fav.provider || fav.provider === item.provider.provider)
+      )
       if (!searchValue && isFavorite) return // Skip adding this item to regular provider section
 
       groups[providerKey].push(item)
