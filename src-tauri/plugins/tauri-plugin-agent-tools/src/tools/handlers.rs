@@ -16,8 +16,8 @@ use crate::skills;
 use crate::tools::jail;
 use crate::tools::proc;
 use crate::tools::sandbox::{
-    escapes_project, in_scratch, is_hidden_jan_path, lexical_normalize, resolve_path,
-    scratch_display_path, symlink_escapes_any_root, symlink_escapes_root,
+    escapes_write_roots, in_scratch, is_hidden_jan_path, lexical_normalize, resolve_path,
+    scratch_display_path, symlink_escapes_any_root,
 };
 use crate::tools::{BuiltinTool, ImageContentPart, ToolContext};
 
@@ -165,8 +165,26 @@ async fn execute_text(
         // readable and unwritable.
         "read" => read(args, project_root, scratch, ctx.read_roots).await.0,
         "ls" => ls(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
-        "write" => write(args, project_root, scratch, ctx.confine_writes).await,
-        "edit" => edit(args, project_root, scratch, ctx.confine_writes).await,
+        "write" => {
+            write(
+                args,
+                project_root,
+                scratch,
+                ctx.confine_writes,
+                ctx.write_roots,
+            )
+            .await
+        }
+        "edit" => {
+            edit(
+                args,
+                project_root,
+                scratch,
+                ctx.confine_writes,
+                ctx.write_roots,
+            )
+            .await
+        }
         "bash" => bash(args, ctx).await,
         "find" => find(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
         "grep" => grep(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
@@ -632,6 +650,7 @@ async fn write(
     root: &Path,
     scratch: Option<&Path>,
     confine: bool,
+    write_roots: &[PathBuf],
 ) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
@@ -642,8 +661,9 @@ async fn write(
     // Defense in depth: when the caller confines writes, re-canonicalize on the
     // canonical root (not the raw argument) so `..` and absolute paths are
     // caught even if the gate's decision was made against a stale view.
+    // `write_roots` widen the confinement exactly as they widened the gate.
     let target = resolve_path(root, scratch, path);
-    if confine && escapes_project(root, scratch, path).unwrap_or(true) {
+    if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
         return format!("ERROR: refused to write outside the agent workspace: {path}");
     }
     // Report the resolved location, not the raw argument: an absolute or `../`
@@ -653,7 +673,7 @@ async fn write(
     // concurrent sandboxed process can swap a path component between the gate
     // decision and this call, and creating the parents first would already have
     // made directories through the swapped link. Fail closed.
-    if symlink_escapes_root(root, scratch, &target) {
+    if symlink_escapes_any_root(root, scratch, write_roots, &target) {
         return format!("ERROR: refused to write through a symlink out of the workspace: {path}");
     }
     if let Some(parent) = target.parent() {
@@ -682,6 +702,7 @@ async fn edit(
     root: &Path,
     scratch: Option<&Path>,
     confine: bool,
+    write_roots: &[PathBuf],
 ) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
@@ -693,13 +714,13 @@ async fn edit(
         return "ERROR: edits must contain at least one replacement".to_string();
     }
     let target = resolve_path(root, scratch, path);
-    if confine && escapes_project(root, scratch, path).unwrap_or(true) {
+    if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
         return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
     let shown = display_path(root, scratch, &target);
     // Re-validate before the final read+write pair so a swapped symlink cannot
     // redirect either the read or the later write.
-    if symlink_escapes_root(root, scratch, &target) {
+    if symlink_escapes_any_root(root, scratch, write_roots, &target) {
         return format!("ERROR: refused to edit through a symlink out of the workspace: {path}");
     }
     let mut content = match tokio::fs::read_to_string(&target).await {
@@ -733,6 +754,64 @@ async fn edit(
     }
 }
 
+/// The shell a confined command launches with: the (possibly jail-wrapped)
+/// shell config, the path the sandbox exposes as its temp dir, and the policy
+/// itself (which `denial_hint` reads even when the shell runs unconfined).
+///
+/// With the sandbox off the shell is spawned bare, the way the user's own
+/// terminal would run it: no wrapper, no policy mounts, the real `$HOME` and
+/// `/tmp`. Only a surface that opted in gets that (the CLI's
+/// `--sandbox`/`sandbox` setting); the desktop never does, so an exec there is
+/// still confined or withheld. Shared by `bash` and the `monitor` condition
+/// scripts so a monitored evaluation runs under exactly the policy a `bash`
+/// call would.
+pub(crate) fn confined_shell(
+    ctx: &ToolContext<'_>,
+) -> Result<(proc::ShellConfig, Option<PathBuf>, jail::Policy), String> {
+    let root = ctx.project_root;
+    let mut policy =
+        jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
+    // While the shell is sandboxed, hide the project's own `.jan` state directory
+    // from it (see [`Policy::with_hide_root`]). When the shell runs unconfined the
+    // hide is both pointless (there is no OS mount to layer it on) and wrong
+    // (the agent should see its own state), so it is only applied when sandboxed.
+    if ctx.sandbox {
+        policy = policy.with_hide_root(&root.join(crate::tools::sandbox::JAN_DIR));
+    }
+    if let Some(mask) = ctx.mask_root {
+        policy = policy.with_mask_root(mask);
+    }
+    if let Some(scratch) = ctx.scratch_root {
+        policy = policy.with_scratch_root(scratch);
+    }
+    if !ctx.read_roots.is_empty() {
+        policy = policy.with_read_roots(ctx.read_roots.to_vec());
+    }
+    if !ctx.write_roots.is_empty() {
+        policy = policy.with_write_roots(ctx.write_roots.to_vec());
+    }
+    let shell = if ctx.sandbox {
+        // No confinement available means no shell: running unsandboxed would give
+        // the command the whole machine, which is never what the caller asked for.
+        let Some(wrapped) = jail::wrap(proc::shell(), &policy) else {
+            return Err(
+                "ERROR: bash is unavailable because no OS sandbox could be established on \
+                 this system. Use the read/ls/find/grep tools instead."
+                    .to_string(),
+            );
+        };
+        wrapped
+    } else {
+        proc::shell().clone()
+    };
+    let sandbox_tmp = if ctx.sandbox {
+        jail::scratch_env_path(jail::backend(), &policy)
+    } else {
+        None
+    };
+    Ok((shell, sandbox_tmp, policy))
+}
+
 async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let Some(command) = arg_str(args, "command").filter(|command| !command.trim().is_empty())
     else {
@@ -752,48 +831,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         );
     }
 
-    let mut policy =
-        jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
-    // While the shell is sandboxed, hide the project's own `.jan` state directory
-    // from it (see [`Policy::with_hide_root`]). When the shell runs unconfined the
-    // hide is both pointless (there is no OS mount to layer it on) and wrong
-    // (the agent should see its own state), so it is only applied when sandboxed.
-    if ctx.sandbox {
-        policy = policy.with_hide_root(&root.join(crate::tools::sandbox::JAN_DIR));
-    }
-    if let Some(mask) = ctx.mask_root {
-        policy = policy.with_mask_root(mask);
-    }
-    if let Some(scratch) = ctx.scratch_root {
-        policy = policy.with_scratch_root(scratch);
-    }
-    if !ctx.read_roots.is_empty() {
-        policy = policy.with_read_roots(ctx.read_roots.to_vec());
-    }
-    // With the sandbox off the shell is spawned bare, the way the user's own
-    // terminal would: no wrapper, no policy, the real `$HOME` and `/tmp`. Only
-    // a surface that opted in gets here (the CLI's `--sandbox`/`sandbox`
-    // setting); the desktop never does, so `bash` there is still confined or
-    // withheld. `policy` is still built either way -- it is what
-    // `denial_hint` reads, and an unconfined command can still hit a plain
-    // filesystem permission error worth explaining.
-    let shell = if ctx.sandbox {
-        // No confinement available means no shell: running unsandboxed would give
-        // the command the whole machine, which is never what the caller asked for.
-        let Some(wrapped) = jail::wrap(proc::shell(), &policy) else {
-            return "ERROR: bash is unavailable because no OS sandbox could be established on \
-                    this system. Use the read/ls/find/grep tools instead."
-                .to_string();
-        };
-        wrapped
-    } else {
-        proc::shell().clone()
-    };
-
-    let sandbox_tmp = if ctx.sandbox {
-        jail::scratch_env_path(jail::backend(), &policy)
-    } else {
-        None
+    let (shell, sandbox_tmp, policy) = match confined_shell(ctx) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
     let child = match proc::spawn(&shell, command, root, sandbox_tmp.as_deref()).await {
         Ok(c) => c,
@@ -1124,28 +1164,7 @@ fn spill_dir(scratch: Option<&Path>) -> Option<PathBuf> {
     let base = scratch
         .map(Path::to_path_buf)
         .unwrap_or_else(std::env::temp_dir);
-    let dir = base.join("jan-bash");
-    match std::fs::symlink_metadata(&dir) {
-        Ok(meta) if !meta.is_dir() => return None,
-        Ok(_) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // create_dir (not create_dir_all) refuses to follow a planted
-            // symlink in the path it creates.
-            let r = std::fs::create_dir(&dir);
-            if let Err(e) = r {
-                if e.kind() != std::io::ErrorKind::AlreadyExists {
-                    return None;
-                }
-            }
-        }
-        Err(_) => return None,
-    }
-    // Re-verify the node is a real directory, not a symlink a concurrent
-    // process swapped in between the create and this check.
-    match std::fs::symlink_metadata(&dir) {
-        Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() => Some(dir),
-        _ => None,
-    }
+    crate::tools::spill::validated_subdir(&base, "jan-bash")
 }
 
 fn new_temp_path(scratch: Option<&Path>) -> Option<PathBuf> {
@@ -1153,16 +1172,11 @@ fn new_temp_path(scratch: Option<&Path>) -> Option<PathBuf> {
     Some(spill_dir(scratch)?.join(format!("jan-bash-{}-{}.txt", std::process::id(), n)))
 }
 
-/// Open a spill file atomically with `O_EXCL` so we never truncate or write
-/// through an existing symlink the shell planted: `create_new` fails if the
-/// path already exists (as a file or a symlink). Combined with the validated
-/// non-symlink parent from [`spill_dir`], the model-controlled spill bytes
-/// cannot be redirected onto a host file.
+/// Open a spill file atomically; see [`crate::tools::spill::open_excl`].
+/// Combined with the validated non-symlink parent from [`spill_dir`], the
+/// model-controlled spill bytes cannot be redirected onto a host file.
 fn open_spill_file(path: &Path) -> std::io::Result<std::fs::File> {
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
+    crate::tools::spill::open_excl(path)
 }
 
 /// Write `content` to a uniquely named temp file, returning its path on
@@ -2566,6 +2580,7 @@ mod tests {
             &root,
             Some(&scratch),
             &[],
+            &[],
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
             true,
@@ -2594,6 +2609,7 @@ mod tests {
             &json!({"path": "/tmp/esc/x.txt", "content": "y"}),
             &root,
             Some(&scratch),
+            &[],
             &[],
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),

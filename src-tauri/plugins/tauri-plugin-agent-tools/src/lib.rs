@@ -11,6 +11,7 @@
 
 pub mod memory;
 pub mod permissions;
+pub mod preview;
 pub mod skills;
 pub mod tools;
 pub mod workspace;
@@ -47,12 +48,34 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::memory_list,
             commands::memory_read,
             commands::memory_write,
+            commands::memory_catalog,
             commands::memory_delete,
             commands::tool_schemas,
             commands::sandbox_status,
+            commands::subagent_result_reserve,
+            commands::subagent_result_fill,
+            commands::attachment_import,
             commands::execute_tool,
-            commands::execute_tool_streaming
+            commands::execute_tool_streaming,
+            commands::start_monitor,
+            commands::stop_monitor,
+            commands::list_monitors,
+            commands::stop_session_monitors,
+            commands::preview_register_root,
+            commands::preview_unregister_root
         ])
+        .setup(|app, _api| {
+            use tauri::Manager;
+            app.manage(preview::PreviewRoots::default());
+            Ok(())
+        })
+        .register_asynchronous_uri_scheme_protocol("preview", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            // Off the webview thread: canonicalize and read touch the disk.
+            std::thread::spawn(move || {
+                responder.respond(commands::preview_response(&app, request.uri().path()));
+            });
+        })
         .build()
 }
 

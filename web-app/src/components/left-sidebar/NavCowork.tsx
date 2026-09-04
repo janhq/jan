@@ -22,6 +22,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { stopAgentSessionMonitors } from '@/lib/agentTools'
+import { dropMonitorLane } from '@/lib/coworkMonitor'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -37,9 +39,13 @@ import {
   MessageCircleIcon,
   type MessageCircleIconHandle,
 } from '@/components/animated-icon/message-circle'
-import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
-import { useIsSessionActive } from '@/hooks/useCoworkRun'
-import { memo, useCallback, useRef, useState } from 'react'
+import {
+  startNewSession,
+  useCoworkSessions,
+  type CoworkSession,
+} from '@/hooks/useCoworkSessions'
+import { useCoworkRun, useIsSessionActive } from '@/hooks/useCoworkRun'
+import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import SkillsManagerDialog from '@/containers/dialogs/SkillsManagerDialog'
 
 type CoworkNavItem = {
@@ -48,11 +54,19 @@ type CoworkNavItem = {
   onClick: () => void
 }
 
+// Leaving a session behind is the moment an abandoned empty one becomes
+// unreachable (it has no sidebar row) — sweep those out of the store, keeping
+// any session whose first run is still streaming its turns in useCoworkRun.
+const pruneEmpty = () => {
+  const running = Object.keys(useCoworkRun.getState().runId)
+  useCoworkSessions.getState().pruneEmptySessions(running)
+}
+
 // Own component (not inlined in a .map()) so it can be memoized: each row's
-// running/needs-input state now comes from its own per-session selector
-// (useIsSessionActive/useSessionHasPendingPerms), so a session starting or
-// stopping a run only re-renders its own row, not the whole session list —
-// mirroring ThreadList.tsx's memoized ThreadItem + useIsThreadActive.
+// running state comes from its own per-session selector (useIsSessionActive),
+// so a session starting or stopping a run only re-renders its own row, not the
+// whole session list — mirroring ThreadList.tsx's memoized ThreadItem +
+// useIsThreadActive.
 const SessionItem = memo(function SessionItem({
   session,
   isCurrent,
@@ -116,6 +130,15 @@ export function NavCowork() {
   const { isMobile } = useSidebar()
   const sessions = useCoworkSessions((s) => s.sessions)
   const currentId = useCoworkSessions((s) => s.currentId)
+  // A session only earns a sidebar row once it has messages. A first run's
+  // turns are transient in useCoworkRun until committed, so a streaming
+  // session stays listed via its active run — otherwise switching away
+  // mid-first-run would make it unreachable.
+  const runIds = useCoworkRun((s) => s.runId)
+  const visibleSessions = useMemo(
+    () => sessions.filter((s) => s.turns.length > 0 || runIds[s.id] != null),
+    [sessions, runIds]
+  )
   const [skillsOpen, setSkillsOpen] = useState(false)
   // Session pending deletion; drives the confirm dialog (null = closed).
   const [pendingDelete, setPendingDelete] = useState<{
@@ -126,12 +149,13 @@ export function NavCowork() {
   const goCowork = useCallback(() => navigate({ to: route.cowork }), [navigate])
   const newSessionIconRef = useRef<MessageCircleIconHandle>(null)
   const newSession = () => {
-    useCoworkSessions.getState().createSession()
+    startNewSession(Object.keys(useCoworkRun.getState().runId))
     goCowork()
   }
   const selectSession = useCallback(
     (id: string) => {
       useCoworkSessions.getState().selectSession(id)
+      pruneEmpty()
       goCowork()
     },
     [goCowork]
@@ -151,7 +175,15 @@ export function NavCowork() {
   ]
 
   const confirmDelete = () => {
-    if (pendingDelete) useCoworkSessions.getState().deleteSession(pendingDelete.id)
+    if (pendingDelete) {
+      const sid = pendingDelete.id
+      // Watchers are the session's, so they go with it: stopped in Rust, their
+      // lane forgotten, their rail entries dropped.
+      void stopAgentSessionMonitors(sid)
+      dropMonitorLane(sid)
+      useCoworkRun.getState().clearMonitors(sid)
+      useCoworkSessions.getState().deleteSession(sid)
+    }
     setPendingDelete(null)
   }
 
@@ -185,11 +217,13 @@ export function NavCowork() {
         })}
       </SidebarMenu>
 
-      {sessions.length > 0 && (
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+      {/* px-0: the group's own p-2 would indent the session rows past the nav
+          rows above it, which share the header's px-1. */}
+      {visibleSessions.length > 0 && (
+        <SidebarGroup className="px-0 group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel>{t('common:sessions')}</SidebarGroupLabel>
           <SidebarMenu>
-            {sessions.map((session) => (
+            {visibleSessions.map((session) => (
               <SessionItem
                 key={session.id}
                 session={session}

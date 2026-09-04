@@ -52,6 +52,7 @@ use crate::core::agent::r#loop::{
 };
 use serde_json::Value;
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::tools::monitor::{MonitorSet, MonitorSnapshot};
 use tauri_plugin_agent_tools::workspace;
 
 /// Mouse tracking, hand-rolled instead of crossterm's `EnableMouseCapture`,
@@ -1917,6 +1918,21 @@ struct App {
     /// Live panels for background subagents currently streaming, one per run.
     /// Several may be active at once; each renders its own rolling window.
     subagents: Vec<SubagentPanel>,
+    /// The session's active file monitors, replaced wholesale by each
+    /// `StreamEvent::Monitors` and re-read from `monitor_set` when a run ends.
+    /// Docked beside the fan-out; never a transcript row, since a monitor
+    /// describes now.
+    monitors: Vec<MonitorSnapshot>,
+    /// The session-owned monitor registry, shared with every run through
+    /// `OrchestrationArgs::monitors`. A watcher outlives the turn that started
+    /// it, so the model can answer and the user can keep talking while it
+    /// runs; a match landing between runs starts a turn of its own
+    /// (`submit_monitor_notices`).
+    monitor_set: Arc<MonitorSet>,
+    /// True from `StreamEvent::Parked` to the next `Step`: the model is done
+    /// and the loop is waiting on background work, so the header says so
+    /// instead of `[working]`.
+    parked: bool,
     /// Committed finished-subagent summary rows, expandable to their full
     /// tool-call list via Ctrl-O (parallel to `groups`/`reasoning_blocks`).
     subagent_blocks: Vec<SubagentBlock>,
@@ -2170,6 +2186,19 @@ struct SubagentPanel {
     waiting: u32,
 }
 
+/// How a closed child's summary row reads. `Failed` carries the reason the
+/// parent's `<SYSTEM>` ping carries, which is otherwise the only account of it:
+/// a background child reports its failure to the model, not to the screen, so a
+/// row that said "finished" either way left the user reading an answer built on
+/// work that never happened. `Interrupted` is the run ending out from under a
+/// child, which is not the child's failure.
+#[derive(Clone, PartialEq)]
+enum SubagentOutcome {
+    Finished,
+    Failed(String),
+    Interrupted,
+}
+
 /// A committed finished-subagent summary row, folded to one line but retaining
 /// its full tool-call list so the row can expand back to it (like a tool group).
 struct SubagentBlock {
@@ -2354,6 +2383,9 @@ impl App {
             should_quit: false,
             exit_armed: false,
             subagents: Vec::new(),
+            monitors: Vec::new(),
+            monitor_set: Arc::new(MonitorSet::new()),
+            parked: false,
             subagent_blocks: Vec::new(),
             awaiting: Vec::new(),
             starting: Vec::new(),
@@ -2439,6 +2471,7 @@ impl App {
         self.reasoning_blocks.clear();
         self.subagent_blocks.clear();
         self.subagents.clear();
+        self.stop_monitors();
         self.expanded.clear();
         self.reveal = None;
         self.assistant_buf.clear();
@@ -2722,28 +2755,38 @@ impl App {
     }
 
     /// Fold one finished child into a summary row, retaining its call list so
-    /// the row can expand back to it (like a tool group). `finished` separates a
-    /// clean `SubagentEnd` from a child the run ended out from under.
-    fn push_subagent_summary(&mut self, name: &str, calls: Vec<String>, finished: bool) {
+    /// the row can expand back to it (like a tool group).
+    fn push_subagent_summary(&mut self, name: &str, calls: Vec<String>, outcome: SubagentOutcome) {
         self.display_log.push(DisplayEntry::Subagent {
             name: name.to_string(),
             calls: calls.clone(),
-            finished,
+            finished: !matches!(outcome, SubagentOutcome::Interrupted),
+            error: match &outcome {
+                SubagentOutcome::Failed(e) => Some(e.clone()),
+                _ => None,
+            },
         });
         let total = calls.len();
         let noun = if total == 1 { "call" } else { "calls" };
-        let verb = if finished { "finished" } else { "interrupted" };
-        let style = if finished {
-            Style::new().magenta().dim()
-        } else {
-            Style::new().yellow()
+        let done = format!("({total} tool {noun})");
+        let (verb, style) = match &outcome {
+            SubagentOutcome::Finished => ("finished", Style::new().magenta().dim()),
+            SubagentOutcome::Failed(_) => ("failed", Style::new().red()),
+            SubagentOutcome::Interrupted => ("interrupted", Style::new().yellow()),
+        };
+        let label = match &outcome {
+            SubagentOutcome::Failed(e) => format!("subagent {name} {verb} {done}: {e}"),
+            _ => format!("subagent {name} {verb} {done}"),
         };
         self.gap(Kind::Tool);
         self.push_row(RowKind::Tool {
             tag: "↲".to_string(),
             tag_style: style,
-            label: format!("subagent {name} {verb} ({total} tool {noun})"),
-            label_style: if finished { style } else { Style::new().dim() },
+            label,
+            label_style: match outcome {
+                SubagentOutcome::Finished => style,
+                _ => Style::new().dim(),
+            },
             reserve: TOOL_ROW_RESERVE,
         });
         if total > 0 {
@@ -2758,11 +2801,49 @@ impl App {
     /// run -- a stranded block spins in the dock on an idle session -- but a
     /// child that did work still earns its summary row, so the calls it made are
     /// accounted for rather than vanishing with the panel.
-    fn close_live_subagents(&mut self) {
+    fn close_live_background(&mut self) {
         for panel in std::mem::take(&mut self.subagents) {
-            self.push_subagent_summary(&panel.name, panel.calls, false);
+            self.push_subagent_summary(&panel.name, panel.calls, SubagentOutcome::Interrupted);
         }
         self.awaiting.clear();
+        // Session monitors outlive the run, so the dock keeps whatever is
+        // still watching; a run that ended is no longer parked on anything.
+        self.monitors = self.monitor_set.snapshot();
+        self.parked = false;
+    }
+
+    /// Stop every session monitor and undock it: the conversation they were
+    /// started for is going away, so a later match would have no turn to join.
+    fn stop_monitors(&mut self) {
+        self.monitor_set.stop_all();
+        self.monitors.clear();
+    }
+
+    /// Deliver monitor pings that landed while no run was active. Each headline
+    /// is noted where the user is looking and each text joins the history as
+    /// the same `<SYSTEM>` reminder the loop attaches mid-run, then one turn
+    /// starts so the model reacts. Nothing is submitted without a model to
+    /// send to; the pings are dropped with a note rather than left to fire the
+    /// moment `/login` completes on a conversation that has moved on.
+    fn submit_monitor_notices(&mut self) {
+        let notices = self.monitor_set.take_notices();
+        self.monitors = self.monitor_set.snapshot();
+        if notices.is_empty() {
+            return;
+        }
+        for notice in &notices {
+            self.note(&notice.headline);
+        }
+        if self.model.is_empty() {
+            self.note("monitor update dropped: not signed in, run /login first");
+            return;
+        }
+        for notice in &notices {
+            crate::core::agent::reminder::attach(&mut self.history, &notice.text);
+        }
+        self.begin_turn();
+        self.want_start = true;
+        self.persist();
     }
 
     /// The live shell panel for `group`'s newest unresolved *command*, or no rows
@@ -4417,6 +4498,8 @@ impl App {
                 }
                 self.starting.clear();
                 self.turn = (index, max);
+                // A new turn means a ping resumed the run.
+                self.parked = false;
             }
             StreamEvent::ToolCallStarted { id, name } => {
                 // Commit buffered prose/reasoning so it renders above the
@@ -4679,7 +4762,11 @@ impl App {
                     waiting,
                 });
             }
-            StreamEvent::SubagentEnd { run_id, name } => {
+            StreamEvent::SubagentEnd {
+                run_id,
+                name,
+                error,
+            } => {
                 let calls = self
                     .subagents
                     .iter()
@@ -4688,8 +4775,22 @@ impl App {
                     .unwrap_or_default();
                 self.subagents.retain(|p| p.run_id != run_id);
                 self.awaiting.retain(|(_, r, _)| r != &run_id);
-                self.push_subagent_summary(&name, calls, true);
+                let outcome = match error {
+                    Some(e) => SubagentOutcome::Failed(e),
+                    None => SubagentOutcome::Finished,
+                };
+                self.push_subagent_summary(&name, calls, outcome);
             }
+            // A background ping's headline (a monitor condition matching),
+            // emitted as the loop delivers the `<SYSTEM>` text to the model.
+            // Transient like every other note: not journaled.
+            StreamEvent::Notice { text } => {
+                self.finalize_tool_group();
+                self.flush_assistant();
+                self.note(&text);
+            }
+            StreamEvent::Monitors { monitors } => self.monitors = monitors,
+            StreamEvent::Parked => self.parked = true,
             StreamEvent::Subagent {
                 run_id,
                 name,
@@ -4863,7 +4964,7 @@ impl App {
         // Children cannot outlive the run that dispatched them: their events
         // arrive on its stream. Any panel still open here never got its own
         // `SubagentEnd`.
-        self.close_live_subagents();
+        self.close_live_background();
         // Capture the turn's reasoning before `take_answer` flushes it: native
         // reasoning lives in `reasoning_segs` until the flush, and inline
         // ` thinking` blocks are folded into the buffer. Preserved so the
@@ -4987,7 +5088,7 @@ impl App {
 
     fn on_error(&mut self, code: String, message: String) {
         self.abort_tool_rows();
-        self.close_live_subagents();
+        self.close_live_background();
         self.flush_assistant();
         self.status = Status::Idle;
         self.run_started = None;
@@ -5128,7 +5229,7 @@ impl App {
         // snapshot readiness); otherwise the loop starts it once ready and the
         // cancel is silently undone.
         self.want_start = false;
-        self.close_live_subagents();
+        self.close_live_background();
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
         self.system(Level::Warn, "cancelled");
@@ -6000,8 +6101,37 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         }
         "ask" => "Asking a question".to_string(),
         "todo" => format!("{} {}", todo_op_verb(args, false), todo_target_label(args)),
+        "monitor" => monitor_activity(args, false),
         // Skill/memory tools already produce active labels ("Updating memory: X").
         _ => describe_tool_call(name, args),
+    }
+}
+
+/// Present/past-tense label for a `monitor` tool call, keyed on its `op`.
+/// Without this the row falls through to the raw-JSON fallback, and a start's
+/// script makes that a paragraph, not a label.
+fn monitor_activity(args: &serde_json::Value, past: bool) -> String {
+    let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
+    match (s("op"), past) {
+        ("start", _) => {
+            let verb = if past { "Started" } else { "Starting" };
+            let label = match (s("name"), s("script")) {
+                ("", "") => String::new(),
+                ("", script) => script.to_string(),
+                (name, _) => name.to_string(),
+            };
+            if label.is_empty() {
+                format!("{verb} a monitor")
+            } else {
+                format!("{verb} a monitor: {label}")
+            }
+        }
+        ("stop", false) => format!("Stopping monitor {}", s("monitor_id")),
+        ("stop", true) => format!("Stopped monitor {}", s("monitor_id")),
+        ("list", false) => "Listing monitors".to_string(),
+        ("list", true) => "Listed monitors".to_string(),
+        (_, false) => "Updating monitors".to_string(),
+        (_, true) => "Updated monitors".to_string(),
     }
 }
 
@@ -6132,6 +6262,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         }
         "ask" => "Asked a question".to_string(),
         "todo" => format!("{} {}", todo_op_verb(args, true), todo_target_label(args)),
+        "monitor" => monitor_activity(args, true),
         _ => describe_tool_call(name, args),
     }
 }
@@ -7017,6 +7148,16 @@ fn spawn_run(args: &Arc<OrchestrationArgs>, body: serde_json::Value) -> CurrentR
     CurrentRun { rx, handle }
 }
 
+/// Await a monitor ping the TUI must deliver itself: only between runs, since a
+/// running loop drains the same set at the top of each turn. Parks forever when
+/// a run is active or queued, or when no watcher could still fire.
+async fn await_monitor_ping(set: &Arc<MonitorSet>, idle: bool) {
+    if !idle || !set.has_pending_work() {
+        return pending().await;
+    }
+    set.wait_for_notice().await
+}
+
 /// Await the next event of the active run, or park forever when idle.
 async fn next_event(current: &mut Option<CurrentRun>) -> Option<StreamEvent> {
     match current {
@@ -7385,6 +7526,10 @@ pub async fn run(
     args.ask_requests = Some(ask_requests.clone());
     let todo_registry = crate::core::agent::todo::new_registry();
     args.todo_registry = Some(todo_registry.clone());
+    // Session-owned, so a watcher survives the turn that started it and the
+    // model's answer ends the run instead of parking on it.
+    let monitor_set = Arc::new(MonitorSet::new());
+    args.monitors = Some(monitor_set.clone());
     let session_scratch = args.session_id.clone();
     let args = Arc::new(args);
 
@@ -7426,6 +7571,7 @@ pub async fn run(
     app.smol_model = smol_model;
     app.stream_reasoning = stream_reasoning;
     app.send_reasoning = send_reasoning;
+    app.monitor_set = monitor_set;
     app.args = Some(args.clone());
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
     // shows immediately; a resumed thread overrides this via restore_run_mode.
@@ -7639,6 +7785,9 @@ async fn chat_loop<B: Backend>(
 ) -> Result<(), String> {
     let mut current: Option<CurrentRun> = None;
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
+    // Cloned out of `app` so the select arm below can await it while other
+    // arms borrow `app` mutably.
+    let monitor_set = app.monitor_set.clone();
     // Active MCP servers connect in the background; gate the first run on them
     // so the model's tools (collected once per run) are ready.
     let mut mcp_ready = mcp_task.is_none();
@@ -7989,6 +8138,9 @@ async fn chat_loop<B: Backend>(
                 if branch_task.is_none() {
                     branch_task = Some(spawn_branch_poll(&app.project_root));
                 }
+            }
+            _ = await_monitor_ping(&monitor_set, current.is_none() && !app.want_start) => {
+                app.submit_monitor_notices();
             }
             branch = await_branch_poll(&mut branch_task) => {
                 app.git_branch = branch;
@@ -13354,9 +13506,15 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
                 name,
                 calls,
                 finished,
+                error,
             } => {
                 app.finalize_tool_group();
-                app.push_subagent_summary(name, calls.clone(), *finished);
+                let outcome = match (finished, error) {
+                    (_, Some(e)) => SubagentOutcome::Failed(e.clone()),
+                    (true, None) => SubagentOutcome::Finished,
+                    (false, None) => SubagentOutcome::Interrupted,
+                };
+                app.push_subagent_summary(name, calls.clone(), outcome);
             }
         }
     }
@@ -13453,6 +13611,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     app.pending_rows.clear();
     app.reasoning_blocks.clear();
     app.subagent_blocks.clear();
+    app.stop_monitors();
     app.expanded.clear();
     app.reveal = None;
     app.assistant_buf.clear();
@@ -15620,6 +15779,15 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         (kind.label().to_string(), Style::new().magenta().bold())
     } else if app.status == Status::Idle {
         ("ready".to_string(), Style::new().green())
+    } else if app.parked {
+        // The model is done and the loop waits on background work; a
+        // `[working]` badge over an idle model would misreport it.
+        let label = if app.monitors.is_empty() {
+            "waiting"
+        } else {
+            "watching"
+        };
+        (label.to_string(), Style::new().cyan())
     } else if !app.show_reasoning {
         // Reasoning folding is on: show the live thought state in place of the
         // generic 'working'. [thinking] while a  block streams; [thought for
@@ -15915,33 +16083,124 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
     // known (configured, catalog, or fallback), so it is always a denominator.
     let context_window = app.context_window;
     let has_todos = !app.todos.is_empty() && !app.todos_expired();
-    let has_agents = !app.subagents.is_empty();
-    match (has_todos, has_agents) {
+    let has_activity = !app.subagents.is_empty() || !app.monitors.is_empty();
+    match (has_todos, has_activity) {
         (false, false) => Vec::new(),
         (true, false) => todo_column(&app.todos, width, rows),
-        (false, true) => agents_column(&mut app.subagents, context_window, width, rows, frame),
+        (false, true) => activity_column(
+            &mut app.subagents,
+            &app.monitors,
+            context_window,
+            width,
+            rows,
+            frame,
+        ),
         (true, true) if width < PANEL_SPLIT_MIN_WIDTH => {
             // Stacked: the plan keeps its head line plus whatever is left after
-            // the agents, which are the thing actually moving.
-            let agents = agents_column(
+            // the activity, which is the thing actually moving.
+            let activity = activity_column(
                 &mut app.subagents,
+                &app.monitors,
                 context_window,
                 width,
                 rows.saturating_sub(1),
                 frame,
             );
-            let mut out = todo_column(&app.todos, width, rows - agents.len());
-            out.extend(agents);
+            let mut out = todo_column(&app.todos, width, rows - activity.len());
+            out.extend(activity);
             out
         }
         (true, true) => {
             let left_w = (width.saturating_sub(PANEL_GUTTER)) / 2;
             let right_w = width.saturating_sub(left_w + PANEL_GUTTER);
             let left = todo_column(&app.todos, left_w, rows);
-            let right = agents_column(&mut app.subagents, context_window, right_w, rows, frame);
+            let right = activity_column(
+                &mut app.subagents,
+                &app.monitors,
+                context_window,
+                right_w,
+                rows,
+                frame,
+            );
             join_columns(left, right, left_w)
         }
     }
+}
+
+/// The right-hand panel column: the live fan-out over the live monitors.
+/// Monitors are laid out first since they are compact (one line each) and
+/// capped at half the budget; the agents take whatever they leave.
+fn activity_column(
+    panels: &mut [SubagentPanel],
+    monitors: &[MonitorSnapshot],
+    context_window: u64,
+    width: u16,
+    rows: usize,
+    frame: &str,
+) -> Vec<Line<'static>> {
+    let monitor_rows = if panels.is_empty() {
+        rows
+    } else {
+        (1 + monitors.len()).min(rows / 2)
+    };
+    let monitors = monitors_column(monitors, width, monitor_rows);
+    let mut out = agents_column(panels, context_window, width, rows - monitors.len(), frame);
+    out.extend(monitors);
+    out
+}
+
+/// The session's active monitors, as a column: one line per monitor (id, name,
+/// polls so far), plus its script when the budget stretches to a second row
+/// each.
+fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec<Line<'static>> {
+    if monitors.is_empty() || rows == 0 {
+        return Vec::new();
+    }
+    let dim = Style::new().dark_gray();
+    let max = width.max(8) as usize;
+    let mut out = vec![Line::from(vec![
+        Span::styled("◔ ", Style::new().cyan()),
+        Span::styled(
+            pluralize("monitor", monitors.len()),
+            Style::new().cyan().bold(),
+        ),
+    ])];
+    let body = rows - 1;
+    let (shown, hidden) = if monitors.len() <= body {
+        (monitors.len(), 0)
+    } else {
+        (
+            body.saturating_sub(1),
+            monitors.len() - body.saturating_sub(1),
+        )
+    };
+    let detail = (body - shown).checked_div(shown).is_some_and(|n| n >= 1);
+    for monitor in monitors.iter().take(shown) {
+        let stats = format!("  {} polls", monitor.polls);
+        let label = format!("{} {}", monitor.monitor_id, monitor.name);
+        out.push(Line::from(vec![
+            Span::styled("◔ ", Style::new().cyan()),
+            Span::styled(
+                truncate(&label, max.saturating_sub(2 + stats.len())),
+                Style::new().cyan(),
+            ),
+            Span::styled(stats, dim),
+        ]));
+        if detail {
+            out.push(Line::from(vec![
+                Span::raw("   "),
+                Span::styled(truncate(&monitor.script, max.saturating_sub(3)), dim),
+            ]));
+        }
+    }
+    if hidden > 0 {
+        out.push(Line::from(vec![Span::styled(
+            format!("  +{hidden} more watching"),
+            dim,
+        )]));
+    }
+    out.truncate(rows);
+    out
 }
 
 /// Max content rows the input box grows to before it scrolls internally.
@@ -16286,17 +16545,18 @@ mod tests {
     }
     use super::journal::{self, DisplayEntry};
     use super::SessionLimits;
+    use super::SubagentOutcome;
     use super::{
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
         apply_resume, apply_stream_event, assistant_is_awaiting_user_answer, assistant_runs,
-        autoscroll_selection, await_branch_poll, backgrounded_job_id, brand, build_user_message,
-        clipboard_path, compact_tokens, context_lines, diff_lines, drain_stream_events,
-        estimate_token_count, finish_account_login, finish_compaction, finish_context_report,
-        finish_login, finish_plugin_install, finish_tokamak_login, finish_update_install,
-        format_tokens, group_detail_lines, group_summary, handle_ask_key, handle_ask_mouse,
-        handle_key, handle_mouse, header_spans, image_mime, image_mime_of, input_content_lines,
-        load_first_file_image, load_image_file, message_text, note_update, open_config_screen,
-        open_rewind_picker, pairs_to_str, parse_command, partial_json_field,
+        autoscroll_selection, await_branch_poll, await_monitor_ping, backgrounded_job_id, brand,
+        build_user_message, clipboard_path, compact_tokens, context_lines, diff_lines,
+        drain_stream_events, estimate_token_count, finish_account_login, finish_compaction,
+        finish_context_report, finish_login, finish_plugin_install, finish_tokamak_login,
+        finish_update_install, format_tokens, group_detail_lines, group_summary, handle_ask_key,
+        handle_ask_mouse, handle_key, handle_mouse, header_spans, image_mime, image_mime_of,
+        input_content_lines, load_first_file_image, load_image_file, message_text, note_update,
+        open_config_screen, open_rewind_picker, pairs_to_str, parse_command, partial_json_field,
         provider_label_for_model, rebuild_recall, replay_display_log, restore_goal,
         restore_run_mode, restore_todos, resume_hint, rewind_to, route_paste_event, row_width,
         run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
@@ -16305,13 +16565,13 @@ mod tests {
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding, unescape_partial_json_string, user_content_parts, wave_sweep_line,
         with_wave_glyph, without_think_tags, App, CompactKind, ContextReport, ContextSegment,
-        ContextView, CurrentRun, McpField, McpPrompt, Pending, PendingImage, PickerKind,
-        ProviderField, ReasoningSeg, ResumeTarget, Row, RowKind, Selection, SelectionMode,
-        SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF, COPY_NOTICE,
-        DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS,
-        KITTY_KEYS_OFF, KITTY_KEYS_ON, MAX_IMAGE_BYTES, MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON,
-        PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS, THINKING_WORDS,
-        WORKING_WORDS,
+        ContextView, CurrentRun, McpField, McpPrompt, MonitorSet, Pending, PendingImage,
+        PickerKind, ProviderField, ReasoningSeg, ResumeTarget, Row, RowKind, Selection,
+        SelectionMode, SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE,
+        ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS,
+        DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF, KITTY_KEYS_ON, MAX_IMAGE_BYTES,
+        MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER,
+        SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -16331,6 +16591,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
     use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+    use tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot;
     use unicode_width::UnicodeWidthStr;
 
     /// A bare key press with no modifiers.
@@ -16998,7 +17259,11 @@ mod tests {
     fn expanded_subagent_detail_wraps_instead_of_eliding() {
         let mut app = test_app();
         let long = "Executing: cargo test --no-default-features --features cli -- cli::tui::tests";
-        app.push_subagent_summary("reviewer", vec![long.to_string()], true);
+        app.push_subagent_summary(
+            "reviewer",
+            vec![long.to_string()],
+            SubagentOutcome::Finished,
+        );
         let block = app.subagent_blocks.last().expect("no subagent block");
         let lines = block.detail_lines(50);
         assert!(lines.len() > 1, "detail was not wrapped: {lines:?}");
@@ -18502,6 +18767,32 @@ mod tests {
             tool_activity("memory_write", &json!({ "name": "decisions" })),
             "Updating memory: decisions"
         );
+    }
+
+    /// A `monitor` call must never fall through to the raw-JSON fallback: a
+    /// start's script makes that a paragraph, not a label.
+    #[test]
+    fn monitor_calls_get_readable_labels() {
+        let start = json!({ "op": "start", "name": "build", "script": "grep OK build.log" });
+        assert_eq!(
+            tool_activity("monitor", &start),
+            "Starting a monitor: build"
+        );
+        assert_eq!(tool_finished("monitor", &start), "Started a monitor: build");
+        let unnamed = json!({ "op": "start", "script": "test -f done.flag" });
+        assert_eq!(
+            tool_activity("monitor", &unnamed),
+            "Starting a monitor: test -f done.flag"
+        );
+        assert_eq!(
+            tool_activity("monitor", &json!({ "op": "stop", "monitor_id": "mon-2" })),
+            "Stopping monitor mon-2"
+        );
+        assert_eq!(
+            tool_finished("monitor", &json!({ "op": "stop", "monitor_id": "mon-2" })),
+            "Stopped monitor mon-2"
+        );
+        assert_eq!(tool_activity("monitor", &json!({ "op": "list" })), "Listing monitors");
     }
 
     #[test]
@@ -20986,6 +21277,7 @@ mod tests {
                 run_mode: crate::core::agent::plan::RunMode::Normal,
                 session_id: None,
                 sandbox: None,
+                monitors: Some(app.monitor_set.clone()),
             });
             app.args = Some(args.clone());
 
@@ -21124,6 +21416,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "sub-reviewer-1".into(),
             name: "reviewer".into(),
+            error: None,
         });
         assert_eq!(
             app.awaiting.len(),
@@ -22760,6 +23053,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            error: None,
         });
         // A collapsed summary row + a retained expandable block.
         assert_eq!(app.subagent_blocks.len(), 1);
@@ -22815,12 +23109,79 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            error: None,
         });
         assert!(app.subagents.iter().all(|p| p.run_id != "r1"));
         assert!(app
             .transcript
             .iter()
             .any(|r| row_text(r).contains("subagent reviewer finished (1 tool call)")));
+    }
+
+    /// A background child reports its failure to the model (the `<SYSTEM>`
+    /// ping) and nowhere else, so the summary row is the user's only account of
+    /// it. Saying "finished" would leave them reading an answer built on work
+    /// that never happened.
+    #[test]
+    fn a_failed_subagent_says_so_and_names_the_reason() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+            task: None,
+        });
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+            error: Some("upstream: 429 rate limited".into()),
+        });
+        let row = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .find(|t| t.contains("subagent reviewer"))
+            .expect("no summary row");
+        assert!(
+            row.contains("failed") && row.contains("429 rate limited"),
+            "row hides the failure: {row}"
+        );
+        assert!(!row.contains("finished"), "row reads as a clean run: {row}");
+    }
+
+    /// The journal replays the outcome too: a resumed session must not turn a
+    /// failure back into a clean finish.
+    #[test]
+    fn a_failed_subagent_survives_a_journal_round_trip() {
+        let entry = DisplayEntry::Subagent {
+            name: "reviewer".into(),
+            calls: Vec::new(),
+            finished: true,
+            error: Some("upstream: 429 rate limited".into()),
+        };
+        let encoded = serde_json::to_string(&entry).unwrap();
+        assert_eq!(
+            serde_json::from_str::<DisplayEntry>(&encoded).unwrap(),
+            entry
+        );
+        let mut app = test_app();
+        super::replay_display_log(&mut app, vec![entry.clone()]);
+        assert!(app
+            .transcript
+            .iter()
+            .any(|r| row_text(r).contains("subagent reviewer failed")));
+        // A journal written before the field existed still replays as a clean
+        // finish rather than being dropped.
+        let old: DisplayEntry =
+            serde_json::from_str(r#"{"kind":"subagent","name":"scout","calls":[]}"#).unwrap();
+        assert_eq!(
+            old,
+            DisplayEntry::Subagent {
+                name: "scout".into(),
+                calls: Vec::new(),
+                finished: true,
+                error: None,
+            }
+        );
     }
 
     #[test]
@@ -25671,6 +26032,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r0".into(),
             name: "alpha".into(),
+            error: None,
         });
         assert!(app.subagents.is_empty(), "live panel closed");
         let rows = render_rows(&mut app, 100, 24);
@@ -28279,6 +28641,214 @@ mod tests {
         assert!(
             text.contains("Todos · 1/2"),
             "single phase progress: {text}"
+        );
+    }
+
+    fn monitor(id: &str, name: &str, script: &str, polls: u64) -> MonitorSnapshot {
+        MonitorSnapshot {
+            monitor_id: id.to_string(),
+            name: name.to_string(),
+            script: script.to_string(),
+            polls,
+        }
+    }
+
+    /// Running monitors are live state like the fan-out, so they dock in the
+    /// status panel: one line each with the name and poll count, the script
+    /// beneath when the budget allows, beside any live agents.
+    #[test]
+    fn running_monitors_dock_in_the_status_panel() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Monitors {
+            monitors: vec![
+                monitor("mon-1", "build", "grep OK build.log", 3),
+                monitor("mon-2", "tests", "grep green test.log", 1),
+            ],
+        });
+        let text = render_rows(&mut app, 100, 24).join("\n");
+        assert!(text.contains("2 monitors"), "{text}");
+        assert!(text.contains("mon-1 build"), "{text}");
+        assert!(text.contains("3 polls"), "{text}");
+        assert!(text.contains("grep OK build.log"), "{text}");
+        assert!(text.contains("mon-2 tests"), "{text}");
+
+        start_subagent(&mut app, "r0", "alpha");
+        let text = render_rows(&mut app, 100, 24).join("\n");
+        assert!(text.contains("1 agent"), "{text}");
+        assert!(text.contains("2 monitors"), "{text}");
+
+        // The set is replaced wholesale; an emptied set drops the column.
+        app.apply(StreamEvent::Monitors {
+            monitors: Vec::new(),
+        });
+        let text = render_rows(&mut app, 100, 24).join("\n");
+        assert!(!text.contains("monitor"), "{text}");
+        assert!(text.contains("1 agent"), "{text}");
+    }
+
+    /// A run parked on background work is not working: the header says
+    /// `[watching]` while monitors are up, `[waiting]` otherwise, and goes back
+    /// to `[working]` once a ping starts the next turn. Run end clears both.
+    #[test]
+    fn a_parked_run_is_watching_not_working() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        let header = |app: &mut App| render_rows(app, 100, 24)[0].clone();
+        assert!(header(&mut app).contains("[working]"));
+
+        app.apply(StreamEvent::Monitors {
+            monitors: vec![monitor("mon-1", "ok", "grep OK build.log", 1)],
+        });
+        app.apply(StreamEvent::Parked);
+        let text = header(&mut app);
+        assert!(text.contains("[watching]"), "{text}");
+        assert!(!text.contains("[working]"), "{text}");
+
+        app.apply(StreamEvent::Step { index: 2, max: 0 });
+        assert!(header(&mut app).contains("[working]"));
+
+        app.apply(StreamEvent::Monitors {
+            monitors: Vec::new(),
+        });
+        app.apply(StreamEvent::Parked);
+        assert!(header(&mut app).contains("[waiting]"));
+
+        app.apply(StreamEvent::Monitors {
+            monitors: vec![monitor("mon-2", "ok", "grep OK build.log", 1)],
+        });
+        app.on_error("upstream".into(), "gone".into());
+        assert!(
+            app.monitors.is_empty(),
+            "run end re-reads the session set, which has nothing running"
+        );
+        assert!(!app.parked);
+        assert!(header(&mut app).contains("[ready]"));
+    }
+
+    fn session_monitor_spec(script: &str) -> tauri_plugin_agent_tools::tools::monitor::MonitorSpec {
+        tauri_plugin_agent_tools::tools::monitor::MonitorSpec {
+            name: "ready".to_string(),
+            script: script.to_string(),
+            timeout_secs: 60,
+            interval: Duration::from_millis(20),
+        }
+    }
+
+    fn session_monitor_ctx(
+        root: &std::path::Path,
+    ) -> tauri_plugin_agent_tools::tools::monitor::MonitorCtx {
+        tauri_plugin_agent_tools::tools::monitor::MonitorCtx {
+            project_root: root.to_path_buf(),
+            scratch_root: None,
+            mask_root: None,
+            read_roots: Vec::new(),
+            write_roots: Vec::new(),
+            allow_network: false,
+            home_readonly: false,
+            // Bare shell: these exercise the TUI wiring, not the jail.
+            sandbox: false,
+        }
+    }
+
+    /// A session monitor outlives the run that started it: the run ends with
+    /// the header back on `[ready]` while the watcher stays docked, and only a
+    /// session reset (`/clear`, a thread switch) takes it down.
+    #[tokio::test]
+    async fn a_running_session_monitor_outlives_the_run_and_stays_docked() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("boot.log"), "starting\n").unwrap();
+        let mut app = test_app();
+        app.monitor_set
+            .start(
+                session_monitor_spec("grep READY boot.log"),
+                session_monitor_ctx(root.path()),
+            )
+            .unwrap();
+        app.submit_user("go".into());
+        let monitors = app.monitor_set.snapshot();
+        app.apply(StreamEvent::Monitors { monitors });
+        app.on_done("stop".into(), None);
+
+        let header = render_rows(&mut app, 100, 24)[0].clone();
+        assert!(header.contains("[ready]"), "{header}");
+        assert_eq!(app.monitors.len(), 1, "the watcher is still docked");
+        assert_eq!(app.status, Status::Idle);
+
+        app.reset_session();
+        assert!(app.monitors.is_empty());
+        assert!(!app.monitor_set.has_pending_work());
+    }
+
+    /// A match landing between runs is delivered by the TUI itself: the
+    /// headline is noted, the text joins the history as a `<SYSTEM>` reminder
+    /// and one turn is armed, exactly as the loop would have done mid-run.
+    #[tokio::test]
+    async fn a_monitor_ping_between_runs_starts_a_turn() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("boot.log"), "READY on port 1337\n").unwrap();
+        let mut app = test_app();
+        app.history
+            .push(serde_json::json!({ "role": "user", "content": "watch the build" }));
+        app.history
+            .push(serde_json::json!({ "role": "assistant", "content": "watching" }));
+        app.monitor_set
+            .start(
+                session_monitor_spec("grep READY boot.log"),
+                session_monitor_ctx(root.path()),
+            )
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), app.monitor_set.wait_for_notice())
+            .await
+            .expect("the first evaluation matches");
+        assert!(app.monitor_set.has_queued_notices());
+
+        app.submit_monitor_notices();
+
+        assert!(app.want_start, "a ping arms one turn");
+        assert_eq!(app.status, Status::Running);
+        let last = app.history.last().unwrap();
+        assert_eq!(last["role"], "user");
+        assert!(crate::core::agent::reminder::is_reminder_only(
+            &last["content"]
+        ));
+        assert!(last["content"]
+            .as_str()
+            .unwrap()
+            .contains("READY on port 1337"));
+        assert!(
+            transcript_text(&app).contains("'ready' matched"),
+            "{}",
+            transcript_text(&app)
+        );
+        assert!(app.monitors.is_empty(), "matched, so the watcher retired");
+        assert!(!app.monitor_set.has_queued_notices(), "taken");
+    }
+
+    /// The loop drains the set itself while a run is up, so the TUI's wait
+    /// must stay parked then -- and with nothing to wait for -- rather than
+    /// racing the run for the same ping.
+    #[tokio::test]
+    async fn await_monitor_ping_only_fires_between_runs() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("boot.log"), "READY\n").unwrap();
+        let set = Arc::new(MonitorSet::new());
+        let parked =
+            tokio::time::timeout(Duration::from_millis(20), await_monitor_ping(&set, true));
+        assert!(parked.await.is_err(), "nothing could fire, so it parks");
+
+        set.start(
+            session_monitor_spec("grep READY boot.log"),
+            session_monitor_ctx(root.path()),
+        )
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), await_monitor_ping(&set, true))
+            .await
+            .expect("idle: the ping is ours to deliver");
+        let busy = tokio::time::timeout(Duration::from_millis(20), await_monitor_ping(&set, false));
+        assert!(
+            busy.await.is_err(),
+            "a run is active, so the loop drains it"
         );
     }
 

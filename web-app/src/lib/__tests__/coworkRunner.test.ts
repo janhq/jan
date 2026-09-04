@@ -8,6 +8,7 @@ import {
   abortRun,
   answerAsk,
   isAbortLike,
+  isRetryableSendError,
   isRunning,
   __testing,
   type PendingToolCall,
@@ -15,6 +16,7 @@ import {
   type ToolOutcome,
 } from '../coworkRunner'
 import { MAX_SESSION_TOKENS } from '../coworkBudget'
+import { encodeToolImageSentinel } from '../tool-image-sentinel'
 
 const streamOf = (chunks: UIMessageChunk[]): ReadableStream<UIMessageChunk> =>
   new ReadableStream({
@@ -52,6 +54,7 @@ const toolStep = (name: string, id = 'c1'): UIMessageChunk[] => [
 
 const noopSink = () => ({
   onText: vi.fn(),
+  onReasoning: vi.fn(),
   onToolStart: vi.fn(),
   onToolArgsDelta: vi.fn(),
   onToolCall: vi.fn(),
@@ -80,6 +83,25 @@ const user = (text: string): UIMessage =>
   ({ id: 'u1', role: 'user', parts: [{ type: 'text', text }] }) as UIMessage
 
 describe('consumeStep', () => {
+  /// Native reasoning arrives as its own chunk type and must neither be
+  /// dropped (nothing on screen while the model thinks) nor folded into
+  /// `text` (which goes back upstream as wire content).
+  it('streams reasoning-delta beside the text, never inside it', async () => {
+    const sink = noopSink()
+    const r = await consumeStep(
+      streamOf([
+        { type: 'reasoning-delta', id: 'r', delta: 'weigh ' } as UIMessageChunk,
+        { type: 'reasoning-delta', id: 'r', delta: 'options' } as UIMessageChunk,
+        ...textStep('answer'),
+      ]),
+      sink
+    )
+    expect(r.reasoning).toBe('weigh options')
+    expect(r.text).toBe('answer')
+    expect(sink.onReasoning).toHaveBeenCalledWith('weigh ')
+    expect(sink.onText).toHaveBeenCalledWith('answer')
+  })
+
   it('folds text, tool calls and usage out of the chunk stream', async () => {
     const sink = noopSink()
     const r = await consumeStep(
@@ -113,6 +135,119 @@ describe('runTurn', () => {
     })
     expect(out.stoppedBy).toBe('done')
     expect(out.steps).toBe(1)
+    expect(d.sendStep).toHaveBeenCalledTimes(1)
+  })
+
+  /// A dispatched subagent outlives its tool call, so the answer arrives after
+  /// the model has already stopped. Ending there would drop it.
+  it('parks instead of finishing while a subagent is still running', async () => {
+    const d = deps([textStep('dispatched'), textStep('and here it is')])
+    const queue: string[] = []
+    let running = 1
+    let waits = 0
+    const out = await runTurn({
+      messages: [user('go')],
+      signal: new AbortController().signal,
+      deps: {
+        ...d,
+        inbox: {
+          take: () => queue.splice(0, queue.length),
+          pending: () => queue.length > 0 || running > 0,
+          // Standing in for the child finishing while the parent is parked.
+          wait: async () => {
+            waits += 1
+            queue.push("Subagent 'researcher' finished")
+            running -= 1
+          },
+        },
+      },
+    })
+    expect(out.stoppedBy).toBe('done')
+    expect(waits).toBe(1)
+    expect(d.sendStep).toHaveBeenCalledTimes(2)
+    // The second request carries the ping as a marked user turn, after the
+    // answer the model had already given.
+    const sent = d.sendStep.mock.calls[1][0] as UIMessage[]
+    const last = sent[sent.length - 1]
+    expect(last.role).toBe('user')
+    expect((last.parts[0] as { text: string }).text).toBe(
+      "<SYSTEM>\nSubagent 'researcher' finished\n</SYSTEM>"
+    )
+    expect(sent[sent.length - 2].role).toBe('assistant')
+  })
+
+  /// The park is the one stretch where nothing is generated; the display is
+  /// told when it starts and when it ends, in that order, around the wait.
+  it('brackets the park with onParked so the display can say watching', async () => {
+    const d = deps([textStep('dispatched'), textStep('reacted')])
+    const queue: string[] = []
+    let running = 1
+    const parked: boolean[] = []
+    let parkedDuringWait: boolean | null = null
+    await runTurn({
+      messages: [user('go')],
+      signal: new AbortController().signal,
+      deps: {
+        ...d,
+        inbox: {
+          take: () => queue.splice(0, queue.length),
+          pending: () => queue.length > 0 || running > 0,
+          wait: async () => {
+            parkedDuringWait = parked.at(-1) ?? null
+            queue.push('Monitor mon-1: condition matched')
+            running -= 1
+          },
+          onParked: (p) => parked.push(p),
+        },
+      },
+    })
+    expect(parkedDuringWait).toBe(true)
+    expect(parked).toEqual([true, false])
+  })
+
+  /// Two children finishing together take one turn: consecutive user messages
+  /// are rejected outright by some providers.
+  it('fuses pings that arrive together into one marked turn', async () => {
+    const d = deps([textStep('a'), textStep('b')])
+    let running = 2
+    const queue: string[] = []
+    await runTurn({
+      messages: [user('go')],
+      signal: new AbortController().signal,
+      deps: {
+        ...d,
+        inbox: {
+          take: () => queue.splice(0, queue.length),
+          pending: () => queue.length > 0 || running > 0,
+          wait: async () => {
+            queue.push('alpha done', 'beta done')
+            running = 0
+          },
+        },
+      },
+    })
+    const sent = d.sendStep.mock.calls[1][0] as UIMessage[]
+    const pings = sent.filter(
+      (m) =>
+        m.role === 'user' &&
+        (m.parts[0] as { text?: string }).text?.startsWith('<SYSTEM>')
+    )
+    expect(pings).toHaveLength(1)
+    expect((pings[0].parts[0] as { text: string }).text).toBe(
+      '<SYSTEM>\nalpha done\nbeta done\n</SYSTEM>'
+    )
+  })
+
+  /// No inbox at all is the subagent path: a child cannot dispatch children, so
+  /// nothing should change for it.
+  it('finishes normally with no inbox', async () => {
+    const d = deps([textStep('done')])
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.stoppedBy).toBe('done')
     expect(d.sendStep).toHaveBeenCalledTimes(1)
   })
 
@@ -240,12 +375,45 @@ describe('runTurn', () => {
   })
 })
 
+describe('reasoning placement', () => {
+  const step: StepResult = {
+    text: 'answer',
+    reasoning: 'weigh options',
+    toolCalls: [],
+    usage: null,
+    aborted: false,
+  }
+
+  it('leads the assistant message as a reasoning part, ahead of the text', () => {
+    const msg = assistantMessageFor('m0', step, new Map()) as {
+      parts: Array<{ type: string; text?: string }>
+    }
+    expect(msg.parts[0]).toEqual({ type: 'reasoning', text: 'weigh options' })
+    expect(msg.parts[1]).toEqual({ type: 'text', text: 'answer' })
+  })
+
+  it('rides the committed turn beside the content, and a reasoning-only step still gets a row', () => {
+    expect(turnsFor(step, new Map())[0]).toMatchObject({
+      role: 'assistant',
+      content: 'answer',
+      reasoning: 'weigh options',
+    })
+    const thoughtOnly = { ...step, text: '' }
+    expect(turnsFor(thoughtOnly, new Map())[0]).toMatchObject({
+      role: 'assistant',
+      content: '',
+      reasoning: 'weigh options',
+    })
+  })
+})
+
 describe('diff sidecar', () => {
   // A diff is a rendering aid. Sending it to the model doubles the cost of
   // every edit and corrupts the output the tool widget parses.
   it('never reaches the model-facing message', () => {
     const step: StepResult = {
       text: '',
+      reasoning: '',
       toolCalls: [
         { toolCallId: 'c1', toolName: 'edit', input: {} } as PendingToolCall,
       ],
@@ -259,6 +427,68 @@ describe('diff sidecar', () => {
     expect(JSON.stringify(msg)).not.toContain('+ new')
     // …but it does reach the transcript row the UI renders.
     expect(turnsFor(step, outcomes)[0].diff).toBe('- old\n+ new')
+  })
+})
+
+describe('tool images', () => {
+  const png = 'data:image/png;base64,iVBORw0KGgo='
+  const step: StepResult = {
+    text: '',
+    reasoning: '',
+    toolCalls: [
+      {
+        toolCallId: 'c1',
+        toolName: 'screenshot',
+        input: { path: 'index.html' },
+      } as PendingToolCall,
+    ],
+    usage: null,
+    aborted: false,
+  }
+  const outcomes = new Map<string, ToolOutcome>([
+    [
+      'c1',
+      {
+        output: 'Screenshot of index.html (1280x960)',
+        images: [{ dataUrl: png, name: 'index.html' }],
+      },
+    ],
+  ])
+
+  // The image rides in the tool part's output as a sentinel the request fetch
+  // decodes into `image_url` parts on the `role: tool` message, the shape the
+  // CLI loop sends for a `read` of an image.
+  it('appends the image sentinel to the model-facing tool output', () => {
+    const msg = assistantMessageFor('m0', step, outcomes)
+    const part = msg.parts[0] as { output: string }
+    expect(part.output).toBe(
+      `Screenshot of index.html (1280x960)${encodeToolImageSentinel(png)}`
+    )
+  })
+
+  it('keeps the image out of the persisted transcript row', () => {
+    const [row] = turnsFor(step, outcomes)
+    expect(row.result).toBe('Screenshot of index.html (1280x960)')
+    expect(JSON.stringify(row)).not.toContain('iVBOR')
+  })
+
+  it('is sent to the model on the next step inside the tool result', async () => {
+    const d = deps(
+      [toolStep('screenshot'), textStep('looks right')],
+      vi.fn(async (): Promise<ToolOutcome> => ({
+        output: 'Screenshot of a.txt (1280x960)',
+        images: [{ dataUrl: png, name: 'a.txt' }],
+      }))
+    )
+    await runTurn({
+      messages: [user('render it')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    const sent = d.sendStep.mock.calls[1][0] as UIMessage[]
+    expect(sent.map((m) => m.role)).toEqual(['user', 'assistant'])
+    const tool = (sent[1].parts as any[]).find((p) => p.type === 'tool-screenshot')
+    expect(tool.output).toContain(encodeToolImageSentinel(png))
   })
 })
 
@@ -314,6 +544,136 @@ describe('isAbortLike', () => {
     const c = new AbortController()
     c.abort()
     expect(isAbortLike(new Error('error sending request'), c.signal)).toBe(true)
+  })
+})
+
+// The failure a long turn invites: while tools run locally no bytes flow, the
+// peer reclaims the idle keep-alive connection, and the next step's request is
+// written into a socket that is already gone. Mirrors the Rust agent's
+// send_with_one_retry — retrying is safe precisely because nothing was
+// received.
+describe('dropped-connection retry', () => {
+  it('retries a dropped send once and the step succeeds', async () => {
+    let first = true
+    const d = deps([textStep('done')])
+    const send = d.sendStep.getMockImplementation()!
+    d.sendStep.mockImplementation(async (...args) => {
+      if (first) {
+        first = false
+        throw new Error('connection reset by peer (os error 104)')
+      }
+      return send(...(args as []))
+    })
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.stoppedBy).toBe('done')
+    expect(d.sendStep).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries exactly once, then reports the failure', async () => {
+    const d = {
+      ...deps([[]]),
+      sendStep: vi.fn(async () => {
+        throw new Error('connection reset by peer')
+      }),
+    }
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.stoppedBy).toBe('error')
+    expect(out.errorText).toContain('connection reset')
+    expect(d.sendStep).toHaveBeenCalledTimes(2)
+  })
+
+  // An error chunk before any delta is the same dropped connection, surfaced
+  // through the stream instead of a rejection — streamText reports transport
+  // failures this way.
+  it('retries an error chunk that arrived before anything streamed', async () => {
+    const d = deps([
+      [
+        {
+          type: 'error',
+          errorText: 'connection closed before message completed',
+        } as UIMessageChunk,
+      ],
+      textStep('done'),
+    ])
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.stoppedBy).toBe('done')
+    expect(d.sendStep).toHaveBeenCalledTimes(2)
+  })
+
+  // Tokens already reached the UI; replaying the request would duplicate them.
+  it('never retries once something has streamed', async () => {
+    const d = deps([
+      [
+        ...textStep('partial'),
+        {
+          type: 'error',
+          errorText: 'connection reset by peer',
+        } as UIMessageChunk,
+      ],
+    ])
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.stoppedBy).toBe('error')
+    expect(d.sendStep).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not retry a timeout: retrying one doubles the wait', async () => {
+    const d = {
+      ...deps([[]]),
+      sendStep: vi.fn(async () => {
+        throw new Error('error sending request: operation timed out')
+      }),
+    }
+    const out = await runTurn({
+      messages: [user('hi')],
+      deps: d,
+      signal: new AbortController().signal,
+    })
+    expect(out.stoppedBy).toBe('error')
+    expect(d.sendStep).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('isRetryableSendError', () => {
+  it('recognises the stale keep-alive family and failed connects', () => {
+    for (const msg of [
+      'connection closed before message completed',
+      'Connection reset by peer (os error 104)',
+      'broken pipe',
+      'connection aborted',
+      'unexpected EOF during handshake',
+      'connection refused',
+      'error sending request for url (http://x/v1/chat/completions)',
+      'TypeError: Failed to fetch',
+    ]) {
+      expect(isRetryableSendError(msg), msg).toBe(true)
+    }
+  })
+
+  it('refuses timeouts, upstream rejections and plain errors', () => {
+    for (const msg of [
+      'error sending request: operation timed out',
+      'Request timeout',
+      '400 Bad Request: model not found',
+      'boom',
+    ]) {
+      expect(isRetryableSendError(msg), msg).toBe(false)
+    }
   })
 })
 

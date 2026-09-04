@@ -1,0 +1,189 @@
+---
+title: Cowork
+description: Give Jan a task and it works on it autonomously — reading and writing files, running commands, and reporting back.
+keywords:
+  [
+    Jan,
+    Cowork,
+    agent,
+    autonomous,
+    sandbox,
+    workspace,
+    plan mode,
+    subagents,
+    artifacts,
+    tasks,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Cowork
+
+Cowork is Jan's agent surface. Instead of answering in one message, Jan takes a
+task, breaks it into steps, and works through them on its own — reading and
+writing files, running shell commands, searching the web, and asking you
+questions when a decision is yours to make.
+
+Open **Cowork** from the left sidebar and give it a task, for example:
+
+- "Write a Python script that renames files by the date they were taken"
+- "Build a single-page dashboard from a CSV I'll paste in"
+- "Find every TODO in my project and group them by area"
+
+<Callout type="warning">
+Cowork is in preview. The surface works end to end, but expect rough edges and
+changes to how it looks and behaves between releases.
+</Callout>
+
+## How it works
+
+Every Cowork session gets a **sandboxed workspace** — a private directory under
+Jan's data folder (`agent-workspace/sessions/<session_id>`) where the agent can
+freely create files and run commands. Scratch work and intermediate files stay
+there, so a session can't touch anything outside it.
+
+To work on a real project, attach a project folder with the **workspace pill**
+at the top of the session. The attached folder is mounted **read and write**:
+the agent reads, searches, and edits your files in place, while keeping its own
+scratch work in the sandbox. Every change lands in the **diff panel**, where you
+can review what the agent changed.
+
+<Callout type="info">
+Nothing leaves your machine except what you explicitly allow: model calls go to
+the provider you selected, and shell commands run inside an OS sandbox. See
+[Sandbox and network](#sandbox-and-network) below.
+</Callout>
+
+## What the agent can do
+
+| Capability | How it works |
+| --- | --- |
+| Files | Read, create, and edit files — in the sandbox or your attached project |
+| Shell | Run commands confined to the session workspace (where the OS allows sandboxing) |
+| Web | Search and fetch pages, following the global [Web Search](/docs/desktop/web-search) setting |
+| Memory | Keep durable facts across sessions with `memory_write` / `memory_read` |
+| Skills | Load reusable procedures with `skill_read` / `skill_write` |
+| Ask | Surface structured questions when the answer changes what it should do |
+| Subagents | Fan out self-contained jobs to background agents |
+
+A run is bounded — up to 100 agent steps and 200,000 tokens per request — so a
+stuck task can't spin forever. When the cap is hit, the agent reports where
+things stand and you can continue it with another message.
+
+## Plan mode
+
+Toggle **Plan mode** (or type `/plan`) when you want Jan to propose before it
+touches anything. In plan mode the agent can only read, search, and research —
+no edits, no shell commands. It investigates, stages a phased plan as a todo
+list, and asks you to review it:
+
+- **Execute plan** — switch to normal execution and carry the plan out
+- **Keep planning** — continue refining the plan
+- **Exit plan mode** — go back to a normal run without executing
+
+## Progress panels
+
+While the agent works, four panels track the run:
+
+- **Todos** — the canonical task list for the current job, with phases and
+  statuses the agent keeps current.
+- **Tasks** — background [subagents](#subagents), their queue position and
+  status.
+- **Diffs** — every change the agent made to an attached project folder.
+- **Files** — every file in the session: documents you attached to a question
+  and the artifacts the agent created, grouped by type. Click one to preview it.
+
+### Attaching documents
+
+Attach a PDF, DOCX, or other document with the composer's attach button. The
+file is copied into the session workspace, its text is extracted beside it, and
+the question names both paths, so the agent can read the contents with its file
+tools. The attachment appears as a chip on your message and in the Files panel.
+
+## Subagents
+
+For work that is self-contained — a broad research sweep, going through many
+files, generating and verifying a large output — the agent can dispatch a
+**subagent**: a nested agent with its own instructions and a narrowed tool set,
+running in the background while the main conversation continues. Subagents
+report their result back when they finish, and each is capped at 30 steps.
+
+Subagent definitions live as files in `agent-workspace/subagents` inside your
+Jan data folder. The agent can also spawn one-off subagents on the fly, passing
+the role inline — no saved definition required.
+
+## Slash commands
+
+| Command | Action |
+| --- | --- |
+| `/help` | List available commands |
+| `/clear` | Clear this session |
+| `/compact` | Compact the session's context into a summary |
+| `/models` | Switch the active model |
+| `/plan` | Toggle plan mode |
+| `/todo` | Open the progress panel |
+| `/tasks` | Open the background tasks panel |
+| `/init` | Study the attached project and write skills and memory for it |
+
+`/init` is a good first move on a new project: Jan maps the directory layout,
+finds the real build and test commands, and records what it learned as
+[skills and memory](#memories-and-skills) so later sessions start informed.
+
+## Artifacts
+
+Files the agent **creates** — a report, a dashboard, an image, a script — are
+collected in the **Artifacts** library, grouped by type (Code, Image, Document,
+Video, Audio) and previewable in the app. Files it merely edited stay out of the
+library; those changes are visible in the diff panel instead.
+
+## Sandbox and network
+
+Under **Settings > Cowork** you can see how the agent's shell is confined:
+
+- **Shell Commands** — shows whether an OS sandbox is available. When it is,
+  commands can only write inside the session workspace and cannot read your
+  home folder. When no sandbox is available, the bash tool is not offered at
+  all — commands are never run unconfined.
+- **Allow Network Access** — lets sandboxed commands reach the network, for
+  things like installing packages or cloning a repository. On by default; turn
+  it off for fully offline runs. The main chat's shell never has network
+  access, regardless of this setting.
+
+## Memories and skills
+
+Cowork keeps two kinds of durable knowledge in your Jan data folder
+(`agent-workspace/memory` and `agent-workspace/skills`):
+
+- **Memories** are short, durable facts the agent records as it learns things
+  worth keeping — decisions, constraints, gotchas. One topic per note.
+- **Skills** are reusable procedures — how to cut a release, run a migration,
+  debug a subsystem — written as markdown with an optional description in YAML
+  frontmatter. The agent sees each skill's name and purpose, and reads the full
+  text only when a task calls for it.
+
+Both are editable from **Settings > Cowork**, where you can add, edit, and
+delete entries by hand. The formats match the [Jan Agent's](/docs/agent/skills)
+skill and [memory](/docs/agent/memory) conventions, so instructions written for
+one surface generally work on the other.
+
+<Steps>
+
+### Open Cowork settings
+
+Go to **Settings > Cowork** in the app.
+
+### Edit an entry
+
+Click the pencil icon next to a memory or skill, or **Add** to create one.
+
+### Find the files
+
+Click **Open Folder** to reveal the underlying files in your file manager.
+
+</Steps>
+
+<Callout type="tip">
+Memories and skills are plain files. If you prefer, edit them directly in your
+editor of choice — the agent picks up changes on its next run.
+</Callout>

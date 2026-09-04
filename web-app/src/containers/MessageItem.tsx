@@ -1,20 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { memo, useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { memo, useState, useCallback, useEffect, useMemo } from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
 import { cn } from '@/lib/utils'
-import { formatDuration } from '@/lib/utils'
-import {
-  activeToolPart,
-  subagentActivityLabel,
-  usedSkillNames,
-  type ActivityLabel,
-} from '@/lib/agentActivity'
-import type { SubagentRun } from '@/types/coworkSession'
-import { Loader } from 'lucide-react'
+import { usedSkillNames } from '@/lib/agentActivity'
 
-/** How close to the cap the step counter becomes visible. */
-const BUDGET_WARN_STEPS = 5
 import { ChainOfThoughtGroup } from './message/ChainOfThoughtGroup'
 import {
   CHAT_STATUS,
@@ -23,6 +13,7 @@ import {
   type PartEntry,
 } from './message/types'
 import { CopyButton } from './CopyButton'
+import { RememberButton } from './RememberButton'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { formatDate } from '@/utils/formatDate'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -35,6 +26,7 @@ import {
   IconAlertTriangle,
   IconChevronLeft,
   IconChevronRight,
+  IconSparkles,
 } from '@tabler/icons-react'
 import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
@@ -64,15 +56,13 @@ export type MessageItemProps = {
   onContinue?: (messageId: string) => void
   onEdit?: (messageId: string, newText: string) => void
   onDelete?: (messageId: string) => void
+  /** Ask this question again, unchanged, dropping whatever it produced. Only
+   * offered where re-running from partway up the transcript is meaningful --
+   * the agent surfaces, where a turn is a chain of tool calls rather than a
+   * single reply. */
+  onRetry?: (messageId: string, text: string) => void
   versionInfo?: { index: number; count: number }
   onSwitchVersion?: (messageId: string, dir: -1 | 1) => void
-  // Cowork only: the session's background subagent runs. Omitted in regular
-  // chat threads, which never spawn subagents.
-  subagents?: SubagentRun[]
-  /** Cowork only: step budget for the running turn. Rendered next to the
-   * activity label, and only once it is close to the cap — a counter that is
-   * always visible is noise for the 95% of turns that never approach it. */
-  budget?: { step: number; max: number }
   isAnimating?: boolean
   hideActions?: boolean
 }
@@ -85,8 +75,6 @@ export const MessageItem = memo(
     status,
     isAnimating,
     hideActions,
-    subagents,
-    budget,
     reasoningContainerRef,
     isReasoningAtBottom,
     onReasoningScroll,
@@ -95,6 +83,7 @@ export const MessageItem = memo(
     onContinue,
     onEdit,
     onDelete,
+    onRetry,
     versionInfo,
     onSwitchVersion,
   }: MessageItemProps) => {
@@ -108,7 +97,6 @@ export const MessageItem = memo(
       url: string
       filename?: string
     } | null>(null)
-
 
     const handleRegenerate = useCallback(() => {
       onRegenerate?.(message.id)
@@ -136,7 +124,11 @@ export const MessageItem = memo(
       return message.parts
         .filter((part) => {
           if (part.type !== 'file') return false
-          const filePart = part as { type: 'file'; url?: string; mediaType?: string }
+          const filePart = part as {
+            type: 'file'
+            url?: string
+            mediaType?: string
+          }
           return filePart.url && filePart.mediaType?.startsWith('image/')
         })
         .map((part) => (part as { url: string }).url)
@@ -169,69 +161,10 @@ export const MessageItem = memo(
       })
     }, [hasPendingToolCall, message.parts, pendingApprovals])
 
-    // Tool parts carry no start timestamp; track first-seen time per
-    // toolCallId locally so the elapsed-time readout is stable across
-    // re-renders (not reset every render, not reused across a new call
-    // with the same id after a session reset -- cleared once a step
-    // becomes non-pending in the effect below).
-    const toolStartedAtRef = useRef<Map<string, number>>(new Map())
-
-    const pendingTool = useMemo(() => {
-      if (!isLastMessage || message.role !== 'assistant') return null
-      return activeToolPart(message.parts as never)
-    }, [isLastMessage, message.role, message.parts])
     const usedSkills = useMemo(
       () => usedSkillNames(message.parts as never),
       [message.parts]
     )
-
-    useEffect(() => {
-      const map = toolStartedAtRef.current
-      if (pendingTool) {
-        // Keep only the current pending id; purge any stale entry that may
-        // have lingered from a previous tool with a different toolCallId.
-        map.forEach((_, key) => {
-          if (key !== pendingTool.toolCallId) map.delete(key)
-        })
-        if (!map.has(pendingTool.toolCallId)) {
-          map.set(pendingTool.toolCallId, Date.now())
-        }
-      } else {
-        map.clear()
-      }
-    }, [pendingTool])
-
-    const subagentLabel = useMemo<ActivityLabel>(() => {
-      if (!subagents || subagents.length === 0) return null
-      return subagentActivityLabel(subagents)
-    }, [subagents])
-
-    // `await_subagent` is only the parent's blocking wrapper; the child is the
-    // work actually in progress. Show its live activity instead of the
-    // misleading "Await subagent" label. Other parent tools retain priority.
-    // Memoized so the reference is stable for the elapsed-time interval effect.
-    const activityLabel = useMemo<ActivityLabel>(() => {
-      if (pendingTool?.toolName === 'await_subagent' && subagentLabel) {
-        return subagentLabel
-      }
-      if (pendingTool) {
-        return {
-          text: pendingTool.text,
-          startedAt:
-            toolStartedAtRef.current.get(pendingTool.toolCallId) ?? Date.now(),
-        }
-      }
-      return subagentLabel
-    }, [pendingTool, subagentLabel])
-
-    // Re-render once a second while a label is showing, purely to advance the
-    // elapsed-time readout -- no state carried, just a tick.
-    const [, forceTick] = useState(0)
-    useEffect(() => {
-      if (!activityLabel) return
-      const id = setInterval(() => forceTick((n) => n + 1), 1000)
-      return () => clearInterval(id)
-    }, [activityLabel])
 
     const isStreaming =
       (isLastMessage &&
@@ -429,11 +362,7 @@ export const MessageItem = memo(
             key={`${message.id}-${partIndex}`}
             className={`flex ${justify} w-full my-2`}
           >
-            <audio
-              controls
-              src={part.url}
-              className="max-w-[80%] rounded-md"
-            />
+            <audio controls src={part.url} className="max-w-[80%] rounded-md" />
           </div>
         )
       }
@@ -586,6 +515,21 @@ export const MessageItem = memo(
         </div>
       ) : null
 
+    // A note the run folded into the conversation, not something either party
+    // said: no actions, no trace, no timestamp. It is on screen because it is
+    // what the next turn is replying to -- a turn that reacts to a subagent
+    // finishing reads as a non sequitur without it.
+    if (message.role === 'system') {
+      return (
+        <div className="mb-4 flex items-start gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <IconSparkles size={14} className="mt-0.5 shrink-0 text-primary" />
+          <span className="min-w-0 whitespace-pre-wrap">
+            {getFullTextContent()}
+          </span>
+        </div>
+      )
+    }
+
     return (
       <div
         className={cn(
@@ -593,53 +537,34 @@ export const MessageItem = memo(
           message.role === 'user' && !isFirstMessage && 'mt-8'
         )}
       >
+        {/* Render message parts. A turn alternates collapsed traces with
+            answer paragraphs, and with no gap the two read as one block. */}
+        <div className="flex flex-col gap-3">{renderedParts}</div>
 
-        {/* Render message parts */}
-        {renderedParts}
+        {message.role === 'assistant' &&
+          !isStreaming &&
+          webCitations.length > 0 && <WebSourcesRow citations={webCitations} />}
 
-        {message.role === 'assistant' && !isStreaming && webCitations.length > 0 && (
-          <WebSourcesRow citations={webCitations} />
-        )}
+        {message.role === 'assistant' &&
+          !isStreaming &&
+          usedSkills.length > 0 && (
+            <div
+              aria-label={t('common:skillsUsedLabel')}
+              className="mt-2 inline-flex rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground"
+            >
+              {t('common:skillsUsed', { skills: usedSkills.join(', ') })}
+            </div>
+          )}
 
-        {message.role === 'assistant' && !isStreaming && usedSkills.length > 0 && (
-          <div
-            aria-label={t('common:skillsUsedLabel')}
-            className="mt-2 inline-flex rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground"
-          >
-            {t('common:skillsUsed', { skills: usedSkills.join(', ') })}
-          </div>
-        )}
-
+        {/* Model-load and prompt-reading progress only: a running tool call
+            reports itself on its own card, and a running subagent on the chip
+            beside the composer. */}
         {isLastMessage &&
           message.role === 'assistant' &&
           !awaitingApproval &&
-          (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED || activityLabel) && (
+          (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED) && (
             <div className="mt-2">
-              {activityLabel ? (
-                <div
-                  role="status"
-                  aria-live="polite"
-                  className="flex items-center gap-2 text-xs"
-                >
-                  <Loader className="animate-spin w-3.5 h-3.5 text-primary shrink-0" />
-                  <span className="font-medium text-foreground">
-                    {activityLabel.text}
-                  </span>
-                  <span className="text-muted-foreground tabular-nums">
-                    {formatDuration(activityLabel.startedAt)}
-                  </span>
-                  {budget && budget.step >= budget.max - BUDGET_WARN_STEPS && (
-                    <span className="ml-auto text-muted-foreground tabular-nums">
-                      {t('common:budget.steps', {
-                        step: budget.step,
-                        max: budget.max,
-                      })}
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <PromptProgress hideIdle={hasPendingToolCall} />
-              )}
+              <PromptProgress hideIdle={hasPendingToolCall} />
             </div>
           )}
 
@@ -657,7 +582,9 @@ export const MessageItem = memo(
                 {messageError}
               </div>
             </div>
-            {selectedModel && onRegenerate && status !== CHAT_STATUS.STREAMING &&
+            {selectedModel &&
+              onRegenerate &&
+              status !== CHAT_STATUS.STREAMING &&
               status !== CHAT_STATUS.SUBMITTED && (
                 <Button
                   variant="outline"
@@ -681,66 +608,85 @@ export const MessageItem = memo(
             {versionNav}
             <CopyButton text={getFullTextContent()} />
 
-            {onEdit && status !== CHAT_STATUS.STREAMING &&
+            {onEdit &&
+              status !== CHAT_STATUS.STREAMING &&
               status !== CHAT_STATUS.SUBMITTED && (
-              <EditMessageDialog
-                message={getFullTextContent()}
-                imageUrls={imageUrls.length > 0 ? imageUrls : undefined}
-                onSave={handleEdit}
-              />
-            )}
+                <EditMessageDialog
+                  message={getFullTextContent()}
+                  imageUrls={imageUrls.length > 0 ? imageUrls : undefined}
+                  onSave={handleEdit}
+                />
+              )}
 
-            {onDelete && status !== CHAT_STATUS.STREAMING &&
+            {onRetry &&
+              status !== CHAT_STATUS.STREAMING &&
               status !== CHAT_STATUS.SUBMITTED && (
-              <DeleteMessageDialog onDelete={handleDelete} />
-            )}
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => onRetry(message.id, getFullTextContent())}
+                  title={t('chat:actions.askAgain')}
+                >
+                  <IconRefresh size={16} className="text-muted-foreground" />
+                </Button>
+              )}
+
+            {onDelete &&
+              status !== CHAT_STATUS.STREAMING &&
+              status !== CHAT_STATUS.SUBMITTED && (
+                <DeleteMessageDialog onDelete={handleDelete} />
+              )}
           </div>
         )}
 
         {/* Message actions for assistant messages (non-tool) */}
-        {message.role === 'assistant' && (
-            <div className="flex items-center gap-2 text-muted-foreground text-xs">
-              {!isStreaming && (
-                <span className="text-muted-foreground">
-                  {formatDate(createdAt)}
-                </span>
+        {message.role === 'assistant' && !hideActions && (
+          <div className="flex items-center gap-2 text-muted-foreground text-xs">
+            {!isStreaming && (
+              <span className="text-muted-foreground">
+                {formatDate(createdAt)}
+              </span>
+            )}
+            <div
+              className={cn(
+                'flex items-center gap-1',
+                (isStreaming || hideActions) && 'hidden'
               )}
-              <div
-                className={cn(
-                  'flex items-center gap-1',
-                  (isStreaming || hideActions) && 'hidden'
+            >
+              {versionNav}
+              <CopyButton text={getFullTextContent()} />
+              <RememberButton text={getFullTextContent()} />
+
+              {onEdit && !isStreaming && (
+                <EditMessageDialog
+                  message={getFullTextContent()}
+                  onSave={handleEdit}
+                />
+              )}
+
+              {onDelete && !isStreaming && (
+                <DeleteMessageDialog onDelete={handleDelete} />
+              )}
+
+              {selectedModel &&
+                onContinue &&
+                !isStreaming &&
+                isLastMessage &&
+                isStopped && (
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={handleContinue}
+                    title={t('chat:actions.continue')}
+                  >
+                    <IconPlayerPlay size={16} />
+                  </Button>
                 )}
-              >
-                {versionNav}
-                <CopyButton text={getFullTextContent()} />
 
-                {onEdit && !isStreaming && (
-                  <EditMessageDialog
-                    message={getFullTextContent()}
-                    onSave={handleEdit}
-                  />
-                )}
-
-                {onDelete && !isStreaming && (
-                  <DeleteMessageDialog onDelete={handleDelete} />
-                )}
-
-                {selectedModel &&
-                  onContinue &&
-                  !isStreaming &&
-                  isLastMessage &&
-                  isStopped && (
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={handleContinue}
-                      title={t('chat:actions.continue')}
-                    >
-                      <IconPlayerPlay size={16} />
-                    </Button>
-                  )}
-
-                {selectedModel && onRegenerate && !isStreaming && isLastMessage && (
+              {selectedModel &&
+                onRegenerate &&
+                !isStreaming &&
+                isLastMessage && (
                   <Button
                     variant="ghost"
                     size="icon-xs"
@@ -750,14 +696,11 @@ export const MessageItem = memo(
                     <IconRefresh size={16} />
                   </Button>
                 )}
-              </div>
-
-              <TokenSpeedIndicator
-                streaming={isStreaming}
-                metadata={metadata}
-              />
             </div>
-          )}
+
+            <TokenSpeedIndicator streaming={isStreaming} metadata={metadata} />
+          </div>
+        )}
 
         {/* Image Preview Dialog */}
         {previewImage && (

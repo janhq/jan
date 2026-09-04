@@ -7443,6 +7443,7 @@ dependencies = [
  "glob",
  "ignore",
  "nix 0.30.1",
+ "percent-encoding",
  "regex",
  "serde",
  "serde_json",

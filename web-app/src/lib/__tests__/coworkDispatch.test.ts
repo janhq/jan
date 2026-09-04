@@ -9,6 +9,11 @@ vi.mock('@/lib/webSearchTool', () => ({
   executeWebTool,
 }))
 
+const coworkConfig = vi.hoisted(() => ({ networkEnabled: true }))
+vi.mock('@/hooks/useCoworkConfig', () => ({
+  useCoworkConfig: { getState: () => coworkConfig },
+}))
+
 import { dispatchCoworkTool } from '../coworkDispatch'
 import type { PendingToolCall } from '../coworkRunner'
 
@@ -46,8 +51,40 @@ describe('dispatchCoworkTool', () => {
       { path: 'a' },
       's1',
       null,
-      'session'
+      'session',
+      true,
+      true
     )
+  })
+
+  // Cowork's shell network follows the Cowork setting (on by default), read
+  // per call so a Settings toggle applies to the next command.
+  it('passes the cowork network setting through per call', async () => {
+    await dispatchCoworkTool(call('bash', { command: 'curl x' }), ctx())
+    expect(executeAgentTool).toHaveBeenCalledWith(
+      'bash',
+      { command: 'curl x' },
+      's1',
+      null,
+      'session',
+      true,
+      true
+    )
+    coworkConfig.networkEnabled = false
+    try {
+      await dispatchCoworkTool(call('bash', { command: 'curl x' }), ctx())
+      expect(executeAgentTool).toHaveBeenLastCalledWith(
+        'bash',
+        { command: 'curl x' },
+        's1',
+        null,
+        'session',
+        false,
+        true
+      )
+    } finally {
+      coworkConfig.networkEnabled = true
+    }
   })
 
   it('routes the client-only tools to their handlers', async () => {
@@ -81,7 +118,9 @@ describe('dispatchCoworkTool', () => {
       {},
       's1',
       '/repo',
-      'session'
+      'session',
+      true,
+      true
     )
   })
 
@@ -93,6 +132,17 @@ describe('dispatchCoworkTool', () => {
     const out = await dispatchCoworkTool(call('edit'), ctx())
     expect(out.output).toBe('Wrote a.txt')
     expect(out.diff).toBe('- a\n+ b')
+  })
+
+  it('carries returned images beside the output', async () => {
+    const images = [{ dataUrl: 'data:image/png;base64,AA', name: 'a.html' }]
+    executeAgentTool.mockResolvedValue({
+      content: 'Screenshot of a.html (1280x960)',
+      images,
+    })
+    const out = await dispatchCoworkTool(call('screenshot'), ctx())
+    expect(out.output).toBe('Screenshot of a.html (1280x960)')
+    expect(out.images).toEqual(images)
   })
 
   // A rejection would abort the whole run; the model can usually recover if it

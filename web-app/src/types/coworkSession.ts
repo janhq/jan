@@ -8,12 +8,26 @@
  */
 
 /** A single visible transcript entry. `tool` rows are display-only and carry the
- * structured call/result so the UI can render a tool card. */
+ * structured call/result so the UI can render a tool card.
+ *
+ * `system` rows are the out-of-band notes the run folds into the conversation
+ * -- today, a backgrounded subagent reporting that it finished. They are shown
+ * because they change what the agent does next, and reading a turn that reacts
+ * to one is otherwise reading half a conversation. */
 export type CoworkTurn = {
-  role: 'user' | 'assistant' | 'tool'
+  role: 'user' | 'assistant' | 'tool' | 'system'
   content: string
-  /** User-row only: data URLs of images attached via paste/file picker. */
-  images?: string[]
+  /** Assistant-row only: natively streamed reasoning (`reasoning-*` chunks),
+   * kept beside the answer rather than inline in it -- `content` is what goes
+   * back as wire history, and reasoning must not ride there as text. Inline
+   * `<think>` reasoning stays inside `content` (that is what the model sent)
+   * and is split out at render time instead. */
+  reasoning?: string
+  /** User-row only: images/audio/video attached to the question, as the
+   * `file` parts the model received. */
+  media?: CoworkMediaPart[]
+  /** User-row only: documents attached to the question. */
+  files?: CoworkAttachedFile[]
   callId?: string
   name?: string
   args?: unknown
@@ -24,6 +38,26 @@ export type CoworkTurn = {
   isError?: boolean
   diff?: string
   status?: 'running' | 'done'
+}
+
+/** A pasted or picked image/audio/video, shaped as an AI SDK `file` part. */
+export type CoworkMediaPart = {
+  type: 'file'
+  mediaType: string
+  url: string
+}
+
+/** A document the user attached to a question. `path` is where it was picked
+ * from; the session does not copy it. */
+export type CoworkAttachedFile = {
+  name: string
+  path: string
+  fileType?: string
+  size?: number
+  /** The copy inside the session workspace, once imported for the agent. */
+  workspacePath?: string
+  /** Extracted text written beside the copy, for formats `read` cannot open. */
+  textPath?: string
 }
 
 /** Mirrors the Rust `Usage` struct (events.rs). */
@@ -50,6 +84,22 @@ export type SubagentRun = {
   turns: CoworkTurn[]
   finalOutput?: string
   usage?: Usage
+}
+
+/**
+ * One monitor the session started, for the background-tasks rail. Kept in the
+ * run store only: a watcher dies with the app, so nothing here is committed
+ * onto the session.
+ */
+export type MonitorView = {
+  monitorId: string
+  name: string
+  script: string
+  status: 'running' | 'done'
+  /** How a done monitor ended. */
+  outcome?: 'matched' | 'timeout' | 'stopped'
+  startedAt: number
+  endedAt?: number
 }
 
 /** Mirrors the Rust `TodoItem`/`TodoPhase`/`TodoList` structs (todo.rs). */

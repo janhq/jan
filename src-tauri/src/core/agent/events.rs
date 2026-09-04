@@ -92,7 +92,18 @@ pub enum StreamEvent {
     },
     /// A backgrounded subagent run finished (success or error). Pairs with the
     /// `SubagentStart` of the same `run_id`.
-    SubagentEnd { run_id: String, name: String },
+    SubagentEnd {
+        run_id: String,
+        name: String,
+        /// Why the child failed, when it did: the same reason the parent's
+        /// `<SYSTEM>` completion ping carries. Carried on the event because a
+        /// background child's answer never reaches a consumer -- only the model
+        /// reads it -- so without this a failed run is indistinguishable from a
+        /// clean one on screen. `None` for a clean finish, and for a child cut
+        /// off at parent teardown, which is not its own failure.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
     /// A backgrounded subagent's own internal event, tagged with its run so a
     /// consumer can attribute it to the right child even when several run
     /// concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/
@@ -103,6 +114,25 @@ pub enum StreamEvent {
         name: String,
         event: Box<StreamEvent>,
     },
+    /// The user-facing headline of a background ping the loop just delivered to
+    /// the model as a `<SYSTEM>` reminder (today: a `monitor` condition
+    /// matching). Emitted at delivery, not when the ping is queued, so the
+    /// transcript reads in the order the model saw things. Display-only and
+    /// transient, like notes: it is never journaled.
+    Notice { text: String },
+    /// The run's active file monitors, as a whole replacing the previous set.
+    /// Emitted whenever the set changes (a `monitor` start or stop, a condition
+    /// matching, a monitor finishing), so a consumer keeps a live view without
+    /// bookkeeping of its own. Display-only and never journaled. Not forwarded
+    /// from a child: a child's monitors are its own.
+    Monitors {
+        monitors: Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot>,
+    },
+    /// The model has finished its turn and the loop is parked on background
+    /// work it started (a subagent still running, a monitor still watching).
+    /// Nothing is being generated until a ping resumes the run, which the next
+    /// `Step` marks. Lets a consumer say "watching" rather than "working".
+    Parked,
     /// The loop's compaction reduced the conversation while retrying a
     /// context overflow. The client should replace its session history with
     /// `messages` for subsequent turns.
@@ -445,6 +475,7 @@ mod tests {
         let end = serde_json::to_value(StreamEvent::SubagentEnd {
             run_id: "sub-1".into(),
             name: "rust-reviewer".into(),
+            error: None,
         })
         .unwrap();
         assert_eq!(

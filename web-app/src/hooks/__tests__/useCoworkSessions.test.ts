@@ -8,7 +8,7 @@ vi.mock('@/lib/backendStorage', () => ({
   },
 }))
 
-import { useCoworkSessions } from '../useCoworkSessions'
+import { startNewSession, useCoworkSessions } from '../useCoworkSessions'
 import type { CoworkTurn, SubagentRun } from '@/types/coworkSession'
 
 const reset = () =>
@@ -20,6 +20,50 @@ const sub = (runId: string, name: string): SubagentRun => ({
   status: 'done',
   startedAt: 0,
   turns: [],
+})
+
+describe('startNewSession', () => {
+  beforeEach(reset)
+
+  /// The Cowork tab is the start page: it must not land on the session viewed
+  /// last, but it also must not pile up empties on repeated clicks.
+  it('opens a fresh session when the current one has a conversation', () => {
+    const store = useCoworkSessions.getState()
+    const used = store.createSession()
+    store.commitTurns(used, [{ role: 'user', content: 'hi' }], [], [])
+    const fresh = startNewSession([])
+    expect(fresh).not.toBe(used)
+    expect(useCoworkSessions.getState().currentId).toBe(fresh)
+    expect(useCoworkSessions.getState().sessions.map((s) => s.id)).toEqual([
+      fresh,
+      used,
+    ])
+  })
+
+  it('reuses an untouched current session', () => {
+    const empty = useCoworkSessions.getState().createSession()
+    expect(startNewSession([])).toBe(empty)
+    expect(useCoworkSessions.getState().sessions).toHaveLength(1)
+  })
+
+  it('sweeps abandoned empties but keeps one whose first run is streaming', () => {
+    const store = useCoworkSessions.getState()
+    const used = store.createSession()
+    store.commitTurns(used, [{ role: 'user', content: 'hi' }], [], [])
+    useCoworkSessions.setState((s) => ({
+      sessions: [
+        { ...s.sessions[0], id: 'abandoned', turns: [] },
+        { ...s.sessions[0], id: 'streaming', turns: [] },
+        ...s.sessions,
+      ],
+    }))
+    const fresh = startNewSession(['streaming'])
+    const ids = useCoworkSessions.getState().sessions.map((s) => s.id)
+    expect(ids).toContain(fresh)
+    expect(ids).toContain('streaming')
+    expect(ids).toContain(used)
+    expect(ids).not.toContain('abandoned')
+  })
 })
 
 describe('useCoworkSessions', () => {
@@ -54,6 +98,86 @@ describe('useCoworkSessions', () => {
     // The question survives; the chain of tool calls it produced does not.
     expect(s.turns.map((t) => t.content)).toEqual(['first', 'done', 'second'])
     expect(s.messages.map((m) => m.id)).toEqual(['m1', 'm2', 'm3'])
+  })
+
+  /// A subagent ping is a user message with no transcript row, so counting it
+  /// as the question would cut the two histories at different points and
+  /// resume the run from a note about a subagent.
+  it('rewinds past a subagent ping to the real question', () => {
+    const id = useCoworkSessions.getState().createSession()
+    const turns: CoworkTurn[] = [
+      { role: 'user', content: 'second' },
+      { role: 'assistant', content: 'answer' },
+    ]
+    const msgs = [
+      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'second' }] },
+      { id: 'm2', role: 'assistant', parts: [] },
+      {
+        id: 'ping-2',
+        role: 'user',
+        parts: [{ type: 'text', text: '<SYSTEM>\nalpha done\n</SYSTEM>' }],
+      },
+      { id: 'm3', role: 'assistant', parts: [] },
+    ] as never
+    useCoworkSessions.getState().commitTurns(id, turns, msgs, [])
+    useCoworkSessions.getState().rewindToLastUser(id)
+
+    const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
+    expect(s.turns.map((t) => t.content)).toEqual(['second'])
+    expect(s.messages.map((m) => m.id)).toEqual(['m1'])
+  })
+
+  /// Editing or deleting a question partway up the transcript cuts both lists
+  /// at that question. The wire history has messages the transcript has no row
+  /// for, so the cut is counted in questions, not in indices.
+  it('drops a question and everything it produced', () => {
+    const id = useCoworkSessions.getState().createSession()
+    const turns: CoworkTurn[] = [
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'answer one' },
+      { role: 'user', content: 'second' },
+      { role: 'tool', content: '', name: 'read', status: 'done' },
+      { role: 'assistant', content: 'answer two' },
+    ]
+    const msgs = [
+      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'first' }] },
+      { id: 'm2', role: 'assistant', parts: [] },
+      {
+        id: 'ping-2',
+        role: 'user',
+        parts: [{ type: 'text', text: '<SYSTEM>\nalpha done\n</SYSTEM>' }],
+      },
+      { id: 'm3', role: 'user', parts: [{ type: 'text', text: 'second' }] },
+      { id: 'm4', role: 'assistant', parts: [] },
+    ] as never
+    useCoworkSessions.getState().commitTurns(id, turns, msgs, [])
+    useCoworkSessions.getState().dropFromTurn(id, 2)
+
+    const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
+    expect(s.turns.map((t) => t.content)).toEqual(['first', 'answer one'])
+    // The ping belongs to the first question's run, so it survives with it.
+    expect(s.messages.map((m) => m.id)).toEqual(['m1', 'm2', 'ping-2'])
+  })
+
+  /// The answers to a question cannot outlive it, so an assistant or tool turn
+  /// is not a place the transcript can be cut.
+  it('refuses to cut anywhere but a question', () => {
+    const id = useCoworkSessions.getState().createSession()
+    const turns: CoworkTurn[] = [
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'answer' },
+    ]
+    const msgs = [
+      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'first' }] },
+      { id: 'm2', role: 'assistant', parts: [] },
+    ] as never
+    useCoworkSessions.getState().commitTurns(id, turns, msgs, [])
+    useCoworkSessions.getState().dropFromTurn(id, 1)
+    useCoworkSessions.getState().dropFromTurn(id, 9)
+
+    const s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
+    expect(s.turns).toHaveLength(2)
+    expect(s.messages).toHaveLength(2)
   })
 
   // Rewinding a session that has never had a turn would otherwise empty it.
@@ -131,6 +255,87 @@ describe('useCoworkSessions', () => {
     useCoworkSessions.getState().setFolder(id, null)
     s = useCoworkSessions.getState().sessions.find((x) => x.id === id)!
     expect(s.folder).toBeNull()
+  })
+})
+
+describe('useCoworkSessions createSession reuse', () => {
+  beforeEach(reset)
+
+  it('reuses the current session when it is still empty', () => {
+    const first = useCoworkSessions.getState().createSession()
+    const second = useCoworkSessions.getState().createSession()
+    expect(second).toBe(first)
+    expect(useCoworkSessions.getState().sessions).toHaveLength(1)
+  })
+
+  it('creates a fresh session once the current one has turns', () => {
+    const first = useCoworkSessions.getState().createSession()
+    useCoworkSessions
+      .getState()
+      .commitTurns(first, [{ role: 'user', content: 'hi' }], [], [])
+    const second = useCoworkSessions.getState().createSession()
+    expect(second).not.toBe(first)
+    expect(useCoworkSessions.getState().sessions).toHaveLength(2)
+  })
+})
+
+describe('useCoworkSessions pruneEmptySessions', () => {
+  beforeEach(reset)
+
+  const seed = (id: string, turns: CoworkTurn[] = []) => {
+    useCoworkSessions.setState((s) => ({
+      sessions: [
+        {
+          id,
+          title: id,
+          folder: null,
+          turns,
+          messages: [],
+          updated: Date.now(),
+        },
+        ...s.sessions,
+      ],
+    }))
+  }
+
+  it('drops sessions with no turns', () => {
+    seed('empty')
+    seed('full', [{ role: 'user', content: 'hi' }])
+    useCoworkSessions.setState({ currentId: 'full' })
+    useCoworkSessions.getState().pruneEmptySessions([])
+    expect(useCoworkSessions.getState().sessions.map((s) => s.id)).toEqual([
+      'full',
+    ])
+  })
+
+  it('keeps the current session even when empty', () => {
+    seed('stale')
+    seed('current')
+    useCoworkSessions.setState({ currentId: 'current' })
+    useCoworkSessions.getState().pruneEmptySessions([])
+    expect(useCoworkSessions.getState().sessions.map((s) => s.id)).toEqual([
+      'current',
+    ])
+  })
+
+  it('keeps empty sessions named in keepIds (first run still streaming)', () => {
+    seed('stale')
+    seed('running')
+    useCoworkSessions.setState({ currentId: 'stale' })
+    useCoworkSessions.getState().pruneEmptySessions(['running'])
+    expect(useCoworkSessions.getState().sessions.map((s) => s.id)).toEqual([
+      'running',
+      'stale',
+    ])
+  })
+
+  it('is a no-op when nothing qualifies', () => {
+    seed('b', [{ role: 'user', content: 'hi' }])
+    seed('a', [{ role: 'user', content: 'hi' }])
+    useCoworkSessions.setState({ currentId: 'a' })
+    const before = useCoworkSessions.getState().sessions
+    useCoworkSessions.getState().pruneEmptySessions([])
+    expect(useCoworkSessions.getState().sessions).toBe(before)
   })
 })
 

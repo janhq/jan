@@ -4,6 +4,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { backendStorage } from '@/lib/backendStorage'
 import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
+import { isPingOnly } from '@/lib/coworkPing'
 import type {
   CoworkTurn,
   SubagentRun,
@@ -93,18 +94,62 @@ type CoworkSessionsState = {
    * be taken again. Both lists are rewound together or the transcript and the
    * history the model sees would disagree. */
   rewindToLastUser: (id: string) => void
+  /** Drop the question at `turnIndex` and everything after it -- the backing
+   * operation for editing, retrying or deleting a message partway up the
+   * transcript. A no-op unless that turn is a question: the answers to a
+   * question cannot outlive it, so there is nowhere else to cut. */
+  dropFromTurn: (id: string, turnIndex: number) => void
   clearSession: (id: string) => void
+  /** Drop sessions that never got a message, except the current one and any in
+   * `keepIds` — callers pass sessions with a run in flight, whose first turns
+   * are still transient in useCoworkRun until the run commits them. */
+  pruneEmptySessions: (keepIds: string[]) => void
 }
 
 const now = () => Date.now()
 
+type RoleLike = { role: string; parts?: unknown }
+
+/**
+ * A question the user actually asked.
+ *
+ * A `<SYSTEM>` ping is a user *message* but never a user *turn*: the transcript
+ * has no row for it, so counting it would cut the two lists at different points
+ * and leave a session resuming from a note about a subagent.
+ */
+const isQuestion = (m: RoleLike) => m.role === 'user' && !isPingOnly(m)
+
+/** Index of the `ordinal`-th (0-based) question, or -1. */
+function questionIndex(items: RoleLike[], ordinal: number): number {
+  let seen = 0
+  for (let i = 0; i < items.length; i++) {
+    if (!isQuestion(items[i])) continue
+    if (seen === ordinal) return i
+    seen += 1
+  }
+  return -1
+}
+
+function lastQuestionIndex(items: RoleLike[]): number {
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (isQuestion(items[i])) return i
+  }
+  return -1
+}
+
 export const useCoworkSessions = create<CoworkSessionsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       sessions: [],
       currentId: null,
 
       createSession: () => {
+        // Already viewing an untouched session — reuse it instead of piling
+        // up empty ones (e.g. from repeated clicks on "New session").
+        const { currentId, sessions } = get()
+        const current = sessions.find((s) => s.id === currentId)
+        if (current && current.turns.length === 0) return current.id
+
         const id = crypto.randomUUID()
         const session: CoworkSession = {
           id,
@@ -201,19 +246,39 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
         set((s) => ({
           sessions: s.sessions.map((x) => {
             if (x.id !== id) return x
-            const lastIndexOfUser = (roles: { role: string }[]) => {
-              for (let i = roles.length - 1; i >= 0; i--) {
-                if (roles[i].role === 'user') return i
-              }
-              return -1
-            }
-            const lastTurn = lastIndexOfUser(x.turns)
-            const lastMessage = lastIndexOfUser(x.messages)
+            const lastTurn = lastQuestionIndex(x.turns)
+            const lastMessage = lastQuestionIndex(x.messages)
             if (lastTurn < 0 || lastMessage < 0) return x
             return {
               ...x,
+              // The question survives; the run it produced does not.
               turns: x.turns.slice(0, lastTurn + 1),
               messages: x.messages.slice(0, lastMessage + 1),
+              updated: now(),
+            }
+          }),
+        })),
+
+      dropFromTurn: (id, turnIndex) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) => {
+            if (x.id !== id) return x
+            if (x.turns[turnIndex]?.role !== 'user') return x
+            // The wire history holds messages the transcript has no row for
+            // (and vice versa), so the cut is made at the same *question*,
+            // counted, rather than at the same index.
+            const ordinal = x.turns
+              .slice(0, turnIndex)
+              .filter((t) => t.role === 'user').length
+            const cut = questionIndex(x.messages, ordinal)
+            // Out of step (a session saved before the two were kept aligned):
+            // truncating the transcript alone would leave the model answering
+            // questions the user can no longer see.
+            if (cut < 0) return x
+            return {
+              ...x,
+              turns: x.turns.slice(0, turnIndex),
+              messages: x.messages.slice(0, cut),
               updated: now(),
             }
           }),
@@ -234,6 +299,15 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
               : x
           ),
         })),
+
+      pruneEmptySessions: (keepIds) =>
+        set((s) => {
+          const keep = new Set(keepIds)
+          const sessions = s.sessions.filter(
+            (x) => x.turns.length > 0 || x.id === s.currentId || keep.has(x.id)
+          )
+          return sessions.length === s.sessions.length ? {} : { sessions }
+        }),
     }),
     {
       name: localStorageKey.coworkSessions,
@@ -269,6 +343,18 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
     }
   )
 )
+
+/**
+ * Open the start page: a fresh session (or the untouched current one), with the
+ * empty sessions left behind swept out. `runningIds` keeps a session whose
+ * first run is still streaming its turns and so has nothing committed yet.
+ */
+export function startNewSession(runningIds: string[]): string {
+  const store = useCoworkSessions.getState()
+  const id = store.createSession()
+  store.pruneEmptySessions(runningIds)
+  return id
+}
 
 /** Return the current session, creating one if none is selected. */
 export function ensureCurrentSession(): string {

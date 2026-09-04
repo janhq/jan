@@ -1,6 +1,7 @@
 // Renderer selection and load-state modelling for the Cowork preview pane
 // (jan-internal #242). Kept pure and separate from the component so the state
 // machine and the security checks are testable without a DOM.
+import { countUnresolvedAssetRefs } from '@/lib/htmlAssets'
 
 /** How a given file should be shown. `file` is the fallback card. */
 export type PreviewKind = 'html' | 'svg' | 'markdown' | 'image' | 'video' | 'audio' | 'text' | 'file'
@@ -25,6 +26,8 @@ export type PreviewState =
       assetUrl?: string
       /** Relative refs the sandbox cannot resolve — see `unresolvedRefs`. */
       unresolvedRefs?: number
+      /** `http(s)` refs blocked while network is off — see `externalRefs`. */
+      externalRefs?: number
     }
   | { status: 'unsupported'; path: string }
   | { status: 'failed'; path: string; reason: string }
@@ -93,27 +96,21 @@ export function basenameOf(path: string): string {
 }
 
 /**
- * `HtmlArtifact` renders into an opaque-origin sandbox via `srcDoc`, so there is
- * no base URL: a relative `src`/`href` cannot resolve and the asset silently
- * fails to load. Count those so the pane can say so instead of presenting a
- * visibly broken page as if it were correct.
- *
- * Absolute URLs, `data:`/`blob:`, protocol-relative URLs, anchors and inline
- * handlers are all fine and not counted.
+ * Relative `src`/`href` the opaque-origin sandbox cannot resolve (no base URL).
+ * One implementation with the chat artifact card, so the two previews agree on
+ * what is broken.
  */
-export function unresolvedRefs(html: string): number {
+export const unresolvedRefs = countUnresolvedAssetRefs
+
+/**
+ * `http(s)` `src`/`href` that the sandbox blocks while network is off: a page
+ * built on a CDN script (Phaser, Three.js) renders nothing until the user
+ * flips the toggle, so the pane tells them.
+ */
+export function externalRefs(html: string): number {
   let count = 0
   for (const m of html.matchAll(/\b(?:src|href)\s*=\s*("([^"]*)"|'([^']*)')/gi)) {
-    const value = (m[2] ?? m[3] ?? '').trim()
-    if (!value) continue
-    if (
-      /^[a-z][a-z0-9+.-]*:/i.test(value) || // any scheme: http:, data:, mailto:
-      value.startsWith('//') || // protocol-relative
-      value.startsWith('#') // in-page anchor
-    ) {
-      continue
-    }
-    count += 1
+    if (/^https?:\/\//i.test((m[2] ?? m[3] ?? '').trim())) count += 1
   }
   return count
 }
@@ -149,6 +146,24 @@ export function resolveInRoot(root: string, path: string): string | null {
   const inRoot = abs.toLowerCase() === r.toLowerCase() ||
     abs.toLowerCase().startsWith(`${r.toLowerCase()}/`)
   return inRoot ? abs : null
+}
+
+/**
+ * The `preview://` URL for `abs`. `sampleUrl` is what `convertFileSrc` produced
+ * for any path under that scheme, which is how the platform's spelling of the
+ * origin (`preview://localhost` on macOS, `http://preview.localhost` elsewhere)
+ * is learned without hard-coding it.
+ *
+ * Deliberately not `convertFileSrc(abs, 'preview')`: that encodes the whole
+ * path as one segment, so a relative `assets/a.png` in the page would resolve
+ * against the scheme root and miss. Real slashes keep the file's directory as
+ * the base URL. A Windows drive path gets a leading slash; `preview.rs` strips
+ * it back off.
+ */
+export function previewUrlFor(abs: string, sampleUrl: string): string {
+  const origin = /^[a-z][a-z0-9+.-]*:\/\/[^/]*/i.exec(sampleUrl)?.[0] ?? ''
+  const path = abs.replace(/\\/g, '/').replace(/^\/+/, '')
+  return `${origin}/${path.split('/').map(encodeURIComponent).join('/')}`
 }
 
 /** Guard before reading, so an oversized file fails fast instead of hanging. */

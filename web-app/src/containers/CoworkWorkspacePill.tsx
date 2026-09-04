@@ -1,4 +1,4 @@
-import { Folder, FolderPlus, GitBranch, Lock } from 'lucide-react'
+import { Folder, FolderPlus, GitBranch, PencilLine } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Popover,
@@ -20,12 +20,12 @@ type Props = {
 }
 
 /**
- * Attach, inspect and detach the read-only project folder.
+ * Attach, inspect and detach the shared project folder.
  *
- * The sandbox it writes into is deliberately unnamed: it is an implementation
- * detail the user never picks or opens, and surfacing it invited the reading
- * that the folder and the sandbox are two halves of one choice. What has to
- * stay visible is the read-only contract on the folder.
+ * The sandbox is deliberately unnamed: it is an implementation detail the user
+ * never picks or opens, and surfacing it invited the reading that the folder
+ * and the sandbox are two halves of one choice. What has to stay visible is the
+ * access contract on the folder — the agent reads AND edits it in place.
  *
  * The trigger is icon-only until a folder is attached, matching the composer
  * row's other controls: with nothing attached there is no name to print, and a
@@ -60,7 +60,7 @@ export function CoworkWorkspacePill({
               <span className="max-w-[120px] truncate text-foreground">
                 {folderName}
               </span>
-              <Lock className="size-3 shrink-0 text-muted-foreground/70" />
+              <PencilLine className="size-3 shrink-0 text-muted-foreground/70" />
             </>
           ) : (
             <FolderPlus className="size-[18px] shrink-0" />
@@ -78,8 +78,8 @@ export function CoworkWorkspacePill({
               <Folder size={14} className="shrink-0 text-muted-foreground" />
               <span className="truncate text-sm font-medium">{folderName}</span>
               <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
-                <Lock size={10} />
-                {t('common:workspace.readOnly')}
+                <PencilLine size={10} />
+                {t('common:workspace.writable')}
               </span>
             </div>
             <p

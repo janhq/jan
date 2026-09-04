@@ -25,7 +25,7 @@ import {
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
+import { useCoworkConfig } from '@/hooks/useCoworkConfig'
 import { getSandboxStatus } from '@/lib/agentTools'
 import type { SandboxStatus } from '@janhq/tauri-plugin-agent-tools-api'
 import {
@@ -43,8 +43,8 @@ import {
 } from '@/lib/agentWorkspace'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const Route = createFileRoute(route.settings.agent_tools as any)({
-  component: AgentToolsContent,
+export const Route = createFileRoute(route.settings.cowork as any)({
+  component: CoworkSettingsContent,
 })
 
 type EntryKind = 'memory' | 'skill'
@@ -65,16 +65,10 @@ const messageOf = (e: unknown): string =>
 
 const SKILL_TEMPLATE = '---\ndescription: \n---\n\n'
 
-function AgentToolsContent() {
+function CoworkSettingsContent() {
   const { t } = useTranslation()
-  const agentToolsEnabled = useAgentToolsConfig((s) => s.agentToolsEnabled)
-  const setAgentToolsEnabled = useAgentToolsConfig(
-    (s) => s.setAgentToolsEnabled
-  )
-  const bashNetworkEnabled = useAgentToolsConfig((s) => s.bashNetworkEnabled)
-  const setBashNetworkEnabled = useAgentToolsConfig(
-    (s) => s.setBashNetworkEnabled
-  )
+  const networkEnabled = useCoworkConfig((s) => s.networkEnabled)
+  const setNetworkEnabled = useCoworkConfig((s) => s.setNetworkEnabled)
   // `undefined` until the probe answers, so the row reads as "checking" rather
   // than briefly claiming there is no sandbox.
   const [sandbox, setSandbox] = useState<SandboxStatus | undefined>()
@@ -96,7 +90,7 @@ function AgentToolsContent() {
       setSkills(nextSkills)
       setMemories(nextMemories)
     } catch (e) {
-      toast.error(t('settings:agentTools.loadFailed'), {
+      toast.error(t('settings:cowork.loadFailed'), {
         description: messageOf(e),
       })
     }
@@ -124,7 +118,7 @@ function AgentToolsContent() {
         kind === 'skill' ? await readSkill(name) : await readMemory(name)
       setEditor({ kind, original: name, name, content })
     } catch (e) {
-      toast.error(t('settings:agentTools.loadFailed'), {
+      toast.error(t('settings:cowork.loadFailed'), {
         description: messageOf(e),
       })
     }
@@ -141,7 +135,7 @@ function AgentToolsContent() {
       setEditor(null)
       await refresh()
     } catch (e) {
-      toast.error(t('settings:agentTools.saveFailed'), {
+      toast.error(t('settings:cowork.saveFailed'), {
         description: messageOf(e),
       })
     } finally {
@@ -155,7 +149,7 @@ function AgentToolsContent() {
       else await deleteMemory(name)
       await refresh()
     } catch (e) {
-      toast.error(t('settings:agentTools.deleteFailed'), {
+      toast.error(t('settings:cowork.deleteFailed'), {
         description: messageOf(e),
       })
     }
@@ -165,7 +159,7 @@ function AgentToolsContent() {
     try {
       await revealStore()
     } catch (e) {
-      toast.error(t('settings:agentTools.revealFailed'), {
+      toast.error(t('settings:cowork.revealFailed'), {
         description: messageOf(e),
       })
     }
@@ -209,7 +203,7 @@ function AgentToolsContent() {
         {t(titleKey)}
       </h1>
       <Button variant="outline" size="sm" onClick={() => openEditor(kind)}>
-        {t('settings:agentTools.add')}
+        {t('settings:cowork.add')}
       </Button>
     </div>
   )
@@ -232,10 +226,10 @@ function AgentToolsContent() {
                 <div className="flex items-start justify-between gap-4 mb-4">
                   <div className="space-y-1">
                     <h1 className="text-foreground font-studio font-medium text-base">
-                      {t('settings:agentTools.title')}
+                      {t('settings:cowork.title')}
                     </h1>
                     <p className="text-muted-foreground leading-normal">
-                      {t('settings:agentTools.description')}
+                      {t('settings:cowork.description')}
                     </p>
                   </div>
                   {/* The path is a tooltip, not a row: it derives from the Jan
@@ -249,24 +243,13 @@ function AgentToolsContent() {
                     disabled={!path}
                   >
                     <IconFolderCode size={16} />
-                    {t('settings:agentTools.openFolder')}
+                    {t('settings:cowork.openFolder')}
                   </Button>
                 </div>
               }
             >
               <CardItem
-                title={t('settings:agentTools.enable')}
-                description={t('settings:agentTools.enableDesc')}
-                align="start"
-                actions={
-                  <Switch
-                    checked={agentToolsEnabled}
-                    onCheckedChange={setAgentToolsEnabled}
-                  />
-                }
-              />
-              <CardItem
-                title={t('settings:agentTools.shell')}
+                title={t('settings:cowork.shell')}
                 align="start"
                 description={
                   <span className="flex items-start gap-1.5">
@@ -280,12 +263,12 @@ function AgentToolsContent() {
                     )}
                     <span>
                       {sandbox === undefined
-                        ? t('settings:agentTools.shellChecking')
+                        ? t('settings:cowork.shellChecking')
                         : sandbox.enforces
-                          ? t('settings:agentTools.shellSandboxed', {
+                          ? t('settings:cowork.shellSandboxed', {
                               backend: sandbox.backend,
                             })
-                          : t('settings:agentTools.shellUnavailable')}
+                          : t('settings:cowork.shellUnavailable')}
                     </span>
                   </span>
                 }
@@ -294,33 +277,32 @@ function AgentToolsContent() {
                   no shell to give network access to in the first place. */}
               {sandbox?.enforces && (
                 <CardItem
-                  title={t('settings:agentTools.network')}
-                  description={t('settings:agentTools.networkDesc')}
+                  title={t('settings:cowork.network')}
+                  description={t('settings:cowork.networkDesc')}
                   align="start"
                   actions={
                     <Switch
-                      checked={bashNetworkEnabled}
-                      onCheckedChange={setBashNetworkEnabled}
-                      disabled={!agentToolsEnabled}
+                      checked={networkEnabled}
+                      onCheckedChange={setNetworkEnabled}
                     />
                   }
                 />
               )}
             </Card>
 
-            <Card header={sectionHeader('settings:agentTools.memories', 'memory')}>
+            <Card header={sectionHeader('settings:cowork.memories', 'memory')}>
               {memories.length === 0 ? (
                 <CardItem
-                  description={t('settings:agentTools.noMemories')}
+                  description={t('settings:cowork.noMemories')}
                 />
               ) : (
                 memories.map((name) => entryRow('memory', name))
               )}
             </Card>
 
-            <Card header={sectionHeader('settings:agentTools.skills', 'skill')}>
+            <Card header={sectionHeader('settings:cowork.skills', 'skill')}>
               {skills.length === 0 ? (
-                <CardItem description={t('settings:agentTools.noSkills')} />
+                <CardItem description={t('settings:cowork.noSkills')} />
               ) : (
                 skills.map((skill) =>
                   entryRow('skill', skill.name, skill.description)
@@ -340,22 +322,22 @@ function AgentToolsContent() {
             <DialogTitle>
               {t(
                 editor?.kind === 'skill'
-                  ? 'settings:agentTools.editSkill'
-                  : 'settings:agentTools.editMemory'
+                  ? 'settings:cowork.editSkill'
+                  : 'settings:cowork.editMemory'
               )}
             </DialogTitle>
             <DialogDescription>
               {t(
                 editor?.kind === 'skill'
-                  ? 'settings:agentTools.editSkillDesc'
-                  : 'settings:agentTools.editMemoryDesc'
+                  ? 'settings:cowork.editSkillDesc'
+                  : 'settings:cowork.editMemoryDesc'
               )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <Input
               type="text"
-              placeholder={t('settings:agentTools.namePlaceholder')}
+              placeholder={t('settings:cowork.namePlaceholder')}
               value={editor?.name ?? ''}
               // Locked once the entry exists: a new name would create a second
               // entry rather than rename this one.
@@ -368,7 +350,7 @@ function AgentToolsContent() {
             />
             <Textarea
               className="min-h-64 font-mono text-xs"
-              placeholder={t('settings:agentTools.contentPlaceholder')}
+              placeholder={t('settings:cowork.contentPlaceholder')}
               value={editor?.content ?? ''}
               onChange={(e) =>
                 setEditor((prev) =>

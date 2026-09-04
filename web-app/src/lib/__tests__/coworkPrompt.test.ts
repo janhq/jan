@@ -12,6 +12,7 @@ const opts = (over = {}) => ({
   webSearch: false,
   bashAvailable: true,
   subagentNames: [],
+  memoryCatalog: [],
   ...over,
 })
 
@@ -22,14 +23,17 @@ describe('buildCoworkSystemPrompt', () => {
     expect(p).toContain('No project folder is attached')
   })
 
-  // Without this the model retries the same refused write until the step
-  // budget runs out — the single most expensive thing it can get wrong here.
-  it('spells out that an attached folder is read-only and how to work around it', () => {
+  // The shared folder is writable on this surface. The prompt has to say so —
+  // a model that assumes read-only copies files into the sandbox and hands the
+  // user stale duplicates — and to say it is real user data, since the
+  // sandbox's anything-goes norms no longer apply.
+  it('spells out that an attached folder is writable, in place, and real data', () => {
     const p = buildCoworkSystemPrompt(opts({ readOnlyFolder: '/home/u/repo' }))
     expect(p).toContain('/home/u/repo')
-    expect(p).toContain('READ-ONLY')
-    expect(p).toMatch(/copy it into your workspace/i)
-    expect(p).toMatch(/Do not\s+retry a refused write/i)
+    expect(p).toMatch(/writable/i)
+    expect(p).toMatch(/IN PLACE/)
+    expect(p).toMatch(/real user\s+data/i)
+    expect(p).not.toContain('READ-ONLY')
   })
 
   it('explains a missing shell rather than staying silent about it', () => {
@@ -47,6 +51,71 @@ describe('buildCoworkSystemPrompt', () => {
     expect(p).toContain('Execute plan')
     expect(p).toContain('Keep planning')
     expect(p).toContain('Exit plan mode')
+  })
+
+  // Progressive disclosure: one line per note, `memory_read` for the rest. An
+  // empty store adds nothing, so the prompt prefix is unchanged for users who
+  // never recorded a memory.
+  it('lists memory notes with summaries only when the store has any', () => {
+    const p = buildCoworkSystemPrompt(
+      opts({
+        memoryCatalog: [
+          { name: 'decisions', summary: 'We use Yarn not npm.' },
+          { name: 'empty-note', summary: '' },
+        ],
+      })
+    )
+    expect(p).toContain('# Available Memories')
+    expect(p).toContain('- `decisions` - We use Yarn not npm.')
+    expect(p).toContain('- `empty-note` - no summary')
+    expect(p).toContain('memory_read')
+    expect(buildCoworkSystemPrompt(opts())).not.toContain(
+      '# Available Memories'
+    )
+  })
+
+  it('states the environment when gathered and omits the block otherwise', () => {
+    const p = buildCoworkSystemPrompt(
+      opts({
+        environment: {
+          os: 'linux',
+          arch: 'x86_64',
+          appVersion: '0.7.0',
+          locale: 'en-US',
+          date: 'Tue Sep 02 2026',
+        },
+      })
+    )
+    expect(p).toContain('# Environment')
+    expect(p).toContain('- OS: linux (x86_64)')
+    expect(p).toContain('- App: Jan v0.7.0 (desktop)')
+    expect(p).toContain("- Today's date: Tue Sep 02 2026")
+    expect(p).toContain('- User locale: en-US')
+    expect(buildCoworkSystemPrompt(opts())).not.toContain('# Environment')
+  })
+
+  // Web builds gather no OS or version; the block must not print empty lines.
+  it('drops environment lines it has no value for', () => {
+    const p = buildCoworkSystemPrompt(
+      opts({
+        environment: {
+          os: null,
+          arch: null,
+          appVersion: null,
+          locale: null,
+          date: 'Tue Sep 02 2026',
+        },
+      })
+    )
+    expect(p).toContain("- Today's date: Tue Sep 02 2026")
+    expect(p).not.toContain('- OS:')
+    expect(p).not.toContain('- App:')
+    expect(p).not.toContain('- User locale:')
+  })
+
+  it('encourages delegating long jobs to a subagent', () => {
+    const p = buildCoworkSystemPrompt(opts({ subagentNames: ['researcher'] }))
+    expect(p).toMatch(/prefer a subagent for long or repetitive jobs/i)
   })
 
   it('describes subagents only when some are available and not planning', () => {
@@ -76,7 +145,8 @@ describe('buildSubagentSystemPrompt', () => {
     // for the CLI (cwd is the project) but leaves a desktop child unable to
     // guess its sandbox path.
     expect(out).toContain('/ws/s1')
-    expect(out).toContain('READ-ONLY')
+    expect(out).toContain('/home/me/repo')
+    expect(out).toMatch(/writable/i)
   })
 
   it('states the three things a child cannot do', () => {
@@ -86,10 +156,29 @@ describe('buildSubagentSystemPrompt', () => {
     expect(out).toContain('cannot dispatch')
   })
 
-  it('never leaks plan mode or a subagent roster into a child', () => {
+  it('never leaks plan mode, a subagent roster, or memory into a child', () => {
     const out = buildSubagentSystemPrompt('p', opts)
     expect(out).not.toContain('PLAN MODE')
     expect(out).not.toContain('# Subagents')
+    // A child runs one stated errand; recall is the dispatcher's job.
+    expect(out).not.toContain('# Available Memories')
+  })
+
+  // A child runs shell commands on the same machine, so it gets the same facts.
+  it('carries the environment through to a child when gathered', () => {
+    const out = buildSubagentSystemPrompt('p', {
+      ...opts,
+      environment: {
+        os: 'macos',
+        arch: 'aarch64',
+        appVersion: '0.7.0',
+        locale: 'en-US',
+        date: 'Tue Sep 02 2026',
+      },
+    })
+    expect(out).toContain('# Environment')
+    expect(out).toContain('- OS: macos (aarch64)')
+    expect(buildSubagentSystemPrompt('p', opts)).not.toContain('# Environment')
   })
 
   // A child whose allowlist dropped the web tools must not be told it has them.

@@ -57,6 +57,12 @@ The data folder location can be customised from **Settings > General > Jan Data 
 Inside the data folder you will typically find:
 
 ```sh
+/agent-workspace/
+  /memory/
+  /skills/
+  /subagents/
+  /sessions/<session_id>/
+  /threads/<thread_id>/
 /assistants/
   /jan/
     assistant.json
@@ -89,6 +95,13 @@ Inside the data folder you will typically find:
     messages.jsonl
     thread.json
 ```
+
+### `agent-workspace/`
+The [Cowork](/docs/desktop/cowork) agent's home. Memories (`memory/`), skills
+(`skills/`), and saved subagent definitions (`subagents/`) live here
+permanently. Each Cowork session gets an ephemeral sandbox under
+`sessions/<session_id>/`, and chat threads that use agent tools get one under
+`threads/<thread_id>/` — the agent can only write inside its own sandbox.
 
 ### `assistants/`
 Where AI personalities live. The default one (`/assistants/jan/`):

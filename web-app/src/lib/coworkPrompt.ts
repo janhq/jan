@@ -2,9 +2,9 @@
  * System prompt for a Cowork run.
  *
  * The workspace block is the load-bearing part. The agent writes into a sandbox
- * and may only *read* an attached project folder, which is an arrangement no
- * model assumes — left unsaid, it retries the same denied write until the step
- * budget runs out.
+ * and, when a project folder is attached, works on it in place (the shared
+ * folder is mounted writable on this surface) — an arrangement no model
+ * assumes, so it is spelled out along with where scratch work belongs.
  */
 
 const IDENTITY =
@@ -41,10 +41,23 @@ export const EXECUTE_PLAN_LABEL = 'Execute plan'
 export const KEEP_PLANNING_LABEL = 'Keep planning'
 export const EXIT_PLAN_LABEL = 'Exit plan mode'
 
+/** Machine facts for the `# Environment` block. Gathered by `coworkEnv.ts`;
+ * a plain value here so the builder stays pure and testable. */
+export type CoworkEnvironment = {
+  os: string | null
+  arch: string | null
+  appVersion: string | null
+  locale: string | null
+  /** Human-readable, stamped at gather time -- a model's sense of "today" is
+   * its training cutoff unless told otherwise. */
+  date: string
+}
+
 export type CoworkPromptOptions = {
   /** The sandbox directory: the only writable location. */
   workspacePath: string | null
-  /** An attached project folder, readable but never writable. */
+  /** An attached project folder. Despite the historical name (it is the
+   * plugin's validated read root), Cowork mounts it writable. */
   readOnlyFolder: string | null
   planMode: boolean
   /** False when no OS sandbox enforces, in which case `bash` is not offered. */
@@ -52,6 +65,32 @@ export type CoworkPromptOptions = {
   subagentNames: string[]
   /** Whether `web_search`/`web_fetch` are advertised this run. */
   webSearch: boolean
+  /** Optional so the prompt still builds where nothing was gathered. */
+  environment?: CoworkEnvironment | null
+  /**
+   * Progressive-disclosure recall: one line per note, dereferenced on demand
+   * with `memory_read`. Snapshotted at the run boundary alongside the frozen
+   * tool set, so the prompt prefix is stable for the run.
+   */
+  memoryCatalog: { name: string; summary: string }[]
+}
+
+/** Mirrors the Rust CLI's `load_memory_catalog` block, one wording for both. */
+function memoryBlock(catalog: { name: string; summary: string }[]): string {
+  const list = catalog
+    .map(({ name, summary }) =>
+      summary ? `- \`${name}\` - ${summary}` : `- \`${name}\` - no summary`
+    )
+    .join('\n')
+  return [
+    '# Available Memories',
+    '',
+    'Durable facts recorded in earlier sessions. Read a note in full with',
+    '`memory_read` when it is relevant to the current task, and record new',
+    'durable facts (not session state) with `memory_write`.',
+    '',
+    list,
+  ].join('\n')
 }
 
 /** Marker text matches chat's, so the same renderer turns it into source chips. */
@@ -64,6 +103,20 @@ const WEB_BLOCK = [
   '[[cite:URL]], using the full URL from a `web_search` result. Do not add a',
   'separate sources section.',
 ].join('\n')
+
+function environmentBlock(env: CoworkEnvironment): string {
+  const lines = ['# Environment', '']
+  if (env.os) lines.push(`- OS: ${env.os}${env.arch ? ` (${env.arch})` : ''}`)
+  if (env.appVersion) lines.push(`- App: Jan v${env.appVersion} (desktop)`)
+  lines.push(`- Today's date: ${env.date}`)
+  if (env.locale) lines.push(`- User locale: ${env.locale}`)
+  lines.push(
+    '',
+    'Trust these over your own assumptions for anything platform- or',
+    'time-sensitive.'
+  )
+  return lines.join('\n')
+}
 
 function workspaceBlock(opts: CoworkPromptOptions): string {
   const lines = ['# Workspace', '']
@@ -78,11 +131,12 @@ function workspaceBlock(opts: CoworkPromptOptions): string {
   if (opts.readOnlyFolder) {
     lines.push(
       '',
-      `The user attached a project folder: \`${opts.readOnlyFolder}\`.`,
-      'It is mounted READ-ONLY. You can read, search and list inside it, but every',
-      'write, edit or shell command targeting it will be refused. To work on one of',
-      'its files, copy it into your workspace first and edit the copy there. Do not',
-      'retry a refused write against the original path.'
+      `The user attached a shared project folder: \`${opts.readOnlyFolder}\`.`,
+      'It is writable: read, search, and edit its files IN PLACE with targeted',
+      'edits, and put files that belong to the project directly inside it. Use',
+      'your workspace for scratch work and intermediate files. This is real user',
+      'data with no undo, so re-read a file before editing it and keep changes',
+      'minimal.'
     )
   } else {
     lines.push('', 'No project folder is attached, so there is nothing outside the workspace to read.')
@@ -98,7 +152,10 @@ function workspaceBlock(opts: CoworkPromptOptions): string {
 }
 
 export function buildCoworkSystemPrompt(opts: CoworkPromptOptions): string {
-  const blocks = [IDENTITY, GUIDELINES, workspaceBlock(opts)]
+  const blocks = [IDENTITY, GUIDELINES]
+  if (opts.environment) blocks.push(environmentBlock(opts.environment))
+  blocks.push(workspaceBlock(opts))
+  if (opts.memoryCatalog.length > 0) blocks.push(memoryBlock(opts.memoryCatalog))
   if (opts.webSearch) blocks.push(WEB_BLOCK)
   if (opts.subagentNames.length > 0 && !opts.planMode) {
     blocks.push(
@@ -108,6 +165,10 @@ export function buildCoworkSystemPrompt(opts: CoworkPromptOptions): string {
         'The `task` tool runs a nested agent that does not see this conversation.',
         'State everything it needs in `description`. Use one for work that is',
         'self-contained and would otherwise flood your own context.',
+        'Strongly prefer a subagent for long or repetitive jobs -- a broad',
+        'research sweep, working through many files, generating and then',
+        'verifying a large output. Delegating keeps your own context focused on',
+        'the plan, and a backgrounded subagent works while you continue.',
         `Available: ${opts.subagentNames.join(', ')}.`,
       ].join('\n')
     )
@@ -127,11 +188,14 @@ export function buildCoworkSystemPrompt(opts: CoworkPromptOptions): string {
  */
 export function buildSubagentSystemPrompt(
   definitionPrompt: string,
-  opts: Omit<CoworkPromptOptions, 'planMode' | 'subagentNames'>
+  // No memory catalog: a child runs one stated errand, so recall is the
+  // dispatching agent's job -- it reads the note and states what matters.
+  opts: Omit<CoworkPromptOptions, 'planMode' | 'subagentNames' | 'memoryCatalog'>
 ): string {
   return [
     definitionPrompt.trim(),
-    workspaceBlock({ ...opts, planMode: false, subagentNames: [] }),
+    ...(opts.environment ? [environmentBlock(opts.environment)] : []),
+    workspaceBlock({ ...opts, planMode: false, subagentNames: [], memoryCatalog: [] }),
     ...(opts.webSearch ? [WEB_BLOCK] : []),
     [
       '# Scope',

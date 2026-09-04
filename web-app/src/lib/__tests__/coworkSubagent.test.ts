@@ -12,13 +12,17 @@ vi.mock('ai', async (orig) => ({
 }))
 
 import {
+  dispatchedSubagentResult,
   intersectAllowedTools,
   parseSubagentRequest,
   parentToolNames,
   resolveSubagent,
   runSubagent,
+  subagentCompletionNotice,
   subagentTools,
+  SubagentInbox,
   MAX_PARALLEL_SUBAGENTS,
+  SUBAGENT_INLINE_MAX,
   __testing,
 } from '../coworkSubagent'
 import type { StreamEvent } from '@/hooks/useCoworkRun'
@@ -34,6 +38,112 @@ const definition = (over = {}) => ({
   allowed_tools: null as string[] | null,
   model: null as string | null,
   ...over,
+})
+
+describe('the task result and its completion ping', () => {
+  it('names the file the answer will land in, and does not wait', () => {
+    const out = dispatchedSubagentResult('researcher', 'c1', '/tmp/subagents/r.md')
+    expect(out).toContain('/tmp/subagents/r.md')
+    expect(out).toContain('Keep working')
+  })
+
+  it('promises the answer itself when there is no file to point at', () => {
+    const out = dispatchedSubagentResult('researcher', 'c1', null)
+    expect(out).toContain('You will be given its answer')
+  })
+
+  /// The row shows the headline and the model gets the instructions after it:
+  /// "read that file when you need it" is addressed to the model alone.
+  it('splits the fact from the instructions that follow it', () => {
+    const out = subagentCompletionNotice({
+      name: 'researcher',
+      callId: 'c1',
+      savedPath: '/tmp/subagents/r.md',
+      output: 'the findings',
+    })
+    expect(out.headline).toBe("Subagent 'researcher' (c1) finished")
+    expect(out.headline).not.toContain('/tmp/')
+    expect(out.text.startsWith(out.headline)).toBe(true)
+    expect(out.text).toContain('/tmp/subagents/r.md')
+    // The answer is on disk; repeating it here would spend the context twice.
+    expect(out.text).not.toContain('the findings')
+  })
+
+  // Nothing else would carry it: with no file, the ping is the only delivery.
+  it('carries the answer inline when nothing was saved, capped', () => {
+    const output = 'y'.repeat(SUBAGENT_INLINE_MAX + 10)
+    const out = subagentCompletionNotice({
+      name: 'researcher',
+      callId: 'c1',
+      savedPath: null,
+      output,
+    })
+    expect(out.text).toContain('y'.repeat(SUBAGENT_INLINE_MAX))
+    expect(out.text.length).toBeLessThan(output.length + 200)
+    // Still just the fact: the answer is for the model, not the transcript.
+    expect(out.headline).toBe("Subagent 'researcher' (c1) finished")
+  })
+
+  /// A failure has no instructions to strip, so both registers are the reason
+  /// it failed -- which is the one thing here worth reading on screen.
+  it('reports a failure as one, in both registers', () => {
+    const out = subagentCompletionNotice({
+      name: 'researcher',
+      callId: 'c1',
+      savedPath: null,
+      output: 'the model refused',
+      isError: true,
+    })
+    expect(out.headline).toBe("Subagent 'researcher' (c1) failed: the model refused")
+    expect(out.text).toBe(out.headline)
+  })
+})
+
+describe('SubagentInbox', () => {
+  const done = { headline: 'done', text: 'done, in full' }
+
+  it('reports work outstanding from dispatch until the ping is taken', async () => {
+    const inbox = new SubagentInbox()
+    expect(inbox.pending()).toBe(false)
+    inbox.begin()
+    expect(inbox.pending()).toBe(true)
+    inbox.finish(done)
+    // Still pending: the ping has been queued but not delivered, so a run that
+    // stopped here would drop it.
+    expect(inbox.pending()).toBe(true)
+    expect(inbox.take()).toEqual([done])
+    expect(inbox.take()).toEqual([])
+    expect(inbox.pending()).toBe(false)
+  })
+
+  it('wakes a waiter when a child finishes', async () => {
+    const inbox = new SubagentInbox()
+    inbox.begin()
+    let woke = false
+    const waiting = inbox.wait().then(() => {
+      woke = true
+    })
+    await Promise.resolve()
+    expect(woke).toBe(false)
+    inbox.finish(done)
+    await waiting
+    expect(woke).toBe(true)
+  })
+
+  it('never parks when there is nothing to wait for', async () => {
+    await expect(new SubagentInbox().wait()).resolves.toBeUndefined()
+  })
+
+  /// A cancelled run aborts its children, and nothing would ever file their
+  /// pings — so the wait has to end with the run, not with the child.
+  it('releases the waiter on cancellation', async () => {
+    const inbox = new SubagentInbox()
+    inbox.begin()
+    const controller = new AbortController()
+    const waiting = inbox.wait(controller.signal)
+    controller.abort()
+    await expect(waiting).resolves.toBeUndefined()
+  })
 })
 
 describe('parseSubagentRequest', () => {

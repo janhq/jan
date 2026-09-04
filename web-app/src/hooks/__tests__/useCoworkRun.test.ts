@@ -139,3 +139,87 @@ describe('useCoworkRun - subagent lanes', () => {
     expect(runs.find((r) => r.runId === 'b')?.turns).toEqual([])
   })
 })
+
+describe('useCoworkRun - monitors and parking', () => {
+  beforeEach(() => {
+    useCoworkRun.setState({ monitors: {}, parked: {}, runId: {}, liveTurns: {}, subagents: {} })
+  })
+
+  const view = {
+    monitorId: 'mon-1',
+    name: 'build',
+    script: 'grep OK build.log',
+    status: 'running' as const,
+    startedAt: 0,
+  }
+  const update = (matched: boolean) => ({
+    monitorId: 'mon-1',
+    name: 'build',
+    headline: 'h',
+    text: 't',
+    matched,
+  })
+
+  it('a match closes the monitor as matched', () => {
+    const s = useCoworkRun.getState()
+    s.startMonitor('sid', view)
+    expect(useCoworkRun.getState().monitors.sid[0]).toMatchObject({
+      name: 'build',
+      status: 'running',
+    })
+    s.updateMonitor('sid', update(true))
+    const done = useCoworkRun.getState().monitors.sid[0]
+    expect(done).toMatchObject({ status: 'done', outcome: 'matched' })
+    expect(done.endedAt).toBeDefined()
+  })
+
+  it('a timeout closes the monitor as timed out', () => {
+    const s = useCoworkRun.getState()
+    s.startMonitor('sid', view)
+    s.updateMonitor('sid', update(false))
+    expect(useCoworkRun.getState().monitors.sid[0]).toMatchObject({
+      status: 'done',
+      outcome: 'timeout',
+    })
+  })
+
+  it('an explicit stop closes the monitor as stopped', () => {
+    const s = useCoworkRun.getState()
+    s.startMonitor('sid', view)
+    s.stopMonitor('sid', 'mon-1')
+    expect(useCoworkRun.getState().monitors.sid[0]).toMatchObject({
+      status: 'done',
+      outcome: 'stopped',
+    })
+  })
+
+  it('a new run keeps the session monitors and clears the parked flag', () => {
+    const s = useCoworkRun.getState()
+    s.startMonitor('sid', view)
+    s.setParked('sid', true)
+    expect(useCoworkRun.getState().parked.sid).toBe(true)
+    s.beginRun('sid', 'run-2', 'again')
+    expect(useCoworkRun.getState().monitors.sid).toHaveLength(1)
+    expect(useCoworkRun.getState().parked.sid).toBeUndefined()
+  })
+
+  it('setParked false clears the key rather than storing false', () => {
+    const s = useCoworkRun.getState()
+    s.setParked('sid', true)
+    s.setParked('sid', false)
+    expect(useCoworkRun.getState().parked).toEqual({})
+  })
+
+  it('a watcher outlives the run: only clearMonitors drops it', () => {
+    const s = useCoworkRun.getState()
+    s.startMonitor('sid', view)
+    s.setParked('sid', true)
+    s.finalizeRun('sid')
+    expect(useCoworkRun.getState().monitors.sid[0].status).toBe('running')
+    expect(useCoworkRun.getState().parked.sid).toBeUndefined()
+    s.clearCodeRun('sid')
+    expect(useCoworkRun.getState().monitors.sid).toHaveLength(1)
+    s.clearMonitors('sid')
+    expect(useCoworkRun.getState().monitors.sid).toBeUndefined()
+  })
+})

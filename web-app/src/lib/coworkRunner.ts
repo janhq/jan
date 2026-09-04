@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { UIMessage, UIMessageChunk } from 'ai'
 import type { AskAnswer, CoworkTurn, Usage } from '@/types/coworkSession'
+import type { ToolImage } from '@/lib/agentTools'
 import {
   MAX_AGENT_STEPS,
   budgetExceeded,
@@ -8,6 +9,8 @@ import {
   recordSpend,
   type BudgetStop,
 } from '@/lib/coworkBudget'
+import { attachPings } from '@/lib/coworkPing'
+import { encodeToolImageSentinel } from '@/lib/tool-image-sentinel'
 
 /**
  * The Cowork agent loop.
@@ -35,11 +38,21 @@ export type ToolOutcome = {
   isError?: boolean
   /** Display-only unified diff. Never reaches the model. */
   diff?: string
+  /** Images the tool returned (`read` of an image, `screenshot`). They reach
+   * the model inside the tool result, as `image_url` parts on the `role: tool`
+   * message (see `tool-image-sentinel.ts`), and are never persisted: a
+   * screenshot is megabytes of base64 and the session store is `settings.json`. */
+  images?: ToolImage[]
 }
 
 /** One model turn's worth of stream, folded into a shape the loop can act on. */
 export type StepResult = {
   text: string
+  /** Natively streamed reasoning (`reasoning-delta` chunks), accumulated apart
+   * from `text`: the answer text becomes wire-history `content`, and reasoning
+   * must never travel there inline. Inline `<think>` reasoning is different --
+   * it IS the content the model sent -- and stays in `text`. */
+  reasoning: string
   toolCalls: PendingToolCall[]
   usage: Usage | null
   errorText?: string
@@ -116,6 +129,41 @@ export function isAbortLike(e: unknown, signal?: AbortSignal): boolean {
   )
 }
 
+/**
+ * True when a failed send can be retried safely: the connection died before any
+ * response arrived, so nothing has been streamed and no upstream side effect is
+ * implied. Port of the Rust agent's `is_retryable_send_error` — the failure a
+ * long turn invites is a keep-alive connection the peer (or its load balancer)
+ * reclaimed while tools ran locally, reported on the *next* request. Matched on
+ * text because the tauri http plugin and the AI SDK both surface transport
+ * failures as message strings. Timeouts are excluded on purpose: retrying one
+ * doubles the wait.
+ */
+export function isRetryableSendError(message: string): boolean {
+  const msg = message.toLowerCase()
+  if (msg.includes('timed out') || msg.includes('timeout')) return false
+  const markers = [
+    // hyper reports a pooled connection the peer had already closed as the
+    // first of these; the rest are the io errors an RST mid-request produces.
+    'connection closed before message completed',
+    'connection reset',
+    'broken pipe',
+    'connection aborted',
+    'unexpected eof',
+    // A refused or failed connect: reqwest via the tauri http plugin, and the
+    // browser fetch in the web build.
+    'connection refused',
+    'error sending request',
+    'failed to fetch',
+    'fetch failed',
+  ]
+  return markers.some((m) => msg.includes(m))
+}
+
+/** Long enough for a load balancer that just recycled a backend to finish,
+ * short enough that the user does not read it as a hang. */
+const SEND_RETRY_DELAY_MS = 250
+
 /** Settle a pending `ask`. Returns false when the request is already gone. */
 export function answerAsk(
   sid: string,
@@ -145,6 +193,10 @@ const usageOf = (meta: unknown): Usage | null => {
 
 export type StreamSink = {
   onText: (delta: string) => void
+  /** A natively streamed reasoning fragment. Dropping these is not an option:
+   * unlike inline `<think>` they never reach `onText`, so a sink without this
+   * would show nothing at all while the model thinks. */
+  onReasoning: (delta: string) => void
   onToolStart: (toolCallId: string, toolName: string) => void
   onToolArgsDelta: (toolCallId: string, delta: string) => void
   onToolCall: (call: PendingToolCall) => void
@@ -162,6 +214,7 @@ export async function consumeStep(
   const reader = stream.getReader()
   const result: StepResult = {
     text: '',
+    reasoning: '',
     toolCalls: [],
     usage: null,
     aborted: false,
@@ -175,6 +228,10 @@ export async function consumeStep(
         case 'text-delta':
           result.text += chunk.delta
           sink.onText(chunk.delta)
+          break
+        case 'reasoning-delta':
+          result.reasoning += chunk.delta
+          sink.onReasoning(chunk.delta)
           break
         case 'tool-input-start':
           sink.onToolStart(chunk.toolCallId, chunk.toolName)
@@ -211,6 +268,13 @@ export async function consumeStep(
   return result
 }
 
+/** The model-facing tail of a tool output: one sentinel per returned image. */
+function toolImageSentinels(outcome: ToolOutcome): string {
+  return (outcome.images ?? [])
+    .map((img) => encodeToolImageSentinel(img.dataUrl))
+    .join('')
+}
+
 /** Assemble the assistant message for a completed step, results included. */
 export function assistantMessageFor(
   id: string,
@@ -218,6 +282,9 @@ export function assistantMessageFor(
   outcomes: Map<string, ToolOutcome>
 ): UIMessage {
   const parts: any[] = []
+  // Before the text part, matching emission order -- and as a `reasoning` part,
+  // the same shape chat threads persist, so the transport treats it the same.
+  if (step.reasoning) parts.push({ type: 'reasoning', text: step.reasoning })
   if (step.text) parts.push({ type: 'text', text: step.text })
   for (const call of step.toolCalls) {
     const outcome = outcomes.get(call.toolCallId)
@@ -233,7 +300,7 @@ export function assistantMessageFor(
     }
     if (outcome) {
       if (outcome.isError) part.errorText = outcome.output
-      else part.output = outcome.output
+      else part.output = outcome.output + toolImageSentinels(outcome)
     }
     parts.push(part)
   }
@@ -246,7 +313,15 @@ export function turnsFor(
   outcomes: Map<string, ToolOutcome>
 ): CoworkTurn[] {
   const turns: CoworkTurn[] = []
-  if (step.text) turns.push({ role: 'assistant', content: step.text })
+  // A reasoning-only step (thought, then straight to a tool call) still gets a
+  // row: its reasoning would otherwise vanish from the committed transcript.
+  if (step.text || step.reasoning) {
+    turns.push({
+      role: 'assistant',
+      content: step.text,
+      ...(step.reasoning ? { reasoning: step.reasoning } : {}),
+    })
+  }
   for (const call of step.toolCalls) {
     const outcome = outcomes.get(call.toolCallId)
     turns.push({
@@ -282,6 +357,20 @@ export type RunDeps = {
   }) => void
   /** Monotonic ids for the assistant messages this run appends. */
   nextMessageId: () => string
+  /**
+   * Pings from work the model started and is no longer blocked on: a
+   * backgrounded subagent finishing. Omitted by a child run, which cannot
+   * dispatch subagents of its own.
+   */
+  inbox?: {
+    take: () => string[]
+    pending: () => boolean
+    wait: () => Promise<void>
+    /** Brackets the park: `true` as the wait begins, `false` when it ends
+     * (a ping, or the abort). Nothing is generated in between, so a display
+     * can say "watching" rather than "working". */
+    onParked?: (parked: boolean) => void
+  }
 }
 
 export type RunOutcome = {
@@ -341,29 +430,94 @@ export async function runTurn(opts: {
       }
     }
 
+    // Anything that finished since the last request reaches the model here, as
+    // a marked user turn rather than an invented tool result: nothing was
+    // called this step.
+    attachPings(messages, deps.inbox?.take() ?? [])
+
     // A snapshot, not the live array: the loop pushes to `messages` after the
     // stream is handed over, and the transport rewrites what it is given
     // (trimming, compaction) without expecting it to move underneath.
     let result: StepResult
-    try {
-      const stream = await deps.sendStep([...messages], signal)
-      result = await consumeStep(stream, deps.sink)
-    } catch (e) {
-      // A transport failure is an outcome, not an exception: throwing here left
-      // the caller with no steps, no usage and nothing to render but the raw
-      // message, and a user-initiated stop arrived down this same path.
-      return {
-        messages,
-        steps: step,
-        usage,
-        sessionTokens: spend.spent,
-        stoppedBy: isAbortLike(e, signal) ? 'aborted' : 'error',
-        errorText: isAbortLike(e, signal)
-          ? undefined
-          : e instanceof Error
-            ? e.message
-            : String(e),
+    let retried = false
+    for (;;) {
+      // Any sink activity means bytes reached the UI; replaying the request
+      // would duplicate them, so a retry is only safe while this stays false.
+      let received = false
+      const sink: StreamSink = {
+        onText: (d) => {
+          received = true
+          deps.sink.onText(d)
+        },
+        // Reasoning bytes on screen count as received too: replaying the
+        // request after them would duplicate the thinking block.
+        onReasoning: (d) => {
+          received = true
+          deps.sink.onReasoning(d)
+        },
+        onToolStart: (id, name) => {
+          received = true
+          deps.sink.onToolStart(id, name)
+        },
+        onToolArgsDelta: (id, d) => {
+          received = true
+          deps.sink.onToolArgsDelta(id, d)
+        },
+        onToolCall: (c) => {
+          received = true
+          deps.sink.onToolCall(c)
+        },
       }
+      try {
+        const stream = await deps.sendStep([...messages], signal)
+        result = await consumeStep(stream, sink)
+      } catch (e) {
+        if (isAbortLike(e, signal)) {
+          return {
+            messages,
+            steps: step,
+            usage,
+            sessionTokens: spend.spent,
+            stoppedBy: 'aborted',
+          }
+        }
+        const errorText = e instanceof Error ? e.message : String(e)
+        if (!retried && !received && isRetryableSendError(errorText)) {
+          retried = true
+          console.warn(`[coworkRunner] ${errorText} — retrying once`)
+          await new Promise((r) => setTimeout(r, SEND_RETRY_DELAY_MS))
+          continue
+        }
+        // A transport failure is an outcome, not an exception: throwing here
+        // left the caller with no steps, no usage and nothing to render but
+        // the raw message, and a user-initiated stop arrived down this path.
+        return {
+          messages,
+          steps: step,
+          usage,
+          sessionTokens: spend.spent,
+          stoppedBy: 'error',
+          errorText,
+        }
+      }
+      // A dropped connection can also surface as an error chunk — streamText
+      // reports transport failures through the stream — so an error that
+      // arrived before anything else gets the same single retry.
+      if (
+        !retried &&
+        !received &&
+        result.usage === null &&
+        !result.aborted &&
+        !signal.aborted &&
+        result.errorText !== undefined &&
+        isRetryableSendError(result.errorText)
+      ) {
+        retried = true
+        console.warn(`[coworkRunner] ${result.errorText} — retrying once`)
+        await new Promise((r) => setTimeout(r, SEND_RETRY_DELAY_MS))
+        continue
+      }
+      break
     }
     step += 1
     if (result.usage) {
@@ -395,8 +549,10 @@ export async function runTurn(opts: {
       }
     }
 
-    // Tools run one at a time: they share a workspace, and the progress
-    // attribution in the UI assumes a single call in flight.
+    // One at a time: tools share a workspace, and the progress attribution in
+    // the UI assumes a single call in flight. A `task` fan-out is not an
+    // exception any more and needs none -- each `task` call returns as soon as
+    // its child has started, so the children overlap whatever this loop does.
     const outcomes = new Map<string, ToolOutcome>()
     for (const call of result.toolCalls) {
       if (signal.aborted) {
@@ -425,6 +581,28 @@ export async function runTurn(opts: {
     }
     // No tool calls means the model answered rather than asked for more work.
     if (result.toolCalls.length === 0) {
+      // Unless a subagent it dispatched is still going: ending here would drop
+      // that answer on the floor. Park, then let the ping drained at the top of
+      // the next step resume the conversation. Re-checked after the wait, which
+      // also returns on cancellation.
+      if (deps.inbox?.pending()) {
+        deps.inbox.onParked?.(true)
+        try {
+          await deps.inbox.wait()
+        } finally {
+          deps.inbox.onParked?.(false)
+        }
+        if (signal.aborted) {
+          return {
+            messages,
+            steps: step,
+            usage,
+            sessionTokens: spend.spent,
+            stoppedBy: 'aborted',
+          }
+        }
+        if (deps.inbox.pending()) continue
+      }
       return {
         messages,
         steps: step,

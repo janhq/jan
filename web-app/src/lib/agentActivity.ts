@@ -1,6 +1,4 @@
-import type { CoworkTurn, SubagentRun } from '@/types/coworkSession'
-
-export type ActivityLabel = { text: string; startedAt: number } | null
+import type { CoworkTurn } from '@/types/coworkSession'
 
 const MAX_COMMAND_LEN = 60
 
@@ -79,28 +77,7 @@ export function completedToolLabel(
 type ToolPartLike = {
   type: string
   state?: string
-  toolCallId?: string
   input?: unknown
-}
-
-const PENDING_STATES = new Set(['input-available', 'submitted'])
-
-/** Finds the first pending tool part; returns its id, name, and activity text. */
-export function activeToolPart(
-  parts: ToolPartLike[]
-): { toolCallId: string; toolName: string; text: string } | null {
-  for (const part of parts) {
-    if (!part.type.startsWith('tool-')) continue
-    if (!part.state || !PENDING_STATES.has(part.state)) continue
-    if (!part.toolCallId) continue
-    const toolName = part.type.slice('tool-'.length)
-    return {
-      toolCallId: part.toolCallId,
-      toolName,
-      text: toolActivityText(toolName, part.input),
-    }
-  }
-  return null
 }
 
 export function usedSkillNames(parts: ToolPartLike[]): string[] {
@@ -115,32 +92,6 @@ export function usedSkillNames(parts: ToolPartLike[]): string[] {
   return [...names]
 }
 
-function lastRunningToolTurn(turns: CoworkTurn[]): CoworkTurn | undefined {
-  for (let i = turns.length - 1; i >= 0; i--) {
-    const turn = turns[i]
-    if (turn.role === 'tool' && turn.status === 'running') return turn
-  }
-  return undefined
-}
-
-/** null if no subagent is running; else a combined label + earliest startedAt. */
-export function subagentActivityLabel(subagents: SubagentRun[]): ActivityLabel {
-  const running = subagents.filter((s) => s.status === 'running')
-  if (running.length === 0) return null
-
-  if (running.length === 1) {
-    const run = running[0]
-    const activeTurn = lastRunningToolTurn(run.turns)
-    const detail = activeTurn
-      ? toolActivityText(activeTurn.name ?? 'tool', activeTurn.args)
-      : 'working'
-    return { text: `${run.name}: ${detail}`, startedAt: run.startedAt }
-  }
-
-  const startedAt = Math.min(...running.map((s) => s.startedAt))
-  return { text: `${running.length} subagents working`, startedAt }
-}
-
 /**
  * Whether a running agent is waiting on the model with nothing to show for it.
  *
@@ -152,6 +103,8 @@ export function awaitsModel(running: boolean, turns: CoworkTurn[]): boolean {
   if (!running) return false
   const last = turns.at(-1)
   if (!last) return true
-  if (last.role === 'user') return true
+  // A question or a note the run just folded in: both are followed by a model
+  // call, with nothing on screen until it answers.
+  if (last.role === 'user' || last.role === 'system') return true
   return last.role === 'tool' && last.status === 'done'
 }

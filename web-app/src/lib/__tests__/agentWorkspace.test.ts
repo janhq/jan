@@ -10,6 +10,17 @@ const api = {
   memoryRead: vi.fn(),
   memoryWrite: vi.fn(),
   memoryDelete: vi.fn(),
+  // agentWorkspace pulls in agentTools (for invalidateMemory), whose own
+  // imports from this module must exist on the mock even though these tests
+  // never call them.
+  memoryCatalog: vi.fn(),
+  subagentResultReserve: vi.fn(),
+  subagentResultFill: vi.fn(),
+  toolSchemas: vi.fn(),
+  executeTool: vi.fn(),
+  sandboxStatus: vi.fn(),
+  threadWorkspaceDelete: vi.fn(),
+  threadWorkspaceSweep: vi.fn(),
 }
 const getJanDataFolder = vi.fn()
 const revealItemInDir = vi.fn()
@@ -66,6 +77,70 @@ describe('agentWorkspace', () => {
     expect(api.skillDelete).toHaveBeenCalledWith('/data', 'deploy')
     expect(api.memoryWrite).toHaveBeenCalledWith('/data', 'prefs', 'y')
     expect(api.memoryDelete).toHaveBeenCalledWith('/data', 'prefs')
+  })
+
+  // ---- the chat Remember action --------------------------------------------
+
+  it('slugs a thread title into a filesystem-safe note name', async () => {
+    const { slugifyMemoryName } = await import('../agentWorkspace')
+    expect(slugifyMemoryName('How to set up CUDA 12?')).toBe(
+      'how-to-set-up-cuda-12'
+    )
+    expect(slugifyMemoryName('  ---  ')).toBe('memory')
+    expect(slugifyMemoryName('')).toBe('memory')
+    expect(slugifyMemoryName('a'.repeat(100))).toHaveLength(60)
+  })
+
+  it('remembers under the thread title, deduplicating taken names', async () => {
+    api.memoryList.mockResolvedValue(['chat-notes', 'chat-notes-2'])
+    api.memoryRead.mockResolvedValue('something else')
+    const ws = await import('../agentWorkspace')
+    await expect(ws.rememberNote('Chat Notes', 'the fact')).resolves.toEqual({
+      name: 'chat-notes-3',
+      duplicate: false,
+    })
+    // Suffixing, never overwriting: memory_write replaces by name, and the
+    // existing notes are not this action's to replace.
+    expect(api.memoryWrite).toHaveBeenCalledWith(
+      '/data',
+      'chat-notes-3',
+      'the fact'
+    )
+  })
+
+  it('uses the plain slug when the name is free', async () => {
+    api.memoryList.mockResolvedValue([])
+    const ws = await import('../agentWorkspace')
+    await expect(ws.rememberNote('Fresh Topic', 'body')).resolves.toEqual({
+      name: 'fresh-topic',
+      duplicate: false,
+    })
+    expect(api.memoryRead).not.toHaveBeenCalled()
+  })
+
+  // Clicking Remember twice on one message must not mint `-2`, `-3`, ... copies
+  // of the same text: the suffix is for a *different* fact under a reused title.
+  it('does not write a second copy of a note that already exists', async () => {
+    api.memoryList.mockResolvedValue(['chat-notes', 'chat-notes-2'])
+    api.memoryRead.mockImplementation(async (_: string, name: string) =>
+      name === 'chat-notes-2' ? 'the fact' : 'other'
+    )
+    const ws = await import('../agentWorkspace')
+    await expect(ws.rememberNote('Chat Notes', 'the fact')).resolves.toEqual({
+      name: 'chat-notes-2',
+      duplicate: true,
+    })
+    expect(api.memoryWrite).not.toHaveBeenCalled()
+  })
+
+  it('treats a note that fails to read as different rather than failing', async () => {
+    api.memoryList.mockResolvedValue(['chat-notes'])
+    api.memoryRead.mockRejectedValue(new Error('gone'))
+    const ws = await import('../agentWorkspace')
+    await expect(ws.rememberNote('Chat Notes', 'the fact')).resolves.toEqual({
+      name: 'chat-notes-2',
+      duplicate: false,
+    })
   })
 
   /// Unlike a tool call, a failed edit has a user waiting on it, so these throw

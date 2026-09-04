@@ -40,7 +40,6 @@ import { generateId } from 'ai'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { QueuedMessageChip } from '@/containers/QueuedMessageBubble'
 import { SamplerPopover } from '@/containers/SamplerPopover'
-import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -122,7 +121,10 @@ type ChatInputProps = {
   projectAssistantId?: string
   onSubmit?: (
     text: string,
-    files?: Array<{ type: string; mediaType: string; url: string }>
+    files?: Array<{ type: 'file'; mediaType: string; url: string }>,
+    /** Document attachments, for surfaces that do not read them back out of
+     * the attachments store themselves. */
+    documents?: Attachment[]
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
@@ -229,7 +231,6 @@ const ChatInput = memo(function ChatInput({
   const effectiveAgentMode = isAgentMode && !projectId
   // Gate for the controls that shape which tools the model is offered.
   const showToolControls = ownsToolSet && !effectiveAgentMode
-  const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
   const webSearchEnabled = useWebSearchConfig((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useWebSearchConfig((s) => s.setWebSearchEnabled)
 
@@ -378,10 +379,6 @@ const ChatInput = memo(function ChatInput({
     },
     [workingDir]
   )
-
-  const handleAgentToggle = useCallback(() => {
-    toggleAgentMode(agentModeKey)
-  }, [agentModeKey, toggleAgentMode])
 
   // Get current thread messages for token counting
   const threadMessages = useMessages(
@@ -601,27 +598,34 @@ const ChatInput = memo(function ChatInput({
       const imageFiles = attachments
         .filter((att) => att.type === 'image' && att.dataUrl)
         .map((att) => ({
-          type: 'file',
+          type: 'file' as const,
           mediaType: att.mimeType ?? 'image/jpeg',
           url: att.dataUrl!,
         }))
       const audioFiles = attachments
         .filter((att) => att.type === 'audio' && att.dataUrl)
         .map((att) => ({
-          type: 'file',
+          type: 'file' as const,
           mediaType: att.audioFormat === 'mp3' ? 'audio/mpeg' : 'audio/wav',
           url: att.dataUrl!,
         }))
       const videoFiles = attachments
         .filter((att) => att.type === 'video' && att.dataUrl)
         .map((att) => ({
-          type: 'file',
+          type: 'file' as const,
           mediaType: att.mimeType ?? 'video/mp4',
           url: att.dataUrl!,
         }))
       const files = [...imageFiles, ...audioFiles, ...videoFiles]
+      const documents = attachments.filter(
+        (att) => att.type === 'document' && att.path
+      )
 
-      onSubmit(effectivePrompt, files.length > 0 ? files : undefined)
+      onSubmit(
+        effectivePrompt,
+        files.length > 0 ? files : undefined,
+        documents.length > 0 ? documents : undefined
+      )
       setPrompt('')
       clearAttachmentsForThread(attachmentsKey)
     } else {
@@ -2438,37 +2442,6 @@ const ChatInput = memo(function ChatInput({
                       </TooltipContent>
                     </Tooltip>
                   ))}
-
-                {/* Agent mode toggle hidden — kept as dead code for future use */}
-                {false && !projectId && isAgentMode && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant={isAgentMode ? "default" : "ghost"}
-                        size="icon-xs"
-                        onClick={currentThreadId ? handleAgentToggle : undefined}
-                        className={cn(
-                          isAgentMode && 'text-primary bg-primary/10 hover:bg-primary/10 items-center',
-                          !currentThreadId && 'cursor-default pointer-events-none'
-                        )}
-                      >
-                        <BotIcon
-                          className={cn(
-                            'text-muted-foreground -mt-0.5',
-                            isAgentMode && 'text-primary'
-                          )}
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>
-                        {isAgentMode
-                          ? 'Agent mode active'
-                          : 'Enable agent mode'}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
 
                 {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') && (
                   <Tooltip>

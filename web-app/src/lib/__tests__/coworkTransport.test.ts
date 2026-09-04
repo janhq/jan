@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { sandboxEnforces, buildCoworkTools } = vi.hoisted(() => ({
-  sandboxEnforces: vi.fn(() => true),
-  buildCoworkTools: vi.fn(),
-}))
-vi.mock('@/lib/agentTools', () => ({ sandboxEnforces }))
+const { sandboxEnforces, buildCoworkTools, getMemoryCatalog } = vi.hoisted(
+  () => ({
+    sandboxEnforces: vi.fn(() => true),
+    buildCoworkTools: vi.fn(),
+    getMemoryCatalog: vi.fn(async () => [] as unknown[]),
+  })
+)
+vi.mock('@/lib/agentTools', () => ({ sandboxEnforces, getMemoryCatalog }))
 vi.mock('@/lib/coworkTools', async (orig) => ({
   ...(await orig<typeof import('../coworkTools')>()),
   buildCoworkTools,
@@ -76,6 +79,24 @@ describe('CoworkChatTransport', () => {
     expect(buildCoworkTools).toHaveBeenLastCalledWith(
       expect.objectContaining({ planMode: true })
     )
+  })
+
+  // Memory moves independently of the tool config: a note written during one
+  // run must reach the next run's prompt even when the tool set is reused, and
+  // must not move mid-run, which would discard the prompt prefix.
+  it('re-snapshots the memory catalog at run boundaries, not mid-run', async () => {
+    getMemoryCatalog.mockReset()
+    getMemoryCatalog.mockResolvedValue([])
+    const t = new CoworkChatTransport('s1', config())
+    await t.refreshTools()
+    await t.refreshTools()
+    expect(getMemoryCatalog).toHaveBeenCalledTimes(1)
+
+    t.unfreezeTools()
+    await t.refreshTools()
+    expect(getMemoryCatalog).toHaveBeenCalledTimes(2)
+    // Same config, so the tool set was reused -- the catalog still refreshed.
+    expect(buildCoworkTools).toHaveBeenCalledTimes(1)
   })
 
   it('rebuilds when the sandbox appears, since bash joins the set', async () => {

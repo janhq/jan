@@ -13,11 +13,21 @@ const COMMANDS: &[&str] = &[
     "memory_list",
     "memory_read",
     "memory_write",
+    "memory_catalog",
     "memory_delete",
     "tool_schemas",
     "sandbox_status",
+    "subagent_result_reserve",
+    "subagent_result_fill",
+    "attachment_import",
     "execute_tool",
     "execute_tool_streaming",
+    "start_monitor",
+    "stop_monitor",
+    "list_monitors",
+    "stop_session_monitors",
+    "preview_register_root",
+    "preview_unregister_root",
 ];
 
 fn main() {

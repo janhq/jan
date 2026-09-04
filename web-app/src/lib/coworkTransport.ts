@@ -1,13 +1,21 @@
-import type { Tool, UIMessage } from 'ai'
+import type { Tool } from 'ai'
 import { CustomChatTransport } from '@/lib/custom-chat-transport'
 import { COWORK_SLOT_ID } from '@/constants/models'
-import { sandboxEnforces } from '@/lib/agentTools'
+import {
+  getMemoryCatalog,
+  sandboxEnforces,
+  type MemoryCatalogEntry,
+} from '@/lib/agentTools'
 import {
   buildCoworkTools,
   coworkToolSignature,
   type CoworkToolOptions,
 } from '@/lib/coworkTools'
-import { buildCoworkSystemPrompt } from '@/lib/coworkPrompt'
+import {
+  buildCoworkSystemPrompt,
+  type CoworkEnvironment,
+} from '@/lib/coworkPrompt'
+import { getCoworkEnvironment } from '@/lib/coworkEnv'
 
 export type CoworkRunConfig = CoworkToolOptions & {
   workspacePath: string | null
@@ -36,6 +44,15 @@ export class CoworkChatTransport extends CustomChatTransport {
    * pay for a rebuild at every run boundary. */
   private builtTools: Record<string, Tool> | null = null
   private builtSig = ''
+  /**
+   * The memory catalog advertised this run. Snapshotted with the tool freeze,
+   * for the same reason: a mid-run change to the prompt prefix discards the KV
+   * cache on every step. A note written mid-run appears at the next run.
+   */
+  private memoryCatalog: MemoryCatalogEntry[] = []
+  /** Snapshotted with the tool freeze: the date line changing mid-run would
+   * discard the prompt prefix on every step, exactly like a catalog change. */
+  private environment: CoworkEnvironment | null = null
 
   constructor(sessionId: string, config: CoworkRunConfig) {
     super(undefined, sessionId)
@@ -71,20 +88,21 @@ export class CoworkChatTransport extends CustomChatTransport {
   /**
    * Cowork's own prompt replaces the chat one wholesale — the agent-tools and
    * web-search blurbs are written for a chat that occasionally reaches for a
-   * tool, not for a run whose whole purpose is tool use. The attached-files
-   * instruction is kept: a pasted document is otherwise never explained.
+   * tool, not for a run whose whole purpose is tool use. Attached documents
+   * need no instruction here either: they are copied into the workspace and
+   * named in the question itself (`withAttachedFiles`).
    */
-  protected override buildSystemPrompt(messages: UIMessage[]): string {
-    const base = buildCoworkSystemPrompt({
+  protected override buildSystemPrompt(): string {
+    return buildCoworkSystemPrompt({
       workspacePath: this.config.workspacePath,
       readOnlyFolder: this.config.readOnlyFolder,
       planMode: this.config.planMode,
       bashAvailable: sandboxEnforces(),
       subagentNames: this.config.allowSubagents ? this.config.subagentNames : [],
       webSearch: this.config.webSearch,
+      memoryCatalog: this.memoryCatalog,
+      environment: this.environment,
     })
-    const files = this.buildFilesSystemInstruction(messages)
-    return files.trim().length > 0 ? `${base}\n\n${files}` : base
   }
 
   /**
@@ -104,6 +122,10 @@ export class CoworkChatTransport extends CustomChatTransport {
       this.tools = this.frozenTools
       return
     }
+    // Run boundary: re-snapshot the catalog even when the tool set is reused,
+    // since memory moves independently of the tool config.
+    this.memoryCatalog = await getMemoryCatalog()
+    this.environment = await getCoworkEnvironment()
     const sig = coworkToolSignature(this.config, sandboxEnforces())
     // Between runs, skip the rebuild when nothing that shapes the set changed.
     if (this.builtTools && this.builtSig === sig) {

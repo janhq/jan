@@ -398,7 +398,7 @@ describe('ChatInput', () => {
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith('hello world', undefined)
+      expect(onSubmit).toHaveBeenCalledWith('hello world', undefined, undefined)
     )
     expect(addToHistoryMock).toHaveBeenCalledWith('hello world')
     expect(setPromptMock).toHaveBeenCalledWith('')
@@ -432,7 +432,7 @@ describe('ChatInput', () => {
     ) as HTMLButtonElement
     fireEvent.click(btn)
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith('button submit', undefined)
+      expect(onSubmit).toHaveBeenCalledWith('button submit', undefined, undefined)
     )
   })
 
@@ -546,10 +546,26 @@ describe('ChatInput', () => {
             mediaType: 'image/png',
             url: 'data:image/png;base64,xxx',
           }),
-        ])
+        ]),
+        undefined
       )
     )
     expect(clearAttachmentsMock).toHaveBeenCalled()
+  })
+
+  it('passes document attachments to onSubmit as the third argument', async () => {
+    promptState = 'read this'
+    attachmentsList = [
+      { type: 'document', name: 'spec.pdf', path: '/docs/spec.pdf', fileType: 'pdf' },
+    ]
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith('read this', undefined, [
+        expect.objectContaining({ name: 'spec.pdf', path: '/docs/spec.pdf' }),
+      ])
+    )
   })
 
   it('shows the queued-message chips from the message queue', () => {

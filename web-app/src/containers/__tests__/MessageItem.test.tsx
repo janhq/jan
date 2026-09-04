@@ -108,7 +108,11 @@ vi.mock('@/components/ui/button', () => ({
 }))
 
 vi.mock('@/components/PromptProgress', () => ({
-  PromptProgress: () => <div data-testid="prompt-progress" />,
+  // `hideIdle` is what suppresses the generic "Working…" fallback, and the real
+  // component renders nothing when it is set with no model load in flight, so
+  // the stand-in has to honour it or every caller looks like it shows a card.
+  PromptProgress: ({ hideIdle }: { hideIdle?: boolean }) =>
+    hideIdle ? null : <div data-testid="prompt-progress" />,
 }))
 
 const pendingApprovalsRef = vi.hoisted(() => ({ current: {} as any }))
@@ -288,6 +292,48 @@ describe('MessageItem', () => {
     expect(onDelete).toHaveBeenCalledWith('msg-1')
   })
 
+  /// One click to ask the same question again, from partway up the transcript
+  /// -- an agent turn is a chain of tool calls, so "regenerate" only ever
+  /// applied to the last one.
+  it('fires onRetry with the question text', () => {
+    const onRetry = vi.fn()
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            role: 'user',
+            parts: [{ type: 'text', text: 'ask me again' }],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+        onRetry={onRetry}
+      />
+    )
+    fireEvent.click(screen.getByTitle('chat:actions.askAgain'))
+    expect(onRetry).toHaveBeenCalledWith(
+      'msg-1',
+      expect.stringContaining('ask me again')
+    )
+  })
+
+  /// Offered only where a caller opts in: an ordinary chat has `onRegenerate`
+  /// on the answer and no use for a second way to re-ask.
+  it('offers no retry without a handler', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({ role: 'user', parts: [{ type: 'text', text: 'x' }] }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+      />
+    )
+    expect(screen.queryByTitle('chat:actions.askAgain')).not.toBeInTheDocument()
+  })
+
   it('hides actions when hideActions is set', () => {
     render(
       <MessageItem
@@ -304,6 +350,20 @@ describe('MessageItem', () => {
     )
     expect(screen.queryByTestId('edit-btn')).not.toBeInTheDocument()
     expect(screen.queryByTestId('delete-btn')).not.toBeInTheDocument()
+  })
+
+  it('hideActions drops the whole assistant row, timestamp included', () => {
+    render(
+      <MessageItem
+        message={makeMsg() as any}
+        isFirstMessage
+        isLastMessage={false}
+        status={'ready' as any}
+        hideActions
+      />
+    )
+    expect(screen.queryByText('2024-01-01')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('token-speed')).not.toBeInTheDocument()
   })
 
   it('streaming state hides edit/delete and marks token speed streaming', () => {
@@ -465,7 +525,9 @@ describe('MessageItem', () => {
     expect(screen.getByTestId('tool-output')).toHaveTextContent('boom')
   })
 
-  it('shows progress for an executing tool call (not awaiting approval)', () => {
+  /// The tool's own card names the call and ticks its duration one row above,
+  /// so a status row repeating it was the same thing twice.
+  it('leaves an executing tool call to its own card', () => {
     render(
       <MessageItem
         message={
@@ -480,9 +542,8 @@ describe('MessageItem', () => {
         status={'ready' as any}
       />
     )
-    // A pending tool call renders the new activity-status row, not PromptProgress.
     expect(screen.queryByTestId('prompt-progress')).not.toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent(/Search/)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('shows a persistent badge for a successfully loaded skill', () => {
@@ -541,40 +602,31 @@ describe('MessageItem', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('shows child activity while the parent awaits that subagent', () => {
+  /// A note the run folded in, not something either party said: the turn after
+  /// it is a reply to it, and reads as a non sequitur on its own.
+  it('renders a system note as a plain row, with no actions', () => {
     render(
       <MessageItem
         message={
           makeMsg({
+            role: 'system',
             parts: [
-              {
-                type: 'tool-await_subagent',
-                state: 'input-available',
-                toolCallId: 'tc-await',
-                input: { run_id: 'sub-robotics-researcher-1' },
-              },
+              { type: 'text', text: "Subagent 'researcher' (c1) finished." },
             ],
           }) as any
         }
-        isFirstMessage
+        isFirstMessage={false}
         isLastMessage
         status={'ready' as any}
-        subagents={[
-          {
-            runId: 'sub-robotics-researcher-1',
-            name: 'robotics-researcher',
-            status: 'running',
-            startedAt: Date.now() - 1_000,
-            turns: [],
-          },
-        ]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
       />
     )
-
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'robotics-researcher: working'
-    )
-    expect(screen.getByRole('status')).not.toHaveTextContent('Await subagent')
+    expect(
+      screen.getByText("Subagent 'researcher' (c1) finished.")
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('edit-btn')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('delete-btn')).not.toBeInTheDocument()
   })
 
   it('hides progress while a tool call awaits approval', () => {

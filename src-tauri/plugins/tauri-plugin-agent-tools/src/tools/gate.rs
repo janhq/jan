@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
-    command_touches_hidden_jan_path, escapes_project, escapes_read_roots, is_hidden_jan_path,
+    command_touches_hidden_jan_path, escapes_read_roots, escapes_write_roots, is_hidden_jan_path,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -138,6 +138,7 @@ pub fn resolve_decision(
     project_root: &Path,
     scratch: Option<&Path>,
     read_roots: &[PathBuf],
+    write_roots: &[PathBuf],
     perms: &ToolPermissions,
     grants: &SessionGrants,
     hide_jan: bool,
@@ -177,9 +178,9 @@ pub fn resolve_decision(
     }
     match tool.capability {
         Capability::Read => {
-            // Read roots widen only this branch. The Write branch below keeps
-            // the unchanged `escapes_project`, which is what makes an attached
-            // folder readable and not writable.
+            // Read roots widen only this branch; the Write branch below widens
+            // only by `write_roots`, so an attached folder is writable exactly
+            // when the caller marked it so.
             let escapes = tool.path_args.iter().any(|key| {
                 args.get(key)
                     .and_then(|v| v.as_str())
@@ -203,11 +204,16 @@ pub fn resolve_decision(
         // escapes the project -- absolute or `..` -- can reach host files no
         // sandbox confines, so mirror the Read branch and gate it separately. It
         // is refused outright on the desktop, where no prompt round-trip exists.
+        // `write_roots` (an attached folder the caller marked writable) widen
+        // this branch exactly the way read roots widen the Read branch; a
+        // caller that passes none keeps the unchanged `escapes_project`.
         Capability::Write => {
             let escapes = tool.path_args.iter().any(|key| {
                 args.get(key)
                     .and_then(|v| v.as_str())
-                    .map(|p| escapes_project(project_root, scratch, p).unwrap_or(true))
+                    .map(|p| {
+                        escapes_write_roots(project_root, scratch, write_roots, p).unwrap_or(true)
+                    })
                     .unwrap_or(false)
             });
             if escapes {
@@ -285,6 +291,7 @@ mod tests {
             &root,
             None,
             &[],
+            &[],
             &perms,
             &grants,
             true,
@@ -303,6 +310,7 @@ mod tests {
             &json!({"path": "../x"}),
             &root,
             None,
+            &[],
             &[],
             &perms,
             &grants,
@@ -324,6 +332,7 @@ mod tests {
                 &root,
                 None,
                 &[],
+                &[],
                 &perms,
                 &grants,
                 true,
@@ -344,6 +353,7 @@ mod tests {
             &json!({}),
             &root,
             None,
+            &[],
             &[],
             &perms,
             &grants,
@@ -372,6 +382,7 @@ mod tests {
                 &root,
                 None,
                 &[],
+                &[],
                 &perms,
                 &grants,
                 true,
@@ -389,6 +400,7 @@ mod tests {
             &root,
             None,
             &[],
+            &[],
             &perms,
             &grants,
             true,
@@ -401,6 +413,7 @@ mod tests {
             &json!({"path": "JAN.md"}),
             &root,
             None,
+            &[],
             &[],
             &perms,
             &grants,
@@ -427,6 +440,7 @@ mod tests {
                 &root,
                 None,
                 &[],
+                &[],
                 &perms,
                 &grants,
                 false,
@@ -443,6 +457,7 @@ mod tests {
             &json!({"command": "cat .jan/agent/agent.toml"}),
             &root,
             None,
+            &[],
             &[],
             &perms,
             &grants,
@@ -463,6 +478,7 @@ mod tests {
             &root,
             None,
             &[],
+            &[],
             &perms,
             &grants,
             true,
@@ -481,6 +497,7 @@ mod tests {
             &json!({"command": "ls"}),
             &root,
             None,
+            &[],
             &[],
             &perms,
             &grants,
@@ -502,6 +519,7 @@ mod tests {
                 &root,
                 None,
                 &[],
+                &[],
                 &perms,
                 &grants,
                 true,
@@ -521,6 +539,7 @@ mod tests {
             &json!({"job_id": "bash-0"}),
             &root,
             None,
+            &[],
             &[],
             &perms,
             &grants,
@@ -553,6 +572,7 @@ mod tests {
             &root,
             None,
             &[],
+            &[],
             &perms,
             &grants,
             true,
@@ -565,6 +585,7 @@ mod tests {
             &json!({"command": "rm -rf /"}),
             &root,
             None,
+            &[],
             &[],
             &perms,
             &grants,
@@ -593,6 +614,7 @@ mod tests {
                 &root,
                 None,
                 &[],
+                &[],
                 &perms,
                 &grants,
                 true,
@@ -620,6 +642,7 @@ mod tests {
                 &root,
                 None,
                 &[],
+                &[],
                 &perms,
                 &grants,
                 true,
@@ -643,6 +666,7 @@ mod tests {
             &root,
             None,
             &[],
+            &[],
             &perms,
             &grants,
             true,
@@ -655,6 +679,7 @@ mod tests {
             &json!({"command": "sudo rm -rf /"}),
             &root,
             None,
+            &[],
             &[],
             &perms,
             &grants,
@@ -684,6 +709,7 @@ mod tests {
                     &root,
                     None,
                     &[],
+                    &[],
                     &perms,
                     &grants,
                     true,
@@ -710,6 +736,7 @@ mod tests {
                 &root,
                 None,
                 &[],
+                &[],
                 &perms,
                 &grants,
                 true,
@@ -724,6 +751,7 @@ mod tests {
             &json!({"name": "x", "content": "y"}),
             &root,
             None,
+            &[],
             &[],
             &denied,
             &grants,
@@ -744,6 +772,7 @@ mod tests {
             &root,
             None,
             &[],
+            &[],
             &perms,
             &grants,
             true,
@@ -762,6 +791,7 @@ mod tests {
             &json!({"path": "out.txt"}),
             &root,
             None,
+            &[],
             &[],
             &perms,
             &grants,
@@ -783,6 +813,7 @@ mod tests {
             &root,
             None,
             &[],
+            &[],
             &perms,
             &grants,
             true,
@@ -803,6 +834,7 @@ mod tests {
             &root,
             None,
             &[],
+            &[],
             &perms,
             &grants,
             true,
@@ -821,6 +853,7 @@ mod tests {
             &json!({"path": "sub/new.txt"}),
             &root,
             None,
+            &[],
             &[],
             &perms,
             &grants,
@@ -843,6 +876,7 @@ mod tests {
                 &root,
                 None,
                 &[],
+                &[],
                 &perms,
                 &grants,
                 true,
@@ -864,6 +898,7 @@ mod tests {
             &root,
             None,
             &[],
+            &[],
             &perms,
             &grants,
             true,
@@ -882,6 +917,7 @@ mod tests {
             &json!({"path": "../x"}),
             &root,
             None,
+            &[],
             &[],
             &perms,
             &grants,
@@ -908,6 +944,7 @@ mod tests {
             &root,
             None,
             &roots,
+            &[],
             &perms,
             &grants,
             true,
@@ -920,6 +957,7 @@ mod tests {
             &root,
             None,
             &roots,
+            &[],
             &ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
             &grants,
             true,
@@ -928,6 +966,49 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The Cowork opt-in at the gate layer: an attached root also passed as a
+    /// write root takes the ordinary in-project Write prompt, not WriteEscape,
+    /// while a path outside both roots keeps the escape classification.
+    #[test]
+    fn a_write_root_downgrades_the_escape_to_an_ordinary_write() {
+        let root = unique_root();
+        let repo = unique_root();
+        let elsewhere = unique_root();
+        let roots = vec![repo.clone()];
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        let grants = SessionGrants::default();
+
+        let inside = resolve_decision(
+            lookup("write").unwrap(),
+            &json!({"path": repo.join("new.txt").to_string_lossy(), "content": "y"}),
+            &root,
+            None,
+            &roots,
+            &roots,
+            &perms,
+            &grants,
+            true,
+        );
+        assert_eq!(inside, Decision::Prompt(PromptKind::Write));
+
+        let outside = resolve_decision(
+            lookup("write").unwrap(),
+            &json!({"path": elsewhere.join("x.txt").to_string_lossy(), "content": "y"}),
+            &root,
+            None,
+            &roots,
+            &roots,
+            &perms,
+            &grants,
+            true,
+        );
+        assert_eq!(outside, Decision::Prompt(PromptKind::WriteEscape));
+
+        for d in [&root, &repo, &elsewhere] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 
     #[test]
@@ -942,6 +1023,7 @@ mod tests {
             &root,
             None,
             &roots,
+            &[],
             &ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
             &SessionGrants::default(),
             true,
