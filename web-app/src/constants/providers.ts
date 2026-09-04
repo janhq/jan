@@ -325,6 +325,14 @@ export const predefinedProviders = [
         description: 'Same performance, faster and more agile. 204K context window.',
         capabilities: ['completion', 'tools'],
       },
+      {
+        id: 'MiniMax-M3',
+        name: 'MiniMax-M3',
+        version: '1.0',
+        description:
+          'Multimodal model that accepts text, image and video input. 1M context window.',
+        capabilities: ['completion', 'tools', 'vision', 'video'],
+      },
     ],
   },
   {
