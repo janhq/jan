@@ -73,5 +73,8 @@
     "@types/react": "19.1.2",
     "@types/react-dom": "19.1.2"
   },
-  "packageManager": "yarn@4.5.3"
+  "packageManager": "yarn@4.5.3",
+  "dependencies": {
+    "form-data": "4.0.4"
+  }
 }
