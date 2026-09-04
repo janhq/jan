@@ -107,6 +107,10 @@ For those who enjoy the scenic route:
 - Make ≥ 3.81
 - Rust (for Tauri)
 - (macOS Apple Silicon only) MetalToolchain `xcodebuild -downloadComponent MetalToolchain`
+- (Linux / Ubuntu) System dependencies:
+  ```bash
+  sudo apt install -y libglib2.0-dev pkg-config libgdk-pixbuf-2.0-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libpango1.0-dev libatk1.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev glslc spirv-headers
+  ```
 
 ### Run with Make
 
@@ -121,6 +125,7 @@ This handles everything: installs dependencies, builds core components, and laun
 **Available make targets:**
 - `make dev` - Full development setup and launch
 - `make build` - Production build
+- `make build-engine-dev` - Build llama.cpp engine worker (`jan-llama-worker`) for local models
 - `make test` - Run tests and linting
 - `make clean` - Delete everything and start fresh
 
@@ -166,9 +171,10 @@ For detailed compatibility, check our [installation guides](https://jan.ai/docs/
 
 If things go sideways:
 
-1. Check our [troubleshooting docs](https://jan.ai/docs/desktop/troubleshooting)
-2. Copy your error logs and system specs
-3. Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH) `#🆘|jan-help` channel
+1. If local models fail or `jan-llama-worker` is not found, build the engine worker explicitly: `make build-engine-dev`
+2. Check our [troubleshooting docs](https://jan.ai/docs/desktop/troubleshooting)
+3. Copy your error logs and system specs
+4. Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH) `#🆘|jan-help` channel
 
 
 ## Contributing

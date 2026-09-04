@@ -106,6 +106,10 @@ Janはオープンソースの優れたAIを使いやすい製品として提供
 - Make ≥ 3.81
 - Rust（Tauri用）
 - （macOS Apple Siliconのみ）MetalToolchain `xcodebuild -downloadComponent MetalToolchain`
+- （Linux / Ubuntu）システム依存関係：
+  ```bash
+  sudo apt install -y libglib2.0-dev pkg-config libgdk-pixbuf-2.0-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libpango1.0-dev libatk1.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev glslc spirv-headers
+  ```
 
 ### Makeで実行
 
@@ -120,6 +124,7 @@ make dev
 **利用可能なmakeターゲット：**
 - `make dev` - 開発環境のフルセットアップと起動
 - `make build` - プロダクションビルド
+- `make build-engine-dev` - ローカルモデル用 llama.cpp エンジンワーカー (`jan-llama-worker`) のビルド
 - `make test` - テストとリンティングの実行
 - `make clean` - すべて削除してクリーンな状態から開始
 
@@ -145,9 +150,10 @@ yarn dev
 
 問題が発生した場合：
 
-1. [トラブルシューティングドキュメント](https://jan.ai/docs/desktop/troubleshooting)を確認
-2. エラーログとシステムスペックをコピー
-3. [Discord](https://discord.gg/FTk2MvZwJH)の`#🆘|jan-help`チャンネルでヘルプを依頼
+1. ローカルモデルの実行に失敗する場合や `jan-llama-worker` が見つからない場合は、エンジンを手動でビルドしてください：`make build-engine-dev`
+2. [トラブルシューティングドキュメント](https://jan.ai/docs/desktop/troubleshooting)を確認
+3. エラーログとシステムスペックをコピー
+4. [Discord](https://discord.gg/FTk2MvZwJH)の`#🆘|jan-help`チャンネルでヘルプを依頼
 
 ## コントリビューション
 
