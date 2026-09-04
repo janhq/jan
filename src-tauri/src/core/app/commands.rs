@@ -6,9 +6,9 @@ use std::{
 use tauri::{AppHandle, Manager, Runtime, State};
 
 use super::constants::{CONFIGURATION_FILE_NAME, TAURI_BUNDLE_IDENTIFIER};
-use super::models::AppConfiguration;
 #[cfg(not(feature = "cli"))]
 use super::helpers::copy_dir_recursive;
+use super::models::AppConfiguration;
 #[cfg(not(feature = "cli"))]
 use crate::core::state::AppState;
 
@@ -142,6 +142,23 @@ pub(crate) fn with_temp_data_folder<T>(f: impl FnOnce(&std::path::Path) -> T) ->
     result
 }
 
+/// Check whether a path exists and can be opened as a readable directory.
+fn is_readable_data_folder(path: &Path) -> bool {
+    path.is_dir() && fs::read_dir(path).is_ok()
+}
+
+/// Default Jan data folder (`<data_dir>/<app_name>/data`) without an AppHandle.
+fn default_data_folder_path_internal() -> PathBuf {
+    let app_name = std::env::var("APP_NAME").unwrap_or_else(|_| "Jan".to_string());
+    if let Some(data_dir) = dirs::data_dir() {
+        return data_dir.join(&app_name).join("data");
+    }
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    PathBuf::from(home).join(&app_name).join("data")
+}
+
 /// Resolve the Jan data folder path without an AppHandle (for CLI use).
 /// Reads AppConfiguration from the config file; falls back to the default location.
 pub fn resolve_jan_data_folder() -> PathBuf {
@@ -159,20 +176,19 @@ pub fn resolve_jan_data_folder() -> PathBuf {
     if config_file.exists() {
         if let Ok(content) = fs::read_to_string(&config_file) {
             if let Ok(config) = serde_json::from_str::<AppConfiguration>(&content) {
-                return PathBuf::from(config.data_folder);
+                let persisted = PathBuf::from(&config.data_folder);
+                if is_readable_data_folder(&persisted) {
+                    return persisted;
+                }
+                log::warn!(
+                    "Persisted data_folder {} is not readable; falling back to default Jan data folder",
+                    persisted.display()
+                );
             }
         }
     }
 
-    // Default: data_dir/Jan/data  (mirrors default_data_folder_path)
-    let app_name = std::env::var("APP_NAME").unwrap_or_else(|_| "Jan".to_string());
-    if let Some(data_dir) = dirs::data_dir() {
-        return data_dir.join(&app_name).join("data");
-    }
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_default();
-    PathBuf::from(home).join(&app_name).join("data")
+    default_data_folder_path_internal()
 }
 
 #[cfg(not(feature = "cli"))]
@@ -211,7 +227,19 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
     match fs::read_to_string(&configuration_file) {
         Ok(content) => {
             match serde_json::from_str::<AppConfiguration>(&content) {
-                Ok(app_configurations) => app_configurations,
+                Ok(app_configurations) => {
+                    let data_folder_path = PathBuf::from(&app_configurations.data_folder);
+                    if !is_readable_data_folder(&data_folder_path) {
+                        log::warn!(
+                            "Configured data_folder {} is not readable; falling back to default data folder {}",
+                            data_folder_path.display(),
+                            default_data_folder
+                        );
+                        app_default_configuration.data_folder = default_data_folder;
+                        return app_default_configuration;
+                    }
+                    app_configurations
+                }
                 Err(err) => {
                     log::error!("Failed to parse app config, returning default config instead. Error: {err}");
                     // Use the proper default data folder path, not the relative "./data"
@@ -376,7 +404,12 @@ pub fn app_token(state: State<'_, AppState>) -> Option<String> {
 mod tests {
     use super::*;
     use serde_json::Value;
+    use std::sync::Mutex;
     use tempfile::tempdir;
+
+    // Environment variables are process-wide and Rust tests run in parallel,
+    // so guard any test that mutates XDG_* or HOME with this lock.
+    static ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn migration_recovers_legacy_then_removes_stale_copy() {
@@ -443,5 +476,93 @@ mod tests {
             identifier, TAURI_BUNDLE_IDENTIFIER,
             "TAURI_BUNDLE_IDENTIFIER must stay synced with tauri.conf.json"
         );
+    }
+
+    #[test]
+    fn resolve_jan_data_folder_falls_back_when_stale() {
+        let _guard = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let tmp = tempdir().expect("temp dir");
+        let data_home = tmp.path();
+
+        let prev_data_home = std::env::var_os("XDG_DATA_HOME");
+        let prev_config_home = std::env::var_os("XDG_CONFIG_HOME");
+        let prev_home = std::env::var_os("HOME");
+        std::env::set_var("XDG_DATA_HOME", data_home);
+        std::env::set_var("XDG_CONFIG_HOME", data_home);
+        std::env::set_var("HOME", data_home);
+
+        // Write a config that points to an absolute path that no longer exists.
+        let config_dir = data_home.join(env!("CARGO_PKG_NAME"));
+        fs::create_dir_all(&config_dir).unwrap();
+        let stale = data_home
+            .join("stale_home")
+            .join("Library")
+            .join("Application Support")
+            .join("Jan")
+            .join("data");
+        let config = AppConfiguration {
+            data_folder: stale.to_string_lossy().into_owned(),
+        };
+        fs::write(
+            config_dir.join(CONFIGURATION_FILE_NAME),
+            serde_json::to_string(&config).unwrap(),
+        )
+        .unwrap();
+        assert!(!stale.exists(), "stale path must be missing");
+
+        let resolved = resolve_jan_data_folder();
+
+        let expected = data_home.join("Jan").join("data");
+        assert_eq!(resolved, expected);
+
+        if let Some(v) = prev_data_home {
+            std::env::set_var("XDG_DATA_HOME", v);
+        } else {
+            std::env::remove_var("XDG_DATA_HOME");
+        }
+        if let Some(v) = prev_config_home {
+            std::env::set_var("XDG_CONFIG_HOME", v);
+        } else {
+            std::env::remove_var("XDG_CONFIG_HOME");
+        }
+        if let Some(v) = prev_home {
+            std::env::set_var("HOME", v);
+        } else {
+            std::env::remove_var("HOME");
+        }
+    }
+
+    #[test]
+    fn get_app_configurations_falls_back_when_stale() {
+        let _guard = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let prev_app_name = std::env::var_os("APP_NAME");
+        std::env::set_var("APP_NAME", "Jan");
+
+        let app = tauri::test::mock_app();
+
+        let configuration_file = get_configuration_file_path(app.handle().clone());
+        let config_parent = configuration_file.parent().unwrap().to_path_buf();
+        fs::create_dir_all(&config_parent).unwrap();
+
+        // Point the config at a sibling data directory that does not exist.
+        let stale = config_parent.join("stale").join("data");
+        let config = AppConfiguration {
+            data_folder: stale.to_string_lossy().into_owned(),
+        };
+        fs::write(&configuration_file, serde_json::to_string(&config).unwrap()).unwrap();
+
+        let resolved = get_app_configurations(app.handle().clone());
+        let expected = default_data_folder_path(app.handle().clone());
+
+        assert_ne!(resolved.data_folder, stale.to_string_lossy());
+        assert_eq!(resolved.data_folder, expected);
+
+        if let Some(v) = prev_app_name {
+            std::env::set_var("APP_NAME", v);
+        } else {
+            std::env::remove_var("APP_NAME");
+        }
     }
 }
