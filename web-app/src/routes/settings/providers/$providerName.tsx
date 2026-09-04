@@ -429,12 +429,6 @@ function ProviderDetail() {
           'x-api-key': key,
           Authorization: `Bearer ${key}`,
         }
-        if (
-          provider.base_url.includes('localhost:') ||
-          provider.base_url.includes('127.0.0.1:')
-        ) {
-          headers['Origin'] = 'tauri://localhost'
-        }
 
         try {
           const response = await fetchImpl(`${provider.base_url}/models`, {
