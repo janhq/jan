@@ -1,0 +1,698 @@
+{
+  "assistants": "Assistenter",
+  "hardware": "Maskinvara",
+  "mcp-servers": "MCP-servrar",
+  "local_api_server": "Lokal API-server",
+  "remote_access": "Fjärråtkomst",
+  "integrations": "Integreringar",
+  "experimental": "Experimentell",
+  "https_proxy": "HTTPS-proxy",
+  "web_search": "Webbsökning",
+  "agent_tools": "Agentverktyg",
+  "browse": "Bläddra",
+  "starting": "Startar…",
+  "attachments": "Bilagor",
+  "general": "Allmänt",
+  "settings": "Inställningar",
+  "modelProviders": "Modellleverantörer",
+  "localProviders": "Lokala",
+  "remoteProviders": "Fjärranslutna",
+  "manageProviders": "Hantera leverantörer",
+  "hiddenProviders": "{{count}} inaktiverade",
+  "hideProvider": "Dölj leverantör",
+  "showProvider": "Visa leverantör",
+  "interface": "Gränssnitt",
+  "appearance": "Utseende",
+  "privacy": "Integritet",
+  "keyboardShortcuts": "Genvägar",
+  "home": "Hem",
+  "newSession": "Ny session",
+  "selectFolder": "Välj mapp",
+  "selectModel": "Välj först en modell",
+  "commands": "Kommandon",
+  "cmdHelp": "Visa tillgängliga kommandon",
+  "cmdClear": "Rensa den här sessionen",
+  "cmdModels": "Byt aktiv modell",
+  "cmdModelSwitched": "Bytte till {{name}}",
+  "cmdUnknown": "Okänt kommando: {{name}}. Prova /help",
+  "cmdBusy": "Det går inte medan agenten körs",
+  "skills": "Färdigheter",
+  "sessions": "Sessioner",
+  "deleteSession": "Ta bort session",
+  "newChat": "Ny chatt",
+  "newAgentChat": "Ny agentchatt",
+  "chats": "Chattar",
+  "favorites": "Favoriter",
+  "recents": "Senaste",
+  "hub": "Hubben",
+  "helpSupport": "Hjälp och support",
+  "analyticsConsentDetail": "Vi samlar in anonyma data för att förstå hur funktioner används. Dina chattar och personuppgifter spåras aldrig. Du kan ändra detta när som helst under Inställningar > Integritet.",
+  "analyticsConsentQuestion": "Vill du hjälpa oss att förbättra Jan?",
+  "deleteAll": "Ta bort alla",
+  "rename": "Byt namn",
+  "delete": "Ta bort",
+  "copied": "Kopierat!",
+  "dataFolder": "Datamapp",
+  "language": "Språk",
+  "login": "Logga in",
+  "logout": "Logga ut",
+  "search": "Sök",
+  "cancel": "Avbryt",
+  "create": "Skapa",
+  "save": "Spara",
+  "edit": "Redigera",
+  "copy": "Kopiera",
+  "back": "Tillbaka",
+  "close": "Stäng",
+  "done": "Klar",
+  "next": "Nästa",
+  "finish": "Slutför",
+  "skip": "Hoppa över",
+  "allow": "Tillåt",
+  "deny": "Neka",
+  "start": "Starta",
+  "stop": "Stoppa",
+  "dark": "Mörkt",
+  "light": "Ljust",
+  "system": "System",
+  "auto": "Automatiskt",
+  "english": "Engelska",
+  "newThread": "Ny tråd",
+  "noResultsFound": "Inga resultat hittades",
+  "noThreadsYet": "Inga trådar ännu",
+  "noThreadsYetDesc": "Starta en ny konversation för att se trådhistoriken här.",
+  "downloads": "Hämtningar",
+  "downloading": "Hämtar",
+  "cancelDownload": "Avbryt hämtning",
+  "downloadCancelled": "Hämtningen avbröts",
+  "downloadComplete": "Hämtningen är klar",
+  "thinking": "Tänker…",
+  "callingTool": "Anropar verktyg",
+  "completed": "Slutförd",
+  "image": "Bild",
+  "tools": "Verktyg",
+  "webSearch": "Webbsökning",
+  "reasoning": "Resonemang",
+  "selectAModel": "Välj en modell",
+  "noToolsAvailable": "Inga verktyg tillgängliga",
+  "noModels": "Inga modeller hittades",
+  "addProvider": "Lägg till leverantör",
+  "changeLanguage": "Byt språk",
+  "apiKeyRequired": "API-nyckel krävs",
+  "enterTrustedHosts": "Ange betrodda värdar",
+  "confirm": "Bekräfta",
+  "continue": "Fortsätt",
+  "loading": "Läser in…",
+  "settingUpJan": "Startar Jan…",
+  "registeringExtensions": "Registrerar tillägg…",
+  "loadingExtensions": "Läser in tillägg… ({{done}}/{{total}})",
+  "error": "Fel",
+  "success": "Lyckades",
+  "warning": "Varning",
+  "conversationNotAvailable": "Konversationen är inte tillgänglig",
+  "conversationNotAvailableDescription": "Konversationen du försöker öppna är inte tillgänglig eller har tagits bort.",
+  "temporaryChat": "Tillfällig chatt",
+  "temporaryChatTooltip": "Tillfälliga chattar visas inte i din historik",
+  "noResultsFoundDesc": "Vi kunde inte hitta några chattar som matchar din sökning. Prova ett annat nyckelord.",
+  "searchModels": "Sök modeller…",
+  "searchStyles": "Sök stilar…",
+  "createAssistant": "Skapa assistent",
+  "enterApiKey": "Ange API-nyckel",
+  "scrollToBottom": "Rulla längst ned",
+  "generateAiResponse": "Generera AI-svar",
+  "continueAiResponse": "Fortsätt med AI-svar",
+  "attachmentInjectedIndicator": "Injicerad i chatten",
+  "attachmentEmbeddedIndicator": "Inbäddad för RAG",
+  "viewInjectedContent": "Visa injicerat innehåll",
+  "injectedContentTitle": "Injicerat filinnehåll",
+  "collapse": "Fäll ihop",
+  "expand": "Fäll ut",
+  "todoPanelTitle": "Förlopp",
+  "todoPanelEmpty": "Ingen att göra-lista ännu.",
+  "artifactOpenPreview": "Öppna förhandsvisning",
+  "artifactOpenExternal": "Öppna",
+  "artifactMoreActions": "Fler åtgärder",
+  "artifactShowInFolder": "Visa i mapp",
+  "skillsUsedLabel": "Använda färdigheter",
+  "skillsUsed": "Använda färdigheter: {{skills}}",
+  "artifactsAll": "Alla",
+  "artifactsEmpty": "Inget har skapats ännu. Artefakter från Cowork-körningar visas här.",
+  "artifactsNoMatch": "Inga artefakter matchar.",
+  "artifactsSearch": "Sök artefakter",
+  "artifactsShowMore": "Visa {{count}} till",
+  "modelNoTools": "{{model}} kan inte anropa verktyg och kan därför inte agera som agent. Välj en modell med verktygsanrop.",
+  "askContinue": "Fortsätt",
+  "askNext": "Nästa fråga",
+  "askPrev": "Föregående fråga",
+  "askRecommended": "Rekommenderas",
+  "askSelectedCount": "{{count}} valda",
+  "askSomethingElse": "Något annat",
+  "askSomethingElsePlaceholder": "Skriv ditt eget svar",
+  "submit": "Skicka",
+  "toolApproval": {
+    "title": "Begäran om verktygsbehörighet",
+    "description": "Assistenten vill använda <strong>{{toolName}}</strong>",
+    "securityNotice": "Tillåt endast verktyg som du litar på. Verktyg kan komma åt ditt system och dina data.",
+    "deny": "Neka",
+    "allowOnce": "Tillåt en gång",
+    "alwaysAllow": "Tillåt alltid"
+  },
+  "errorDialog": {
+    "titleFallback": "Något gick fel",
+    "details": "Detaljer"
+  },
+  "missingDependenciesDialog": {
+    "title": "Systembibliotek saknas",
+    "description": "{{backend}} installerades men vissa nödvändiga systembibliotek kunde inte hittas. Den kan falla tillbaka till CPU eller inte fungera korrekt.",
+    "installLabel": "Installera följande för att lösa problemet:",
+    "download": "Hämta",
+    "additionalLibraries": "Ytterligare saknade bibliotek:",
+    "missingLibraries": "Saknade bibliotek:",
+    "showRawLibraries": "Visa {{count}} saknade biblioteksnamn"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp är fortfarande upptagen",
+    "description": "En eller flera modeller hann inte läsas ur. Tvångsavslutning stänger llama.cpp och kan avbryta aktiva svar.",
+    "forceQuit": "Tvinga avslutning",
+    "forcing": "Tvingar avslutning…",
+    "shuttingDown": "Stänger av…"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Byt plats för datamappen",
+      "description": "Är du säker på att du vill byta plats för datamappen? Alla data flyttas till den nya platsen och programmet startas om.",
+      "currentLocation": "Nuvarande plats:",
+      "newLocation": "Ny plats:",
+      "cancel": "Avbryt",
+      "changeLocation": "Byt plats"
+    },
+    "deleteAllThreads": {
+      "title": "Ta bort alla trådar",
+      "description": "Alla trådar tas bort. Åtgärden kan inte ångras."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "Ta bort alla konversationer",
+      "description": "{{count}} konversationer i ”{{projectName}}” tas bort. Åtgärden kan inte ångras."
+    },
+    "deleteThread": {
+      "description": "Är du säker på att du vill ta bort den här tråden? Åtgärden kan inte ångras."
+    },
+    "editMessage": { "title": "Redigera meddelande" },
+    "messageMetadata": { "title": "Meddelandemetadata" }
+  },
+  "cowork": "Cowork",
+  "coworkEmpty": {
+    "title": "Vad arbetar vi med?",
+    "subtitleSandbox": "Ge Jan en uppgift. Den läser och skriver filer, kör kommandon och arbetar igenom stegen på egen hand.",
+    "subtitleFolder": "Ge Jan en uppgift. Den läser {{folder}} utan att ändra något där och arbetar på egen hand utifrån det.",
+    "try": "Prova",
+    "sandbox": {
+      "first": "Skriv ett Python-skript som byter namn på filer efter datumet de togs",
+      "second": "Bygg en ensidig instrumentpanel från en CSV-fil som jag klistrar in",
+      "third": "Skriv ett utkast till en README för ett projekt som jag beskriver"
+    },
+    "folder": {
+      "first": "Förklara hur {{folder}} är uppbyggd",
+      "second": "Hitta alla TODO i {{folder}} och gruppera dem efter område",
+      "third": "Skriv tester för den del av {{folder}} som jag pekar ut"
+    }
+  },
+  "skillsInContext": "Färdigheter som är tillgängliga för agenten i den här körningen",
+  "skillsTitle": "Hantera färdigheter",
+  "skillsSelectFolder": "Välj först en projektmapp på kodskärmen för att hantera dess färdigheter.",
+  "skillsEmpty": "Inga färdigheter ännu",
+  "skillsPickOrNew": "Välj en färdighet att redigera eller skapa en ny.",
+  "skillNew": "Ny färdighet",
+  "skillDelete": "Ta bort färdighet",
+  "skillSave": "Spara",
+  "skillSaved": "Färdigheten har sparats",
+  "skillNameRequired": "Färdighetsnamn krävs",
+  "skillNamePlaceholder": "färdighetsnamn",
+  "skillContentPlaceholder": "Beskriv den återanvändbara proceduren i Markdown…",
+  "skillHubImport": "Importera från hubben",
+  "skillHubTitle": "Anthropics färdighetshubb",
+  "skillHubEmpty": "Inga färdigheter hittades i hubben",
+  "skillImport": "Importera",
+  "skillReimport": "Importera på nytt",
+  "skillImported": "Importerade {{name}}",
+  "htmlArtifact": {
+    "code": "Kod",
+    "preview": "Förhandsvisning",
+    "previewStreaming": "Tillgänglig när genereringen är klar",
+    "unresolvedAssets_one": "1 resursreferens kan inte läsas in i förhandsvisningen. Relativa sökvägar saknar en bas-URL att tolka mot.",
+    "unresolvedAssets_other": "{{count}} resursreferenser kan inte läsas in i förhandsvisningen. Relativa sökvägar saknar en bas-URL att tolka mot."
+  },
+  "claude_code": "Claude Code",
+  "activeSuffix": " (aktiv)",
+  "extensions": "Tillägg",
+  "artifacts": "Artefakter",
+  "customize": "Anpassa",
+  "local": "Lokalt",
+  "cmdModelsHint": "Skriv /models och välj sedan en modell i listan",
+  "deleteSessionTitle": "Ta bort session?",
+  "deleteSessionBody": "”{{title}}” och dess transkription tas bort permanent. Åtgärden kan inte ångras.",
+  "helpUsImproveJan": "Hjälp oss att förbättra Jan",
+  "unstarAll": "Ta bort alla favoriter",
+  "unstar": "Ta bort från favoriter",
+  "star": "Lägg till som favorit",
+  "others": "Övrigt",
+  "loginWith": "Logga in med {{provider}}",
+  "loginFailed": "Det gick inte att logga in",
+  "loggingOut": "Loggar ut…",
+  "loggedOut": "Du har loggats ut",
+  "logoutFailed": "Det gick inte att logga ut",
+  "profile": "Profil",
+  "reset": "Återställ",
+  "searchThreads": "Sök trådar…",
+  "toNavigate": "för att navigera",
+  "toSelect": "för att välja",
+  "toClose": "för att stänga",
+  "clearRecent": "Rensa",
+  "name": "Namn",
+  "dismiss": "Avfärda",
+  "preview": {
+    "loading": "Öppnar…",
+    "unsupported": "Jan kan inte visa den här typen av fil. Öppna den i ett annat program.",
+    "outside": "Den här filen finns inte längre i sessionens arbetsyta.",
+    "tooLarge": "Filen är för stor för förhandsvisning. Öppna den i ett annat program.",
+    "reload": "Läs in igen",
+    "allowNetwork": "Tillåt nätverksåtkomst",
+    "unresolvedRefs_one": "1 fil som sidan länkar till kan inte läsas in i förhandsvisningen. Öppna den i en webbläsare.",
+    "unresolvedRefs_other": "{{count}} filer som sidan länkar till kan inte läsas in i förhandsvisningen. Öppna den i en webbläsare."
+  },
+  "changes": {
+    "title": "Agentändringar",
+    "empty": "Filer som agenten skriver eller redigerar visas här.",
+    "a11y": "Agentändringar: {{files}} filer, {{additions}} tillagda, {{deletions}} borttagna"
+  },
+  "compactWidth": "Kompakt bredd",
+  "fullWidth": "Full bredd",
+  "medium": "Medel",
+  "uploadingAttachments": "Laddar upp bilagor…",
+  "thought": "Tanke",
+  "vision": "Bildanalys",
+  "multimodal": "Multimodal",
+  "embeddings": "Vektorinbäddningar",
+  "proactive": "Proaktiv",
+  "noModelsFoundFor": "Inga modeller hittades för ”{{searchValue}}”",
+  "failedToLoadModels": "Det gick inte att läsa in modeller",
+  "noAssistant": "Ingen assistent",
+  "customAvatar": "Anpassad avatar",
+  "editAssistant": "Redigera assistent",
+  "jan": "Jan",
+  "metadata": "Metadata",
+  "regenerate": "Generera igen",
+  "threadImage": "Trådbild",
+  "editMessage": "Redigera meddelande",
+  "deleteMessage": "Ta bort meddelande",
+  "deleteThread": "Ta bort tråd",
+  "renameThread": "Byt namn på tråd",
+  "threadTitle": "Trådrubrik",
+  "deleteAllThreads": "Ta bort alla trådar",
+  "allThreadsUnfavorited": "Alla trådar har tagits bort från favoriter",
+  "deleteAllThreadsConfirm": "Är du säker på att du vill ta bort alla trådar? Åtgärden kan inte ångras.",
+  "addOpenAIProvider": "Lägg till OpenAI-leverantör",
+  "enterNameForProvider": "Ange ett namn på leverantören",
+  "providerAlreadyExists": "En leverantör med namnet ”{{name}}” finns redan. Välj ett annat namn.",
+  "adjustFontSize": "Justera teckenstorlek",
+  "editTheme": "Redigera tema",
+  "editCodeBlockStyle": "Redigera kodblocksformat",
+  "editServerHost": "Redigera servervärd",
+  "pickColorWindowBackground": "Välj färg för fönsterbakgrund",
+  "pickColorAppMainView": "Välj färg för programmets huvudvy",
+  "pickColorAppPrimary": "Välj primärfärg för programmet",
+  "pickColorAppAccent": "Välj accentfärg för programmet",
+  "pickColorAppDestructive": "Välj varningsfärg för programmet",
+  "placeholder": {
+    "chatInput": "Fråga mig vad som helst…"
+  },
+  "addModel": {
+    "title": "Lägg till modell",
+    "modelId": "Modell-ID",
+    "enterModelId": "Ange modell-ID",
+    "addModel": "Lägg till modell",
+    "description": "Lägg till en ny modell till leverantören",
+    "exploreModels": "Visa leverantörens modellista"
+  },
+  "mcpServers": {
+    "editServer": "Redigera server",
+    "addServer": "Lägg till server",
+    "serverName": "Servernamn",
+    "enterServerName": "Ange servernamn",
+    "command": "Kommando",
+    "enterCommand": "Ange kommando",
+    "arguments": "Argument",
+    "argument": "Argument {{index}}",
+    "envVars": "Miljövariabler",
+    "key": "Nyckel",
+    "value": "Värde",
+    "save": "Spara"
+  },
+  "deleteServer": {
+    "title": "Ta bort server",
+    "delete": "Ta bort"
+  },
+  "editJson": {
+    "errorParse": "Det gick inte att tolka JSON",
+    "errorPaste": "Det gick inte att klistra in JSON",
+    "errorFormat": "Ogiltigt JSON-format",
+    "titleAll": "Redigera konfigurationen för alla servrar",
+    "placeholder": "Ange JSON-konfiguration…",
+    "save": "Spara"
+  },
+  "editModel": {
+    "title": "Redigera modell: {{modelId}}",
+    "description": "Konfigurera modellens funktioner genom att växla alternativen nedan.",
+    "capabilities": "Funktioner",
+    "tools": "Verktyg",
+    "vision": "Bildanalys",
+    "embeddings": "Vektorinbäddningar",
+    "notAvailable": "Inte tillgängligt ännu"
+  },
+  "outOfContextError": {
+    "truncateInput": "Förkorta indata",
+    "title": "Kontextgränsen har nåtts",
+    "description": "Den här chatten närmar sig AI-modellens minnesgräns, som en whiteboard som fylls. Vi kan utöka minnesfönstret (kontextstorleken) så att modellen minns mer, men det kan använda mer av datorns minne. Vi kan också förkorta indata, vilket gör att en del av chatthistoriken glöms bort för att ge plats åt nya meddelanden.",
+    "increaseContextSizeDescription": "Vill du öka kontextstorleken?",
+    "increaseContextSize": "Öka kontextstorleken"
+  },
+  "deleteModel": {
+    "title": "Ta bort modell: {{modelId}}",
+    "description": "Är du säker på att du vill ta bort den här modellen? Åtgärden kan inte ångras.",
+    "success": "Modellen {{modelId}} har tagits bort permanent.",
+    "cancel": "Avbryt",
+    "delete": "Ta bort"
+  },
+  "deleteProvider": {
+    "title": "Ta bort leverantör",
+    "description": "Ta bort leverantören och alla dess modeller. Åtgärden kan inte ångras.",
+    "success": "Leverantören {{provider}} har tagits bort permanent.",
+    "confirmTitle": "Ta bort leverantör: {{provider}}",
+    "confirmDescription": "Är du säker på att du vill ta bort leverantören? Åtgärden kan inte ångras.",
+    "cancel": "Avbryt",
+    "delete": "Ta bort"
+  },
+  "modelSettings": {
+    "title": "Modellinställningar – {{modelId}}",
+    "description": "Konfigurera modellinställningar för bästa prestanda och beteende.",
+    "nglDisabledByFit": "Automatisk anpassning väljer GPU-lager. Stäng av automatisk anpassning för att ange detta manuellt.",
+    "samplingDefaults": {
+      "title": "Standardparametrar för sampling",
+      "description": "Standardinställningar för den här modellens sampler. Används om de inte åsidosätts per assistent eller begäran."
+    },
+    "specDraft": {
+      "section": "Spekulativ avkodning",
+      "enable": "Aktivera spekulativ avkodning",
+      "enableDescription": "Skapa flera tokenutkast per steg och verifiera dem i en omgång, vilket snabbar upp genereringen. Använder modellens inbyggda MTP-huvuden eller utkastmodellen som hämtades med den (MTP, Eagle3, DFlash eller DSpark).",
+      "nMax": "Högsta antal utkasttoken",
+      "nMaxDescription": "Högsta antal tokenutkast per steg. Standardvärdet är 16.",
+      "nMin": "Lägsta antal utkasttoken",
+      "nMinDescription": "Lägsta antal tokenutkast per steg. Standardvärdet är 0.",
+      "pMin": "Lägsta sannolikhet för utkast",
+      "pMinDescription": "Lägsta sannolikhet för giriga utkast (0–1). Standardvärdet är 0,75."
+    },
+    "templateKwargs": {
+      "section": "Alternativ för chattmall",
+      "description": "Ytterligare alternativ som modellens chattmall stöder. Skickas som chat_template_kwargs i varje begäran; behåll standardvärdet om mallen ska avgöra.",
+      "addCustom": "Lägg till eget alternativ",
+      "keyPlaceholder": "namn",
+      "valuePlaceholder": "värde",
+      "add": "Lägg till",
+      "cancel": "Avbryt",
+      "remove": "Ta bort"
+    }
+  },
+  "attachmentsIngestion": {
+    "title": "Välj hur bilagor ska läsas in",
+    "description": "Välj om filerna ska inkluderas direkt i chatten eller indexeras som vektorinbäddningar.",
+    "inline": "Infoga i chatten",
+    "embeddings": "Använd vektorinbäddningar"
+  },
+  "errors": {
+    "fileTooLarge": "Filen är för stor",
+    "fileTooLargeDescription": "{{fileName}} överskrider gränsen på {{maxFileSizeMB}} MB"
+  },
+  "files": {
+    "chunksCount": "{{count}} segment"
+  },
+  "duration": {
+    "seconds": "{{count}} s",
+    "minutes": "{{count}} min",
+    "hours": "{{count}} h"
+  },
+  "workspace": {
+    "readsFrom": "Läser från",
+    "readOnly": "skrivskyddad",
+    "footnote": "Agenten läser bara den här mappen. Inget i den ändras någonsin.",
+    "footnoteEmpty": "Anslut en mapp så att agenten kan läsa projektet. Den ändrar fortfarande ingenting i mappen.",
+    "attach": "Anslut en mapp",
+    "change": "Byt mapp",
+    "detach": "Koppla från mapp",
+    "open": "Öppna",
+    "reveal": "Visa",
+    "missing": "Den här mappen finns inte längre. Anslut en annan mapp.",
+    "a11yWithFolder": "Projektmappen {{folder}} är ansluten skrivskyddad. Byt eller koppla från den.",
+    "a11yNoFolder": "Ingen projektmapp är ansluten. Anslut en."
+  },
+  "sandbox": {
+    "noTerminal": "Ingen terminal",
+    "a11y": "Körning av kommandon är avstängd. Detaljer.",
+    "title": "Körning av kommandon är avstängd",
+    "body": "Jan låter agenten köra skalkommandon bara när systemet kan begränsa dem. Ingen sandlåda är tillgänglig här, så agenten kan läsa, skriva och redigera filer i sin sandlåda – men inte köra några kommandon.",
+    "fixLinux": "Linux använder bubblewrap. Installera det och starta sedan om Jan.",
+    "fixMac": "macOS använder den inbyggda sandlådan i /usr/bin/sandbox-exec. Starta om Jan när den är tillgänglig.",
+    "fixWindows": "Windows använder AppContainer. Starta om Jan för att försöka igen.",
+    "recheck": "Kontrollera igen"
+  },
+  "planMode": {
+    "label": "Plan",
+    "tooltipOff": "Planera först – agenten läser och föreslår utan att skriva.",
+    "tooltipOn": "Planerar. Stäng av detta för att låta agenten skriva filer.",
+    "onAnnounce": "Planeringsläge på",
+    "placeholder": "Be om en plan. Agenten ändrar inga filer."
+  },
+  "budget": {
+    "steps": "steg {{step}}/{{max}}",
+    "stoppedSteps": "Stannade efter {{max}} steg. Agenten har inte slutfört uppgiften.",
+    "keepGoing": "Fortsätt",
+    "stoppedTokens": "Stannade – sessionen nådde sin tokengräns.",
+    "compact": "Komprimera",
+    "newSession": "Ny session"
+  },
+  "run": {
+    "stopped": "Stoppad.",
+    "failed": "Körningen avbröts i förtid.",
+    "tryAgain": "Försök igen"
+  },
+  "projects": {
+    "title": "Projekt",
+    "new": "Nya projekt",
+    "addProject": "Lägg till projekt",
+    "addToProject": "Lägg till i projekt",
+    "removeFromProject": "Ta bort från projekt",
+    "createNewProject": "Skapa nytt projekt",
+    "editProject": "Redigera projekt",
+    "deleteProject": "Ta bort projekt",
+    "projectName": "Projektnamn",
+    "enterProjectName": "Ange projektnamn…",
+    "noProjectsAvailable": "Inga projekt tillgängliga",
+    "noProjectsYet": "Inga projekt ännu",
+    "noProjectsYetDesc": "Starta ett nytt projekt genom att klicka på knappen Lägg till projekt.",
+    "projectNotFound": "Projektet hittades inte",
+    "projectNotFoundDesc": "Projektet du letar efter finns inte eller har tagits bort.",
+    "selectAssistant": "Välj assistent",
+    "noAssistantAssigned": "Ingen assistent är tilldelad till det här projektet",
+    "files": "Filer",
+    "filesDescription": "Lägg till PDF-filer, dokument eller annan text att referera till i projektet.",
+    "uploadingFiles": "Bearbetar filer…",
+    "processButton": "Lägg till",
+    "deleteProjectDialog": {
+      "title": "Ta bort projekt",
+      "permanentDelete": "Detta tar bort alla trådar permanent.",
+      "permanentDeleteWarning": "Åtgärden tar bort ALLA trådar i projektet permanent!",
+      "deleteEmptyProject": "Åtgärden tar bort projektet ”{{projectName}}”.",
+      "saveThreadsAdvice": "Flytta trådarna till trådlistan eller ett annat projekt innan du tar bort dem om du vill spara dem.",
+      "starredWarning": "Du har fortfarande favoritmarkerade trådar i projektet.",
+      "deleteButton": "Ta bort",
+      "successWithName": "Projektet ”{{projectName}}” har tagits bort",
+      "successWithoutName": "Projektet har tagits bort",
+      "error": "Det gick inte att ta bort projektet. Försök igen.",
+      "ariaLabel": "Ta bort {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Skapa nytt projekt",
+      "editTitle": "Redigera projekt",
+      "nameLabel": "Projektnamn",
+      "namePlaceholder": "Ange projektnamn…",
+      "assistant": "Assistent",
+      "selectAssistant": "Välj en assistent (valfritt)",
+      "noAssistant": "Ingen assistent",
+      "addAssistant": "Lägg till assistent",
+      "createButton": "Skapa",
+      "updateButton": "Uppdatera",
+      "alreadyExists": "Projektet ”{{projectName}}” finns redan",
+      "createSuccess": "Projektet ”{{projectName}}” har skapats",
+      "updateSuccess": "Projektet ”{{projectName}}” har uppdaterats"
+    },
+    "noConversationsIn": "Inga konversationer i {{projectName}}",
+    "startNewConversation": "Starta en ny konversation med {{projectName}} nedan",
+    "conversationsIn": "Konversationer i {{projectName}}",
+    "conversationsDescription": "Klicka på en konversation för att fortsätta chatta, eller starta en ny nedan.",
+    "conversation": "Konversation",
+    "instructions": "Instruktioner",
+    "setup": "Konfigurering",
+    "instructionsDescription": "Anpassa svarens ton och stil",
+    "manageInstructions": "Hantera instruktioner",
+    "thread": "tråd",
+    "threads": "trådar",
+    "updated": "Uppdaterad:",
+    "collapseProject": "Fäll ihop projekt",
+    "expandProject": "Fäll ut projekt",
+    "update": "Uppdatera",
+    "searchProjects": "Sök projekt…",
+    "noProjectsFound": "Inga projekt hittades",
+    "tryDifferentSearch": "Prova ett annat sökord"
+  },
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Alla trådar har tagits bort från favoriter",
+      "description": "Alla trådar har tagits bort från dina favoriter."
+    },
+    "deleteAllThreads": {
+      "title": "Ta bort alla trådar",
+      "description": "Alla trådar har tagits bort permanent."
+    },
+    "renameThread": {
+      "title": "Byt namn på tråd",
+      "description": "Trådens titel har ändrats till ”{{title}}”"
+    },
+    "deleteThread": {
+      "title": "Ta bort tråd",
+      "description": "Den här tråden har tagits bort permanent."
+    },
+    "errorCopied": {
+      "title": "Kopieringen lyckades",
+      "description": "Felinformationen har kopierats till urklipp."
+    },
+    "errorCopyFailed": {
+      "title": "Det gick inte att kopiera",
+      "description": "Det gick inte att kopiera felinformationen till urklipp."
+    },
+    "editMessage": {
+      "title": "Redigera meddelande",
+      "description": "Meddelandet har redigerats. Vänta på modellens svar."
+    },
+    "appUpdateDownloaded": {
+      "title": "Programuppdateringen har hämtats",
+      "description": "Programuppdateringen har hämtats."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Det gick inte att hämta programuppdateringen",
+      "description": "Det gick inte att hämta programuppdateringen. Försök igen."
+    },
+    "downloadComplete": {
+      "title": "Hämtningen är klar",
+      "description": "{{item}} har hämtats"
+    },
+    "downloadCancelled": {
+      "title": "Hämtningen avbröts",
+      "description": "Hämtningen har avbrutits"
+    },
+    "downloadFailed": {
+      "title": "Hämtningen misslyckades",
+      "description": "Det gick inte att hämta {{item}}"
+    },
+    "openSettings": "Öppna inställningar",
+    "downloadTokenRequired": {
+      "title": "Hugging Face-token krävs",
+      "description": "Den här modellen kräver en åtkomsttoken för Hugging Face. Lägg till token i Inställningar och försök igen."
+    },
+    "downloadLicenseRequired": {
+      "title": "Godkänn modellens licens på Hugging Face",
+      "description": "Du måste godkänna modellens licens på dess Hugging Face-sida innan hämtning."
+    },
+    "downloadRateLimited": {
+      "title": "Hugging Face har begränsat begäranden",
+      "description": "Du har nått en gräns för begäranden. En token kan höja gränsen. Försök igen senare."
+    },
+    "modelValidationStarted": {
+      "title": "Validerar modell",
+      "description": "Modellen ”{{modelId}}” har hämtats. Verifierar integriteten…"
+    },
+    "modelValidationFailed": {
+      "title": "Modellvalideringen misslyckades",
+      "description": "Den hämtade modellen ”{{modelId}}” klarade inte integritetskontrollen och har tagits bort. Filen kan vara skadad eller manipulerad."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Hämtningen är klar",
+      "description": "Modellen ”{{item}}” har hämtats och verifierats"
+    },
+    "uploadFailed": {
+      "title": "Bearbetningen misslyckades",
+      "description": "Det gick inte att bearbeta filen",
+      "subjectThisFile": "Den här filen",
+      "pdfMalformedXref": "{{subject}} har en felaktig korsreferenstabell för PDF och kunde inte tolkas. Öppna den i en PDF-läsare, spara den på nytt (Arkiv → Skriv ut → Spara som PDF) och ladda upp igen.",
+      "pdfScanned": "{{subject}} verkar vara en skannad eller bildbaserad PDF. OCR stöds inte ännu – ladda upp en textbaserad PDF.",
+      "pdfEncrypted": "{{subject}} är lösenordsskyddad. Ta bort lösenordet och försök igen.",
+      "pdfUnsupportedFeature": "{{subject}} använder en PDF-funktion som Jan inte kan tolka ännu (till exempel PostScript-funktioner för färg eller skuggning). Spara den på nytt (Arkiv → Skriv ut → Spara som PDF) för att förenkla den och ladda sedan upp igen.",
+      "pdfGeneric": "{{subject}} kunde inte tolkas som en PDF. Filen kan vara skadad eller använda en PDF-funktion som inte stöds.",
+      "fileTooLarge": "{{subject}} är för stor. {{message}}.",
+      "unsupportedType": "Filtypen ”{{type}}” stöds inte.",
+      "ioError": "Kunde inte läsa {{subject}}: {{message}}",
+      "parseGeneric": "{{subject}} kunde inte tolkas: {{message}}",
+      "fallback": "Det gick inte att bearbeta {{subject}}."
+    },
+    "unsupportedFileType": {
+      "title": "Filtypen stöds inte",
+      "description": "Filtillägget ”.{{extension}}” stöds inte som projektreferens."
+    },
+    "attachmentsDisabledInfo": {
+      "title": "Bilagor är inaktiverade",
+      "description": "Bilagor är inaktiverade i Inställningar"
+    },
+    "projectCreated": {
+      "title": "Projektet har skapats",
+      "description": "Projektet ”{{projectName}}” har skapats"
+    },
+    "projectRenamed": {
+      "title": "Projektets namn har ändrats",
+      "description": "Projektet har bytt namn från ”{{oldName}}” till ”{{newName}}”"
+    },
+    "projectDeleted": {
+      "title": "Projektet har tagits bort",
+      "description": "Projektet ”{{projectName}}” har tagits bort"
+    },
+    "projectAlreadyExists": {
+      "title": "Projektet finns redan",
+      "description": "Projektet ”{{projectName}}” finns redan"
+    },
+    "projectDeleteFailed": {
+      "title": "Borttagningen misslyckades",
+      "description": "Det gick inte att ta bort projektet. Försök igen."
+    },
+    "threadAssignedToProject": {
+      "title": "Tråden har tilldelats projektet",
+      "description": "Tråden har tilldelats ”{{projectName}}”"
+    },
+    "threadRemovedFromProject": {
+      "title": "Tråden har tagits bort från projektet",
+      "description": "Tråden har tagits bort från ”{{projectName}}”"
+    },
+    "fileUploaded": {
+      "title": "Filen har bearbetats",
+      "description": "Filen har bearbetats och indexerats."
+    },
+    "fileDeleted": {
+      "title": "Filen har tagits bort",
+      "description": "Filen har tagits bort från projektet"
+    },
+    "deleteFailed": {
+      "title": "Borttagningen misslyckades",
+      "description": "Det gick inte att ta bort filen"
+    },
+    "fileAlreadyExists": {
+      "title": "Filen finns redan",
+      "description": "Filen är redan bifogad till projektet"
+    }
+  }
+}
