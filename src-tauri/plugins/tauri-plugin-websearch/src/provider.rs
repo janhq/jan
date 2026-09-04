@@ -565,6 +565,16 @@ fn normalize_tavily_extract(body: &Value, requested_url: &str) -> Result<Fetched
     })
 }
 
+/// Attach the shared You.com request headers. Callers set the body with
+/// `.json()`, which already sets `Content-Type: application/json` — setting it
+/// again here would duplicate the header (reqwest's `.header()` appends), and
+/// api.you.com rejects a multi-valued `Content-Type` with HTTP 415.
+fn with_youcom_headers(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    request
+        .header("user-agent", YOU_COM_USER_AGENT)
+        .header("x-client-info", YOU_COM_CLIENT_INFO)
+}
+
 /// Which You.com transport the adapter uses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum YouComMode {
@@ -605,10 +615,7 @@ impl YouComProvider {
     /// Send a prepared request and return the body, mapping transport and HTTP
     /// failures into one message shape for both transports.
     async fn send(&self, request: reqwest::RequestBuilder) -> Result<String, String> {
-        let resp = request
-            .header("content-type", "application/json")
-            .header("user-agent", YOU_COM_USER_AGENT)
-            .header("x-client-info", YOU_COM_CLIENT_INFO)
+        let resp = with_youcom_headers(request)
             .send()
             .await
             .map_err(|e| format!("You.com request failed: {e}"))?;
@@ -1186,6 +1193,32 @@ mod tests {
         assert!(segments.iter().all(|s| !s.contains(';')));
         assert!(YOU_COM_USER_AGENT.starts_with("jan-websearch/"));
         assert!(YOU_COM_USER_AGENT.contains("github.com/janhq/jan"));
+    }
+
+    #[test]
+    fn youcom_requests_send_a_single_content_type() {
+        // Regression test: reqwest's `.json()` sets `Content-Type` and
+        // `.header()` appends, so an extra explicit header produced a
+        // duplicated `content-type: application/json` — which api.you.com
+        // rejects with HTTP 415 ("Content-Type must be application/json").
+        let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call" });
+        let req = with_youcom_headers(
+            YouComProvider::new(None)
+                .unwrap()
+                .client
+                .post(YOU_COM_HOSTED_URL)
+                .header("accept", "application/json, text/event-stream")
+                .json(&body),
+        )
+        .build()
+        .unwrap();
+        assert_eq!(req.headers().get_all("content-type").iter().count(), 1);
+        assert_eq!(
+            req.headers().get("content-type").unwrap(),
+            "application/json"
+        );
+        assert!(req.headers().contains_key("user-agent"));
+        assert!(req.headers().contains_key("x-client-info"));
     }
 
     #[test]
