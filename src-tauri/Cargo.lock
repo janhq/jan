@@ -7587,6 +7587,7 @@ dependencies = [
  "tauri-plugin-hardware",
  "thiserror 2.0.18",
  "tokio",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

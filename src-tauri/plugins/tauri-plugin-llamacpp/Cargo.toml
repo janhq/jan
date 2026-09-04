@@ -48,6 +48,18 @@ reqwest = { version = "0.12", features = ["json", "blocking", "stream", "rustls-
 [target.'cfg(unix)'.dependencies]
 nix = { version = "=0.30.1", features = ["signal", "process"] }
 
+# The kill-on-close job object the worker is spawned into. Windows has no
+# process group, so this is what keeps a force-quit Jan from orphaning it.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60.2", features = [
+  "Win32_Foundation",
+  # CreateJobObjectW takes SECURITY_ATTRIBUTES, and the extended limit struct
+  # lives behind Threading; both are gated separately from JobObjects itself.
+  "Win32_Security",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+] }
+
 # The supervised worker. `required-features` keeps it out of the default build,
 # where there is no compiled llama.cpp to link against.
 [[bin]]
