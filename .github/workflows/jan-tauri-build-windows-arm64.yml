@@ -271,9 +271,10 @@ jobs:
           fi
 
       # The checked-in NSIS "template" is a rendered Handlebars dump: every
-      # value is literal, including the arch, the sidecar filenames and the
-      # workspace path of whatever machine generated it. Rewritten here rather
-      # than in the file, which the x64 build shares.
+      # value is literal except the placeholders the x64 template substitutes
+      # (`jan_workspace` and the product names), so the arch and the sidecar
+      # filenames are rewritten here rather than in the file, which the x64
+      # build shares.
       - name: Retarget the NSIS template for ARM64
         shell: pwsh
         run: |
@@ -281,7 +282,7 @@ jobs:
           $c = Get-Content $t -Raw
 
           # .Replace, not -replace: regex would eat the backslashes.
-          $c = $c.Replace('D:\a\jan\jan', $env:GITHUB_WORKSPACE)
+          $c = $c.Replace('jan_workspace', $env:GITHUB_WORKSPACE)
           $c = $c.Replace('!define ARCH "x64"', '!define ARCH "arm64"')
           $c = $c.Replace('\nsis\x64\', '\nsis\arm64\')
           # Sidecars are named by target triple, so they land as aarch64-*.
