@@ -175,6 +175,8 @@ If things go sideways:
 
 Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full spiel.
 
+> **Note:** Please [sign your commits](CONTRIBUTING.md#signed-commits) so we can verify your contributions.
+
 ## Links
 
 - [Documentation](https://jan.ai/docs) - The manual you should read
