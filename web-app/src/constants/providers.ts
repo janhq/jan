@@ -399,4 +399,38 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://neuronpool.damnknee.workers.dev/v1',
+    explore_models_url: 'https://neuronpool.damnknee.workers.dev/v1/models',
+    provider: 'neuronpool',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'Mint a buyer key on the NeuronPool dashboard. Keys look like sk-neuronpool-…',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'sk-neuronpool-…',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'OpenAI-compatible base. Include /v1. Live Worker until api.neuronpool.dev resolves.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://neuronpool.damnknee.workers.dev/v1',
+          value: 'https://neuronpool.damnknee.workers.dev/v1',
+        },
+      },
+    ],
+    models: [],
+  },
 ]
