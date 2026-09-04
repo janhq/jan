@@ -67,6 +67,29 @@ Var NoShortcutMode
 Var WixMode
 Var OldMainBinaryName
 
+; A bundled sidecar can outlive the app that spawned it: an MCP server started
+; through `bun x` is a grandchild of Jan and Windows has no process group to
+; reap it, so `bun.exe` is often still mapped when the next installer runs.
+; Windows refuses to overwrite a mapped image, which is how an update fails
+; with "unable to open $INSTDIR\bun.exe for writing" -- `File` is fatal, so the
+; whole install aborts. A mapped image can still be renamed, so move the locked
+; copy aside and write the new one over the freed name. The leftover is deleted
+; by the next install, or by the uninstaller's `RMDir /r`; scheduling it with
+; /REBOOTOK instead would raise the reboot flag on a per-user install that
+; cannot honour it.
+!macro UnlockBundledBinary path
+  ${If} ${FileExists} "${path}"
+    ClearErrors
+    Delete "${path}"
+    ${If} ${Errors}
+      ClearErrors
+      Delete "${path}.old"
+      Rename "${path}" "${path}.old"
+      ClearErrors
+    ${EndIf}
+  ${EndIf}
+!macroend
+
 Name "${PRODUCTNAME}"
 BrandingText "${COPYRIGHT}"
 OutFile "${OUTFILE}"
@@ -702,6 +725,8 @@ Section Install
     SetOutPath "$INSTDIR\resources\pre-install"
     File /nonfatal /a /r "jan_workspace\src-tauri\resources\pre-install\"
     SetOutPath "$INSTDIR\resources\bin"
+    !insertmacro UnlockBundledBinary "$INSTDIR\resources\bin\jan.exe"
+    !insertmacro UnlockBundledBinary "$INSTDIR\resources\bin\jan-llama-worker.exe"
     File /a "/oname=jan.exe" "jan_workspace\src-tauri\resources\bin\jan.exe"
     ; The engine. This block is a hand-maintained snapshot of
     ; tauri.windows.conf.json's `bundle.resources`, which the NSIS bundler does
@@ -719,6 +744,8 @@ Section Install
     SetOutPath $INSTDIR
 
   ; Copy external binaries
+    !insertmacro UnlockBundledBinary "$INSTDIR\bun.exe"
+    !insertmacro UnlockBundledBinary "$INSTDIR\uv.exe"
     File /a "/oname=bun.exe" "jan_workspace\src-tauri\resources\bin\bun-x86_64-pc-windows-msvc.exe"
     File /a "/oname=uv.exe" "jan_workspace\src-tauri\resources\bin\uv-x86_64-pc-windows-msvc.exe"
 
@@ -850,7 +877,9 @@ Section Uninstall
 
   ; Delete external binaries
     Delete "$INSTDIR\bun.exe"
+    Delete "$INSTDIR\bun.exe.old"
     Delete "$INSTDIR\uv.exe"
+    Delete "$INSTDIR\uv.exe.old"
 
   ; Delete app associations
 
