@@ -7,6 +7,10 @@ import { modelSettings } from '@/lib/predefined'
 import { predefinedProviders } from '@/constants/providers'
 import { isLocalProvider } from '@/lib/utils'
 import { API_KEY_FALLBACKS_SETTING_KEY } from '@/lib/provider-api-keys'
+import {
+  isLocalEngineProvider,
+  seedRemoteModelsCtxLen,
+} from '@/lib/model-context-size'
 
 const API_KEY_SETTING_KEY = 'api-key'
 
@@ -775,9 +779,21 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 18 && state?.providers) {
+          // Custom / OpenAI-compatible models had no ctx_len, so the overflow
+          // banner used a phantom 8k/32k cap and Increase Context Size was a
+          // no-op. Seed the existing ctx_len setting (empty = no client cap).
+          state.providers.forEach((provider) => {
+            if (isLocalEngineProvider(provider.provider) || !provider.models) {
+              return
+            }
+            provider.models = seedRemoteModelsCtxLen(provider.models) ?? []
+          })
+        }
+
         return state
       },
-      version: 18,
+      version: 19,
     }
   )
 )

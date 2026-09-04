@@ -71,6 +71,15 @@ import {
   isContextOverflowMessage,
   parseContextOverflow,
 } from '@/utils/error'
+import {
+  applyCtxLenToModel,
+  contextOverflowMessage,
+  ctxLenMax,
+  findProviderModelIndex,
+  getModelCtxLen,
+  isLocalEngineProvider,
+  nextCtxLen,
+} from '@/lib/model-context-size'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
@@ -316,15 +325,22 @@ function ThreadDetail() {
       // of the new message, so the user sees the partial text immediately.
       if (!isAbort && finishReason === 'length') {
         const selectedModelState = useModelProvider.getState().selectedModel
+        const selectedProviderState =
+          useModelProvider.getState().selectedProvider
         const usage = msgMeta?.usage as
           | { inputTokens?: number; outputTokens?: number }
           | undefined
         const totalTokens =
           (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
-        const ctxLen =
-          (selectedModelState?.settings?.ctx_len?.controller_props
-            ?.value as number) ?? 32768
-        const isContextLimit = totalTokens >= ctxLen * 0.9
+        const ctxLen = getModelCtxLen(selectedModelState)
+        // Remote/OpenAI-compatible models have no engine window. A missing
+        // ctx_len must not invent an 8k/32k client cap — that is what blocked
+        // long prompts that the backend would accept. Local engines keep the
+        // historical 32k fallback because llama.cpp always has a real n_ctx.
+        const remote = !isLocalEngineProvider(selectedProviderState)
+        const effectiveCtxLen = ctxLen ?? (remote ? undefined : 32768)
+        const isContextLimit =
+          effectiveCtxLen != null && totalTokens >= effectiveCtxLen * 0.9
 
         if (isContextLimit) {
           // Stash the partial so the manual "Increase Context Size" button can
@@ -337,8 +353,12 @@ function ThreadDetail() {
           if (partialText) {
             pendingContinuationRef.current = { message, text: partialText }
           }
-          stampContextErrorOnThread(threadId)
-          setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+          const overflowMsg = contextOverflowMessage(
+            totalTokens,
+            effectiveCtxLen
+          )
+          stampContextErrorOnThread(threadId, overflowMsg)
+          setContextLimitError(new Error(overflowMsg))
           return
         }
         // Non-context-limit length truncation: fall through and persist the
@@ -1465,51 +1485,32 @@ function ThreadDetail() {
     const provider = getProviderByName(selectedProvider)
     if (!provider) return
 
-    const modelIndex = provider.models.findIndex(
-      (m) => m.id === selectedModel.id
-    )
+    const modelIndex = findProviderModelIndex(provider.models, selectedModel)
     if (modelIndex === -1) return
 
     const model = provider.models[modelIndex]
+    const remote = !isLocalEngineProvider(provider.provider)
 
-    // Increase context length in steps: <8192 -> 8192 -> 32768 -> x1.5
-    const currentCtxLen =
-      (model.settings?.ctx_len?.controller_props?.value as number) ?? 8192
-    const maxCtxLen =
-      (model.settings?.ctx_len?.controller_props?.max as number) || 131072
+    const overflow = contextLimitError
+      ? parseContextOverflow(contextLimitError.message)
+      : null
+    const currentCtxLen = getModelCtxLen(model) ?? (remote ? 0 : 8192)
+    const maxCtxLen = ctxLenMax(model, remote)
+    const newCtxLen = nextCtxLen(currentCtxLen, {
+      max: maxCtxLen,
+      remote,
+      minNeeded: overflow?.requestTokens,
+    })
 
-    let newCtxLen: number
-    if (currentCtxLen < 8192) {
-      newCtxLen = 8192
-    } else if (currentCtxLen < 32768) {
-      newCtxLen = 32768
-    } else {
-      newCtxLen = Math.round(currentCtxLen * 1.5)
-    }
-
-    newCtxLen = Math.min(newCtxLen, maxCtxLen)
     if (newCtxLen <= currentCtxLen) {
       stampContextErrorOnThread(threadId)
       setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
       return
     }
 
-    const updatedModel = {
-      ...model,
-      settings: {
-        ...model.settings,
-        ctx_len: {
-          ...(model.settings?.ctx_len ?? {}),
-          controller_props: {
-            ...(model.settings?.ctx_len?.controller_props ?? {}),
-            value: newCtxLen,
-          },
-        },
-      },
-    }
-
+    const updatedModel = applyCtxLenToModel(model, newCtxLen, remote)
     const updatedModels = [...provider.models]
-    updatedModels[modelIndex] = updatedModel as Model
+    updatedModels[modelIndex] = updatedModel
 
     updateProvider(provider.provider, {
       models: updatedModels,
@@ -1518,7 +1519,10 @@ function ThreadDetail() {
     // For llamacpp the router reads ctx-size from the preset, not from any
     // request param — so we must write model.yml and bounce the router before
     // the regenerate, otherwise the next load picks up the OLD context size.
-    // Other providers consume the new Zustand value directly on next load.
+    // Remote providers persist via Zustand (updateProvider) and consume the
+    // new value on the next request. Do not call stopModel — it defaults to
+    // the llamacpp engine and can throw, which aborted regenerate and made
+    // Increase Context Size look like a no-op.
     if (provider.provider === 'llamacpp') {
       try {
         await serviceHub
@@ -1533,8 +1537,6 @@ function ThreadDetail() {
         setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
         return
       }
-    } else {
-      await serviceHub.models().stopModel(selectedModel.id)
     }
 
     // Consume any pending partial captured at the `finishReason === 'length'`
@@ -1547,9 +1549,13 @@ function ThreadDetail() {
       setPendingContinueMessage(pending.message)
     }
 
-    setTimeout(() => {
+    if (provider.provider === 'llamacpp') {
+      setTimeout(() => {
+        handleRegenerate()
+      }, 1000)
+    } else {
       handleRegenerate()
-    }, 1000)
+    }
   }, [
     selectedModel,
     selectedProvider,
@@ -1557,6 +1563,7 @@ function ThreadDetail() {
     serviceHub,
     handleRegenerate,
     threadId,
+    contextLimitError,
   ])
 
   // Keep refs in sync so onFinish always calls the latest versions
