@@ -387,6 +387,8 @@ mod engine {
             src.join("ggml").display()
         ));
         cfg.arg(format!("-DCMAKE_INSTALL_PREFIX={}", prefix.display()));
+        // Ensure libraries are installed in lib, not in platform specific dirs (e.g. lib64 on Fedora/RHEL).
+        cfg.arg("-DCMAKE_INSTALL_LIBDIR=lib");
         cfg.args([
             "-DCMAKE_BUILD_TYPE=Release",
             "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
