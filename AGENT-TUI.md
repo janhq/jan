@@ -35,7 +35,7 @@ jan (binary, src-tauri/src/bin/jan.rs)
 
 ```bash
 # The project is at:
-cd /Users/alandao/Documents/codes/jan-agent
+cd jan-agent  # from the repo root
 
 # Rust toolchain (already installed):
 rustc --version   # 1.77.2+ (minimum)
@@ -48,7 +48,7 @@ rustc --version   # 1.77.2+ (minimum)
 cd src-tauri && cargo check --no-default-features --features cli --lib
 
 # Debug build + install to ~/.local/bin:
-cd /Users/alandao/Documents/codes/jan-agent
+cd jan-agent  # from the repo root
 ./build-tui.sh            # debug
 ./build-tui.sh release    # release (optimized, slower build)
 
@@ -68,7 +68,7 @@ The `build-tui.sh` script at the project root automates building and installing:
 ./build-tui.sh help     # show help
 ```
 
-The script installs the binary to `~/.local/bin/jan-agent`. Make sure `~/.local/bin` is in your `PATH`.
+The script installs the binary to `~/.local/bin/jan`. Make sure `~/.local/bin` is in your `PATH`.
 
 ### Binary vs Library
 
@@ -261,17 +261,17 @@ The TUI supports Tab-based slash command completion:
 ## Running the TUI
 
 ```bash
-# After building (binary at ~/.local/bin/jan-agent):
-jan-agent tui
+# After building (binary at ~/.local/bin/jan):
+jan tui
 
 # Or from the project:
 cd src-tauri && cargo run --no-default-features --features cli --bin jan -- tui
 
 # With a specific model:
-jan-agent tui --model my-model
+jan tui --model my-model
 
 # With provider overrides:
-jan-agent tui --provider openai --model gpt-4
+jan tui --provider openai --model gpt-4
 ```
 
 ## Making Changes
@@ -292,7 +292,7 @@ vim src-tauri/src/core/cli/tui.rs
 ./build-tui.sh debug
 
 # 5. Test in terminal
-jan-agent tui
+jan tui
 ```
 
 ### Adding a New Slash Command
