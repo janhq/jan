@@ -75,7 +75,7 @@ export const removeYamlFrontMatter = (content: string): string => {
 
 /**
  * Extract model name from repo path, e.g. cortexso/tinyllama -> tinyllama
- * @param modelId
+ * @param model
  * @returns
  */
 export const extractModelName = (model?: string) => {
@@ -84,7 +84,7 @@ export const extractModelName = (model?: string) => {
 
 /**
  * Extract model name from repo path, e.g. https://huggingface.co/cortexso/tinyllama -> cortexso/tinyllama
- * @param modelId
+ * @param model
  * @returns
  */
 export const extractModelRepo = (model?: string) => {
