@@ -6,11 +6,6 @@
   "noUpdateAvailable": "Вы используете последнюю версию",
   "devVersion": "Обнаружена версия для разработки",
   "updateError": "Не удалось проверить наличие обновлений",
-  "checkForBackendUpdates": "Проверить обновления Llamacpp",
-  "checkForBackendUpdatesDesc": "Проверить, доступна ли более новая версия компонента Llamacpp.",
-  "checkingForBackendUpdates": "Проверка обновлений Llamacpp...",
-  "noBackendUpdateAvailable": "Вы используете последнюю версию Llamacpp",
-  "backendUpdateError": "Не удалось проверить обновления Llamacpp",
   "changeLocation": "Изменить расположение",
   "copied": "Скопировано",
   "copyPath": "Копировать путь",
@@ -305,15 +300,6 @@
       "cancel": "Отмена",
       "changeLocation": "Изменить расположение"
     }
-  },
-  "backendUpdater": {
-    "newBackendVersion": "Новая версия Llamacpp {{version}}",
-    "backendUpdateAvailable": "Доступно обновление Llamacpp",
-    "remindMeLater": "Отложить",
-    "updating": "Обновление…",
-    "updateNow": "Обновить",
-    "updateSuccess": "Llamacpp успешно обновлено",
-    "updateError": "Не удалось обновить Llamacpp"
   },
   "backendInstallSuccess": "Компонент успешно установлен",
   "backendInstallError": "Не удалось установить компонент"

@@ -10,12 +10,21 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use tauri_plugin_agent_tools::permissions::ToolPermissions;
+use tauri_plugin_agent_tools::workspace;
+
+/// Directory name holding `<name>.toml` definitions, under both a project's
+/// `.jan/agent/` and the desktop's permanent store.
+const SUBAGENTS: &str = "subagents";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SubagentScope {
     User,
     Project,
+    /// A subagent shipped by an installed plugin (`<plugin>/agents/*.md`, the
+    /// Claude Code convention). Read-only: managed via plugin install/remove,
+    /// never via `create_subagent`.
+    Plugin,
 }
 
 /// A dispatchable subagent definition, resolved from a `<name>.toml` file plus
@@ -72,15 +81,25 @@ impl std::fmt::Display for SubagentError {
 
 /// `~/.jan/agent/subagents/`. `None` when the home directory can't be resolved.
 pub fn user_subagents_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".jan").join("agent").join("subagents"))
+    dirs::home_dir().map(|h| h.join(".jan").join("agent").join(SUBAGENTS))
 }
 
 /// `<project_root>/.jan/agent/subagents/`.
 pub fn project_subagents_dir(project_root: &Path) -> PathBuf {
-    project_root
-        .join(".jan")
-        .join("agent")
-        .join("subagents")
+    project_root.join(".jan").join("agent").join(SUBAGENTS)
+}
+
+/// The desktop's single subagent directory:
+/// `<jan_data_folder>/agent-workspace/subagents/`.
+///
+/// Cowork has no project root in a default session and mounts an attached folder
+/// read-only, so two of the three CLI scopes (project, and plugin -- which is
+/// also project-relative) are unreachable or unwritable there. Desktop keeps one
+/// directory instead, a sibling of `memory/` and `skills/` in the permanent
+/// store. That placement also puts it outside every tool's project root, so the
+/// agent cannot rewrite its own definitions with `write`.
+pub fn desktop_subagents_dir(jan_data_folder: &Path) -> PathBuf {
+    workspace::store_dir(&workspace::permanent_store(jan_data_folder), SUBAGENTS)
 }
 
 /// A subagent name is used to build a filename, so it must be a single path
@@ -108,10 +127,14 @@ pub struct SubagentRegistry {
 }
 
 impl SubagentRegistry {
-    /// Load and merge the user scope then the project scope. Malformed files are
-    /// skipped with a warning rather than failing the whole run.
+    /// Load plugin agents first (lowest precedence), then the user scope,
+    /// then the project scope. `get` resolves the winning definition by
+    /// reverse iteration, so a user/project TOML definition shadows a plugin
+    /// agent of the same name. Malformed files are skipped with a warning
+    /// rather than failing the whole run.
     pub fn load(project_root: &Path) -> Self {
         let mut defs = Vec::new();
+        load_plugin_agents(project_root, &mut defs);
         if let Some(dir) = user_subagents_dir() {
             load_dir(&dir, SubagentScope::User, &mut defs);
         }
@@ -120,6 +143,15 @@ impl SubagentRegistry {
             SubagentScope::Project,
             &mut defs,
         );
+        Self { defs }
+    }
+
+    /// Load exactly one directory as one scope, for the desktop's flat layout
+    /// (see [`desktop_subagents_dir`]). No merge, so no shadowing: `get` and
+    /// `list` both see the same set.
+    pub fn load_one(dir: &Path, scope: SubagentScope) -> Self {
+        let mut defs = Vec::new();
+        load_dir(dir, scope, &mut defs);
         Self { defs }
     }
 
@@ -156,6 +188,10 @@ impl SubagentRegistry {
                     "project scope requires create_in; use create_in".to_string(),
                 ))
             }
+            SubagentScope::Plugin => return Err(SubagentError::Upstream(
+                "plugin scope is read-only: plugin agents are managed via plugin install/remove"
+                    .to_string(),
+            )),
         };
         self.create_in(&dir, def, scope, overwrite)
     }
@@ -171,6 +207,12 @@ impl SubagentRegistry {
         overwrite: bool,
     ) -> Result<bool, SubagentError> {
         validate_name(&def.name)?;
+        if scope == SubagentScope::Plugin {
+            return Err(SubagentError::Upstream(
+                "plugin scope is read-only: plugin agents are managed via plugin install/remove"
+                    .to_string(),
+            ));
+        }
         let collides = self
             .defs
             .iter()
@@ -209,6 +251,147 @@ impl SubagentRegistry {
     }
 }
 
+/// Load subagent definitions shipped by installed plugins as Markdown agent
+/// files (`<plugin>/agents/**/*.md`, the Claude Code convention). Loaded
+/// first so user/project TOML definitions shadow them by name. Frontmatter
+/// `name` and `description` are used; `model` and `color` are Claude-runtime
+/// metadata and ignored (the parent's model runs the child); `tools` maps
+/// Claude tool names onto Jan tool names, dropping names with no equivalent.
+fn load_plugin_agents(project_root: &Path, out: &mut Vec<SubagentDefinition>) {
+    let dir = crate::core::agent::skills::plugins_dir(project_root);
+    let Ok(rd) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if plugin.starts_with(".installing-") {
+            continue;
+        }
+        scan_agent_dir(&path.join("agents"), out);
+    }
+}
+
+/// Number of agent markdown files one plugin ships, for the plugin listing.
+/// Same discovery rules as `load_plugin_agents`: recursive `agents/**/*.md`,
+/// skipping READMEs and dotfiles.
+pub(crate) fn count_plugin_agents(root: &Path, plugin: &str) -> usize {
+    let mut count = 0;
+    let base = crate::core::agent::skills::plugins_dir(root)
+        .join(plugin)
+        .join("agents");
+    scan_agent_files(&base, &mut |_, _| count += 1);
+    count
+}
+
+/// Recursively visit every agent markdown file under `dir`, applying the
+/// loader's skip rules (READMEs, dotfiles, non-`.md` files) via the shared
+/// walker. Malformed files still reach the visitor; parsing happens in the
+/// caller, and unreadable files are skipped.
+fn scan_agent_files(dir: &Path, visit: &mut dyn FnMut(&Path, &str)) {
+    crate::core::agent::skills::walk_markdown_files(dir, &mut |path| {
+        if let Ok(raw) = std::fs::read_to_string(path) {
+            visit(path, &raw);
+        }
+    });
+}
+
+fn scan_agent_dir(dir: &Path, out: &mut Vec<SubagentDefinition>) {
+    scan_agent_files(dir, &mut |path, raw| match parse_plugin_agent(raw) {
+        Some((name, description, tools, system_prompt)) => {
+            if validate_name(&name).is_err() {
+                log::warn!("subagent: skipping plugin agent '{name}' (invalid name)");
+                return;
+            }
+            out.push(SubagentDefinition {
+                name,
+                description,
+                system_prompt,
+                allowed_tools: tools,
+                model: None,
+                scope: SubagentScope::Plugin,
+            });
+        }
+        None => log::warn!(
+            "subagent: skipping plugin agent {} (missing frontmatter name)",
+            path.display()
+        ),
+    });
+}
+
+/// Frontmatter fields recognized in a Claude Code agent file; everything else
+/// is ignored.
+#[derive(Debug, Default, Deserialize)]
+struct PluginAgentFrontmatter {
+    name: Option<String>,
+    description: Option<String>,
+    #[serde(default)]
+    tools: Vec<String>,
+}
+
+/// Parse a Claude Code agent markdown file into `(name, description, tools,
+/// system_prompt)`. `None` when the file has no `---` frontmatter or no
+/// `name` — such files are not dispatchable.
+fn parse_plugin_agent(raw: &str) -> Option<(String, String, Option<Vec<String>>, String)> {
+    let (yaml, body) = crate::core::agent::skills::split_frontmatter(raw);
+    let yaml = yaml?;
+    let fm: PluginAgentFrontmatter = serde_yaml::from_str(&yaml).unwrap_or_default();
+    let name = fm
+        .name
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty())?;
+    let description = fm.description.unwrap_or_default();
+    Some((name, description, map_claude_tools(&fm.tools), body))
+}
+
+/// Claude Code tool names with a Jan equivalent, 1:1 where one exists. Unknown
+/// names are dropped — the author's runtime differs. Returns `None` when
+/// nothing maps, so the child inherits the parent's full tool policy (an empty
+/// list would mean "no tools" to the dispatcher).
+fn map_claude_tools(tools: &[String]) -> Option<Vec<String>> {
+    let mapped: Vec<String> = tools
+        .iter()
+        .filter_map(|t| {
+            let jan = match t.to_ascii_lowercase().as_str() {
+                "read" => Some("read"),
+                "glob" => Some("glob"),
+                "grep" => Some("grep"),
+                "bash" => Some("bash"),
+                "edit" => Some("edit"),
+                "write" => Some("write"),
+                "websearch" => Some("web_search"),
+                "webfetch" => Some("web_fetch"),
+                "todowrite" => Some("todo"),
+                "ask" => Some("ask"),
+                _ => None,
+            };
+            jan.map(String::from)
+        })
+        .collect();
+    (!mapped.is_empty()).then_some(mapped)
+}
+
+/// Agent definitions one plugin ships (`(name, description)`), for the
+/// `/plugin list` detail view (cli only).
+#[cfg(feature = "cli")]
+pub(crate) fn plugin_agent_metas(root: &Path, plugin: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let base = crate::core::agent::skills::plugins_dir(root)
+        .join(plugin)
+        .join("agents");
+    scan_agent_files(&base, &mut |_, raw| {
+        if let Some((name, description, _, _)) = parse_plugin_agent(raw) {
+            out.push((name, description));
+        }
+    });
+    out
+}
+
 fn load_dir(dir: &Path, scope: SubagentScope, out: &mut Vec<SubagentDefinition>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -240,12 +423,30 @@ fn load_dir(dir: &Path, scope: SubagentScope, out: &mut Vec<SubagentDefinition>)
     }
 }
 
+/// Skill tools every subagent keeps. Skills are how a subagent executes its
+/// procedure, and Claude-style agent `tools:` lists never name them, so a
+/// narrowed toolset must not strip them (Claude Code grants skills to every
+/// agent unconditionally). Read-side only: skill authoring stays a management
+/// action of the top-level agent.
+const SUBAGENT_SKILL_TOOLS: &[&str] = &["skill_list", "skill_read"];
+
+fn with_skill_tools(tools: &[String], parent: &ToolPermissions) -> Vec<String> {
+    let mut out = tools.to_vec();
+    for skill in SUBAGENT_SKILL_TOOLS {
+        if !out.iter().any(|t| t == skill) && !parent.is_denied(skill) {
+            out.push((*skill).to_string());
+        }
+    }
+    out
+}
+
 /// Effective tool allowlist for a subagent dispatch: the intersection of the
 /// definition's `allowed_tools`, the call-site override, and the parent's
-/// permissions. Narrowing only, never widening; deny (from the parent) always
-/// wins. Returns the list to set as the child's `allowed_tools` (an empty list
-/// means "no tools"), or `None` to inherit the definition's full toolset with no
-/// per-run allowlist (the parent's deny-list still applies at gate time).
+/// permissions, plus the always-on `skill_list`/`skill_read` pair. Deny (from
+/// the parent) always wins. Returns the list to set as the child's
+/// `allowed_tools` (an empty list means "no tools"), or `None` to inherit the
+/// definition's full toolset with no per-run allowlist (the parent's deny-list
+/// still applies at gate time).
 ///
 /// Fails closed: a tool named in `request` that the definition does not permit,
 /// or that the parent denies, is rejected rather than silently dropped. A
@@ -273,15 +474,17 @@ pub fn intersect_allowed_tools(
             }
             effective.push(tool.clone());
         }
-        return Ok(Some(effective));
+        return Ok(Some(with_skill_tools(&effective, parent)));
     }
     match definition {
-        Some(def) => Ok(Some(
-            def.iter()
+        Some(def) => {
+            let filtered: Vec<String> = def
+                .iter()
                 .filter(|t| !parent.is_denied(t))
                 .cloned()
-                .collect(),
-        )),
+                .collect();
+            Ok(Some(with_skill_tools(&filtered, parent)))
+        }
         None => Ok(None),
     }
 }
@@ -483,18 +686,27 @@ impl Drop for AbortOnDrop {
     }
 }
 
+/// What a child inherits from the run that dispatched it: the model to fall back
+/// on when the definition names none, the parent's remaining token budget, and
+/// its `send_reasoning` answer.
+#[derive(Clone)]
+pub(crate) struct ParentRun {
+    pub(crate) model: String,
+    pub(crate) budget_remaining: Option<u64>,
+    pub(crate) send_reasoning: bool,
+}
+
 /// Build the child request body shared by every subagent run.
 fn child_body(
     resolved: &ResolvedDispatch,
     description: &str,
-    parent_model: &str,
-    budget_remaining: Option<u64>,
+    parent: &ParentRun,
 ) -> serde_json::Value {
     let model = resolved
         .definition
         .model
         .clone()
-        .unwrap_or_else(|| parent_model.to_string());
+        .unwrap_or_else(|| parent.model.clone());
     let mut body = serde_json::Map::new();
     body.insert("model".to_string(), serde_json::json!(model));
     body.insert(
@@ -507,8 +719,14 @@ fn child_body(
     if let Some(tools) = &resolved.allowed_tools {
         body.insert("allowed_tools".to_string(), serde_json::json!(tools));
     }
-    if let Some(remaining) = budget_remaining {
+    if let Some(remaining) = parent.budget_remaining {
         body.insert("max_session_tokens".to_string(), serde_json::json!(remaining));
+    }
+    // A child's own tool-call turns carry `reasoning_content`, so the parent's
+    // opt-out has to travel with the dispatch or a strict provider still sees
+    // the field on the second child turn.
+    if !parent.send_reasoning {
+        body.insert("send_reasoning".to_string(), serde_json::json!(false));
     }
     serde_json::Value::Object(body)
 }
@@ -520,8 +738,7 @@ async fn run_subagent(
     parent_args: crate::core::agent::r#loop::OrchestrationArgs,
     resolved: ResolvedDispatch,
     description: String,
-    parent_model: String,
-    budget_remaining: Option<u64>,
+    parent: ParentRun,
     events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
     run_id: String,
 ) -> Result<String, SubagentError> {
@@ -540,7 +757,7 @@ async fn run_subagent(
     // context, matching ask_requests above).
     child_args.todo_registry = None;
 
-    let body = child_body(&resolved, &description, &parent_model, budget_remaining);
+    let body = child_body(&resolved, &description, &parent);
 
     let _ = events.send(StreamEvent::SubagentStart {
         run_id: run_id.clone(),
@@ -591,8 +808,7 @@ pub(crate) fn spawn_subagent(
     bg: &Arc<BackgroundSubagents>,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     req: SubagentRequest,
-    parent_model: &str,
-    budget_remaining: Option<u64>,
+    parent: &ParentRun,
     events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
 ) -> Result<String, SubagentError> {
     use crate::core::agent::events::StreamEvent;
@@ -638,7 +854,7 @@ pub(crate) fn spawn_subagent(
     let parent_args = parent_args.clone();
     let task_events = events.clone();
     let entry_events = events.clone();
-    let model = parent_model.to_string();
+    let inherited = parent.clone();
     let description = req.description.clone();
     let run_id_task = run_id.clone();
     let queued_counter = bg.clone();
@@ -659,8 +875,7 @@ pub(crate) fn spawn_subagent(
             parent_args,
             resolved,
             description,
-            model,
-            budget_remaining,
+            inherited,
             task_events,
             run_id_task,
         )
@@ -729,6 +944,7 @@ pub fn format_subagent_list(registry: &SubagentRegistry) -> String {
         let scope = match d.scope {
             SubagentScope::User => "user",
             SubagentScope::Project => "project",
+            SubagentScope::Plugin => "plugin",
         };
         lines.push(format!("{} [{}]: {}", d.name, scope, d.description));
     }
@@ -915,14 +1131,18 @@ pub fn subagent_dir_for(
         SubagentScope::User => user_subagents_dir().ok_or_else(|| {
             SubagentError::Upstream("cannot resolve home directory for user scope".to_string())
         }),
+        SubagentScope::Plugin => Err(SubagentError::Upstream(
+            "plugin scope is read-only: plugin agents are managed via plugin install/remove"
+                .to_string(),
+        )),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
     use std::sync::atomic::{AtomicU32, Ordering};
+    use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -969,6 +1189,48 @@ mod tests {
         assert_eq!(def.allowed_tools.as_deref(), Some(&["read".to_string(), "grep".to_string()][..]));
         assert_eq!(def.model.as_deref(), Some("m-1"));
         assert_eq!(def.scope, SubagentScope::Project);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn desktop_dir_is_a_sibling_of_the_store_kinds() {
+        let data = unique_root("desktopdir");
+        let dir = desktop_subagents_dir(&data);
+        assert_eq!(dir, data.join("agent-workspace").join("subagents"));
+        // A sibling of memory/ and skills/, never inside a thread or session
+        // sandbox -- that is what keeps `write` away from these definitions.
+        assert_eq!(
+            dir.parent(),
+            Some(workspace::permanent_store(&data).as_path())
+        );
+        assert_ne!(dir, workspace::threads_dir(&data));
+        assert_ne!(dir, workspace::sessions_dir(&data));
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn load_one_reads_only_the_directory_it_is_given() {
+        let root = unique_root("loadone");
+        let flat = root.join("flat");
+        write_def(&flat, "desktop-agent", "");
+        // A project-scoped definition under the same root must stay invisible:
+        // Cowork mounts an attached folder read-only and must not pick up
+        // definitions that ship inside it.
+        write_def(&project_subagents_dir(&root), "project-agent", "");
+
+        let reg = SubagentRegistry::load_one(&flat, SubagentScope::User);
+        assert_eq!(reg.list().len(), 1);
+        let def = reg.get("desktop-agent").expect("loaded");
+        assert_eq!(def.scope, SubagentScope::User);
+        assert!(reg.get("project-agent").is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn load_one_on_a_missing_directory_is_empty_not_an_error() {
+        let root = unique_root("loadone_missing");
+        let reg = SubagentRegistry::load_one(&root.join("nope"), SubagentScope::User);
+        assert!(reg.list().is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1118,7 +1380,15 @@ mod tests {
         let def = vec!["read".to_string(), "write".to_string()];
         let p = perms_denying(&["write"]);
         let out = intersect_allowed_tools(Some(&def), None, &p).unwrap();
-        assert_eq!(out, Some(vec!["read".to_string()]));
+        assert_eq!(
+            out,
+            Some(vec![
+                "read".to_string(),
+                "skill_list".to_string(),
+                "skill_read".to_string(),
+            ]),
+            "skill tools survive the narrowing"
+        );
     }
 
     #[test]
@@ -1127,7 +1397,41 @@ mod tests {
         let req = vec!["read".to_string()];
         let p = ToolPermissions::allow_all();
         let out = intersect_allowed_tools(Some(&def), Some(&req), &p).unwrap();
-        assert_eq!(out, Some(vec!["read".to_string()]));
+        assert_eq!(
+            out,
+            Some(vec![
+                "read".to_string(),
+                "skill_list".to_string(),
+                "skill_read".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn intersect_skill_tools_dedupe_when_already_listed() {
+        let def = vec!["read".to_string(), "skill_read".to_string()];
+        let p = ToolPermissions::allow_all();
+        let out = intersect_allowed_tools(Some(&def), None, &p).unwrap();
+        assert_eq!(
+            out,
+            Some(vec![
+                "read".to_string(),
+                "skill_read".to_string(),
+                "skill_list".to_string(),
+            ]),
+            "no duplicate skill_read"
+        );
+    }
+
+    #[test]
+    fn intersect_skill_tools_respect_parent_deny() {
+        let def = vec!["read".to_string()];
+        let p = perms_denying(&["skill_read"]);
+        let out = intersect_allowed_tools(Some(&def), None, &p).unwrap();
+        assert_eq!(
+            out,
+            Some(vec!["read".to_string(), "skill_list".to_string()])
+        );
     }
 
     #[test]
@@ -1171,6 +1475,41 @@ mod tests {
         }
     }
 
+    /// The dispatching run's inheritance, with the defaults every test that only
+    /// cares about scheduling wants.
+    fn parent_run() -> ParentRun {
+        ParentRun {
+            model: "m".to_string(),
+            budget_remaining: None,
+            send_reasoning: true,
+        }
+    }
+
+    /// `[agent].send_reasoning = false` has to reach the child body: a child
+    /// resends the `reasoning_content` of its own tool-call turns, so an opt-out
+    /// that stopped at the parent would still break a strict provider on the
+    /// child's second turn.
+    #[test]
+    fn child_body_forwards_the_parents_send_reasoning_opt_out() {
+        let reg = registry_with("reviewer", None);
+        let p = ToolPermissions::allow_all();
+        let resolved = resolve_dispatch(&reg, &req("reviewer", None), &p).expect("resolves");
+        let on = child_body(&resolved, "task", &parent_run());
+        assert!(
+            on.get("send_reasoning").is_none(),
+            "the default is inherited implicitly: {on}"
+        );
+        let off = child_body(
+            &resolved,
+            "task",
+            &ParentRun {
+                send_reasoning: false,
+                ..parent_run()
+            },
+        );
+        assert_eq!(off["send_reasoning"], serde_json::json!(false));
+    }
+
     #[test]
     fn resolve_unknown_name_without_inline_prompt_errors() {
         let reg = registry_with("reviewer", None);
@@ -1192,7 +1531,14 @@ mod tests {
         let resolved = resolve_dispatch(&reg, &request, &p).unwrap();
         assert_eq!(resolved.definition.system_prompt, "You are a one-off.");
         assert_eq!(resolved.definition.name, "one-off");
-        assert_eq!(resolved.allowed_tools, Some(vec!["read".to_string()]));
+        assert_eq!(
+            resolved.allowed_tools,
+            Some(vec![
+                "read".to_string(),
+                "skill_list".to_string(),
+                "skill_read".to_string(),
+            ])
+        );
     }
 
     #[test]
@@ -1215,7 +1561,14 @@ mod tests {
         let p = ToolPermissions::allow_all();
         let resolved =
             resolve_dispatch(&reg, &req("reviewer", Some(vec!["read".to_string()])), &p).unwrap();
-        assert_eq!(resolved.allowed_tools, Some(vec!["read".to_string()]));
+        assert_eq!(
+            resolved.allowed_tools,
+            Some(vec![
+                "read".to_string(),
+                "skill_list".to_string(),
+                "skill_read".to_string(),
+            ])
+        );
         assert_eq!(resolved.definition.system_prompt, "sp");
     }
 
@@ -1490,12 +1843,12 @@ mod tests {
     fn max_par_args(root: &std::path::Path) -> crate::core::agent::r#loop::OrchestrationArgs {
         use crate::core::agent::r#loop::OrchestrationArgs;
         use crate::core::mcp::models::McpSettings;
-        use tauri_plugin_agent_tools::permissions::ToolPermissions;
         use crate::core::state::ProviderConfig;
         use std::collections::HashMap;
         use std::sync::Arc;
+        use tauri_plugin_agent_tools::permissions::ToolPermissions;
         OrchestrationArgs {
-            client: reqwest::Client::new(),
+            client: crate::core::agent::upstream::agent_http_client(),
             provider_configs: Arc::new(tokio::sync::Mutex::new(
                 HashMap::<String, ProviderConfig>::new(),
             )),
@@ -1513,6 +1866,7 @@ mod tests {
             auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
+            sandbox: None,
         }
     }
 
@@ -1581,9 +1935,9 @@ mod tests {
         let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
         let mut starts = Vec::new();
 
-        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
-        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
-        let r3 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let r3 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
         assert_ne!(r1, r2);
         assert_ne!(r2, r3);
 
@@ -1636,8 +1990,8 @@ mod tests {
         // Occupy the only slot BEFORE dispatching, so every dispatch queues and
         // the await below is deterministic: nothing can start while held.
         let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
-        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
-        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
 
         // r2 is queued (not started), and awaiting it must NOT start it: the
         // slot is still held, so the await parks. Assert via the events: no
@@ -1678,9 +2032,9 @@ mod tests {
         // Hold the slot before dispatching so r1, r2, r3 all queue (parked on
         // the semaphore) -- the interesting teardown case.
         let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
-        let _r1 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
-        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
-        let r3 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+        let _r1 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let r3 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
 
         AbortOnDrop(bg.clone()); // teardown with queued children parked
 
@@ -1786,5 +2140,126 @@ mod tests {
         }))
         .is_err());
         assert!(parse_create_args(&serde_json::json!({ "name": "x" })).is_err());
+        // The plugin scope is read-only and never a create target.
+        assert!(parse_create_args(&serde_json::json!({
+            "name": "x", "description": "d", "system_prompt": "sp", "scope": "plugin"
+        }))
+        .is_err());
+    }
+
+    fn plugin_agents_dir(root: &Path) -> PathBuf {
+        crate::core::agent::skills::plugins_dir(root)
+            .join("feature-dev")
+            .join("agents")
+    }
+
+    #[test]
+    fn plugin_agents_load_from_markdown_with_plugin_scope() {
+        let root = unique_root("plugin-agents");
+        std::fs::create_dir_all(plugin_agents_dir(&root)).unwrap();
+        std::fs::write(
+            plugin_agents_dir(&root).join("code-explorer.md"),
+            "---\nname: code-explorer\ndescription: Explores code\nmodel: sonnet\ncolor: yellow\n---\n\nYou are an explorer.",
+        )
+        .unwrap();
+
+        let reg = SubagentRegistry::load(&root);
+        let def = reg.get("code-explorer").expect("loaded");
+        assert_eq!(def.description, "Explores code");
+        assert_eq!(def.system_prompt, "You are an explorer.");
+        // Claude runtime metadata is ignored: the parent model runs the child.
+        assert_eq!(def.model, None);
+        assert_eq!(def.scope, SubagentScope::Plugin);
+        let list = format_subagent_list(&reg);
+        assert!(list.contains("code-explorer [plugin]"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn plugin_agent_tools_map_known_names_and_drop_unknowns() {
+        let root = unique_root("plugin-tools");
+        std::fs::create_dir_all(plugin_agents_dir(&root)).unwrap();
+        std::fs::write(
+            plugin_agents_dir(&root).join("reader.md"),
+            "---\nname: reader\ndescription: Reads\n---\nYou are a reader.",
+        )
+        .unwrap();
+        // tools is a Claude Code frontmatter list; NotebookRead has no Jan
+        // equivalent and must be dropped, not fatal.
+        std::fs::write(
+            plugin_agents_dir(&root).join("scout.md"),
+            "---\nname: scout\ndescription: Scans\ntools: [Read, Glob, Grep, NotebookRead]\n---\nScan.",
+        )
+        .unwrap();
+
+        let reg = SubagentRegistry::load(&root);
+        let def = reg.get("scout").expect("loaded");
+        assert_eq!(
+            def.allowed_tools.as_deref(),
+            Some(&["read".to_string(), "glob".to_string(), "grep".to_string()][..])
+        );
+        // No tools field: no allowlist at all.
+        assert_eq!(reg.get("reader").unwrap().allowed_tools, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn plugin_agent_with_only_unknown_tools_gets_no_allowlist() {
+        let root = unique_root("plugin-unknown-tools");
+        std::fs::create_dir_all(plugin_agents_dir(&root)).unwrap();
+        std::fs::write(
+            plugin_agents_dir(&root).join("probe.md"),
+            "---\nname: probe\ndescription: Probes\ntools: [NotebookRead, BashOutput]\n---\nProbe.",
+        )
+        .unwrap();
+
+        let reg = SubagentRegistry::load(&root);
+        // All names unknown -> None (inherit parent policy), never Some([])
+        // which the dispatcher treats as "no tools".
+        assert_eq!(reg.get("probe").unwrap().allowed_tools, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn project_toml_shadows_plugin_agent_by_name() {
+        let root = unique_root("plugin-shadow");
+        std::fs::create_dir_all(plugin_agents_dir(&root)).unwrap();
+        std::fs::write(
+            plugin_agents_dir(&root).join("code-explorer.md"),
+            "---\nname: code-explorer\ndescription: Plugin version\n---\nPlugin body.",
+        )
+        .unwrap();
+        write_def(
+            &project_subagents_dir(&root),
+            "code-explorer",
+            "allowed_tools = [\"read\"]\n",
+        );
+
+        let reg = SubagentRegistry::load(&root);
+        let def = reg.get("code-explorer").expect("resolved");
+        assert_eq!(def.scope, SubagentScope::Project);
+        assert_eq!(def.system_prompt, "You are code-explorer.");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn create_rejects_plugin_scope() {
+        let root = unique_root("plugin-create");
+        let mut reg = SubagentRegistry::load(&root);
+        let def = SubagentDefinition {
+            name: "x".to_string(),
+            description: "d".to_string(),
+            system_prompt: "sp".to_string(),
+            allowed_tools: None,
+            model: None,
+            scope: SubagentScope::Plugin,
+        };
+        let dir = project_subagents_dir(&root);
+        assert!(reg
+            .create_in(&dir, def.clone(), SubagentScope::Plugin, false)
+            .is_err());
+        assert!(reg.create(def, SubagentScope::Plugin, false).is_err());
+        assert!(subagent_dir_for(&root, SubagentScope::Plugin).is_err());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

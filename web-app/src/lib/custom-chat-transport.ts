@@ -31,6 +31,7 @@ import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
 import { getAgentToolSchemas, sandboxEnforces } from '@/lib/agentTools'
 import { useAppState } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
+import { engineFailure } from '@/lib/engineError'
 import { ExtensionManager } from '@/lib/extension'
 import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
 import {
@@ -55,6 +56,7 @@ import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
 import { encodeVideoSentinel, parseVideoDataUrl } from '@/lib/video-sentinel'
 import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
 import { paramsSettings } from '@/lib/predefinedParams'
+import { CHAT_SLOT_ID } from '@/constants/models'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -100,10 +102,11 @@ const SCHEMA_PRIMITIVE_TYPES = new Set([
 const SCHEMA_NODE_MAP_KEYS = new Set(['properties', 'patternProperties', 'definitions', '$defs'])
 const SCHEMA_NODE_LIST_KEYS = new Set(['anyOf', 'oneOf', 'allOf', 'prefixItems'])
 
-// Per-model sidebar keys whose values should be forwarded into each chat-
-// completion request body as defaults. In router mode these can't be CLI args
-// — the router is one process serving every model — so they have to ride
-// along on each call. Assistant `parameters` override these in the merge.
+// Per-model sidebar keys forwarded into each chat-completion request body as
+// defaults. These *are* also written into the model's own preset section, so
+// this is not the only path -- it exists so a sidebar change applies without
+// regenerating the preset and reloading the engine. Assistant `parameters`
+// override these in the merge.
 const MODEL_SAMPLING_SETTING_KEYS = [
   'temperature',
   'top_k',
@@ -115,6 +118,26 @@ const MODEL_SAMPLING_SETTING_KEYS = [
   'frequency_penalty',
 ] as const
 
+/** Keys whose upstream handler throws on a negative value. */
+const NON_NEGATIVE_SAMPLING_KEYS = new Set<string>([
+  'repeat_last_n',
+  'dry_penalty_last_n',
+])
+
+/**
+ * llama.cpp's own defaults for the sampling keys that set the
+ * suppress-the-GGUF-recommendation bit. Keys absent here set no bit and are
+ * always forwarded.
+ */
+const UPSTREAM_SAMPLING_DEFAULTS: Record<string, number> = {
+  temperature: 0.8,
+  top_k: 40,
+  top_p: 0.95,
+  min_p: 0.05,
+  repeat_last_n: 64,
+  repeat_penalty: 1.0,
+}
+
 function extractModelSamplingDefaults(
   model: Model | null | undefined
 ): Record<string, unknown> {
@@ -125,13 +148,28 @@ function extractModelSamplingDefaults(
     if (raw === undefined || raw === null || raw === '') continue
     // Sidebar inputs are string-typed even when controller_props.type is
     // 'number'; coerce so the request body matches the OpenAI schema.
+    let value: unknown = raw
     if (typeof raw === 'string') {
       const n = Number(raw)
       if (!Number.isFinite(n)) continue
-      out[key] = n
-    } else {
-      out[key] = raw
+      value = n
     }
+    // The server rejects a negative window outright rather than clamping, so a
+    // value left over from the old "-1 = full context" UI would 400 every
+    // request. Dropping it lets the server's own default apply.
+    if (
+      NON_NEGATIVE_SAMPLING_KEYS.has(key) &&
+      typeof value === 'number' &&
+      value < 0
+    ) {
+      continue
+    }
+    // Forwarding a value equal to llama.cpp's default is not a no-op: it sets a
+    // bit that suppresses the GGUF's own recommended sampling, so an
+    // untouched-looking default would silently override what the model asked
+    // for. Same rule preset.ts applies.
+    if (UPSTREAM_SAMPLING_DEFAULTS[key] === value) continue
+    out[key] = value
   }
   return out
 }
@@ -739,7 +777,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   public model: LanguageModel | null = null
   private routerModel: LanguageModel | null = null
   private routerModelKey = ''
-  private tools: Record<string, Tool> = {}
+  protected tools: Record<string, Tool> = {}
   // Smart tool routing selects tools from the latest user message, which would
   // change the tool set (and thus the cached prompt prefix) every turn. Freeze
   // the routed set for the thread's lifetime so the prefix stays stable;
@@ -750,9 +788,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private hasDocuments = false
   private modelSupportsTools = false
   private ragFeatureAvailable = false
-  private systemMessage?: string
-  private serviceHub: ServiceHub | null
-  private threadId?: string
+  protected systemMessage?: string
+  protected serviceHub: ServiceHub | null
+  protected threadId?: string
   private continueFromContent: ContinuationContent | null = null
   /** Latest user message text — used by the MCP orchestrator for tool routing. */
   private lastUserMessage = ''
@@ -825,6 +863,46 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * Filters out disabled tools based on thread settings
    * @private
    */
+  /**
+   * llama.cpp slot pin for this surface. Chat reuses one slot per thread so its
+   * KV prefix survives across turns; other surfaces override to claim their own
+   * and avoid evicting it. See CHAT_SLOT_ID.
+   */
+  protected slotParams(threadId?: string): Record<string, unknown> {
+    return { id_slot: CHAT_SLOT_ID, thread_id: threadId }
+  }
+
+  /**
+   * The system turn for this surface. Whitespace-only prompts collapse to
+   * undefined so we don't send a useless system turn that some chat templates
+   * still wrap into special tokens.
+   */
+  protected buildSystemPrompt(messages: UIMessage[]): string | undefined {
+    const raw =
+      [
+        this.systemMessage,
+        this.buildFilesSystemInstruction(messages),
+        this.buildWebSearchSystemInstruction(),
+        this.buildAgentToolsSystemInstruction(),
+      ]
+        .filter((s) => typeof s === 'string' && s.trim().length > 0)
+        .join('\n\n') || undefined
+    return typeof raw === 'string' && raw.trim().length > 0 ? raw : undefined
+  }
+
+  /**
+   * Many chat templates (Qwen3.5+) reject a window with no genuine user query
+   * and throw a cryptic Jinja error. Fail early with a clear message when
+   * deletion/eviction has left no real user turn to respond to.
+   */
+  protected assertSendable(messages: UIMessage[]): void {
+    if (!hasGenuineUserQuery(messages)) {
+      throw new Error(
+        'This conversation has no user message to respond to. Add a message, or regenerate from a turn that includes your question.'
+      )
+    }
+  }
+
   async refreshTools(abortSignal?: AbortSignal) {
     if (!this.serviceHub) {
       this.tools = {}
@@ -1210,11 +1288,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       if (isPredefinedRemoteProvider(effectiveProviderName)) {
         for (const key of Object.keys(paramsSettings)) delete mergedParams[key]
       }
-      // Pin chat to slot 0 so llama-server reuses this thread's cached KV
-      // prefix across turns; title generation uses the reserved background
-      // slot (RESERVED_BACKGROUND_SLOTS) and can't evict it.
+      // Pin chat to the chat slot so llama-server reuses this thread's cached
+      // KV prefix across turns; background tasks use BACKGROUND_SLOT_ID and
+      // can't evict it.
+      //
+      // thread_id names whose cache that is, which is what lets the engine
+      // park it when another thread takes the slot and pick it back up later,
+      // including in a later session. It is stripped before the request
+      // reaches llama.cpp.
       if (providerId === 'llamacpp') {
-        mergedParams.id_slot = 0
+        Object.assign(mergedParams, this.slotParams(threadId))
       }
       this.model = await this.createModelOrAbort(
         modelId,
@@ -1236,9 +1319,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Preserve AbortError identity so callers/UI can tell a user-initiated
       // Stop from an actual model-load failure.
       if (error instanceof Error && error.name === 'AbortError') throw error
-      throw new Error(
-        `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
-      )
+      throw engineFailure('model-errors:createModelFailed', error)
     }
 
     await this.refreshTools(options.abortSignal)
@@ -1253,24 +1334,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const selectedModel = useModelProvider.getState().selectedModel
 
-    const filesInstruction = this.buildFilesSystemInstruction(messagesToConvert)
-    const webSearchInstruction = this.buildWebSearchSystemInstruction()
-    const agentToolsInstruction = this.buildAgentToolsSystemInstruction()
-    const rawSystem =
-      [
-        this.systemMessage,
-        filesInstruction,
-        webSearchInstruction,
-        agentToolsInstruction,
-      ]
-        .filter((s) => typeof s === 'string' && s.trim().length > 0)
-        .join('\n\n') || undefined
-    // Drop whitespace-only system prompts so we don't send a useless system
-    // turn that some chat templates still wrap into special tokens.
-    const effectiveSystem =
-      typeof rawSystem === 'string' && rawSystem.trim().length > 0
-        ? rawSystem
-        : undefined
+    const effectiveSystem = this.buildSystemPrompt(messagesToConvert)
 
     const maxOutputTokens: number | undefined = (() => {
       const raw = inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
@@ -1354,11 +1418,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Many chat templates (Qwen3.5+) reject a window with no genuine user query
     // and throw a cryptic Jinja error. Fail early with a clear message when
     // deletion/eviction has left no real user turn to respond to.
-    if (!hasGenuineUserQuery(effectiveMessages)) {
-      throw new Error(
-        'This conversation has no user message to respond to. Add a message, or regenerate from a turn that includes your question.'
-      )
-    }
+    this.assertSendable(effectiveMessages)
 
     const modelSupportsVision =
       selectedModel?.capabilities?.includes('vision') ?? false

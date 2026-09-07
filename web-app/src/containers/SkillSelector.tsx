@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useSkills, effectiveEnabled, storedEnabled } from '@/hooks/useSkills'
+import { cn } from '@/lib/utils'
 
 /**
  * Top-of-input control showing which skills will be advertised to the agent this
@@ -34,15 +35,23 @@ export default function SkillSelector({ folder }: { folder: string | null }) {
     <Popover>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
-          size="sm"
-          className="h-7 gap-1.5 rounded-full"
+          variant="ghost"
+          size={effective.size > 0 ? 'xs' : 'icon-xs'}
+          className="shrink-0 text-muted-foreground"
           title={t('common:skillsInContext')}
+          aria-label={t('common:skillsInContext')}
         >
-          <Sparkles size={14} className="text-muted-foreground" />
-          <span>
-            {t('common:skills')} {effective.size}/{allNames.length}
-          </span>
+          <Sparkles
+            className={cn(
+              'shrink-0',
+              effective.size > 0 ? 'size-3.5' : 'size-[18px]'
+            )}
+          />
+          {effective.size > 0 && (
+            <span className="tabular-nums text-foreground">
+              {effective.size}/{allNames.length}
+            </span>
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 p-1">

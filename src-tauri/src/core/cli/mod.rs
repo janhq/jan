@@ -2,15 +2,20 @@
 //!
 //! This module is only compiled when the `cli` feature is enabled.
 
+pub mod auth;
 pub mod brand;
+pub mod browser;
+pub mod device_auth;
 pub mod journal;
 pub mod login;
 pub mod mcp;
-pub mod providers;
+mod model_capabilities;
 mod path_refs;
 pub mod run_report;
+pub mod providers;
 mod secret_input;
 pub mod telemetry;
+pub mod terminal_setup;
 pub mod tokamak;
 mod tui;
 pub mod updater;
@@ -18,7 +23,7 @@ pub mod updater;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::core::app::commands::{resolve_config_file_path, resolve_jan_data_folder};
+use crate::core::app::commands::resolve_jan_data_folder;
 use crate::core::threads::{
     constants::THREADS_FILE,
     helpers::{read_messages_from_file, update_thread_metadata, write_messages_to_file},
@@ -304,7 +309,7 @@ pub fn cli_set_project_model(agent_dir: &std::path::Path, model: &str) -> Result
 
 /// Stands in for a tool result that never reached disk, so the call it answers
 /// stays valid. Says what happened rather than inventing an outcome.
-const MISSING_TOOL_RESULT: &str =
+pub(crate) const MISSING_TOOL_RESULT: &str =
     "(result not saved: the session ended before this call's output was recorded)";
 
 /// Rebuild the wire conversation from persisted `thread.message` records: the
@@ -414,6 +419,29 @@ fn openai_content_text(content: Option<&serde_json::Value>) -> String {
     }
 }
 
+/// If `text` is a machine-generated skill or plugin-command invocation message
+/// (the `[IMPORTANT: You have invoked the "<name>" <kind> - follow its
+/// instructions...]` wrapper produced by `skills::build_invocation_message` and
+/// `commands::build_message`), return the compact transcript label
+/// (`[skill:<name>]` or `[command:<name>]`). `None` for any other text, so a
+/// user who types that prefix verbatim still renders normally.
+pub fn invocation_label(text: &str) -> Option<String> {
+    const PREFIX: &str = "[IMPORTANT: You have invoked the \"";
+    let rest = text.strip_prefix(PREFIX)?;
+    let (name, rest) = rest.split_once('"')?;
+    if name.is_empty() {
+        return None;
+    }
+    let kind = if rest.starts_with(" skill - follow its instructions") {
+        "skill"
+    } else if rest.starts_with(" command - follow its instructions") {
+        "command"
+    } else {
+        return None;
+    };
+    Some(format!("[{kind}:{name}]"))
+}
+
 /// Fallback thread title: the first user message, whitespace-collapsed and
 /// truncated. Used only when no summarized title exists yet.
 fn default_thread_title(history: &[serde_json::Value]) -> String {
@@ -422,6 +450,9 @@ fn default_thread_title(history: &[serde_json::Value]) -> String {
         .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
         .map(|m| openai_content_text(m.get("content")))
         .unwrap_or_default();
+    if let Some(label) = invocation_label(&first_user) {
+        return label;
+    }
     let collapsed = first_user.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.is_empty() {
         return "Agent chat".to_string();
@@ -433,21 +464,6 @@ fn default_thread_title(history: &[serde_json::Value]) -> String {
     }
 }
 
-// ── App config ────────────────────────────────────────────────────────────
-
-pub fn cli_get_data_folder() -> PathBuf {
-    resolve_jan_data_folder()
-}
-
-pub fn cli_get_config() -> Result<serde_json::Value, String> {
-    let path = resolve_config_file_path();
-    if !path.exists() {
-        return Err(format!("Config file not found at: {}", path.display()));
-    }
-    let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&data).map_err(|e| e.to_string())
-}
-
 // ── Agent operations ───────────────────────────────────────────────────────
 
 use crate::core::agent::events::StreamEvent;
@@ -457,13 +473,13 @@ use crate::core::agent::project::{
 use crate::core::agent::r#loop::{
     run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
 };
-use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tauri_plugin_agent_tools::workspace;
 use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use crate::core::cli::run_report::{OutputFormat, RunReport};
 use crate::core::mcp::models::McpSettings;
 use std::collections::HashMap;
 use std::io::Write as _;
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tokio::sync::{mpsc, Mutex};
 
 /// Token-spend ceiling for one agent run when `agent.toml [budget].max_tokens`
@@ -503,7 +519,7 @@ pub fn cli_agent_status(
             serde_json::json!({
                 "provider": c.provider,
                 "base_url": c.base_url,
-                "has_api_key": c.api_key.is_some() || !c.api_keys.is_empty(),
+                "has_api_key": crate::core::cli::providers::has_credential(c),
                 "models": c.models.len(),
             })
         })
@@ -522,6 +538,16 @@ pub fn cli_agent_status(
             "allow_write": cfg.tools.allow_write,
             "allow_network": cfg.tools.allow_network,
             "allow_home_read": cfg.tools.allow_home_read,
+            "sandbox": cfg.tools.sandbox,
+        },
+        // What `bash` will actually do, with the config files already resolved
+        // (the `--sandbox` flag is per-invocation and so cannot be reported
+        // here). `backend` names the confinement that would be used and is
+        // `none` where none can be established -- with `enabled` true that
+        // combination is what withholds `bash` entirely.
+        "sandbox": {
+            "enabled": crate::core::agent::r#loop::effective_sandbox(&project_root),
+            "backend": tauri_plugin_agent_tools::tools::jail::backend().as_str(),
         },
         "providers": providers,
     }))
@@ -541,9 +567,11 @@ pub fn cli_agent_config_set(
         provider,
         crate::core::agent::global_config::ProviderUpdate {
             api_key,
+            clear_api_key: false,
             base_url,
             models,
             api_type,
+            ..Default::default()
         },
     )
 }
@@ -583,6 +611,37 @@ pub fn cli_agent_config_list() -> Result<serde_json::Value, String> {
     }))
 }
 
+/// List plugins installed for a project.
+pub fn cli_plugin_list(project: &str) -> Vec<crate::core::agent::plugins::InstalledPlugin> {
+    crate::core::agent::plugins::installed(&resolve_project_root(project))
+}
+
+/// Install git or marketplace plugin(s) for a project.
+///
+/// This is the interactive CLI path: a multi-plugin collection prompts the user
+/// to choose which plugins to install (it has an owning terminal, unlike the
+/// TUI render loop which reads stdin itself and so uses the non-interactive
+/// listing-error behavior). Returns every plugin actually installed.
+pub async fn cli_plugin_install(
+    project: &str,
+    spec: &str,
+) -> Result<Vec<crate::core::agent::plugins::InstalledPlugin>, String> {
+    crate::core::agent::plugins::install_interactive(&resolve_project_root(project), spec).await
+}
+
+/// Remove a plugin from a project.
+pub fn cli_plugin_remove(project: &str, name: &str) -> Result<(), String> {
+    crate::core::agent::plugins::remove(&resolve_project_root(project), name)
+}
+
+/// Search the configured plugin marketplace for a project.
+pub async fn cli_plugin_search(
+    project: &str,
+    query: &str,
+) -> Result<Vec<crate::core::agent::plugins::MarketEntry>, String> {
+    crate::core::agent::plugins::search(&resolve_project_root(project), query).await
+}
+
 /// Autonomous run: as many turns as the task needs, bounded only by the
 /// session token budget.
 #[allow(clippy::too_many_arguments)]
@@ -591,21 +650,11 @@ pub async fn cli_agent_run(
     task: &str,
     model: Option<String>,
     overrides: ProviderOverrides,
-    auto_approve: bool,
+    flags: SessionFlags,
     resume: Option<ResumeTarget>,
     format: OutputFormat,
 ) -> Result<(), String> {
-    run_agent_loop(
-        project,
-        task,
-        model,
-        false,
-        overrides,
-        auto_approve,
-        resume,
-        format,
-    )
-    .await
+    run_agent_loop(project, task, model, false, overrides, flags, resume, format).await
 }
 
 /// Single-turn run for debugging: the one place a turn cap is still applied,
@@ -615,7 +664,7 @@ pub async fn cli_agent_step(
     task: &str,
     model: Option<String>,
     overrides: ProviderOverrides,
-    auto_approve: bool,
+    flags: SessionFlags,
 ) -> Result<(), String> {
     run_agent_loop(
         project,
@@ -623,7 +672,7 @@ pub async fn cli_agent_step(
         model,
         true,
         overrides,
-        auto_approve,
+        flags,
         None,
         OutputFormat::Text,
     )
@@ -641,9 +690,10 @@ fn build_cli_orchestration_args(
     auto_approve: bool,
     plan: bool,
     max_parallel_subagents: u32,
+    sandbox: Option<bool>,
 ) -> OrchestrationArgs {
     OrchestrationArgs {
-        client: reqwest::Client::new(),
+        client: crate::core::agent::upstream::agent_http_client(),
         provider_configs: Arc::new(Mutex::new(provider_configs)),
         mcp_servers,
         mcp_settings: Arc::new(Mutex::new(mcp_settings)),
@@ -667,6 +717,9 @@ fn build_cli_orchestration_args(
         // reuses `args` across turns and wipes it when the interactive session
         // ends.
         session_id: Some(uuid::Uuid::new_v4().to_string()),
+        // `--sandbox` only when passed; unset falls through to the project's
+        // `[tools].sandbox` and then the user's global `sandbox`.
+        sandbox,
     }
 }
 
@@ -696,9 +749,13 @@ struct PersistTarget {
 /// run of bare numbers, which would be trivial to transpose at a call site.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SessionLimits {
-    /// Context window limit in tokens for the model. Defaults to 128K if agent.toml
-    /// doesn't set it. Used to display `ctx N/K` in the header and trigger compaction.
+    /// Context window limit in tokens for the model. Resolution order is the
+    /// configured `[agent].context_window` override, then the built-in model
+    /// catalog, then a 128K fallback. Used to display `ctx N/K` in the header
+    /// and trigger compaction.
     pub context_window: u64,
+    /// Where `context_window` came from: configured override, catalog, or fallback.
+    pub context_window_source: crate::core::cli::model_capabilities::ContextWindowSource,
     /// Tokens reserved for the model's response. Defaults to 16K if unset.
     /// Compaction triggers at `context_window - reserve_tokens`.
     pub reserve_tokens: u64,
@@ -722,6 +779,14 @@ pub(crate) struct AgentSession {
     pub limits: SessionLimits,
     /// Whether the TUI expands `<think>` reasoning blocks (default false).
     pub show_reasoning: bool,
+    /// Whether the TUI streams reasoning into the live tail while it folds
+    /// (`stream_reasoning` in `~/.jan/config.toml`, default true). Independent
+    /// of `show_reasoning`, which unfolds it for good.
+    pub stream_reasoning: bool,
+    /// Whether to resend a prior assistant turn's reasoning to the model
+    /// (default true). False drops `reasoning_content` from outgoing assistant
+    /// messages; the display journal still keeps reasoning for a resume.
+    pub send_reasoning: bool,
     /// Shared MCP connection map (same Arc held by `args`), so the TUI can
     /// connect/disconnect servers live via `/mcp` and later turns pick them up.
     pub mcp_servers: crate::core::state::SharedMcpServers,
@@ -744,8 +809,42 @@ impl AgentSession {
         if let Some(max) = self.limits.max_tokens {
             body["max_tokens"] = serde_json::json!(max);
         }
+        // Reasoning resend policy: the request-level flag the loop reads to
+        // decide whether prior assistant `reasoning_content` goes back out.
+        body["send_reasoning"] = serde_json::json!(self.send_reasoning);
         body
     }
+}
+
+/// The per-invocation switches a session starts with.
+///
+/// A struct rather than a run of positional `bool`s: `(.., false, false, true)`
+/// at a call site names none of them, and the compiler cannot catch two of them
+/// being swapped.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SessionFlags {
+    /// Skip the permission prompt for writes, shell, and MCP calls.
+    pub auto_approve: bool,
+    /// Start in read-only plan mode.
+    pub plan: bool,
+    /// Fail when no model resolves instead of launching with an empty one. The
+    /// TUI leaves this off so `/login` can fill the model in later.
+    pub require_model: bool,
+    /// `--sandbox`: run `bash` under OS confinement. `None` (not passed) defers
+    /// to `[tools].sandbox`, then the global `sandbox`, then the CLI default of
+    /// off.
+    pub sandbox: Option<bool>,
+}
+
+/// The desktop app's currently-selected model, adopted only when signed in to
+/// Tokamak. Split out from the resolution chain so the rule is testable without
+/// a `settings.json` on disk; see the note at the call site for why the sign-in
+/// gates it.
+fn inherit_desktop_model(
+    signed_in: bool,
+    selection: crate::core::cli::providers::DesktopSelection,
+) -> Option<String> {
+    signed_in.then_some(selection.model).flatten()
 }
 
 /// Resolve project config + credentials into a ready-to-run engine handle.
@@ -754,9 +853,7 @@ fn prepare_agent_session(
     project: &str,
     model_override: Option<String>,
     overrides: ProviderOverrides,
-    auto_approve: bool,
-    plan: bool,
-    require_model: bool,
+    flags: SessionFlags,
 ) -> Result<AgentSession, String> {
     let project_root = resolve_project_root(project);
     ensure_project(&project_root)?;
@@ -771,18 +868,31 @@ fn prepare_agent_session(
     // model), then the desktop app's currently-selected model (settings.json
     // inherit). Global config outranks desktop so a standalone agent is
     // self-sufficient without a desktop install.
+    //
+    // The desktop inherit is the last resort and applies only when signed in to
+    // Tokamak. Without a sign-in, silently adopting whatever model the desktop
+    // app last had selected starts the session on a provider the user never
+    // chose here -- and hides the sign-in notice that would otherwise fire,
+    // because a non-empty model reads as "configured". Leaving it unset surfaces
+    // the notice instead. An explicit --model, agent.toml, or ~/.jan default is
+    // unaffected: all three outrank this.
     let explicit = model_override.is_some() || overrides.api_key.is_some();
     let model = model_override
         .or_else(|| cfg.agent.model.clone())
         .or_else(|| crate::core::agent::global_config::default_model().ok().flatten())
-        .or_else(|| crate::core::cli::providers::desktop_selection().model);
+        .or_else(|| {
+            inherit_desktop_model(
+                crate::core::cli::tokamak::auth_status().signed_in,
+                crate::core::cli::providers::desktop_selection(),
+            )
+        });
     // A project or global default can name a model with nobody around to serve
     // it (e.g. this repo's own agent.toml pins one, but a fresh `~/.jan` has no
     // credentials for anything). Trust it only when the user was explicit
     // (--model/--api-key) or some provider can actually be reached; otherwise
     // treat it as unset so the TUI's sign-in notice fires instead of failing on
     // the first message.
-    let model = if !require_model
+    let model = if !flags.require_model
         && !explicit
         && !crate::core::cli::providers::has_usable_provider(Some(&project_root))
     {
@@ -790,7 +900,7 @@ fn prepare_agent_session(
     } else {
         model.unwrap_or_default()
     };
-    if model.is_empty() && require_model {
+    if model.is_empty() && flags.require_model {
         return Err(
             "no model specified: run `jan login` to sign in to Tokamak, or pass --model, set [agent].model in agent.toml, set default_model in ~/.jan/config.toml, or select a model in the desktop app"
                 .to_string(),
@@ -839,6 +949,10 @@ fn prepare_agent_session(
         None
     };
 
+    // `think_tags` is user-wide and read from free rendering functions, so it is
+    // applied to the process here, the one path every agent surface takes.
+    tui::set_think_tags_parsed(crate::core::agent::global_config::think_tags_enabled());
+
     let permission_requests: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
     let max_parallel_subagents = cfg
         .agent
@@ -851,10 +965,16 @@ fn prepare_agent_session(
         mcp_servers.clone(),
         mcp_settings,
         permission_requests.clone(),
-        auto_approve,
-        plan,
+        flags.auto_approve,
+        flags.plan,
         max_parallel_subagents,
+        flags.sandbox,
     );
+
+    // Resolution order: configured `[agent].context_window` override, then the
+    // built-in model catalog, then the 128K fallback.
+    let resolved_window =
+        crate::core::cli::model_capabilities::resolve_context_window(&model, cfg.agent.context_window);
 
     Ok(AgentSession {
         args,
@@ -862,12 +982,15 @@ fn prepare_agent_session(
         model,
         smol_model,
         limits: SessionLimits {
-            context_window: cfg.agent.context_window.unwrap_or(128_000),
+            context_window: resolved_window.tokens,
+            context_window_source: resolved_window.source,
             reserve_tokens: cfg.agent.compaction_reserve_tokens.unwrap_or(16_384),
             max_tokens: cfg.agent.max_tokens,
             max_session_tokens: cfg.budget.max_tokens.unwrap_or(DEFAULT_MAX_SESSION_TOKENS),
         },
         show_reasoning: cfg.agent.show_reasoning.unwrap_or(false),
+        stream_reasoning: crate::core::agent::global_config::stream_reasoning_enabled(),
+        send_reasoning: cfg.agent.send_reasoning.unwrap_or(true),
         mcp_servers,
         mcp_task,
     })
@@ -907,18 +1030,21 @@ fn prepare_agent_run(
     model_override: Option<String>,
     single_turn: bool,
     overrides: ProviderOverrides,
-    auto_approve: bool,
+    flags: SessionFlags,
     resume: Option<ResumeTarget>,
 ) -> Result<PreparedRun, String> {
     // Non-interactive runs (`agent run`/`step`) have no plan-review handoff, so
-    // plan mode stays a TUI-only startup option.
+    // plan mode stays a TUI-only startup option, and a run with no model has no
+    // terminal to recover in, so it must fail rather than launch empty.
     let session = prepare_agent_session(
         project,
         model_override,
         overrides,
-        auto_approve,
-        false,
-        true,
+        SessionFlags {
+            plan: false,
+            require_model: true,
+            ..flags
+        },
     )?;
     let project_root = resolve_project_root(project);
     let (clean_task, injected) = path_refs::resolve_references(task, &project_root);
@@ -980,7 +1106,7 @@ async fn run_agent_loop(
     model_override: Option<String>,
     single_turn: bool,
     overrides: ProviderOverrides,
-    auto_approve: bool,
+    flags: SessionFlags,
     resume: Option<ResumeTarget>,
     format: OutputFormat,
 ) -> Result<(), String> {
@@ -991,7 +1117,7 @@ async fn run_agent_loop(
         model_override,
         single_turn,
         overrides,
-        auto_approve,
+        flags,
         resume,
     );
     // A setup failure never reaches the event stream, so a JSON consumer would
@@ -1028,6 +1154,14 @@ async fn run_agent_loop(
                 // Headless has no transcript to note into, so these stay logs.
                 for failure in &outcome.failed {
                     log::warn!("MCP: {failure}");
+                }
+                // Signing in needs a browser and a keypress, neither of which
+                // exists here, so the fix is named rather than attempted.
+                if !outcome.needs_auth.is_empty() {
+                    log::warn!(
+                        "MCP: {} need authentication - run `jan` and use /mcp to sign in",
+                        outcome.needs_auth.join(", ")
+                    );
                 }
             }
             Err(e) => log::warn!("MCP connect task failed: {e}"),
@@ -1153,8 +1287,7 @@ pub async fn cli_agent_ui(
     model: Option<String>,
     images: Vec<String>,
     overrides: ProviderOverrides,
-    auto_approve: bool,
-    plan: bool,
+    flags: SessionFlags,
     resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
     let project_root = resolve_project_root(project);
@@ -1167,7 +1300,15 @@ pub async fn cli_agent_ui(
     // Fresh install with a terminal attached: launch with no model rather than
     // forcing sign-in here. The TUI shows a one-line notice and `/login` (or
     // `jan login`) picks a model up once the user is ready.
-    let session = prepare_agent_session(project, model, overrides, auto_approve, plan, false)?;
+    let session = prepare_agent_session(
+        project,
+        model,
+        overrides,
+        SessionFlags {
+            require_model: false,
+            ..flags
+        },
+    )?;
     // TUI threads persist under the project's .jan/agent dir, separate from the
     // desktop store, so continuing here never mutates desktop threads.
     let agent_dir = agent_dir_for(&project_root);
@@ -1183,10 +1324,30 @@ pub fn agent_dir_for(project_root: &std::path::Path) -> PathBuf {
 /// run can be piped; progress/diagnostics go to stderr. `PermissionRequest` is
 /// resolved via the terminal (deny when non-interactive).
 async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
+    if crate::core::cli::auth::account::take_claude_alias_engaged() {
+        eprintln!(
+            "\x1b[33m[warning] {}\x1b[0m",
+            crate::core::cli::auth::account::CLAUDE_ALIAS_NOTICE
+        );
+    }
     match ev {
         StreamEvent::Token { text } => {
             print!("{text}");
             let _ = std::io::stdout().flush();
+        }
+        // A command's live output is progress, not answer: it goes to stderr so a
+        // piped stdout still holds only the model's completion. The full output
+        // arrives again with the tool result, which is what the model sees; this
+        // is purely so a long command is not silent in a headless run.
+        StreamEvent::ToolOutputDelta { delta, .. } => {
+            eprint!("\x1b[2m{delta}\x1b[0m");
+            let _ = std::io::stderr().flush();
+        }
+        // Reasoning is progress, not answer: dimmed on stderr so piping stdout
+        // yields only the real completion.
+        StreamEvent::Reasoning { text } => {
+            eprint!("\x1b[2m{text}\x1b[0m");
+            let _ = std::io::stderr().flush();
         }
         StreamEvent::Step { index, max } => match max {
             0 => eprintln!("\n\x1b[2m[turn {index}]\x1b[0m"),
@@ -1240,6 +1401,8 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::AskRequest { .. } => {
             eprintln!("\n\x1b[31m[error] interactive ask requires `jan agent ui`\x1b[0m")
         }
+        // Headless never renders an ask prompt, so there is nothing to dismiss.
+        StreamEvent::AskResolved { .. } => {}
         // The non-interactive CLI doesn't persist session state; a todo update
         // is silently dropped here (mirrors MessagesUpdated below).
         StreamEvent::TodoUpdate { .. } => {}
@@ -1302,6 +1465,36 @@ async fn prompt_permission(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Signing in to Tokamak is what unlocks the desktop inherit. Without it the
+    /// model stays unset so the TUI's sign-in notice fires, instead of the
+    /// session silently starting on whatever the desktop app last had selected.
+    #[test]
+    fn desktop_model_is_inherited_only_when_signed_in() {
+        let selection = crate::core::cli::providers::DesktopSelection {
+            provider: Some("llamacpp".into()),
+            model: Some("gemma-4-E2B-it-IQ4_XS".into()),
+        };
+        assert_eq!(
+            inherit_desktop_model(true, selection.clone()).as_deref(),
+            Some("gemma-4-E2B-it-IQ4_XS"),
+        );
+        assert_eq!(
+            inherit_desktop_model(false, selection),
+            None,
+            "a signed-out session does not adopt the desktop's selection"
+        );
+    }
+
+    /// Signed in but the desktop has no selection (or no desktop at all) is not
+    /// an error -- it just contributes nothing to the chain.
+    #[test]
+    fn an_empty_desktop_selection_contributes_nothing() {
+        assert_eq!(
+            inherit_desktop_model(true, crate::core::cli::providers::DesktopSelection::default()),
+            None
+        );
+    }
 
     // ── resume ─────────────────────────────────────────────────────────────
 
@@ -1519,7 +1712,49 @@ mod tests {
         );
     }
 
-    // ── default_thread_title ───────────────────────────────────────────────
+    // ── invocation_label / default_thread_title ────────────────────────────
+
+    #[test]
+    fn invocation_label_recognizes_skill_and_command_wrappers() {
+        assert_eq!(
+            invocation_label(
+                "[IMPORTANT: You have invoked the \"deploy\" skill - follow its instructions. The full skill content is loaded below.]\n\nBody."
+            ),
+            Some("[skill:deploy]".to_string())
+        );
+        assert_eq!(
+            invocation_label(
+                "[IMPORTANT: You have invoked the \"feature-dev\" command - follow its instructions. The full command content is loaded below.]\n\nBuild: $ARGUMENTS"
+            ),
+            Some("[command:feature-dev]".to_string())
+        );
+        // Anything that is not the exact machine wrapper stays None.
+        assert_eq!(invocation_label("deploy"), None);
+        assert_eq!(
+            invocation_label("[IMPORTANT: You have invoked the \"\" skill - x"),
+            None
+        );
+        assert_eq!(
+            invocation_label("[IMPORTANT: You have invoked the \"deploy\" skill"), // truncated wrapper
+            None
+        );
+        assert_eq!(
+            invocation_label("[IMPORTANT: You have invoked the \"deploy\""), // no kind
+            None
+        );
+    }
+
+    #[test]
+    fn default_thread_title_uses_invocation_label_for_first_message() {
+        let history = serde_json::json!([{
+            "role": "user",
+            "content": "[IMPORTANT: You have invoked the \"feature-dev\" command - follow its instructions. The full command content is loaded below.]\n\nBuild: auth"
+        }]);
+        assert_eq!(
+            default_thread_title(history.as_array().unwrap()),
+            "[command:feature-dev]"
+        );
+    }
 
     #[test]
     fn default_thread_title_uses_first_user_message() {
@@ -1611,14 +1846,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    // ── cli_get_data_folder returns a path ────────────────────────────────
-
-    #[test]
-    fn cli_get_data_folder_returns_non_empty_path() {
-        let p = cli_get_data_folder();
-        assert!(!p.as_os_str().is_empty());
-    }
-
     // ── prepare_agent_session model resolution ────────────────────────────
 
     /// A project's `agent.toml` naming a model must not paper over "nothing can
@@ -1640,12 +1867,63 @@ mod tests {
                 dir.path().to_str().unwrap(),
                 None,
                 ProviderOverrides::default(),
-                false,
-                false,
-                false,
+                SessionFlags::default(),
             )
             .expect("TUI session prep must not fail with nothing configured");
             assert_eq!(session.model, "");
+        });
+    }
+
+    /// End-to-end for the sign-in gate, arranged so the pre-existing
+    /// "nothing usable is configured" guard cannot mask it: a usable non-Tokamak
+    /// provider is present (so the guard passes) but names no models (so
+    /// `default_model` contributes nothing), leaving the desktop inherit as the
+    /// only thing that could supply a model. Signed out, it must not.
+    #[test]
+    fn a_signed_out_session_does_not_adopt_the_desktop_model() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            crate::core::agent::global_config::set_provider(
+                "openai",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("sk-test".into()),
+                    base_url: Some("https://api.openai.com/v1".into()),
+                    models: Some(vec![]),
+                    ..Default::default()
+                },
+            )
+            .expect("seed provider");
+
+            let data = home.join("jan-data");
+            std::fs::create_dir_all(&data).unwrap();
+            std::fs::write(
+                data.join("settings.json"),
+                r#"{"model-provider":"{\"state\":{\"selectedProvider\":\"llamacpp\",\"selectedModel\":{\"id\":\"gemma-4-E2B-it-IQ4_XS\"}}}"}"#,
+            )
+            .unwrap();
+            std::env::set_var("JAN_DATA_FOLDER", &data);
+
+            // Sanity: the desktop selection really is readable, so a passing
+            // assertion below means the gate fired, not that the fixture is dead.
+            assert_eq!(
+                crate::core::cli::providers::desktop_selection().model.as_deref(),
+                Some("gemma-4-E2B-it-IQ4_XS")
+            );
+            assert!(!crate::core::cli::tokamak::auth_status().signed_in);
+
+            let dir = tempfile::tempdir().unwrap();
+            let session = prepare_agent_session(
+                dir.path().to_str().unwrap(),
+                None,
+                ProviderOverrides::default(),
+                SessionFlags::default(),
+            )
+            .expect("session prep");
+            std::env::remove_var("JAN_DATA_FOLDER");
+
+            assert_eq!(
+                session.model, "",
+                "signed out, the desktop's last selection must not become the session model"
+            );
         });
     }
 
@@ -1658,9 +1936,11 @@ mod tests {
                 "tokamak",
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("tk".into()),
+                    clear_api_key: false,
                     base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
                     models: Some(vec!["tokamak-1-preview".into()]),
                     api_type: None,
+                                    ..Default::default()
                 },
             )
             .unwrap();
@@ -1675,9 +1955,7 @@ mod tests {
                 dir.path().to_str().unwrap(),
                 None,
                 ProviderOverrides::default(),
-                false,
-                false,
-                false,
+                SessionFlags::default(),
             )
             .expect("session prep");
             assert_eq!(session.model, "tokamak-1-preview");

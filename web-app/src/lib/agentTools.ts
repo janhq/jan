@@ -6,6 +6,7 @@ import {
   threadWorkspaceSweep,
   type SandboxStatus,
   type ToolSchema,
+  type WorkspaceScope,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
@@ -35,6 +36,9 @@ export const AGENT_TOOL_NAMES = new Set([
   'skill_list',
   'skill_read',
   'skill_write',
+  // Renders a local .html/.svg with headless Chrome so the agent can see what
+  // it built. Read capability: it writes nothing back.
+  'screenshot',
 ])
 
 /**
@@ -66,6 +70,18 @@ export function getSandboxStatus(): Promise<SandboxStatus> {
 }
 
 let enforcesNow = false
+
+/**
+ * Re-probe the sandbox, dropping both caches. Installing a backend (bubblewrap
+ * on Linux) cannot take effect otherwise: `statusCache` is module-level, and
+ * leaving `schemaCache` behind would keep `bash` withheld even once a backend
+ * enforces.
+ */
+export function refreshSandboxStatus(): Promise<SandboxStatus> {
+  statusCache = null
+  schemaCache = null
+  return getSandboxStatus()
+}
 
 /**
  * Synchronous view of the sandbox, for building the system prompt. `false` until
@@ -120,7 +136,20 @@ const messageOf = (e: unknown): string =>
 export async function executeAgentTool(
   toolName: string,
   input: unknown,
-  threadId: string
+  threadId: string,
+  /**
+   * A project folder to attach read-only. Rust validates it and refuses one
+   * that overlaps the workspace or the Jan data folder, rather than silently
+   * dropping it, so an unusable attachment surfaces as a tool error.
+   */
+  readOnlyProject?: string | null,
+  /**
+   * Which sandbox namespace `threadId` names. Load-bearing: a Cowork session id
+   * is not a chat thread id, so running one under `'thread'` would put its files
+   * where the thread sweep's keep-list can never mention them — and the sweep
+   * would delete the only copy of the agent's work.
+   */
+  scope: WorkspaceScope = 'thread'
 ): Promise<AgentToolResult> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
@@ -136,7 +165,9 @@ export async function executeAgentTool(
       args,
       undefined,
       undefined,
-      useAgentToolsConfig.getState().bashNetworkEnabled
+      useAgentToolsConfig.getState().bashNetworkEnabled,
+      readOnlyProject ?? undefined,
+      scope
     )
     if (result.isError) return { error: result.content }
     return { content: result.content, diff: result.diff ?? undefined }

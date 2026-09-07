@@ -40,35 +40,60 @@ fn role(msg: &Value) -> &str {
     msg.get("role").and_then(|r| r.as_str()).unwrap_or("")
 }
 
+/// Where the kept tail may begin, given the ideal boundary `target`. The tail
+/// must not open on an orphaned tool result whose `tool_calls` message sits in
+/// the dropped prefix, so the boundary moves to the nearest message that is not
+/// one. Forward first, since that drops the most; but a long agentic run under
+/// a single prompt can end on a fan-out whose results reach the end of the
+/// conversation, and walking forward there runs off the end and abandons
+/// compaction on exactly the history that needed it. So fall back to walking
+/// back onto the call that owns the batch, keeping the group whole.
+///
+/// `None` when the tail would leave nothing worth dropping: the summary is
+/// itself a message, so a prefix of one shrinks nothing.
+fn tail_start(rest: &[Value], target: usize) -> Option<usize> {
+    let mut cut = target;
+    while cut < rest.len() && role(&rest[cut]) == "tool" {
+        cut += 1;
+    }
+    if cut >= rest.len() {
+        cut = target;
+        while cut > 0 && role(&rest[cut]) == "tool" {
+            cut -= 1;
+        }
+    }
+    (cut >= 2).then_some(cut)
+}
+
 /// Compact `messages` so the result is meaningfully smaller than the input.
 /// Returns the input unchanged when there is nothing safe to compact (so the
 /// caller can detect a no-op and stop retrying).
+///
+/// The error case is one specific failure: when the *target model's* summarizer
+/// itself overflows its context window, a fallback note must not be fabricated
+/// (it would silently drop the whole dropped span and, for a smaller-window
+/// model, the compacted request could still overflow). The `Err` is propagated
+/// so the caller can preserve history and block the request instead. Every
+/// other summarizer failure stays recoverable and yields a [`FALLBACK_NOTE`].
 pub(crate) async fn compact_conversation(
     messages: &[Value],
     model_id: &str,
     model: &dyn ModelInvoker,
     keep_recent: usize,
-) -> Vec<Value> {
+) -> Result<Vec<Value>, String> {
     let sys_end = messages.iter().take_while(|m| role(m) == "system").count();
     let (system_msgs, rest) = messages.split_at(sys_end);
 
     if rest.len() <= keep_recent {
-        return messages.to_vec();
+        return Ok(messages.to_vec());
     }
 
-    let mut cut = rest.len() - keep_recent;
-    // The kept tail must not begin with an orphaned tool result whose assistant
-    // tool-call message sits in the dropped prefix; push the boundary forward
-    // until the tail starts on a user/assistant message.
-    while cut < rest.len() && role(&rest[cut]) == "tool" {
-        cut += 1;
-    }
-    if cut == 0 || cut >= rest.len() {
-        return messages.to_vec();
-    }
+    let Some(cut) = tail_start(rest, rest.len() - keep_recent) else {
+        return Ok(messages.to_vec());
+    };
 
     let kept = &rest[cut..];
-    let summary = summarize(&rest[..cut], model_id, model).await;
+    let summary = summarize(&rest[..cut], model_id, model).await?;
 
     let mut out = Vec::with_capacity(system_msgs.len() + 1 + kept.len());
     out.extend_from_slice(system_msgs);
@@ -77,7 +102,7 @@ pub(crate) async fn compact_conversation(
         "content": format!("[Summary of earlier conversation, condensed to save context]\n\n{summary}")
     }));
     out.extend_from_slice(kept);
-    out
+    Ok(out)
 }
 
 /// Flatten a span of wire messages into a plain-text transcript. Rendering
@@ -142,10 +167,15 @@ fn clamp_middle(text: &str, max: usize) -> String {
 /// conversation: this runs after an overflow, so a request carrying the full
 /// history plus a prompt is strictly larger than the one that just failed and
 /// could only fail too, silently degrading every compaction to [`FALLBACK_NOTE`].
-async fn summarize(dropped: &[Value], model_id: &str, model: &dyn ModelInvoker) -> String {
+///
+/// Returns an `Err` only when the target model's context window overflowed --
+/// the caller must block rather than fabricate a fallback note for a
+/// smaller-window model. Every other failure and empty/unreadable completion
+/// stays recoverable and returns [`FALLBACK_NOTE`].
+async fn summarize(dropped: &[Value], model_id: &str, model: &dyn ModelInvoker) -> Result<String, String> {
     let transcript = clamp_middle(&render_transcript(dropped), SUMMARY_INPUT_CHARS);
     if transcript.trim().is_empty() {
-        return FALLBACK_NOTE.to_string();
+        return Ok(FALLBACK_NOTE.to_string());
     }
     let request = json!({
         "model": model_id,
@@ -158,14 +188,25 @@ async fn summarize(dropped: &[Value], model_id: &str, model: &dyn ModelInvoker) 
     // never reach the user-facing event stream.
     let (sink, _rx) = mpsc::unbounded_channel();
     match model.invoke(&request, &sink).await {
-        Ok(completion) => extract_choice_message(&completion)
-            .and_then(|m| m.get("content"))
-            .and_then(|c| c.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| FALLBACK_NOTE.to_string()),
-        Err(_) => FALLBACK_NOTE.to_string(),
+        Ok(completion) => {
+            let summary = extract_choice_message(&completion)
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            Ok(summary.unwrap_or_else(|| FALLBACK_NOTE.to_string()))
+        }
+        Err(e) => {
+            // A model-switch compaction targets the (smaller) new model: if the
+            // summarizer itself overflows, a note is not safe -- the request
+            // could still overflow and the dropped span would be lost. Propagate.
+            if crate::core::agent::upstream::is_context_overflow_error(&e) {
+                Err(e)
+            } else {
+                Ok(FALLBACK_NOTE.to_string())
+            }
+        }
     }
 }
 
@@ -222,7 +263,9 @@ mod tests {
             requests: tokio::sync::Mutex::new(Vec::new()),
         };
         let input = convo(4);
-        let out = compact_conversation(&input, "m", &model, DEFAULT_KEEP_RECENT).await;
+        let out = compact_conversation(&input, "m", &model, DEFAULT_KEEP_RECENT)
+            .await
+            .expect("no-op must not fail");
         assert_eq!(out, input);
         assert_eq!(*model.calls.lock().unwrap(), 0, "no summarization on no-op");
     }
@@ -235,7 +278,9 @@ mod tests {
             requests: tokio::sync::Mutex::new(Vec::new()),
         };
         let input = convo(20);
-        let out = compact_conversation(&input, "m", &model, 4).await;
+        let out = compact_conversation(&input, "m", &model, 4)
+            .await
+            .expect("successful summary must not fail");
 
         assert!(out.len() < input.len());
         assert_eq!(role(&out[0]), "system");
@@ -260,7 +305,9 @@ mod tests {
         };
         let input = convo(20);
 
-        compact_conversation(&input, "m", &model, 4).await;
+        compact_conversation(&input, "m", &model, 4)
+            .await
+            .expect("successful summary must not fail");
 
         let requests = model.requests.lock().await;
         let messages = requests[0]["messages"].as_array().unwrap();
@@ -315,7 +362,9 @@ mod tests {
             json!({ "role": "assistant", "content": "welcome" }),
         ];
 
-        compact_conversation(&input, "m", &model, 2).await;
+        compact_conversation(&input, "m", &model, 2)
+            .await
+            .expect("successful summary must not fail");
 
         let requests = model.requests.lock().await;
         let messages = requests[0]["messages"].as_array().unwrap();
@@ -345,7 +394,9 @@ mod tests {
             input.push(json!({ "role": r, "content": "x".repeat(8_000) }));
         }
 
-        compact_conversation(&input, "m", &model, 4).await;
+        compact_conversation(&input, "m", &model, 4)
+            .await
+            .expect("successful summary must not fail");
 
         let requests = model.requests.lock().await;
         let transcript = requests[0]["messages"][1]["content"].as_str().unwrap();
@@ -387,9 +438,132 @@ mod tests {
     #[tokio::test]
     async fn falls_back_to_note_when_summarizer_fails() {
         let input = convo(20);
-        let out = compact_conversation(&input, "m", &FailingModel, 4).await;
+        let out = compact_conversation(&input, "m", &FailingModel, 4)
+            .await
+            .expect("an ordinary summarizer error must not fail compaction");
         assert!(out[1]["content"].as_str().unwrap().contains(FALLBACK_NOTE));
         assert!(out.len() < input.len());
+    }
+
+    /// A target-model summarizer that itself overflows its context window must
+    /// fail compaction rather than fabricate a fallback note: for a
+    /// smaller-window model a note could still overflow, and the dropped span
+    /// would be silently lost. The caller (a model switch) blocks instead.
+    struct OverflowingModel;
+    #[async_trait]
+    impl ModelInvoker for OverflowingModel {
+        async fn invoke(
+            &self,
+            _request: &Value,
+            _events: &mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+        ) -> Result<Value, String> {
+            Err(format!(
+                "[{}] Upstream returned HTTP 400: prompt is too long",
+                crate::core::agent::upstream::CONTEXT_OVERFLOW_MARKER
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn target_summary_context_overflow_is_fatal() {
+        let input = convo(20);
+        let error = compact_conversation(&input, "m", &OverflowingModel, 4)
+            .await
+            .expect_err("a summarizer context overflow must not be swallowed");
+        assert!(crate::core::agent::upstream::is_context_overflow_error(&error));
+    }
+
+    /// One prompt driving a long agentic run is the normal shape here: a single
+    /// user message followed by hundreds of assistant/tool rounds. Compaction
+    /// has to bite into that from the top, or the run it was called to rescue
+    /// cannot continue.
+    #[tokio::test]
+    async fn compacts_a_run_with_a_single_user_message() {
+        let model = StubModel {
+            summary: "CONDENSED".into(),
+            calls: StdMutex::new(0),
+            requests: tokio::sync::Mutex::new(Vec::new()),
+        };
+        let mut input = vec![
+            json!({ "role": "system", "content": "sys" }),
+            json!({ "role": "user", "content": "do the whole task" }),
+        ];
+        for i in 0..40 {
+            input.push(json!({
+                "role": "assistant", "content": Value::Null,
+                "tool_calls": [{ "id": format!("t{i}"), "function": { "name": "bash" } }]
+            }));
+            input.push(json!({
+                "role": "tool", "tool_call_id": format!("t{i}"), "content": format!("out{i}")
+            }));
+        }
+        let out = compact_conversation(&input, "m", &model, DEFAULT_KEEP_RECENT)
+            .await
+            .expect("successful summary must not fail");
+
+        assert!(out.len() < input.len(), "the run must shrink");
+        assert_ne!(
+            role(&out[2]),
+            "tool",
+            "kept tail must not start on a result"
+        );
+        assert_eq!(
+            out[out.len() - 1],
+            input[input.len() - 1],
+            "the newest round is what the run resumes from"
+        );
+    }
+
+    /// The cut can land inside a batch of parallel tool results with nothing
+    /// but results between it and the end. Walking the boundary forward runs it
+    /// off the end and compaction gives up -- on exactly the conversation that
+    /// needed it. The boundary has to fall back to the call that owns the batch.
+    #[tokio::test]
+    async fn compacts_when_the_tail_is_one_batch_of_parallel_results() {
+        let model = StubModel {
+            summary: "CONDENSED".into(),
+            calls: StdMutex::new(0),
+            requests: tokio::sync::Mutex::new(Vec::new()),
+        };
+        let mut input = vec![
+            json!({ "role": "system", "content": "sys" }),
+            json!({ "role": "user", "content": "do the whole task" }),
+        ];
+        for i in 0..10 {
+            input.push(json!({
+                "role": "assistant", "content": Value::Null,
+                "tool_calls": [{ "id": format!("t{i}"), "function": { "name": "bash" } }]
+            }));
+            input.push(json!({
+                "role": "tool", "tool_call_id": format!("t{i}"), "content": format!("out{i}")
+            }));
+        }
+        // A final fan-out: one call message, then results all the way to the end.
+        let calls: Vec<Value> = (0..20)
+            .map(|i| json!({ "id": format!("p{i}"), "function": { "name": "read" } }))
+            .collect();
+        input.push(json!({
+            "role": "assistant", "content": Value::Null, "tool_calls": calls
+        }));
+        let batch_start = input.len() - 1;
+        for i in 0..20 {
+            input.push(json!({
+                "role": "tool", "tool_call_id": format!("p{i}"), "content": format!("r{i}")
+            }));
+        }
+
+        let out = compact_conversation(&input, "m", &model, DEFAULT_KEEP_RECENT)
+            .await
+            .expect("successful summary must not fail");
+
+        assert!(
+            out.len() < input.len(),
+            "a tail of parallel results must not defeat compaction"
+        );
+        assert_eq!(
+            out[2], input[batch_start],
+            "the tail must start on the call that owns the results it keeps"
+        );
     }
 
     #[tokio::test]
@@ -410,7 +584,9 @@ mod tests {
         }
         // keep_recent=4 would place the boundary mid tool-group; the guard must
         // advance it so the kept tail does not begin with a tool message.
-        let out = compact_conversation(&input, "m", &model, 4).await;
+        let out = compact_conversation(&input, "m", &model, 4)
+            .await
+            .expect("successful summary must not fail");
         let first_kept = &out[2];
         assert_ne!(
             role(first_kept),

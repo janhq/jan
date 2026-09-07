@@ -85,6 +85,10 @@ fn default_router_model_id() -> String {
     String::new()
 }
 
+fn default_max_tool_output_chars() -> u64 {
+    super::constants::DEFAULT_MCP_MAX_TOOL_OUTPUT_CHARS
+}
+
 /// Runtime MCP settings that can be adjusted via UI
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -105,6 +109,9 @@ pub struct McpSettings {
     pub router_model_provider: String,
     #[serde(default = "default_router_model_id")]
     pub router_model_id: String,
+    /// Per-tool-result character cap; `0` disables it.
+    #[serde(default = "default_max_tool_output_chars")]
+    pub max_tool_output_chars: u64,
 }
 
 impl Default for McpSettings {
@@ -118,6 +125,7 @@ impl Default for McpSettings {
             use_lightweight_router_model: false,
             router_model_provider: String::new(),
             router_model_id: String::new(),
+            max_tool_output_chars: super::constants::DEFAULT_MCP_MAX_TOOL_OUTPUT_CHARS,
         }
     }
 }
@@ -126,6 +134,22 @@ impl McpSettings {
     /// Returns the tool call timeout duration, enforcing a minimum of 1 second to avoid zero-duration timeouts.
     pub fn tool_call_timeout_duration(&self) -> std::time::Duration {
         std::time::Duration::from_secs(self.tool_call_timeout_seconds.max(1))
+    }
+
+    /// Effective per-tool-result character cap. `0` means uncapped.
+    ///
+    /// `override_chars` is the caller's own budget - the desktop chat derives one
+    /// from the active model's context window, which the backend cannot see. The
+    /// tighter of the two wins. A user setting of `0` disables capping outright,
+    /// and an absent or `0` override simply leaves the setting in charge.
+    pub fn tool_output_cap(&self, override_chars: Option<u64>) -> u64 {
+        if self.max_tool_output_chars == 0 {
+            return 0;
+        }
+        match override_chars {
+            Some(o) if o > 0 => o.min(self.max_tool_output_chars),
+            _ => self.max_tool_output_chars,
+        }
     }
 }
 

@@ -11,7 +11,7 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "read",
-                "description": "Read the contents of a UTF-8 text file. Output is truncated to 2000 lines or 64KB (whichever is hit first). Use offset/limit for large files.",
+                "description": "Read the contents of a UTF-8 text file. Output is truncated to 2000 lines or 64KB (whichever is hit first). Use offset/limit for large files. Image files (png/jpeg/gif/webp, detected by signature or extension) are returned as a vision image instead of text.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -71,6 +71,22 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
                         "limit": { "type": "integer", "description": "Maximum number of matches to return (default 100)." }
                     },
                     "required": ["pattern"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "screenshot",
+                "description": "Render a local HTML or SVG file with headless Chrome and return a PNG screenshot of it, so you can see what you built and iterate on the visual result. Use after writing an HTML/SVG artifact to check its appearance; the returned image is what a viewer would see. Relative assets (images, css, js) resolve against the file's own directory. Non-HTML/SVG files are rejected.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Project-relative or absolute path to the .html/.htm/.svg file to render." },
+                        "width": { "type": "integer", "description": "Viewport width in pixels (default 1280)." },
+                        "height": { "type": "integer", "description": "Viewport height in pixels (default 960)." }
+                    },
+                    "required": ["path"]
                 }
             }
         }),
@@ -245,7 +261,7 @@ mod tests {
     #[test]
     fn schemas_match_builtin_tools() {
         let schemas = builtin_tool_schemas();
-        assert_eq!(schemas.len(), 15);
+        assert_eq!(schemas.len(), 16);
         for schema in &schemas {
             assert_eq!(schema["type"], "function");
         }

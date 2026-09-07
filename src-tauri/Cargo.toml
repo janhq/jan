@@ -6,18 +6,18 @@ authors = ["Jan <service@jan.ai>"]
 license = "MIT"
 repository = "https://github.com/janhq/jan"
 edition = "2021"
-# 1.82 is the floor actually used: `Option::is_none_or` (1.82) in agent/loop.rs
-# and `LazyLock` (1.80) in cli/tui.rs.
-rust-version = "1.82"
+# 1.85 is the floor: `genai` (the OpenAI upstream client) is edition 2024.
+# Below that the previous floor was 1.82, for `Option::is_none_or` in agent/loop.rs.
+rust-version = "1.85"
 resolver = "2"
-default-run = "jan-desktop"
+default-run = "Jan-Desktop"
 
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "jan-desktop"
+name = "Jan-Desktop"
 path = "src/main.rs"
 required-features = ["desktop"]
 
@@ -93,7 +93,7 @@ test-tauri = [
     "deep-link",
     "hardware",
 ]
-cli = ["dep:env_logger", "dep:indicatif", "dep:console", "dep:ratatui", "dep:pulldown-cmark", "dep:syntect", "dep:comfy-table", "dep:arboard", "dep:png"]
+cli = ["dep:env_logger", "dep:indicatif", "dep:console", "dep:ratatui", "dep:unicode-width", "dep:pulldown-cmark", "dep:syntect", "dep:comfy-table", "dep:arboard", "dep:png"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [], optional = true }
@@ -105,6 +105,7 @@ async-trait = "0.1"
 env = "1.0.1"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs", optional = true }
 flate2 = "1.0"
+form_urlencoded = "1.2"
 futures-util = "0.3.31"
 hex = "0.4"
 hmac = "0.12"
@@ -115,8 +116,12 @@ tokio-stream = "0.1"
 jan-utils = { path = "./utils" }
 libloading = "0.8.7"
 log = "0.4"
+# Pulled in by rmcp's `auth` feature; used directly for `TokenResponse`
+# accessors on the persisted token record (`core::mcp::oauth`).
+oauth2 = "5.0"
 rand = "0.8"
 rmcp = { version = "0.8.5", features = [
+    "auth",
     "client",
     "transport-sse-client",
     "transport-sse-client-reqwest",
@@ -202,6 +207,15 @@ keyring = { version = "3", features = [
 aes-gcm = "0.10"
 machine-uid = "0.5"
 ratatui = { version = "0.30", optional = true, features = ["unstable-rendered-line-info"] }
+# Display width for the TUI's own truncation: a CJK glyph or emoji is two
+# cells wide, so counting chars overflows a bordered panel. Already in the graph
+# via ratatui; named here because this crate calls it directly.
+unicode-width = { version = "0.2", optional = true }
+# Grapheme clusters for the `wave` glyph cap: `👁️‍🗨️` is one thing a person sees
+# but five `char`s, so the 3-glyph limit has to count clusters or it rejects a
+# single emoji. Not optional -- `global_config` builds for desktop too. Already
+# compiled in both graphs via ratatui/comfy-table, so this adds no build cost.
+unicode-segmentation = "1"
 pulldown-cmark = { version = "0.13", optional = true, default-features = false }
 # `regex-fancy` keeps this pure Rust: the default `onig` backend links libonig,
 # which the headless CLI must not pull in. The raw `.sublime-syntax`/`.tmTheme`
@@ -243,12 +257,21 @@ tauri-plugin-mlx = { path = "./plugins/tauri-plugin-mlx", optional = true }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 reqwest = { version = "0.12", features = ["json", "blocking", "stream", "native-tls"] }
+# TLS backend must track `reqwest` above: reqwest features are additive across the
+# graph, so letting genai default to rustls would link both backends here.
+genai = { version = "=0.7.0-beta.19", default-features = false, features = ["native-tls"] }
+# genai is on reqwest 0.13 while the rest of the app is on 0.12, so its client
+# type is a distinct crate. Aliased here solely to build the pool-tuned client
+# `agent_http_client` hands to genai (see core/agent/upstream.rs).
+reqwest13 = { package = "reqwest", version = "0.13", default-features = false, features = ["json", "stream", "charset", "http2", "system-proxy", "native-tls"] }
 tauri-plugin-updater = { version = "2", optional = true }
 once_cell = "1.18"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"], optional = true }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 reqwest = { version = "0.12", features = ["json", "blocking", "stream", "rustls-tls"], default-features = false }
+genai = { version = "=0.7.0-beta.19", default-features = false, features = ["rustls-tls"] }
+reqwest13 = { package = "reqwest", version = "0.13", default-features = false, features = ["json", "stream", "charset", "http2", "rustls"] }
 tauri-plugin-dialog = { version = "2.2.1", default-features = false, optional = true }
 tauri-plugin-http = { version = "2", default-features = false, optional = true }
 tauri-plugin-log = { version = "2.0.0-rc", default-features = false, optional = true }

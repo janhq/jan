@@ -2,7 +2,9 @@
   "htmlArtifact": {
     "code": "Code",
     "preview": "Preview",
-    "previewStreaming": "Available when generation finishes"
+    "previewStreaming": "Available when generation finishes",
+    "unresolvedAssets_one": "1 asset reference can't load in the preview. Relative paths have no base URL to resolve against.",
+    "unresolvedAssets_other": "{{count}} asset references can't load in the preview. Relative paths have no base URL to resolve against."
   },
   "assistants": "Assistants",
   "hardware": "Hardware",
@@ -34,7 +36,7 @@
   "privacy": "Privacy",
   "keyboardShortcuts": "Shortcuts",
   "home": "Home",
-  "code": "Code",
+  "cowork": "Cowork",
   "newSession": "New session",
   "artifacts": "Artifacts",
   "customize": "Customize",
@@ -80,6 +82,8 @@
   "hub": "Hub",
   "helpSupport": "Help & Support",
   "helpUsImproveJan": "Help Us Improve Jan",
+  "analyticsConsentDetail": "We collect anonymous data to understand feature usage. Your chats and personal information are never tracked. You can change this anytime in Settings > Privacy.",
+  "analyticsConsentQuestion": "Would you like to help us to improve Jan?",
   "unstarAll": "Unstar All",
   "unstar": "Unstar",
   "deleteAll": "Delete All",
@@ -122,7 +126,21 @@
   "deny": "Deny",
   "start": "Start",
   "stop": "Stop",
-  "preview": "Preview",
+  "preview": {
+    "loading": "Opening…",
+    "unsupported": "Jan can't show this kind of file. Open it to see it in another app.",
+    "outside": "This file is no longer in the session workspace.",
+    "tooLarge": "Too big to preview. Open it to see it in another app.",
+    "reload": "Reload",
+    "allowNetwork": "Allow network",
+    "unresolvedRefs_one": "1 file this page links to can't load in the preview. Open it to see it in a browser.",
+    "unresolvedRefs_other": "{{count}} files this page links to can't load in the preview. Open it to see it in a browser."
+  },
+  "changes": {
+    "title": "Agent changes",
+    "empty": "Files the agent writes or edits will show up here.",
+    "a11y": "Agent changes: {{files}} files, {{additions}} added, {{deletions}} removed"
+  },
   "compactWidth": "Compact Width",
   "fullWidth": "Full Width",
   "dark": "Dark",
@@ -295,11 +313,10 @@
       "title": "Default sampling parameters",
       "description": "Default sampler settings for this model. Used unless overridden by per-assistant or per-request values."
     },
-    "mtp": {
-      "section": "Multi-Token Prediction (MTP)",
-      "enable": "Enable MTP",
-      "enableDescription": "Use the model's built-in MTP heads to draft multiple tokens per step. Speeds up generation when the model has MTP weights (DeepSeek-V3, GLM-4.5/4.6, MiMo v2.5, …).",
-      "needsUpgrade": "Update the llama.cpp backend to build b9193 or newer to enable MTP.",
+    "specDraft": {
+      "section": "Speculative decoding",
+      "enable": "Enable speculative decoding",
+      "enableDescription": "Draft several tokens per step and verify them in one pass, which speeds up generation. Uses the model's built-in MTP heads, or the draft model downloaded with it (MTP, Eagle3, DFlash or DSpark).",
       "nMax": "Max draft tokens",
       "nMaxDescription": "Maximum number of tokens to draft per step. Default 16.",
       "nMin": "Min draft tokens",
@@ -486,6 +503,19 @@
       "title": "Download Failed",
       "description": "{{item}} download failed"
     },
+    "openSettings": "Open Settings",
+    "downloadTokenRequired": {
+      "title": "Hugging Face token required",
+      "description": "This model requires a Hugging Face access token. Add your token in Settings and retry."
+    },
+    "downloadLicenseRequired": {
+      "title": "Accept model license on Hugging Face",
+      "description": "You must accept the model's license on its Hugging Face page before downloading."
+    },
+    "downloadRateLimited": {
+      "title": "Rate limited by Hugging Face",
+      "description": "You have been rate-limited. Adding a token can increase rate limits. Please try again later."
+    },
     "modelValidationStarted": {
       "title": "Validating Model",
       "description": "Downloaded model \"{{modelId}}\" successfully. Verifying integrity..."
@@ -584,5 +614,89 @@
     "seconds": "{{count}}s",
     "minutes": "{{count}}m",
     "hours": "{{count}}h"
-  }
+  },
+  "collapse": "Collapse",
+  "expand": "Expand",
+  "todoPanelTitle": "Progress",
+  "todoPanelEmpty": "No todo list yet.",
+  "artifactOpenPreview": "Open preview",
+  "artifactOpenExternal": "Open",
+  "artifactMoreActions": "More actions",
+  "artifactShowInFolder": "Show in Folder",
+  "skillsUsedLabel": "Skills used",
+  "skillsUsed": "Skills used: {{skills}}",
+  "artifactsAll": "All",
+  "artifactsEmpty": "Nothing produced yet. Artifacts from Cowork runs show up here.",
+  "artifactsNoMatch": "No artifacts match.",
+  "artifactsSearch": "Search artifacts",
+  "artifactsShowMore": "Show {{count}} more",
+  "workspace": {
+    "readsFrom": "Reads from",
+    "readOnly": "read-only",
+    "footnote": "The agent only reads this folder. Nothing inside it is ever modified.",
+    "footnoteEmpty": "Attach a folder to let the agent read your project. It still won't change anything in it.",
+    "attach": "Attach a folder",
+    "change": "Change folder",
+    "detach": "Detach folder",
+    "open": "Open",
+    "reveal": "Reveal",
+    "missing": "This folder isn't there anymore. Attach a different one.",
+    "a11yWithFolder": "Project folder {{folder}}, attached read-only. Change or detach it.",
+    "a11yNoFolder": "No project folder attached. Attach one."
+  },
+  "coworkEmpty": {
+    "title": "What are we working on?",
+    "subtitleSandbox": "Give Jan a task. It reads and writes files, runs commands, and works through the steps on its own.",
+    "subtitleFolder": "Give Jan a task. It reads {{folder}} without changing anything in it, and works on its own from there.",
+    "try": "Try",
+    "sandbox": {
+      "first": "Write a Python script that renames files by the date they were taken",
+      "second": "Build a single-page dashboard from a CSV I'll paste in",
+      "third": "Draft a README for a project I describe to you"
+    },
+    "folder": {
+      "first": "Explain how {{folder}} is put together",
+      "second": "Find every TODO in {{folder}} and group them by area",
+      "third": "Write tests for the part of {{folder}} I point you at"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "No terminal",
+    "a11y": "Running commands is turned off. Details.",
+    "title": "Running commands is turned off",
+    "body": "Jan lets the agent run shell commands only when your system can confine them. No sandbox is available here, so the agent can read, write and edit files in its sandbox — but not run anything.",
+    "fixLinux": "Linux uses bubblewrap. Install it, then restart Jan.",
+    "fixMac": "macOS uses the built-in sandbox at /usr/bin/sandbox-exec. Restart Jan once it is available.",
+    "fixWindows": "Windows uses AppContainer. Restart Jan to try again.",
+    "recheck": "Check again"
+  },
+  "planMode": {
+    "label": "Plan",
+    "tooltipOff": "Plan first — the agent reads and proposes, without writing.",
+    "tooltipOn": "Planning. Turn this off to let the agent write files.",
+    "onAnnounce": "Plan mode on",
+    "placeholder": "Ask for a plan. The agent won't change any files."
+  },
+  "budget": {
+    "steps": "step {{step}}/{{max}}",
+    "stoppedSteps": "Stopped at {{max}} steps. The agent hasn’t finished.",
+    "keepGoing": "Keep going",
+    "stoppedTokens": "Stopped — this session hit its token budget.",
+    "compact": "Compact",
+    "newSession": "New session"
+  },
+  "run": {
+    "stopped": "Stopped.",
+    "failed": "The run stopped early.",
+    "tryAgain": "Try again"
+  },
+  "modelNoTools": "{{model}} can’t call tools, so it can’t act as an agent. Pick a tool-calling model.",
+  "askContinue": "Continue",
+  "askNext": "Next question",
+  "askPrev": "Previous question",
+  "askRecommended": "Recommended",
+  "askSelectedCount": "{{count}} selected",
+  "askSomethingElse": "Something else",
+  "askSomethingElsePlaceholder": "Type your own answer",
+  "submit": "Submit"
 }

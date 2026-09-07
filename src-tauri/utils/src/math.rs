@@ -58,7 +58,6 @@ mod tests {
         
         // Third attempt should be roughly quadruple
         assert!((2000..=6000).contains(&delay3));
-        
         // Generally increasing pattern
         assert!(delay1 < delay3);
     }

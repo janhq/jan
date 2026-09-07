@@ -17,12 +17,17 @@ use crate::tools::jail;
 use crate::tools::proc;
 use crate::tools::sandbox::{
     escapes_project, in_scratch, is_hidden_jan_path, lexical_normalize, resolve_path,
-    scratch_display_path,
+    scratch_display_path, symlink_escapes_any_root, symlink_escapes_root,
 };
-use crate::tools::{BuiltinTool, ToolContext};
+use crate::tools::{BuiltinTool, ImageContentPart, ToolContext};
 
 const MAX_BYTES: usize = 64 * 1024;
 const MAX_LINES: usize = 2000;
+/// Cap on a `read` image payload returned as an `image_url` content part.
+/// Mirrors the TUI's `MAX_IMAGE_BYTES` so an oversized raster (or a large
+/// text file whose name ends in an image extension) cannot flood the model
+/// context as a base64 blob.
+const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
 /// bash output caps: generous enough that typical command output reaches the
 /// model intact on a large-context run, spilling to a temp file only past this.
 const BASH_MAX_BYTES: usize = 256 * 1024;
@@ -60,6 +65,13 @@ fn arg_u64(args: &serde_json::Value, key: &str) -> Option<u64> {
 
 fn arg_bool(args: &serde_json::Value, key: &str) -> bool {
     args.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
+/// Single-quote a value for a POSIX shell. Single quotes disable `$`/backtick
+/// expansion and globbing, and the only escape (closing quote) is handled by
+/// the `'\''` idiom. Used when launching headless Chrome through the shell.
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn rel_to(base: &Path, path: &Path) -> String {
@@ -119,9 +131,28 @@ fn collapse_carriage_returns(s: &str) -> String {
     out
 }
 
-/// Execute a built-in tool. Returns the tool-result text. Errors are returned
-/// as a String STARTING WITH "ERROR" rather than as Err.
+/// Execute a built-in tool. Returns the tool-result text plus, for a `read` of
+/// an image file, the base64 `image_url` content parts the model needs to see
+/// the image. Errors are returned as a String STARTING WITH "ERROR" rather than
+/// as Err.
 pub async fn execute_builtin(
+    tool: &BuiltinTool,
+    args: &serde_json::Value,
+    ctx: &ToolContext<'_>,
+) -> (String, Option<Vec<ImageContentPart>>) {
+    let project_root = ctx.project_root;
+    let scratch = ctx.scratch_root;
+    let (content, images) = match tool.name {
+        "read" => read(args, project_root, scratch, ctx.read_roots).await,
+        "screenshot" => screenshot(args, project_root, scratch, ctx.read_roots).await,
+        _ => (execute_text(tool, args, ctx).await, None),
+    };
+    (content, images)
+}
+
+/// The text result for every tool except `read`. Split out so `read` can also
+/// return image parts without duplicating the remaining tool dispatch.
+async fn execute_text(
     tool: &BuiltinTool,
     args: &serde_json::Value,
     ctx: &ToolContext<'_>,
@@ -129,13 +160,16 @@ pub async fn execute_builtin(
     let project_root = ctx.project_root;
     let scratch = ctx.scratch_root;
     match tool.name {
-        "read" => read(args, project_root, scratch).await,
-        "ls" => ls(args, project_root, scratch).await,
+        // Read tools consult the attached read-only roots; `write`/`edit`
+        // deliberately do not, which is what keeps an attached folder
+        // readable and unwritable.
+        "read" => read(args, project_root, scratch, ctx.read_roots).await.0,
+        "ls" => ls(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
         "write" => write(args, project_root, scratch, ctx.confine_writes).await,
         "edit" => edit(args, project_root, scratch, ctx.confine_writes).await,
         "bash" => bash(args, ctx).await,
-        "find" => find(args, project_root, scratch).await,
-        "grep" => grep(args, project_root, scratch).await,
+        "find" => find(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
+        "grep" => grep(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
         // Memory and skills live in the store root, not the sandbox: they must
         // outlive the conversation the filesystem tools are scoped to.
         "memory_list" => memory_list(ctx.store_root).await,
@@ -211,17 +245,21 @@ pub async fn execute_builtin_with_diff(
     tool: &BuiltinTool,
     args: &serde_json::Value,
     ctx: &ToolContext<'_>,
-) -> (String, Option<String>) {
+) -> (String, Option<String>, Option<Vec<ImageContentPart>>) {
     match tool.name {
         "write" | "edit" => {
             let diff = preview_diff(tool, args, ctx).await;
-            let content = execute_builtin(tool, args, ctx).await;
+            let (content, images) = execute_builtin(tool, args, ctx).await;
             if content.starts_with("ERROR") {
-                return (content, None);
+                return (content, None, None);
             }
-            (content, diff)
+            (content, diff, images)
         }
-        _ => (execute_builtin(tool, args, ctx).await, None),
+        "read" => {
+            let (content, images) = execute_builtin(tool, args, ctx).await;
+            (content, None, images)
+        }
+        _ => (execute_builtin(tool, args, ctx).await.0, None, None),
     }
 }
 
@@ -384,7 +422,8 @@ fn skill_list(ctx: &ToolContext<'_>) -> String {
 }
 
 /// `skill_read` tool: a skill's full instructions (frontmatter stripped). A
-/// disabled skill is treated as absent so it never reaches the model.
+/// disabled skill — or one with `disable-model-invocation: true` — is treated
+/// as absent so it never reaches the model.
 fn skill_read(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let Some(name) = arg_str(args, "name") else {
         return "ERROR: missing required argument 'name'".to_string();
@@ -392,10 +431,15 @@ fn skill_read(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     if !skills::is_enabled(ctx.enabled_skills, name) {
         return format!("ERROR: skill '{name}' not found");
     }
-    match skills::read_body(ctx.store_root, name) {
-        Ok(body) => body,
-        Err(e) => e,
+    let raw = match skills::read_raw(ctx.store_root, name) {
+        Ok(raw) => raw,
+        Err(e) => return e,
+    };
+    let parsed = skills::parse(&raw);
+    if !parsed.model_invocable {
+        return format!("ERROR: skill '{name}' not found");
     }
+    parsed.body
 }
 
 /// `skill_write` tool: create/update a skill (new ones as `<name>/SKILL.md`).
@@ -447,31 +491,70 @@ async fn memory_write(args: &serde_json::Value, store: &Path) -> String {
     }
 }
 
-async fn read(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> String {
+async fn read(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    read_roots: &[PathBuf],
+) -> (String, Option<Vec<ImageContentPart>>) {
     let Some(path) = arg_str(args, "path") else {
-        return "ERROR: missing required argument 'path'".to_string();
+        return ("ERROR: missing required argument 'path'".to_string(), None);
     };
     let offset = arg_u64(args, "offset").map(|v| v as usize);
     let limit = arg_u64(args, "limit").map(|v| v as usize);
     let target = resolve_path(root, scratch, path);
+    // Fail closed: a component swapped to a symlink after the gate validated
+    // the path must not redirect the open out of the workspace.
+    if symlink_escapes_any_root(root, scratch, read_roots, &target) {
+        return (
+            format!("ERROR: refused to read through a symlink out of the workspace: {path}"),
+            None,
+        );
+    }
 
     let bytes = match tokio::fs::read(&target).await {
         Ok(b) => b,
-        Err(e) => return format!("ERROR: {e}"),
+        Err(e) => return (format!("ERROR: {e}"), None),
     };
+
+    // An image file is returned as an OpenAI `image_url` content part rather
+    // than text: the model cannot see a raster through a base64 string. Only a
+    // plain read (no offset/limit) does this, since slicing an image makes no
+    // sense and offset/limit still refers to text lines.
+    if offset.is_none() && limit.is_none() && bytes.len() <= MAX_IMAGE_BYTES {
+        if let Some(mime) = crate::tools::image::detect(&target) {
+            use base64::Engine;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            let name = target
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("image")
+                .to_string();
+            let note = format!("Read image {name} ({mime}, {} bytes)", bytes.len());
+            let image = ImageContentPart {
+                data_url: format!("data:{mime};base64,{b64}"),
+                name,
+            };
+            return (note, Some(vec![image]));
+        }
+    }
+
     let content = match String::from_utf8(bytes) {
         Ok(c) => c,
-        Err(_) => return "ERROR: not a UTF-8 text file".to_string(),
+        Err(_) => return ("ERROR: not a UTF-8 text file".to_string(), None),
     };
 
     let selected = if offset.is_some() || limit.is_some() {
         let lines: Vec<&str> = content.split('\n').collect();
         let start = offset.map(|o| o.saturating_sub(1)).unwrap_or(0);
         if start >= lines.len() {
-            return format!(
-                "ERROR: offset {} is beyond end of file ({} lines total)",
-                offset.unwrap_or(1),
-                lines.len()
+            return (
+                format!(
+                    "ERROR: offset {} is beyond end of file ({} lines total)",
+                    offset.unwrap_or(1),
+                    lines.len()
+                ),
+                None,
             );
         }
         let end = match limit {
@@ -483,20 +566,34 @@ async fn read(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
         content
     };
 
-    cap_output(
-        &selected,
-        MAX_LINES,
-        MAX_BYTES,
-        "\n[truncated: use offset/limit to read more]",
+    (
+        cap_output(
+            &selected,
+            MAX_LINES,
+            MAX_BYTES,
+            "\n[truncated: use offset/limit to read more]",
+        ),
+        None,
     )
 }
 
-async fn ls(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> String {
+async fn ls(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    hide_jan: bool,
+    read_roots: &[PathBuf],
+) -> String {
     let path = arg_str(args, "path").unwrap_or(".");
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
         .unwrap_or(LS_DEFAULT_LIMIT);
-    let mut entries = match tokio::fs::read_dir(resolve_path(root, scratch, path)).await {
+    let target = resolve_path(root, scratch, path);
+    // Names are content too: a symlinked directory would list a host directory.
+    if symlink_escapes_any_root(root, scratch, read_roots, &target) {
+        return format!("ERROR: refused to list through a symlink out of the workspace: {path}");
+    }
+    let mut entries = match tokio::fs::read_dir(&target).await {
         Ok(rd) => rd,
         Err(e) => return format!("ERROR: {e}"),
     };
@@ -505,8 +602,9 @@ async fn ls(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> St
         match entries.next_entry().await {
             Ok(Some(entry)) => {
                 // Hidden state is omitted, not reported-then-denied: an entry the
-                // agent can never open is only an invitation to try.
-                if is_hidden_jan_path(root, &entry.path().to_string_lossy()) {
+                // agent can never open is only an invitation to try. Skipped when
+                // not hiding, so an unconfined CLI run sees its own `.jan`.
+                if hide_jan && is_hidden_jan_path(root, &entry.path().to_string_lossy()) {
                     continue;
                 }
                 let mut name = entry.file_name().to_string_lossy().into_owned();
@@ -529,7 +627,12 @@ async fn ls(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> St
     cap_output(&joined, usize::MAX, MAX_BYTES, "\n[truncated: 64KB limit]")
 }
 
-async fn write(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, confine: bool) -> String {
+async fn write(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    confine: bool,
+) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
     };
@@ -546,6 +649,13 @@ async fn write(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, co
     // Report the resolved location, not the raw argument: an absolute or `../`
     // path lands outside the project and the model must see where it went.
     let shown = display_path(root, scratch, &target);
+    // Re-validate before `create_dir_all`, not just before the write: a
+    // concurrent sandboxed process can swap a path component between the gate
+    // decision and this call, and creating the parents first would already have
+    // made directories through the swapped link. Fail closed.
+    if symlink_escapes_root(root, scratch, &target) {
+        return format!("ERROR: refused to write through a symlink out of the workspace: {path}");
+    }
     if let Some(parent) = target.parent() {
         if let Err(e) = tokio::fs::create_dir_all(parent).await {
             return format!("ERROR: {shown}: {e}");
@@ -567,7 +677,12 @@ async fn write(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, co
     }
 }
 
-async fn edit(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, confine: bool) -> String {
+async fn edit(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    confine: bool,
+) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
     };
@@ -582,6 +697,11 @@ async fn edit(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, con
         return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
     let shown = display_path(root, scratch, &target);
+    // Re-validate before the final read+write pair so a swapped symlink cannot
+    // redirect either the read or the later write.
+    if symlink_escapes_root(root, scratch, &target) {
+        return format!("ERROR: refused to edit through a symlink out of the workspace: {path}");
+    }
     let mut content = match tokio::fs::read_to_string(&target).await {
         Ok(c) => c,
         Err(e) => return format!("ERROR: {shown}: {e}"),
@@ -614,10 +734,11 @@ async fn edit(args: &serde_json::Value, root: &Path, scratch: Option<&Path>, con
 }
 
 async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
-    if let Some(job_id) = arg_str(args, "job_id") {
-        return await_bash_job(job_id).await;
-    }
-    let Some(command) = arg_str(args, "command") else {
+    let Some(command) = arg_str(args, "command").filter(|command| !command.trim().is_empty())
+    else {
+        if let Some(job_id) = arg_str(args, "job_id").filter(|job_id| !job_id.trim().is_empty()) {
+            return await_bash_job(job_id).await;
+        }
         return "ERROR: missing required argument 'command' (or 'job_id' to poll a backgrounded job)"
             .to_string();
     };
@@ -631,24 +752,49 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         );
     }
 
-    // No confinement available means no shell: running unsandboxed would give the
-    // command the whole machine, which is never what the caller asked for.
-    let mut policy = jail::Policy::new(root, ctx.allow_network)
-        .with_home_readonly(ctx.home_readonly)
-        .with_hide_root(&root.join(crate::tools::sandbox::JAN_DIR));
+    let mut policy =
+        jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
+    // While the shell is sandboxed, hide the project's own `.jan` state directory
+    // from it (see [`Policy::with_hide_root`]). When the shell runs unconfined the
+    // hide is both pointless (there is no OS mount to layer it on) and wrong
+    // (the agent should see its own state), so it is only applied when sandboxed.
+    if ctx.sandbox {
+        policy = policy.with_hide_root(&root.join(crate::tools::sandbox::JAN_DIR));
+    }
     if let Some(mask) = ctx.mask_root {
         policy = policy.with_mask_root(mask);
     }
     if let Some(scratch) = ctx.scratch_root {
         policy = policy.with_scratch_root(scratch);
     }
-    let Some(shell) = jail::wrap(proc::shell(), &policy) else {
-        return "ERROR: bash is unavailable because no OS sandbox could be established on this \
-                system. Use the read/ls/find/grep tools instead."
-            .to_string();
+    if !ctx.read_roots.is_empty() {
+        policy = policy.with_read_roots(ctx.read_roots.to_vec());
+    }
+    // With the sandbox off the shell is spawned bare, the way the user's own
+    // terminal would: no wrapper, no policy, the real `$HOME` and `/tmp`. Only
+    // a surface that opted in gets here (the CLI's `--sandbox`/`sandbox`
+    // setting); the desktop never does, so `bash` there is still confined or
+    // withheld. `policy` is still built either way -- it is what
+    // `denial_hint` reads, and an unconfined command can still hit a plain
+    // filesystem permission error worth explaining.
+    let shell = if ctx.sandbox {
+        // No confinement available means no shell: running unsandboxed would give
+        // the command the whole machine, which is never what the caller asked for.
+        let Some(wrapped) = jail::wrap(proc::shell(), &policy) else {
+            return "ERROR: bash is unavailable because no OS sandbox could be established on \
+                    this system. Use the read/ls/find/grep tools instead."
+                .to_string();
+        };
+        wrapped
+    } else {
+        proc::shell().clone()
     };
 
-    let sandbox_tmp = jail::scratch_env_path(jail::backend(), &policy);
+    let sandbox_tmp = if ctx.sandbox {
+        jail::scratch_env_path(jail::backend(), &policy)
+    } else {
+        None
+    };
     let child = match proc::spawn(&shell, command, root, sandbox_tmp.as_deref()).await {
         Ok(c) => c,
         Err(e) => return format!("ERROR: failed to run command: {e}"),
@@ -662,13 +808,31 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // reap its whole process tree if it is still running.
     let (tx, mut rx) = oneshot::channel();
     let spill_scratch = ctx.scratch_root.map(Path::to_path_buf);
+    // Cloned into the detached task, which is what keeps a backgrounded command
+    // reporting after this call has already returned its `job_id`.
+    let sink = ctx.on_output.clone();
+    let sandboxed = ctx.sandbox;
+    // The model writes POSIX commands by default, which `cmd` rejects. Surface
+    // the resolved shell so it can adapt when the only shell on a Windows box
+    // is cmd, instead of the tool silently presenting cmd as bash.
+    let shell_description = shell.description;
     tokio::spawn(async move {
-        let mut out = collect_and_format(child, spill_scratch).await;
+        let mut out = collect_and_format(child, spill_scratch, sink).await;
         // Appended inside the task so a backgrounded job carries the hint too.
         // `Permission denied` on its own tells the model nothing about *why*;
-        // without this it retries the same command until it gives up.
-        if bash_result_failed(&out) && jail::looks_denied(&out) {
+        // without this it retries the same command until it gives up. Only when
+        // confined: unsandboxed, a denial is an ordinary filesystem permission
+        // and the hint would name limits that are not in force.
+        if sandboxed && bash_result_failed(&out) && jail::looks_denied(&out) {
             out.push_str(&jail::denial_hint(&policy));
+        }
+        if shell_description == "cmd" {
+            out.insert_str(
+                0,
+                "[shell: cmd.exe - no bash is installed. Write commands in cmd syntax \
+                 (e.g. `dir`, `type`, `set`, `mkdir`, `%VAR%` for variables), not \
+                 POSIX/bash. Alternatively install git-bash and this tool will use it.]\n",
+            );
         }
         if let Some(pid) = pid {
             proc::unregister(pid);
@@ -708,7 +872,11 @@ async fn await_bash_job(job_id: &str) -> String {
 /// combined chronologically and spilled to a temp file once it outgrows the
 /// in-memory window, so the full text stays readable even though only a bounded
 /// tail is kept in RAM.
-async fn collect_and_format(mut child: tokio::process::Child, scratch: Option<PathBuf>) -> String {
+async fn collect_and_format(
+    mut child: tokio::process::Child,
+    scratch: Option<PathBuf>,
+    sink: Option<crate::tools::OutputSink>,
+) -> String {
     use tokio::io::AsyncReadExt;
     let mut stdout = child.stdout.take();
     let mut stderr = child.stderr.take();
@@ -717,16 +885,40 @@ async fn collect_and_format(mut child: tokio::process::Child, scratch: Option<Pa
     let mut be = vec![0u8; 8192];
     let mut out_open = stdout.is_some();
     let mut err_open = stderr.is_some();
+    // A read boundary can land mid-character, so decoding each chunk on its own
+    // would emit a replacement character for any multi-byte sequence unlucky
+    // enough to straddle one. Hold the incomplete tail back for the next chunk.
+    let mut carry: Vec<u8> = Vec::new();
+    let tee = |bytes: &[u8], carry: &mut Vec<u8>| {
+        let Some(sink) = sink.as_ref() else { return };
+        carry.extend_from_slice(bytes);
+        let text = match std::str::from_utf8(carry) {
+            Ok(_) => std::mem::take(carry),
+            // Everything before the first bad byte is complete; the rest is
+            // either a split character or genuinely invalid, and waiting one
+            // more chunk tells us which.
+            Err(e) => carry.drain(..e.valid_up_to()).collect(),
+        };
+        if !text.is_empty() {
+            sink(String::from_utf8_lossy(&text).into_owned());
+        }
+    };
     while out_open || err_open {
         tokio::select! {
             r = stdout.as_mut().unwrap().read(&mut bo), if out_open => match r {
                 Ok(0) | Err(_) => out_open = false,
-                Ok(n) => cap.push(&bo[..n]),
+                Ok(n) => { cap.push(&bo[..n]); tee(&bo[..n], &mut carry); }
             },
             r = stderr.as_mut().unwrap().read(&mut be), if err_open => match r {
                 Ok(0) | Err(_) => err_open = false,
-                Ok(n) => cap.push(&be[..n]),
+                Ok(n) => { cap.push(&be[..n]); tee(&be[..n], &mut carry); }
             },
+        }
+    }
+    // Whatever is left was never completed: emit it lossily rather than losing it.
+    if !carry.is_empty() {
+        if let Some(sink) = sink.as_ref() {
+            sink(String::from_utf8_lossy(&carry).into_owned());
         }
     }
     match child.wait().await {
@@ -767,14 +959,15 @@ impl BashCapture {
         // yet), so dumping it captures the full prefix before we start
         // dropping from the front.
         if self.spill.is_none() && self.tail.len() + chunk.len() > BASH_MAX_BYTES {
-            let path = new_temp_path(self.scratch.as_deref());
-            if let Ok(file) = std::fs::File::create(&path) {
-                let mut w = std::io::BufWriter::new(file);
-                let (a, b) = self.tail.as_slices();
-                let _ = w.write_all(a);
-                let _ = w.write_all(b);
-                self.spill = Some(w);
-                self.spill_path = Some(path);
+            if let Some(path) = new_temp_path(self.scratch.as_deref()) {
+                if let Ok(file) = open_spill_file(&path) {
+                    let mut w = std::io::BufWriter::new(file);
+                    let (a, b) = self.tail.as_slices();
+                    let _ = w.write_all(a);
+                    let _ = w.write_all(b);
+                    self.spill = Some(w);
+                    self.spill_path = Some(path);
+                }
             }
         }
         if let Some(w) = self.spill.as_mut() {
@@ -817,7 +1010,7 @@ impl BashCapture {
 
         if !truncated {
             if let Some(p) = self.spill_path.take() {
-                let _ = std::fs::remove_file(p);
+                remove_spill_file(&p);
             }
             return body;
         }
@@ -871,7 +1064,7 @@ impl Drop for BashCapture {
     /// fires on the leak paths.
     fn drop(&mut self) {
         if let Some(p) = self.spill_path.take() {
-            let _ = std::fs::remove_file(p);
+            remove_spill_file(&p);
         }
     }
 }
@@ -918,38 +1111,291 @@ fn tail_cap(s: &str, max_lines: usize, max_bytes: usize) -> String {
 /// same `/tmp/jan-bash/...` name from both the filesystem tools and the shell,
 /// and is reclaimed when the session's scratch is removed.
 ///
+/// The directory is validated as a real, non-symlink directory before use: the
+/// sandboxed shell can write the scratch, so it could have redirected `jan-bash`
+/// at a host directory. Refuse to spill through a redirect (returning `None`)
+/// rather than write the model's bytes through an attacker-chosen path.
+///
 /// Deliberately not swept on first use: the files are removed individually by
 /// [`BashCapture::finish`] and its `Drop`, and the host fallback is a shared
 /// path, so a global purge there would delete a concurrent instance's live
 /// spill files rather than only stale ones.
-fn spill_dir(scratch: Option<&Path>) -> PathBuf {
+fn spill_dir(scratch: Option<&Path>) -> Option<PathBuf> {
     let base = scratch
         .map(Path::to_path_buf)
         .unwrap_or_else(std::env::temp_dir);
     let dir = base.join("jan-bash");
-    let _ = std::fs::create_dir_all(&dir);
-    dir
+    match std::fs::symlink_metadata(&dir) {
+        Ok(meta) if !meta.is_dir() => return None,
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // create_dir (not create_dir_all) refuses to follow a planted
+            // symlink in the path it creates.
+            let r = std::fs::create_dir(&dir);
+            if let Err(e) = r {
+                if e.kind() != std::io::ErrorKind::AlreadyExists {
+                    return None;
+                }
+            }
+        }
+        Err(_) => return None,
+    }
+    // Re-verify the node is a real directory, not a symlink a concurrent
+    // process swapped in between the create and this check.
+    match std::fs::symlink_metadata(&dir) {
+        Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() => Some(dir),
+        _ => None,
+    }
 }
 
-fn new_temp_path(scratch: Option<&Path>) -> PathBuf {
+fn new_temp_path(scratch: Option<&Path>) -> Option<PathBuf> {
     let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-    spill_dir(scratch).join(format!("jan-bash-{}-{}.txt", std::process::id(), n))
+    Some(spill_dir(scratch)?.join(format!("jan-bash-{}-{}.txt", std::process::id(), n)))
 }
 
-/// Write `content` to a uniquely named temp file, returning its path on success.
+/// Open a spill file atomically with `O_EXCL` so we never truncate or write
+/// through an existing symlink the shell planted: `create_new` fails if the
+/// path already exists (as a file or a symlink). Combined with the validated
+/// non-symlink parent from [`spill_dir`], the model-controlled spill bytes
+/// cannot be redirected onto a host file.
+fn open_spill_file(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+}
+
+/// Write `content` to a uniquely named temp file, returning its path on
+/// success. Uses [`open_spill_file`] so the write never follows a symlink.
 fn write_temp_output(content: &str, scratch: Option<&Path>) -> Option<PathBuf> {
-    let path = new_temp_path(scratch);
-    std::fs::write(&path, content).ok()?;
+    use std::io::Write;
+    let path = new_temp_path(scratch)?;
+    let mut file = open_spill_file(&path).ok()?;
+    file.write_all(content.as_bytes()).ok()?;
     Some(path)
 }
 
-async fn find(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> String {
+/// Remove a spill file only through a real, non-symlink parent directory. The
+/// shell controls the scratch, so a redirected `jan-bash` dir must not redirect
+/// our cleanup either; if it has been swapped, leave the file behind (it is
+/// reclaimed with the session's scratch). `remove_file` itself unlinks a
+/// symlink rather than following it, so only the parent needs re-checking.
+fn remove_spill_file(path: &Path) {
+    if let Some(parent) = path.parent() {
+        match std::fs::symlink_metadata(parent) {
+            Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() => {}
+            _ => return,
+        }
+    }
+    let _ = std::fs::remove_file(path);
+}
+
+const SCREENSHOT_MAX_PNG_BYTES: usize = 4 * 1024 * 1024; // 4 MiB
+
+fn chrome_binary() -> Option<PathBuf> {
+    if let Ok(env) = std::env::var("CHROME_PATH") {
+        if !env.is_empty() {
+            return Some(PathBuf::from(env));
+        }
+    }
+    const CANDIDATES: &[&str] = &[
+        // macOS (bundled browsers)
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        // Linux
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+    ];
+    CANDIDATES
+        .iter()
+        .find(|p| Path::new(p).exists())
+        .map(PathBuf::from)
+}
+
+/// Render a local HTML/SVG file to PNG bytes with headless Chrome.
+///
+/// Shared by the model-facing `screenshot` tool and the `agent_render_preview`
+/// command the annotation overlay calls, so both agree on Chrome discovery,
+/// viewport clamping and the output cap. `width`/`height` are the viewport in
+/// CSS pixels; the caller picks them (the overlay passes its own stage size so
+/// the PNG lines up pixel-for-pixel with what the user drew on).
+///
+/// `scale` is the device pixel ratio: the PNG comes out `width*scale` pixels
+/// wide with the layout unchanged. The overlay passes the webview's own ratio
+/// so a HiDPI screen doesn't composite crisp marks over an upscaled blur.
+pub async fn render_html_png(
+    target: &Path,
+    width: u64,
+    height: u64,
+    scale: f64,
+) -> Result<Vec<u8>, String> {
+    let ext = target
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    if ext != "html" && ext != "htm" && ext != "svg" {
+        return Err(format!(
+            "screenshot only renders .html/.htm/.svg files, got .{ext}"
+        ));
+    }
+    if !target.is_file() {
+        return Err(format!("file not found: {}", target.display()));
+    }
+
+    let Some(chrome) = chrome_binary() else {
+        return Err(
+            "no Chrome/Chromium binary found (set CHROME_PATH to point at one)".to_string(),
+        );
+    };
+
+    let width = width.clamp(320, 4096);
+    let height = height.clamp(240, 4096);
+    let scale = if scale.is_finite() {
+        scale.clamp(1.0, 3.0)
+    } else {
+        1.0
+    };
+    // A per-call profile (pid + nanos) keeps headless Chrome from colliding
+    // with a running browser or a leftover from a previous call; `--screenshot`
+    // exits after writing, but the wait below is bounded in case it lingers.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let shot = std::env::temp_dir().join(format!("jan-shot-{}-{nanos}.png", std::process::id()));
+    let profile = std::env::temp_dir().join(format!("jan-chrome-{}-{nanos}", std::process::id()));
+
+    // file:// lets the page resolve relative assets against its own directory,
+    // matching what the artifact preview does.
+    let file_url = format!("file://{}", target.display());
+    // Chrome is spawned through the shell (`sh -c`): on macOS, a Chrome
+    // headless-new process spawned directly by a non-bundled parent fails its
+    // singleton/TCC check with "Multiple targets are not supported in headless
+    // mode", while the same invocation via the shell succeeds. The `bash` tool
+    // already relies on this property, so we inherit it here.
+    let profile_quoted = shell_quote(profile.to_str().unwrap_or_default());
+    let shot_quoted = shell_quote(shot.to_str().unwrap_or_default());
+    let url_quoted = shell_quote(&file_url);
+    let chrome_quoted = shell_quote(chrome.to_str().unwrap_or_default());
+    let cmd = format!(
+        "{chrome_quoted} --headless=new --disable-gpu --hide-scrollbars --no-sandbox \
+         --disable-dev-shm-usage --no-first-run --user-data-dir={profile_quoted} \
+         --force-device-scale-factor={scale} \
+         --window-size={width},{height} --screenshot={shot_quoted} {url_quoted}"
+    );
+    let shell = proc::shell();
+    let mut child = match tokio::process::Command::new(shell.program.clone())
+        .args(shell.args.clone())
+        .arg(&cmd)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => return Err(format!("failed to launch Chrome: {e}")),
+    };
+    // Bounded: headless Chrome can linger after writing the PNG. Give it a
+    // generous window, then reap whatever is left and proceed if the file
+    // exists. stderr is drained on a background task so a chatty Chrome never
+    // fills the pipe and deadlocks.
+    let stderr_pipe = child.stderr.take();
+    let drain = tokio::spawn(async move {
+        use tokio::io::AsyncReadExt as _;
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = stderr_pipe {
+            let _ = pipe.read_to_end(&mut buf).await;
+        }
+        String::from_utf8_lossy(&buf).into_owned()
+    });
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(30), child.wait()).await;
+    let _ = child.kill().await;
+    let stderr = drain.await.unwrap_or_default();
+    let _ = tokio::fs::remove_dir_all(&profile).await;
+
+    let png = match tokio::fs::read(&shot).await {
+        Ok(b) => b,
+        Err(e) => {
+            let detail = stderr.lines().take(3).collect::<Vec<_>>().join(" | ");
+            return Err(format!("screenshot not produced: {e} (chrome: {detail})"));
+        }
+    };
+    let _ = tokio::fs::remove_file(&shot).await;
+
+    if png.is_empty() {
+        return Err("Chrome produced an empty screenshot (page may be blank)".to_string());
+    }
+    if png.len() > SCREENSHOT_MAX_PNG_BYTES {
+        return Err(format!(
+            "screenshot is {} KiB, over the {}-MiB cap; try a smaller viewport",
+            png.len() / 1024,
+            SCREENSHOT_MAX_PNG_BYTES / 1024 / 1024
+        ));
+    }
+    Ok(png)
+}
+
+/// Render a local HTML/SVG file and hand the model the image.
+///
+/// Returns an `ImageContentPart` rather than a data URL pasted into the text,
+/// matching what `read` does for images: that is the form a vision model
+/// actually consumes, and it keeps a megabyte of base64 out of the transcript.
+async fn screenshot(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    read_roots: &[PathBuf],
+) -> (String, Option<Vec<ImageContentPart>>) {
+    let Some(path) = arg_str(args, "path") else {
+        return ("ERROR: missing required argument 'path'".to_string(), None);
+    };
+    let width = arg_u64(args, "width").unwrap_or(1280).clamp(320, 4096);
+    let height = arg_u64(args, "height").unwrap_or(960).clamp(240, 4096);
+    let target = resolve_path(root, scratch, path);
+    if symlink_escapes_any_root(root, scratch, read_roots, &target) {
+        return (
+            format!("ERROR: refused to screenshot through a symlink out of the workspace: {path}"),
+            None,
+        );
+    }
+    let png = match render_html_png(&target, width, height, 1.0).await {
+        Ok(b) => b,
+        Err(e) => return (format!("ERROR: {e}"), None),
+    };
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+    let name = target
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string());
+    (
+        format!("Screenshot of {path} ({width}x{height})"),
+        Some(vec![ImageContentPart {
+            data_url: format!("data:image/png;base64,{b64}"),
+            name,
+        }]),
+    )
+}
+
+async fn find(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    hide_jan: bool,
+    read_roots: &[PathBuf],
+) -> String {
     let pattern = arg_str(args, "pattern").map(String::from);
     let path = arg_str(args, "path").unwrap_or(".").to_string();
     let limit = arg_u64(args, "limit")
         .map(|v| v as usize)
         .unwrap_or(FIND_DEFAULT_LIMIT);
     let base = resolve_path(root, scratch, &path);
+    if symlink_escapes_any_root(root, scratch, read_roots, &base) {
+        return format!("ERROR: refused to search through a symlink out of the workspace: {path}");
+    }
     let root_owned = root.to_path_buf();
 
     let Some(pattern) = pattern else {
@@ -975,7 +1421,7 @@ async fn find(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(true) {
                 continue;
             }
-            if is_hidden_jan_path(&root_owned, &entry.path().to_string_lossy()) {
+            if hide_jan && is_hidden_jan_path(&root_owned, &entry.path().to_string_lossy()) {
                 continue;
             }
             let rel = rel_to(&base, entry.path());
@@ -996,7 +1442,13 @@ async fn find(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
     res.unwrap_or_else(|e| format!("ERROR: {e}"))
 }
 
-async fn grep(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> String {
+async fn grep(
+    args: &serde_json::Value,
+    root: &Path,
+    scratch: Option<&Path>,
+    hide_jan: bool,
+    read_roots: &[PathBuf],
+) -> String {
     let pattern = arg_str(args, "pattern").map(String::from);
     let path = arg_str(args, "path").unwrap_or(".").to_string();
     let glob_filter = arg_str(args, "glob").map(String::from);
@@ -1007,7 +1459,13 @@ async fn grep(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
         .map(|v| v as usize)
         .unwrap_or(GREP_DEFAULT_LIMIT);
     let base = resolve_path(root, scratch, &path);
+    if symlink_escapes_any_root(root, scratch, read_roots, &base) {
+        return format!("ERROR: refused to search through a symlink out of the workspace: {path}");
+    }
     let root_owned = root.to_path_buf();
+    let scratch_owned = scratch.map(Path::to_path_buf);
+    // Owned for the blocking walk closure, which outlives this frame.
+    let roots_owned = read_roots.to_vec();
 
     let Some(pattern) = pattern else {
         return "ERROR: missing required argument 'pattern'".to_string();
@@ -1092,10 +1550,27 @@ async fn grep(args: &serde_json::Value, root: &Path, scratch: Option<&Path>) -> 
                 .build()
                 .flatten()
             {
-                if entry.file_type().map(|t| t.is_dir()).unwrap_or(true) {
+                let Some(file_type) = entry.file_type() else {
+                    continue;
+                };
+                if file_type.is_dir() {
                     continue;
                 }
-                if is_hidden_jan_path(&root_owned, &entry.path().to_string_lossy()) {
+                // The walk does not descend symlinked directories, but a symlink
+                // to a *file* is not a directory and would be opened and read.
+                // Checked (not skipped outright) so a link that stays inside the
+                // workspace -- every yarn workspace has them -- is still searched.
+                if file_type.is_symlink()
+                    && symlink_escapes_any_root(
+                        &root_owned,
+                        scratch_owned.as_deref(),
+                        &roots_owned,
+                        entry.path(),
+                    )
+                {
+                    continue;
+                }
+                if hide_jan && is_hidden_jan_path(&root_owned, &entry.path().to_string_lossy()) {
                     continue;
                 }
                 if !search_file(entry.path(), &base) {
@@ -1145,7 +1620,9 @@ mod tests {
     // `workspace` and `commands`.
     async fn execute_builtin(tool: &BuiltinTool, args: &serde_json::Value, root: &Path) -> String {
         let store = crate::workspace::project_store(root);
-        super::execute_builtin(tool, args, &ToolContext::new(root, &store, &[])).await
+        super::execute_builtin(tool, args, &ToolContext::new(root, &store, &[]))
+            .await
+            .0
     }
 
     async fn execute_builtin_with_diff(
@@ -1154,7 +1631,10 @@ mod tests {
         root: &Path,
     ) -> (String, Option<String>) {
         let store = crate::workspace::project_store(root);
-        super::execute_builtin_with_diff(tool, args, &ToolContext::new(root, &store, &[])).await
+        let (content, diff, _images) =
+            super::execute_builtin_with_diff(tool, args, &ToolContext::new(root, &store, &[]))
+                .await;
+        (content, diff)
     }
 
     async fn preview_diff(
@@ -1205,6 +1685,90 @@ mod tests {
         std::fs::write(root.join("bin"), [0xff, 0xfe, 0x00]).unwrap();
         let out = execute_builtin(lookup("read").unwrap(), &json!({"path": "bin"}), &root).await;
         assert!(out.starts_with("ERROR"), "unexpected: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_returns_image_payload_for_a_png() {
+        let root = unique_root();
+        // Minimal valid PNG signature suffices for detection; the payload is
+        // what the tool validates, not a decodable image.
+        let bytes: Vec<u8> = vec![
+            0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52,
+        ];
+        std::fs::write(root.join("pic.png"), &bytes).unwrap();
+        let (content, images) = super::execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "pic.png"}),
+            &ToolContext::new(&root, &crate::workspace::project_store(&root), &[]),
+        )
+        .await;
+        assert!(content.contains("image/png"), "note: {content}");
+        let img = images.expect("an image read must return image parts");
+        assert_eq!(img.len(), 1);
+        assert_eq!(img[0].name, "pic.png");
+        assert!(img[0].data_url.starts_with("data:image/png;base64,"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_extension_fallback_catches_a_misnamed_image() {
+        let root = unique_root();
+        // No valid signature header, but the extension says PNG: the extension
+        // fallback still returns an image payload.
+        std::fs::write(root.join("scanned.png"), b"not a real png").unwrap();
+        let (content, images) = super::execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "scanned.png"}),
+            &ToolContext::new(&root, &crate::workspace::project_store(&root), &[]),
+        )
+        .await;
+        assert!(!content.starts_with("ERROR"), "got: {content}");
+        assert!(
+            images.is_some(),
+            "extension-matching png must yield an image"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_image_with_offset_falls_back_to_text_error() {
+        let root = unique_root();
+        let bytes: Vec<u8> = vec![0x89, b'P', b'N', b'G'];
+        std::fs::write(root.join("pic.png"), &bytes).unwrap();
+        let out = execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "pic.png", "offset": 1, "limit": 1}),
+            &root,
+        )
+        .await;
+        assert!(
+            out.starts_with("ERROR"),
+            "slicing an image must not render: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn read_image_over_cap_falls_back_to_text_error() {
+        let root = unique_root();
+        // Valid PNG signature but far larger than MAX_IMAGE_BYTES: the size
+        // gate must refuse to base64-dump it into model context.
+        let mut bytes: Vec<u8> = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        bytes.resize(MAX_IMAGE_BYTES + 1, 0u8);
+        std::fs::write(root.join("huge.png"), &bytes).unwrap();
+        let (content, images) = super::execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "huge.png"}),
+            &ToolContext::new(&root, &crate::workspace::project_store(&root), &[]),
+        )
+        .await;
+        assert!(
+            images.is_none(),
+            "an over-cap image must not yield image parts"
+        );
+        assert!(content.starts_with("ERROR"), "got: {content}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1312,7 +1876,10 @@ mod tests {
             &[json!({"old_string": "two", "new_string": "TWO"})],
             "one\ntwo\nthree",
         );
-        assert_eq!(d, "     1 | one\n-    2 | two\n+    2 | TWO\n     3 | three");
+        assert_eq!(
+            d,
+            "     1 | one\n-    2 | two\n+    2 | TWO\n     3 | three"
+        );
     }
 
     /// Two edits far apart in one call: each hunk carries its own file context
@@ -1626,8 +2193,12 @@ mod tests {
             &json!({"path": "../escape.txt", "content": "x"}),
             &ctx,
         )
-        .await;
-        assert!(out.starts_with("ERROR: refused to write outside"), "got: {out}");
+        .await
+        .0;
+        assert!(
+            out.starts_with("ERROR: refused to write outside"),
+            "got: {out}"
+        );
         assert!(!root.parent().unwrap().join("escape.txt").exists());
 
         let out = super::execute_builtin(
@@ -1635,8 +2206,12 @@ mod tests {
             &json!({"path": "../escape.txt", "edits": [{"old_string": "a", "new_string": "b"}]}),
             &ctx,
         )
-        .await;
-        assert!(out.starts_with("ERROR: refused to edit outside"), "got: {out}");
+        .await
+        .0;
+        assert!(
+            out.starts_with("ERROR: refused to edit outside"),
+            "got: {out}"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1682,12 +2257,127 @@ mod tests {
             &json!({"pattern": "*.txt", "path": "/tmp"}),
             &ctx,
         )
-        .await;
+        .await
+        .0;
         assert!(
             !out.contains("secret.txt"),
             "walked out of the scratch through a symlink: {out}"
         );
         let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A recursive `grep` must not follow a *file* symlink out of the root.
+    /// The directory-symlink case is covered by WalkBuilder's no-follow default
+    /// (directories are recursed, symlinks to dirs are not entered), but a
+    /// symlink to a file is not classified as a directory and would be opened
+    /// and read. Skip every symlink so a planted `key -> $HOME/.ssh/id_rsa`
+    /// cannot be disclosed without a separate approval.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn grep_does_not_read_a_file_symlink_out_of_the_root() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::fs::write(outside.join("secret.txt"), b"classified").unwrap();
+        std::os::unix::fs::symlink(outside.join("secret.txt"), root.join("key.txt")).unwrap();
+        std::fs::write(root.join("real.txt"), b"plain").unwrap();
+        let out = execute_builtin(
+            lookup("grep").unwrap(),
+            &json!({"pattern": "classified", "path": "."}),
+            &root,
+        )
+        .await;
+        assert!(
+            !out.contains("secret") && !out.contains("classified"),
+            "read through a file symlink outside the root: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// The escaping-symlink refusals must not become a blanket "no symlinks":
+    /// a link that stays inside the workspace is ordinary (every yarn workspace
+    /// links `node_modules/<pkg>` back into the repo), so `grep` still searches
+    /// through it and `read` still opens it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn in_root_symlinks_stay_readable_and_searchable() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
+        std::fs::write(root.join("pkg/index.js"), b"needle here").unwrap();
+        std::os::unix::fs::symlink(root.join("pkg/index.js"), root.join("linked.js")).unwrap();
+
+        let out = execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": "linked.js"}),
+            &root,
+        )
+        .await;
+        assert!(out.contains("needle"), "in-root symlink was refused: {out}");
+
+        let out = execute_builtin(
+            lookup("grep").unwrap(),
+            &json!({"pattern": "needle", "path": "."}),
+            &root,
+        )
+        .await;
+        assert!(
+            out.contains("linked.js"),
+            "in-root symlink was skipped: {out}"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A redirected spill directory must refuse to write through it. The shell
+    /// can replace `scratch/jan-bash` with a symlink to a host directory (or
+    /// point `jan-bash` at one), so both spill entry points must come up empty
+    /// rather than place the model's bytes at an attacker-chosen location.
+    #[cfg(unix)]
+    #[test]
+    fn spill_writing_refuses_a_redirected_spill_dir() {
+        let scratch = unique_root();
+        let outside = unique_root();
+        std::os::unix::fs::symlink(&outside, scratch.join("jan-bash")).unwrap();
+
+        assert!(
+            new_temp_path(Some(&scratch)).is_none(),
+            "dir symlink accepted"
+        );
+        assert!(
+            write_temp_output("x", Some(&scratch)).is_none(),
+            "wrote through a redirected spill dir"
+        );
+        // The outside host directory is untouched.
+        assert_eq!(
+            std::fs::read_dir(&outside).unwrap().count(),
+            0,
+            "host files created via a symlinked spill dir"
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A spill *file* that is a planted symlink must never be opened (truncated
+    /// and written through), so the host target it points at stays intact.
+    #[cfg(unix)]
+    #[test]
+    fn spill_file_writes_never_follow_a_planted_symlink() {
+        let scratch = unique_root();
+        let outside = unique_root();
+        std::fs::create_dir_all(scratch.join("jan-bash")).unwrap();
+        let victim = outside.join("victim.txt");
+        std::fs::write(&victim, b"precious").unwrap();
+        let planted = scratch.join("jan-bash/spill.txt");
+        std::os::unix::fs::symlink(&victim, &planted).unwrap();
+
+        assert!(open_spill_file(&planted).is_err(), "opened a spill symlink");
+        assert_eq!(
+            std::fs::read_to_string(&victim).unwrap(),
+            "precious",
+            "wrote through the spill symlink to the host file"
+        );
         let _ = std::fs::remove_dir_all(&scratch);
         let _ = std::fs::remove_dir_all(&outside);
     }
@@ -1711,7 +2401,8 @@ mod tests {
             &json!({"path": "/tmp/esc/pwned.txt", "content": "x"}),
             &ctx,
         )
-        .await;
+        .await
+        .0;
         assert!(out.starts_with("ERROR"), "must be refused, got: {out}");
         assert!(
             !outside.join("pwned.txt").exists(),
@@ -1722,9 +2413,69 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 
+    /// The handler itself re-checks for symlinks immediately before opening,
+    /// closing the gate-vs-use window. A read through a planted symlink must be
+    /// refused (not silently resolved), even when the gate already allowed the
+    /// path inside the root.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_refuses_a_symlink_redirected_file() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::fs::write(outside.join("secret.txt"), b"classified").unwrap();
+        std::os::unix::fs::symlink(outside.join("secret.txt"), root.join("link.txt")).unwrap();
+        let out =
+            execute_builtin(lookup("read").unwrap(), &json!({"path": "link.txt"}), &root).await;
+        assert!(out.starts_with("ERROR"), "must refuse, got: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// The same re-check on the writing side, and it must fire *before* the
+    /// parent directories are created: a refused write that has already made
+    /// directories through the planted link has still touched the host.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_and_edit_refuse_a_symlink_redirected_file() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::fs::write(outside.join("victim.txt"), b"precious").unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("escape")).unwrap();
+
+        let out = execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "escape/victim.txt", "content": "owned"}),
+            &root,
+        )
+        .await;
+        assert!(out.starts_with("ERROR"), "write must refuse, got: {out}");
+
+        let out = execute_builtin(
+            lookup("edit").unwrap(),
+            &json!({"path": "escape/victim.txt", "edits": [{"old_string": "precious", "new_string": "owned"}]}),
+            &root,
+        )
+        .await;
+        assert!(out.starts_with("ERROR"), "edit must refuse, got: {out}");
+
+        assert_eq!(
+            std::fs::read_to_string(outside.join("victim.txt")).unwrap(),
+            "precious"
+        );
+        // Nothing was created through the link on the way to the refusal.
+        assert_eq!(
+            std::fs::read_dir(&outside).unwrap().count(),
+            1,
+            "directories were created through the symlink"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
     /// A `write` to `/tmp/x` lands in the session scratch, and a `read` of the
     /// same path sees it: every fs tool shares the one `/tmp` the shell sees.
     #[tokio::test]
+    #[cfg(target_os = "linux")]
     async fn write_then_read_via_tmp_persists_in_scratch() {
         let root = unique_root();
         let scratch = unique_root();
@@ -1735,7 +2486,8 @@ mod tests {
             &json!({"path": "/tmp/scratch.txt", "content": "persist"}),
             &ctx,
         )
-        .await;
+        .await
+        .0;
         assert!(out.starts_with("Created /tmp/scratch.txt"), "got: {out}");
         assert!(scratch.join("scratch.txt").exists(), "wrote into scratch");
 
@@ -1744,7 +2496,8 @@ mod tests {
             &json!({"path": "/tmp/scratch.txt"}),
             &ctx,
         )
-        .await;
+        .await
+        .0;
         assert_eq!(out, "persist");
 
         // No stray file on the real host /tmp.
@@ -1756,6 +2509,7 @@ mod tests {
     /// The bare `/tmp` dir resolves to the scratch root; files written there by
     /// the shell (or a sibling tool) are listable through the file tools.
     #[test]
+    #[cfg(target_os = "linux")]
     fn resolve_path_maps_tmp_into_scratch() {
         let root = unique_root();
         let scratch = unique_root();
@@ -1781,6 +2535,7 @@ mod tests {
     /// scratch root (chroot semantics, matching the `/tmp` bind mount), so it
     /// can never reach the host temp.
     #[test]
+    #[cfg(target_os = "linux")]
     fn tmp_path_cannot_climb_out_with_dotdot() {
         let root = unique_root();
         let scratch = unique_root();
@@ -1801,6 +2556,7 @@ mod tests {
 
     /// The gate treats a scratch-backed `/tmp` write as inside, not an escape.
     #[test]
+    #[cfg(target_os = "linux")]
     fn gate_allows_tmp_write_when_scratch_is_set() {
         let root = unique_root();
         let scratch = unique_root();
@@ -1809,8 +2565,10 @@ mod tests {
             &json!({"path": "/tmp/x.txt", "content": "y"}),
             &root,
             Some(&scratch),
+            &[],
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
+            true,
         );
         assert_eq!(
             d,
@@ -1836,8 +2594,10 @@ mod tests {
             &json!({"path": "/tmp/esc/x.txt", "content": "y"}),
             &root,
             Some(&scratch),
+            &[],
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
+            true,
         );
         assert_eq!(
             d,
@@ -1883,7 +2643,31 @@ mod tests {
         let out = execute_builtin(lookup("ls").unwrap(), &json!({}), &root).await;
         assert!(out.contains("src.rs"), "unexpected: {out}");
         assert!(out.contains("JAN.md"), "unexpected: {out}");
-        assert!(!out.contains(".jan/"), "must not list the agent state dir: {out}");
+        assert!(
+            !out.contains(".jan/"),
+            "must not list the agent state dir: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// When the shell is unconfined (CLI with --no-sandbox) the `.jan` directory
+    /// is ordinary project state and is listed, not hidden.
+    #[tokio::test]
+    async fn ls_lists_the_jan_dir_when_unconfined() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join(".jan/agent")).unwrap();
+        std::fs::write(root.join(".jan/agent/agent.toml"), b"[tools]\n").unwrap();
+        std::fs::write(root.join("src.rs"), b"x").unwrap();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[]).with_sandbox(false);
+        let out = super::execute_builtin(lookup("ls").unwrap(), &json!({}), &ctx)
+            .await
+            .0;
+        assert!(out.contains("src.rs"), "unexpected: {out}");
+        assert!(
+            out.contains(".jan/"),
+            "must list .jan when unconfined: {out}"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2024,6 +2808,80 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A command's output reaches the sink as it is produced, not just in the
+    /// returned string -- this is what makes a long command visible while it runs.
+    #[tokio::test]
+    async fn bash_streams_output_to_the_sink() {
+        let root = unique_root();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let sink = {
+            let seen = seen.clone();
+            std::sync::Arc::new(move |chunk: String| {
+                seen.lock().unwrap().push_str(&chunk);
+            }) as crate::tools::OutputSink
+        };
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[])
+            .with_sandbox(false)
+            .with_output_sink(sink);
+        let out = super::execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "printf 'one\ntwo\n'"}),
+            &ctx,
+        )
+        .await
+        .0;
+        let streamed = seen.lock().unwrap().clone();
+        assert!(streamed.contains("one"), "sink saw nothing: {streamed:?}");
+        assert!(
+            streamed.contains("two"),
+            "sink missed a chunk: {streamed:?}"
+        );
+        // The return value still carries it, so the model's view is unchanged.
+        assert!(out.contains("one") && out.contains("two"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A backgrounded command keeps streaming after the call has returned its
+    /// `job_id`: the sink lives in the detached task, which is the whole reason
+    /// waiting on a long job can show progress.
+    #[tokio::test]
+    async fn a_backgrounded_command_keeps_streaming() {
+        let root = unique_root();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let sink = {
+            let seen = seen.clone();
+            std::sync::Arc::new(move |chunk: String| {
+                seen.lock().unwrap().push_str(&chunk);
+            }) as crate::tools::OutputSink
+        };
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[])
+            .with_sandbox(false)
+            .with_output_sink(sink);
+        // timeout 0 => backgrounds immediately, before the command prints.
+        let out = super::execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "sleep 0.2; printf 'late\n'", "timeout": 0}),
+            &ctx,
+        )
+        .await
+        .0;
+        assert!(out.contains("job_id=bash-"), "should background: {out}");
+        assert!(
+            seen.lock().unwrap().is_empty(),
+            "nothing printed yet at hand-off"
+        );
+        // The detached task is still running and still holds the sink.
+        tokio::time::sleep(std::time::Duration::from_millis(900)).await;
+        let streamed = seen.lock().unwrap().clone();
+        assert!(
+            streamed.contains("late"),
+            "a backgrounded job must keep reporting: {streamed:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[tokio::test]
     async fn bash_exceeding_timeout_backgrounds_instead_of_erroring() {
         let root = unique_root();
@@ -2079,6 +2937,22 @@ mod tests {
             out.starts_with("ERROR: unknown or already-collected"),
             "unexpected: {out}"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_command_takes_precedence_over_spurious_job_id() {
+        let root = unique_root();
+        for job_id in ["", " ", "x"] {
+            let out = execute_builtin(
+                lookup("bash").unwrap(),
+                &json!({"command": "printf hello", "job_id": job_id}),
+                &root,
+            )
+            .await;
+            assert!(out.contains("hello"), "job_id {job_id:?}: {out}");
+            assert!(out.contains("[exit 0]"), "job_id {job_id:?}: {out}");
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2246,7 +3120,8 @@ mod tests {
             &json!({"command": "for i in $(seq 1 16000); do printf '%064d\\n' \"$i\"; done"}),
             &ctx,
         )
-        .await;
+        .await
+        .0;
         let path = out
             .rsplit("full output written to ")
             .next()
@@ -2263,10 +3138,67 @@ mod tests {
             &json!({"path": path, "offset": 15999, "limit": 1}),
             &ctx,
         )
-        .await;
+        .await
+        .0;
         assert!(
             full.contains("015999") || full.contains("016000"),
             "spill at {path} must be readable back: {full}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// With the sandbox off, `bash` runs bare instead of being wrapped or
+    /// withheld. The point of the opt-out is that it works on a machine where
+    /// no backend can be established, so this must not depend on one.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unsandboxed_bash_runs_without_a_backend() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[]).with_sandbox(false);
+        let out = super::execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "echo unconfined"}),
+            &ctx,
+        )
+        .await
+        .0;
+        assert!(
+            out.contains("unconfined"),
+            "unsandboxed bash did not run: {out}"
+        );
+        assert!(
+            !out.contains("no OS sandbox could be established"),
+            "withheld despite the opt-out: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Dropping the sandbox drops the scratch with it, in either builder order.
+    /// A scratch that outlived the sandbox would leave the fs tools rewriting
+    /// `/tmp/...` into a directory the unconfined shell never looks at.
+    #[test]
+    fn unsandboxed_context_has_no_scratch() {
+        let root = unique_root();
+        let scratch = unique_root();
+        let store = crate::workspace::project_store(&root);
+        assert!(ToolContext::new(&root, &store, &[])
+            .with_scratch_root(&scratch)
+            .with_sandbox(false)
+            .scratch_root
+            .is_none());
+        assert!(ToolContext::new(&root, &store, &[])
+            .with_sandbox(false)
+            .with_scratch_root(&scratch)
+            .scratch_root
+            .is_none());
+        // The sandboxed default still binds it.
+        assert_eq!(
+            ToolContext::new(&root, &store, &[])
+                .with_scratch_root(&scratch)
+                .scratch_root,
+            Some(scratch.as_path())
         );
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&scratch);
@@ -2448,20 +3380,24 @@ mod tests {
         let store = crate::workspace::project_store(&root);
         let ctx = ToolContext::new(&root, &store, &enabled);
 
-        let list = super::execute_builtin(lookup("skill_list").unwrap(), &json!({}), &ctx).await;
+        let list = super::execute_builtin(lookup("skill_list").unwrap(), &json!({}), &ctx)
+            .await
+            .0;
         assert!(list.contains("on"), "list: {list}");
         assert!(!list.contains("off body"), "disabled skill leaked: {list}");
 
         // Disabled skill is unreadable.
         let read_off =
             super::execute_builtin(lookup("skill_read").unwrap(), &json!({"name": "off"}), &ctx)
-                .await;
+                .await
+                .0;
         assert!(read_off.starts_with("ERROR"), "disabled read: {read_off}");
 
         // Enabled skill still readable.
         let read_on =
             super::execute_builtin(lookup("skill_read").unwrap(), &json!({"name": "on"}), &ctx)
-                .await;
+                .await
+                .0;
         assert_eq!(read_on, "on body");
 
         // A disabled skill is read-only for the model: writing to it is refused
@@ -2471,18 +3407,63 @@ mod tests {
             &json!({"name": "off", "content": "evil body"}),
             &ctx,
         )
-        .await;
+        .await
+        .0;
         assert!(
             write_off.starts_with("ERROR"),
             "disabled write: {write_off}"
         );
-        let r = super::execute_builtin(
-            lookup("skill_read").unwrap(),
-            &json!({"name": "off"}),
-            &ctx,
+        let r =
+            super::execute_builtin(lookup("skill_read").unwrap(), &json!({"name": "off"}), &ctx)
+                .await
+                .0;
+        assert!(r.starts_with("ERROR"), "still disabled after write");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn skill_tools_hide_user_invoked_skills_from_model() {
+        let root = unique_root();
+        // A `disable-model-invocation: true` skill: only the human may fire it.
+        execute_builtin(
+            lookup("skill_write").unwrap(),
+            &json!({"name": "secret",
+                    "content": "---\ndescription: internal ritual\ndisable-model-invocation: true\n---\nsecret body"}),
+            &root,
         )
         .await;
-        assert!(r.starts_with("ERROR"), "still disabled after write");
+        execute_builtin(
+            lookup("skill_write").unwrap(),
+            &json!({"name": "plain", "content": "---\ndescription: open\n---\nplain body"}),
+            &root,
+        )
+        .await;
+
+        let list = execute_builtin(lookup("skill_list").unwrap(), &json!({}), &root).await;
+        assert!(list.contains("plain"), "list: {list}");
+        assert!(
+            !list.contains("internal ritual"),
+            "user-only skill leaked: {list}"
+        );
+
+        let read_secret = execute_builtin(
+            lookup("skill_read").unwrap(),
+            &json!({"name": "secret"}),
+            &root,
+        )
+        .await;
+        assert!(
+            read_secret.starts_with("ERROR"),
+            "user-only read: {read_secret}"
+        );
+
+        let read_plain = execute_builtin(
+            lookup("skill_read").unwrap(),
+            &json!({"name": "plain"}),
+            &root,
+        )
+        .await;
+        assert_eq!(read_plain, "plain body");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2501,6 +3482,87 @@ mod tests {
                 "name {bad:?} should be rejected: {out}"
             );
         }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+    // ---- screenshot ---------------------------------------------------------
+
+    /// Two headless Chromes racing for the same profile dir collide, so the
+    /// tests that actually launch one are serialised.
+    static CHROME_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[tokio::test]
+    async fn screenshot_rejects_a_non_html_file() {
+        let root = unique_root();
+        std::fs::write(root.join("a.txt"), b"nope").unwrap();
+        let (out, images) = screenshot(&json!({"path": "a.txt"}), &root, None, &[]).await;
+        assert!(out.contains("only renders"), "{out}");
+        assert!(images.is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn screenshot_rejects_a_missing_file() {
+        let root = unique_root();
+        let (out, images) = screenshot(&json!({"path": "gone.html"}), &root, None, &[]).await;
+        assert!(out.contains("file not found"), "{out}");
+        assert!(images.is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn screenshot_requires_a_path() {
+        let root = unique_root();
+        let (out, _) = screenshot(&json!({}), &root, None, &[]).await;
+        assert!(out.contains("missing required argument"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn screenshot_refuses_a_symlink_out_of_the_workspace() {
+        let root = unique_root();
+        let outside = unique_root();
+        let secret = outside.join("secret.html");
+        std::fs::write(&secret, b"<h1>secret</h1>").unwrap();
+        let link = root.join("innocent.html");
+        std::os::unix::fs::symlink(&secret, &link).unwrap();
+
+        let (out, images) = screenshot(&json!({"path": "innocent.html"}), &root, None, &[]).await;
+        assert!(out.contains("symlink"), "{out}");
+        assert!(images.is_none());
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// Renders for real when a browser is present, and returns an image part
+    /// rather than a data URL buried in the text.
+    #[tokio::test]
+    async fn screenshot_returns_an_image_part_when_chrome_is_present() {
+        if chrome_binary().is_none() {
+            return;
+        }
+        let _guard = CHROME_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let root = unique_root();
+        std::fs::write(
+            root.join("page.html"),
+            b"<html><body style=\"background:#0af\"><h1>hi</h1></body></html>",
+        )
+        .unwrap();
+
+        let (out, images) = screenshot(
+            &json!({"path": "page.html", "width": 400, "height": 300}),
+            &root,
+            None,
+            &[],
+        )
+        .await;
+        assert!(!out.starts_with("ERROR"), "{out}");
+        let images = images.expect("an image part");
+        assert_eq!(images.len(), 1);
+        assert!(images[0].data_url.starts_with("data:image/png;base64,"));
+        assert_eq!(images[0].name, "page.html");
+        // The base64 stays out of the model-facing text.
+        assert!(!out.contains("base64"), "{out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -7,7 +7,7 @@ use std::path::Path;
 use chrono::Local;
 
 use crate::core::agent::git;
-use tauri_plugin_agent_tools::{memory, skills, workspace};
+use tauri_plugin_agent_tools::{memory, workspace};
 
 /// Default persona used only when no assistant instructions are supplied, so a
 /// bare project run still opens with a role statement instead of "# Working
@@ -83,11 +83,12 @@ const DEFAULT_SKILL_GUIDE: &str = include_str!("default_skill.md");
 /// per skill with its one-line description only — NOT the full body. Progressive
 /// disclosure: the model calls `skill_read` to pull a skill's full instructions
 /// on demand, so a large skill library costs ~a description each, not full text.
-/// Covers folder skills (`<name>/SKILL.md`) and legacy flat `<name>.md`. Returns
-/// None when no advertisable skill exists.
+/// Skills with `disable-model-invocation: true` are excluded (user-invoked
+/// skills pay no context load). Covers folder skills (`<name>/SKILL.md`) and
+/// legacy flat `<name>.md`. Returns None when no advertisable skill exists.
 pub(crate) fn load_skills(project_root: &Path) -> Option<String> {
     let enabled = crate::core::agent::project::enabled_skills(project_root);
-    let entries = skills::catalog(&workspace::project_store(project_root), &enabled);
+    let entries = crate::core::agent::skills::catalog(project_root, &enabled);
     if entries.is_empty() {
         return None;
     }
@@ -376,6 +377,31 @@ mod tests {
     fn memory_catalog_is_none_when_no_notes() {
         let root = scratch_project("memnone");
         assert!(load_memory_catalog(&root).is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn catalog_respects_invocation_sides() {
+        let root = scratch_project("sides");
+        // Agent-invoked (user-invocable: false) stays advertised to the model.
+        write_skill(
+            &root,
+            "agent-only.md",
+            "---\ndescription: Agent fires this\ndisable-model-invocation: false\nuser-invocable: false\n---\nagent body",
+        );
+        // User-invoked (disable-model-invocation: true) costs the model nothing.
+        write_skill(
+            &root,
+            "user-only.md",
+            "---\ndescription: Human fires this\ndisable-model-invocation: true\n---\nuser body",
+        );
+        let block = load_skills(&root).expect("skills block");
+        assert!(block.contains("## Skill: agent-only"), "block: {block}");
+        assert!(
+            !block.contains("## Skill: user-only"),
+            "user-only leaked: {block}"
+        );
+        assert!(!block.contains("user body"), "body leaked: {block}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -8,6 +8,7 @@
 
 import {
   AIEngine,
+  type EmbeddingEngine,
   getJanDataFolderPath,
   fs,
   joinPath,
@@ -17,6 +18,7 @@ import {
   chatCompletion,
   chatCompletionChunk,
   ImportOptions,
+  type SpecDraftKind,
   chatCompletionRequest,
   events,
   AppEvent,
@@ -33,16 +35,6 @@ import {
 } from './settings-store'
 
 import { listen } from '@tauri-apps/api/event'
-import {
-  listSupportedBackends,
-  fetchRemoteBackends,
-  downloadBackend,
-  isBackendInstalled,
-  verifyBackendInstallation,
-  getBackendExePath,
-  getBackendDir,
-  getLocalInstalledBackends,
-} from './backend'
 import { invoke } from '@tauri-apps/api/core'
 import {
   getProxyConfig,
@@ -50,12 +42,25 @@ import {
   mergeEmbedResponses,
   detectEmbeddingFromGgufMeta,
   detectMtpLayersFromGgufMeta,
+  resolveSpecDraftKind,
   detectTemplateKwargsFromChatTemplate,
   getDefaultEmbeddingModelId,
   setDefaultEmbeddingModelId,
   type EmbedBatchResult,
 } from './util'
-import { generatePreset, MTP_MIN_BUILD } from './preset'
+import {
+  generatePreset,
+  threadCacheDir,
+  DEFAULT_EMBEDDING_UBATCH,
+} from './preset'
+import {
+  evaluateEmbeddingVector,
+  evaluateGpuOffload,
+  backendFromDeviceIds,
+  type EmbeddingVectorProblem,
+  type GpuOffloadCheck,
+  type ReadinessStatus,
+} from './readiness'
 import {
   getBackendSetting,
   setBackendSetting,
@@ -63,13 +68,21 @@ import {
 } from './backend-settings'
 import { basename } from '@tauri-apps/api/path'
 import {
+  asI32,
   loadLlamaModel,
   readGgufMetadata,
+  findGgufTensors,
   isModelSupported,
   unloadLlamaModel,
-  reloadRouterModels,
-  routerHealth,
-  adoptRouter,
+  startEngine,
+  eraseThreadSlotState,
+  getEngineInfo as pluginGetEngineInfo,
+  reloadEngineModels,
+  engineDevices,
+  generateApiKey as pluginGenerateApiKey,
+  findSessionByModel as pluginFindSessionByModel,
+  ensureSessionReady as pluginEnsureSessionReady,
+  getLoadedModels as pluginGetLoadedModels,
   LlamacppConfig,
   DownloadItem,
   ModelConfig,
@@ -77,60 +90,25 @@ import {
   EmbeddingResponse,
   ModelProps,
   DeviceList,
-  mapOldBackendToNew,
-  findLatestVersionForBackend,
-  prioritizeBackends,
-  checkBackendForUpdates,
-  removeOldBackendVersions,
-  shouldMigrateBackend,
-  handleSettingUpdate,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 const EMBEDDING_CHECK_VERSION = 3
 const MTP_CHECK_VERSION = 1
+
+// The tensor that marks a DSpark draft: it is a DFlash one plus this Markov
+// head (common/speculative.cpp, llama-arch.cpp LLM_TENSOR_DSPARK_MARKOV_W1).
+const MARKOV_HEAD_TENSOR = 'markov_w1.weight'
 const TEMPLATE_KWARGS_CHECK_VERSION = 1
 
-// Upstream build that added the `GET /models?reload=1` diff/reconcile path
-// (llama.cpp #21848). At/above this, a preset change can be hot-applied without
-// restarting the router (unchanged models stay loaded); below it we must do a
-// full process restart.
-const RELOAD_MIN_BUILD = 9023
-
-// Superseded installs kept on disk so a rollback (or an offline downgrade)
-// does not require re-downloading a release that may since have been yanked.
-const BACKEND_VERSIONS_RETAINED = 2
-
-// Bounded so a long-lived install cannot grow the log without limit.
-const UPDATE_HISTORY_LIMIT = 50
-const UPDATE_HISTORY_FILENAME = 'update_history.json'
-
-type BackendUpdateRecord = {
-  timestamp: string
-  from: string
-  to: string
-  outcome: 'updated' | 'rolled-back' | 'rollback-failed' | 'failed'
-  durationMs: number
-  error?: string
-}
-
-/** Snapshot of an active backend choice, sufficient to restore it on rollback. */
-type BackendSelection = {
-  version: string
-  backend: string
-  storedType?: string
-}
-
 // Provider settings that end up in `router.preset.ini` (`[*]` global section
-// in preset.ts). Mutating any of these requires a router restart so the new
-// preset is read; cosmetic / process-only keys (auto_update_engine, models_max,
-// timeout, llamacpp_env, version_backend) are handled separately or not at all.
+// in preset.ts). Mutating any of these needs the preset reloaded so the new
+// value is read; cosmetic / process-only keys (models_max, timeout,
+// llamacpp_env) are handled separately or not at all.
 const PRESET_AFFECTING_KEYS = new Set<string>([
   'fit',
   'fit_target',
   'fit_ctx',
-  'ctx_size',
-  'n_gpu_layers',
   'flash_attn',
   'cache_type_k',
   'cache_type_v',
@@ -139,22 +117,33 @@ const PRESET_AFFECTING_KEYS = new Set<string>([
   'threads',
   'threads_batch',
   'n_predict',
+  'batch_size',
   'ubatch_size',
+  'n_cpu_moe',
+  'no_kv_offload',
   'device',
   'split_mode',
   'main_gpu',
   'no_mmap',
   'mlock',
   'rope_scaling',
-  'rope_scale',
   'rope_freq_base',
   'rope_freq_scale',
   'ctx_shift',
   'cache_ram',
+  // persist_thread_cache decides whether slot-save-path is emitted at all;
+  // thread_cache_size is not a preset key but rides the same reload, which
+  // carries it to the worker (see reload_engine_models).
+  'persist_thread_cache',
+  'thread_cache_size',
   'cache_reuse',
   'swa_full',
   'keep',
   'kv_unified',
+  'tensor_split',
+  'no_op_offload',
+  'ctx_checkpoints',
+  'checkpoint_min_step',
 ])
 
 
@@ -163,15 +152,6 @@ const PRESET_AFFECTING_KEYS = new Set<string>([
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-
-/**
- * Parse the build number from a llama.cpp version string like "b6325".
- * Returns the numeric portion, or null if the format doesn't match.
- */
-function parseBuildNumber(version: string): number | null {
-  const match = version.match(/^b(\d+)$/)
-  return match ? parseInt(match[1], 10) : null
-}
 
 type YamlSettingValue = string | number | boolean | null
 
@@ -187,13 +167,46 @@ type PersistedModelState = {
 }
 
 const MODEL_PROVIDER_STORE_KEY = 'model-provider'
-const INTERFACE_SETTINGS_STORE_KEY = 'setting-appearance'
 const EMBEDDER_BOOTSTRAP_KEY = 'llamacpp-embedder-bootstrapped'
+/** Set once the user has agreed to the first-run download. */
+const SETUP_CONSENT_KEY = 'llamacpp-first-run-setup-started'
 const FALLBACK_EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
 const FALLBACK_EMBEDDING_MODEL_URL =
   'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true'
 const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY =
-  'llamacpp_model_yaml_backfill_v1'
+  'llamacpp_model_yaml_backfill_v2'
+
+/// The GPU-layers value the old UI shipped as its default. v1 of the backfill
+/// copied it into every model.yml, which pins offload to 100 layers and defeats
+/// llama.cpp's own -1 (auto, VRAM-aware) -- an OOM on a small GPU. v2 removes it
+/// again. A user who deliberately chose exactly 100 loses that choice, which is
+/// the right trade: 100 was never a considered value, it was the default.
+const LEGACY_NGL_DEFAULT = 100
+
+/// Matches the `timeout` default in settings.json.
+const DEFAULT_TIMEOUT = 600
+
+// Short and non-empty: enough to exercise tokenize plus pooling without making
+// setup wait on a long prompt.
+const EMBEDDING_PROBE_TEXT = 'jan setup embedding probe'
+
+export interface EmbeddingModelReport {
+  status: ReadinessStatus
+  modelId?: string
+  dimension?: number
+  problem?: EmbeddingVectorProblem
+  error?: string
+  /** The engine has not finished setting up, so nothing was concluded. */
+  pending?: boolean
+}
+
+export interface GpuOffloadReport extends GpuOffloadCheck {
+  backend: string
+  /** Set when the device probe itself failed, leaving `reason` undetermined. */
+  error?: string
+  /** The engine has not finished setting up, so nothing was concluded. */
+  pending?: boolean
+}
 
 // Sampling defaults are floats/ints where 0 is a meaningful value (e.g.
 // temperature=0), so unlike ctx_len these coercions keep 0 and only reject
@@ -224,7 +237,18 @@ const MODEL_SETTINGS_YAML_MAPPING: Record<
   top_k: { yamlKey: 'top_k', coerce: coerceIntSetting },
   top_p: { yamlKey: 'top_p', coerce: coerceFloatSetting },
   min_p: { yamlKey: 'min_p', coerce: coerceFloatSetting },
-  repeat_last_n: { yamlKey: 'repeat_last_n', coerce: coerceIntSetting },
+  // Not coerceIntSetting: upstream throws on a negative window on both the
+  // preset path and the per-request path, so a legacy -1 from the old
+  // "-1 = full context" UI has to be dropped, not passed through. Omitting the
+  // key lets upstream's own default (64) apply.
+  repeat_last_n: {
+    yamlKey: 'repeat_last_n',
+    coerce: (v) => {
+      if (v === '' || v == null) return null
+      const n = typeof v === 'number' ? v : Number(v)
+      return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null
+    },
+  },
   repeat_penalty: { yamlKey: 'repeat_penalty', coerce: coerceFloatSetting },
   presence_penalty: { yamlKey: 'presence_penalty', coerce: coerceFloatSetting },
   frequency_penalty: {
@@ -244,7 +268,9 @@ const MODEL_SETTINGS_YAML_MAPPING: Record<
     coerce: (v) => {
       if (v === '' || v == null) return null
       const n = typeof v === 'number' ? v : Number(v)
-      return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null
+      // -1 is auto (VRAM-aware) and -2 or below means all layers, so the floor
+      // is -2 rather than 0.
+      return Number.isFinite(n) && n >= -2 ? Math.floor(n) : null
     },
   },
   chat_template: {
@@ -312,22 +338,6 @@ async function readPersistedLlamacppModels(): Promise<PersistedModelState[]> {
   }
 }
 
-// Interface settings persist to the Rust settings store (settings.json), not
-// webview localStorage — see web-app/src/lib/backendStorage.ts. The value is
-// the Zustand-persisted blob `{ state: {...} }`. Defaults to true (feature on).
-async function readAutoGenerateTitleSetting(): Promise<boolean> {
-  try {
-    const raw = await getBackendSetting(INTERFACE_SETTINGS_STORE_KEY)
-    if (!raw) return true
-    const parsed = JSON.parse(raw)
-    const value = parsed?.state?.autoGenerateTitle
-    return typeof value === 'boolean' ? value : true
-  } catch (error) {
-    logger.warn('Failed to read autoGenerateTitle setting:', error)
-    return true
-  }
-}
-
 /**
  * Breadth-first search of `rootDir` for the directory directly containing
  * a file named `serverName`. Returns the absolute path of that directory,
@@ -384,7 +394,7 @@ async function findLlamaServerDir(
 //  - lib/
 //    - e.g. libcudart.so.12
 
-export default class llamacpp_extension extends AIEngine {
+export default class llamacpp_extension extends AIEngine implements EmbeddingEngine {
   provider: string = 'llamacpp'
   timeout: number = 600
   llamacpp_env: string = ''
@@ -394,65 +404,46 @@ export default class llamacpp_extension extends AIEngine {
   private providerPath!: string
   private apiSecret: string = 'JustAskNow'
   private pendingDownloads: Map<string, Promise<void>> = new Map()
-  private isConfiguringBackends: boolean = false
-  private isUpdatingBackend: boolean = false
-  private currentUpdate: Promise<{
-    wasUpdated: boolean
-    newBackend: string
-  }> | null = null
-  private pendingUpdate: Promise<{
-    wasUpdated: boolean
-    newBackend: string
-  }> | null = null
-  private pendingTarget: string | null = null
+  /** Keyed by modelId; two imports of one model would cancel each other. */
+  private pendingImports: Map<string, Promise<void>> = new Map()
+  private embedderBootstrapError?: string
+  /**
+   * True while the fallback embedder is being fetched.
+   *
+   * The old readiness gate keyed off "no backend selected yet", which happened
+   * to cover this window on a fresh install. The engine ships with the app now,
+   * so that proxy is gone and this is the direct signal -- without it, a normal
+   * first-run download is reported as a failed embedding check.
+   */
+  private embedderBootstrapping = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private unlistenValidationStarted?: () => void
 
-  private routerPort?: number
-  private routerApiKey?: string
-  private routerStartLock: Promise<void> | null = null
+  private enginePort?: number
+  private engineApiKey?: string
+  private presetPath?: string
+  private engineStartLock: Promise<void> | null = null
   private userModelsMax: number = 1
-  private routerEmbeddingBonus: number = 0
+  private engineEmbeddingBonus: number = 0
   private loadedChatOrder: string[] = []
 
-  // Backend discovery + router spawn run off the onLoad critical path; awaited
-  // via ensureRouterReady() before any model load so inference never races it.
+  // The engine worker spawn runs off the onLoad critical path; awaited via
+  // ensureEngineReady() before any model load so inference never races it.
   private backgroundInit?: Promise<void>
+  /** Single-flight provisioning run; see ensureProvisioned(). */
+  private provisioning?: Promise<void>
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
 
     await this.migrateLocalStorageToFile()
 
-    let settings = structuredClone(SETTINGS) // Clone to modify settings definition before registration
-
-    // Migration: legacy `version_backend` (single composite string) → split
-    // into `llamacpp_version` + `llamacpp_backend`. Read from localStorage
-    // before registerSettings overwrites the persisted set.
-    try {
-      const prior = await this.getSettings()
-      const legacy = prior.find((s) => s.key === 'version_backend')
-      const legacyValue = legacy?.controllerProps?.value
-      if (
-        typeof legacyValue === 'string' &&
-        legacyValue.includes('/') &&
-        legacyValue !== 'none'
-      ) {
-        const [v, b] = legacyValue.split('/')
-        if (v && b) {
-          const vSetting = settings.find((s) => s.key === 'llamacpp_version')
-          const bSetting = settings.find((s) => s.key === 'llamacpp_backend')
-          if (vSetting) vSetting.controllerProps.value = v
-          if (bSetting) bSetting.controllerProps.value = b
-          logger.info(
-            `Migrated legacy version_backend '${legacyValue}' → version='${v}', backend='${b}'`
-          )
-        }
-      }
-    } catch (e) {
-      logger.warn('version_backend migration check failed (ignored):', e)
-    }
-
+    // The engine is bundled at a pinned version, so there is no backend or
+    // version to migrate or select. `registerSettings` drops the keys that no
+    // longer exist in SETTINGS (llamacpp_version, llamacpp_backend,
+    // check_for_updates, auto_update_engine, verify_backend_deps) from the
+    // persisted set on its own.
+    const settings = structuredClone(SETTINGS)
     await this.registerSettings(settings)
 
     let loadedConfig: any = {}
@@ -465,7 +456,6 @@ export default class llamacpp_extension extends AIEngine {
       )
     }
     this.config = loadedConfig as LlamacppConfig
-    this.recomposeVersionBackend()
 
     // Auto-fit is disabled by default on all platforms; ctx-size owns context
     // sizing. Force off for users a prior build left with fit enabled.
@@ -473,7 +463,7 @@ export default class llamacpp_extension extends AIEngine {
 
     await this.migrateAutoUnloadToModelsMax()
 
-    this.timeout = this.config.timeout
+    this.timeout = asI32(this.config.timeout, DEFAULT_TIMEOUT) || DEFAULT_TIMEOUT
     this.llamacpp_env = this.config.llamacpp_env
 
     // This sets the base directory where model files for this provider are stored.
@@ -489,40 +479,59 @@ export default class llamacpp_extension extends AIEngine {
       events.emit(DownloadEvent.onModelValidationStarted, event.payload)
     })
 
-    // Defer the slow, fail-soft startup (network + subprocess) off onLoad so
-    // the UI unblocks; performLoad awaits it via ensureRouterReady().
-    //
-    // When a usable backend is already installed, start the router first so
-    // inference is available without waiting on the network-bound update check.
-    // A restart on the new binary is owned by updateBackend, which needs it to
-    // health-check the switch. On a fresh install (no backend yet)
-    // configureBackends must run first to download one before the router can start.
-    this.backgroundInit = (async () => {
-      if (await this.hasInstalledBackend()) {
-        try {
-          await this.startRouter()
-        } catch (e) {
-          logger.error('Router failed to start during onLoad:', e)
-        }
-        try {
-          await this.configureBackends()
-        } catch (e) {
-          logger.error('configureBackends failed during onLoad:', e)
-        }
-      } else {
-        try {
-          await this.configureBackends()
-        } catch (e) {
-          logger.error('configureBackends failed during onLoad:', e)
-        }
-        try {
-          await this.startRouter()
-        } catch (e) {
-          logger.error('Router failed to start during onLoad:', e)
-        }
+    // Deferred off onLoad so the UI unblocks; performLoad awaits it via
+    // ensureEngineReady(). The engine is bundled with the app now, so there is
+    // no backend catalog fetch and no hundreds-of-megabytes download to ask
+    // consent for -- only the fallback embedder, which bootstrapDefaultEmbedder
+    // still gates on setup consent.
+    this.backgroundInit = this.ensureProvisioned()
+  }
+
+  private async hasSetupConsent(): Promise<boolean> {
+    try {
+      return Boolean(await getBackendSetting(SETUP_CONSENT_KEY))
+    } catch (e) {
+      // A readable answer is not worth blocking startup over; erring towards
+      // "not consented" only defers work the user can still trigger.
+      logger.warn('Could not read the first-run setup flag:', e)
+      return false
+    }
+  }
+
+  /**
+   * Runs the first-run provisioning the setup screen asked for, and remembers
+   * that it was asked so a later launch does not wait again.
+   */
+  async startFirstRunSetup(): Promise<void> {
+    try {
+      await setBackendSetting(SETUP_CONSENT_KEY, 'true')
+    } catch (e) {
+      logger.warn('Could not persist the first-run setup flag:', e)
+    }
+    await this.ensureProvisioned()
+  }
+
+  /**
+   * Starts the engine, then installs the fallback embedder. Single-flight:
+   * startup, the setup screen and the first model load can all ask for it, and
+   * only one run happens.
+   *
+   * There is no backend selection step any more -- the engine is linked into
+   * the shipped worker at a pinned version, so the ordering dance between
+   * "download a backend first" and "start first for availability" is gone.
+   */
+  private ensureProvisioned(): Promise<void> {
+    this.provisioning ??= (async () => {
+      try {
+        await this.startEngine()
+      } catch (e) {
+        logger.error('Engine failed to start during provisioning:', e)
+        this.reportMissingLibrariesFromError(e)
       }
       await this.bootstrapDefaultEmbedder()
     })()
+    this.backgroundInit = this.provisioning
+    return this.provisioning
   }
 
   /**
@@ -537,39 +546,155 @@ export default class llamacpp_extension extends AIEngine {
   private async bootstrapDefaultEmbedder(): Promise<void> {
     try {
       if (await getBackendSetting(EMBEDDER_BOOTSTRAP_KEY)) return
-      const models = await this.list()
-      const hasEmbedder = models.some(
-        (m) => (m as { embedding?: boolean }).embedding === true
-      )
-      if (!hasEmbedder) {
+      if (!(await this.hasEmbedderInstalled())) {
+        // Set only around the actual fetch, and only when there is one to do:
+        // an install that is already present must not flash a pending state.
+        this.embedderBootstrapping = true
         await this.import(FALLBACK_EMBEDDING_MODEL_ID, {
           modelPath: FALLBACK_EMBEDDING_MODEL_URL,
         })
+        // A stopped or cancelled download resolves without throwing, so the
+        // install has to be confirmed before the one-shot flag is recorded --
+        // otherwise bootstrap marks itself done and never retries.
+        if (!(await this.hasEmbedderInstalled())) {
+          throw new Error(
+            `Import of "${FALLBACK_EMBEDDING_MODEL_ID}" did not complete`
+          )
+        }
         logger.info(
           `Pre-installed fallback embedding model "${FALLBACK_EMBEDDING_MODEL_ID}" at startup`
         )
       }
       await setBackendSetting(EMBEDDER_BOOTSTRAP_KEY, 'true')
+      this.embedderBootstrapError = undefined
     } catch (e) {
+      this.embedderBootstrapError = e instanceof Error ? e.message : String(e)
       logger.warn(
         'Fallback embedder bootstrap failed (will import on demand):',
         e
       )
+    } finally {
+      // In `finally` so a thrown import cannot leave the checklist reporting
+      // "downloading" for the rest of the session.
+      this.embedderBootstrapping = false
     }
   }
 
-  // True when config.version_backend names a backend that's already downloaded,
-  // so the router can spawn without waiting on configureBackends.
-  private async hasInstalledBackend(): Promise<boolean> {
-    const vb = this.config?.version_backend
-    if (!vb || vb === 'none' || !vb.includes('/')) return false
-    const [version, backend] = vb.split('/')
-    if (!version || !backend) return false
+  private async hasEmbedderInstalled(): Promise<boolean> {
+    const models = await this.list()
+    return models.some((m) => (m as { embedding?: boolean }).embedding === true)
+  }
+
+  /**
+   * Why the startup embedder install failed, for setup to report. Undefined
+   * when it succeeded or has not run; the import is retried on demand, so this
+   * is advisory rather than terminal.
+   */
+  /**
+   * A launch failure that names unresolvable libraries is the one dependency
+   * problem a bundled engine still has: the GPU driver runtime (CUDA, Vulkan)
+   * lives on the user's machine, not in the app. Raises the same dependency
+   * dialog the old pre-flight backend verification did.
+   */
+  private reportMissingLibrariesFromError(error: unknown): void {
+    const err = error as { code?: string; missing_libraries?: unknown }
+    if (err?.code !== 'MISSING_SHARED_LIBRARY') return
+
+    const libs = Array.isArray(err.missing_libraries)
+      ? err.missing_libraries.filter(
+          (lib): lib is string => typeof lib === 'string'
+        )
+      : []
+    if (libs.length === 0) return
+
+    // The engine is bundled, so there is no selected variant to name. The
+    // unresolved library itself identifies the runtime that is missing, and
+    // getBackendDisplayName matches on exactly these substrings.
+    const joined = libs.join(' ').toLowerCase()
+    const backend = ['cuda', 'vulkan', 'hip', 'metal'].find((b) =>
+      joined.includes(b)
+    )
+    events.emit(AppEvent.onBackendVerificationFailed, {
+      backend: backend ?? '',
+      missingLibraries: libs,
+    })
+  }
+
+  getEmbedderBootstrapError(): string | undefined {
+    return this.embedderBootstrapError
+  }
+
+  /**
+   * Proves the embedding model can actually produce a usable vector, rather
+   * than inferring health from a completed download. Never throws: setup
+   * reports the problem and lets the user continue.
+   */
+  async verifyEmbeddingModel(): Promise<EmbeddingModelReport> {
+    // Downloading it is not a defect. Probing mid-download would fail on a
+    // model that is simply not there yet and report a warning for it.
+    if (this.embedderBootstrapping) {
+      return { status: 'ok', pending: true }
+    }
+
+    let modelId: string | undefined
     try {
-      return await isBackendInstalled(backend, version)
+      const sInfo = await this.ensureEmbeddingModelLoaded()
+      modelId = sInfo.model_id
+      const response = await this.embed([EMBEDDING_PROBE_TEXT])
+      const check = evaluateEmbeddingVector(response?.data?.[0]?.embedding)
+      return {
+        status: check.ok ? 'ok' : 'warning',
+        modelId,
+        dimension: check.dimension,
+        problem: check.problem,
+      }
     } catch (e) {
-      logger.warn('isBackendInstalled probe failed during onLoad:', e)
-      return false
+      // A failed startup install is the more specific cause, and it is the one
+      // the user can act on.
+      return {
+        status: 'warning',
+        modelId,
+        error:
+          this.getEmbedderBootstrapError() ??
+          (e instanceof Error ? e.message : String(e)),
+      }
+    }
+  }
+
+  /**
+   * Detects a GPU backend that runs entirely on the CPU. Such a router starts
+   * cleanly and reports healthy, so this comparison against the engine's own
+   * device list is the only signal that offload never happened.
+   */
+  async verifyGpuOffload(): Promise<GpuOffloadReport> {
+    let devices: DeviceList[]
+    try {
+      devices = await this.getDevices()
+    } catch (e) {
+      // Without a device list there is no basis for a reason code, and guessing
+      // one would point the user at the wrong fix.
+      return {
+        status: 'warning',
+        backend: '',
+        gpuExpected: false,
+        engineDeviceCount: 0,
+        error: e instanceof Error ? e.message : String(e),
+      }
+    }
+
+    let hardwareGpuCount = 0
+    try {
+      hardwareGpuCount = (await getSystemInfo())?.gpus?.length ?? 0
+    } catch (e) {
+      logger.warn('Hardware GPU probe failed during setup verification:', e)
+    }
+
+    return {
+      backend: backendFromDeviceIds(devices.map((d) => d.id)),
+      ...evaluateGpuOffload({
+        engineDeviceCount: devices.length,
+        hardwareGpuCount,
+      }),
     }
   }
 
@@ -674,260 +799,178 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private async persistRecommended(
-    key: string,
-    value: string
-  ): Promise<void> {
-    const settings = await readSettingsFile()
-    const entry = settings.find((s) => s.key === key)
-    if (!entry) return
-    const cp = entry.controllerProps as { recommended?: string }
-    if (cp.recommended === value) return
-    cp.recommended = value
-    await writeSettingsFile(settings)
+  /**
+   * Serialized: two concurrent calls would each run the stop-then-spawn
+   * sequence, and the second would kill the worker the first had just brought
+   * up. A late caller gets the in-flight start rather than a restart.
+   */
+  private async startEngine(): Promise<void> {
+    const inflight = this.engineStartLock
+    if (inflight) {
+      logger.info('startEngine already in progress; awaiting the in-flight run')
+      await inflight.catch(() => undefined)
+      return
+    }
+    this.engineStartLock = this.runStartEngine().finally(() => {
+      this.engineStartLock = null
+    })
+    return this.engineStartLock
   }
 
-  private recomposeVersionBackend(): void {
-    const v = this.config?.llamacpp_version
-    const b = this.config?.llamacpp_backend
-    if (v && b && v !== 'none' && b !== 'none') {
-      this.config.version_backend = `${v}/${b}`
-    } else if (!this.config.version_backend) {
-      this.config.version_backend = ''
+  private async runStartEngine(): Promise<void> {
+    const providerPath = await this.getProviderPath()
+    const janDataFolderPath = await getJanDataFolderPath()
+    const { path: presetPath, embeddingCount } = await generatePreset(
+      providerPath,
+      janDataFolderPath,
+      this.config
+    )
+
+    const modelsMax = this.resolveModelsMax(embeddingCount)
+
+    // Idempotent in the plugin: a second start returns the running worker
+    // rather than orphaning it, so a redundant call is a no-op instead of a
+    // cold restart. That is also why there is no adoption dance here: the
+    // worker exits on stdin EOF, which the OS delivers when this process dies
+    // by any means -- including SIGKILL, where kill_on_drop never runs -- so
+    // there is nothing to adopt or reap. Not because a child dies with its
+    // parent; it does not, it gets reparented.
+    const envs: Record<string, string> = {}
+    envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
+    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
+
+    const info = await startEngine(
+      presetPath,
+      modelsMax,
+      this.resolveThreadCacheBudget(),
+      envs
+    )
+    this.enginePort = info.port
+    this.engineApiKey = info.api_key
+    this.presetPath = presetPath
+    logger.info(
+      `Engine worker started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax}, ${info.models.length} models registered, preset=${presetPath})`
+    )
+  }
+
+  /**
+   * Drops a thread's saved prompt cache, for a thread the user deleted.
+   *
+   * Best-effort by design: the cache is invisible to the user and the store
+   * prunes by size anyway, so failing here must not make deleting a thread
+   * fail. Returns how many states were dropped.
+   */
+  async forgetThreadCache(threadId: string): Promise<number> {
+    try {
+      return await eraseThreadSlotState({
+        threadId,
+        cacheDir: threadCacheDir(await this.getProviderPath()),
+      })
+    } catch (e) {
+      logger.warn(`could not drop the saved cache for thread ${threadId}: ${e}`)
+      return 0
     }
   }
 
   /**
-   * Serialized: two concurrent calls would each run the stop-then-spawn
-   * sequence below, and the second would kill the router the first had just
-   * brought up. A late caller gets the in-flight start rather than a restart.
+   * The disk budget for saved thread caches, in MiB.
+   *
+   * 0 is the off switch on the worker side, so the toggle and the size collapse
+   * into one number: a disabled feature and a zero budget are the same thing,
+   * and keeping them separate would let the worker create a directory it would
+   * never write to.
    */
-  private async startRouter(): Promise<void> {
-    const inflight = this.routerStartLock
-    if (inflight) {
-      logger.info('startRouter already in progress; awaiting the in-flight run')
-      await inflight.catch(() => undefined)
-      return
-    }
-    this.routerStartLock = this.runStartRouter().finally(() => {
-      this.routerStartLock = null
-    })
-    return this.routerStartLock
+  private resolveThreadCacheBudget(): number {
+    if (this.config.persist_thread_cache === false) return 0
+    const raw = Number(this.config.thread_cache_size)
+    if (!Number.isFinite(raw) || raw <= 0) return 0
+    return Math.floor(raw)
   }
 
-  private async runStartRouter(): Promise<void> {
-    const versionBackend = this.config?.version_backend
-    if (
-      !versionBackend ||
-      versionBackend === 'none' ||
-      !versionBackend.includes('/')
-    ) {
-      logger.info(
-        'Router will start once backend is configured (no version_backend yet).'
-      )
-      return
-    }
-
-    const [version, backend] = versionBackend.split('/')
-    if (!version || !backend) {
-      logger.warn(
-        `Skipping router start; malformed version_backend: ${versionBackend}`
-      )
-      return
-    }
-
-    const providerPath = await this.getProviderPath()
-    const janDataFolderPath = await getJanDataFolderPath()
-    const build = parseBuildNumber(version)
-    const supportsMtp = build !== null && build >= MTP_MIN_BUILD
-    const { path: presetPath, embeddingCount } = await generatePreset(
-      providerPath,
-      janDataFolderPath,
-      this.config,
-      {
-        supportsMtp,
-        reservedBackgroundSlots: (await readAutoGenerateTitleSetting()) ? 1 : 0,
-      }
-    )
-
-    const backendExe = await getBackendExePath(backend, version)
-
-    const rawMax = (this.config as any).models_max
+  /**
+   * `models_max` including the embedding slot bonus.
+   *
+   * Reserves one extra slot when any embedder is installed so loading it does
+   * not evict the user's chat model. Only one embedding model is ever resident
+   * (RAG calls load() once per request), so the bonus is +1 regardless of how
+   * many are installed. 0 (unlimited) stays unlimited.
+   */
+  private resolveModelsMax(embeddingCount: number): number {
+    const raw = (this.config as { models_max?: unknown }).models_max
     let modelsMax = 1
-    if (typeof rawMax === 'number') modelsMax = rawMax
-    else if (typeof rawMax === 'string' && rawMax.trim().length > 0) {
-      const n = parseInt(rawMax, 10)
+    if (typeof raw === 'number') modelsMax = raw
+    else if (typeof raw === 'string' && raw.trim().length > 0) {
+      const n = parseInt(raw, 10)
       if (!Number.isNaN(n) && n >= 0) modelsMax = n
     }
-    // Reserve a single extra slot when any embedder is installed, so loading
-    // an embedder doesn't evict the user's chat model. Only one embedding is
-    // ever loaded at a time (RAG calls load() once per request), so the bonus
-    // is +1 regardless of how many embedders are installed. 0 (unlimited)
-    // stays unlimited.
-    const userModelsMax = modelsMax
-    this.userModelsMax = userModelsMax
-    const embeddingSlotBonus =
-      modelsMax > 0 && embeddingCount > 0 ? 1 : 0
-    modelsMax += embeddingSlotBonus
-    this.routerEmbeddingBonus = embeddingSlotBonus
-
-    // Adoption runs before any stop, and is the only thing allowed to end an
-    // existing router here. It reuses a process whose backend, preset and
-    // models_max still match, and kills one whose config has moved on. A router
-    // can outlive the UI (crash, SIGKILL, power loss) since kill_on_drop never
-    // runs, so this both rescues orphans holding VRAM and makes a redundant
-    // call a no-op instead of a needless cold restart.
-    let adopted: Awaited<ReturnType<typeof adoptRouter>> = null
-    try {
-      adopted = await adoptRouter(
-        backendExe,
-        presetPath,
-        modelsMax,
-        this.apiSecret
-      )
-    } catch (e) {
-      logger.warn('Router adoption failed; starting a fresh router:', e)
-    }
-    if (adopted) {
-      this.routerPort = adopted.port
-      this.routerApiKey = adopted.api_key
-      logger.info(
-        `Reusing router on port ${adopted.port} (pid ${adopted.pid}); skipping spawn`
-      )
-      return
-    }
-
-    // Adoption found nothing to adopt, or declined a process it could not
-    // verify against the lock. A live router with no matching lock would make
-    // start_router reject, so clear it.
-    try {
-      const existing = await invoke<{ port: number; api_key: string } | null>(
-        'plugin:llamacpp|get_router_info'
-      )
-      if (existing) {
-        await invoke('plugin:llamacpp|stop_router').catch(() => undefined)
-      }
-    } catch {
-      /* ignore probe failures */
-    }
-
-    const port = await this.getRandomPort()
-    const apiKey = await this.generateApiKey('router', String(port))
-
-    const envs: Record<string, string> = {}
-    envs['LLAMA_API_KEY'] = apiKey
-    envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
-    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
-
-    // --no-webui was renamed to --no-ui in upstream b9222. Keep the legacy
-    // flag for older backends; the deprecated form still works on newer ones
-    // but emits a warning, so prefer the new spelling when available.
-    const NO_UI_RENAME_BUILD = 9222
-    const noUiFlag =
-      build !== null && build >= NO_UI_RENAME_BUILD ? '--no-ui' : '--no-webui'
-
-    // Beside app.log in the managed logs folder, where a bug report will look.
-    // The filename is derived from the port inside the plugin.
-    const logDir = await joinPath([janDataFolderPath, 'logs'])
-
-    const info = await invoke<{ port: number; api_key: string; pid: number }>(
-      'plugin:llamacpp|start_router',
-      {
-        backendExe,
-        presetPath,
-        logDir,
-        port,
-        apiKey,
-        modelsMax,
-        defaultArgs: [noUiFlag],
-        envs,
-      }
-    )
-
-    this.routerPort = info.port
-    this.routerApiKey = info.api_key
-    logger.info(
-      `Router started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax} [user=${userModelsMax}, +${embeddingSlotBonus} embedding, ${embeddingCount} installed], preset=${presetPath})`
-    )
+    this.userModelsMax = modelsMax
+    const bonus = modelsMax > 0 && embeddingCount > 0 ? 1 : 0
+    this.engineEmbeddingBonus = bonus
+    return modelsMax + bonus
   }
 
   /**
    * Apply a preset change (model added/removed/renamed or a per-model setting)
-   * to the router. On a backend with the reload diff path (b9023+), regenerate
-   * `router.preset.ini` and hot-reload via `GET /models?reload=1` — models whose
-   * preset is unchanged stay loaded, so an embedder import or a settings write no
-   * longer cold-reloads the user's chat model. Falls back to a full restart when
-   * the router isn't running yet, the backend is too old, or the reload fails.
+   * to the running worker. Models whose preset section is unchanged stay
+   * loaded, so an embedder import or a settings write no longer cold-reloads
+   * the model the user is talking to.
+   *
+   * Unlike the router this also resizes `models_max`, so a change in the
+   * embedding slot bonus no longer needs a restart either -- which was the one
+   * remaining case that evicted a live chat model.
    */
-  private async refreshRouterPreset(): Promise<void> {
-    if (!(await this.getRouterInfo())) {
-      await this.startRouter() // cold start
-      return
-    }
-
-    const versionBackend = this.config?.version_backend
-    const version = versionBackend?.split('/')[0]
-    const build = version ? parseBuildNumber(version) : null
-    if (build === null || build < RELOAD_MIN_BUILD) {
-      await this.startRouter() // backend predates live reload
+  private async refreshEnginePreset(): Promise<void> {
+    if (!(await this.getEngineInfo())) {
+      await this.startEngine() // cold start
       return
     }
 
     const providerPath = await this.getProviderPath()
     const janDataFolderPath = await getJanDataFolderPath()
-    const supportsMtp = build >= MTP_MIN_BUILD
-    const { embeddingCount } = await generatePreset(
+    const { path: presetPath, embeddingCount } = await generatePreset(
       providerPath,
       janDataFolderPath,
-      this.config,
-      {
-        supportsMtp,
-        reservedBackgroundSlots: (await readAutoGenerateTitleSetting()) ? 1 : 0,
-      }
+      this.config
     )
-
-    // models_max is fixed at router spawn; a live reload can't grow it. If an
-    // embedder appeared (e.g. sentence-transformer-mini imported on demand) or
-    // the last one was removed, restart so the +1 embedding slot is applied —
-    // otherwise chat and embedding models evict each other on every RAG call.
-    const requiredBonus =
-      this.userModelsMax > 0 && embeddingCount > 0 ? 1 : 0
-    if (requiredBonus !== this.routerEmbeddingBonus) {
-      logger.info(
-        `Embedding slot bonus changed (${this.routerEmbeddingBonus} -> ${requiredBonus}); restarting router to resize models_max`
-      )
-      await this.startRouter()
-      return
-    }
+    this.presetPath = presetPath
 
     try {
-      await reloadRouterModels()
-      logger.info('Router preset hot-reloaded without restart')
+      const report = await reloadEngineModels(
+        presetPath,
+        this.resolveModelsMax(embeddingCount),
+        this.resolveThreadCacheBudget()
+      )
+      logger.info(
+        `Engine preset reloaded: +${report.added.length} ~${report.changed.length} -${report.removed.length}, ${report.kept.length} kept loaded`
+      )
     } catch (e) {
-      logger.warn('Live router reload failed; falling back to restart:', e)
-      await this.startRouter()
+      logger.warn('Live engine reload failed; falling back to restart:', e)
+      await this.startEngine()
     }
   }
 
   /**
-   * Public accessor for downstream consumers. Returns `null` if the router
-   * hasn't been started successfully yet.
+   * Public accessor for downstream consumers. Returns `null` if the engine
+   * worker hasn't started successfully yet.
    */
-  async getRouterInfo(): Promise<{ port: number; apiKey: string } | null> {
-    if (this.routerPort != null && this.routerApiKey) {
-      return { port: this.routerPort, apiKey: this.routerApiKey }
-    }
+  async getEngineInfo(): Promise<{ port: number; apiKey: string } | null> {
+    // Deliberately not answered from the cached port: get_engine_info is the
+    // one place a worker that died is noticed -- it reaps the handle and
+    // reports nothing running -- and every caller here uses this as the
+    // liveness probe before deciding whether to respawn. Answering from
+    // enginePort would keep handing out a closed port for the rest of the
+    // session, which is exactly the crash the worker process exists to survive.
     try {
-      const info = await invoke<
-        { port: number; api_key: string; pid: number } | null
-      >('plugin:llamacpp|get_router_info')
+      const info = await pluginGetEngineInfo()
       if (info) {
-        this.routerPort = info.port
-        this.routerApiKey = info.api_key
+        this.enginePort = info.port
+        this.engineApiKey = info.api_key
         return { port: info.port, apiKey: info.api_key }
       }
+      this.enginePort = undefined
+      this.engineApiKey = undefined
     } catch (e) {
-      logger.warn('get_router_info failed:', e)
+      logger.warn('get_engine_info failed:', e)
     }
     return null
   }
@@ -947,10 +990,10 @@ export default class llamacpp_extension extends AIEngine {
       })
     | undefined
   > {
-    const router = await this.getRouterInfo()
-    if (!router || !modelId) return undefined
-    // Router runs with models_autoload=true, so `/props?model=X` against an
-    // unloaded model would trigger a load. Gate on the loaded-set first.
+    const engine = await this.getEngineInfo()
+    if (!engine || !modelId) return undefined
+    // A request naming an unloaded model loads it on demand, so `/props` alone
+    // would trigger a load. Gate on the loaded-set first.
     try {
       const loaded = await this.getLoadedModels()
       if (!loaded.includes(modelId)) return undefined
@@ -958,9 +1001,9 @@ export default class llamacpp_extension extends AIEngine {
       return undefined
     }
     try {
-      const url = `http://127.0.0.1:${router.port}/props?model=${encodeURIComponent(modelId)}`
+      const url = `http://127.0.0.1:${engine.port}/props?model=${encodeURIComponent(modelId)}`
       const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${router.apiKey}` },
+        headers: { Authorization: `Bearer ${engine.apiKey}` },
       })
       if (!res.ok) return undefined
       const json = (await res.json()) as {
@@ -1040,20 +1083,6 @@ export default class llamacpp_extension extends AIEngine {
     await setBackendSetting(MIGRATION_KEY, '1')
   }
 
-  private async getStoredBackendType(): Promise<string | null> {
-    return getBackendSetting('llama_cpp_backend_type')
-  }
-
-  private async setStoredBackendType(backendType: string): Promise<void> {
-    await setBackendSetting('llama_cpp_backend_type', backendType)
-    logger.info(`Stored backend type preference: ${backendType}`)
-  }
-
-  private async clearStoredBackendType(): Promise<void> {
-    await removeBackendSetting('llama_cpp_backend_type')
-    logger.info('Cleared stored backend type preference')
-  }
-
   private async migrateFitOff(): Promise<void> {
     const MIGRATION_KEY = 'llamacpp_fit_off_v1'
     if (await getBackendSetting(MIGRATION_KEY)) return
@@ -1079,12 +1108,16 @@ export default class llamacpp_extension extends AIEngine {
     if (await getBackendSetting(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY)) return
 
     const persistedModels = await readPersistedLlamacppModels()
+    const providerPath = await this.getProviderPath()
+
+    // v1's n_gpu_layers stamp lives in model.yml, not in the persisted
+    // settings, so it has to be swept even when nothing is persisted.
+    await this.stripLegacyNglFromModelYaml(providerPath)
+
     if (persistedModels.length === 0) {
       await setBackendSetting(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY, '1')
       return
     }
-
-    const providerPath = await this.getProviderPath()
 
     for (const persistedModel of persistedModels) {
       const modelId =
@@ -1104,6 +1137,16 @@ export default class llamacpp_extension extends AIEngine {
       })) as ModelConfig & Record<string, unknown>
 
       let touched = false
+
+      // Undo v1's n_gpu_layers stamp so upstream's auto offload applies again.
+      if (cfg.n_gpu_layers === LEGACY_NGL_DEFAULT) {
+        delete (cfg as Record<string, unknown>).n_gpu_layers
+        touched = true
+        logger.info(
+          `Removed legacy n_gpu_layers=${LEGACY_NGL_DEFAULT} from ${modelId}; GPU offload is auto again`
+        )
+      }
+
       for (const [sidebarKey, persistedSetting] of Object.entries(
         persistedModel.settings
       )) {
@@ -1112,7 +1155,13 @@ export default class llamacpp_extension extends AIEngine {
 
         if (mapping.yamlKey in cfg) continue
 
-        const next = mapping.coerce(persistedSetting?.controller_props?.value)
+        const value = persistedSetting?.controller_props?.value
+        // Never re-copy the legacy default; that is what v1 did.
+        if (sidebarKey === 'ngl' && Number(value) === LEGACY_NGL_DEFAULT) {
+          continue
+        }
+
+        const next = mapping.coerce(value)
         if (next === null) continue
 
         ;(cfg as Record<string, unknown>)[mapping.yamlKey] = next
@@ -1127,849 +1176,42 @@ export default class llamacpp_extension extends AIEngine {
     await setBackendSetting(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY, '1')
   }
 
-  async configureBackends(): Promise<void> {
-    if (this.isConfiguringBackends) {
-      logger.info(
-        'configureBackends already in progress, skipping duplicate call'
-      )
+  /**
+   * Removes v1's `n_gpu_layers: 100` stamp from every model.yml.
+   *
+   * Separate from the settings backfill because the stamp is in the yaml even
+   * for models that no longer appear in the persisted provider settings, so
+   * iterating the persisted list would miss them.
+   */
+  private async stripLegacyNglFromModelYaml(providerPath: string): Promise<void> {
+    const modelsDir = await joinPath([providerPath, 'models'])
+    if (!(await fs.existsSync(modelsDir))) return
+
+    let entries: string[] = []
+    try {
+      entries = await fs.readdirSync(modelsDir)
+    } catch (e) {
+      logger.warn('Could not list models while sweeping legacy ngl:', e)
       return
     }
 
-    this.isConfiguringBackends = true
-
-    try {
-      let version_backends: { version: string; backend: string }[] = []
-
+    for (const entry of entries) {
+      const configPath = await joinPath([entry, 'model.yml'])
       try {
-        version_backends = await listSupportedBackends(
-          this.config.check_for_updates !== false
-        )
-        if (version_backends.length === 0) {
-          throw new Error(
-            'No supported backend binaries found for this system. Backend selection and auto-update will be unavailable.'
-          )
-        } else {
-          version_backends.sort((a, b) => b.version.localeCompare(a.version))
-        }
-      } catch (error) {
-        throw new Error(
-          `Failed to fetch supported backends: ${
-            error instanceof Error ? error.message : error
-          }`
-        )
-      }
-
-      // Get stored backend preference
-      const storedBackendType = await this.getStoredBackendType()
-      let bestAvailableBackendString = ''
-
-      // "Recommended" is computed against upstream releases only — a
-      // user-side-loaded backend (Install from File) must not bias the
-      // suggestion. If we have no remote data (check_for_updates off or
-      // offline), there is no honest recommendation to surface.
-      const remoteOnly =
-        this.config.check_for_updates !== false
-          ? await fetchRemoteBackends()
-          : []
-      bestAvailableBackendString =
-        remoteOnly.length > 0
-          ? await this.determineBestBackend(remoteOnly)
-          : ''
-
-      if (storedBackendType) {
-        // Delegate migration check to Rust
-        const migrationTarget = await shouldMigrateBackend(
-          storedBackendType,
-          version_backends
-        )
-
-        if (migrationTarget) {
-          logger.info(
-            `Migrating stored backend type preference from old '${storedBackendType}' to new common type: '${migrationTarget}'`
-          )
-          await this.setStoredBackendType(migrationTarget)
-        }
-
-        const effectiveStoredBackendType = migrationTarget || storedBackendType
-
-        // Use the effective (migrated) type to find the latest version
-        const preferredBackendString = await findLatestVersionForBackend(
-          version_backends,
-          effectiveStoredBackendType
-        )
-
-        if (preferredBackendString) {
-          // Override bestAvailableBackendString with the user preference
-          // The returned string from Rust is "version/backend"
-          bestAvailableBackendString = preferredBackendString
-          logger.info(
-            `Using stored backend preference: ${bestAvailableBackendString}`
-          )
-        } else {
-          logger.warn(
-            `Stored backend type '${effectiveStoredBackendType}' not available, falling back to best backend`
-          )
-          // Clear the invalid stored preference
-          await this.clearStoredBackendType()
-          // bestAvailableBackendString remains as the priority one calculated earlier
-        }
-      }
-
-      let settings = structuredClone(SETTINGS)
-      const versionSetting = settings.find((s) => s.key === 'llamacpp_version')
-      const backendSetting = settings.find((s) => s.key === 'llamacpp_backend')
-      if (!versionSetting || !backendSetting) {
-        throw new Error(
-          'Critical settings "llamacpp_version" / "llamacpp_backend" not found.'
-        )
-      }
-
-      // Read prior persisted values (may have been pre-populated by the
-      // legacy-migration pass in onLoad, or carry user-edited values from a
-      // prior session).
-      const priorPersisted = await this.getSettings()
-      const priorVersion = String(
-        priorPersisted.find((s) => s.key === 'llamacpp_version')?.controllerProps
-          .value ?? ''
-      )
-      const priorBackend = String(
-        priorPersisted.find((s) => s.key === 'llamacpp_backend')?.controllerProps
-          .value ?? ''
-      )
-
-      // Flag versions already on disk so the dropdown distinguishes a rollback
-      // (instant, works offline) from a download.
-      const installedVersions = new Set(
-        (await getLocalInstalledBackends().catch((e) => {
-          logger.warn('Could not list local backends for the version list:', e)
-          return [] as { version: string; backend: string }[]
-        })).map((b) => b.version)
-      )
-
-      const allVersions = Array.from(
-        new Set(version_backends.map((b) => b.version))
-      )
-      versionSetting.controllerProps.options = allVersions.map((v) => ({
-        value: v,
-        name: v,
-        installed: installedVersions.has(v),
-      }))
-
-      const allBackends = Array.from(
-        new Set(version_backends.map((b) => b.backend))
-      )
-      backendSetting.controllerProps.options = allBackends.map((b) => ({
-        value: b,
-        name: b,
-      }))
-
-      const [bestVersion, bestBackend] =
-        bestAvailableBackendString.split('/')
-      if (bestVersion) versionSetting.controllerProps.recommended = bestVersion
-      if (bestBackend) backendSetting.controllerProps.recommended = bestBackend
-
-      // Decide initial UI values. Priority: valid prior selection → best-available.
-      let initialVersion = bestVersion || ''
-      let initialBackend = bestBackend || ''
-      if (
-        priorVersion &&
-        priorBackend &&
-        priorVersion !== 'none' &&
-        priorBackend !== 'none'
-      ) {
-        const normalizedBackend = await mapOldBackendToNew(priorBackend)
-        const composed = `${priorVersion}/${normalizedBackend}`
-        if (
-          version_backends.some(
-            (e) => `${e.version}/${e.backend}` === composed
-          )
-        ) {
-          initialVersion = priorVersion
-          initialBackend = normalizedBackend
-          const currentStoredBackend = await this.getStoredBackendType()
-          if (currentStoredBackend !== normalizedBackend) {
-            await this.setStoredBackendType(normalizedBackend)
-            logger.info(
-              `Stored backend type preference from saved setting: ${normalizedBackend}`
-            )
-          }
-        }
-      } else if (bestBackend) {
-        const currentStoredBackend = await this.getStoredBackendType()
-        if (currentStoredBackend !== bestBackend) {
-          await this.setStoredBackendType(bestBackend)
-          logger.info(
-            `Stored backend type preference from best available: ${bestBackend}`
-          )
-        }
-      }
-
-      versionSetting.controllerProps.value = initialVersion
-      backendSetting.controllerProps.value = initialBackend
-      logger.info(
-        `Initial UI defaults: llamacpp_version='${initialVersion}', llamacpp_backend='${initialBackend}'`
-      )
-
-      // Must await — registerSettings is async; without await, the
-      // persistRecommended writes below race with its merge+write and lose.
-      await this.registerSettings(settings)
-
-      // core's registerSettings preserves the previous `recommended` over the
-      // new one (see extension.ts:142-148). Force-write afterward so a stale
-      // recommendation from a prior session can't outlive a fresh compute.
-      await this.persistRecommended('llamacpp_version', bestVersion || '')
-      await this.persistRecommended('llamacpp_backend', bestBackend || '')
-
-      let effectiveBackendString = this.config.version_backend
-      let backendWasDownloaded = false
-
-      // Handle fresh installation case where version_backend might be 'none' or invalid
-      if (
-        (!effectiveBackendString ||
-          effectiveBackendString === 'none' ||
-          !effectiveBackendString.includes('/') ||
-          // If the selected backend is not in the list of supported backends
-          // Need to reset too
-          !version_backends.some(
-            (e) => `${e.version}/${e.backend}` === effectiveBackendString
-          )) &&
-        // Ensure we have a valid best available backend
-        bestAvailableBackendString
-      ) {
-        effectiveBackendString = bestAvailableBackendString
+        if (!(await fs.existsSync(configPath))) continue
+        // Read as a bag rather than ModelConfig: that type covers the
+        // plugin's own fields, not every per-model key the sidebar writes.
+        const cfg = await fs.readYaml<Record<string, unknown>>(configPath)
+        if (cfg?.n_gpu_layers !== LEGACY_NGL_DEFAULT) continue
+        delete cfg.n_gpu_layers
+        await fs.writeYaml(configPath, cfg)
         logger.info(
-          `Fresh installation or invalid backend detected, using: ${effectiveBackendString}`
+          `Removed legacy n_gpu_layers=${LEGACY_NGL_DEFAULT} from ${configPath}`
         )
-
-        const [newV, newB] = effectiveBackendString.split('/')
-        this.config.llamacpp_version = newV
-        this.config.llamacpp_backend = newB
-        this.recomposeVersionBackend()
-
-        const updatedSettings = await this.getSettings()
-        await this.updateSettings(
-          updatedSettings.map((item) => {
-            if (item.key === 'llamacpp_version') {
-              item.controllerProps.value = newV
-            } else if (item.key === 'llamacpp_backend') {
-              item.controllerProps.value = newB
-            }
-            return item
-          })
-        )
-        logger.info(`Updated UI settings to show: ${effectiveBackendString}`)
-
-        if (events && typeof events.emit === 'function') {
-          events.emit('settingsChanged', {
-            key: 'llamacpp_version',
-            value: newV,
-          })
-          events.emit('settingsChanged', {
-            key: 'llamacpp_backend',
-            value: newB,
-          })
-        }
+      } catch (e) {
+        // Per-model isolation: one unreadable yaml must not block the sweep.
+        logger.warn(`Legacy ngl sweep skipped ${configPath}:`, e)
       }
-
-      // Download and install the backend if not already present
-      if (effectiveBackendString) {
-        const [version, backend] = effectiveBackendString.split('/')
-        if (version && backend) {
-          const isInstalled = await isBackendInstalled(backend, version)
-          if (!isInstalled) {
-            logger.info(`Installing initial backend: ${effectiveBackendString}`)
-            await this.ensureBackendReady(backend, version)
-            backendWasDownloaded = true
-            logger.info(
-              `Successfully installed initial backend: ${effectiveBackendString}`
-            )
-          }
-        }
-      }
-
-      if (this.config.auto_update_engine && this.config.check_for_updates) {
-        const updateResult = await this.handleAutoUpdate(
-          bestAvailableBackendString
-        )
-        if (updateResult.wasUpdated) {
-          effectiveBackendString = updateResult.newBackend
-          backendWasDownloaded = true
-        }
-      }
-
-      if (!backendWasDownloaded && effectiveBackendString) {
-        await this.ensureFinalBackendInstallation(effectiveBackendString)
-      }
-
-      // Run dependency verification once after the backend is confirmed
-      // installed. This covers both fresh downloads and pre-existing installs,
-      // and runs only once per app startup via the isConfiguringBackends guard.
-      if (effectiveBackendString && this.config.verify_backend_deps !== false) {
-        // effectiveBackendString is expected to be "<version>/<backend>" (e.g.
-        // "b4589/linux-cuda-12"). Any other shape silently skips verification.
-        const [version, backend] = effectiveBackendString.split('/')
-        if (version && backend) {
-          // Advisory and fail-soft — defer to browser idle so it yields to the
-          // router (already up by now) and the UI instead of running inline.
-          const verify = () => void this.verifyBackendDeps(backend, version)
-          if (typeof window.requestIdleCallback === 'function')
-            window.requestIdleCallback(verify, { timeout: 3000 })
-          else setTimeout(verify, 0)
-        }
-      }
-    } finally {
-      this.isConfiguringBackends = false
-    }
-  }
-
-  /*
-   * Narrow refresh of the `version_backend` setting's options dropdown.
-   *
-   * Re-scans installed + remote backends and rewrites
-   * `controllerProps.options` on the persisted setting without re-running
-   * the heavy `configureBackends` flow (no autoupdate, no initial
-   * download, no dep verification). The user's current selection is
-   * preserved unless it disappeared from the list.
-   *
-   * Used by the manual "Install from file" flow so the just-extracted
-   * backend shows up in the dropdown immediately.
-   */
-  async refreshBackendOptions(): Promise<void> {
-    let version_backends: { version: string; backend: string }[] = []
-    try {
-      version_backends = await listSupportedBackends(
-        this.config.check_for_updates !== false
-      )
-    } catch (e) {
-      logger.error(
-        `refreshBackendOptions: failed to list supported backends: ${String(e)}`
-      )
-      return
-    }
-    if (version_backends.length === 0) {
-      logger.warn('refreshBackendOptions: no supported backends found')
-      return
-    }
-    version_backends.sort((a, b) => b.version.localeCompare(a.version))
-
-    const settings = await this.getSettings()
-    const versionSetting = settings.find((s) => s.key === 'llamacpp_version')
-    const backendSetting = settings.find((s) => s.key === 'llamacpp_backend')
-    if (!versionSetting || !backendSetting) {
-      logger.error(
-        'refreshBackendOptions: llamacpp_version/llamacpp_backend not found in persisted settings'
-      )
-      return
-    }
-
-    const allVersions = Array.from(
-      new Set(version_backends.map((b) => b.version))
-    )
-    const allBackends = Array.from(
-      new Set(version_backends.map((b) => b.backend))
-    )
-    ;(versionSetting.controllerProps as DropdownComponentProps).options =
-      allVersions.map((v) => ({
-        value: v,
-        name: v,
-      }))
-    ;(backendSetting.controllerProps as DropdownComponentProps).options =
-      allBackends.map((b) => ({
-        value: b,
-        name: b,
-      }))
-
-    const currentV = String(versionSetting.controllerProps.value ?? '')
-    const currentB = String(backendSetting.controllerProps.value ?? '')
-    const composedStillPresent =
-      currentV &&
-      currentB &&
-      version_backends.some(
-        (e) => e.version === currentV && e.backend === currentB
-      )
-    if (!composedStillPresent) {
-      const best = await this.determineBestBackend(version_backends)
-      const [bv, bb] = best.split('/')
-      if (bv && bb) {
-        versionSetting.controllerProps.value = bv
-        backendSetting.controllerProps.value = bb
-        this.config.llamacpp_version = bv
-        this.config.llamacpp_backend = bb
-        this.recomposeVersionBackend()
-      }
-    }
-
-    await this.registerSettings(settings)
-
-    if (events && typeof events.emit === 'function') {
-      events.emit('settingsChanged', {
-        key: 'llamacpp_version',
-        value: versionSetting.controllerProps.value,
-      })
-      events.emit('settingsChanged', {
-        key: 'llamacpp_backend',
-        value: backendSetting.controllerProps.value,
-      })
-    }
-  }
-
-  private async determineBestBackend(
-    version_backends: { version: string; backend: string }[]
-  ): Promise<string> {
-    if (version_backends.length === 0) return ''
-
-    // Check GPU memory availability via system info
-    let hasEnoughGpuMemory = false
-    try {
-      const sysInfo = await getSystemInfo()
-      for (const gpuInfo of sysInfo.gpus) {
-        if (gpuInfo.total_memory >= 6 * 1024) {
-          hasEnoughGpuMemory = true
-          break
-        }
-      }
-    } catch (error) {
-      logger.warn('Failed to get system info for GPU memory check:', error)
-      // Default to false if we can't determine GPU memory
-      hasEnoughGpuMemory = false
-    }
-
-    // Use Rust logic to prioritize backends
-    const result = await prioritizeBackends(
-      version_backends,
-      hasEnoughGpuMemory
-    )
-    return result.backend_string
-  }
-
-  /**
-   * Serializes backend updates. A request arriving mid-update is queued rather
-   * than dropped, and only the newest queued target survives -- if a user
-   * clicks through three versions while a download runs, the first two are
-   * obsolete by the time they could run. All callers waiting on the queued slot
-   * receive the same result.
-   */
-  async updateBackend(
-    targetBackendString: string
-  ): Promise<{ wasUpdated: boolean; newBackend: string }> {
-    if (this.currentUpdate) {
-      this.pendingTarget = targetBackendString
-      logger.info(
-        `Backend update in progress; queued ${targetBackendString} (supersedes any earlier queued target)`
-      )
-      events.emit(AppEvent.onBackendUpdateQueued, {
-        target: targetBackendString,
-      })
-
-      this.pendingUpdate ??= this.currentUpdate
-        .catch(() => undefined)
-        .then(() => {
-          const next = this.pendingTarget as string
-          this.pendingTarget = null
-          this.pendingUpdate = null
-          return this.updateBackend(next)
-        })
-      return this.pendingUpdate
-    }
-
-    // `runUpdate` clears currentUpdate inside its own body, so a queued
-    // continuation chained onto it always observes an idle slot.
-    this.currentUpdate = this.runUpdate(targetBackendString)
-    return this.currentUpdate
-  }
-
-  private async runUpdate(
-    targetBackendString: string
-  ): Promise<{ wasUpdated: boolean; newBackend: string }> {
-    this.isUpdatingBackend = true
-    const startedAt = Date.now()
-    const from = this.config.version_backend
-    let previous: BackendSelection | undefined
-
-    try {
-      if (!targetBackendString)
-        throw new Error(
-          `Invalid backend string: ${targetBackendString} supplied to update function`
-        )
-
-      const backendParts = targetBackendString.split('/')
-
-      if (
-        backendParts.length !== 2 ||
-        !backendParts[0]?.trim() ||
-        !backendParts[1]?.trim()
-      ) {
-        throw new Error(
-          `Invalid backend string format: "${targetBackendString}". Expected "version/backend".`
-        )
-      }
-
-      const [rawVersion, rawBackend] = backendParts
-      const version = rawVersion.trim()
-      const backend = rawBackend.trim()
-
-      // Normalize the target backend string to use trimmed values
-      targetBackendString = `${version}/${backend}`
-
-      logger.info(
-        `Updating backend to ${targetBackendString} (backend type: ${backend})`
-      )
-
-      previous = await this.captureBackendSelection()
-
-      // Download new backend using the original asset/backend name
-      await this.ensureBackendReady(backend, version)
-
-      // Add delay on Windows
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-      }
-
-      await this.commitBackendSelection(version, backend)
-
-      if (await this.restartRouterAndProbe()) {
-        logger.info(`Successfully updated to backend: ${targetBackendString}`)
-        await this.pruneOldBackendVersions(version, backend)
-        await this.recordUpdateHistory({
-          from,
-          to: targetBackendString,
-          outcome: 'updated',
-          durationMs: Date.now() - startedAt,
-        })
-        return { wasUpdated: true, newBackend: targetBackendString }
-      }
-
-      throw new Error(
-        `Router failed its health check on backend ${targetBackendString}`
-      )
-    } catch (error) {
-      logger.error('Backend update failed:', error)
-      const rollbackOutcome = await this.rollbackBackendSelection(previous)
-      await this.recordUpdateHistory({
-        from,
-        to: targetBackendString,
-        outcome:
-          rollbackOutcome === 'not-attempted' ? 'failed' : rollbackOutcome,
-        error: String(error),
-        durationMs: Date.now() - startedAt,
-      })
-      return { wasUpdated: false, newBackend: this.config.version_backend }
-    } finally {
-      this.isUpdatingBackend = false
-      this.currentUpdate = null
-    }
-  }
-
-  /**
-   * Every update outcome, newest first, for diagnosing a switch after the fact.
-   * Returns an empty list when nothing has been recorded yet.
-   */
-  async getBackendUpdateHistory(): Promise<BackendUpdateRecord[]> {
-    try {
-      const path = await joinPath([
-        await this.getProviderPath(),
-        UPDATE_HISTORY_FILENAME,
-      ])
-      if (!(await fs.existsSync(path))) return []
-      const parsed = JSON.parse(await fs.readFileSync(path, 'utf8'))
-      return Array.isArray(parsed) ? parsed : []
-    } catch (e) {
-      logger.warn('Could not read backend update history:', e)
-      return []
-    }
-  }
-
-  /**
-   * Append one outcome to the update log. Never throws: losing a diagnostic
-   * record must not turn a working update into a failed one.
-   */
-  private async recordUpdateHistory(
-    record: Omit<BackendUpdateRecord, 'timestamp'>
-  ): Promise<void> {
-    try {
-      const path = await joinPath([
-        await this.getProviderPath(),
-        UPDATE_HISTORY_FILENAME,
-      ])
-      const history = await this.getBackendUpdateHistory()
-      history.unshift({ timestamp: new Date().toISOString(), ...record })
-      await fs.writeFileSync(
-        path,
-        JSON.stringify(history.slice(0, UPDATE_HISTORY_LIMIT), null, 2)
-      )
-    } catch (e) {
-      logger.warn('Could not record backend update history:', e)
-    }
-  }
-
-  /**
-   * Prune superseded installs, keeping BACKEND_VERSIONS_RETAINED older ones as
-   * rollback targets. Runs only after the new backend has passed its health
-   * probe -- pruning earlier would delete the very copy a rollback needs.
-   * Best-effort: a full disk is worse than a failed update, but not by enough
-   * to undo a switch that already works.
-   */
-  private async pruneOldBackendVersions(
-    version: string,
-    backend: string
-  ): Promise<void> {
-    try {
-      const janDataFolderPath = await getJanDataFolderPath()
-      const backendsDir = await joinPath([
-        janDataFolderPath,
-        'llamacpp',
-        'backends',
-      ])
-
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 500))
-      }
-
-      const removed = await removeOldBackendVersions(
-        backendsDir,
-        version,
-        backend,
-        BACKEND_VERSIONS_RETAINED
-      )
-      if (removed.length) {
-        logger.info(`Pruned ${removed.length} superseded backend install(s)`)
-      }
-    } catch (cleanupError) {
-      logger.warn('Failed to remove old backend versions:', cleanupError)
-    }
-  }
-
-  private async captureBackendSelection(): Promise<BackendSelection> {
-    return {
-      version: this.config.llamacpp_version,
-      backend: this.config.llamacpp_backend,
-      storedType: (await this.getStoredBackendType()) || undefined,
-    }
-  }
-
-  /**
-   * Persist a backend choice across all three places it lives: the settings
-   * file, the stored type preference, and in-memory config. Settings are
-   * written before the in-memory mutation so a failure leaves config coherent.
-   */
-  private async commitBackendSelection(
-    version: string,
-    backend: string
-  ): Promise<void> {
-    const effectiveBackendType = await mapOldBackendToNew(backend)
-    const currentStoredBackend = await this.getStoredBackendType()
-
-    const settings = await this.getSettings()
-    await this.updateSettings(
-      settings.map((item) => {
-        if (item.key === 'llamacpp_version') {
-          item.controllerProps.value = version
-        } else if (item.key === 'llamacpp_backend') {
-          item.controllerProps.value = backend
-        }
-        return item
-      })
-    )
-
-    if (currentStoredBackend !== effectiveBackendType) {
-      await this.setStoredBackendType(effectiveBackendType)
-      logger.info(
-        `Updated stored backend type preference: ${effectiveBackendType}`
-      )
-    }
-
-    this.config.llamacpp_version = version
-    this.config.llamacpp_backend = backend
-    this.recomposeVersionBackend()
-    this.config.device = ''
-
-    if (events && typeof events.emit === 'function') {
-      events.emit('settingsChanged', { key: 'llamacpp_version', value: version })
-      events.emit('settingsChanged', { key: 'llamacpp_backend', value: backend })
-    }
-  }
-
-  /**
-   * Bring the router up on whatever backend config currently names and confirm
-   * it answers `/health`. A spawn that throws and a process that starts but
-   * can't serve are the same failure to the caller.
-   *
-   * This is the only gate on a backend switch. Static dependency analysis is
-   * deliberately not one: it is advisory on every other path and cannot be
-   * trusted to fail a switch (see verifyBackendInstallation).
-   */
-  private async restartRouterAndProbe(): Promise<boolean> {
-    try {
-      await this.startRouter()
-    } catch (e) {
-      logger.error('Router failed to start on updated backend:', e)
-      return false
-    }
-    return await routerHealth()
-  }
-
-  /**
-   * Restore the backend that was active before a failed update and bring its
-   * router back. Nothing to do when the update failed before the commit, or
-   * when there was no valid prior selection (first-run install).
-   */
-  private async rollbackBackendSelection(
-    previous: BackendSelection | undefined
-  ): Promise<'rolled-back' | 'rollback-failed' | 'not-attempted'> {
-    if (!previous?.version || !previous.backend) return 'not-attempted'
-    if (
-      this.config.llamacpp_version === previous.version &&
-      this.config.llamacpp_backend === previous.backend
-    ) {
-      return 'not-attempted'
-    }
-
-    const target = `${previous.version}/${previous.backend}`
-    logger.warn(`Rolling back to previous backend: ${target}`)
-    try {
-      await this.commitBackendSelection(previous.version, previous.backend)
-      if (previous.storedType) {
-        await this.setStoredBackendType(previous.storedType)
-      }
-      const healthy = await this.restartRouterAndProbe()
-      if (!healthy) {
-        logger.error(`Rollback target ${target} also failed its health check`)
-      }
-      events.emit(AppEvent.onBackendRollback, {
-        backend: previous.backend,
-        version: previous.version,
-      })
-      return healthy ? 'rolled-back' : 'rollback-failed'
-    } catch (e) {
-      logger.error(`Rollback to ${target} failed:`, e)
-      return 'rollback-failed'
-    }
-  }
-
-  private async handleAutoUpdate(
-    bestAvailableBackendString: string
-  ): Promise<{ wasUpdated: boolean; newBackend: string }> {
-    logger.info(
-      `Auto-update engine is enabled. Current backend: ${this.config.version_backend}. Best available: ${bestAvailableBackendString}`
-    )
-
-    if (!bestAvailableBackendString) {
-      logger.warn(
-        'Auto-update enabled, but no best available backend determined'
-      )
-      return { wasUpdated: false, newBackend: this.config.version_backend }
-    }
-
-    // If version_backend is empty, invalid, or 'none', use the best available backend
-    if (
-      !this.config.version_backend ||
-      this.config.version_backend === '' ||
-      this.config.version_backend === 'none' ||
-      !this.config.version_backend.includes('/')
-    ) {
-      logger.info(
-        'No valid backend currently selected, using best available backend'
-      )
-
-      return await this.updateBackend(bestAvailableBackendString)
-    }
-
-    // Use Rust checkBackendForUpdates logic implicitly here by using the helpers
-    const version_backends = await listSupportedBackends(true)
-    const checkResult = await checkBackendForUpdates(
-      this.config.version_backend,
-      version_backends
-    )
-
-    if (checkResult.update_needed && checkResult.target_backend) {
-      logger.info(
-        `Auto-updating to new version: ${checkResult.new_version} (${checkResult.target_backend})`
-      )
-      return await this.updateBackend(checkResult.target_backend)
-    }
-
-    // If no update needed, check if we need to fall back (e.g. current backend not supported anymore)
-    // The Rust check_backend_for_updates handles finding the latest version for current type.
-    // If it returns no target_backend, it means current type is not found.
-    if (!checkResult.target_backend) {
-      const [currentVersion, currentBackend] =
-        this.config.version_backend.split('/')
-      const currentEffectiveType = await mapOldBackendToNew(currentBackend)
-      const bestEffectiveType = await mapOldBackendToNew(
-        bestAvailableBackendString.split('/')[1]
-      )
-
-      if (currentEffectiveType !== bestEffectiveType) {
-        logger.info(
-          `Current backend type ${currentEffectiveType} not available, falling back to best available: ${bestAvailableBackendString}`
-        )
-        return await this.updateBackend(bestAvailableBackendString)
-      }
-    }
-
-    return { wasUpdated: false, newBackend: this.config.version_backend }
-  }
-
-  async checkBackendForUpdates(): Promise<{
-    updateNeeded: boolean
-    newVersion: string
-    targetBackend?: string
-  }> {
-    try {
-      const version_backends = await listSupportedBackends(true)
-      const result = await checkBackendForUpdates(
-        this.config.version_backend,
-        version_backends
-      )
-
-      return {
-        updateNeeded: result.update_needed,
-        newVersion: result.new_version,
-        targetBackend: result.target_backend,
-      }
-    } catch (e) {
-      logger.warn('Failed to check for updates via Rust command:', e)
-      return { updateNeeded: false, newVersion: '0' }
-    }
-  }
-
-  private async ensureFinalBackendInstallation(
-    backendString: string
-  ): Promise<void> {
-    if (!backendString) {
-      logger.warn('No backend specified for final installation check')
-      return
-    }
-
-    const [selectedVersion, selectedBackend] = backendString
-      .split('/')
-      .map((part) => part?.trim())
-
-    if (!selectedVersion || !selectedBackend) {
-      logger.warn(`Invalid backend format: ${backendString}`)
-      return
-    }
-
-    try {
-      const isInstalled = await isBackendInstalled(
-        selectedBackend,
-        selectedVersion
-      )
-      if (!isInstalled) {
-        logger.info(`Final check: Installing backend ${backendString}`)
-        await this.ensureBackendReady(selectedBackend, selectedVersion)
-        logger.info(`Successfully installed backend: ${backendString}`)
-      } else {
-        logger.info(
-          `Final check: Backend ${backendString} is already installed`
-        )
-      }
-    } catch (error) {
-      logger.error(
-        `Failed to ensure backend ${backendString} installation:`,
-        error
-      )
-      throw error // Re-throw as this is critical
     }
   }
 
@@ -1991,140 +1233,52 @@ export default class llamacpp_extension extends AIEngine {
       this.unlistenValidationStarted()
     }
 
-    // Deliberately does NOT stop the router. The router outlives any single
+    // Deliberately does NOT stop the engine worker. It outlives any single
     // extension instance: the app owns its lifetime and stops it on
-    // ExitRequested/Exit, and adoption reuses a survivor. An extension teardown
-    // is not an app exit -- React StrictMode and HMR both unload and immediately
-    // reload us, and awaiting backgroundInit here (as this used to) meant
-    // blocking until startRouter had adopted the router, then killing exactly
-    // the process it had just adopted.
-    this.routerPort = undefined
-    this.routerApiKey = undefined
+    // ExitRequested/Exit. An extension teardown is not an app exit -- React
+    // StrictMode and HMR both unload and immediately reload us, and awaiting
+    // backgroundInit here (as this used to) meant blocking until the worker was
+    // up, then killing exactly the process it had just started.
+    this.enginePort = undefined
+    this.engineApiKey = undefined
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
-    // configureBackends and updateBackend both persist settings themselves and
-    // own the router restart that follows, so every notification they trigger
-    // is an echo of their own write, and configureBackends writes the whole
-    // settings array rather than just the backend selection. This only
-    // suppresses echoes delivered while they are still running; a debounced
-    // restart outlives the flag. Reuse in startRouter, not this guard, is what
-    // keeps a late echo from respawning a healthy router.
-    const selfInflicted = this.isUpdatingBackend || this.isConfiguringBackends
-
-    if (
-      selfInflicted &&
-      (key === 'llamacpp_version' || key === 'llamacpp_backend')
-    ) {
-      return
-    }
-
     this.config[key] = value
 
-    if (key === 'llamacpp_version' || key === 'llamacpp_backend') {
-      ;(async () => {
-        try {
-          let v = this.config.llamacpp_version
-          let b = this.config.llamacpp_backend
-          if (!v || !b || v === 'none' || b === 'none') return
-
-          // Validate (v, b) combination exists; if not, auto-resolve the
-          // backend to the best one available for the chosen version.
-          const supported = await listSupportedBackends(
-            this.config.check_for_updates !== false
-          )
-          const combos = new Set(
-            supported.map((e) => `${e.version}/${e.backend}`)
-          )
-          if (!combos.has(`${v}/${b}`)) {
-            const candidates = supported.filter((e) => e.version === v)
-            if (candidates.length === 0) {
-              logger.warn(
-                `No backends available for version '${v}'; ignoring update.`
-              )
-              return
-            }
-            const best = await this.determineBestBackend(candidates)
-            const [, bb] = best.split('/')
-            if (!bb) return
-            b = bb
-            this.config.llamacpp_backend = bb
-            const settings = await this.getSettings()
-            await this.updateSettings(
-              settings.map((item) => {
-                if (item.key === 'llamacpp_backend') {
-                  item.controllerProps.value = bb
-                }
-                return item
-              })
-            )
-            if (events && typeof events.emit === 'function') {
-              events.emit('settingsChanged', {
-                key: 'llamacpp_backend',
-                value: bb,
-              })
-            }
-          }
-
-          this.recomposeVersionBackend()
-          const composite = this.config.version_backend
-          const currentStored =
-            (await this.getStoredBackendType()) || undefined
-          const result = await handleSettingUpdate(
-            'version_backend',
-            composite,
-            currentStored
-          )
-
-          if (result.backend_type_updated && result.effective_backend_type) {
-            await this.setStoredBackendType(result.effective_backend_type)
-            logger.info(
-              `Updated backend type preference to: ${result.effective_backend_type}`
-            )
-          }
-
-          if (result.version && result.backend) {
-            this.config.device = ''
-            await this.ensureBackendReady(result.backend, result.version)
-            try {
-              await this.startRouter()
-            } catch (e) {
-              logger.warn('Router restart after backend update failed:', e)
-            }
-          }
-        } catch (e) {
-          logger.error('Error in onSettingUpdate async block:', e)
-        }
-      })()
-    } else if (key === 'llamacpp_env') {
+    if (key === 'llamacpp_env') {
       this.llamacpp_env = value as string
     } else if (key === 'timeout') {
-      this.timeout = value as number
+      // Clamped through the plugin's own coercion: the field is a text input, so
+      // clearing it yields '' and a bare cast produced NaN. 0 or negative would
+      // make the request timeout fire immediately and abort every stream.
+      this.timeout = asI32(value, DEFAULT_TIMEOUT) || DEFAULT_TIMEOUT
+    } else if (key === 'models_max') {
+      // Not a `[*]` preset key, so it is deliberately absent from
+      // PRESET_AFFECTING_KEYS -- but the worker still has to be told, or
+      // "Max Concurrently Loaded Models" only ever updated this.config.
+      this.schedulePresetRefresh()
     } else if (PRESET_AFFECTING_KEYS.has(key)) {
-      // A live router was started with the previous preset; without a restart
-      // the new value is invisible to inference. Debounced so a flurry of
-      // slider/dropdown updates collapses into one bounce.
-      if (selfInflicted) return
-      this.scheduleRouterRestart()
+      // The running worker was started with the previous preset; without a
+      // reload the new value is invisible to inference. Debounced so a flurry
+      // of slider/dropdown updates collapses into one bounce.
+      this.schedulePresetRefresh()
     }
   }
 
-  private routerRestartTimer: ReturnType<typeof setTimeout> | null = null
-  private scheduleRouterRestart(): void {
-    if (this.routerRestartTimer) clearTimeout(this.routerRestartTimer)
-    this.routerRestartTimer = setTimeout(() => {
-      this.routerRestartTimer = null
-      this.startRouter().catch((e) =>
-        logger.warn('Router restart after settings update failed:', e)
+  private presetRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  private schedulePresetRefresh(): void {
+    if (this.presetRefreshTimer) clearTimeout(this.presetRefreshTimer)
+    this.presetRefreshTimer = setTimeout(() => {
+      this.presetRefreshTimer = null
+      this.refreshEnginePreset().catch((e) =>
+        logger.warn('Preset refresh after settings update failed:', e)
       )
     }, 600)
   }
 
   private async generateApiKey(modelId: string, port: string): Promise<string> {
-    const hash = await invoke<string>('plugin:llamacpp|generate_api_key', {
-      modelId: modelId + port,
-      apiSecret: this.apiSecret,
-    })
+    const hash = await pluginGenerateApiKey(modelId + port, this.apiSecret)
     return hash
   }
 
@@ -2549,173 +1703,6 @@ export default class llamacpp_extension extends AIEngine {
     await setBackendSetting('cortex_models_migrated', 'true')
   }
 
-  /*
-   * Manually installs a supported backend archive
-   *
-   */
-  async installBackend(path: string): Promise<void> {
-    const platformName = IS_WINDOWS ? 'win' : 'linux'
-
-    // Match prefix (optional), llama, main (optional), version (b####-hash),
-    // optional cudart-llama, bin, backend details
-    // Examples:
-    // - k_llama-main-b4314-09c61e1-bin-win-cuda-12.8-x64-avx2.zip
-    // - ik_llama-main-b4314-09c61e1-cudart-llama-bin-win-cuda-12.8-x64-avx512.zip
-    // - llama-b7037-bin-win-cuda-12.4-x64.zip (legacy format)
-    const re =
-      /^(.+?[-_])?llama(?:-main)?-(b\d+(?:-[a-f0-9]+)?)(?:-cudart-llama)?-bin-(.+?)\.(?:tar\.gz|zip)$/
-
-    const archiveName = await basename(path)
-    logger.info(`Installing backend from path: ${path}`)
-
-    if (
-      !(await fs.existsSync(path)) ||
-      (!path.endsWith('tar.gz') && !path.endsWith('zip'))
-    ) {
-      logger.error(`Invalid path or file ${path}`)
-      throw new Error(`Invalid path or file ${path}`)
-    }
-
-    const match = re.exec(archiveName)
-
-    if (!match) {
-      throw new Error(
-        `Failed to parse archive name: ${archiveName}. Expected format: [Optional prefix-]llama-<version>-bin-<backend>.(tar.gz|zip)`
-      )
-    }
-
-    const [, prefix, version, backend] = match
-
-    if (!version || !backend) {
-      throw new Error(`Invalid backend archive name: ${archiveName}`)
-    }
-
-    // Include prefix in the backend identifier if present
-    const backendIdentifier = prefix ? `${prefix}${backend}` : backend
-
-    logger.info(
-      `Detected prefix: ${prefix || 'none'}, version: ${version}, backend: ${backendIdentifier}`
-    )
-
-    const backendDir = await getBackendDir(backendIdentifier, version)
-
-    try {
-      await invoke('decompress', { path: path, outputDir: backendDir })
-    } catch (e) {
-      logger.error(`Failed to install: ${String(e)}`)
-      throw new Error(`Failed to decompress archive: ${String(e)}`)
-    }
-
-    const serverName =
-      platformName === 'win' ? 'llama-server.exe' : 'llama-server'
-    const expectedBinDir = await joinPath([backendDir, 'build', 'bin'])
-    const expectedBinPath = await joinPath([expectedBinDir, serverName])
-
-    // Normalize varying archive layouts to `build/bin/`: Jan tarballs already
-    // ship it; upstream Linux tarballs nest under `llama-bXXXX/`; upstream
-    // Windows zips are flat with the binary + DLLs at the root.
-    if (!(await fs.existsSync(expectedBinPath))) {
-      const foundDir = await findLlamaServerDir(backendDir, serverName)
-      if (!foundDir) {
-        await fs.rm(backendDir)
-        throw new Error(
-          'Not a supported backend archive! Missing llama-server binary.'
-        )
-      }
-      if (foundDir !== expectedBinDir) {
-        const staging = `${backendDir}.staging`
-        try {
-          // Move the binary's dir into build/bin in one rename to keep relative
-          // symlinks intact (libggml.so → .so.0 → .so.0.10.0). A flat-root
-          // archive can't rename into its own subtree, so stage to a sibling.
-          if (foundDir === backendDir) {
-            await fs.mv(backendDir, staging)
-            await fs.mkdir(await joinPath([backendDir, 'build']))
-            await fs.mv(staging, expectedBinDir)
-          } else {
-            await fs.mkdir(await joinPath([backendDir, 'build']))
-            await fs.mv(foundDir, expectedBinDir)
-          }
-        } catch (e) {
-          if (await fs.existsSync(staging)) await fs.rm(staging)
-          if (await fs.existsSync(backendDir)) await fs.rm(backendDir)
-          throw new Error(`Failed to normalize backend layout: ${String(e)}`)
-        }
-      }
-    }
-
-    if (!(await fs.existsSync(expectedBinPath))) {
-      await fs.rm(backendDir)
-      throw new Error(
-        'Not a supported backend archive! Missing llama-server binary.'
-      )
-    }
-
-    try {
-      await this.refreshBackendOptions()
-      logger.info(
-        `Backend ${backendIdentifier}/${version} installed and UI refreshed`
-      )
-    } catch (e) {
-      logger.error('Backend installed but failed to refresh UI', e)
-      throw new Error(
-        `Backend installed but failed to refresh UI: ${String(e)}`
-      )
-    }
-  }
-
-  /**
-   * Install the supplementary CUDA runtime DLLs that upstream ships separately
-   * (`cudart-llama-bin-<backend>.zip`) into every installed backend of that
-   * type, so llama-server can resolve cublas/cudart at launch.
-   */
-  async installCudaRuntime(path: string): Promise<void> {
-    if (
-      !(await fs.existsSync(path)) ||
-      (!path.endsWith('tar.gz') && !path.endsWith('zip'))
-    ) {
-      throw new Error(`Invalid path or file ${path}`)
-    }
-
-    const archiveName = await basename(path)
-    const match = /^cudart-llama-bin-(.+?)\.(?:tar\.gz|zip)$/.exec(archiveName)
-    if (!match || !match[1]) {
-      throw new Error(
-        `Not a CUDA runtime archive: ${archiveName}. Expected cudart-llama-bin-<backend>.(zip|tar.gz)`
-      )
-    }
-    const backendType = match[1]
-
-    const targets = (await getLocalInstalledBackends()).filter(
-      (b) => b.backend === backendType
-    )
-    if (targets.length === 0) {
-      throw new Error(
-        `No installed "${backendType}" backend found. Install that backend first, then add the CUDA runtime.`
-      )
-    }
-
-    let installed = 0
-    for (const t of targets) {
-      const binDir = await joinPath([
-        await getBackendDir(t.backend, t.version),
-        'build',
-        'bin',
-      ])
-      if (!(await fs.existsSync(binDir))) continue
-      await invoke('decompress', { path, outputDir: binDir })
-      installed++
-    }
-    if (installed === 0) {
-      throw new Error(
-        `Found ${backendType} backend(s) but none had a build/bin directory to install into.`
-      )
-    }
-    logger.info(
-      `CUDA runtime installed into ${installed} ${backendType} backend(s)`
-    )
-  }
-
   /**
    * Update a model with new information.
    * @param modelId
@@ -2761,13 +1748,35 @@ export default class llamacpp_extension extends AIEngine {
     // The router's preset still references the old model id until we
     // regenerate; without this a `POST /models/load <new-id>` would 404.
     try {
-      await this.refreshRouterPreset()
+      await this.refreshEnginePreset()
     } catch (e) {
       logger.warn(`Router restart after model rename (${modelId} → ${model.id}) failed`, e)
     }
   }
 
+  /**
+   * Joins concurrent imports of the same model instead of starting a second one.
+   * Two callers racing (startup embedder bootstrap and an on-demand embed) both
+   * passed the `model.yml` existence guard, then registered the same download
+   * task id -- which Rust resolves by cancelling the first and deleting its
+   * partial file. The loser then returned without writing `model.yml`, so its
+   * caller went on to load a model that was never installed.
+   */
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
+    const inFlight = this.pendingImports.get(modelId)
+    if (inFlight) {
+      logger.info(`Joining in-flight import of "${modelId}"`)
+      return inFlight
+    }
+
+    const task = this.runImport(modelId, opts).finally(() => {
+      this.pendingImports.delete(modelId)
+    })
+    this.pendingImports.set(modelId, task)
+    return task
+  }
+
+  private async runImport(modelId: string, opts: ImportOptions): Promise<void> {
     const isValidModelId = (id: string) => {
       // only allow alphanumeric, underscore, hyphen, and dot characters in modelId
       if (!/^[a-zA-Z0-9/_\-\.]+$/.test(id)) return false
@@ -2836,9 +1845,11 @@ export default class llamacpp_extension extends AIEngine {
     let mmprojPath = opts.mmprojPath
       ? await maybeDownload(opts.mmprojPath, 'mmproj.gguf')
       : undefined
-    // MTP draft companion (speculative decoding); paired with the main model.
-    let mtpModelPath = opts.mtpPath
-      ? await maybeDownload(opts.mtpPath, 'mtp.gguf')
+    // Speculative-decoding draft companion; paired with the main model. The
+    // file name stays `mtp.gguf` for every flavour: it is the local name of
+    // the paired draft, and changing it would orphan existing installs.
+    let draftModelPath = opts.specDraftPath
+      ? await maybeDownload(opts.specDraftPath, 'mtp.gguf')
       : undefined
 
     if (downloadItems.length > 0) {
@@ -2922,6 +1933,7 @@ export default class llamacpp_extension extends AIEngine {
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
     let isEmbedding = false
     let mtpLayers = 0
+    let specKind: SpecDraftKind = 'mtp'
     let templateKwargs: TemplateKwarg[] = []
     let resolvedName: string | undefined
 
@@ -2955,12 +1967,26 @@ export default class llamacpp_extension extends AIEngine {
         )
       }
 
-      // Validate MTP draft and read its head count (the main gguf usually
-      // lacks nextn_predict_layers when MTP ships as a separate file).
-      if (mtpModelPath) {
-        const fullMtpPath = await joinPath([janDataFolderPath, mtpModelPath])
-        const mtpMetadata = await readGgufMetadata(fullMtpPath)
-        const draftLayers = detectMtpLayersFromGgufMeta(mtpMetadata.metadata)
+      // Validate the draft, decide which spec type it implements, and read
+      // its head count (the main gguf usually lacks nextn_predict_layers when
+      // MTP ships as a separate file).
+      if (draftModelPath) {
+        const fullDraftPath = await joinPath([janDataFolderPath, draftModelPath])
+        const draftMetadata = await readGgufMetadata(fullDraftPath)
+        // Only asked for a DFlash-architecture draft, since that is the one
+        // case a tensor decides (DSpark = DFlash + Markov head).
+        const hasMarkovHead =
+          draftMetadata.metadata?.['general.architecture'] === 'dflash'
+            ? (await findGgufTensors(fullDraftPath, [MARKOV_HEAD_TENSOR]))
+                .length > 0
+            : undefined
+        specKind = resolveSpecDraftKind(draftMetadata.metadata, {
+          hasMarkovHead,
+          hint: opts.specDraftKind,
+        })
+        const draftLayers = detectMtpLayersFromGgufMeta(draftMetadata.metadata)
+        // Only an MTP head reports nextn layers; the other flavours have none,
+        // and the count is what makes the settings panel offer the toggle.
         mtpLayers = draftLayers > 0 ? draftLayers : Math.max(mtpLayers, 1)
       }
     } catch (error) {
@@ -2979,9 +2005,9 @@ export default class llamacpp_extension extends AIEngine {
         await fs.fileStat(await joinPath([janDataFolderPath, mmprojPath]))
       ).size
     }
-    if (mtpModelPath) {
+    if (draftModelPath) {
       size_bytes += (
-        await fs.fileStat(await joinPath([janDataFolderPath, mtpModelPath]))
+        await fs.fileStat(await joinPath([janDataFolderPath, draftModelPath]))
       ).size
     }
 
@@ -3006,9 +2032,16 @@ export default class llamacpp_extension extends AIEngine {
       mtp_check_v: MTP_CHECK_VERSION,
       template_kwargs: templateKwargs,
       template_kwargs_check_v: TEMPLATE_KWARGS_CHECK_VERSION,
-      // A separate draft gguf is downloaded only to be used — enable MTP by
-      // default. Embedded-MTP models keep MTP opt-in (no flag written here).
-      ...(mtpModelPath ? { mtp_model_path: mtpModelPath, mtp: true } : {}),
+      // A separate draft gguf is downloaded only to be used, so enable it by
+      // default. Embedded-MTP models stay opt-in (no flag written here) and
+      // need no spec_type: their flavour is always draft-mtp.
+      ...(draftModelPath
+        ? {
+            mtp_model_path: draftModelPath,
+            mtp: true,
+            spec_type: `draft-${specKind}`,
+          }
+        : {}),
       ...(isEmbedding
         ? { pooling: 'mean', ubatch_size: 2048, batch_size: 2048 }
         : {}),
@@ -3038,7 +2071,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     try {
-      await this.refreshRouterPreset()
+      await this.refreshEnginePreset()
     } catch (e) {
       logger.warn(`Router refresh after import(${modelId}) failed:`, e)
     }
@@ -3141,15 +2174,13 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  // Awaits the deferred startup, then makes one direct attempt if the router
-  // still isn't up. Safe to call redundantly: startRouter reuses a router that
-  // already matches this config rather than respawning it.
-  private async ensureRouterReady(): Promise<void> {
-    if (this.backgroundInit) {
-      await this.backgroundInit.catch(() => undefined)
-    }
-    if (!(await this.getRouterInfo())) {
-      await this.startRouter()
+  // Awaits the deferred startup, then makes one direct attempt if the worker
+  // still isn't up. Safe to call redundantly: start_engine returns the running
+  // worker rather than spawning a second one.
+  private async ensureEngineReady(): Promise<void> {
+    await this.ensureProvisioned().catch(() => undefined)
+    if (!(await this.getEngineInfo())) {
+      await this.startEngine()
     }
   }
 
@@ -3157,11 +2188,10 @@ export default class llamacpp_extension extends AIEngine {
     modelId: string,
     isEmbedding: boolean = false
   ): Promise<SessionInfo> {
-    await this.ensureRouterReady()
-    const router = await this.getRouterInfo()
-    if (!router) {
+    await this.ensureEngineReady()
+    if (!(await this.getEngineInfo())) {
       throw new Error(
-        'llama.cpp router is not running. Please restart the app.'
+        'The llama.cpp engine is not running. Please restart the app.'
       )
     }
 
@@ -3246,70 +2276,16 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  /**
+   * The id becomes a Tauri event name (`download-<taskId>`), which cannot contain
+   * a dot. Dots are replaced rather than truncated at: truncating collapsed every
+   * `Jan-v3.*` quant onto one id, and Rust cancels an in-flight task whose id
+   * repeats -- deleting its partial file -- so downloading one quant destroyed
+   * another's, and pause/cancel hit whichever quant happened to be registered.
+   */
   private createDownloadTaskId(modelId: string) {
-    // prepend provider to make taksId unique across providers
-    const cleanModelId = modelId.includes('.')
-      ? modelId.slice(0, modelId.indexOf('.'))
-      : modelId
-    return `${this.provider}/${cleanModelId}`
-  }
-
-  private async verifyBackendDeps(backend: string, version: string): Promise<void> {
-    const backendKey = `${version}/${backend}`
-    try {
-      const verification = await verifyBackendInstallation(backend, version)
-      if (verification.verified) {
-        logger.info(
-          `Backend ${backendKey} dependency verification passed (${verification.resolved_libraries.length} libraries resolved)`
-        )
-      } else {
-        logger.warn(
-          `Backend ${backendKey} is missing libraries: ${verification.missing_libraries.join(', ')}`
-        )
-        events.emit(AppEvent.onBackendVerificationFailed, {
-          backend,
-          version,
-          missingLibraries: verification.missing_libraries,
-        })
-      }
-    } catch (verifyErr) {
-      // Intentionally non-fatal: verification is advisory only. A BinaryNotFound
-      // error here means the exe disappeared between install and startup — the
-      // backend will fail naturally when first used, which is surfaced elsewhere.
-      logger.warn(`Backend ${backendKey} dependency verification failed: ${verifyErr}`)
-    }
-  }
-
-  private async ensureBackendReady(
-    backend: string,
-    version: string
-  ): Promise<void> {
-    const backendKey = `${version}/${backend}`
-
-    // Check if backend is already installed
-    const isInstalled = await isBackendInstalled(backend, version)
-    if (isInstalled) {
-      return
-    }
-
-    // Check if download is already in progress
-    if (this.pendingDownloads.has(backendKey)) {
-      logger.info(
-        `Backend ${backendKey} download already in progress, waiting...`
-      )
-      await this.pendingDownloads.get(backendKey)
-      return
-    }
-
-    // Start new download
-    logger.info(`Backend ${backendKey} not installed, downloading...`)
-    const downloadPromise = downloadBackend(backend, version).finally(() => {
-      this.pendingDownloads.delete(backendKey)
-    })
-
-    this.pendingDownloads.set(backendKey, downloadPromise)
-    await downloadPromise
-    logger.info(`Backend ${backendKey} download completed`)
+    // prepend provider to make taskId unique across providers
+    return `${this.provider}/${modelId.replace(/\./g, '-')}`
   }
 
   private async *handleStreamingResponse(
@@ -3411,10 +2387,7 @@ export default class llamacpp_extension extends AIEngine {
     modelId: string
   ): Promise<SessionInfo | null> {
     try {
-      return await invoke<SessionInfo | null>(
-        'plugin:llamacpp|find_session_by_model',
-        { modelId }
-      )
+      return await pluginFindSessionByModel(modelId)
     } catch (e) {
       logger.error(e)
       throw new Error(String(e))
@@ -3422,10 +2395,7 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   private async ensureHealthySession(modelId: string): Promise<SessionInfo> {
-    return invoke<SessionInfo>('plugin:llamacpp|ensure_session_ready', {
-      modelId,
-      isEmbedding: false,
-    })
+    return pluginEnsureSessionReady(modelId, false)
   }
 
   override async chat(
@@ -3490,7 +2460,7 @@ export default class llamacpp_extension extends AIEngine {
     await fs.rm(modelDir)
 
     try {
-      await this.refreshRouterPreset()
+      await this.refreshEnginePreset()
     } catch (e) {
       logger.warn(`Router refresh after delete(${modelId}) failed:`, e)
     }
@@ -3498,9 +2468,7 @@ export default class llamacpp_extension extends AIEngine {
 
   override async getLoadedModels(): Promise<string[]> {
     try {
-      let models: string[] = await invoke<string[]>(
-        'plugin:llamacpp|get_loaded_models'
-      )
+      let models: string[] = await pluginGetLoadedModels()
       return models
     } catch (e) {
       logger.error(e)
@@ -3619,7 +2587,7 @@ export default class llamacpp_extension extends AIEngine {
     await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
 
     try {
-      await this.refreshRouterPreset()
+      await this.refreshEnginePreset()
     } catch (e) {
       logger.warn(`Failed to restart router after MTP update for ${modelId}`, e)
     }
@@ -3674,7 +2642,7 @@ export default class llamacpp_extension extends AIEngine {
     await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
 
     try {
-      await this.refreshRouterPreset()
+      await this.refreshEnginePreset()
     } catch (e) {
       logger.warn(
         `Failed to restart router after model settings update for ${modelId}`,
@@ -3684,27 +2652,12 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async getDevices(): Promise<DeviceList[]> {
-    const cfg = this.config
-    const [version, backend] = cfg.version_backend.split('/')
-    if (!version || !backend) {
-      throw new Error(
-        'Backend setup was not successful. Please restart the app in a stable internet connection.'
-      )
-    }
     // set envs
     const envs: Record<string, string> = {}
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
-    // Ensure backend is downloaded and ready before proceeding
-    await this.ensureBackendReady(backend, version)
-    logger.info('Calling Tauri command getDevices with arg --list-devices')
-    const backendPath = await getBackendExePath(backend, version)
-
     try {
-      const dList = await invoke<DeviceList[]>('plugin:llamacpp|get_devices', {
-        backendPath,
-        envs,
-      })
+      const dList = await engineDevices(envs)
       // On Linux with AMD GPUs, llama.cpp via Vulkan may report UMA (shared) memory as device-local.
       // For clearer UX, override with dedicated VRAM from the hardware plugin when available.
       try {
@@ -3870,14 +2823,33 @@ export default class llamacpp_extension extends AIEngine {
     return counts
   }
 
+  /**
+   * Token budget for one embedding request.
+   *
+   * Deliberately not the engine-wide `ubatch_size`: preset.ts pins every
+   * embedding model's section to its own ubatch (DEFAULT_EMBEDDING_UBATCH) and
+   * to `ctx-size = 0`, so the real ceiling is the embedder's own trained
+   * context -- 512 on MiniLM. llama.cpp rejects a batch wider than either with
+   * no retry path, so the budget is the smaller of the two.
+   */
+  private async embedBatchBudget(sInfo: SessionInfo): Promise<number> {
+    let budget = DEFAULT_EMBEDDING_UBATCH
+    try {
+      const props = await this.getModelProps(sInfo.model_id)
+      const nCtx = props?.nCtx
+      if (typeof nCtx === 'number' && nCtx > 0) {
+        budget = Math.min(budget, nCtx)
+      }
+    } catch (e) {
+      // Without /props the pinned ubatch is still a valid ceiling.
+      logger.warn('Could not read embedder context size; using the pinned ubatch:', e)
+    }
+    return budget
+  }
+
   async embed(text: string[]): Promise<EmbeddingResponse> {
     const sInfo = await this.ensureEmbeddingModelLoaded()
-
-    const ubatchSize =
-      (this.config?.ubatch_size && this.config.ubatch_size > 0
-        ? this.config.ubatch_size
-        : 512) || 512
-    const batches = buildEmbedBatches(text, ubatchSize)
+    const batches = buildEmbedBatches(text, await this.embedBatchBudget(sInfo))
 
     const attemptRequest = async (
       session: SessionInfo,

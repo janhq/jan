@@ -1,7 +1,7 @@
 //! Built-in agent tools: the capability classification and the `BUILTIN_TOOLS`
 //! registry every other module in this crate keys off.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Windows-only confinement backend for [`jail`]. Present on every platform so
 /// the argv it builds stays unit-testable.
@@ -9,6 +9,7 @@ pub mod appcontainer;
 pub mod cmdscan;
 pub mod gate;
 pub mod handlers;
+pub mod image;
 pub mod jail;
 pub mod proc;
 /// Path containment for the filesystem tools. Distinct from [`jail`], which is
@@ -16,6 +17,18 @@ pub mod proc;
 pub mod sandbox;
 pub mod schema;
 pub mod web;
+
+/// A single OpenAI `image_url` content part: the `data:<mime>;base64,<bytes>`
+/// URL plus a display name. This is what the `read` tool returns for an image
+/// file, and the agent loop threads into the tool-result message so a vision
+/// model sees the image.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ImageContentPart {
+    /// `data:image/png;base64,...` URL, ready to embed in an `image_url` part.
+    pub data_url: String,
+    /// Basename shown to the model and in the transcript.
+    pub name: String,
+}
 
 /// Ambient context a tool call executes against.
 ///
@@ -36,7 +49,10 @@ pub mod web;
 /// `allow_network` opens the sandboxed shell's network namespace. It defaults to
 /// off and is a field rather than a `new` parameter so existing callers keep the
 /// safe default without being rewritten.
-#[derive(Debug, Clone, Copy)]
+/// Not `Copy`: the output sink is an `Arc`. Cloning is cheap either way (every
+/// other field is a borrow or a bool), so callers that relied on implicit copies
+/// clone explicitly.
+#[derive(Clone)]
 pub struct ToolContext<'a> {
     pub project_root: &'a Path,
     pub store_root: &'a Path,
@@ -61,7 +77,65 @@ pub struct ToolContext<'a> {
     /// default throwaway per-command tmpfs. Cleaned up with the session (run end
     /// on the CLI, thread teardown on the desktop).
     pub scratch_root: Option<&'a Path>,
+    /// Whether `bash` runs under OS confinement. On by default, and the desktop
+    /// keeps it that way: there, `bash` is either sandboxed or withheld.
+    ///
+    /// The CLI turns it off (see its `--sandbox` flag and the `sandbox` config
+    /// key), which runs the shell exactly as the user's own terminal would --
+    /// no mounts, no policy, the user's real `$HOME` and `/tmp`. The permission
+    /// gate is then the only thing between the model and the machine, which is
+    /// why nothing else about the gate changes when this is off.
+    pub sandbox: bool,
+    /// Where a tool sends output as it is produced, when the caller wants to
+    /// show it live. `None` means "collect and return only", which is what every
+    /// non-interactive caller wants.
+    ///
+    /// `Arc` and not a borrow because `bash` hands its child to a detached task:
+    /// the sink has to outlive the call that created it, which is also what makes
+    /// a backgrounded command keep reporting after the tool has returned its
+    /// `job_id`.
+    pub on_output: Option<OutputSink>,
+    /// Folders attached read-only: readable by the file tools and the shell,
+    /// never writable. Empty on every surface that has not attached one.
+    ///
+    /// Owned paths rather than borrows because they are canonicalized once at
+    /// attach time; re-canonicalizing per call would be both slower and a
+    /// check/use race of its own.
+    pub read_roots: &'a [PathBuf],
+    /// Correlation id echoed on every streamed output chunk.
+    ///
+    /// Needed because `bash` with `timeout: 0` backgrounds and keeps streaming
+    /// after the tool has returned: without an id the caller cannot route late
+    /// chunks to the tool call that produced them. Minted by the caller (the
+    /// frontend's tool-call id) rather than inside `bash`, so the sink can carry
+    /// it from the first chunk.
+    pub call_id: Option<&'a str>,
 }
+
+impl std::fmt::Debug for ToolContext<'_> {
+    /// Hand-written because a sink is a closure: reported as present or absent,
+    /// which is the only thing about it worth printing.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolContext")
+            .field("project_root", &self.project_root)
+            .field("store_root", &self.store_root)
+            .field("enabled_skills", &self.enabled_skills)
+            .field("allow_network", &self.allow_network)
+            .field("confine_writes", &self.confine_writes)
+            .field("mask_root", &self.mask_root)
+            .field("home_readonly", &self.home_readonly)
+            .field("scratch_root", &self.scratch_root)
+            .field("sandbox", &self.sandbox)
+            .field("on_output", &self.on_output.is_some())
+            .field("read_roots", &self.read_roots)
+            .field("call_id", &self.call_id)
+            .finish()
+    }
+}
+
+/// A tool's live-output channel: called with each chunk as it arrives, in order.
+/// Chunks are raw fragments, not lines -- a caller that wants lines buffers them.
+pub type OutputSink = std::sync::Arc<dyn Fn(String) + Send + Sync>;
 
 impl<'a> ToolContext<'a> {
     pub fn new(project_root: &'a Path, store_root: &'a Path, enabled_skills: &'a [String]) -> Self {
@@ -74,7 +148,31 @@ impl<'a> ToolContext<'a> {
             mask_root: None,
             home_readonly: false,
             scratch_root: None,
+            sandbox: true,
+            on_output: None,
+            read_roots: &[],
+            call_id: None,
         }
+    }
+
+    /// Attach folders the tools may read but never write. Callers pass the
+    /// canonical form from [`crate::workspace::validate_read_root`].
+    pub fn with_read_roots(mut self, read_roots: &'a [PathBuf]) -> Self {
+        self.read_roots = read_roots;
+        self
+    }
+
+    /// Tag streamed output with `call_id`. See [`Self::call_id`].
+    pub fn with_call_id(mut self, call_id: &'a str) -> Self {
+        self.call_id = Some(call_id);
+        self
+    }
+
+    /// Stream this call's output to `sink` as it is produced, as well as
+    /// returning it. See [`Self::on_output`].
+    pub fn with_output_sink(mut self, sink: OutputSink) -> Self {
+        self.on_output = Some(sink);
+        self
     }
 
     pub fn with_network(mut self, allow: bool) -> Self {
@@ -100,8 +198,27 @@ impl<'a> ToolContext<'a> {
 
     /// Bind `scratch_root` over the sandbox's `/tmp` so scratch files survive
     /// across `bash` calls. See [`Self::scratch_root`].
+    /// Ignored when the sandbox is off, so the two builders commute (see
+    /// [`Self::with_sandbox`] for why an unconfined run has no scratch).
     pub fn with_scratch_root(mut self, scratch_root: &'a Path) -> Self {
-        self.scratch_root = Some(scratch_root);
+        if self.sandbox {
+            self.scratch_root = Some(scratch_root);
+        }
+        self
+    }
+
+    /// Run `bash` under OS confinement (the default). See [`Self::sandbox`].
+    ///
+    /// Turning it off also drops the scratch: the scratch only makes sense as
+    /// the thing bound over the sandbox's `/tmp`. Unconfined, the shell sees the
+    /// real `/tmp`, and leaving the scratch set would have the filesystem tools
+    /// still rewriting `/tmp/...` into a directory the shell never looks at --
+    /// two tools disagreeing about what one path means.
+    pub fn with_sandbox(mut self, sandbox: bool) -> Self {
+        self.sandbox = sandbox;
+        if !sandbox {
+            self.scratch_root = None;
+        }
         self
     }
 }
@@ -144,6 +261,12 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
     },
     BuiltinTool {
         name: "grep",
+        capability: Capability::Read,
+        path_args: &["path"],
+    },
+    // Read: it renders a file that is already reachable and writes nothing back.
+    BuiltinTool {
+        name: "screenshot",
         capability: Capability::Read,
         path_args: &["path"],
     },
@@ -259,8 +382,8 @@ mod tests {
 
     #[test]
     fn builtin_count_matches_expected() {
-        // 7 coding tools + 6 dedicated skill/memory tools + 2 native web tools.
-        assert_eq!(BUILTIN_TOOLS.len(), 15);
+        // 8 coding tools + 6 dedicated skill/memory tools + 2 native web tools.
+        assert_eq!(BUILTIN_TOOLS.len(), 16);
     }
 
     #[test]

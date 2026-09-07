@@ -14,11 +14,15 @@ use tokio::process::{Child, Command};
 /// How to invoke the host shell. `program` + `args` are fixed; the command
 /// string is appended as the final argv element, or piped to stdin when
 /// `via_stdin` is set (legacy WSL `bash.exe`, which cannot take `-c`).
+/// `description` names the shell for the model (e.g. git-bash vs `cmd`), so it
+/// can adapt command syntax instead of assuming POSIX bash.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellConfig {
     pub program: PathBuf,
     pub args: Vec<String>,
     pub via_stdin: bool,
+    /// A short human-readable name of the resolved shell, for the model.
+    pub description: &'static str,
 }
 
 /// Resolved shell for this process, computed once. Prefers a real `bash`
@@ -29,11 +33,12 @@ pub fn shell() -> &'static ShellConfig {
     SHELL.get_or_init(resolve_shell)
 }
 
-fn c(program: &str, args: &[&str]) -> ShellConfig {
+fn c(program: &str, args: &[&str], description: &'static str) -> ShellConfig {
     ShellConfig {
         program: PathBuf::from(program),
         args: args.iter().map(|s| s.to_string()).collect(),
         via_stdin: false,
+        description,
     }
 }
 
@@ -45,25 +50,38 @@ fn resolve_shell() -> ShellConfig {
                 program: p,
                 args: vec!["-c".to_string()],
                 via_stdin: false,
+                description: "custom",
             };
         }
     }
     #[cfg(unix)]
     {
-        if Path::new("/bin/bash").exists() {
-            return c("/bin/bash", &["-c"]);
-        }
+        // Prefer the bash on `PATH` over the fixed `/bin/bash`: on NixOS the
+        // shell lives only at a Nix-store path resolved via `which`, so a
+        // hardcoded `/bin/bash` does not exist there and the fixed path would be
+        // wrong.
+        // `/bin/bash` stays as the fallback for systems where `which` is absent
+        // or `PATH` is degenerate but `/bin/bash` is real (e.g. cron); `/bin/sh`
+        // is the guaranteed-POSIX last resort.
         if let Some(p) = which("bash") {
             return ShellConfig {
                 program: p,
                 args: vec!["-c".to_string()],
                 via_stdin: false,
+                description: "bash",
             };
         }
-        c("/bin/sh", &["-c"])
+        if Path::new("/bin/bash").exists() {
+            return c("/bin/bash", &["-c"], "bash");
+        }
+        c("/bin/sh", &["-c"], "sh")
     }
     #[cfg(windows)]
     {
+        // Prefer a real bash before ever falling back to cmd, so POSIX command
+        // syntax keeps working. Check the standard git-bash/msys install
+        // locations under the well-known program dirs first, then `bash` on
+        // PATH.
         for var in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"] {
             if let Some(base) = std::env::var_os(var) {
                 let git_bash = PathBuf::from(base).join("Git").join("bin").join("bash.exe");
@@ -72,36 +90,54 @@ fn resolve_shell() -> ShellConfig {
                         program: git_bash,
                         args: vec!["-c".to_string()],
                         via_stdin: false,
+                        description: "git-bash",
                     };
                 }
             }
         }
         if let Some(p) = which("bash") {
-            // System32\bash.exe is the WSL launcher: it rejects `-c`, so the
-            // command must be piped to `bash -s` on stdin instead.
+            // The WSL launcher is the shim at System32\bash.exe; it rejects
+            // `-c`, so the command must be piped to `bash -s` on stdin. Only
+            // that exact location is treated as WSL, so a real bash that merely
+            // lives under a directory named `system32` is not misrouted to
+            // stdin one-shot mode.
             let is_wsl = p
-                .to_string_lossy()
-                .to_lowercase()
-                .contains("system32");
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.eq_ignore_ascii_case("bash.exe"))
+                .unwrap_or(false)
+                && p.parent()
+                    .and_then(|d| d.file_name())
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.eq_ignore_ascii_case("System32"))
+                    .unwrap_or(false);
             if is_wsl {
                 return ShellConfig {
                     program: p,
                     args: vec!["-s".to_string()],
                     via_stdin: true,
+                    description: "wsl bash",
                 };
             }
             return ShellConfig {
                 program: p,
                 args: vec!["-c".to_string()],
                 via_stdin: false,
+                description: "bash",
             };
         }
-        c("cmd.exe", &["/C"])
+        // No bash anywhere: cmd is the only shell. The model is told this (the
+        // runtime env block reports COMSPEC, and the bash handler's output note
+        // names cmd) so it can write cmd syntax rather than silently passing
+        // POSIX commands that cmd would reject.
+        c("cmd.exe", &["/C"], "cmd")
     }
 }
 
-/// Locate an executable on PATH via the platform's own resolver.
-fn which(name: &str) -> Option<PathBuf> {
+/// Locate an executable on PATH via the platform's own resolver. Also used by
+/// [`super::jail`] to find `bwrap` on distros with no FHS paths (NixOS keeps it
+/// only at a Nix-store path).
+pub(crate) fn which(name: &str) -> Option<PathBuf> {
     #[cfg(unix)]
     let finder = "which";
     #[cfg(windows)]
@@ -126,7 +162,25 @@ fn which(name: &str) -> Option<PathBuf> {
 /// `JAN_DATA_FOLDER` -- so the shell is launched with only what a command needs
 /// to run at all. Applied here, the one choke point all backends (bubblewrap,
 /// seatbelt, and the Windows AppContainer helper) funnel through.
-const SANDBOX_ENV_ALLOW: &[&str] = &["PATH", "HOME", "USERPROFILE", "TMPDIR", "TMP", "TEMP", "LANG", "TERM"];
+const SANDBOX_ENV_ALLOW: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USERPROFILE",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "LANG",
+    "TERM",
+    // Windows processes (cmd, and the cygwin/git-bash and MSYS runtimes) need
+    // the system location keys to find system DLLs, `cmd.exe` itself, and run
+    // `.bat`/`.cmd` helpers. Harmless no-ops on unix, where none are set.
+    "SystemRoot",
+    "windir",
+    "ComSpec",
+    "PATHEXT",
+    "ProgramFiles",
+    "ProgramData",
+];
 
 /// Every spelling of "where temporary files go": POSIX tools read `TMPDIR`,
 /// Windows ones `TEMP`/`TMP`, and a mixed toolchain (git-bash, MSYS) reads both.
@@ -280,6 +334,25 @@ pub fn kill_all() {
     let pids: Vec<u32> = running().lock().unwrap().drain().collect();
     for pid in pids {
         kill_tree(pid);
+    }
+}
+
+#[cfg(test)]
+mod env_allowlist_tests {
+    use super::*;
+
+    /// Windows-native processes (cmd, plus the cygwin/git-bash and MSYS
+    /// runtimes) need the system-location keys to find DLLs and `cmd.exe`
+    /// itself. These are the keys the ticket adds; assert they stay present so
+    /// a bare Windows box can actually run a command.
+    #[test]
+    fn allowlist_has_windows_system_keys() {
+        for key in ["SystemRoot", "windir", "ComSpec", "PATHEXT", "ProgramFiles", "ProgramData"] {
+            assert!(
+                SANDBOX_ENV_ALLOW.contains(&key),
+                "missing {key} in SANDBOX_ENV_ALLOW"
+            );
+        }
     }
 }
 

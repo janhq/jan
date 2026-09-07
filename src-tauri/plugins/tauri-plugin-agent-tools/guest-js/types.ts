@@ -24,3 +24,15 @@ export interface ToolSchema {
     parameters: Record<string, unknown>
   }
 }
+
+/** Which sandbox namespace an id belongs to. */
+export type WorkspaceScope = 'thread' | 'session'
+
+/** One fragment of a tool's live output. */
+export type ToolOutputChunk = {
+  /** Monotonic per call, so a receiver can assert ordering. */
+  seq: number
+  /** The tool call this belongs to; a backgrounded `bash` needs it. */
+  callId: string | null
+  text: string
+}

@@ -34,7 +34,6 @@ $ProgressPreference = 'SilentlyContinue'
 
 $BinaryName = 'jan.exe'
 $PlatformKey = 'windows-x86_64'
-$RepoRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 
 if (-not $Dir) {
   if ($env:JAN_INSTALL_DIR) {
@@ -101,6 +100,10 @@ function Install-Binary {
 }
 
 function Install-FromSource {
+  if (-not $PSCommandPath) {
+    throw '-Source requires running the script from a checkout; download scripts\install-jan-agent.ps1 and run it from the repo'
+  }
+  $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
   if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     throw 'cargo not found; install Rust first'
   }

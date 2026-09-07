@@ -46,6 +46,11 @@ Tools that take a path have it checked against the project root, so a write outs
 refused before it happens. `bash` has no path argument and runs in the project root; a command you
 approve can still reach outside, which is why plan mode exists as the hard boundary.
 
+A symbolic link is followed only while it stays inside the project (or the session scratch). Links
+that point back into your own tree - the ones every `node_modules` is full of - work normally; a
+link out of the project is refused, so it can't be used to smuggle a read or a write past the check
+above.
+
 ## Project policy
 
 `.jan/agent/agent.toml` sets what a project exposes:
@@ -64,6 +69,9 @@ allow_write = []
 
 # Whether the sandboxed shell can reach the network
 # allow_network = true
+
+# Whether shell commands run under OS confinement at all
+# sandbox = true
 ```
 
 | `default` | Effect |
@@ -74,10 +82,69 @@ allow_write = []
 
 `deny` always wins over `allow`. A tool in both lists is denied.
 
+## The shell sandbox
+
+Jan can run shell commands under OS confinement - bubblewrap on Linux, Seatbelt on macOS,
+AppContainer on Windows. Confined, a command can **write** only the project and its scratch
+directory, and reaches the network only if allowed. Reads are looser: the CLI keeps `$HOME` readable
+so `git` and `ssh` credential helpers work (`[tools].allow_home_read`, set it to `false` to close
+that), while the desktop masks it entirely.
+
+Whether it is on depends on the surface:
+
+| Surface | Sandbox | Can it be changed? |
+| --- | --- | --- |
+| Desktop chat agent | Always on | No. If no sandbox can be established, `bash` is withheld rather than run unconfined |
+| `jan` CLI and console | **Off by default** | Yes, see below |
+
+The CLI runs unconfined because it is a coding agent in your own project, started from your own
+terminal - the same trust `make`, `git push`, or any other tool you run there already has - and
+confinement breaks the toolchains projects actually build with often enough to be the wrong default.
+Note that approval prompts are also off by default, so out of the box nothing gates a shell command
+at all - `--safe`, `--sandbox`, or both are how you change that.
+
+<Callout type="warning">
+With the sandbox off, a shell command you approve runs with exactly your access. Nothing confines it
+to the project. If that isn't the trade you want, turn it on.
+</Callout>
+
+### Turning it on
+
+Three levels, most specific first:
+
+```bash
+jan --sandbox                    # this session only
+jan --no-sandbox                 # this session only, overriding a setting below
+```
+
+```toml
+# .jan/agent/agent.toml - for everyone who checks this project out
+[tools]
+sandbox = true
+```
+
+```toml
+# ~/.jan/config.toml - for every project you work on
+sandbox = true
+```
+
+A flag beats the project file, which beats the global setting, which beats the default. Every level
+works in both directions, which is why `--no-sandbox` exists: without it, turning confinement on
+permanently would leave no way to run a single command without it.
+
+`jan cli agent status` reports what a run would actually do:
+
+```json
+"sandbox": { "enabled": false, "backend": "bubblewrap" }
+```
+
+`backend` is the confinement that *would* be used. `none` means none is available on this machine -
+with `enabled: true` that combination is what withholds `bash` entirely.
+
 ## Network access
 
-A `bash` command runs inside an OS sandbox. Whether that sandbox has network access depends on the
-surface, and the two defaults differ:
+Network access is a property of the sandbox, so it applies when the sandbox is on. Unconfined, a
+command has whatever network access you do. The two surfaces default differently:
 
 | Surface | How to set network access | Default |
 | --- | --- | --- |
@@ -106,6 +173,7 @@ Approval prompts are opt-in: by default every call above is auto-approved. Start
 `jan --safe` to be asked instead. See [run modes](/docs/agent/run-modes).
 
 <Callout type="info">
-Auto-approval only removes the prompt. The OS sandbox around shell commands, the `.jan/agent/`
-restriction, and `[tools] deny` all still apply.
+Auto-approval only removes the prompt. The `.jan/agent/` restriction, the path checks, and
+`[tools] deny` all still apply, as does the shell sandbox where it is on - but on the CLI it is off
+by default, so auto-approved shell commands run with your own access unless you turn it on.
 </Callout>

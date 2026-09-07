@@ -20,7 +20,9 @@ const KEY_PROMPT: &str = "Paste your Tokamak API key: ";
 /// to show the sign-in notice in and nobody to act on it. No-op otherwise --
 /// an interactive run with no provider proceeds and the TUI shows its own
 /// notice instead of forcing a login flow here.
-pub fn reject_headless_without_provider(project_root: Option<&std::path::Path>) -> Result<(), String> {
+pub fn reject_headless_without_provider(
+    project_root: Option<&std::path::Path>,
+) -> Result<(), String> {
     if super::providers::has_usable_provider(project_root) {
         return Ok(());
     }
@@ -30,16 +32,72 @@ pub fn reject_headless_without_provider(project_root: Option<&std::path::Path>) 
     Ok(())
 }
 
-/// Sign in to Tokamak from a plain terminal: point the user at the API-keys
-/// page, read the key they paste (hidden), verify it, and persist it.
+/// Sign in to Tokamak from a plain terminal.
 ///
-/// A piped stdin (`echo $KEY | jan login`) is verified directly instead: there
-/// is no browser to open and no prompt to answer, so scripting it is the only
-/// sensible reading.
-pub async fn run_login() -> Result<(), String> {
+/// The default flow is browser-approval: the CLI creates a sign-in session,
+/// opens the authorize page (any device can approve), and polls for the minted
+/// key. When the server predates the `/auth/cli/sessions` endpoints (404/405 on
+/// create), it falls back to the legacy paste-a-key flow automatically; a piped
+/// stdin (`echo $KEY | jan login`) and `--paste-token` force the paste flow.
+pub async fn run_login(paste_token: bool) -> Result<(), String> {
     if !std::io::stdin().is_terminal() {
         return login_from_stdin().await;
     }
+    if paste_token {
+        return login_by_paste().await;
+    }
+    match device_login_interactive().await {
+        // A deployment that predates the flow is not an error, but say which
+        // flow you ended up in -- otherwise a paste prompt looks like the
+        // browser sign-in silently failing.
+        Err(DeviceLogin::Unsupported) => {
+            println!();
+            println!("This Tokamak deployment does not support browser sign-in yet.");
+            login_by_paste().await
+        }
+        Err(DeviceLogin::Failed(e)) => Err(e),
+        Ok(()) => Ok(()),
+    }
+}
+
+/// Why the browser flow did not complete, split so `run_login` can fall back on
+/// "this server is too old" without inspecting prose.
+enum DeviceLogin {
+    Unsupported,
+    Failed(String),
+}
+
+/// The device (browser-approval) login, interactive.
+async fn device_login_interactive() -> Result<(), DeviceLogin> {
+    use super::device_auth::{self, BeginError};
+
+    let base = tokamak::base_url();
+    let pending = match device_auth::begin(&base).await {
+        Ok(pending) => pending,
+        Err(BeginError::Unsupported) => return Err(DeviceLogin::Unsupported),
+        Err(e) => return Err(DeviceLogin::Failed(e.message(&base))),
+    };
+
+    println!();
+    println!("Sign in to Tokamak in your browser.");
+    let session = pending.session();
+    println!("  confirm this code matches: {}", session.user_code);
+    println!("  {}", session.authorize_url);
+    match super::browser::open(&session.authorize_url) {
+        Ok(()) => println!("  (opening that page in your browser)"),
+        Err(e) => println!("  (open that URL yourself: {e})"),
+    }
+    println!("  waiting for approval... (approve from any device, Ctrl-C to cancel)");
+
+    let login = tokamak::device_login(pending)
+        .await
+        .map_err(DeviceLogin::Failed)?;
+    report(&login);
+    Ok(())
+}
+
+/// The legacy paste-a-key login, interactive.
+async fn login_by_paste() -> Result<(), String> {
     println!();
     println!("Sign in to Tokamak and create an API key:");
     println!("  {}", tokamak::API_KEYS_URL);
@@ -122,7 +180,7 @@ fn piped_empty_message() -> String {
          $TOKAMAK_API_KEY | jan login\nor set it directly:\n  jan config set --provider {} \
          --api-key <key> --base-url {}",
         tokamak::PROVIDER,
-        tokamak::BASE_URL
+        tokamak::base_url()
     )
 }
 
@@ -142,6 +200,9 @@ fn report(login: &tokamak::Login) {
         ),
         1 => println!("Signed in to Tokamak - 1 model available."),
         n => println!("Signed in to Tokamak - {n} models available."),
+    }
+    if let Some(account) = &login.account {
+        println!("  account: {account}");
     }
     println!("  key saved to {}", login.config_path.display());
     if let Some(model) = &login.default_model {
@@ -171,12 +232,19 @@ mod tests {
 
     #[test]
     fn report_survives_every_model_count() {
-        for models in [Vec::new(), vec!["m".to_string()], vec!["a".into(), "b".into()]] {
-            report(&tokamak::Login {
-                models,
-                config_path: std::path::PathBuf::from("/tmp/config.toml"),
-                default_model: Some("a".to_string()),
-            });
+        for models in [
+            Vec::new(),
+            vec!["m".to_string()],
+            vec!["a".into(), "b".into()],
+        ] {
+            for account in [None, Some("a@b.c".to_string())] {
+                report(&tokamak::Login {
+                    models: models.clone(),
+                    config_path: std::path::PathBuf::from("/tmp/config.toml"),
+                    default_model: Some("a".to_string()),
+                    account,
+                });
+            }
         }
     }
 }

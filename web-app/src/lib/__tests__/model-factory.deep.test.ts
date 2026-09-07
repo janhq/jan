@@ -260,6 +260,25 @@ describe('model-factory deep coverage', () => {
       mockStartModel.mockRejectedValueOnce({ code: 'ENOMEM' })
       await expect(ModelFactory.createModel('m', mkProvider('llamacpp'), {})).rejects.toThrow('Failed to start model:')
     })
+
+    // A serialized engine error is a plain object; it used to reach the user as
+    // raw JSON including the Rust-authored English message.
+    it('does not leak a serialized engine error as raw JSON', async () => {
+      mockStartModel.mockRejectedValueOnce({
+        code: 'MISSING_SHARED_LIBRARY',
+        message: 'A library this backend depends on is missing.',
+        details: 'libnccl.so.2: cannot open shared object file',
+        missing_libraries: ['libnccl.so.2'],
+      })
+
+      const err = await ModelFactory.createModel('m', mkProvider('llamacpp'), {}).catch(
+        (e) => e as Error
+      )
+
+      expect(err.message).not.toContain('{')
+      expect(err.message).not.toContain('backend depends on')
+      expect(err.message).toContain('libnccl.so.2')
+    })
   })
 
   /* mlx internals */

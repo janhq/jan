@@ -31,11 +31,11 @@ Write-Host "[SUCCESS] Initialization wait completed"
 
 # Verify installation based on nightly flag
 if ($isNightly) {
-    $defaultJanPath = "$env:LOCALAPPDATA\Programs\jan-nightly\Jan-nightly.exe"
-    $processName = "Jan-nightly.exe"
+    $defaultJanPath = "$env:LOCALAPPDATA\Programs\jan-nightly\Jan-Desktop-nightly.exe"
+    $processName = "Jan-Desktop-nightly.exe"
 } else {
-    $defaultJanPath = "$env:LOCALAPPDATA\Programs\jan\Jan.exe"
-    $processName = "Jan.exe"
+    $defaultJanPath = "$env:LOCALAPPDATA\Programs\jan\Jan-Desktop.exe"
+    $processName = "Jan-Desktop.exe"
 }
 
 if (Test-Path $defaultJanPath) {

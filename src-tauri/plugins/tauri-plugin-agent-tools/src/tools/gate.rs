@@ -1,10 +1,12 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
-use crate::tools::sandbox::{command_touches_hidden_jan_path, escapes_project, is_hidden_jan_path};
+use crate::tools::sandbox::{
+    command_touches_hidden_jan_path, escapes_project, escapes_read_roots, is_hidden_jan_path,
+};
 use crate::tools::{BuiltinTool, Capability};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -134,22 +136,28 @@ pub fn resolve_decision(
     args: &serde_json::Value,
     project_root: &Path,
     scratch: Option<&Path>,
+    read_roots: &[PathBuf],
     perms: &ToolPermissions,
     grants: &SessionGrants,
+    hide_jan: bool,
 ) -> Decision {
     if perms.is_denied(tool.name) {
         return Decision::HardDeny(DenyReason::Policy);
     }
-    // Nothing under .jan is reachable: skills/memory only through their
-    // dedicated tools, config, threads and the dir listing not at all. Checked
-    // ahead of allow rules so an allowed tool name cannot bypass it.
-    let hits_hidden = tool.path_args.iter().any(|key| {
-        args.get(key)
-            .and_then(|v| v.as_str())
-            .map(|p| is_hidden_jan_path(project_root, p))
-            .unwrap_or(false)
-    });
-    let exec_hits_hidden = tool.capability == Capability::Exec
+    // Nothing under .jan is reachable while hidden: skills/memory only through
+    // their dedicated tools, config, threads and the dir listing not at all.
+    // Checked ahead of allow rules so an allowed tool name cannot bypass it.
+    // The whole check is skipped when not hiding, so an unconfined CLI run can
+    // read and edit its own `.jan` like any other project state.
+    let hits_hidden = hide_jan
+        && tool.path_args.iter().any(|key| {
+            args.get(key)
+                .and_then(|v| v.as_str())
+                .map(|p| is_hidden_jan_path(project_root, p))
+                .unwrap_or(false)
+        });
+    let exec_hits_hidden = hide_jan
+        && tool.capability == Capability::Exec
         && args
             .get("command")
             .and_then(|v| v.as_str())
@@ -168,10 +176,15 @@ pub fn resolve_decision(
     }
     match tool.capability {
         Capability::Read => {
+            // Read roots widen only this branch. The Write branch below keeps
+            // the unchanged `escapes_project`, which is what makes an attached
+            // folder readable and not writable.
             let escapes = tool.path_args.iter().any(|key| {
                 args.get(key)
                     .and_then(|v| v.as_str())
-                    .map(|p| escapes_project(project_root, scratch, p).unwrap_or(true))
+                    .map(|p| {
+                        escapes_read_roots(project_root, scratch, read_roots, p).unwrap_or(true)
+                    })
                     .unwrap_or(false)
             });
             if !escapes || grants.covers(PromptKind::ReadEscape) {
@@ -207,13 +220,19 @@ pub fn resolve_decision(
             }
         }
         Capability::Exec => {
+            let command = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
             // Polling a previously backgrounded command (job_id, no new
             // command) never prompts: the exec permission was already
-            // granted (or denied above) when the command was started.
-            if args.get("job_id").and_then(|v| v.as_str()).is_some() {
+            // granted (or denied above) when the command was started. A real
+            // command wins over a stray model-supplied job_id.
+            if command.trim().is_empty()
+                && args
+                    .get("job_id")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|job_id| !job_id.trim().is_empty())
+            {
                 return Decision::Allow;
             }
-            let command = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
             if grants.covers_command(command) {
                 Decision::Allow
             } else {
@@ -264,8 +283,10 @@ mod tests {
             &json!({"path": "inner.txt"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -281,8 +302,10 @@ mod tests {
             &json!({"path": "../x"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
         let _ = std::fs::remove_dir_all(&root);
@@ -299,8 +322,10 @@ mod tests {
                 &json!({}),
                 &root,
                 None,
+                &[],
                 &perms,
                 &grants,
+                true,
             );
             assert_eq!(d, Decision::Allow, "{tool} should be auto-allowed");
         }
@@ -318,8 +343,10 @@ mod tests {
             &json!({}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(
             d,
@@ -343,8 +370,10 @@ mod tests {
                 &json!({ "path": ".jan/agent/agent.toml" }),
                 &root,
                 None,
+                &[],
                 &perms,
                 &grants,
+                true,
             );
             assert_eq!(
                 d,
@@ -358,8 +387,10 @@ mod tests {
             &json!({"command": "cat .jan/agent/agent.toml"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::HardDeny(DenyReason::Hidden));
         // The instructions file is an ordinary project file at the root.
@@ -369,10 +400,54 @@ mod tests {
             &json!({"path": "JAN.md"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn hidden_jan_is_reachable_when_not_hiding() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join(".jan/agent")).unwrap();
+        std::fs::write(root.join(".jan/agent/agent.toml"), b"[tools]\n").unwrap();
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        // With hiding off, paths and commands under `.jan` take the ordinary
+        // capability path instead of the hard deny (here an in-project read
+        // allows; the write prompts like any in-project write).
+        for tool in ["read", "ls", "find", "grep", "write", "edit"] {
+            let d = resolve_decision(
+                lookup(tool).unwrap(),
+                &json!({ "path": ".jan/agent/agent.toml" }),
+                &root,
+                None,
+                &[],
+                &perms,
+                &grants,
+                false,
+            );
+            assert_ne!(
+                d,
+                Decision::HardDeny(DenyReason::Hidden),
+                "{tool} must not hard-deny .jan when not hiding"
+            );
+        }
+        // bash referencing it is a normal exec prompt, not a hidden deny.
+        let d = resolve_decision(
+            lookup("bash").unwrap(),
+            &json!({"command": "cat .jan/agent/agent.toml"}),
+            &root,
+            None,
+            &[],
+            &perms,
+            &grants,
+            false,
+        );
+        assert_ne!(d, Decision::HardDeny(DenyReason::Hidden));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -386,8 +461,10 @@ mod tests {
             &json!({"path": "out.txt"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Write));
         let _ = std::fs::remove_dir_all(&root);
@@ -403,10 +480,33 @@ mod tests {
             &json!({"command": "ls"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bash_command_with_spurious_job_id_still_prompts_exec() {
+        let root = unique_root();
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        let grants = SessionGrants::default();
+        for job_id in ["", " ", "x"] {
+            let d = resolve_decision(
+                lookup("bash").unwrap(),
+                &json!({"command": "ls", "job_id": job_id}),
+                &root,
+                None,
+                &[],
+                &perms,
+                &grants,
+                true,
+            );
+            assert_eq!(d, Decision::Prompt(PromptKind::Exec), "job_id {job_id:?}");
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -420,8 +520,10 @@ mod tests {
             &json!({"job_id": "bash-0"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -449,8 +551,10 @@ mod tests {
             &json!({"command": "git push"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
 
@@ -460,8 +564,10 @@ mod tests {
             &json!({"command": "rm -rf /"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
         let _ = std::fs::remove_dir_all(&root);
@@ -485,10 +591,16 @@ mod tests {
                 &json!({ "command": cmd }),
                 &root,
                 None,
+                &[],
                 &perms,
                 &grants,
+                true,
             );
-            assert_eq!(d, Decision::Prompt(PromptKind::Exec), "must reprompt: {cmd}");
+            assert_eq!(
+                d,
+                Decision::Prompt(PromptKind::Exec),
+                "must reprompt: {cmd}"
+            );
         }
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -506,8 +618,10 @@ mod tests {
                 &json!({ "command": cmd }),
                 &root,
                 None,
+                &[],
                 &perms,
                 &grants,
+                true,
             );
             assert_eq!(d, Decision::Allow, "should be covered: {cmd}");
         }
@@ -527,8 +641,10 @@ mod tests {
             &json!({"command": "sudo   systemctl restart nginx"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
 
@@ -538,8 +654,10 @@ mod tests {
             &json!({"command": "sudo rm -rf /"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
         let _ = std::fs::remove_dir_all(&root);
@@ -564,8 +682,10 @@ mod tests {
                     &json!({ "path": path }),
                     &root,
                     None,
+                    &[],
                     &perms,
                     &grants,
+                    true,
                 );
                 assert_eq!(
                     d,
@@ -588,20 +708,25 @@ mod tests {
                 &json!({"name": "x", "content": "y"}),
                 &root,
                 None,
+                &[],
                 &perms,
                 &grants,
+                true,
             );
             assert_eq!(d, Decision::Allow, "{name} should auto-allow");
         }
         // Explicit deny in agent.toml still overrides the auto-allow.
-        let denied = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &s(&["memory_write"]), &[]);
+        let denied =
+            ToolPermissions::new(PermissionDefault::ReadOnly, &[], &s(&["memory_write"]), &[]);
         let d = resolve_decision(
             lookup("memory_write").unwrap(),
             &json!({"name": "x", "content": "y"}),
             &root,
             None,
+            &[],
             &denied,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::HardDeny(DenyReason::Policy));
         let _ = std::fs::remove_dir_all(&root);
@@ -617,8 +742,10 @@ mod tests {
             &json!({"path": "out.txt"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::HardDeny(DenyReason::Policy));
         let _ = std::fs::remove_dir_all(&root);
@@ -634,8 +761,10 @@ mod tests {
             &json!({"path": "out.txt"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -652,8 +781,10 @@ mod tests {
             &json!({"path": "out.txt"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -670,8 +801,10 @@ mod tests {
             &json!({"path": "../x"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -687,8 +820,10 @@ mod tests {
             &json!({"path": "sub/new.txt"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Write));
         let _ = std::fs::remove_dir_all(&root);
@@ -706,8 +841,10 @@ mod tests {
                 &json!({"path": path}),
                 &root,
                 None,
+                &[],
                 &perms,
                 &grants,
+                true,
             );
             assert_eq!(d, Decision::Prompt(PromptKind::WriteEscape), "{}", path);
         }
@@ -725,8 +862,10 @@ mod tests {
             &json!({"path": "../x"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -742,10 +881,73 @@ mod tests {
             &json!({"path": "../x"}),
             &root,
             None,
+            &[],
             &perms,
             &grants,
+            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
         let _ = std::fs::remove_dir_all(&root);
+    }
+    // Reads reach an attached folder; writes into it are still an escape. These
+    // two together *are* the read-only mount at the gate layer.
+    #[test]
+    fn read_in_an_attached_root_allows_and_write_prompts_escape() {
+        let root = unique_root();
+        let repo = unique_root();
+        std::fs::write(repo.join("main.rs"), b"x").unwrap();
+        let roots = vec![repo.clone()];
+        let target = repo.join("main.rs").to_string_lossy().into_owned();
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+
+        let read = resolve_decision(
+            lookup("read").unwrap(),
+            &json!({"path": target}),
+            &root,
+            None,
+            &roots,
+            &perms,
+            &grants,
+            true,
+        );
+        assert_eq!(read, Decision::Allow);
+
+        let write = resolve_decision(
+            lookup("write").unwrap(),
+            &json!({"path": repo.join("new.txt").to_string_lossy(), "content": "y"}),
+            &root,
+            None,
+            &roots,
+            &ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
+            &grants,
+            true,
+        );
+        assert_eq!(write, Decision::Prompt(PromptKind::WriteEscape));
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn an_escaping_read_still_prompts_when_no_root_covers_it() {
+        let root = unique_root();
+        let repo = unique_root();
+        let elsewhere = unique_root();
+        let roots = vec![repo.clone()];
+        let d = resolve_decision(
+            lookup("read").unwrap(),
+            &json!({"path": elsewhere.join("secret").to_string_lossy()}),
+            &root,
+            None,
+            &roots,
+            &ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
+            &SessionGrants::default(),
+            true,
+        );
+        assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
+        for d in [&root, &repo, &elsewhere] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 }

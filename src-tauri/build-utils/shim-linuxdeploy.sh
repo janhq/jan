@@ -27,4 +27,10 @@ fi
 rm -f "$SYMLINK"
 ln -s "$LINUXDEPLOY" "$SYMLINK"
 
+# linuxdeploy, its plugins and appimagetool are all AppImages, which mount
+# themselves through FUSE and fail with no output at all where it is missing --
+# and the GitHub-hosted images no longer ship libfuse2. Extracting instead is
+# the documented fallback and costs a little disk on a host that has FUSE.
+export APPIMAGE_EXTRACT_AND_RUN=1
+
 "$@"

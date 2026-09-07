@@ -32,7 +32,8 @@ export const localStorageKey = {
   latestJanModel: 'latest-jan-model',
   defaultEmbeddingModel: 'default-embedding-model',
   pausedDownloads: 'paused-downloads',
-  codeSessions: 'code-sessions',
+  // Value predates the Cowork rename; changing it would orphan saved sessions.
+  coworkSessions: 'code-sessions',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

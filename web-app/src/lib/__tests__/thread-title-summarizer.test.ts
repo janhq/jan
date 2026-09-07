@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { cleanTitle, generateThreadTitle } from '../thread-title-summarizer'
+import { BACKGROUND_SLOT_ID } from '@/constants/models'
 
 // Mock AI SDK generateText
 const mockGenerateText = vi.fn()
@@ -17,11 +18,12 @@ vi.mock('../model-factory', () => ({
 
 // Mock useModelProvider
 const mockGetProviderByName = vi.fn()
+let mockSelectedProvider = 'test-provider'
 vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: {
     getState: () => ({
       selectedModel: { id: 'test-model' },
-      selectedProvider: 'test-provider',
+      selectedProvider: mockSelectedProvider,
       getProviderByName: mockGetProviderByName,
     }),
   },
@@ -104,6 +106,7 @@ describe('generateThreadTitle', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSelectedProvider = 'test-provider'
     mockGetProviderByName.mockReturnValue(mockProvider)
     mockCreateModel.mockResolvedValue(mockModel)
   })
@@ -125,6 +128,32 @@ describe('generateThreadTitle', () => {
         abortSignal: controller.signal,
       })
     )
+  })
+
+  // Upstream wraps an out-of-range id_slot modulo the slot count instead of
+  // rejecting it, so a pin derived from the provider-level "Parallel Sequences"
+  // value silently resolved to the chat slot 0 whenever the emitted count
+  // differed -- which a per-model `parallel` override causes. The pin is a
+  // fixed index the preset guarantees exists instead.
+  it('pins llamacpp background work to the reserved slot, not a derived index', async () => {
+    mockSelectedProvider = 'llamacpp'
+    mockGetProviderByName.mockReturnValue({
+      provider: 'llamacpp',
+      models: [],
+      settings: [
+        { key: 'parallel', controller_props: { value: 4 } },
+      ],
+    })
+    mockGenerateText.mockResolvedValue({ text: 'Some Title' })
+
+    await generateThreadTitle('hello there', new AbortController().signal)
+
+    expect(mockCreateModel).toHaveBeenCalledWith(
+      'test-model',
+      expect.anything(),
+      expect.objectContaining({ id_slot: BACKGROUND_SLOT_ID })
+    )
+    expect(BACKGROUND_SLOT_ID).toBe(1)
   })
 
   it('returns null when aborted', async () => {

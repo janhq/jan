@@ -3,6 +3,7 @@ import { logger } from '@janhq/core'
 import {
   buildEmbedBatches,
   detectMtpLayersFromGgufMeta,
+  resolveSpecDraftKind,
   detectTemplateKwargsFromChatTemplate,
   estimateTokensFromText,
   getProxyConfig,
@@ -671,5 +672,72 @@ describe('detectTemplateKwargsFromChatTemplate', () => {
     expect(detectTemplateKwargsFromChatTemplate(tpl)).toEqual([
       { name: 'add_notes', type: 'boolean', default: true },
     ])
+  })
+})
+
+describe('resolveSpecDraftKind', () => {
+  // general.architecture is what llama.cpp itself keys on: `eagle3` and
+  // `dflash` are distinct architectures, and anything else carrying draft
+  // weights is an MTP head.
+  it('reads eagle3 straight off the architecture', () => {
+    expect(resolveSpecDraftKind({ 'general.architecture': 'eagle3' })).toBe(
+      'eagle3'
+    )
+  })
+
+  it('reads dflash off the architecture', () => {
+    expect(resolveSpecDraftKind({ 'general.architecture': 'dflash' })).toBe(
+      'dflash'
+    )
+  })
+
+  // DSpark shares the dflash architecture and is told apart by its Markov
+  // head, which is a tensor rather than a metadata key.
+  it('separates dspark from dflash by the markov head', () => {
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
+        hasMarkovHead: true,
+      })
+    ).toBe('dspark')
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
+        hasMarkovHead: false,
+      })
+    ).toBe('dflash')
+  })
+
+  // The tensor is the evidence; the catalog's file naming is only a fallback
+  // for when it could not be read.
+  it('trusts the markov head over the file naming', () => {
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
+        hasMarkovHead: false,
+        hint: 'dspark',
+      })
+    ).toBe('dflash')
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
+        hint: 'dspark',
+      })
+    ).toBe('dspark')
+  })
+
+  it('treats any other architecture as an MTP head', () => {
+    expect(resolveSpecDraftKind({ 'general.architecture': 'deepseek2' })).toBe(
+      'mtp'
+    )
+    expect(resolveSpecDraftKind({})).toBe('mtp')
+    expect(resolveSpecDraftKind(undefined)).toBe('mtp')
+  })
+
+  // The architecture wins: a misnamed file must not select a type the draft
+  // cannot implement, which fails the load with an unrelated message.
+  it('ignores a hint the architecture contradicts', () => {
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'glm4moe' }, { hint: 'dflash' })
+    ).toBe('mtp')
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, { hint: 'mtp' })
+    ).toBe('dflash')
   })
 })

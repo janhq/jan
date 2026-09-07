@@ -35,18 +35,32 @@ const sourceFiles = (dir: string): string[] =>
     return /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) ? [full] : []
   })
 
+const lookup = (
+  bundle: Record<string, unknown>,
+  ns: string,
+  key: string
+): unknown => {
+  let cur: unknown = bundle[ns]
+  for (const part of key.split('.')) {
+    if (typeof cur !== 'object' || cur === null || !(part in cur)) return undefined
+    cur = (cur as Record<string, unknown>)[part]
+  }
+  return cur
+}
+
+/**
+ * A count-aware key is stored as `_one`/`_other` so i18next can pick the form,
+ * never under its own name. Without this the only way to satisfy the scan is to
+ * drop the namespace prefix and fall out of it entirely.
+ */
 const resolves = (
   bundle: Record<string, unknown>,
   ns: string,
   key: string
-): boolean => {
-  let cur: unknown = bundle[ns]
-  for (const part of key.split('.')) {
-    if (typeof cur !== 'object' || cur === null || !(part in cur)) return false
-    cur = (cur as Record<string, unknown>)[part]
-  }
-  return typeof cur === 'string'
-}
+): boolean =>
+  typeof lookup(bundle, ns, key) === 'string' ||
+  (typeof lookup(bundle, ns, `${key}_one`) === 'string' &&
+    typeof lookup(bundle, ns, `${key}_other`) === 'string')
 
 // Only literal keys; dynamically-built ones can't be checked statically.
 const KEY_CALL = /t\(\s*['"]([a-zA-Z0-9_-]+):([a-zA-Z0-9_.]+)['"]/g

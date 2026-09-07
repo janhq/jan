@@ -9,6 +9,13 @@
 pub enum StreamEvent {
     /// A streamed content delta from the model.
     Token { text: String },
+    /// A streamed reasoning delta, carried natively when the upstream exposes
+    /// it as a dedicated field (`reasoning_content`). Display-only: reasoning
+    /// never joins the assistant `content` that is resent as history, and it
+    /// must never leak into piped stdout. Providers that instead inline
+    /// `<think>` tags in `content` stream those through [`Token`]; consumers
+    /// fall back to stripping the tags manually.
+    Reasoning { text: String },
     /// A new orchestration turn began (`index` is 1-based; `max` is the turn
     /// cap, `0` when the run is unbounded, which is the normal case).
     Step { index: u32, max: u32 },
@@ -35,6 +42,18 @@ pub enum StreamEvent {
         name: String,
         args: serde_json::Value,
     },
+    /// A chunk of a tool's output, as it is produced. Emitted between
+    /// [`ToolCall`] and [`ToolResult`] so a consumer can show a command's output
+    /// while it runs instead of only once it exits.
+    ///
+    /// Deltas, not the accumulated buffer, for the same reason as
+    /// [`ToolCallArgsDelta`]: resending the prefix on every chunk is quadratic in
+    /// the output size. Chunks are raw fragments and may split a line.
+    ///
+    /// Keeps arriving after a `bash` call has backgrounded itself and returned a
+    /// `job_id`, so a long-running job reports progress under the id of the call
+    /// that started it.
+    ToolOutputDelta { id: String, delta: String },
     /// A tool finished. `is_error` reflects the upstream "ERROR" encoding.
     /// `diff` is display-only focused-change text (line-prefixed `-`/`+`) for
     /// `write`/`edit`; `None` for other tools.
@@ -90,11 +109,23 @@ pub enum StreamEvent {
     MessagesUpdated {
         messages: Vec<serde_json::Value>,
     },
-    /// The `ask` tool is waiting for structured interactive input.
+    /// The `ask` tool is waiting for structured interactive input. Carries the
+    /// `ask_timeout_secs` deadline (seconds until the loop auto-selects the
+    /// recommended option) as `timeout_secs`, or `None` when no timeout is
+    /// configured. It travels on the event so a client can render a countdown
+    /// without re-reading config: the same value both arms the loop's timer and
+    /// drives the display, keeping the two in agreement.
     AskRequest {
         request_id: String,
         request: crate::core::agent::interaction::AskRequest,
+        timeout_secs: Option<u64>,
     },
+    /// An `ask` request the loop resolved without a user answer (it timed out
+    /// and auto-selected). Tells a client showing the live prompt for
+    /// `request_id` to dismiss it, since no `respond` from that client is
+    /// coming. User-driven answers never emit this: the client clears its own
+    /// prompt as it responds.
+    AskResolved { request_id: String },
     /// The canonical todo list changed (tool mutation or user edit in the
     /// TUI). Carries the full resulting snapshot for reconstruction.
     TodoUpdate {
@@ -234,6 +265,12 @@ mod tests {
     fn token_serializes_with_snake_case_tag() {
         let v = serde_json::to_value(StreamEvent::Token { text: "hi".into() }).unwrap();
         assert_eq!(v, json!({ "type": "token", "text": "hi" }));
+    }
+
+    #[test]
+    fn reasoning_serializes_with_snake_case_tag() {
+        let v = serde_json::to_value(StreamEvent::Reasoning { text: "hmm".into() }).unwrap();
+        assert_eq!(v, json!({ "type": "reasoning", "text": "hmm" }));
     }
 
     #[test]

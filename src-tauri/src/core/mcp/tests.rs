@@ -655,6 +655,10 @@ fn test_mcp_settings_default_matches_constants() {
     assert!(!s.use_lightweight_router_model);
     assert!(s.router_model_provider.is_empty());
     assert!(s.router_model_id.is_empty());
+    assert_eq!(
+        s.max_tool_output_chars,
+        constants::DEFAULT_MCP_MAX_TOOL_OUTPUT_CHARS
+    );
 }
 
 #[test]
@@ -669,6 +673,40 @@ fn test_mcp_settings_tool_call_timeout_duration_enforces_minimum() {
     assert_eq!(s.tool_call_timeout_duration(), Duration::from_secs(5));
     s.tool_call_timeout_seconds = 600;
     assert_eq!(s.tool_call_timeout_duration(), Duration::from_secs(600));
+}
+
+#[test]
+fn test_mcp_settings_tool_output_cap_takes_the_tighter_of_setting_and_override() {
+    use super::models::McpSettings;
+    let s = McpSettings {
+        max_tool_output_chars: 40_000,
+        ..McpSettings::default()
+    };
+
+    // No caller budget: the user's setting governs.
+    assert_eq!(s.tool_output_cap(None), 40_000);
+    // A tighter model-derived budget wins.
+    assert_eq!(s.tool_output_cap(Some(8_000)), 8_000);
+    // A looser one cannot raise the user's ceiling.
+    assert_eq!(s.tool_output_cap(Some(500_000)), 40_000);
+    // A 0 override means "no derived budget", not "uncapped".
+    assert_eq!(s.tool_output_cap(Some(0)), 40_000);
+}
+
+#[test]
+fn test_mcp_settings_zero_max_tool_output_chars_disables_capping() {
+    use super::models::McpSettings;
+    let s = McpSettings {
+        max_tool_output_chars: 0,
+        ..McpSettings::default()
+    };
+
+    assert_eq!(s.tool_output_cap(None), 0);
+    assert_eq!(
+        s.tool_output_cap(Some(8_000)),
+        0,
+        "an explicit opt-out is not overridden by a derived budget"
+    );
 }
 
 #[test]
@@ -696,6 +734,7 @@ impl PartialEq for super::models::McpSettings {
             && self.use_lightweight_router_model == other.use_lightweight_router_model
             && self.router_model_provider == other.router_model_provider
             && self.router_model_id == other.router_model_id
+            && self.max_tool_output_chars == other.max_tool_output_chars
     }
 }
 

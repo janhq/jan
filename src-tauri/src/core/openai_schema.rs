@@ -2,6 +2,7 @@
 //! upstream layer: tool-schema normalization and key-rotation status checks.
 //! Tauri-free so the headless CLI build can use it without the proxy.
 
+#[cfg(not(feature = "cli"))]
 use reqwest::StatusCode;
 
 const SCHEMA_PRIMITIVE_TYPES: &[&str] = &[
@@ -167,6 +168,9 @@ pub(crate) fn normalize_openai_tools_in_chat_body(body: &mut serde_json::Value) 
     }
 }
 
+/// Only the desktop API-server path branches on this; the agent's key
+/// rotation lives in `agent::genai_bridge`.
+#[cfg(not(feature = "cli"))]
 pub(crate) fn http_status_indicates_api_key_retry(status: StatusCode) -> bool {
     matches!(
         status,

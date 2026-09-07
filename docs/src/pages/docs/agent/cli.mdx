@@ -37,6 +37,8 @@ jan <COMMAND>
 | `--image <PATH>` | Attach an image to the first message. Repeatable |
 | `--plan` | Start in read-only plan mode |
 | `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
+| `--sandbox` | Run shell commands under OS confinement. Off by default |
+| `--no-sandbox` | Run shell commands unconfined, overriding a persistent `sandbox` setting |
 | `--resume [ID]` | Resume the most recent session, or one whose id starts with `ID` |
 | `-c`, `--continue` | Resume the most recent session |
 | `--provider <ID>` | Target a specific provider for this run |
@@ -50,13 +52,15 @@ jan -c                                  # resume the latest session
 jan --resume 3f7a91c2                   # resume by id prefix
 jan --plan                              # read-only
 jan --safe                              # ask before writes and shell commands
+jan --sandbox                           # confine shell commands to the project
 ```
 
-<Callout type="info">
-Tool calls are auto-approved by default. Shell commands still run inside the OS sandbox
-(bubblewrap, Seatbelt, or AppContainer), confined to the project directory, and the hard denies
-never lift: `.jan/agent/` internals, anything in `[tools] deny`, and everything plan mode blocks.
-`--safe` adds the interactive approval prompt on top of that.
+<Callout type="warning">
+Tool calls are auto-approved by default, and shell commands are **not** sandboxed by default - an
+approved command runs with your own access. The hard denies never lift: `.jan/agent/` internals,
+anything in `[tools] deny`, and everything plan mode blocks. `--safe` adds the interactive approval
+prompt; `--sandbox` adds OS confinement (bubblewrap, Seatbelt, or AppContainer). See
+[tool permissions](/docs/agent/permissions#the-shell-sandbox).
 </Callout>
 
 ## `jan cli agent`
@@ -80,6 +84,8 @@ jan cli agent run --safe "run the migration"   # approve each step
 | `--project <PATH>` | Project root. Defaults to `.` |
 | `--model <ID>` | Model id, overriding `[agent].model` |
 | `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
+| `--sandbox` | Run shell commands under OS confinement. Off by default |
+| `--no-sandbox` | Run shell commands unconfined, overriding a persistent `sandbox` setting |
 | `--resume[=ID]` | Resume the most recent session, or one by id |
 | `-c`, `--continue` | Resume the most recent session |
 | `--provider`, `--api-key` | Credential overrides for this run |
@@ -159,6 +165,28 @@ jan cli agent status
 jan cli agent status --project ~/code/app
 ```
 
+## `jan plugin`
+
+Manage project-local plugins without the interactive console. Plugin commands use
+`.jan/agent/plugins/` under `--project` (default `.`) and print JSON for list, install, and search.
+
+```bash
+jan plugin list
+jan plugin install https://github.com/acme/release-tools
+jan plugin install https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-code-setup
+jan plugin remove release-tools
+jan plugin search prepare
+```
+
+Direct git URLs, optional `#ref` suffixes, marketplace names, and GitHub tree URLs selecting a
+repository subdirectory are supported. A project marketplace is configured in `agent.toml`:
+
+```toml
+[plugins]
+marketplace = "https://example.com/jan-plugins/index.json"
+```
+
+
 ## `jan config`
 
 Manage provider credentials in `~/.jan/config.toml`.
@@ -221,6 +249,50 @@ jan cli models list
 
 This includes providers inherited from Jan Desktop, so it can list models even when
 `jan config list` shows none of its own.
+
+## `jan cli mcp`
+
+Manage Model Context Protocol servers in the shared `mcp_config.json` -- the same store Jan
+Desktop and the interactive console read. Servers you add or enable here are available in both.
+
+The desktop-only `Jan Browser MCP` bridge is never listed or editable from the CLI.
+
+```bash
+jan cli mcp list                            # JSON, env/header values redacted
+jan cli mcp list --show-secrets             # include secret values
+jan cli mcp get <NAME>                      # one server's full config
+jan cli mcp add <NAME> --command npx --arg -y --arg my-mcp
+jan cli mcp remove <NAME>
+jan cli mcp enable <NAME>                   # connect on the next session
+jan cli mcp disable <NAME>
+```
+
+A stdio server needs a command and optional args; an `http`/`sse` server needs a URL.
+
+```bash
+# stdio (the default transport)
+jan cli mcp add files --command npx --arg -y --arg @modelcontextprotocol/server-filesystem \
+  --env FOO=bar
+
+# http, with a header and marked active immediately
+jan cli mcp add exa --type http --url https://mcp.exa.ai/mcp --header Authorization=Bearer-secret \
+  --active
+```
+
+| `add` flag | Description |
+| --- | --- |
+| `--command <CMD>` | Command for a stdio server (e.g. `npx`, `uvx`). Required for stdio |
+| `--arg <ARG>` | Argument for the command. Repeatable |
+| `--env KEY=VALUE` | Environment variable for a stdio server. Repeatable |
+| `--type <TYPE>` | Transport: `stdio` (default), `http`, or `sse` |
+| `--url <URL>` | URL for an `http`/`sse` server. Required unless stdio |
+| `--header KEY=VALUE` | Header for an `http`/`sse` server. Repeatable |
+| `--active` | Mark the server active immediately. Defaults to inactive |
+
+Adding a server that already exists replaces it (an edit); its `active` flag is preserved. Newly
+added servers default to inactive, so they are persisted but not connected until you `enable` them.
+
+See [MCP](/docs/agent/mcp).
 
 ## `jan update`
 

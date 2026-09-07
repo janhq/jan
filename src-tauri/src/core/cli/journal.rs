@@ -1,12 +1,12 @@
 //! Display journal: the transcript as it was shown, so `/resume` can restore
 //! reasoning, tool calls and their results.
 //!
-//! `messages.jsonl` is the wire conversation and cannot carry this: reasoning is
-//! deliberately kept out of it (never resent to the model), tool calls are
-//! flattened to text on save, and a `/compact` rewrites it. The journal is a
-//! separate append-only log of what the TUI rendered, in emission order, written
-//! off the render loop at each turn boundary and replayed through the same
-//! rendering path on resume.
+//! `messages.jsonl` is the wire conversation and cannot carry this: it keeps
+//! reasoning out of `content` (it rides along on `reasoning_content` instead),
+//! tool calls are flattened to text on save, and a `/compact` rewrites it. The
+//! journal is a separate append-only log of what the TUI rendered, in emission
+//! order, written off the render loop at each turn boundary and replayed through
+//! the same rendering path on resume.
 
 use std::path::{Path, PathBuf};
 
@@ -20,9 +20,16 @@ pub enum DisplayEntry {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         images: Vec<String>,
     },
-    /// Assistant text exactly as streamed, `<think>` markers included, so the
-    /// replay folds reasoning the same way the live turn did.
-    Assistant { text: String },
+    /// Answer prose exactly as streamed. Reasoning is not inlined into it:
+    /// natively streamed `reasoning_content` rides along in `reasoning`, while
+    /// an inline-tag provider's `<think>` markers are simply part of the prose
+    /// it sent. A journal written before `reasoning` existed has its reasoning
+    /// inside `text` as markers, which replays down the inline path unchanged.
+    Assistant {
+        text: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        reasoning: Vec<ReasoningSeg>,
+    },
     ToolCall {
         id: String,
         name: String,
@@ -46,6 +53,16 @@ pub enum DisplayEntry {
         #[serde(default = "default_true")]
         finished: bool,
     },
+}
+
+/// One stretch of natively streamed reasoning, anchored to the byte offset in
+/// the answer prose it arrived at. Keeping the offset (rather than splicing the
+/// text into the prose) preserves emission order without ever encoding
+/// reasoning as markup a later pass would have to parse back out.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReasoningSeg {
+    pub at: usize,
+    pub text: String,
 }
 
 fn default_true() -> bool {
@@ -177,6 +194,7 @@ mod tests {
             user("do it"),
             DisplayEntry::Assistant {
                 text: "<think>plan</think>".into(),
+                reasoning: Vec::new(),
             },
             DisplayEntry::ToolCall {
                 id: "c1".into(),
@@ -196,6 +214,7 @@ mod tests {
             },
             DisplayEntry::Assistant {
                 text: "Done.".into(),
+                reasoning: Vec::new(),
             },
         ]
     }
@@ -251,6 +270,7 @@ mod tests {
         entries.push(user("second"));
         entries.push(DisplayEntry::Assistant {
             text: "more".into(),
+            reasoning: Vec::new(),
         });
         assert_eq!(truncate_at_user(&entries, 0), 0);
         assert_eq!(truncate_at_user(&entries, 1), 6, "cuts at the second user");

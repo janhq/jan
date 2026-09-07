@@ -570,11 +570,13 @@ pub fn get_destination_path(original_path: &str, prefix: &str) -> String {
 
 use crate::core::server::MlxBackendSession;
 
-pub(crate) async fn router_upstream(
+/// The loopback endpoint local-model requests are forwarded to: the engine
+/// worker's `/v1` surface, or None when no engine is running.
+pub(crate) async fn engine_upstream(
     llama_state: &LlamacppState,
     destination_path: &str,
 ) -> Option<(String, String)> {
-    let guard = llama_state.router.lock().await;
+    let guard = llama_state.engine.lock().await;
     guard.as_ref().map(|h| {
         (
             format!("http://127.0.0.1:{}/v1{}", h.port, destination_path),
@@ -583,19 +585,13 @@ pub(crate) async fn router_upstream(
     })
 }
 
-pub(crate) async fn router_list_models(
+pub(crate) async fn engine_list_models(
     llama_state: &LlamacppState,
     client: &Client,
 ) -> Vec<String> {
-    let (url, key) = {
-        let guard = llama_state.router.lock().await;
-        match guard.as_ref() {
-            Some(h) => (
-                format!("http://127.0.0.1:{}/v1/models", h.port),
-                h.api_key.clone(),
-            ),
-            None => return Vec::new(),
-        }
+    let (url, key) = match engine_upstream(llama_state, "/models").await {
+        Some(v) => v,
+        None => return Vec::new(),
     };
     let resp = match client
         .get(&url)
@@ -605,7 +601,7 @@ pub(crate) async fn router_list_models(
     {
         Ok(r) => r,
         Err(e) => {
-            log::warn!("Failed to query router /v1/models: {e}");
+            log::warn!("Failed to query the engine's /v1/models: {e}");
             return Vec::new();
         }
     };
@@ -630,7 +626,7 @@ pub(crate) async fn router_first_model(
     llama_state: &LlamacppState,
     client: &Client,
 ) -> Option<String> {
-    router_list_models(llama_state, client)
+    engine_list_models(llama_state, client)
         .await
         .into_iter()
         .next()
@@ -981,7 +977,9 @@ async fn proxy_request(
 
                         match run_server_side_openai_orchestration(
                             &openai_body,
-                            &client,
+                            // The agent loop runs on genai (reqwest 0.13); the
+                            // proxy's own passthrough stays on 0.12.
+                            &crate::core::agent::upstream::agent_http_client(),
                             provider_configs.clone(),
                             llama_state.clone(),
                             mlx_sessions.clone(),
@@ -1069,7 +1067,7 @@ async fn proxy_request(
                                 target_base_url =
                                     Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
                             } else if let Some((url, key)) =
-                                router_upstream(&llama_state, "/messages").await
+                                engine_upstream(&llama_state, "/messages").await
                             {
                                 session_api_keys = vec![key];
                                 target_base_url = Some(url);
@@ -1326,6 +1324,13 @@ async fn proxy_request(
                     return Ok(error_response.body(full(e)).unwrap());
                 }
             };
+            // `provider/model` records the provider qualifier used to resolve
+            // the upstream above; the request body must carry the bare model id.
+            let body_model_id = {
+                let pc = provider_configs.lock().await;
+                crate::core::agent::upstream::strip_provider_prefix(&model_id, &pc)
+            };
+
 
             let max_turns = json_body
                 .get("max_turns")
@@ -1338,7 +1343,7 @@ async fn proxy_request(
             for _turn in 0..max_turns {
                 // Build upstream request body for each turn so messages are updated.
                 let mut completion_map = serde_json::Map::new();
-                completion_map.insert("model".to_string(), serde_json::json!(model_id));
+                completion_map.insert("model".to_string(), serde_json::json!(body_model_id));
                 completion_map.insert(
                     "messages".to_string(),
                     serde_json::Value::Array(conversation_messages.clone()),
@@ -1498,7 +1503,7 @@ async fn proxy_request(
                     {
                         match run_server_side_openai_orchestration(
                             &json_body,
-                            &client,
+                            &crate::core::agent::upstream::agent_http_client(),
                             provider_configs.clone(),
                             llama_state.clone(),
                             mlx_sessions.clone(),
@@ -1582,9 +1587,23 @@ async fn proxy_request(
 
                             if let Some(provider_cfg) = provider_config {
                                 // A converter only applies to chat/completions; other
-                                // paths keep verbatim forwarding.
+                                // paths keep verbatim forwarding. The OAuth auth
+                                // scheme applies only when the provider is actually
+                                // authenticated with an OAuth account token, not
+                                // merely because openai/anthropic also support
+                                // account login (an API-key sign-in must stay on
+                                // its plain key scheme).
                                 let converter = if destination_path == "/chat/completions" {
-                                    converter_for(provider_cfg.api_type.as_deref())
+                                    // OAuth account login is a `cli` feature; the
+                                    // desktop has no OAuth account token here, so it
+                                    // must keep the plain API-key scheme rather than
+                                    // treat every anthropic provider as an account.
+                                    #[cfg(feature = "cli")]
+                                    let oauth = crate::core::cli::auth::account::
+                                        has_oauth_credential(&provider_cfg.provider);
+                                    #[cfg(not(feature = "cli"))]
+                                    let oauth = false;
+                                    converter_for(provider_cfg.api_type.as_deref(), oauth)
                                 } else {
                                     None
                                 };
@@ -1613,7 +1632,7 @@ async fn proxy_request(
                                     .map(|s| s.info.clone())
                             };
 
-                            let router_up = router_upstream(&llama_state, &destination_path).await;
+                            let router_up = engine_upstream(&llama_state, &destination_path).await;
 
                             if mlx_session_info.is_none() && router_up.is_none() {
                                 log::warn!(
@@ -1694,7 +1713,7 @@ async fn proxy_request(
         (hyper::Method::GET, "/models") => {
             log::debug!("Handling GET /v1/models request");
 
-            let local_models: Vec<_> = router_list_models(&llama_state, &client)
+            let local_models: Vec<_> = engine_list_models(&llama_state, &client)
                 .await
                 .into_iter()
                 .map(|id| {
@@ -2013,6 +2032,11 @@ async fn proxy_request(
                 None => ("authorization", format!("Bearer {key}")),
             };
             outbound_req = outbound_req.header(auth_name, auth_value);
+            if let Some(conv) = &upstream_converter {
+                for (name, value) in conv.credential_headers(key) {
+                    outbound_req = outbound_req.header(name, value);
+                }
+            }
         } else {
             log::debug!("No session API key for this attempt");
         }
@@ -2287,6 +2311,27 @@ fn is_insecure_public_bind(host: &str, api_key: &str) -> bool {
     !is_loopback && api_key.is_empty()
 }
 
+/// Convert a TCP bind failure into a user-facing message. Address-in-use
+/// (Windows error 10048 / WSAEADDRINUSE, Unix EADDRINUSE) almost always means
+/// a leftover Jan process or another service still owns the port after a
+/// restart, so name the port and the remedy instead of surfacing a bare OS
+/// errno. Any other error is passed through unchanged.
+fn map_bind_error(
+    addr: SocketAddr,
+    err: std::io::Error,
+) -> Box<dyn std::error::Error + Send + Sync> {
+    if err.kind() == std::io::ErrorKind::AddrInUse {
+        let msg = format!(
+            "Port {port} ({addr}) is already in use. A previous Jan process may still be \
+             running or another application may be using the port. Close the leftover \
+             process and try again, or pick a different port in Settings > Local API Server.",
+            port = addr.port()
+        );
+        return msg.into();
+    }
+    Box::new(err)
+}
+
 pub(crate) fn add_cors_headers_with_host_and_origin(
     builder: hyper::http::response::Builder,
     _host: &str,
@@ -2419,7 +2464,7 @@ async fn start_server_internal(
         Ok(l) => l,
         Err(e) => {
             log::error!("Failed to bind to {addr}: {e}");
-            return Err(Box::new(e));
+            return Err(map_bind_error(addr, e));
         }
     };
     log::info!("Jan API server started on http://{addr}");
@@ -2907,7 +2952,8 @@ async fn forward_non_streaming(
 
 #[cfg(test)]
 mod tests {
-    use super::is_insecure_public_bind;
+    use super::{is_insecure_public_bind, map_bind_error};
+    use std::net::SocketAddr;
 
     #[test]
     fn loopback_never_warns() {
@@ -2927,5 +2973,25 @@ mod tests {
     fn public_bind_with_key_is_ok() {
         assert!(!is_insecure_public_bind("0.0.0.0", "secret"));
         assert!(!is_insecure_public_bind("192.168.1.10", "secret"));
+    }
+
+    #[test]
+    fn addr_in_use_maps_to_actionable_message() {
+        let addr: SocketAddr = "127.0.0.1:1337".parse().unwrap();
+        let err = std::io::Error::new(std::io::ErrorKind::AddrInUse, "Address already in use");
+        let msg = map_bind_error(addr, err).to_string();
+        assert!(msg.contains("1337"), "should name the port: {msg}");
+        assert!(
+            msg.contains("already in use") && msg.contains("process"),
+            "should explain the leftover-process remedy: {msg}"
+        );
+    }
+
+    #[test]
+    fn non_addr_in_use_error_passes_through() {
+        let addr: SocketAddr = "127.0.0.1:1337".parse().unwrap();
+        let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let msg = map_bind_error(addr, err).to_string();
+        assert!(msg.contains("denied"), "should keep the original error: {msg}");
     }
 }

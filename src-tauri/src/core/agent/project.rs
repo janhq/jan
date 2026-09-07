@@ -23,6 +23,18 @@ pub(crate) struct AgentToml {
     pub tools: ToolsSection,
     #[serde(default)]
     pub skills: SkillsSection,
+    #[serde(default)]
+    pub plugins: PluginsSection,
+}
+
+/// `[plugins]` — plugin installs and marketplace. Installed plugins live in
+/// `.jan/agent/plugins/`; this section only carries configuration.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct PluginsSection {
+    /// URL of a JSON marketplace index (`[{ name, description, repo, ref? }]`).
+    /// Unset disables name-based installs; direct git URLs still work.
+    #[serde(default)]
+    pub marketplace: Option<String>,
 }
 
 /// `[provider]` — project-local override of a single provider's config,
@@ -98,9 +110,24 @@ pub(crate) struct AgentSection {
     /// this flips the default for every block in the session.
     #[serde(default)]
     pub show_reasoning: Option<bool>,
+    /// Resend a prior assistant turn's `reasoning_content` to the model with the
+    /// rest of the conversation. Default true: providers that expose reasoning
+    /// natively generally expect it back, and local llama.cpp templates with
+    /// `preserve_thinking` re-emit prior reasoning from this field (dropping it
+    /// shrinks earlier turns and forces the KV-cache prefix to be reprocessed).
+    /// Set false for a strict upstream that rejects the key on assistant turns
+    /// (Groq's validator is the known case), or to keep long chains of thought
+    /// out of the context budget.
+    #[serde(default)]
+    pub send_reasoning: Option<bool>,
 }
 
+// `default`/`allow`/`deny`/`allow_write` are consumed by `permissions_from`,
+// which only the CLI calls: the desktop's tool gate lives in the plugin. They
+// stay parsed regardless so the desktop round-trips an `agent.toml` written by
+// the CLI instead of silently dropping the user's policy on save.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
 pub(crate) struct ToolsSection {
     #[serde(default)]
     pub default: Option<String>,
@@ -122,6 +149,13 @@ pub(crate) struct ToolsSection {
     /// `$HOME` entirely. Writes are confined to the workspace either way.
     #[serde(default)]
     pub allow_home_read: Option<bool>,
+    /// Whether the shell runs under OS confinement. `None` (unset) leaves the
+    /// choice to the surface: the desktop always confines, the CLI defaults to
+    /// off and opts in with `--sandbox` or the global `sandbox` setting.
+    /// Setting it here is how a repo requires confinement for everyone who
+    /// checks it out.
+    #[serde(default)]
+    pub sandbox: Option<bool>,
 }
 
 const AGENT_TOML_TEMPLATE: &str = r#"[agent]
@@ -131,6 +165,8 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
 # show_reasoning = false  # expand  reasoning in the transcript (Ctrl-O still toggles)
+# send_reasoning = true  # resend prior reasoning to the model; false drops it from the request
+#                        # (a provider that rejects the field is detected and stripped automatically)
 
 # Project-local provider override. Wins over ~/.jan/config.toml and any
 # provider inherited from Jan Desktop's settings.json. Most projects don't
@@ -166,6 +202,11 @@ allow_write = []
 # credential helpers and ~/.ssh/config). Unset follows the surface: the CLI
 # allows it (true), the desktop masks $HOME. Writes stay in the workspace.
 # allow_home_read = true
+# Whether `bash` runs under OS confinement at all. Unset follows the surface:
+# the CLI runs unconfined unless you pass --sandbox or set sandbox = true in
+# ~/.jan/config.toml; the desktop always confines. Set it here to require
+# confinement for anyone working in this project.
+# sandbox = true
 
 [skills]
 enabled = []
@@ -201,6 +242,9 @@ pub(crate) struct RunSettings {
     /// `[tools].allow_home_read`; `None` when unset, so the caller applies the
     /// default appropriate to its surface.
     pub allow_home_read: Option<bool>,
+    /// `[tools].sandbox`; `None` when unset, so the caller applies the default
+    /// appropriate to its surface.
+    pub sandbox: Option<bool>,
 }
 
 /// A missing or malformed config yields defaults rather than an error: a project
@@ -213,6 +257,7 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
         enabled_skills: cfg.skills.enabled,
         allow_network: cfg.tools.allow_network,
         allow_home_read: cfg.tools.allow_home_read,
+        sandbox: cfg.tools.sandbox,
     }
 }
 
@@ -221,6 +266,10 @@ pub(crate) fn enabled_skills(project_root: &Path) -> Vec<String> {
 }
 
 /// Build a `ToolPermissions` from the parsed `[tools]` section.
+///
+/// CLI-only: the desktop no longer runs the agent loop in Rust, so its tool
+/// gating is the plugin's, not this one.
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
 pub(crate) fn permissions_from(cfg: &AgentToml) -> ToolPermissions {
     let default = cfg
         .tools
@@ -427,8 +476,7 @@ mod tests {
     /// The scaffold documents the key, so it has to stay parseable as written.
     #[test]
     fn scaffold_template_parses_with_allow_network_documented() {
-        let cfg: AgentToml =
-            toml::from_str(AGENT_TOML_TEMPLATE).expect("scaffold template parses");
+        let cfg: AgentToml = toml::from_str(AGENT_TOML_TEMPLATE).expect("scaffold template parses");
         assert_eq!(cfg.tools.allow_network, None);
         assert!(AGENT_TOML_TEMPLATE.contains("allow_network"));
     }
@@ -437,8 +485,10 @@ mod tests {
     fn ensure_errors_when_project_dir_missing() {
         // A mistyped --project (e.g. wrong case) must fail fast, not scaffold a
         // phantom project dir from nothing.
-        let root = std::env::temp_dir()
-            .join(format!("jan_agent_missing_{}", COUNTER.fetch_add(1, Ordering::SeqCst)));
+        let root = std::env::temp_dir().join(format!(
+            "jan_agent_missing_{}",
+            COUNTER.fetch_add(1, Ordering::SeqCst)
+        ));
         assert!(!root.exists());
         let err = ensure_project(&root).expect_err("must reject missing dir");
         assert!(err.contains("does not exist"), "err: {err}");
@@ -525,12 +575,19 @@ mod tests {
         let root = unique_root("max_parallel");
         ensure_project(&root).expect("scaffold");
         let cfg = load_agent_config(&root).expect("load");
-        assert_eq!(cfg.agent.max_parallel_subagents, None, "template leaves it unset");
+        assert_eq!(
+            cfg.agent.max_parallel_subagents, None,
+            "template leaves it unset"
+        );
 
         // Explicit value round-trips through the /settings writer; unset removes.
         let path = agent_toml_path(&root);
-        set_agent_key(&path, "max_parallel_subagents", Some(toml_edit::value(4i64)))
-            .expect("write");
+        set_agent_key(
+            &path,
+            "max_parallel_subagents",
+            Some(toml_edit::value(4i64)),
+        )
+        .expect("write");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.max_parallel_subagents, Some(4));
         set_agent_key(&path, "max_parallel_subagents", None).expect("unset");
@@ -549,13 +606,33 @@ mod tests {
 
         // Explicit value round-trips through the /settings writer; unset removes.
         let path = agent_toml_path(&root);
-        set_agent_key(&path, "show_reasoning", Some(toml_edit::value(true)))
-            .expect("write");
+        set_agent_key(&path, "show_reasoning", Some(toml_edit::value(true))).expect("write");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.show_reasoning, Some(true));
         set_agent_key(&path, "show_reasoning", None).expect("unset");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.show_reasoning, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `send_reasoning` is unset in the template, which the callers read as the
+    /// resend-by-default policy; an explicit false round-trips so a strict
+    /// upstream can be opted out of it.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn send_reasoning_parses_and_round_trips() {
+        let root = unique_root("send_reasoning");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.send_reasoning, None, "template leaves it unset");
+
+        let path = agent_toml_path(&root);
+        set_agent_key(&path, "send_reasoning", Some(toml_edit::value(false))).expect("write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.send_reasoning, Some(false));
+        set_agent_key(&path, "send_reasoning", None).expect("unset");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.send_reasoning, None);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -568,7 +645,10 @@ mod tests {
 
         set_agent_key(&path, "budget.max_tokens", Some(toml_edit::value(60i64))).expect("write");
         let raw = std::fs::read_to_string(&path).unwrap();
-        assert!(raw.contains("max_tokens = 60"), "written under [budget]: {raw}");
+        assert!(
+            raw.contains("max_tokens = 60"),
+            "written under [budget]: {raw}"
+        );
 
         set_agent_key(&path, "budget.max_tokens", None).expect("unset");
         let raw = std::fs::read_to_string(&path).unwrap();
@@ -590,16 +670,14 @@ mod tests {
     #[cfg(feature = "cli")]
     #[test]
     fn scaffold_template_leaves_session_budget_unset() {
-        let cfg: AgentToml =
-            toml::from_str(AGENT_TOML_TEMPLATE).expect("scaffold template parses");
+        let cfg: AgentToml = toml::from_str(AGENT_TOML_TEMPLATE).expect("scaffold template parses");
         assert_eq!(cfg.budget.max_tokens, None);
     }
 
     #[cfg(feature = "cli")]
     #[test]
     fn budget_max_tokens_parses_when_set() {
-        let cfg: AgentToml =
-            toml::from_str("[budget]\nmax_tokens = 200000\n").expect("parses");
+        let cfg: AgentToml = toml::from_str("[budget]\nmax_tokens = 200000\n").expect("parses");
         assert_eq!(cfg.budget.max_tokens, Some(200_000));
     }
 

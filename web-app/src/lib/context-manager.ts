@@ -15,6 +15,32 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / CHARS_PER_TOKEN)
 }
 
+/**
+ * Share of the model's context window a single tool result may occupy.
+ *
+ * One result should never crowd out the conversation that gives it meaning, so
+ * this is deliberately a minority of the window: enough for a substantial page
+ * or file, far short of the whole budget.
+ */
+const TOOL_OUTPUT_FRACTION_OF_CONTEXT = 0.25
+
+/**
+ * Per-tool-result character budget derived from the active model's context
+ * window, so a bigger window earns a proportionally bigger allowance instead of
+ * being held to one hardcoded number.
+ *
+ * Returns `undefined` when the window is unknown - remote providers often don't
+ * report one - leaving the user's configured cap in sole charge.
+ */
+export function deriveToolOutputCap(
+  contextWindowTokens: number | undefined
+): number | undefined {
+  if (!contextWindowTokens || contextWindowTokens <= 0) return undefined
+  return Math.floor(
+    contextWindowTokens * CHARS_PER_TOKEN * TOOL_OUTPUT_FRACTION_OF_CONTEXT
+  )
+}
+
 function messageToText(message: UIMessage): string {
   const parts: string[] = []
   for (const part of message.parts) {

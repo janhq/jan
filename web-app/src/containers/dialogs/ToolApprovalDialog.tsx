@@ -15,7 +15,7 @@ export type ApprovalDecision = 'allow-once' | 'allow-always' | 'deny'
 
 /**
  * Presentational approval dialog shared by the chat MCP tool-approval flow
- * (`ToolApproval`) and the code agent's permission prompt (`CodePermissionDialog`).
+ * (`ToolApproval`).
  *
  * It owns only the shell — the shared `tools:toolApproval.*` copy, the
  * deny / allow-once / allow-always footer, and close-as-deny semantics (Esc or

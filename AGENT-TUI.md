@@ -173,17 +173,42 @@ The TUI supports non-blocking input — the user can type even while the agent i
 | Key | Action |
 |-----|--------|
 | Enter | Submit / queue message |
-| Alt+Enter / Ctrl+J | Insert newline |
-| Backspace / Delete | Edit input |
-| Left / Right / Home / End | Cursor movement |
-| Up / Down | Scroll transcript |
-| PageUp / PageDown | Scroll by page |
+| Alt+Enter / Shift+Enter / Ctrl+J | Insert newline |
+| Backspace / Delete / Ctrl+H | Delete one character |
+| Alt+Backspace / Ctrl+Backspace / Ctrl+Delete / Alt+D | Delete a word (emacs boundary) |
+| Ctrl+W | Delete a word (whitespace-delimited, shell `unix-word-rubout`) |
+| Ctrl+U / Ctrl+K | Kill to start / end of line |
+| Ctrl+A / Ctrl+E / Home / End | Start / end of line |
+| Ctrl+B / Ctrl+F / Left / Right | Character motion |
+| Alt+B / Alt+F / Ctrl+Left / Ctrl+Right | Word motion |
+| Cmd+Backspace / Cmd+Left / Cmd+Right | Line-wise kill / motion (SUPER, kitty protocol only) |
+| Ctrl+T | Transpose characters |
+| Ctrl+P / Ctrl+N | Message history recall |
+| Up / Down | Recall messages, or scroll once the input has text |
+| PageUp / PageDown | Scroll by page (always) |
 | Ctrl-O | Toggle expand/collapse all regions |
 | Ctrl-V | Attach clipboard image |
 | Ctrl-C / Esc | Cancel current run |
 | Ctrl-D | Quit TUI |
-| Ctrl-Z | Suspend (SIGTSTP) |
 | Tab | Autocomplete / cycle slash commands |
+
+Motion and kills are **line-wise**, not buffer-wise, since the composer is
+multi-line (`line_bounds`). Word boundaries come in two flavours on purpose:
+`prev_word_start` / `next_word_end` (alphanumerics plus `_`, readline's
+`Alt+B`/`Alt+F`) and `prev_unix_word_start` (whitespace only, for `Ctrl+W`), so
+`Ctrl+W` eats a whole path token where `Alt+Backspace` stops at each `/`. Every
+kill funnels through `App::delete_span`, which owns the slash/path-hint refresh.
+
+`Shift+Enter` and the `SUPER` bindings only arrive when the terminal implements
+the kitty keyboard protocol. `KITTY_KEYS_ON` (`CSI > 5 u`: disambiguate escape
+codes + report alternate keys) is pushed at startup and popped on exit, sent
+unconditionally because a terminal without the protocol ignores both sequences,
+and `supports_keyboard_enhancement()` would stall for its full 2s timeout on
+exactly the terminals that lack support. Event types (flag 2) are deliberately
+off - they add key-release and repeat events nothing here filters. Where the
+protocol is unavailable, `core::cli::terminal_setup` (`/terminal-setup`)
+configures a terminal-side binding that sends `ESC` + `CR`, which crossterm
+reports as `Enter` + `ALT` - the same arm `Alt+Enter` already uses.
 
 ### Message Queue System
 

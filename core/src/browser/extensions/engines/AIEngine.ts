@@ -215,6 +215,13 @@ export interface chatOptions {
 // Output for /chat will be Promise<ChatCompletion> for non-streaming
 // or Promise<AsyncIterable<ChatCompletionChunk>> for streaming
 
+/**
+ * A speculative-decoding draft flavour, matching llama.cpp's `--spec-type`
+ * values minus their `draft-` prefix (common/speculative.cpp). `dspark` is
+ * `dflash` plus a Markov head.
+ */
+export type SpecDraftKind = 'mtp' | 'eagle3' | 'dflash' | 'dspark'
+
 // 7. /import
 export interface ImportOptions {
   modelPath: string
@@ -223,8 +230,11 @@ export interface ImportOptions {
   modelSize?: number
   mmprojSha256?: string
   mmprojSize?: number
-  // Optional MTP draft gguf (speculative decoding companion) downloaded with the model.
-  mtpPath?: string
+  // Optional speculative-decoding draft gguf downloaded alongside the model,
+  // plus which flavour the catalog named it as. The kind is a hint only: the
+  // draft's own `general.architecture` decides, since it is authoritative.
+  specDraftPath?: string
+  specDraftKind?: SpecDraftKind
   // Additional files to download for MLX models
   files?: Array<{
     url: string
@@ -238,6 +248,79 @@ export interface importResult {
   success: boolean
   modelInfo?: modelInfo
   error?: string
+}
+
+export interface EmbeddingData {
+  embedding: number[]
+  index: number
+  object?: string
+}
+
+export interface EmbeddingResponse {
+  data: EmbeddingData[]
+  model?: string
+  object?: string
+  usage?: {
+    prompt_tokens: number
+    total_tokens: number
+  }
+}
+
+/**
+ * Embedding support an engine may add on top of `AIEngine`.
+ *
+ * Kept off `AIEngine` because most engines cannot embed. It is an interface
+ * rather than optional members so the RAG and vector-db extensions -- which
+ * reach the embedding engine by name across the extension boundary -- narrow
+ * with `isEmbeddingEngine` instead of casting to a structural type each
+ * declares for itself. Three copies of that cast had already drifted apart.
+ */
+export interface EmbeddingEngine {
+  /** Embeds each text, in input order. */
+  embed(texts: string[]): Promise<EmbeddingResponse>
+
+  /**
+   * The embedding model's context window in tokens, or undefined when no
+   * embedding model is available to ask.
+   */
+  getEmbeddingContextSize(): Promise<number | undefined>
+
+  /** Token counts from the embedding model's own tokenizer, in input order. */
+  countEmbeddingTokens(texts: string[]): Promise<number[]>
+}
+
+function hasMethod(engine: unknown, name: keyof EmbeddingEngine): boolean {
+  return (
+    !!engine &&
+    typeof engine === 'object' &&
+    typeof (engine as Record<string, unknown>)[name] === 'function'
+  )
+}
+
+/**
+ * Narrows to an engine that can produce embeddings.
+ *
+ * Deliberately weaker than `isEmbeddingEngine`: producing a vector needs no
+ * tokenizer, so an engine that can embed but cannot count tokens is usable
+ * here and must not be turned away.
+ */
+export function canEmbed(engine: unknown): engine is AIEngine & Pick<EmbeddingEngine, 'embed'> {
+  return hasMethod(engine, 'embed')
+}
+
+/**
+ * Narrows to an engine implementing the whole embedding contract, including the
+ * tokenizer queries that context-aware chunking needs.
+ *
+ * Checks each method rather than the object as a whole so a partially
+ * implemented engine is rejected here instead of throwing on first use.
+ */
+export function isEmbeddingEngine(engine: unknown): engine is AIEngine & EmbeddingEngine {
+  return (
+    canEmbed(engine) &&
+    hasMethod(engine, 'getEmbeddingContextSize') &&
+    hasMethod(engine, 'countEmbeddingTokens')
+  )
 }
 
 /**

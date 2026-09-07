@@ -6,11 +6,6 @@
   "noUpdateAvailable": "Estás usando la última versión",
   "devVersion": "Versión de desarrollo detectada",
   "updateError": "Error al buscar actualizaciones",
-  "checkForBackendUpdates": "Buscar actualizaciones de Llamacpp",
-  "checkForBackendUpdatesDesc": "Verifica si hay una versión más reciente del backend Llamacpp disponible.",
-  "checkingForBackendUpdates": "Buscando actualizaciones de Llamacpp...",
-  "noBackendUpdateAvailable": "Estás usando la última versión de Llamacpp",
-  "backendUpdateError": "Error al buscar actualizaciones de Llamacpp",
   "changeLocation": "Cambiar ubicación",
   "copied": "Copiado",
   "copyPath": "Copiar ruta",
@@ -312,15 +307,6 @@
       "cancel": "Cancelar",
       "changeLocation": "Cambiar ubicación"
     }
-  },
-  "backendUpdater": {
-    "newBackendVersion": "Nueva versión de Llamacpp {{version}}",
-    "backendUpdateAvailable": "Actualización de Llamacpp disponible",
-    "remindMeLater": "Recordar más tarde",
-    "updating": "Actualizando...",
-    "updateNow": "Actualizar ahora",
-    "updateSuccess": "Llamacpp actualizado correctamente",
-    "updateError": "Error al actualizar Llamacpp"
   },
   "backendInstallSuccess": "¡OpenClaw instalado correctamente!",
   "backendInstallError": "Error al instalar el backend",

@@ -13,7 +13,7 @@
 //!    env fallback via [`ProviderOverrides::with_env`]) win over all of the
 //!    above - the most explicit, most ephemeral signal.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path, time::Duration};
 
 use crate::core::agent::global_config::load_global_config;
 use crate::core::agent::project::ProviderSection;
@@ -114,6 +114,16 @@ pub fn is_cli_reachable(config: &ProviderConfig) -> bool {
     config.base_url.as_deref().is_some_and(|u| !u.is_empty())
 }
 
+/// Log a provider-config load failure at most once per process. Startup probes
+/// this in two independent places (the headless sign-in guard and the model
+/// fallback), and a malformed `~/.jan/config.toml` fails both, so without this
+/// the same multi-line TOML error is printed twice before the fatal error
+/// prints it a third time.
+fn warn_load_failure_once(context: &str, err: &str) {
+    static LOGGED: std::sync::Once = std::sync::Once::new();
+    LOGGED.call_once(|| log::warn!("could not load provider configs{context}: {err}"));
+}
+
 /// Whether this install can run a turn at all: some provider is reachable and
 /// either credentialed or local (a self-hosted endpoint - typically the desktop
 /// app's API server - needs no key). `false` is the fresh-install state that
@@ -124,24 +134,43 @@ pub fn has_usable_provider(project_root: Option<&std::path::Path>) -> bool {
     match load_provider_configs(project_root, &overrides) {
         Ok(configs) => configs.values().any(is_usable),
         Err(e) => {
-            log::warn!("could not load provider configs: {e}");
+            warn_load_failure_once("", &e);
             false
         }
     }
+}
+
+/// Whether `provider` has a stored credential or resolves to a usable config.
+pub fn provider_is_signed_in(project_root: Option<&Path>, provider: &str) -> bool {
+    if matches!(
+        crate::core::cli::auth::CredentialStore::load(provider),
+        Ok(Some(_))
+    ) {
+        return true;
+    }
+
+    let overrides = ProviderOverrides {
+        provider: Some(provider.to_string()),
+        api_key: None,
+    }
+    .with_env();
+
+    load_provider_configs(project_root, &overrides)
+        .ok()
+        .and_then(|configs| configs.get(provider).map(is_usable))
+        .unwrap_or(false)
 }
 
 fn is_usable(config: &ProviderConfig) -> bool {
     if !is_cli_reachable(config) {
         return false;
     }
-    config.api_key.is_some()
-        || !config.api_keys.is_empty()
-        || config.base_url.as_deref().is_some_and(is_loopback_url)
+    has_credential(config) || config.base_url.as_deref().is_some_and(is_loopback_url)
 }
 
 /// Whether a base URL points at this machine, where an API key is usually not
 /// required. Host-only match (no DNS): anything else is treated as remote.
-fn is_loopback_url(url: &str) -> bool {
+pub(crate) fn is_loopback_url(url: &str) -> bool {
     let authority = url
         .split_once("://")
         .map(|(_, rest)| rest)
@@ -157,15 +186,31 @@ fn is_loopback_url(url: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "0.0.0.0" | "::1")
 }
 
-/// `(provider, model_id)` pairs the CLI can actually run, sorted by provider
-/// then model.
+/// `(provider, model_id)` pairs the CLI can actually run: Tokamak first, then
+/// every other provider by name, models sorted within each.
+///
+/// Tokamak leads because it is the provider the product signs users in to; a
+/// plain alphabetical sort buried it below whatever else happened to be
+/// configured. Ordering only -- nothing is filtered by provider, so a user who
+/// prefers another provider still sees it.
 pub fn reachable_models(configs: &HashMap<String, ProviderConfig>) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = configs
         .values()
         .filter(|c| is_cli_reachable(c))
         .flat_map(|c| c.models.iter().map(|m| (c.provider.clone(), m.clone())))
         .collect();
-    out.sort();
+    // `false < true`, so the Tokamak rows sort ahead of everything else while
+    // the rest stay alphabetical.
+    out.sort_by(|a, b| {
+        let key = |(provider, model): &(String, String)| {
+            (
+                provider != super::tokamak::PROVIDER,
+                provider.clone(),
+                model.clone(),
+            )
+        };
+        key(a).cmp(&key(b))
+    });
     out
 }
 
@@ -205,10 +250,156 @@ pub fn list_provider_models(project_root: Option<&std::path::Path>) -> Vec<(Stri
     match load_provider_configs(project_root, &ProviderOverrides::default().with_env()) {
         Ok(configs) => reachable_models(&configs),
         Err(e) => {
-            log::warn!("could not load provider configs for the model picker: {e}");
+            warn_load_failure_once(" for the model picker", &e);
             Vec::new()
         }
     }
+}
+
+/// Populate model lists for providers that have none configured
+/// (e.g. a provider just added via the `/settings` wizard with the models field
+/// left blank). For each reachable provider with an empty `models` list, query
+/// its OpenAI-compatible `GET {base_url}/models` endpoint and persist the
+/// discovered ids back to `~/.jan/config.toml`, mirroring how `/login` records
+/// Tokamak's model list. Returns `true` if at least one provider was populated.
+/// An unreachable endpoint is not fatal: it yields a warning and is skipped, so
+/// a dead credential never blocks the picker. The configured list is preserved
+/// when a provider already names models (the user's explicit choice wins), and
+/// only providers present in the global store are touched -- writing a
+/// models-only entry for a Desktop-inherited provider would shadow it.
+/// `already_probed` records which `(provider, base_url)` pairs were queried,
+/// so each is touched at most once per session: a dead upstream is not
+/// re-contacted on every picker open.
+pub async fn fetch_missing_models(
+    project_root: Option<&std::path::Path>,
+    already_probed: &mut std::collections::HashSet<String>,
+) -> Result<bool, String> {
+    let global = load_global_config()?;
+    let configs = load_provider_configs(project_root, &ProviderOverrides::default().with_env())?;
+    let to_fetch: Vec<(String, String, Vec<String>)> = configs
+        .values()
+        .filter(|c| {
+            global.contains_key(&c.provider) && is_cli_reachable(c) && c.models.is_empty()
+        })
+        // Probe each provider at most once per session. A provider that still
+        // has an empty list after a probe was unreachable or offered nothing;
+        // re-probing it on every bare `/model` would freeze the render loop
+        // for the full request timeout each time. Filtered before the key is
+        // fetched so a re-open cannot re-prompt for a provider already probed.
+        .filter(|c| {
+            let tag = format!("{}|{}", c.provider, c.base_url.clone().unwrap_or_default());
+            if already_probed.contains(&tag) {
+                return false;
+            }
+            already_probed.insert(tag);
+            true
+        })
+        .cloned()
+        .map(|mut c| {
+            hydrate_provider_keys(&mut c);
+            (
+                c.provider.clone(),
+                c.base_url.clone().unwrap_or_default(),
+                c.bearer_key_chain(),
+            )
+        })
+        .collect();
+    if to_fetch.is_empty() {
+        return Ok(false);
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+    // Probe providers concurrently so a batch of dead upstreams cannot stall
+    // the `/model` picker for the sum of their timeouts; the slowest provider
+    // bounds the wait.
+    let results = futures::future::join_all(to_fetch.into_iter().map(|(name, base_url, keys)| {
+        let client = &client;
+        async move {
+            let models = fetch_models(client, &base_url, &keys).await;
+            (name, base_url, models)
+        }
+    }))
+    .await;
+    let mut populated = false;
+    for (name, _, result) in results {
+        let models = match result {
+            Ok(m) => m,
+            Err(e) => {
+                log::warn!("could not list models for provider '{name}': {e}");
+                continue;
+            }
+        };
+        if models.is_empty() {
+            continue;
+        }
+        crate::core::agent::global_config::set_provider(
+            &name,
+            crate::core::agent::global_config::ProviderUpdate {
+                api_key: None,
+                base_url: None,
+                clear_api_key: false,
+                models: Some(models),
+                api_type: None,
+                ..Default::default()
+            },
+        )?;
+        populated = true;
+    }
+    Ok(populated)
+}
+
+/// Query an OpenAI-compatible `GET {base_url}/models` with Bearer auth (trying
+/// each key in the chain on 401/403, matching upstream resolution) and return
+/// the parsed, sorted, deduped ids from the response body. A provider with no
+/// key (a keyless local endpoint) is queried unauthenticated. A remote
+/// plaintext-`http` base URL is rejected up front so a bearer key is never
+/// sent over a cleartext connection (loopback `http` is allowed).
+async fn fetch_models(
+    client: &reqwest::Client,
+    base_url: &str,
+    keys: &[String],
+) -> Result<Vec<String>, String> {
+    if !(base_url.starts_with("https://")
+        || (base_url.starts_with("http://") && is_loopback_url(base_url)))
+    {
+        return Err(format!(
+            "base URL must be https:// (or http:// for localhost): {base_url}"
+        ));
+    }
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let mut last_err = format!("GET {url} failed");
+    let attempts: Vec<Option<&String>> = if keys.is_empty() {
+        vec![None]
+    } else {
+        keys.iter().map(Some).collect()
+    };
+    for key in attempts {
+        let mut request = client.get(&url);
+        if let Some(key) = key {
+            request = request.header("Authorization", format!("Bearer {key}"));
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|e| format!("could not reach {url}: {e}"))?;
+        let status = response.status();
+        if status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            let parsed: serde_json::Value = serde_json::from_str(&body)
+                .map_err(|e| format!("{url} returned a response we could not read: {e}"))?;
+            return Ok(super::tokamak::parse_models(&parsed));
+        }
+        if status != reqwest::StatusCode::UNAUTHORIZED && status != reqwest::StatusCode::FORBIDDEN {
+            // A non-auth error (rate limit, upstream down) won't be fixed by
+            // trying another key, so report it and stop.
+            return Err(format!("GET {url} returned {status}"));
+        }
+        last_err = format!("{url} rejected the key ({status})");
+    }
+    Err(last_err)
 }
 
 /// Load provider configs by layering the four `.jan`-based scopes (see module
@@ -233,22 +424,49 @@ pub fn load_provider_configs(
     }
 
     apply_overrides(&mut configs, overrides);
+    seed_from_credential_store(&mut configs);
     Ok(configs)
+}
+
+/// Fill a login-created provider's key chain from the auth credential store
+/// when neither persisted configuration nor CLI/env overrides supplied a key.
+/// The login flow writes only non-secret metadata to config, so without this
+/// seeding a signed-in provider would resolve keyless at runtime and every
+/// request would 401. OAuth credentials are resolved by the transport layer
+/// and deliberately not seeded here.
+fn seed_from_credential_store(configs: &mut HashMap<String, ProviderConfig>) {
+    use crate::core::cli::auth::CredentialStore;
+    for (name, cfg) in configs.iter_mut() {
+        if !cfg.bearer_key_chain().is_empty() {
+            continue;
+        }
+        let Ok(Some(credential)) = CredentialStore::load(name) else {
+            continue;
+        };
+        let Some(key) = credential.as_api_key() else {
+            continue;
+        };
+        cfg.api_key = Some(key.to_string());
+        cfg.api_keys = vec![key.to_string()];
+    }
 }
 
 /// Layer in providers from Desktop's `settings.json` that Global doesn't
 /// already define. Read-only inherit: never overwrites a Global entry, never
-/// writes back to `settings.json`. Secrets are seeded from the OS keyring /
-/// encrypted fallback file (#8388) since they no longer live in the JSON blob.
+/// writes back to `settings.json`.
+///
+/// Their secrets live in the OS keyring (#8388) and are deliberately *not*
+/// read here: this runs on startup, on every `/model` open and on every status
+/// call, and reading N keychain items costs N macOS authorization prompts for
+/// providers a run will never select. Keys are fetched by
+/// [`hydrate_provider_keys`] for the one provider that is actually used;
+/// [`has_stored_key`] answers presence without touching the secret.
 fn inherit_desktop_providers(configs: &mut HashMap<String, ProviderConfig>) {
     let path = resolve_jan_data_folder().join("settings.json");
-    let mut desktop_configs = match std::fs::read_to_string(&path) {
+    let desktop_configs = match std::fs::read_to_string(&path) {
         Ok(raw) => parse_provider_store(&raw),
         Err(_) => return,
     };
-    seed_keys_from_store(&mut desktop_configs, |p| {
-        crate::core::server::provider_secrets::load_provider_keys(p)
-    });
     for (name, cfg) in desktop_configs {
         configs.entry(name).or_insert(cfg);
     }
@@ -286,24 +504,40 @@ fn provider_config_from_section(section: ProviderSection) -> ProviderConfig {
 /// Seed each config's key chain from the secret store when the settings blob
 /// carried no key. `load` is injected for testability. Explicit `--api-key`/env
 /// overrides run afterward and still win.
-fn seed_keys_from_store(
-    configs: &mut HashMap<String, ProviderConfig>,
-    load: impl Fn(&str) -> Vec<String>,
-) {
-    for (name, cfg) in configs.iter_mut() {
-        if cfg.api_key.is_some() {
-            continue;
-        }
-        let keys = load(name);
-        if !keys.is_empty() {
-            cfg.api_key = keys.first().cloned();
-            cfg.api_keys = keys;
-        }
+/// Fill in a provider's key chain from the OS secret store, on demand.
+///
+/// No-op when the config already carries one: `~/.jan/config.toml` providers
+/// (Tokamak included) hold their key inline, as do `--api-key`/env overrides,
+/// so the prioritized path never reaches the keyring at all. Call this only for
+/// a provider that is about to be used -- each call can cost a macOS keychain
+/// prompt.
+pub fn hydrate_provider_keys(config: &mut ProviderConfig) {
+    hydrate_with(config, |p| {
+        crate::core::server::provider_secrets::load_provider_keys(p)
+    })
+}
+
+fn hydrate_with(config: &mut ProviderConfig, mut load: impl FnMut(&str) -> Vec<String>) {
+    if !config.bearer_key_chain().is_empty() {
+        return;
+    }
+    let keys = load(&config.provider);
+    if !keys.is_empty() {
+        config.api_key = keys.first().cloned();
+        config.api_keys = keys;
     }
 }
 
+/// Whether `config` can present a key, without reading one. Inline keys answer
+/// themselves; anything else defers to the secret store's presence index.
+pub fn has_credential(config: &ProviderConfig) -> bool {
+    !config.bearer_key_chain().is_empty()
+        || crate::core::server::provider_secrets::has_stored_key(&config.provider)
+}
+
 /// Parse the `settings.json` body into provider configs. Tolerant of shape
-/// drift: anything it cannot read is skipped rather than erroring.
+/// drift: anything it cannot read is skipped rather than erroring. Providers
+/// Desktop has marked inactive are skipped too (see `provider_from_json`).
 fn parse_provider_store(raw: &str) -> HashMap<String, ProviderConfig> {
     let root: serde_json::Value = match serde_json::from_str(raw) {
         Ok(v) => v,
@@ -339,6 +573,16 @@ fn parse_provider_store(raw: &str) -> HashMap<String, ProviderConfig> {
 
 fn provider_from_json(p: &serde_json::Value) -> Option<ProviderConfig> {
     let provider = p.get("provider").and_then(|v| v.as_str())?.to_string();
+
+    // A provider the user switched off in Desktop is not an option here either.
+    // Desktop stops registering an inactive provider (`syncRemoteProviders`
+    // gates on `active`), so inheriting one meant offering an entry whose key
+    // Desktop no longer maintains. Absent field = inherit: `active` is written
+    // for every provider Desktop creates, so only an explicit `false` is a
+    // deliberate opt-out.
+    if p.get("active").and_then(|v| v.as_bool()) == Some(false) {
+        return None;
+    }
 
     let base_url = p
         .get("base_url")
@@ -452,6 +696,34 @@ mod tests {
         assert!(openai.api_keys.is_empty());
     }
 
+    /// Desktop stops maintaining an inactive provider's key, so inheriting one
+    /// offers an entry that cannot run and reports as keyless.
+    #[test]
+    fn an_inactive_desktop_provider_is_not_inherited() {
+        let store = STORE.replace(
+            r#"{\"provider\":\"openai\""#,
+            r#"{\"provider\":\"openai\",\"active\":false"#,
+        );
+        let configs = parse_provider_store(&store);
+        assert!(!configs.contains_key("openai"), "inactive provider skipped");
+        assert!(configs.contains_key("anthropic"), "active one still there");
+    }
+
+    #[test]
+    fn an_active_desktop_provider_is_inherited() {
+        let store = STORE.replace(
+            r#"{\"provider\":\"openai\""#,
+            r#"{\"provider\":\"openai\",\"active\":true"#,
+        );
+        assert!(parse_provider_store(&store).contains_key("openai"));
+    }
+
+    /// Stores predating the flag, and any shape drift, must keep working.
+    #[test]
+    fn a_provider_without_the_active_flag_is_inherited() {
+        assert!(parse_provider_store(STORE).contains_key("openai"));
+    }
+
     #[test]
     fn malformed_store_yields_empty_map() {
         assert!(parse_provider_store("not json").is_empty());
@@ -500,14 +772,14 @@ mod tests {
     }
 
     #[test]
-    fn seed_fills_missing_key_from_store() {
+    fn hydrate_fills_missing_key_from_store() {
         let mut configs = parse_provider_store(STORE);
-        // openai has an empty key in the blob -> should be seeded.
-        seed_keys_from_store(&mut configs, |p| match p {
+        // openai has an empty key in the blob -> should be filled in.
+        let openai = configs.get_mut("openai").unwrap();
+        hydrate_with(openai, |p| match p {
             "openai" => vec!["sk-stored-1".to_string(), "sk-stored-2".to_string()],
             _ => Vec::new(),
         });
-        let openai = configs.get("openai").unwrap();
         assert_eq!(openai.api_key.as_deref(), Some("sk-stored-1"));
         assert_eq!(
             openai.api_keys,
@@ -516,19 +788,43 @@ mod tests {
     }
 
     #[test]
-    fn seed_does_not_clobber_existing_key() {
+    fn hydrate_does_not_clobber_existing_key() {
         let mut configs = parse_provider_store(STORE);
         // anthropic already has sk-ant-123 from the blob -> store must not win.
-        seed_keys_from_store(&mut configs, |_| vec!["sk-should-not-apply".to_string()]);
-        let anthropic = configs.get("anthropic").unwrap();
+        let anthropic = configs.get_mut("anthropic").unwrap();
+        hydrate_with(anthropic, |_| vec!["sk-should-not-apply".to_string()]);
         assert_eq!(anthropic.api_key.as_deref(), Some("sk-ant-123"));
     }
 
+    /// The whole point of deferring: a desktop-inherited provider is keyless
+    /// as loaded, and reaches the secret store exactly once, only when it is
+    /// the provider actually being used -- each read can cost a macOS keychain
+    /// prompt.
     #[test]
-    fn seed_empty_store_leaves_key_none() {
+    fn a_desktop_provider_stays_keyless_until_hydrated() {
         let mut configs = parse_provider_store(STORE);
-        seed_keys_from_store(&mut configs, |_| Vec::new());
-        assert_eq!(configs.get("openai").unwrap().api_key, None);
+        let openai = configs.get_mut("openai").unwrap();
+        assert_eq!(openai.api_key, None, "keyless until hydrated");
+
+        let mut reads = 0;
+        hydrate_with(openai, |_| {
+            reads += 1;
+            Vec::new()
+        });
+        assert_eq!(reads, 1, "and exactly one read when it is");
+        assert_eq!(openai.api_key, None);
+    }
+
+    #[test]
+    fn hydrate_skips_the_store_when_a_key_is_already_present() {
+        let mut configs = parse_provider_store(STORE);
+        let anthropic = configs.get_mut("anthropic").unwrap();
+        let mut reads = 0;
+        hydrate_with(anthropic, |_| {
+            reads += 1;
+            Vec::new()
+        });
+        assert_eq!(reads, 0, "an inline key must not trigger a store read");
     }
 
     #[test]
@@ -632,6 +928,51 @@ mod tests {
         assert!(!is_loopback_url("https://localhost.evil.com/v1"));
         assert!(!is_loopback_url("https://api.tokamak.sh/v1"));
         assert!(!is_loopback_url(""));
+    }
+
+    /// Tokamak leads the `/model` picker; everything else keeps its alphabetical
+    /// order behind it, and models stay sorted within each provider.
+    #[test]
+    fn reachable_models_lists_tokamak_first() {
+        let mut configs = HashMap::new();
+        configs.insert(
+            "anthropic".to_string(),
+            cfg("anthropic", Some("https://api.anthropic.com/v1"), &["claude-sonnet-5"]),
+        );
+        configs.insert(
+            "tokamak".to_string(),
+            cfg("tokamak", Some("https://api.tokamak.sh/v1"), &["tokamak-1-preview"]),
+        );
+        configs.insert(
+            "openai".to_string(),
+            cfg("openai", Some("https://api.openai.com/v1"), &["gpt-5", "gpt-4o"]),
+        );
+
+        assert_eq!(
+            reachable_models(&configs),
+            vec![
+                ("tokamak".to_string(), "tokamak-1-preview".to_string()),
+                ("anthropic".to_string(), "claude-sonnet-5".to_string()),
+                ("openai".to_string(), "gpt-4o".to_string()),
+                ("openai".to_string(), "gpt-5".to_string()),
+            ]
+        );
+    }
+
+    /// Ordering is the only change: with no Tokamak entry the list is exactly
+    /// the alphabetical order it always was.
+    #[test]
+    fn without_tokamak_the_order_is_unchanged() {
+        let mut configs = HashMap::new();
+        configs.insert("zeta".to_string(), cfg("zeta", Some("https://z.example/v1"), &["z1"]));
+        configs.insert("alpha".to_string(), cfg("alpha", Some("https://a.example/v1"), &["a1"]));
+        assert_eq!(
+            reachable_models(&configs),
+            vec![
+                ("alpha".to_string(), "a1".to_string()),
+                ("zeta".to_string(), "z1".to_string()),
+            ]
+        );
     }
 
     #[test]
@@ -743,5 +1084,362 @@ mod tests {
             configs.get("anthropic").and_then(|c| c.api_key.as_deref()),
             Some("sk-ant-123")
         );
+    }
+
+    /// One-shot `/models` stub on a random loopback port. Returns the bound
+    /// address; each accepted connection gets `body` back as JSON.
+    fn models_stub(body: String, connections: usize) -> std::net::SocketAddr {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(connections) {
+                let Ok(mut stream) = stream else { continue };
+                let mut buf = [0u8; 4096];
+                let _ = std::io::Read::read(&mut stream, &mut buf);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = std::io::Write::write_all(&mut stream, resp.as_bytes());
+            }
+        });
+        addr
+    }
+
+    #[test]
+    fn fetch_missing_models_populates_and_persists_empty_providers() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(
+                serde_json::json!({"data": [{"id": "m-b"}, {"id": "m-a"}]}).to_string(),
+                1,
+            );
+            crate::core::agent::global_config::set_provider(
+                "bare",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    clear_api_key: false,
+                    models: Some(vec![]),
+                    api_type: None,
+                                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
+            assert!(populated);
+
+            let configs = load_global_config().unwrap();
+            assert_eq!(
+                configs.get("bare").unwrap().models,
+                vec!["m-a".to_string(), "m-b".to_string()],
+                "discovered ids persist sorted"
+            );
+        });
+    }
+
+    #[test]
+    fn fetch_missing_models_leaves_configured_lists_alone() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "chosen",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("http://127.0.0.1:9/v1".into()), // would refuse
+                    clear_api_key: false,
+                    models: Some(vec!["my-model".into()]),
+                    api_type: None,
+                                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            // Nothing to fetch: the provider already names its models, so the
+            // dead endpoint above must never be contacted.
+            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
+            assert!(!populated);
+            let configs = load_global_config().unwrap();
+            assert_eq!(configs.get("chosen").unwrap().models, vec!["my-model".to_string()]);
+        });
+    }
+
+    #[test]
+    fn fetch_missing_models_queries_keyless_loopback_providers() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(
+                serde_json::json!({"data": [{"id": "local-model"}]}).to_string(),
+                1,
+            );
+            crate::core::agent::global_config::set_provider(
+                "local",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: None,
+                    base_url: Some(format!("http://{addr}/v1")),
+                    clear_api_key: false,
+                    models: Some(vec![]),
+                    api_type: None,
+                                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
+            assert!(populated, "a keyless endpoint is queried unauthenticated");
+            let configs = load_global_config().unwrap();
+            assert_eq!(configs.get("local").unwrap().models, vec!["local-model".to_string()]);
+        });
+    }
+
+    /// Probes must run concurrently, not sequentially: each stub here only
+    /// responds after BOTH providers have connected, so a sequential
+    /// implementation (probe one to completion before starting the next)
+    /// deadlocks into its 15s timeout and populates only one provider.
+    #[test]
+    fn fetch_missing_models_probes_concurrently() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+            let stub = |models: &str| {
+                let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                let addr = listener.local_addr().unwrap();
+                let body = serde_json::json!({"data": [{"id": models}]}).to_string();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let Ok((mut stream, _)) = listener.accept() else { return };
+                    let mut buf = [0u8; 4096];
+                    let _ = std::io::Read::read(&mut stream, &mut buf);
+                    barrier.wait();
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = std::io::Write::write_all(&mut stream, resp.as_bytes());
+                });
+                addr
+            };
+            let addr_a = stub("model-a");
+            let addr_b = stub("model-b");
+            for (name, addr) in [("prov-a", addr_a), ("prov-b", addr_b)] {
+                crate::core::agent::global_config::set_provider(
+                    name,
+                    crate::core::agent::global_config::ProviderUpdate {
+                        api_key: Some("k".into()),
+                        base_url: Some(format!("http://{addr}/v1")),
+                        clear_api_key: false,
+                        models: Some(vec![]),
+                        api_type: None,
+                                            ..Default::default()
+                    },
+                )
+                .unwrap();
+            }
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let populated = rt
+                .block_on(fetch_missing_models(None, &mut std::collections::HashSet::new()))
+                .expect("fetch");
+            assert!(populated);
+            let configs = load_global_config().unwrap();
+            assert_eq!(configs.get("prov-a").unwrap().models, vec!["model-a".to_string()]);
+            assert_eq!(configs.get("prov-b").unwrap().models, vec!["model-b".to_string()]);
+        });
+    }
+
+    #[test]
+    fn fetch_missing_models_short_circuits_already_probed() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            // A dead endpoint: if it were contacted, the 15s timeout would hang.
+            crate::core::agent::global_config::set_provider(
+                "dead",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("http://127.0.0.1:9/v1".into()), // refuses instantly
+                    clear_api_key: false,
+                    models: Some(vec![]),
+                    api_type: None,
+                                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let mut probed = std::collections::HashSet::new();
+            // First probe hits the dead endpoint (fast refusal) and warns.
+            let populated = rt
+                .block_on(fetch_missing_models(None, &mut probed))
+                .expect("fetch");
+            assert!(!populated);
+            assert_eq!(probed.len(), 1, "dead provider is recorded as probed");
+
+            // A second fetch must not re-contact the dead endpoint at all
+            // (the probed set short-circuits it), and must not error.
+            let again = rt
+                .block_on(fetch_missing_models(None, &mut probed))
+                .expect("second fetch");
+            assert!(!again, "already-probed provider is not re-fetched");
+        });
+    }
+
+    /// Redirects the secret store (data folder + forced file fallback) for the
+    /// duration of `f`. `JAN_DATA_FOLDER` is process-wide, so tests touching it
+    /// must not run concurrently.
+    fn with_temp_secrets<T>(f: impl FnOnce() -> T) -> T {
+        let _guard = crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let prev = std::env::var("JAN_DATA_FOLDER").ok();
+        std::env::set_var("JAN_DATA_FOLDER", dir.path());
+        crate::core::server::provider_secrets::force_file_secrets();
+        let result = f();
+        match &prev {
+            Some(v) => std::env::set_var("JAN_DATA_FOLDER", v),
+            None => std::env::remove_var("JAN_DATA_FOLDER"),
+        }
+        result
+    }
+
+    #[test]
+    fn provider_is_signed_in_when_api_key_credential_exists() {
+        use crate::core::agent::global_config::with_temp_home;
+        use crate::core::cli::auth::{Credential, CredentialStore};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                CredentialStore::store("deepseek", &Credential::ApiKey("sk-live".into())).unwrap();
+
+                assert!(provider_is_signed_in(None, "deepseek"));
+            });
+        });
+    }
+
+    #[test]
+    fn provider_is_signed_in_when_oauth_credential_exists() {
+        use crate::core::agent::global_config::with_temp_home;
+        use crate::core::cli::auth::{Credential, CredentialStore, OAuthToken};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                CredentialStore::store(
+                    "anthropic",
+                    &Credential::OAuthToken(OAuthToken {
+                        access_token: "access".into(),
+                        refresh_token: Some("refresh".into()),
+                        expires_at: Some(1_800_000_000),
+                        token_type: "Bearer".into(),
+                        scopes: vec!["model.read".into()],
+                    }),
+                )
+                .unwrap();
+
+                assert!(provider_is_signed_in(None, "anthropic"));
+            });
+        });
+    }
+
+    #[test]
+    fn provider_is_not_signed_in_without_credential_or_usable_config() {
+        use crate::core::agent::global_config::with_temp_home;
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                assert!(!provider_is_signed_in(None, "deepseek"));
+            });
+        });
+    }
+
+    #[test]
+    fn provider_is_signed_in_when_resolved_config_is_usable() {
+        use crate::core::agent::global_config::{set_provider, with_temp_home, ProviderUpdate};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                set_provider(
+                    "jan",
+                    ProviderUpdate {
+                        api_key: None,
+                        clear_api_key: true,
+                        base_url: Some("http://localhost:1337/v1".into()),
+                        models: Some(vec!["jan-local".into()]),
+                        api_type: None,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+
+                assert!(provider_is_signed_in(None, "jan"));
+            });
+        });
+    }
+
+    #[test]
+    fn runtime_uses_secret_store_when_non_secret_config_has_no_key() {
+        use crate::core::agent::global_config::{set_provider, with_temp_home, ProviderUpdate};
+        use crate::core::cli::auth::{Credential, CredentialStore};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                // The login flow writes only non-secret metadata to config.
+                set_provider(
+                    "deepseek",
+                    ProviderUpdate {
+                        api_key: None,
+                        clear_api_key: true,
+                        base_url: Some("https://mock/v1".into()),
+                        models: Some(vec!["deepseek-chat".into()]),
+                        api_type: None,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                CredentialStore::store("deepseek", &Credential::ApiKey("sk-live".into())).unwrap();
+
+                let configs = load_provider_configs(None, &ProviderOverrides::default()).unwrap();
+                assert_eq!(
+                    configs.get("deepseek").unwrap().bearer_key_chain(),
+                    vec!["sk-live".to_string()]
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn secret_store_never_overrides_an_explicit_override_key() {
+        use crate::core::agent::global_config::{set_provider, with_temp_home, ProviderUpdate};
+        use crate::core::cli::auth::{Credential, CredentialStore};
+
+        with_temp_secrets(|| {
+            with_temp_home(|_| {
+                set_provider(
+                    "deepseek",
+                    ProviderUpdate {
+                        api_key: None,
+                        clear_api_key: true,
+                        base_url: Some("https://mock/v1".into()),
+                        models: Some(vec!["deepseek-chat".into()]),
+                        api_type: None,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                CredentialStore::store("deepseek", &Credential::ApiKey("sk-stored".into())).unwrap();
+
+                // A CLI/env override is the most explicit, most ephemeral signal
+                // and must win over the persisted secret.
+                let overrides = ProviderOverrides {
+                    provider: Some("deepseek".into()),
+                    api_key: Some("sk-flag".into()),
+                };
+                let configs = load_provider_configs(None, &overrides).unwrap();
+                assert_eq!(
+                    configs.get("deepseek").unwrap().bearer_key_chain(),
+                    vec!["sk-flag".to_string()]
+                );
+            });
+        });
     }
 }

@@ -58,6 +58,9 @@ impl RunReport {
                 self.partial.clear();
             }
             StreamEvent::Token { text } => self.partial.push_str(text),
+            // Reasoning is display-only: it must not enter the piped/plain-text
+            // report answer, which is reserved for the final completion.
+            StreamEvent::Reasoning { .. } => {}
             StreamEvent::TurnUsage { usage } => {
                 self.prompt_tokens += usage.prompt_tokens.unwrap_or(0);
                 self.completion_tokens += usage.completion_tokens.unwrap_or(0);

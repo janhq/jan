@@ -17,14 +17,15 @@ import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { engineSlotsIdle } from '@janhq/tauri-plugin-llamacpp-api'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
+import { deriveToolOutputCap } from '@/lib/context-manager'
 import { renderInstructions } from '@/lib/instructionTemplate'
 import {
   Conversation,
   ConversationContent,
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation'
-import { invoke } from '@tauri-apps/api/core'
 import { generateId, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
@@ -556,9 +557,18 @@ function ThreadDetail() {
                 scope: projectId ? 'project' : 'thread',
               })
             } else if (mcpToolNames.has(toolName)) {
+              // An MCP result is injected into conversation history verbatim, so
+              // a page-sized one can exhaust the context on its own. Give the
+              // backend a budget scaled to the window this model actually has;
+              // it narrows that against the user's configured ceiling.
+              const ctxLen = useModelProvider.getState().selectedModel?.settings
+                ?.ctx_len?.controller_props?.value
               result = await serviceHub.mcp().callTool({
                 toolName,
                 arguments: toolCall.input,
+                maxOutputChars: deriveToolOutputCap(
+                  typeof ctxLen === 'number' ? ctxLen : undefined
+                ),
               })
             } else {
               result = {
@@ -653,10 +663,7 @@ function ThreadDetail() {
                 let idle = false
                 for (let attempt = 0; attempt < 6; attempt++) {
                   try {
-                    idle = await invoke<boolean>(
-                      'plugin:llamacpp|router_slots_idle',
-                      { modelId }
-                    )
+                    idle = await engineSlotsIdle(modelId)
                   } catch {
                     idle = true
                     break
