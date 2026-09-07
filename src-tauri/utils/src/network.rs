@@ -125,8 +125,7 @@ pub fn should_bypass_proxy(url: &str, no_proxy: &[String]) -> bool {
         }
 
         // Simple wildcard matching
-        if entry.starts_with("*.") {
-            let domain = &entry[2..];
+        if let Some(domain) = entry.strip_prefix("*.") {
             if host.ends_with(domain) {
                 return true;
             }
@@ -203,7 +202,7 @@ fn find_process_using_port_unix(port: u16) -> Option<ProcessUsingPort> {
     use std::process::Command;
 
     let output = Command::new("lsof")
-        .args(&["-i", &format!(":{}", port)])
+        .args(["-i", &format!(":{}", port)])
         .output()
         .ok()?;
 
@@ -289,7 +288,7 @@ fn get_process_command_line(pid: u32) -> Option<Vec<String>> {
     use std::process::Command;
 
     let output = Command::new("ps")
-        .args(&["-p", &pid.to_string(), "-o", "command="])
+        .args(["-p", &pid.to_string(), "-o", "command="])
         .output()
         .ok()?;
 
@@ -369,7 +368,7 @@ fn get_process_info_by_pid_unix(pid: u32) -> Option<ProcessUsingPort> {
 
     // Use ps to get process info by PID
     let output = Command::new("ps")
-        .args(&["-p", &pid.to_string(), "-o", "comm="])
+        .args(["-p", &pid.to_string(), "-o", "comm="])
         .output()
         .ok()?;
 

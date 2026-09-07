@@ -2,13 +2,14 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
+#[cfg(not(feature = "cli"))]
 use tauri::{AppHandle, Manager, Runtime, State};
 
-use super::{
-    constants::{CONFIGURATION_FILE_NAME, TAURI_BUNDLE_IDENTIFIER},
-    helpers::copy_dir_recursive,
-    models::AppConfiguration,
-};
+use super::constants::{CONFIGURATION_FILE_NAME, TAURI_BUNDLE_IDENTIFIER};
+use super::models::AppConfiguration;
+#[cfg(not(feature = "cli"))]
+use super::helpers::copy_dir_recursive;
+#[cfg(not(feature = "cli"))]
 use crate::core::state::AppState;
 
 /// Canonical Jan app support directory (`%APPDATA%/Jan` on Windows).
@@ -57,7 +58,7 @@ fn migrate_from_candidates(canonical: &Path, candidates: Vec<PathBuf>) -> std::i
     Ok(())
 }
 
-fn legacy_app_config_candidate_paths(app_data_dir: &Path) -> Vec<PathBuf> {
+fn legacy_app_config_candidate_paths(_app_data_dir: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
     if let Some(bundle_dir) = resolve_bundle_app_data_dir() {
@@ -69,7 +70,7 @@ fn legacy_app_config_candidate_paths(app_data_dir: &Path) -> Vec<PathBuf> {
         let package_name = env!("CARGO_PKG_NAME");
         if let Some(config_dir) = dirs::config_dir() {
             let legacy = config_dir.join(package_name).join(CONFIGURATION_FILE_NAME);
-            if legacy != app_data_dir.join(CONFIGURATION_FILE_NAME) {
+            if legacy != _app_data_dir.join(CONFIGURATION_FILE_NAME) {
                 paths.push(legacy);
             }
         }
@@ -78,21 +79,25 @@ fn legacy_app_config_candidate_paths(app_data_dir: &Path) -> Vec<PathBuf> {
     paths
 }
 
+#[cfg(not(feature = "cli"))]
 fn app_data_dir_with_fallback<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> PathBuf {
     let package_name = env!("CARGO_PKG_NAME");
-    app_handle.path().data_dir().unwrap_or_else(|err| {
-        log::error!("Failed to get data directory: {err}. Using home directory instead.");
+    app_handle
+        .path()
+        .data_dir()
+        .unwrap_or_else(|err| {
+            log::error!("Failed to get data directory: {err}. Using home directory instead.");
 
-        let home_dir = std::env::var(if cfg!(target_os = "windows") {
-            "USERPROFILE"
-        } else {
-            "HOME"
+            let home_dir = std::env::var(if cfg!(target_os = "windows") {
+                "USERPROFILE"
+            } else {
+                "HOME"
+            })
+            .expect("Failed to determine the home directory");
+
+            PathBuf::from(home_dir)
         })
-        .expect("Failed to determine the home directory");
-
-        PathBuf::from(home_dir)
-    })
-    .join(package_name)
+        .join(package_name)
 }
 
 /// Resolve the Jan config file path without an AppHandle (for CLI use).
@@ -112,6 +117,29 @@ pub fn resolve_config_file_path() -> PathBuf {
     }
 
     app_data.join(CONFIGURATION_FILE_NAME)
+}
+
+/// Run `f` with `JAN_DATA_FOLDER` pointed at a fresh temp directory, restoring
+/// the previous value afterwards. Serialized on `SECRET_STORE_TEST_LOCK`, the
+/// one lock every `JAN_DATA_FOLDER` mutator takes: the env is process-wide and
+/// Rust runs tests on threads, so a private lock here would exclude only the
+/// other callers of this helper while the secret-store tests redirected the
+/// folder (and dropped its temp dir) underneath a run already in progress.
+#[cfg(all(test, feature = "cli"))]
+pub(crate) fn with_temp_data_folder<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
+    let _guard = crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let prev = std::env::var_os("JAN_DATA_FOLDER");
+    std::env::set_var("JAN_DATA_FOLDER", dir.path());
+    let result = f(dir.path());
+    match prev {
+        Some(p) => std::env::set_var("JAN_DATA_FOLDER", p),
+        None => std::env::remove_var("JAN_DATA_FOLDER"),
+    }
+    result
 }
 
 /// Resolve the Jan data folder path without an AppHandle (for CLI use).
@@ -147,6 +175,7 @@ pub fn resolve_jan_data_folder() -> PathBuf {
     PathBuf::from(home).join(&app_name).join("data")
 }
 
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> AppConfiguration {
     let mut app_default_configuration = AppConfiguration::default();
@@ -202,6 +231,7 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
     }
 }
 
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn update_app_configuration<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
@@ -217,6 +247,7 @@ pub fn update_app_configuration<R: Runtime>(
     .map_err(|e| e.to_string())
 }
 
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
     if cfg!(test) {
@@ -247,6 +278,7 @@ pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
     PathBuf::from(app_configurations.data_folder)
 }
 
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
     let app_path = app_data_dir_with_fallback(&app_handle);
@@ -256,6 +288,7 @@ pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) 
     app_path.join(CONFIGURATION_FILE_NAME)
 }
 
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> String {
     let mut path = app_handle.path().data_dir().unwrap_or_else(|err| {
@@ -283,11 +316,13 @@ pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
     path_str
 }
 
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn get_user_home_path<R: Runtime>(app: AppHandle<R>) -> String {
     get_app_configurations(app.clone()).data_folder
 }
 
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn change_app_data_folder<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
@@ -331,6 +366,7 @@ pub fn change_app_data_folder<R: Runtime>(
     update_app_configuration(app_handle, configuration)
 }
 
+#[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn app_token(state: State<'_, AppState>) -> Option<String> {
     state.app_token.clone()

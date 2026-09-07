@@ -2,6 +2,9 @@
   "toolApproval": {
     "needsApproval": "Questo strumento richiede la tua approvazione prima di essere eseguito.",
     "deny": "Rifiuta",
-    "allowOnce": "Consenti una volta"
+    "allowOnce": "Consenti una volta",
+    "title": "Richiesta chiamata strumento",
+    "description": "L'assistente vuole utilizzare lo strumento:",
+    "securityNotice": "Avviso di sicurezza: strumenti dannosi o il contenuto della conversazione potrebbero ingannare l'assistente spingendolo a compiere azioni nocive. Verifica attentamente ogni chiamata prima di approvarla."
   }
 }

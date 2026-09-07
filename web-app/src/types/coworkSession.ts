@@ -1,0 +1,105 @@
+/**
+ * Shared Cowork session types, kept free of any store so the presentation layer
+ * can be built and tested without pulling in zustand or the run driver.
+ *
+ * The shapes mirroring Rust structs keep snake_case field names verbatim: the
+ * same JSON crosses the tool boundary in both directions, and renaming here
+ * would mean a translation layer on every hop.
+ */
+
+/** A single visible transcript entry. `tool` rows are display-only and carry the
+ * structured call/result so the UI can render a tool card. */
+export type CoworkTurn = {
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+  /** User-row only: data URLs of images attached via paste/file picker. */
+  images?: string[]
+  callId?: string
+  name?: string
+  args?: unknown
+  /** Raw JSON argument text accumulated while the call streams, so the tool card
+   * shows a live preview. Superseded once the parsed `args` land. */
+  argsLive?: string
+  result?: string
+  isError?: boolean
+  diff?: string
+  status?: 'running' | 'done'
+}
+
+/** Mirrors the Rust `Usage` struct (events.rs). */
+export type Usage = {
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+}
+
+/**
+ * One subagent run, bucketed by its own run id so concurrent subagents never
+ * share a transcript lane. Lives transiently in the run store while running,
+ * then the finished set is committed onto its session.
+ */
+export type SubagentRun = {
+  runId: string
+  name: string
+  status: 'queued' | 'running' | 'done'
+  startedAt: number
+  endedAt?: number
+  /** 1-based FIFO queue position while `queued`; cleared on start. */
+  waiting?: number
+  /** The subagent's own trace. The final answer is in `finalOutput`, not here. */
+  turns: CoworkTurn[]
+  finalOutput?: string
+  usage?: Usage
+}
+
+/** Mirrors the Rust `TodoItem`/`TodoPhase`/`TodoList` structs (todo.rs). */
+export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'abandoned'
+
+export type TodoItem = {
+  content: string
+  status: TodoStatus
+}
+
+export type TodoPhase = {
+  name: string
+  tasks: TodoItem[]
+}
+
+export type TodoList = {
+  phases: TodoPhase[]
+}
+
+/** `/goal` state: set by `/goal <condition>`, checked after each turn completes,
+ * cleared by `/goal clear` or once the evaluator reports it met. */
+export type CoworkGoal = {
+  condition: string
+  turns: number
+  status: 'active' | 'achieved'
+  lastReason: string
+}
+
+/** Mirrors the Rust `OptionItem`/`Question`/`AskRequest` structs (interaction.rs). */
+export type AskOption = {
+  label: string
+  description?: string
+}
+
+export type AskQuestion = {
+  id: string
+  question: string
+  options: AskOption[]
+  multi?: boolean
+  recommended?: number
+}
+
+export type AskRequestPayload = {
+  questions: AskQuestion[]
+}
+
+/** Mirrors `QuestionResult` (interaction.rs): one answer per question, either
+ * selected option label(s) or free-text `custom_input` — never both. */
+export type AskAnswer = {
+  id: string
+  selected: string[]
+  custom_input?: string
+}

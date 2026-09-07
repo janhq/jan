@@ -12,7 +12,7 @@ import {
 } from '@/lib/models'
 import { toast } from 'sonner'
 import { cn, sanitizeModelId } from '@/lib/utils'
-import { pickMtpSibling } from '@/lib/mtp'
+import { pickSpecSibling } from '@/lib/specDraft'
 import { CatalogModel } from '@/services/models/types'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -132,8 +132,8 @@ export function DownloadButtonPlaceholder({
         (e) => e.model_id.toLowerCase() === 'mmproj-f16'
       ) || model.mmproj_models?.[0]
     )?.path
-    const mtpPath = quant
-      ? pickMtpSibling(model.mtpQuants, quant)?.path
+    const specDraft = quant
+      ? pickSpecSibling(model.specQuants, quant)
       : undefined
     setResumeParams(modelId, {
       modelPath: modelUrl,
@@ -149,7 +149,8 @@ export function DownloadButtonPlaceholder({
           mmprojPath,
           huggingfaceToken,
           undefined,
-          mtpPath
+          specDraft?.quant.path,
+          specDraft?.kind
         )
     } catch (err) {
       removeLocalDownloadingModel(modelId)

@@ -1,0 +1,130 @@
+---
+title: Contributing a Provider
+description: How to add a new model provider to Jan Agent - from a plain OpenAI-compatible endpoint to a custom wire API.
+keywords: [Jan, Jan Agent, providers, contribute, API key, wire API, converter, OAuth]
+---
+
+import { Callout } from 'nextra/components'
+
+# Contributing a Provider
+
+Jan Agent ships no inference engine, so every model runs through a provider. Most providers are OpenAI-compatible
+endpoints and need **no code at all** - the user configures them with `jan config set`. This guide covers the three
+levels of integration, from least to most code:
+
+1. A plain OpenAI-compatible endpoint - no Rust changes.
+2. A provider you want in the `/login` picker - one entry in a catalog.
+3. A provider with a **nonstandard wire API** (not openai `chat/completions`) - a converter.
+
+## 1. A plain OpenAI-compatible provider (no code)
+
+If the provider exposes an OpenAI- or Anthropic-compatible `chat/completions` endpoint, users configure it directly:
+
+```bash
+jan config set \
+  --provider myprovider \
+  --api-key sk-... \
+  --base-url https://api.myprovider.com/v1 \
+  --model my-model-1 \
+  --model my-model-2
+```
+
+That is the entire change - `--api-type openai` (the default) and `anthropic` are both supported without code. The
+provider appears in `/model` and `/settings`, and the agent resolves it like any other.
+
+<Callout type="info">
+The config-file path is `~/.jan/config.toml`. Read the [Providers](/docs/agent/providers) page for the full
+config surface, including per-project overrides and environment variables.
+</Callout>
+
+## 2. Adding it to the `/login` picker (one catalog entry)
+
+To let users sign in from `/login` (key entry + automatic `GET /models` discovery) instead of hand-writing config,
+add a `ProviderDefinition` to the catalog. One entry covers `jan /login`, model discovery on sign-in, and the
+provider appearing in `/model`.
+
+Where: `src-tauri/src/core/cli/auth/mod.rs`, in `provider_catalog()`.
+
+```rust
+ProviderDefinition {
+    id: "myprovider",                       // id in config.toml and in `myprovider/model` ids
+    name: "MyProvider",                     // display name in pickers
+    default_base_url: "https://api.myprovider.com/v1".to_string(),
+    transport: Transport::OpenAi,           // or Transport::Anthropic
+    api_key: ApiKeyMetadata {
+        keys_url: "https://myprovider.com/account/api-keys",
+        hint: "get a key at myprovider.com/account/api-keys",
+        open_in_browser: true,
+    },
+    oauth: None,                            // see the OAuth note below
+}
+```
+
+Notes:
+
+- `Transport` is a simple OpenAI/Anthropic flag (`core/cli/auth/mod.rs`). If your wire API is neither, you need a
+  converter - see step 3.
+- `oauth` metadata alone does not turn on account login. Account login is driven separately by
+  `account::AccountProvider` (`core/cli/auth/account.rs`); add supporting code there only if you are wiring a
+  Jan-owned OAuth flow.
+- Sign-in validates the key against `GET {base_url}/models` and persists the discovered ids, so a fresh entry
+  becomes selectable immediately.
+
+## 3. A nonstandard wire API (a converter)
+
+If the provider does not speak OpenAI `chat/completions` (for example Anthropic `/v1/messages`, OpenAI `/v1/responses`,
+Google `generateContent`), the agent translates between the internal chat shape and the provider's native protocol
+with an `UpstreamConverter`.
+
+Where: `src-tauri/src/core/server/converters.rs`.
+
+1. Implement `UpstreamConverter` (build the native request body from the chat request, and translate the native
+   stream back to chat events).
+2. Register it in `converter_for(api_type, oauth)` - the `api_type` string is what a config entry declares:
+
+```rust
+match api_type {
+    Some("openai-responses") => Some(Box::new(OpenAIResponsesConverter::new())),
+    Some("google") => Some(Box::new(GoogleGenerateContentConverter::new())),
+    Some("anthropic") => Some(Box::new(AnthropicMessagesConverter::new())),
+    _ => None, // verbatim chat/completions passthrough
+}
+```
+
+3. Users then set the provider with that wire type:
+
+```bash
+jan config set \
+  --provider myprovider \
+  --api-key sk-... \
+  --base-url https://api.myprovider.com/v1 \
+  --api-type google \          # matches the converter_for key
+  --model my-model
+```
+
+The converter is selected per-request via `resolve_api_type_for_model` (in
+`src-tauri/src/core/agent/upstream.rs`), mirroring how the upstream URL and credential are resolved.
+
+## How model ids resolve to a provider
+
+The agent must pick one provider when a model id could be offered by several (e.g. `mimo-v2.5` served both by
+`minimax` directly and by an `opencode` gateway). The rules, in `resolve_upstream_for_model`
+(`src-tauri/src/core/agent/upstream.rs`):
+
+1. An exact match in a provider's `models` list.
+2. Otherwise a `<provider>/<model>` prefix naming a configured provider.
+3. When several providers offer the same id, a credentialed one wins over a keyless twin (deterministic, so the
+   same model always routes the same way).
+
+The request **body** always receives the bare model id - a `<provider>/` qualifier is stripped by
+`strip_provider_prefix` before the request is sent, because upstreams reject a provider-qualified id
+(OpenCode GO returns `model not supported` for `opencode/gpt-5.6-luna`, for instance).
+
+## Checklist
+
+- [ ] OpenAI/Anthropic compatible? Ship the config surface only, or add the catalog entry for `/login`.
+- [ ] Nonstandard wire API? Implement + register an `UpstreamConverter` and document the `--api-type` value.
+- [ ] The base URL is `https://` (or `http://` for a loopback/localhost endpoint).
+- [ ] The `/login` sign-in discovers models, so the ids fetch correctly on a fresh key.
+- [ ] A model id offered by several providers prefers the credentialed one.
+- [ ] Tests: `cargo test --lib --no-default-features --features cli` for the CLI build.

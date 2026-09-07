@@ -1,0 +1,123 @@
+---
+title: Keybindings
+description: Keyboard shortcuts for the Jan Agent console.
+keywords: [Jan, Jan Agent, keybindings, keyboard shortcuts, TUI, console, readline]
+---
+
+import { Callout } from 'nextra/components'
+
+# Keybindings
+
+`/help` prints this list inside the console.
+
+## Input
+
+| Key | Action |
+| --- | --- |
+| <kbd>Enter</kbd> | Send the message |
+| <kbd>Alt</kbd>+<kbd>Enter</kbd> / <kbd>Ctrl</kbd>+<kbd>J</kbd> | Insert a newline |
+| <kbd>Shift</kbd>+<kbd>Enter</kbd> | Insert a newline, on terminals that report it - see [Shift+Enter and Option](#shiftenter-and-the-option-key) |
+| <kbd>Ctrl</kbd>+<kbd>V</kbd> | Paste an image from the clipboard |
+| <kbd>Shift</kbd>+<kbd>Tab</kbd> | Cycle reasoning effort: low -> medium -> high -> low |
+| <kbd>Alt</kbd>+<kbd>T</kbd> | Toggle reasoning effort between low and the last non-low level |
+
+Typing while the agent works queues your message rather than dropping it. See
+[Sessions](/docs/agent/sessions#queueing).
+
+## Editing
+
+The composer follows readline, so shell habits carry over. Motion and deletion are line-wise, not
+buffer-wise: a message with newlines in it has more than one line to move around.
+
+| Key | Action |
+| --- | --- |
+| <kbd>Ctrl</kbd>+<kbd>A</kbd> / <kbd>Ctrl</kbd>+<kbd>E</kbd>, <kbd>Home</kbd> / <kbd>End</kbd> | Start / end of the line |
+| <kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>Ctrl</kbd>+<kbd>F</kbd>, <kbd>←</kbd> / <kbd>→</kbd> | One character left / right |
+| <kbd>Alt</kbd>+<kbd>B</kbd> / <kbd>Alt</kbd>+<kbd>F</kbd> | One word left / right |
+| <kbd>Ctrl</kbd>+<kbd>←</kbd> / <kbd>→</kbd>, <kbd>Option</kbd>+<kbd>←</kbd> / <kbd>→</kbd> | One word left / right |
+| <kbd>Backspace</kbd> / <kbd>Delete</kbd>, <kbd>Ctrl</kbd>+<kbd>H</kbd> | Delete one character |
+| <kbd>Alt</kbd>+<kbd>Backspace</kbd>, <kbd>Option</kbd>+<kbd>Delete</kbd> | Delete the word before the caret |
+| <kbd>Ctrl</kbd>+<kbd>W</kbd> | Delete the whitespace-delimited word before the caret |
+| <kbd>Alt</kbd>+<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>Delete</kbd> | Delete the word after the caret |
+| <kbd>Ctrl</kbd>+<kbd>U</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd> | Delete to the start / end of the line |
+| <kbd>Ctrl</kbd>+<kbd>T</kbd> | Transpose the characters around the caret |
+| <kbd>Ctrl</kbd>+<kbd>P</kbd> / <kbd>Ctrl</kbd>+<kbd>N</kbd> | Previous / next sent message |
+| <kbd>Esc</kbd> | Clear the input |
+
+<Callout type="info">
+<kbd>Ctrl</kbd>+<kbd>W</kbd> and <kbd>Alt</kbd>+<kbd>Backspace</kbd> both delete backwards, but
+they disagree on where a word ends, exactly as they do in a shell. On `src/core/cli/tui.rs`,
+<kbd>Ctrl</kbd>+<kbd>W</kbd> takes the whole path and <kbd>Alt</kbd>+<kbd>Backspace</kbd> takes
+just `rs`.
+</Callout>
+
+## Shift+Enter and the Option key
+
+Two keystrokes depend on the terminal rather than on Jan, because the terminal decides what
+reaches the application at all:
+
+- **<kbd>Shift</kbd>+<kbd>Enter</kbd>** has no representation in the classic terminal encoding -
+  it sends a bare carriage return, identical to a plain <kbd>Enter</kbd>. It only arrives when the
+  terminal implements the kitty keyboard protocol, which Jan asks for at startup. kitty, Ghostty,
+  WezTerm, foot, Rio, Konsole 24+, Alacritty 0.14+, iTerm2 3.5+ and Windows Terminal all deliver
+  it. Terminal.app and VTE terminals (gnome-terminal, Tilix) cannot.
+- **<kbd>Option</kbd>+<kbd>Delete</kbd> on macOS** needs the terminal to send `Option` as `Alt`.
+  Several terminals - including kitty and Ghostty - default to treating it as an
+  accent-composition modifier instead, so the keystroke arrives as a plain delete and removes one
+  character.
+
+Run **`/terminal-setup`** to fix whichever of these applies. It writes the terminal's own config
+where it can (a VS Code keybinding, `macos_option_as_alt` for kitty, `macos-option-as-alt` for
+Ghostty, `extended-keys` for tmux) and prints the exact manual step where it cannot. It is
+idempotent and never overwrites a binding you already set.
+
+The console offers it once at startup when a config file shows a key is being dropped. Set
+`terminal_hint = false` in `~/.jan/config.toml` to silence that note.
+
+<Callout type="tip">
+<kbd>Alt</kbd>+<kbd>Enter</kbd>, <kbd>Ctrl</kbd>+<kbd>J</kbd> and <kbd>Ctrl</kbd>+<kbd>W</kbd> need
+no terminal support at all. If you would rather not configure anything, use those.
+</Callout>
+
+## Running
+
+| Key | Action |
+| --- | --- |
+| <kbd>Esc</kbd> / <kbd>Ctrl</kbd>+<kbd>C</kbd> | Cancel the running turn |
+| <kbd>Esc</kbd> <kbd>Esc</kbd> | Rewind to an earlier message (when idle) |
+
+Cancelling stops the turn, not the session. See [rewinding](/docs/agent/sessions#rewinding).
+
+## Reading
+
+| Key | Action |
+| --- | --- |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Recall sent messages, or scroll the transcript once the input has text |
+| <kbd>PgUp</kbd> / <kbd>PgDn</kbd> | Scroll the transcript, always |
+| <kbd>Ctrl</kbd>+<kbd>O</kbd> | Expand or collapse all tool calls and reasoning blocks |
+| Drag | Select text, copied on release (<kbd>Alt</kbd>+drag selects a block) |
+| Click | Expand or collapse the row under the pointer |
+
+<Callout type="tip">
+Mouse tracking is on by default, which means Jan owns selection rather than the terminal - dragging
+selects and copies through Jan, and clicking a folded row expands it. Set `mouse = false` in
+`~/.jan/config.toml` to hand both back to the terminal. There is no hotkey for this.
+</Callout>
+
+## Approval prompts
+
+When the agent asks before a write or a command:
+
+| Key | Action |
+| --- | --- |
+| <kbd>y</kbd> | Allow once |
+| <kbd>a</kbd> | Allow, and stop asking for this kind of call this session |
+| <kbd>n</kbd> | Deny |
+
+See [Tool permissions](/docs/agent/permissions).
+
+## Exit
+
+| Key | Action |
+| --- | --- |
+| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Quit |

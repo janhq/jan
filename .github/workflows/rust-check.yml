@@ -26,11 +26,12 @@ jobs:
             features: test-tauri
             targets: --all-targets
             tauri: true
-          # Test targets are only exercised in the desktop config, and a
-          # headless runner cannot link them here anyway.
+          # --all-targets matters here: modules like core::agent::global_config
+          # are #[cfg(feature = "cli")], so their tests exist in no other config
+          # and --lib --bins would leave them unlinted.
           - name: cli
             features: cli
-            targets: --lib --bins
+            targets: --all-targets
             tauri: false
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

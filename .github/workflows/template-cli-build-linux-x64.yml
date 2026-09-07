@@ -25,6 +25,11 @@ on:
         required: false
       DELTA_AWS_REGION:
         required: false
+      # Baked into the binary at compile time via option_env!; without it the
+      # released CLI falls back to the local-dev key and its signed requests
+      # are rejected.
+      JAN_SIGNING_KEY:
+        required: false
     outputs:
       FILE_NAME:
         value: ${{ jobs.build-linux-x64.outputs.FILE_NAME }}
@@ -42,6 +47,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
+
+      - name: Install Linux native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libdbus-1-dev
+
+      - name: Verify DBus development package
+        run: |
+          pkg-config --exists dbus-1
+          echo "Found dbus-1 $(pkg-config --modversion dbus-1)"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -66,6 +81,8 @@ jobs:
       # so a regression here would surface as a confusing linker error later.
       # `dbus`/`libdbus-sys` arrive via keyring's `sync-secret-service` backend;
       # it is pinned to the pure-Rust `async-secret-service` (zbus) instead.
+      # `onig`/`onig_sys` are syntect's default regex backend and link C code;
+      # the highlighter is pinned to the pure-Rust `regex-fancy` engine instead.
       #
       # `cargo tree -i` exits 0 with "nothing to print" for a crate that is in
       # Cargo.lock but not in *this* feature graph, so the exit code alone does
@@ -75,7 +92,7 @@ jobs:
       - name: Assert no GUI or D-Bus crates in the CLI dependency graph
         run: |
           cd src-tauri
-          for crate in tauri gtk gdk muda wry webkit2gtk dbus libdbus-sys dbus-secret-service; do
+          for crate in tauri gtk gdk muda wry webkit2gtk dbus libdbus-sys dbus-secret-service onig onig_sys; do
             out=$(cargo tree --no-default-features --features cli -e normal \
               --target x86_64-unknown-linux-gnu -i "$crate" 2>&1) || continue
             case "$out" in *"nothing to print"*) continue ;; esac
@@ -88,6 +105,7 @@ jobs:
         env:
           JAN_CLI_UPDATE_CHANNEL: ${{ inputs.channel }}
           JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
+          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
         run: |
           cd src-tauri
           cargo build --no-default-features --features cli --bin jan --release

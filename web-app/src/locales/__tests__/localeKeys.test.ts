@@ -6,7 +6,7 @@ const SRC = resolve(__dirname, '../..')
 const LOCALE_DIR = resolve(__dirname, '../en')
 
 /** Namespaces whose keys are asserted to exist. */
-const GUARDED_NAMESPACES = ['setup', 'model-errors']
+const GUARDED_NAMESPACES = ['setup', 'model-errors', 'common', 'chat']
 
 /**
  * Keys the code composes at runtime (`t(`setup:${stage.messageKey}`)`), which a
@@ -30,7 +30,6 @@ const DYNAMIC_KEYS: Record<string, string[]> = {
     'checkEngineCpu',
     'checkEngineGpuUnused',
     'checkEngineVendorMismatch',
-    'checkEngineNoGpuHardware',
     'checkEngineRuntimeUnreachable',
     'checkEngineMissingLibrary',
     'checkEngineProbeFailed',
@@ -42,22 +41,24 @@ const DYNAMIC_KEYS: Record<string, string[]> = {
     'checkSearchProbeFailed',
     'checkSearchUnavailable',
   ],
+  common: [
+    // CoworkEmptyState picks its example set by whether a folder is attached.
+    'coworkEmpty.sandbox.first',
+    'coworkEmpty.sandbox.second',
+    'coworkEmpty.sandbox.third',
+    'coworkEmpty.folder.first',
+    'coworkEmpty.folder.second',
+    'coworkEmpty.folder.third',
+  ],
   'model-errors': [
     'engine.unknown',
-    'engine.BINARY_NOT_FOUND',
-    'engine.MODEL_FILE_NOT_FOUND',
-    'engine.LIBRARY_PATH_INVALID',
     'engine.MODEL_LOAD_FAILED',
-    'engine.DRAFT_MODEL_LOAD_FAILED',
-    'engine.MULTIMODAL_PROJECTOR_LOAD_FAILED',
     'engine.MODEL_ARCH_NOT_SUPPORTED',
     'engine.MODEL_LOAD_TIMED_OUT',
-    'engine.LLAMA_CPP_PROCESS_ERROR',
     'engine.MISSING_SHARED_LIBRARY',
     'engine.GPU_DRIVER_TOO_OLD',
     'engine.OUT_OF_MEMORY',
     'engine.INVALID_ARGUMENT',
-    'engine.DEVICE_LIST_PARSE_FAILED',
     'engine.IO_ERROR',
     'engine.INTERNAL_ERROR',
   ],
@@ -80,14 +81,25 @@ function loadNamespace(namespace: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(LOCALE_DIR, `${namespace}.json`), 'utf8'))
 }
 
+function lookup(bundle: Record<string, unknown>, key: string): unknown {
+  return key.split('.').reduce<unknown>((node, part) => {
+    if (node && typeof node === 'object' && part in node) {
+      return (node as Record<string, unknown>)[part]
+    }
+    return undefined
+  }, bundle)
+}
+
+/**
+ * A count-aware key lives in the bundle as `_one`/`_other`, never under its own
+ * name, so i18next can pick the form. Without this, the only way to satisfy the
+ * scan is to drop the `common:` prefix and fall out of it entirely.
+ */
 function resolveKey(bundle: Record<string, unknown>, key: string): boolean {
   return (
-    key.split('.').reduce<unknown>((node, part) => {
-      if (node && typeof node === 'object' && part in node) {
-        return (node as Record<string, unknown>)[part]
-      }
-      return undefined
-    }, bundle) !== undefined
+    lookup(bundle, key) !== undefined ||
+    (lookup(bundle, `${key}_one`) !== undefined &&
+      lookup(bundle, `${key}_other`) !== undefined)
   )
 }
 

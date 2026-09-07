@@ -1,0 +1,102 @@
+---
+title: Sessions
+description: Saved conversations, resuming, rewinding, and queueing messages while the agent works.
+keywords: [Jan, Jan Agent, sessions, threads, resume, rewind, checkpoints, queue]
+---
+
+import { Callout } from 'nextra/components'
+
+# Sessions
+
+A session is one conversation with the agent. Sessions are saved per project, under
+`.jan/agent/threads`, so a project's history stays with the project.
+
+Because they're per project, resuming from a different directory finds nothing - that's expected,
+not a bug.
+
+## Resuming
+
+```bash
+jan -c                 # the most recent session
+jan --resume 3f7a91c2  # by id, or any unique prefix
+```
+
+From inside the console:
+
+```
+/threads   # list saved threads for this project
+/resume    # pick one interactively
+/resume 3f7a91c2
+```
+
+For a headless run the value form needs an equals sign, because `run` takes a positional task that a
+space-separated id would swallow:
+
+```bash
+jan cli agent run --resume=3f7a91c2 "carry on"
+```
+
+<Callout type="info">
+Sessions share Jan Desktop's thread store, so a conversation started in the terminal can appear in
+the app.
+</Callout>
+
+## Starting fresh
+
+```
+/new     # new session, conversation cleared
+/clear   # clear the conversation
+```
+
+Both drop the active goal along with the conversation.
+
+## Rewinding
+
+Press <kbd>Esc</kbd> twice while idle to pick an earlier message and roll back to it.
+
+In a git repository the agent snapshots your workspace as it works, so a rewind can restore the
+files too - not just the conversation. Outside a repository you get conversation-only rewind, which
+is the same behaviour minus the file restore.
+
+This is the escape hatch when the agent goes down a wrong path: rather than arguing it back, rewind
+to before the turn that started it and rephrase.
+
+## Queueing
+
+Type while the agent is working and your message is queued instead of dropped. It's sent as soon as
+the current turn ends, and the footer shows how many are waiting:
+
+```
+⏳ Queued (2)
+```
+
+```
+/cancel    # drop all queued messages
+/cancel 2  # drop the second
+```
+
+<kbd>Esc</kbd> cancels the turn that's running, which is separate from the queue.
+
+## Inspecting from the shell
+
+Threads are readable without opening the console. Output is JSON, so it pipes into `jq`:
+
+```bash
+jan cli threads list
+jan cli threads get <ID>
+jan cli threads messages <THREAD_ID>
+jan cli threads delete <ID>
+```
+
+## What's stored
+
+Under `<project>/.jan/agent/`:
+
+| Path | Contents |
+| --- | --- |
+| `threads/` | Saved sessions and their messages |
+| `memory/` | Durable facts, see [Memory](/docs/agent/memory) |
+| `skills/` | Reusable procedures, see [Skills](/docs/agent/skills) |
+
+Add `threads/` to `.gitignore` - those are personal transcripts. `agent.toml`, `AGENT.md`, and
+`skills/` are worth committing.

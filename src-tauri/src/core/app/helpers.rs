@@ -22,8 +22,7 @@ pub fn copy_dir_recursive(
             }
         }
 
-        let is_dir = file_type.is_dir()
-            || (file_type.is_symlink() && src_path.is_dir());
+        let is_dir = file_type.is_dir() || (file_type.is_symlink() && src_path.is_dir());
 
         if is_dir {
             copy_dir_recursive(&src_path, &dst_path, exclude_dirs)?;
@@ -61,7 +60,10 @@ mod tests {
         copy_dir_recursive(&src, &dst, &[]).unwrap();
 
         assert_eq!(fs::read_to_string(dst.join("a.txt")).unwrap(), "hello");
-        assert_eq!(fs::read_to_string(dst.join("nested/b.txt")).unwrap(), "world");
+        assert_eq!(
+            fs::read_to_string(dst.join("nested/b.txt")).unwrap(),
+            "world"
+        );
     }
 
     #[test]

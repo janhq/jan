@@ -1,0 +1,76 @@
+---
+title: Goals and Todos
+description: Give the agent a finish line, and track multi-step work as it goes.
+keywords: [Jan, Jan Agent, goal, todo, task list, autonomous, goal mode]
+---
+
+import { Callout } from 'nextra/components'
+
+# Goals and Todos
+
+Two ways to run longer work without steering every turn.
+
+## Goals
+
+A goal is a finish line. Describe the condition and the agent keeps working until it holds, instead
+of handing back after one turn.
+
+```
+/goal all tests in tests/auth pass
+```
+
+After each turn the agent evaluates whether the condition is met. If not, it continues.
+
+```
+/goal        # status: the condition, turns spent, and why it isn't done
+/goal clear  # stop
+```
+
+A good condition is checkable. "All tests in `tests/auth` pass" is something the agent can verify by
+running them. "Make the code better" is not, so it will either stop early or never stop.
+
+<Callout type="info">
+A new session (`/new`) or a cleared conversation (`/clear`) drops the active goal along with the
+history.
+</Callout>
+
+## Todos
+
+For multi-step work the agent keeps a todo list, shown above the input while it isn't empty:
+
+```
+Todos   /todo
+ ├─ ☑ Read the failing test
+ ├─ ☐ Fix the parser
+ └─ ☐ Re-run the suite
+```
+
+It maintains the list itself as work progresses. You can edit it too:
+
+```
+/todo                      # open the editor
+/todo add write the tests  # append an item
+/todo add setup | install deps   # append with a phase label
+/todo clear                # drop all of them
+```
+
+In the editor:
+
+| Key | Action |
+| --- | --- |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Select |
+| <kbd>d</kbd> | Mark done |
+| <kbd>x</kbd> | Abandon |
+| <kbd>r</kbd> | Remove |
+| <kbd>Esc</kbd> | Close |
+
+### Todos and plan mode
+
+Todos staged during [plan mode](/docs/agent/run-modes#plan-mode) survive the switch out of it, so
+the plan the agent proposed becomes the work list it then executes.
+
+### Reminders
+
+If the agent yields with open todos still on the list, it gets one nudge to either finish them or
+close them out. The nudge is bounded - it won't loop arguing with a model that has genuinely
+stopped.

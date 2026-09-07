@@ -1,0 +1,335 @@
+---
+title: CLI Reference
+description: Every Jan Agent flag and subcommand, including headless runs for scripts and CI.
+keywords:
+  [
+    Jan,
+    Jan Agent,
+    CLI,
+    command line,
+    headless,
+    automation,
+    CI,
+    jan cli agent run,
+    threads,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+
+# CLI Reference
+
+`jan` with no subcommand opens the [interactive console](/docs/agent/console). Everything else is
+non-interactive, for scripts and CI.
+
+```bash
+jan [OPTIONS]
+jan <COMMAND>
+```
+
+## Opening the console
+
+| Flag | Description |
+| --- | --- |
+| `--project <PATH>` | Project root containing `.jan/agent/agent.toml`. Defaults to `.` |
+| `--task <TEXT>` | Seed the session with a first message |
+| `--model <ID>` | Model id, overriding `[agent].model` |
+| `--image <PATH>` | Attach an image to the first message. Repeatable |
+| `--plan` | Start in read-only plan mode |
+| `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
+| `--sandbox` | Run shell commands under OS confinement. Off by default |
+| `--no-sandbox` | Run shell commands unconfined, overriding a persistent `sandbox` setting |
+| `--resume [ID]` | Resume the most recent session, or one whose id starts with `ID` |
+| `-c`, `--continue` | Resume the most recent session |
+| `--provider <ID>` | Target a specific provider for this run |
+| `--api-key <KEY>` | API key for that provider |
+
+```bash
+jan                                     # current directory
+jan --project ~/code/app                # somewhere else
+jan --task "fix the failing test"       # with a first message
+jan -c                                  # resume the latest session
+jan --resume 3f7a91c2                   # resume by id prefix
+jan --plan                              # read-only
+jan --safe                              # ask before writes and shell commands
+jan --sandbox                           # confine shell commands to the project
+```
+
+<Callout type="warning">
+Tool calls are auto-approved by default, and shell commands are **not** sandboxed by default - an
+approved command runs with your own access. The hard denies never lift: `.jan/agent/` internals,
+anything in `[tools] deny`, and everything plan mode blocks. `--safe` adds the interactive approval
+prompt; `--sandbox` adds OS confinement (bubblewrap, Seatbelt, or AppContainer). See
+[tool permissions](/docs/agent/permissions#the-shell-sandbox).
+</Callout>
+
+## `jan cli agent`
+
+Run the agent without a UI. This is the form to use in scripts.
+
+### `run`
+
+Run to completion, or until the session token budget is spent. There is no turn cap - the agent
+runs as many turns as the task needs, bounded only by `[budget].max_tokens`, or by cancelling it.
+
+```bash
+jan cli agent run "fix the failing test in tests/auth"
+jan cli agent run --project ~/code/app "update the changelog"
+jan cli agent run --model gpt-4o "add unit tests for the parser"
+jan cli agent run --safe "run the migration"   # approve each step
+```
+
+| Flag | Description |
+| --- | --- |
+| `--project <PATH>` | Project root. Defaults to `.` |
+| `--model <ID>` | Model id, overriding `[agent].model` |
+| `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
+| `--sandbox` | Run shell commands under OS confinement. Off by default |
+| `--no-sandbox` | Run shell commands unconfined, overriding a persistent `sandbox` setting |
+| `--resume[=ID]` | Resume the most recent session, or one by id |
+| `-c`, `--continue` | Resume the most recent session |
+| `--provider`, `--api-key` | Credential overrides for this run |
+| `--output-format <FORMAT>` | `text` (default) streams the answer; `json` prints one result object |
+
+<Callout type="info">
+`run` takes a positional task, so a space-separated `--resume ID` would swallow it. Write the value
+form with an equals sign: `--resume=3f7a91c2`.
+</Callout>
+
+#### JSON output
+
+`--output-format json` suppresses the streamed answer and prints a single object on stdout when the
+run finishes. Progress and diagnostics still go to stderr, so stdout is safe to pipe into `jq`.
+
+```bash
+jan cli agent run --output-format json "review auth.rs" | jq -r .result
+```
+
+```json
+{
+  "type": "result",
+  "is_error": false,
+  "result": "APPROVED: the retry loop is correct...",
+  "stop_reason": "end_turn",
+  "session_id": "3f7a91c2",
+  "model": "tokamak-1-preview",
+  "num_turns": 3,
+  "duration_ms": 48213,
+  "usage": { "prompt_tokens": 9011, "completion_tokens": 655, "total_tokens": 9666 }
+}
+```
+
+A failed run adds an `error` object, sets `stop_reason` to `error`, and reports whatever the model
+had said before it broke as `result`:
+
+```json
+{
+  "type": "result",
+  "is_error": true,
+  "result": "I started reviewing auth.rs and...",
+  "stop_reason": "error",
+  "error": { "code": "upstream_error", "message": "[400] tool_choice does not match any of the specified tools" },
+  "session_id": null,
+  "model": "tokamak-1-preview",
+  "num_turns": 1,
+  "duration_ms": 1204,
+  "usage": { "prompt_tokens": 8123, "completion_tokens": 0, "total_tokens": 8123 }
+}
+```
+
+| Field | Notes |
+| --- | --- |
+| `result` | The final answer, or the partial answer of the turn that failed. Reasoning is stripped |
+| `stop_reason` | The upstream finish reason, or `error` |
+| `error.code` | `context_overflow`, `upstream_error`, `setup_error`, or the raw code |
+| `session_id` | Short session id for `--resume`. `null` when the run failed before producing one |
+| `num_turns` | Agent turns taken. Subagent turns are not counted |
+| `usage` | Summed over every request the run made, subagents included |
+
+The process exit code is unchanged: `0` on success, `1` on failure.
+
+### `step`
+
+Run a single turn. Useful when debugging a prompt or a tool.
+
+```bash
+jan cli agent step "list the files you would change"
+```
+
+### `status`
+
+Print the resolved project config and available providers as JSON.
+
+```bash
+jan cli agent status
+jan cli agent status --project ~/code/app
+```
+
+## `jan plugin`
+
+Manage project-local plugins without the interactive console. Plugin commands use
+`.jan/agent/plugins/` under `--project` (default `.`) and print JSON for list, install, and search.
+
+```bash
+jan plugin list
+jan plugin install https://github.com/acme/release-tools
+jan plugin install https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-code-setup
+jan plugin remove release-tools
+jan plugin search prepare
+```
+
+Direct git URLs, optional `#ref` suffixes, marketplace names, and GitHub tree URLs selecting a
+repository subdirectory are supported. A project marketplace is configured in `agent.toml`:
+
+```toml
+[plugins]
+marketplace = "https://example.com/jan-plugins/index.json"
+```
+
+
+## `jan config`
+
+Manage provider credentials in `~/.jan/config.toml`.
+
+```bash
+jan config set --provider openai --api-key sk-... --base-url https://api.openai.com/v1 --model gpt-4o
+jan config unset --provider openai
+jan config list    # JSON, API keys redacted
+jan config path    # print the file path, scaffolding a template if absent
+```
+
+| `set` flag | Description |
+| --- | --- |
+| `--provider <ID>` | Provider id, e.g. `openai`, `anthropic`, `groq`. Required |
+| `--api-key <KEY>` | API key |
+| `--base-url <URL>` | Base URL for the endpoint |
+| `--model <ID>` | Model to expose. Repeatable; replaces any existing list |
+| `--api-type <TYPE>` | Wire protocol (`openai`, `anthropic`). Defaults to OpenAI-compatible |
+
+See [Configuration](/docs/agent/providers).
+
+## `jan login`
+
+Sign in to Tokamak and save the API key to `~/.jan/config.toml`.
+
+```bash
+jan login
+```
+
+## `jan cli threads`
+
+Inspect saved conversations. Output is JSON, so it pipes into `jq`.
+
+```bash
+jan cli threads list
+jan cli threads get <ID>
+jan cli threads messages <THREAD_ID>
+jan cli threads delete <ID>
+```
+
+## `jan cli models`
+
+Print every configured provider's models as JSON, keys redacted.
+
+```bash
+jan cli models list
+```
+
+```json
+[
+  {
+    "provider": "anthropic",
+    "api_type": "anthropic",
+    "base_url": "https://api.anthropic.com/v1",
+    "has_api_key": true,
+    "id": "claude-fable-5"
+  }
+]
+```
+
+This includes providers inherited from Jan Desktop, so it can list models even when
+`jan config list` shows none of its own.
+
+## `jan cli mcp`
+
+Manage Model Context Protocol servers in the shared `mcp_config.json` -- the same store Jan
+Desktop and the interactive console read. Servers you add or enable here are available in both.
+
+The desktop-only `Jan Browser MCP` bridge is never listed or editable from the CLI.
+
+```bash
+jan cli mcp list                            # JSON, env/header values redacted
+jan cli mcp list --show-secrets             # include secret values
+jan cli mcp get <NAME>                      # one server's full config
+jan cli mcp add <NAME> --command npx --arg -y --arg my-mcp
+jan cli mcp remove <NAME>
+jan cli mcp enable <NAME>                   # connect on the next session
+jan cli mcp disable <NAME>
+```
+
+A stdio server needs a command and optional args; an `http`/`sse` server needs a URL.
+
+```bash
+# stdio (the default transport)
+jan cli mcp add files --command npx --arg -y --arg @modelcontextprotocol/server-filesystem \
+  --env FOO=bar
+
+# http, with a header and marked active immediately
+jan cli mcp add exa --type http --url https://mcp.exa.ai/mcp --header Authorization=Bearer-secret \
+  --active
+```
+
+| `add` flag | Description |
+| --- | --- |
+| `--command <CMD>` | Command for a stdio server (e.g. `npx`, `uvx`). Required for stdio |
+| `--arg <ARG>` | Argument for the command. Repeatable |
+| `--env KEY=VALUE` | Environment variable for a stdio server. Repeatable |
+| `--type <TYPE>` | Transport: `stdio` (default), `http`, or `sse` |
+| `--url <URL>` | URL for an `http`/`sse` server. Required unless stdio |
+| `--header KEY=VALUE` | Header for an `http`/`sse` server. Repeatable |
+| `--active` | Mark the server active immediately. Defaults to inactive |
+
+Adding a server that already exists replaces it (an edit); its `active` flag is preserved. Newly
+added servers default to inactive, so they are persisted but not connected until you `enable` them.
+
+See [MCP](/docs/agent/mcp).
+
+## `jan update`
+
+Update the binary to the latest build of the channel it was built for.
+
+```bash
+jan update
+jan update --check   # report without installing
+jan update --force   # reinstall even if current
+```
+
+<Callout type="info">
+Builds compiled from source have no update channel embedded, so `jan update` will say so rather than
+doing anything. Re-run the installer with `--source` to rebuild.
+</Callout>
+
+## Environment variables
+
+| Variable | Description |
+| --- | --- |
+| `JAN_API_KEY` | API key for the target provider |
+| `<PROVIDER>_API_KEY` | Per-provider key, e.g. `ANTHROPIC_API_KEY` |
+| `JAN_INSTALL_DIR` | Install directory used by the install script |
+
+## Using it in CI
+
+A headless run with credentials from the environment and no prompts:
+
+```bash
+export ANTHROPIC_API_KEY="$SECRET_KEY"
+
+jan cli agent run \
+  --project . \
+  --provider anthropic \
+  "update the changelog for the current release"
+```
+
+No flag is needed: tool calls are auto-approved by default, which is what a CI runner wants since
+there's nobody at a keyboard to answer a prompt. Do not pass `--safe` here. With no TTY on stdin
+there is no way to answer, so every prompt is denied and the run stalls out on its first write.

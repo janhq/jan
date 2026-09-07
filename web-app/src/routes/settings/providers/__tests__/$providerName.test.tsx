@@ -47,18 +47,11 @@ const h = vi.hoisted(() => {
     ],
     settings: [
       {
-        key: 'llamacpp_version',
-        title: 'Version',
-        description: 'llama.cpp release version',
+        key: 'ctx_size',
+        title: 'Context Size',
+        description: 'context window',
         controller_type: 'input',
-        controller_props: { value: 'v1', recommended: 'v1' },
-      },
-      {
-        key: 'llamacpp_backend',
-        title: 'Backend',
-        description: 'Hardware backend',
-        controller_type: 'input',
-        controller_props: { value: 'cuda', recommended: 'cuda' },
+        controller_props: { value: '4096' },
       },
       {
         key: 'device',
@@ -122,11 +115,6 @@ const h = vi.hoisted(() => {
     setModelLoadError: vi.fn(),
   }
 
-  const backendUpdater = {
-    checkForUpdate: vi.fn().mockResolvedValue(null),
-    installBackend: vi.fn().mockResolvedValue(undefined),
-  }
-
   const params: any = { providerName: 'openai' }
 
   return {
@@ -147,7 +135,6 @@ const h = vi.hoisted(() => {
     modelsSvc,
     dialogSvc,
     modelLoad,
-    backendUpdater,
     params,
   }
 })
@@ -330,10 +317,6 @@ vi.mock('@/hooks/useLlamacppDevices', () => {
   return { useLlamacppDevices: hook }
 })
 
-vi.mock('@/hooks/useBackendUpdater', () => ({
-  useBackendUpdater: () => h.backendUpdater,
-}))
-
 vi.mock('@/hooks/useAppState', () => ({ useAppState: h.useAppStateMock }))
 
 vi.mock('zustand/shallow', () => ({
@@ -393,8 +376,6 @@ beforeEach(() => {
   h.modelsSvc.stopAllModels = vi.fn().mockResolvedValue(undefined)
   h.modelsSvc.checkMmprojExists = vi.fn().mockResolvedValue(false)
   h.dialogSvc.open = vi.fn().mockResolvedValue(null)
-  h.backendUpdater.checkForUpdate = vi.fn().mockResolvedValue(null)
-  h.backendUpdater.installBackend = vi.fn().mockResolvedValue(undefined)
 })
 
 describe('ProviderDetail route', () => {
@@ -449,12 +430,10 @@ describe('ProviderDetail route', () => {
       expect(screen.queryByTestId('add-model')).not.toBeInTheDocument()
     })
 
-    it('renders llamacpp-specific UI: import button, backend controls', () => {
+    it('renders llamacpp-specific UI: import button', () => {
       h.params.providerName = 'llamacpp'
       renderComponent()
       expect(screen.getByTestId('import-vision')).toBeInTheDocument()
-      expect(screen.getByText('settings:checkForBackendUpdates')).toBeInTheDocument()
-      expect(screen.getByText('settings:installBackendFromFile')).toBeInTheDocument()
     })
   })
 
@@ -690,72 +669,6 @@ describe('ProviderDetail route', () => {
     })
   })
 
-  describe('Backend install / update (llamacpp)', () => {
-    beforeEach(() => {
-      h.params.providerName = 'llamacpp'
-    })
-
-    it('check-for-update shows info toast when no update available', async () => {
-      renderComponent()
-      await act(async () => {
-        fireEvent.click(screen.getByText('settings:checkForBackendUpdates'))
-      })
-      await waitFor(() => {
-        expect(h.toastInfo).toHaveBeenCalled()
-      })
-    })
-
-    it('check-for-update shows error toast when the checker throws', async () => {
-      h.backendUpdater.checkForUpdate = vi.fn().mockRejectedValue(new Error('x'))
-      renderComponent()
-      await act(async () => {
-        fireEvent.click(screen.getByText('settings:checkForBackendUpdates'))
-      })
-      await waitFor(() => {
-        expect(h.toastError).toHaveBeenCalled()
-      })
-      // restore
-      h.backendUpdater.checkForUpdate = vi.fn().mockResolvedValue(null)
-    })
-
-    it('install-from-file no-ops cleanly when dialog returns null', async () => {
-      renderComponent()
-      await act(async () => {
-        fireEvent.click(screen.getByText('settings:installBackendFromFile'))
-      })
-      // no toast fired because file selection was cancelled
-      expect(h.toastSuccess).not.toHaveBeenCalled()
-      expect(h.toastError).not.toHaveBeenCalled()
-    })
-
-    it('install-from-file calls installBackend and toasts success', async () => {
-      h.dialogSvc.open = vi.fn().mockResolvedValue('/some/path/My Backend.tar.gz')
-      renderComponent()
-      await act(async () => {
-        fireEvent.click(screen.getByText('settings:installBackendFromFile'))
-      })
-      await waitFor(() => {
-        expect(h.backendUpdater.installBackend).toHaveBeenCalledWith(
-          '/some/path/My Backend.tar.gz'
-        )
-      })
-      expect(h.toastSuccess).toHaveBeenCalled()
-    })
-
-    it('install-from-file toasts error when installBackend throws', async () => {
-      h.dialogSvc.open = vi.fn().mockResolvedValue('/some/path/bad.tar.gz')
-      h.backendUpdater.installBackend = vi.fn().mockRejectedValue(new Error('install fail'))
-      renderComponent()
-      await act(async () => {
-        fireEvent.click(screen.getByText('settings:installBackendFromFile'))
-      })
-      await waitFor(() => {
-        expect(h.toastError).toHaveBeenCalled()
-      })
-      h.backendUpdater.installBackend = vi.fn().mockResolvedValue(undefined)
-    })
-  })
-
   describe('Dynamic setting changes', () => {
     const setupCustomProvider = () => {
       const custom: any = {
@@ -803,12 +716,12 @@ describe('ProviderDetail route', () => {
       )
     })
 
-    it('for llamacpp, the llamacpp_version control also stops all running models on change', async () => {
+    it('for llamacpp, changing a setting also stops all running models', async () => {
       h.params.providerName = 'llamacpp'
       renderComponent()
       const dyns = screen.getAllByTestId('dynamic-ctrl')
       await act(async () => {
-        fireEvent.click(dyns[0]) // llamacpp_version
+        fireEvent.click(dyns[0])
       })
       expect(h.modelsSvc.stopAllModels).toHaveBeenCalled()
     })

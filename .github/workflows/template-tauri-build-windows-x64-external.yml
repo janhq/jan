@@ -15,9 +15,25 @@ on:
         type: string
         default: 'nightly'
         description: 'The channel to use for this job'
+      runner:
+        required: false
+        type: string
+        default: 'windows-latest'
+        description: >
+          Label of the runner to build on. A self-hosted label is what carries
+          the engine toolchain; the default keeps the GitHub-hosted image, which
+          only has enough for the vulkan variant.
+      engine_variant:
+        required: false
+        type: string
+        default: 'vulkan'
+        description: >
+          JAN_ENGINE_VARIANT for the bundled jan-llama-worker: a `-` joined
+          backend list, e.g. vulkan, cuda13-vulkan, rocm-vulkan. One CUDA major
+          per bundle, so cuda12 and cuda13 are separate builds.
 jobs:
   build-windows-x64-external:
-    runs-on: windows-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -132,7 +148,6 @@ jobs:
 
             # Update Cargo.toml
             ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
-            ctoml ./src-tauri/Cargo.toml package.default-run "Jan-${{ inputs.channel }}"
             ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
             echo "------------------"
             cat ./src-tauri/Cargo.toml
@@ -141,10 +156,12 @@ jobs:
             .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
             cat ./package.json
             sed -i "s/jan_productname/Jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
-            sed -i "s/jan_mainbinaryname/jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_mainbinaryname/Jan-Desktop-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_bundleid/jan-${{ inputs.channel }}.ai.app/g" ./src-tauri/tauri.bundle.windows.nsis.template
           else
             sed -i "s/jan_productname/Jan/g" ./src-tauri/tauri.bundle.windows.nsis.template
-            sed -i "s/jan_mainbinaryname/jan/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_mainbinaryname/Jan-Desktop/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_bundleid/jan.ai.app/g" ./src-tauri/tauri.bundle.windows.nsis.template
           fi
           echo "---------nsis.template---------"
           cat ./src-tauri/tauri.bundle.windows.nsis.template
@@ -155,6 +172,14 @@ jobs:
           corepack prepare yarn@4.5.3 --activate
           yarn --version
           yarn config set -H enableImmutableInstalls false
+
+      # `make build` compiles jan-llama-worker, which the NSIS and MSI bundles
+      # both carry. Vulkan covers AMD, Intel and NVIDIA here through one
+      # driver-provided backend; a CUDA variant needs a toolkit on the runner.
+      - name: Set up the llama.cpp engine toolchain
+        uses: ./.github/actions/setup-engine-toolchain
+        with:
+          variant: ${{ inputs.engine_variant }}
 
       - name: Build app
         shell: bash

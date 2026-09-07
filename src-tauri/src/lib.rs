@@ -1,5 +1,15 @@
-pub mod core;
+// The headless `jan` CLI and the desktop app are mutually exclusive builds: the
+// `cli` feature gates off every Tauri-dependent module, so pairing it with the
+// Tauri stack leaves the desktop entry points without their subsystems. Note
+// that `--features cli` alone still implies `default` (and therefore
+// `desktop`); the CLI must be built with `--no-default-features`.
+#[cfg(all(feature = "cli", feature = "tauri-app"))]
+compile_error!(
+    "features `cli` and `tauri-app`/`desktop` are mutually exclusive; \
+     build the CLI with `cargo build --no-default-features --features cli --bin jan`"
+);
 
+pub mod core;
 
 #[cfg(not(feature = "cli"))]
 use core::{
@@ -60,7 +70,6 @@ macro_rules! invoke_commands_with_extras {
         // System commands
         core::system::commands::relaunch,
         core::system::commands::open_app_directory,
-        core::system::commands::open_file_explorer,
         core::system::commands::factory_reset,
         core::system::commands::take_pending_webdata_reset,
         core::system::commands::read_logs,
@@ -74,6 +83,21 @@ macro_rules! invoke_commands_with_extras {
         core::server::commands::start_server,
         core::server::commands::stop_server,
         core::server::commands::get_server_status,
+        // Agent commands
+        core::agent::commands::agent_skill_list,
+        core::agent::commands::agent_skill_read,
+        core::agent::commands::agent_skill_write,
+        core::agent::commands::agent_skill_delete,
+        core::agent::commands::agent_skill_hub_list,
+        core::agent::commands::agent_skill_hub_import,
+        core::agent::commands::agent_skill_enabled_get,
+        core::agent::commands::agent_skill_enabled_set,
+        core::agent::commands::agent_plugin_list,
+        core::agent::commands::agent_plugin_install,
+        core::agent::commands::agent_plugin_remove,
+        core::agent::commands::agent_plugin_search,
+        core::agent::commands::agent_git_branch,
+        core::agent::commands::agent_subagent_list,
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
@@ -94,6 +118,9 @@ macro_rules! invoke_commands_with_extras {
         core::mcp::commands::get_mcp_configs,
         core::mcp::commands::activate_mcp_server,
         core::mcp::commands::deactivate_mcp_server,
+        core::mcp::commands::get_mcp_auth_status,
+        core::mcp::commands::authorize_mcp_server,
+        core::mcp::commands::clear_mcp_auth,
         core::mcp::commands::check_jan_browser_extension_connected,
         // Threads
         core::threads::commands::list_threads,
@@ -143,10 +170,19 @@ async fn confirm_exit<R: tauri::Runtime>(_app_handle: tauri::AppHandle<R>) {
 }
 
 #[cfg(not(feature = "cli"))]
-fn is_llamacpp_router_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+/// Whether a llama.cpp engine worker is up, so the exit path knows whether it
+/// owes the user a graceful shutdown.
+///
+/// `try_lock` rather than a blocking lock: this runs on the event loop. A held
+/// lock means a start or stop is in flight, which counts as running -- the
+/// graceful path is the safe answer when the state cannot be read.
+fn is_llamacpp_engine_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
     use tauri::Manager;
     app.try_state::<std::sync::Arc<tauri_plugin_llamacpp::LlamacppState>>()
-        .map(|s| s.router_pid.load(std::sync::atomic::Ordering::SeqCst) != 0)
+        .map(|s| match s.engine.try_lock() {
+            Ok(guard) => guard.is_some(),
+            Err(_) => true,
+        })
         .unwrap_or(false)
 }
 
@@ -173,12 +209,15 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
     exit_code: i32,
 ) {
     use std::sync::atomic::Ordering;
+    // Reap any still-running agent bash command trees before we tear down, so
+    // no shell (or child it spawned) outlives the app.
+    tauri_plugin_agent_tools::tools::proc::kill_all();
     let mut emitted = false;
     loop {
         if SHUTTING_DOWN.load(Ordering::SeqCst) {
             return;
         }
-        match tauri_plugin_llamacpp::try_graceful_stop_router(app_handle.clone(), 1).await {
+        match tauri_plugin_llamacpp::try_graceful_stop_engine(app_handle.clone(), 1).await {
             Ok(None) => {
                 if let Ok(mut g) = BUSY_MODELS.lock() {
                     g.clear();
@@ -204,7 +243,7 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
             Err(e) => {
-                log::warn!("{}: try_graceful_stop_router failed: {}", source, e);
+                log::warn!("{}: try_graceful_stop_engine failed: {}", source, e);
                 SHUTTING_DOWN.store(true, Ordering::SeqCst);
                 app_handle.exit(exit_code);
                 return;
@@ -237,7 +276,8 @@ pub fn run() {
         .plugin(tauri_plugin_llamacpp::init())
         .plugin(tauri_plugin_vector_db::init())
         .plugin(tauri_plugin_rag::init())
-        .plugin(tauri_plugin_websearch::init());
+        .plugin(tauri_plugin_websearch::init())
+        .plugin(tauri_plugin_agent_tools::init());
 
     #[cfg(feature = "deep-link")]
     {
@@ -383,7 +423,7 @@ pub fn run() {
                 }
                 // Windows/Linux: hide to tray only while the Local API Server is
                 // running; otherwise fall through to the normal quit-on-close.
-                // The llamacpp router is not a reason to keep the app resident
+                // The llamacpp engine is not a reason to keep the app resident
                 // (normal chat usage keeps it alive), so it gets torn down via
                 // the ExitRequested path on quit.
                 #[cfg(not(target_os = "macos"))]
@@ -404,7 +444,7 @@ pub fn run() {
             }
         }
         if let RunEvent::ExitRequested { api, code, .. } = &event {
-            if SHUTTING_DOWN.load(Ordering::SeqCst) || !is_llamacpp_router_running(app) {
+            if SHUTTING_DOWN.load(Ordering::SeqCst) || !is_llamacpp_engine_running(app) {
                 return;
             }
             api.prevent_exit();
@@ -425,7 +465,7 @@ pub fn run() {
             let app_handle = app.clone();
 
             // Drain any debounced settings writes before the process dies so
-            // jan-cli never reads a stale settings.json.
+            // jan CLI never reads a stale settings.json.
             core::app::settings_store::flush_settings();
 
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -468,9 +508,9 @@ pub fn run() {
                     }
 
                     if let Err(e) = cleanup_llama_processes(app_handle.clone()).await {
-                        log::warn!("Failed to shut down llama-server router: {}", e);
+                        log::warn!("Failed to shut down the llama.cpp engine: {}", e);
                     } else {
-                        log::info!("Llama-server router shut down successfully");
+                        log::info!("llama.cpp engine shut down successfully");
                     }
 
                     #[cfg(target_os = "macos")]
@@ -482,7 +522,6 @@ pub fn run() {
                             log::info!("MLX processes cleaned up successfully");
                         }
                     }
-
 
                     log::info!("App cleanup completed");
                 });

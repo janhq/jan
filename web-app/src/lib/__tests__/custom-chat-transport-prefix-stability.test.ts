@@ -9,6 +9,9 @@ const h = vi.hoisted(() => ({
   disabledTools: [] as string[],
   servers: ['srv'] as string[],
   getRelevantTools: vi.fn(),
+  getModelProps: vi.fn(),
+  assistantParameters: null as Record<string, unknown> | null,
+  providerId: 'openai',
   serviceHub: null as unknown,
 }))
 
@@ -43,7 +46,12 @@ vi.mock('ai', async () => {
   }
 })
 
-const provider = { provider: 'openai', api_key: 'k', models: [] }
+const provider = {
+  provider: 'openai',
+  api_key: 'k',
+  models: [],
+  settings: [] as Array<{ key: string; controller_props: { value: boolean } }>,
+}
 const selectedModel = { id: 'gpt', capabilities: ['tools'] }
 
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -58,13 +66,19 @@ vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: {
     getState: () => ({
       selectedModel,
-      selectedProvider: 'openai',
+      selectedProvider: h.providerId,
       getProviderByName: () => provider,
     }),
   },
 }))
 vi.mock('@/hooks/useAssistant', () => ({
-  useAssistant: { getState: () => ({ currentAssistant: null }) },
+  useAssistant: {
+    getState: () => ({
+      currentAssistant: h.assistantParameters
+        ? { parameters: h.assistantParameters }
+        : null,
+    }),
+  },
 }))
 vi.mock('@/hooks/useThreads', () => ({
   useThreads: { getState: () => ({ threads: {} }) },
@@ -91,11 +105,12 @@ vi.mock('@/hooks/useAppState', () => ({
   },
 }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => []) }))
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: { getInstance: () => ({ get: () => null }) },
+vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({
+  getLoadedModels: vi.fn(async () => ['llama-local']),
+  unloadLlamaModel: vi.fn(),
 }))
 vi.mock('@/lib/llamacppRouterProps', () => ({
-  getLlamacppExtension: () => null,
+  getLlamacppExtension: () => ({ getModelProps: h.getModelProps }),
 }))
 vi.mock('@/lib/mcp-orchestrator', () => ({
   mcpOrchestrator: { getRelevantTools: h.getRelevantTools },
@@ -144,6 +159,13 @@ describe('CustomChatTransport prompt-prefix stability across turns', () => {
     streamTextCalls.length = 0
     h.disabledTools = []
     h.servers = ['srv']
+    h.providerId = 'openai'
+    h.assistantParameters = null
+    h.getModelProps.mockReset()
+    provider.provider = 'openai'
+    provider.settings = []
+    selectedModel.id = 'gpt'
+    selectedModel.capabilities = ['tools']
     h.getRelevantTools.mockReset()
     h.getRelevantTools.mockResolvedValue([
       { name: 'tool_a', description: 'a', inputSchema: {}, server: 'srv' },
@@ -185,6 +207,32 @@ describe('CustomChatTransport prompt-prefix stability across turns', () => {
     ).toBe(JSON.stringify(firstMessages))
   })
 
+  it('trims history to the loaded llama.cpp context window before streaming', async () => {
+    h.providerId = 'llamacpp'
+    h.getModelProps.mockResolvedValue({ nCtx: 4096 })
+    provider.provider = 'llamacpp'
+    provider.settings = [
+      { key: 'ctx_shift', controller_props: { value: true } },
+    ]
+    selectedModel.id = 'llama-local'
+
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(
+      await send(transport, [
+        user('u1', `old-user ${'context '.repeat(1_200)}`),
+        assistant('a1', `old-assistant ${'context '.repeat(1_200)}`),
+        user('u2', `latest-user ${'context '.repeat(1_200)}`),
+      ])
+    )
+
+    const requestMessages = streamTextCalls[0].messages as unknown[]
+    const serialized = JSON.stringify(requestMessages)
+    expect(h.getModelProps).toHaveBeenCalledWith('llama-local')
+    expect(requestMessages).toHaveLength(1)
+    expect(serialized).not.toContain('old-user')
+    expect(serialized).toContain('latest-user')
+  })
+
   it('keeps the prefix stable when the third turn extends the second', async () => {
     const transport = new CustomChatTransport('you are jan', 'thread-1')
 
@@ -206,6 +254,30 @@ describe('CustomChatTransport prompt-prefix stability across turns', () => {
       JSON.stringify(thirdMessages.slice(0, secondMessages.length))
     ).toBe(JSON.stringify(secondMessages))
   })
+
+  it('keeps the configured limit when llama.cpp context shift is disabled', async () => {
+    h.providerId = 'llamacpp'
+    h.getModelProps.mockResolvedValue({ nCtx: 4096 })
+    h.assistantParameters = {
+      max_context_tokens: 12_000,
+      max_output_tokens: 2048,
+    }
+    provider.provider = 'llamacpp'
+    selectedModel.id = 'llama-local'
+
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(
+      await send(transport, [
+        user('u1', `first-user ${'context '.repeat(1_200)}`),
+        assistant('a1', `first-assistant ${'context '.repeat(1_200)}`),
+        user('u2', `latest-user ${'context '.repeat(1_200)}`),
+      ])
+    )
+
+    const requestMessages = streamTextCalls[0].messages as unknown[]
+    expect(h.getModelProps).not.toHaveBeenCalled()
+    expect(requestMessages).toHaveLength(3)
+  })
 })
 
 describe('CustomChatTransport assistant completion (continuation prefill)', () => {
@@ -213,6 +285,13 @@ describe('CustomChatTransport assistant completion (continuation prefill)', () =
     streamTextCalls.length = 0
     h.disabledTools = []
     h.servers = ['srv']
+    h.providerId = 'openai'
+    h.assistantParameters = null
+    h.getModelProps.mockReset()
+    provider.provider = 'openai'
+    provider.settings = []
+    selectedModel.id = 'gpt'
+    selectedModel.capabilities = ['tools']
     h.getRelevantTools.mockReset()
     h.getRelevantTools.mockResolvedValue([
       { name: 'tool_a', description: 'a', inputSchema: {}, server: 'srv' },

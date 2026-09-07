@@ -107,16 +107,13 @@ async fn validate_downloaded_file(
 
     // Use model_id from item if available, otherwise extract from save path
     // Path structure: llamacpp/models/{modelId}/model.gguf or llamacpp/models/{modelId}/mmproj.gguf
-    let model_id = item
-        .model_id
-        .as_deref()
-        .unwrap_or_else(|| {
-            save_path
-                .parent() // get parent directory (modelId folder)
-                .and_then(|p| p.file_name())
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown")
-        });
+    let model_id = item.model_id.as_deref().unwrap_or_else(|| {
+        save_path
+            .parent() // get parent directory (modelId folder)
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+    });
 
     if emit_event {
         if let Err(e) = app.emit(

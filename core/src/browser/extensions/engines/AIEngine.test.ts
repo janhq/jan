@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { AIEngine } from './AIEngine'
+import { AIEngine, isEmbeddingEngine } from './AIEngine'
 import { events } from '../../events'
 import { ModelEvent, Model } from '../../../types'
 
@@ -82,5 +82,32 @@ describe('AIEngine', () => {
     const result = await engine.getLoadedModels()
 
     expect(result).toEqual([])
+  })
+})
+
+describe('isEmbeddingEngine', () => {
+  const full = {
+    embed: async () => ({ data: [] }),
+    getEmbeddingContextSize: async () => 512,
+    countEmbeddingTokens: async () => [1],
+  }
+
+  it('accepts an engine implementing all three members', () => {
+    expect(isEmbeddingEngine(full)).toBe(true)
+  })
+
+  // A partially implemented engine used to pass the callers' `if (!llm?.embed)`
+  // check and then throw on the first getEmbeddingContextSize call.
+  it('rejects an engine missing any member', () => {
+    for (const key of Object.keys(full)) {
+      const partial: Record<string, unknown> = { ...full }
+      delete partial[key]
+      expect(isEmbeddingEngine(partial), key).toBe(false)
+    }
+  })
+
+  it('rejects absent engines', () => {
+    expect(isEmbeddingEngine(undefined)).toBe(false)
+    expect(isEmbeddingEngine(null)).toBe(false)
   })
 })

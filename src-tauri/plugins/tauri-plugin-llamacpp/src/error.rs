@@ -3,17 +3,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ErrorCode {
-    BinaryNotFound,
-    ModelFileNotFound,
-    LibraryPathInvalid,
-
     // --- Model Loading Errors ---
     ModelLoadFailed,
-    DraftModelLoadFailed,
-    MultimodalProjectorLoadFailed,
     ModelArchNotSupported,
     ModelLoadTimedOut,
-    LlamaCppProcessError,
     MissingSharedLibrary,
     GpuDriverTooOld,
 
@@ -24,7 +17,6 @@ pub enum ErrorCode {
     InvalidArgument,
 
     // --- Internal Application Errors ---
-    DeviceListParseFailed,
     IoError,
     InternalError,
 }
@@ -37,7 +29,7 @@ pub struct LlamacppError {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<String>,
     /// Library names the loader could not resolve, so the UI can turn them into
-    /// install advice instead of showing raw stderr.
+    /// install advice instead of showing raw engine output.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub missing_libraries: Option<Vec<String>>,
 }
@@ -52,58 +44,69 @@ impl LlamacppError {
         }
     }
 
-    /// Parses stderr from llama.cpp and creates a specific LlamacppError.
-    pub fn from_stderr(stderr: &str) -> Self {
-        let lower_stderr = stderr.to_lowercase();
+    /// Classifies engine output from a failed model load. An unrecognized
+    /// reason is a failed load rather than a crashed process, and `details`
+    /// keeps llama.cpp's own words so the UI can show them next to the
+    /// localized advice instead of an HTTP status line.
+    pub fn from_load_failure(output: &str) -> Self {
+        Self::classify(output).unwrap_or_else(|| {
+            Self::new(
+                ErrorCode::ModelLoadFailed,
+                "The model could not be loaded.".into(),
+                Some(output.into()),
+            )
+        })
+    }
+
+    /// None when no marker matched, so each caller supplies its own fallback.
+    fn classify(output: &str) -> Option<Self> {
+        let lower = output.to_lowercase();
         // TODO: add others
-        let is_out_of_memory = lower_stderr.contains("out of memory")
-            || lower_stderr.contains("failed to allocate")
-            || lower_stderr.contains("insufficient memory")
-            || lower_stderr.contains("erroroutofdevicememory") // vulkan specific
-            || lower_stderr.contains("kiogpucommandbuffercallbackerroroutofmemory") // Metal-specific error code
-            || lower_stderr.contains("cuda_error_out_of_memory"); // CUDA-specific
+        let is_out_of_memory = lower.contains("out of memory")
+            || lower.contains("failed to allocate")
+            || lower.contains("insufficient memory")
+            || lower.contains("erroroutofdevicememory") // vulkan specific
+            || lower.contains("kiogpucommandbuffercallbackerroroutofmemory") // Metal-specific error code
+            || lower.contains("cuda_error_out_of_memory"); // CUDA-specific
 
         if is_out_of_memory {
-            return Self::new(
+            return Some(Self::new(
                 ErrorCode::OutOfMemory,
                 "Out of memory. The model requires more RAM or VRAM than available.".into(),
-                Some(stderr.into()),
-            );
+                Some(output.into()),
+            ));
         }
 
         // A dynamic-loader failure is why a mismatched GPU backend dies on
         // launch; without this it lands on the generic process error.
-        if is_missing_library(&lower_stderr) {
-            let libs = extract_missing_libraries(stderr);
+        if is_missing_library(&lower) {
+            let libs = extract_missing_libraries(output);
             let mut err = Self::new(
                 ErrorCode::MissingSharedLibrary,
                 "A library this backend depends on is missing.".into(),
-                Some(stderr.into()),
+                Some(output.into()),
             );
             err.missing_libraries = (!libs.is_empty()).then_some(libs);
-            return err;
+            return Some(err);
         }
 
-        if is_driver_too_old(&lower_stderr) {
-            return Self::new(
+        if is_driver_too_old(&lower) {
+            return Some(Self::new(
                 ErrorCode::GpuDriverTooOld,
                 "The installed GPU driver is too old for this backend.".into(),
-                Some(stderr.into()),
-            );
+                Some(output.into()),
+            ));
         }
 
-        if lower_stderr.contains("error loading model architecture") {
-            return Self::new(
+        if lower.contains("error loading model architecture") {
+            return Some(Self::new(
                 ErrorCode::ModelArchNotSupported,
                 "The model's architecture is not supported by this version of the backend.".into(),
-                Some(stderr.into()),
-            );
+                Some(output.into()),
+            ));
         }
-        Self::new(
-            ErrorCode::LlamaCppProcessError,
-            "The model process encountered an unexpected error.".into(),
-            Some(stderr.into()),
-        )
+
+        None
     }
 }
 
@@ -125,16 +128,16 @@ const DRIVER_TOO_OLD_MARKERS: [&str; 5] = [
     "forward compatibility was attempted on non supported",
 ];
 
-fn is_missing_library(lower_stderr: &str) -> bool {
+fn is_missing_library(lower: &str) -> bool {
     MISSING_LIBRARY_MARKERS
         .iter()
-        .any(|m| lower_stderr.contains(m))
+        .any(|m| lower.contains(m))
 }
 
-fn is_driver_too_old(lower_stderr: &str) -> bool {
+fn is_driver_too_old(lower: &str) -> bool {
     DRIVER_TOO_OLD_MARKERS
         .iter()
-        .any(|m| lower_stderr.contains(m))
+        .any(|m| lower.contains(m))
 }
 
 fn looks_like_library(name: &str) -> bool {
@@ -144,12 +147,11 @@ fn looks_like_library(name: &str) -> bool {
 }
 
 /// Pulls unresolved library names out of loader diagnostics. Case is preserved,
-/// so this reads the original stderr rather than a lowercased copy. Shared with
-/// the load probe, which parses `dlerror()` text of the same shape.
-pub(crate) fn extract_missing_libraries(stderr: &str) -> Vec<String> {
+/// so this reads the original text rather than a lowercased copy.
+fn extract_missing_libraries(output: &str) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
 
-    for line in stderr.lines() {
+    for line in output.lines() {
         let lower = line.to_lowercase();
 
         // `<...>: libfoo.so.1: cannot open shared object file: ...`
@@ -238,8 +240,8 @@ pub type ServerResult<T> = Result<T, ServerError>;
 mod tests {
     use super::*;
 
-    fn classify(stderr: &str) -> LlamacppError {
-        LlamacppError::from_stderr(stderr)
+    fn classify(output: &str) -> LlamacppError {
+        LlamacppError::from_load_failure(output)
     }
 
     // The UI matches on these exact strings to pick a localized message, so the
@@ -247,23 +249,13 @@ mod tests {
     #[test]
     fn error_codes_serialize_to_the_strings_the_ui_matches_on() {
         let cases = [
-            (ErrorCode::BinaryNotFound, "BINARY_NOT_FOUND"),
-            (ErrorCode::ModelFileNotFound, "MODEL_FILE_NOT_FOUND"),
-            (ErrorCode::LibraryPathInvalid, "LIBRARY_PATH_INVALID"),
             (ErrorCode::ModelLoadFailed, "MODEL_LOAD_FAILED"),
-            (ErrorCode::DraftModelLoadFailed, "DRAFT_MODEL_LOAD_FAILED"),
-            (
-                ErrorCode::MultimodalProjectorLoadFailed,
-                "MULTIMODAL_PROJECTOR_LOAD_FAILED",
-            ),
             (ErrorCode::ModelArchNotSupported, "MODEL_ARCH_NOT_SUPPORTED"),
             (ErrorCode::ModelLoadTimedOut, "MODEL_LOAD_TIMED_OUT"),
-            (ErrorCode::LlamaCppProcessError, "LLAMA_CPP_PROCESS_ERROR"),
             (ErrorCode::MissingSharedLibrary, "MISSING_SHARED_LIBRARY"),
             (ErrorCode::GpuDriverTooOld, "GPU_DRIVER_TOO_OLD"),
             (ErrorCode::OutOfMemory, "OUT_OF_MEMORY"),
             (ErrorCode::InvalidArgument, "INVALID_ARGUMENT"),
-            (ErrorCode::DeviceListParseFailed, "DEVICE_LIST_PARSE_FAILED"),
             (ErrorCode::IoError, "IO_ERROR"),
             (ErrorCode::InternalError, "INTERNAL_ERROR"),
         ];
@@ -278,7 +270,7 @@ mod tests {
 
     #[test]
     fn a_serialized_error_carries_the_fields_the_ui_reads() {
-        let err = LlamacppError::from_stderr(
+        let err = LlamacppError::from_load_failure(
             "libcudart.so.12: cannot open shared object file: No such file or directory",
         );
         let json: serde_json::Value = serde_json::to_value(&err).unwrap();
@@ -387,12 +379,12 @@ mod tests {
         ));
         assert!(matches!(
             classify("something else entirely went wrong").code,
-            ErrorCode::LlamaCppProcessError
+            ErrorCode::ModelLoadFailed
         ));
     }
 
     #[test]
-    fn always_keeps_raw_stderr_in_details() {
+    fn always_keeps_the_raw_engine_output_in_details() {
         let raw = "libcudart.so.12: cannot open shared object file: No such file or directory";
         assert_eq!(classify(raw).details.as_deref(), Some(raw));
     }

@@ -16,6 +16,7 @@ import {
   UnloadResult,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
+import type { SpecDraftKind } from '@janhq/core'
 import type {
   ModelsService,
   ModelCatalog,
@@ -235,7 +236,8 @@ export class DefaultModelsService implements ModelsService {
     mmprojPath?: string,
     mmprojSha256?: string,
     mmprojSize?: number,
-    mtpPath?: string
+    specDraftPath?: string,
+    specDraftKind?: SpecDraftKind
   ): Promise<void> {
     return this.getEngine()?.import(id, {
       modelPath,
@@ -244,7 +246,8 @@ export class DefaultModelsService implements ModelsService {
       modelSize,
       mmprojSha256,
       mmprojSize,
-      mtpPath,
+      specDraftPath,
+      specDraftKind,
     })
   }
 
@@ -254,7 +257,8 @@ export class DefaultModelsService implements ModelsService {
     mmprojPath?: string,
     hfToken?: string,
     skipVerification: boolean = true,
-    mtpPath?: string
+    specDraftPath?: string,
+    specDraftKind?: SpecDraftKind
   ): Promise<void> {
     let modelSha256: string | undefined
     let modelSize: number | undefined
@@ -320,7 +324,8 @@ export class DefaultModelsService implements ModelsService {
         mmprojPath,
         mmprojSha256,
         mmprojSize,
-        mtpPath
+        specDraftPath,
+        specDraftKind
       )
     } catch (error) {
       // Emit download error event so the UI can clean up the stale downloading state

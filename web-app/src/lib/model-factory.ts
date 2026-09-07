@@ -57,6 +57,7 @@ import { createXai } from '@ai-sdk/xai'
 import { createMistral } from '@ai-sdk/mistral'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { invoke } from '@tauri-apps/api/core'
+import { findSessionByModel } from '@janhq/tauri-plugin-llamacpp-api'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
@@ -74,7 +75,7 @@ import {
   getMutualExclusionDrops,
   getProviderApiType,
 } from '@/lib/providerCaps'
-import { describeEngineError } from '@/lib/engineError'
+import { engineFailure } from '@/lib/engineError'
 import { i18n } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -200,6 +201,71 @@ const CLIENT_SIDE_PARAM_KEYS: ReadonlySet<string> = new Set([
   'max_context_tokens',
   'auto_compact',
 ])
+
+/**
+ * Reconcile `grammar` / `json_schema` with what llama-server actually accepts.
+ * The UI can express every combination the server refuses:
+ *
+ * - `grammar` is rejected whenever the request carries usable tools, and the
+ *   check is `body.contains("grammar")` (server-common.cpp), so an untouched
+ *   Grammar row -- default `''` -- 400s a tool-enabled thread on its own.
+ * - `json_schema` and `grammar` together are refused outright; the explicit
+ *   GBNF wins here, since typing one is the more deliberate act.
+ * - a schema must be an *object*. The textarea holds a string, which the
+ *   server dumps and re-parses into a JSON string that every consumer skips
+ *   over `is_object()`, so the setting silently did nothing.
+ *
+ * Mutates `body`; llamacpp-only, since the other providers never see these keys.
+ */
+export function reconcileConstraintParams(body: Record<string, unknown>): void {
+  if ('grammar' in body) {
+    const grammar = body.grammar
+    if (typeof grammar !== 'string' || grammar.trim() === '') {
+      delete body.grammar
+    }
+  }
+
+  if ('json_schema' in body) {
+    const raw = body.json_schema
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim()
+      if (trimmed === '') {
+        delete body.json_schema
+      } else {
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(trimmed)
+        } catch (e) {
+          console.warn('Ignoring JSON Schema that is not valid JSON:', e)
+          delete body.json_schema
+        }
+        if ('json_schema' in body) {
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            body.json_schema = parsed
+          } else {
+            console.warn('Ignoring JSON Schema that is not a JSON object')
+            delete body.json_schema
+          }
+        }
+      }
+    } else if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      delete body.json_schema
+    }
+  }
+
+  const tools = body.tools
+  const toolsUsable =
+    Array.isArray(tools) && tools.length > 0 && body.tool_choice !== 'none'
+  if (toolsUsable && 'grammar' in body) {
+    console.warn('Ignoring the GBNF grammar: llama.cpp refuses one alongside tools')
+    delete body.grammar
+  }
+
+  if ('grammar' in body && 'json_schema' in body) {
+    console.warn('Ignoring the JSON Schema: a GBNF grammar is set and llama.cpp accepts only one')
+    delete body.json_schema
+  }
+}
 
 function filterParameters(
   parameters: Record<string, unknown>,
@@ -424,6 +490,7 @@ export function createCustomFetch(
       // Assert the server default explicitly so a preset/CLI override can't
       // silently disable prompt-prefix KV reuse across turns.
       merged.cache_prompt = true
+      reconcileConstraintParams(merged)
     }
     if (keepLlamacppOnly && merged.stream === true) {
       merged.return_progress = true
@@ -917,19 +984,14 @@ export class ModelFactory {
         console.error('Failed to start llamacpp model:', error)
         // A serialized engine error is a plain object, so the previous
         // `instanceof Error` path stringified it into raw JSON for the user.
-        throw new Error(
-          i18n.t('model-errors:startModelFailed', {
-            reason: describeEngineError(error),
-          })
-        )
+        // It rides along as `cause` so an outer layer describes the failure
+        // once from its code instead of nesting this sentence inside its own.
+        throw engineFailure('model-errors:startModelFailed', error)
       }
     }
 
     // Get session info which includes port and api_key
-    const sessionInfo = await invoke<SessionInfo | null>(
-      'plugin:llamacpp|find_session_by_model',
-      { modelId }
-    )
+    const sessionInfo = await findSessionByModel(modelId)
 
     if (!sessionInfo) {
       throw new Error(
@@ -1004,11 +1066,7 @@ export class ModelFactory {
         }
       } catch (error) {
         console.error('Failed to start MLX model:', error)
-        throw new Error(
-          i18n.t('model-errors:startModelFailed', {
-            reason: describeEngineError(error),
-          })
-        )
+        throw engineFailure('model-errors:startModelFailed', error)
       }
     }
 

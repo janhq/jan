@@ -195,4 +195,31 @@ describe('TauriMCPService – coverage', () => {
       expect(result.mcpServers).toEqual({})
     })
   })
+
+  describe('OAuth', () => {
+    it('forwards each command with the server name', async () => {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const status = {
+        state: 'unauthenticated',
+        canAuthenticate: true,
+        hasCredentials: false,
+        expiresAt: null,
+      }
+      vi.mocked(invoke).mockResolvedValueOnce(status)
+      await expect(svc.getMCPAuthStatus('remote')).resolves.toEqual(status)
+      expect(invoke).toHaveBeenCalledWith('get_mcp_auth_status', {
+        name: 'remote',
+      })
+
+      vi.mocked(invoke).mockResolvedValueOnce(undefined)
+      await svc.authorizeMCPServer('remote')
+      expect(invoke).toHaveBeenCalledWith('authorize_mcp_server', {
+        name: 'remote',
+      })
+
+      vi.mocked(invoke).mockResolvedValueOnce(true)
+      await expect(svc.clearMCPAuth('remote')).resolves.toBe(true)
+      expect(invoke).toHaveBeenCalledWith('clear_mcp_auth', { name: 'remote' })
+    })
+  })
 })

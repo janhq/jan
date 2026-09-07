@@ -1,53 +1,39 @@
 import { describe, it, expect } from 'vitest'
 import {
-  backendImpliesGpu,
-  isBackendConfigured,
+  backendFromDeviceIds,
   evaluateGpuOffload,
   evaluateEmbeddingVector,
 } from './readiness'
 
-describe('backendImpliesGpu', () => {
-  it('recognizes every GPU variant Jan ships', () => {
-    for (const backend of [
-      'linux-cuda-12-common_cpus-x64',
-      'linux-cuda-11-common_cpus-x64',
-      'win-cuda-13-common_cpus-x64',
-      'linux-vulkan-common_cpus-x64',
-      'linux-hip-common_cpus-x64',
-    ]) {
-      expect(backendImpliesGpu(backend), backend).toBe(true)
-    }
+describe('backendFromDeviceIds', () => {
+  // The backend is read off the device the engine actually enumerated, which
+  // is what makes it trustworthy: a configured name never proved the runtime
+  // had loaded.
+  it('strips the device index to name the backend', () => {
+    expect(backendFromDeviceIds(['CUDA0'])).toBe('cuda')
+    expect(backendFromDeviceIds(['Vulkan0'])).toBe('vulkan')
+    expect(backendFromDeviceIds(['Metal0'])).toBe('metal')
+    expect(backendFromDeviceIds(['ROCm1'])).toBe('rocm')
   })
 
-  it('does not flag CPU variants', () => {
-    for (const backend of [
-      'linux-common_cpus-x64',
-      'win-common_cpus-x64',
-      'win-arm64',
-      'linux-noavx-x64',
-      'linux-avx2-x64',
-    ]) {
-      expect(backendImpliesGpu(backend), backend).toBe(false)
-    }
+  it('uses the first device when several are present', () => {
+    expect(backendFromDeviceIds(['CUDA0', 'CUDA1'])).toBe('cuda')
   })
 
-  // Metal is implicit on Apple Silicon and always available, so a macOS build
-  // must not be reported as a GPU variant that failed to find a device.
-  it('does not flag macOS builds', () => {
-    expect(backendImpliesGpu('macos-arm64')).toBe(false)
-    expect(backendImpliesGpu('macos-x64')).toBe(false)
+  it('is empty when no device was enumerated', () => {
+    expect(backendFromDeviceIds([])).toBe('')
+    expect(backendFromDeviceIds(['', '  '])).toBe('')
   })
 
-  it('tolerates an empty or missing backend id', () => {
-    expect(backendImpliesGpu('')).toBe(false)
-    expect(backendImpliesGpu(undefined as unknown as string)).toBe(false)
+  // A multi-digit index must not eat part of the name.
+  it('only strips trailing digits', () => {
+    expect(backendFromDeviceIds(['Vulkan10'])).toBe('vulkan')
   })
 })
 
 describe('evaluateGpuOffload', () => {
-  it('passes a CPU backend without looking at devices', () => {
+  it('passes a machine with no GPU without expecting offload', () => {
     const result = evaluateGpuOffload({
-      backend: 'linux-common_cpus-x64',
       engineDeviceCount: 0,
       hardwareGpuCount: 0,
     })
@@ -56,9 +42,8 @@ describe('evaluateGpuOffload', () => {
     expect(result.reason).toBeUndefined()
   })
 
-  it('passes a GPU backend that the engine can actually use', () => {
+  it('passes a GPU the engine can actually use', () => {
     const result = evaluateGpuOffload({
-      backend: 'linux-cuda-12-common_cpus-x64',
       engineDeviceCount: 1,
       hardwareGpuCount: 1,
     })
@@ -66,22 +51,11 @@ describe('evaluateGpuOffload', () => {
     expect(result.gpuExpected).toBe(true)
   })
 
-  // The machine has no GPU at all: the wrong variant was installed.
-  it('warns when a GPU backend finds no devices and no GPU hardware exists', () => {
+  // The one failure worth reporting now that the engine ships with the app: a
+  // GPU is present but the engine cannot reach it, which is a driver or runtime
+  // problem. There is no longer a "wrong variant installed" case.
+  it('warns when a present GPU is invisible to the engine', () => {
     const result = evaluateGpuOffload({
-      backend: 'linux-cuda-12-common_cpus-x64',
-      engineDeviceCount: 0,
-      hardwareGpuCount: 0,
-    })
-    expect(result.status).toBe('warning')
-    expect(result.reason).toBe('noGpuHardware')
-  })
-
-  // A GPU exists but the engine cannot reach it, which is a driver/runtime
-  // problem and needs different advice than "you have no GPU".
-  it('distinguishes a present GPU the engine cannot reach', () => {
-    const result = evaluateGpuOffload({
-      backend: 'linux-cuda-12-common_cpus-x64',
       engineDeviceCount: 0,
       hardwareGpuCount: 1,
     })
@@ -91,14 +65,12 @@ describe('evaluateGpuOffload', () => {
 
   it('reports the engine device count it based the verdict on', () => {
     expect(
-      evaluateGpuOffload({
-        backend: 'linux-cuda-12-common_cpus-x64',
-        engineDeviceCount: 2,
-        hardwareGpuCount: 2,
-      }).engineDeviceCount
+      evaluateGpuOffload({ engineDeviceCount: 2, hardwareGpuCount: 2 })
+        .engineDeviceCount
     ).toBe(2)
   })
 })
+
 
 describe('evaluateEmbeddingVector', () => {
   it('accepts a healthy vector and reports its dimension', () => {
@@ -142,26 +114,5 @@ describe('evaluateEmbeddingVector', () => {
     expect(result.ok).toBe(false)
     expect(result.problem).toBe('degenerate')
     expect(result.dimension).toBe(3)
-  })
-})
-
-describe('isBackendConfigured', () => {
-  it('accepts a well-formed version/backend pair', () => {
-    expect(isBackendConfigured('b6099/linux-cuda-12-common_cpus-x64')).toBe(true)
-  })
-
-  // A fresh install sits in these states through a catalog fetch and a backend
-  // download; treating them as "configured" is what made a probe report a
-  // defect instead of an absence.
-  it('rejects the fresh-install placeholders', () => {
-    for (const value of ['', '   ', 'none', undefined, null]) {
-      expect(isBackendConfigured(value), String(value)).toBe(false)
-    }
-  })
-
-  it('rejects a malformed pair', () => {
-    for (const value of ['b6099', 'b6099/', '/linux-cuda', '/']) {
-      expect(isBackendConfigured(value), value).toBe(false)
-    }
   })
 })

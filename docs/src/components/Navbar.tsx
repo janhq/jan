@@ -5,15 +5,34 @@ import { cn } from '@/lib/utils'
 import { FaDiscord, FaGithub } from 'react-icons/fa'
 import { FiDownload } from 'react-icons/fi'
 import { FaXTwitter, FaLinkedinIn } from 'react-icons/fa6'
+import { ChevronDown } from 'lucide-react'
 import { Button } from './ui/button'
 import DocSearch from './DocSearch'
 import LogoJanSVG from '@/assets/icons/logo-jan.svg'
 
 const MENU_ITEMS = [
+  {
+    name: 'Jan',
+    href: '/docs/desktop/quickstart',
+    children: [
+      { name: 'Jan Desktop', href: '/docs/desktop/quickstart' },
+      { name: 'Jan Agent', href: '/docs/agent/quickstart' },
+    ],
+  },
+  { name: 'Tokamak', href: 'https://tokamak.sh', external: true },
+  { name: 'Research', href: '/research' },
   { name: 'Docs', href: '/docs' },
-  { name: 'Changelog', href: '/changelog' },
-  { name: 'Blog', href: '/blog' },
-  { name: 'Handbook', href: '/handbook' },
+  {
+    name: 'Company',
+    href: '#',
+    children: [
+      { name: 'Changelog', href: '/changelog' },
+      { name: 'Blog', href: '/blog' },
+      { name: 'About Us', href: '/handbook/who/who-we-are' },
+      { name: 'Careers', href: 'https://jobs.ashbyhq.com/menlo', external: true },
+      { name: 'Handbook', href: '/handbook' },
+    ],
+  },
 ]
 
 const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
@@ -80,17 +99,47 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
             {MENU_ITEMS.map((item) => {
               const isActive = currentPath === item.href
               return (
-                <li key={item.name}>
+                <li
+                  key={item.name}
+                  className={cn(item.children && 'group relative py-2')}
+                >
                   <a
                     href={item.href}
+                    target={item.external ? '_blank' : undefined}
+                    rel={item.external ? 'noopener noreferrer' : undefined}
                     className={cn(
-                      'hover:opacity-70 transition-opacity',
+                      'flex items-center gap-1 hover:opacity-70 transition-opacity',
                       !isLanding && '!text-black',
-                      isActive && 'text-blue-600 font-semibold'
+                      isActive && !isLanding && 'text-blue-600',
+                      isActive && 'font-semibold'
                     )}
                   >
                     {item.name}
+                    {item.children && (
+                      <ChevronDown className="size-3.5 transition-transform duration-200 group-hover:rotate-180" />
+                    )}
                   </a>
+                  {item.children && (
+                    <div
+                      className="invisible opacity-0 translate-y-1 group-hover:visible group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 absolute left-0 top-full pt-2 z-50"
+                    >
+                      <div className="bg-white rounded-xl border border-black shadow-[0px_4px_0px_0px_rgba(0,0,0,1)] overflow-hidden min-w-[180px]">
+                        {item.children.map((child) => (
+                          <a
+                            key={child.name}
+                            href={child.href}
+                            target={child.external ? '_blank' : undefined}
+                            rel={
+                              child.external ? 'noopener noreferrer' : undefined
+                            }
+                            className="block px-4 py-2 whitespace-nowrap text-black hover:bg-[#E0EEFE] hover:text-[#0668D5] transition-colors"
+                          >
+                            {child.name}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </li>
               )
             })}
@@ -253,6 +302,8 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                       <li key={item.name}>
                         <a
                           href={item.href}
+                          target={item.external ? '_blank' : undefined}
+                          rel={item.external ? 'noopener noreferrer' : undefined}
                           className={cn(
                             'block text-lg font-medium text-black hover:text-gray-600 transition-colors py-2',
                             isActive && 'text-blue-600 font-bold'
@@ -261,10 +312,30 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                         >
                           {item.name}
                         </a>
+                        {item.children && (
+                          <ul className="pl-4 space-y-2">
+                            {item.children.map((child) => (
+                              <li key={child.name}>
+                                <a
+                                  href={child.href}
+                                  target={child.external ? '_blank' : undefined}
+                                  rel={
+                                    child.external
+                                      ? 'noopener noreferrer'
+                                      : undefined
+                                  }
+                                  className="block text-base text-gray-600 hover:text-black transition-colors py-1"
+                                  onClick={() => setIsMobileMenuOpen(false)}
+                                >
+                                  {child.name}
+                                </a>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </li>
                     )
                   })}
-                  <li></li>
                 </ul>
               </nav>
 

@@ -4,6 +4,7 @@ import type { UIMessage } from '@ai-sdk/react'
 import {
   buildLlamacppReasoningParams,
   coalesceMessagesForAlternation,
+  effectiveContextWindow,
   hasGenuineUserQuery,
   extractContextInfoFromError,
   normalizeToolInputSchema,
@@ -29,6 +30,14 @@ const assistantMsg = (
     role: 'assistant',
     parts,
   }) as UIMessage
+
+describe('effectiveContextWindow', () => {
+  it('uses the live llama.cpp context only when context shift is enabled', () => {
+    expect(effectiveContextWindow(0, 12_288, true)).toBe(12_288)
+    expect(effectiveContextWindow(8_192, 12_288, false)).toBe(8_192)
+  })
+})
+
 
 describe('normalizeToolInputSchema', () => {
   it('adds empty properties for object schemas without properties', () => {

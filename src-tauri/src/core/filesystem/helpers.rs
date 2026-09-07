@@ -148,7 +148,10 @@ mod tests {
         fs::write(outside.join("secret.txt"), "x").unwrap();
 
         let result = resolve_path_within_jan_data_folder(&data, "../outside/secret.txt");
-        assert!(result.is_err(), "expected escape to be rejected, got {result:?}");
+        assert!(
+            result.is_err(),
+            "expected escape to be rejected, got {result:?}"
+        );
     }
 
     #[test]
@@ -172,8 +175,7 @@ mod tests {
         fs::create_dir_all(&data).unwrap();
         fs::create_dir_all(&elsewhere).unwrap();
 
-        let result =
-            resolve_path_within_jan_data_folder(&data, &elsewhere.to_string_lossy());
+        let result = resolve_path_within_jan_data_folder(&data, &elsewhere.to_string_lossy());
         assert!(result.is_err());
     }
 
@@ -183,9 +185,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let data = tmp.path().to_path_buf();
 
-        let (root, resolved) =
-            resolve_path_within_jan_data_folder(&data, "new/nested/file.txt")
-                .expect("resolves nonexistent child");
+        let (root, resolved) = resolve_path_within_jan_data_folder(&data, "new/nested/file.txt")
+            .expect("resolves nonexistent child");
         assert!(resolved.starts_with(&root));
         assert!(resolved.ends_with("file.txt"));
     }

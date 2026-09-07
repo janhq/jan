@@ -1,6 +1,7 @@
 use rmcp::{
     model::{ClientCapabilities, ClientInfo, Implementation},
     transport::{
+        sse_client::SseClient, streamable_http_client::StreamableHttpClient,
         streamable_http_client::StreamableHttpClientTransportConfig, SseClientTransport,
         StreamableHttpClientTransport, TokioChildProcess,
     },
@@ -9,7 +10,6 @@ use rmcp::{
 use serde_json::Value;
 use std::{collections::HashMap, env, process::Stdio, sync::Arc, time::Duration};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-use tauri_plugin_http::reqwest;
 use tokio::{
     io::AsyncReadExt,
     process::Command,
@@ -19,7 +19,8 @@ use tokio::{
 
 use crate::core::{
     app::commands::get_jan_data_folder_path,
-    mcp::models::{McpServerConfig, McpSettings},
+    mcp::models::{extract_active_status, extract_command_args, McpSettings},
+    mcp::oauth,
     mcp::progress::JanClientHandler,
     state::{AppState, RunningMcpService, SharedMcpServers},
 };
@@ -257,9 +258,8 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
         let base_delay_ms = settings.base_restart_delay_ms;
         let max_delay_ms = settings.max_restart_delay_ms;
         let multiplier = settings.backoff_multiplier;
-        let delay_ms = (base_delay_ms as f64
-            * multiplier.powi((consecutive_failures - 1) as i32))
-            as u64;
+        let delay_ms =
+            (base_delay_ms as f64 * multiplier.powi((consecutive_failures - 1) as i32)) as u64;
         let capped_delay_ms = delay_ms.min(max_delay_ms);
 
         log::info!(
@@ -306,7 +306,9 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
                 emit_mcp_update_event(&app, &name);
             }
             Err(e) => {
-                log::error!("MCP server {name} reconnect attempt {consecutive_failures} failed: {e}");
+                log::error!(
+                    "MCP server {name} reconnect attempt {consecutive_failures} failed: {e}"
+                );
                 // Loop continues — will retry with increased backoff
             }
         }
@@ -410,56 +412,42 @@ async fn schedule_mcp_start_task<R: Runtime>(
     let config_params = extract_command_args(&config)
         .ok_or_else(|| format!("Failed to extract command args from config for {name}"))?;
 
-    if let (Some("http"), Some(url)) = (
+    if let (Some(transport @ ("http" | "sse")), Some(url)) = (
         config_params.transport_type.as_deref(),
         config_params.url.clone(),
     ) {
-        let transport = StreamableHttpClientTransport::with_client(
-            reqwest::Client::builder()
-                .default_headers({
-                    // Map envs to request headers
-                    let mut headers: tauri::http::HeaderMap = reqwest::header::HeaderMap::new();
-                    for (key, value) in config_params.headers.iter() {
-                        if let Some(v_str) = value.as_str() {
-                            // Try to map env keys to HTTP header names (case-insensitive)
-                            // Most HTTP headers are Title-Case, so we try to convert
-                            let header_name =
-                                reqwest::header::HeaderName::from_bytes(key.as_bytes());
-                            if let Ok(header_name) = header_name {
-                                if let Ok(header_value) =
-                                    reqwest::header::HeaderValue::from_str(v_str)
-                                {
-                                    headers.insert(header_name, header_value);
-                                }
-                            }
-                        }
-                    }
-                    headers
-                })
-                .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
-                .build()
-                .unwrap(),
-            StreamableHttpClientTransportConfig {
-                uri: url.into(),
-                ..Default::default()
-            },
-        );
+        // One client for both transports, and one place the configured headers
+        // are turned into a `HeaderMap` -- the http and sse arms used to carry
+        // identical copies of that loop.
+        let base = reqwest::Client::builder()
+            .default_headers(header_map(&config_params.headers))
+            .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
+            .build()
+            .map_err(|e| format!("Failed to build HTTP client for {name}: {e}"))?;
 
-        let client_info = ClientInfo {
-            protocol_version: Default::default(),
-            capabilities: ClientCapabilities::default(),
-            client_info: Implementation {
-                name: "Jan Streamable Client".to_string(),
-                version: "0.0.1".to_string(),
-                title: None,
-                website_url: None,
-                icons: None,
-            },
+        // Stored OAuth credentials (refreshed if stale) are wrapped around the
+        // base client so every request carries the bearer token. `None` means
+        // there is no OAuth here -- nothing stored, or the user configured their
+        // own `Authorization` header, which the base client already sends.
+        let authorized =
+            oauth::authorized_client(&app_path, &name, &url, &config, base.clone())
+                .await
+                .map_err(|detail| oauth::NEEDS_AUTH_PREFIX.to_string() + &detail)?;
+        let had_credentials = authorized.is_some();
+
+        let label = if transport == "http" {
+            "Jan Streamable Client"
+        } else {
+            "Jan SSE Client"
         };
-        let handler = JanClientHandler::new(client_info, name.clone(), app.clone());
-        let client = handler.serve(transport).await.inspect_err(|e| {
-            log::error!("client error: {e:?}");
-        });
+        let handler = JanClientHandler::new(client_info(label), name.clone(), app.clone());
+
+        let client = match (transport, authorized) {
+            ("http", Some(c)) => serve_http(c, &url, handler).await,
+            ("http", None) => serve_http(base, &url, handler).await,
+            (_, Some(c)) => serve_sse(c, &url, handler).await,
+            (_, None) => serve_sse(base, &url, handler).await,
+        };
 
         match client {
             Ok(client) => {
@@ -470,75 +458,16 @@ async fn schedule_mcp_start_task<R: Runtime>(
             }
             Err(e) => {
                 log::error!("Failed to connect to server: {e}");
-                return Err(format!("Failed to connect to server: {e}"));
-            }
-        }
-    } else if let (Some("sse"), Some(url)) = (
-        config_params.transport_type.as_deref(),
-        config_params.url.clone(),
-    ) {
-        let transport = SseClientTransport::start_with_client(
-            reqwest::Client::builder()
-                .default_headers({
-                    // Map envs to request headers
-                    let mut headers = reqwest::header::HeaderMap::new();
-                    for (key, value) in config_params.headers.iter() {
-                        if let Some(v_str) = value.as_str() {
-                            // Try to map env keys to HTTP header names (case-insensitive)
-                            // Most HTTP headers are Title-Case, so we try to convert
-                            let header_name =
-                                reqwest::header::HeaderName::from_bytes(key.as_bytes());
-                            if let Ok(header_name) = header_name {
-                                if let Ok(header_value) =
-                                    reqwest::header::HeaderValue::from_str(v_str)
-                                {
-                                    headers.insert(header_name, header_value);
-                                }
-                            }
-                        }
-                    }
-                    headers
-                })
-                .connect_timeout(config_params.timeout.unwrap_or(Duration::MAX))
-                .build()
-                .unwrap(),
-            rmcp::transport::sse_client::SseClientConfig {
-                sse_endpoint: url.into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .map_err(|e| {
-            log::error!("transport error: {e:?}");
-            format!("Failed to start SSE transport: {e}")
-        })?;
-
-        let client_info = ClientInfo {
-            protocol_version: Default::default(),
-            capabilities: ClientCapabilities::default(),
-            client_info: Implementation {
-                name: "Jan SSE Client".to_string(),
-                version: "0.0.1".to_string(),
-                title: None,
-                website_url: None,
-                icons: None,
-            },
-        };
-        let handler = JanClientHandler::new(client_info, name.clone(), app.clone());
-        let client = handler.serve(transport).await.map_err(|e| {
-            log::error!("client error: {e:?}");
-            e.to_string()
-        });
-
-        match client {
-            Ok(client) => {
-                log::info!("Connected to server: {:?}", client.peer_info());
-                servers.lock().await.insert(name.clone(), client);
-
-                emit_mcp_update_event(&app, &name);
-            }
-            Err(e) => {
-                log::error!("Failed to connect to server: {e}");
+                // Only probe when no token was sent: a failure *with* credentials
+                // is either a real outage or tokens the provider revoked, and
+                // discovery cannot tell those apart. Re-authenticating is offered
+                // from the settings screen regardless.
+                if !had_credentials && oauth::advertises_oauth(&url).await {
+                    return Err(format!(
+                        "{}no credentials are stored ({e})",
+                        oauth::NEEDS_AUTH_PREFIX
+                    ));
+                }
                 return Err(format!("Failed to connect to server: {e}"));
             }
         }
@@ -584,8 +513,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
         // what most published MCP servers are tested against.
         let override_available = (config_params.command == "npx"
             && can_override_npx(bun_x_path.display().to_string()))
-            || (config_params.command == "uvx"
-                && can_override_uvx(uv_path.display().to_string()));
+            || (config_params.command == "uvx" && can_override_uvx(uv_path.display().to_string()));
 
         let build_cmd = |use_override: bool| -> Command {
             let mut cmd = Command::new(config_params.command.clone());
@@ -765,9 +693,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                     return Ok(());
                 }
                 Some(Ok(Ok(_tools))) => {
-                    log::info!(
-                        "MCP server {name} tools/list verified on attempt {attempt}"
-                    );
+                    log::info!("MCP server {name} tools/list verified on attempt {attempt}");
                     break;
                 }
                 Some(Ok(Err(e))) => {
@@ -822,10 +748,10 @@ async fn schedule_mcp_start_task<R: Runtime>(
 /// server itself reported, defaulting to info when no level tag is present.
 fn log_mcp_stderr_line(server_name: &str, line: &str) {
     let trimmed = line.trim_start();
-    let level_token = trimmed
-        .split_whitespace()
-        .next()
-        .map(|t| t.trim_matches(|c: char| !c.is_ascii_alphabetic()).to_ascii_uppercase());
+    let level_token = trimmed.split_whitespace().next().map(|t| {
+        t.trim_matches(|c: char| !c.is_ascii_alphabetic())
+            .to_ascii_uppercase()
+    });
     match level_token.as_deref() {
         Some("ERROR" | "CRITICAL" | "FATAL") => {
             log::error!("[mcp-stderr:{server_name}] {line}")
@@ -837,6 +763,78 @@ fn log_mcp_stderr_line(server_name: &str, line: &str) {
     }
 }
 
+/// Turn the entry's configured `headers` map into a `HeaderMap`, skipping any
+/// pair that is not a valid header name/value. Shared by both remote transports.
+fn header_map(headers: &serde_json::Map<String, Value>) -> reqwest::header::HeaderMap {
+    let mut map = reqwest::header::HeaderMap::new();
+    for (key, value) in headers.iter() {
+        if let Some(v) = value.as_str() {
+            if let (Ok(name), Ok(val)) = (
+                reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                reqwest::header::HeaderValue::from_str(v),
+            ) {
+                map.insert(name, val);
+            }
+        }
+    }
+    map
+}
+
+fn client_info(label: &str) -> ClientInfo {
+    ClientInfo {
+        protocol_version: Default::default(),
+        capabilities: ClientCapabilities::default(),
+        client_info: Implementation {
+            name: label.to_string(),
+            version: "0.0.1".to_string(),
+            title: None,
+            website_url: None,
+            icons: None,
+        },
+    }
+}
+
+/// Serve the streamable-http transport over any client that implements it, so
+/// the plain and OAuth-wrapped clients share one transport construction.
+async fn serve_http<C>(
+    client: C,
+    url: &str,
+    handler: JanClientHandler,
+) -> Result<RunningMcpService, String>
+where
+    C: StreamableHttpClient + Send + Sync + 'static,
+{
+    let transport = StreamableHttpClientTransport::with_client(
+        client,
+        StreamableHttpClientTransportConfig {
+            uri: url.to_string().into(),
+            ..Default::default()
+        },
+    );
+    handler.serve(transport).await.map_err(|e| e.to_string())
+}
+
+/// `serve_http`'s counterpart for the legacy SSE transport.
+async fn serve_sse<C>(
+    client: C,
+    url: &str,
+    handler: JanClientHandler,
+) -> Result<RunningMcpService, String>
+where
+    C: SseClient + Send + Sync + 'static,
+{
+    let transport = SseClientTransport::start_with_client(
+        client,
+        rmcp::transport::sse_client::SseClientConfig {
+            sse_endpoint: url.to_string().into(),
+            ..Default::default()
+        },
+    )
+    .await
+    .map_err(|e| format!("Failed to start SSE transport: {e}"))?;
+    handler.serve(transport).await.map_err(|e| e.to_string())
+}
+
 fn emit_mcp_update_event<R: Runtime>(app: &AppHandle<R>, name: &str) {
     if let Err(e) = app.emit(
         "mcp-update",
@@ -846,43 +844,6 @@ fn emit_mcp_update_event<R: Runtime>(app: &AppHandle<R>, name: &str) {
     ) {
         log::error!("Failed to emit mcp-update event: {e}");
     }
-}
-
-pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {
-    let obj = config.as_object()?;
-    let command = obj.get("command")?.as_str()?.to_string();
-    let args = obj.get("args")?.as_array()?.clone();
-    let url = obj.get("url").and_then(|u| u.as_str()).map(String::from);
-    let transport_type = obj.get("type").and_then(|t| t.as_str()).map(String::from);
-    let timeout = obj
-        .get("timeout")
-        .and_then(|t| t.as_u64())
-        .map(Duration::from_secs);
-    let headers = obj
-        .get("headers")
-        .unwrap_or(&Value::Object(serde_json::Map::new()))
-        .as_object()?
-        .clone();
-    let envs = obj
-        .get("env")
-        .unwrap_or(&Value::Object(serde_json::Map::new()))
-        .as_object()?
-        .clone();
-    Some(McpServerConfig {
-        timeout,
-        transport_type,
-        url,
-        command,
-        args,
-        envs,
-        headers,
-    })
-}
-
-pub fn extract_active_status(config: &Value) -> Option<bool> {
-    let obj = config.as_object()?;
-    let active = obj.get("active")?.as_bool()?;
-    Some(active)
 }
 
 /// Restart only servers that were previously active (like cortex restart behavior)
@@ -932,42 +893,41 @@ pub async fn kill_orphaned_mcp_process_with_app<R: Runtime>(
             check_and_cleanup_stale_lock(app, port).await?;
             // Fall through — port may still be held by a grandchild that outlived this PID.
         } else {
+            // Process from lock file is alive - verify it's still the MCP process
+            if let Some(process_info) = jan_utils::network::get_process_info_by_pid(lock.pid) {
+                if jan_utils::network::is_orphaned_mcp_process(&process_info) {
+                    log::info!(
+                        "Lock file PID {} verified as MCP process, attempting kill",
+                        lock.pid
+                    );
+                    kill_process_by_pid(lock.pid).await?;
 
-        // Process from lock file is alive - verify it's still the MCP process
-        if let Some(process_info) = jan_utils::network::get_process_info_by_pid(lock.pid) {
-            if jan_utils::network::is_orphaned_mcp_process(&process_info) {
-                log::info!(
-                    "Lock file PID {} verified as MCP process, attempting kill",
-                    lock.pid
-                );
-                kill_process_by_pid(lock.pid).await?;
+                    use crate::core::mcp::lockfile::delete_lock_file;
+                    delete_lock_file(app, port)?;
 
-                use crate::core::mcp::lockfile::delete_lock_file;
-                delete_lock_file(app, port)?;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-                if jan_utils::network::is_port_available(port) {
-                    log::info!("Cleaned up orphaned process via lock file");
-                    return Ok(true);
-                }
-            } else {
-                log::warn!(
+                    if jan_utils::network::is_port_available(port) {
+                        log::info!("Cleaned up orphaned process via lock file");
+                        return Ok(true);
+                    }
+                } else {
+                    log::warn!(
                     "Lock file PID {} is alive but NOT an MCP process (name: {}, cmd: {:?}). Lock file is stale.",
                     lock.pid,
                     process_info.name,
                     process_info.cmd
                 );
-                // PID reused by another process, clean up stale lock file
+                    // PID reused by another process, clean up stale lock file
+                    check_and_cleanup_stale_lock(app, port).await?;
+                }
+            } else {
+                log::debug!(
+                    "Could not get process info for PID {}, cleaning up lock file",
+                    lock.pid
+                );
                 check_and_cleanup_stale_lock(app, port).await?;
             }
-        } else {
-            log::debug!(
-                "Could not get process info for PID {}, cleaning up lock file",
-                lock.pid
-            );
-            check_and_cleanup_stale_lock(app, port).await?;
-        }
         }
     }
 
@@ -1032,8 +992,7 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
         None => kill(nix_pid, sig),
     };
 
-    send(Signal::SIGTERM)
-        .map_err(|e| format!("Failed to send SIGTERM to PID {}: {}", pid, e))?;
+    send(Signal::SIGTERM).map_err(|e| format!("Failed to send SIGTERM to PID {}: {}", pid, e))?;
 
     for _ in 0..30 {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -1044,8 +1003,7 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     }
 
     log::warn!("Process group {} unresponsive, sending SIGKILL", pid);
-    send(Signal::SIGKILL)
-        .map_err(|e| format!("Failed to send SIGKILL to PID {}: {}", pid, e))?;
+    send(Signal::SIGKILL).map_err(|e| format!("Failed to send SIGKILL to PID {}: {}", pid, e))?;
 
     Ok(())
 }
@@ -1101,7 +1059,12 @@ pub async fn terminate_browser_mcp(pid: Option<u32>, port: u16) {
             info.pid
         );
         if let Err(e) = kill_process_by_pid(info.pid).await {
-            log::warn!("Failed to kill straggler PID {} on port {}: {}", info.pid, port, e);
+            log::warn!(
+                "Failed to kill straggler PID {} on port {}: {}",
+                info.pid,
+                port,
+                e
+            );
         }
         let _ = jan_utils::network::wait_for_port_free(
             port,

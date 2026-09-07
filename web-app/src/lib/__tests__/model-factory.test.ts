@@ -391,6 +391,14 @@ describe('createCustomFetch — max_tokens coercion', () => {
     expect(sent.cache_prompt).toBeUndefined()
   })
 
+  // The whole cross-session prompt cache depends on this field surviving the
+  // trip to the engine; a filter that dropped it would disable the feature
+  // silently, with nothing failing.
+  it('passes thread_id through to the request body', async () => {
+    const sent = await captureSentBody({ thread_id: 'thread-42' }, true, {})
+    expect(sent.thread_id).toBe('thread-42')
+  })
+
   it('preserves an explicit id_slot passed via parameters (title-gen path)', async () => {
     const sent = await captureSentBody({ id_slot: 3 }, true, {})
     expect(sent.id_slot).toBe(3)

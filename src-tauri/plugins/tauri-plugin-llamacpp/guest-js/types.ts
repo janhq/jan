@@ -12,10 +12,26 @@ export interface UnloadResult {
   error?: string
 }
 
-export interface DeviceInfo {
-  id: string
-  name: string
-  memory: number
+/** Mirrors `engine::commands::EngineInfo`. */
+export interface EngineInfo {
+  port: number
+  api_key: string
+  pid: number
+  /** Model ids the worker registered from the preset. */
+  models: string[]
+}
+
+/**
+ * Mirrors `engine::commands::ReloadReport`. Every model in the preset appears
+ * in exactly one list, so an empty `changed`/`removed` proves the reload left
+ * the models the user was using alone.
+ */
+export interface ReloadReport {
+  added: string[]
+  changed: string[]
+  removed: string[]
+  kept: string[]
+  models_max: number
 }
 
 export interface ModelProps {
@@ -31,65 +47,56 @@ export interface GgufMetadata {
   metadata: Record<string, string>
 }
 
-// llama.cpp settings
+/**
+ * The engine-level (provider-wide) settings, mirroring
+ * `extensions/llamacpp-extension/settings.json` exactly.
+ *
+ * Kept in lockstep on purpose: `this.config` is built only from those keys, so a
+ * field declared here with no settings.json entry is permanently `undefined` --
+ * which is how two dead `[*]` preset branches (`ctx_size`, `n_gpu_layers`) came
+ * to typecheck. Per-model settings are a different type (`ModelConfig`).
+ */
 export type LlamacppConfig = {
-  llamacpp_version: string
-  llamacpp_backend: string
-  /** Composed from llamacpp_version + llamacpp_backend as `${version}/${backend}`. Not user-settable. */
-  version_backend: string
-  auto_update_engine: boolean
-  check_for_updates: boolean
-  verify_backend_deps: boolean
-  auto_unload: boolean
+  llamacpp_env: string
   models_max: string | number
   timeout: number
-  llamacpp_env: string
   fit: boolean
   fit_target: string
   fit_ctx: string
-  chat_template: string
-  n_gpu_layers: number
-  offload_mmproj: boolean
-  cpu_moe: boolean
-  n_cpu_moe: number
-  override_tensor_buffer_t: string
-  ctx_size: number
   threads: number
   threads_batch: number
+  ctx_shift: boolean
   n_predict: number
   batch_size: number
   ubatch_size: number
+  n_cpu_moe: number
+  no_kv_offload: boolean
   device: string
   split_mode: string
   main_gpu: number
+  tensor_split: string
+  no_op_offload: boolean
   flash_attn: string
+  parallel: number
   cont_batching: boolean
   no_mmap: boolean
   mlock: boolean
-  no_kv_offload: boolean
   cache_type_k: string
   cache_type_v: string
   rope_scaling: string
-  rope_scale: number
   rope_freq_base: number
   rope_freq_scale: number
-  ctx_shift: boolean
-  parallel: number
-  reasoning: string
   cache_ram: number
+  /** Keep each thread's prompt cache on disk across sessions. */
+  persist_thread_cache: boolean
+  /** Disk budget for the above, in MiB. */
+  thread_cache_size: number
   cache_reuse: number
+  ctx_checkpoints: number
+  checkpoint_min_step: number
   swa_full: boolean
-  keep: number
   kv_unified: string
-}
-
-export type ModelPlan = {
-  gpuLayers: number
-  maxContextLength: number
-  noOffloadKVCache: boolean
-  offloadMmproj?: boolean
-  batchSize: number
-  mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
+  keep: number
 }
 
 export interface DownloadItem {
@@ -146,81 +153,3 @@ export interface DeviceList {
   free: number
 }
 
-export interface SystemMemory {
-  totalVRAM: number
-  totalRAM: number
-  totalMemory: number
-}
-
-// backend types
-export type BackendVersion = { version: string; backend: string }
-
-export type BackendFeatures = {
-  cuda11: boolean
-  cuda12: boolean
-  cuda13: boolean
-  vulkan: boolean
-  hip: boolean
-}
-
-export type SupportedFeatures = {
-  avx: boolean
-  avx2: boolean
-  avx512: boolean
-  cuda11: boolean
-  cuda12: boolean
-  cuda13: boolean
-  vulkan: boolean
-}
-export type NvidiaInfo = {
-  compute_capability: string
-}
-
-export type VulkanInfo = {
-  api_version: string
-}
-
-export type GpuInfo = {
-  driver_version: string
-  nvidia_info?: NvidiaInfo | null
-  vulkan_info?: VulkanInfo | null
-}
-
-export interface BestBackendResult {
-  backend_string: string
-  version: string
-  backend_type: string
-}
-
-export interface UpdateCheckResult {
-  update_needed: boolean
-  new_version: string
-  target_backend?: string
-}
-
-export interface SettingUpdateResult {
-  backend_type_updated: boolean
-  effective_backend_type?: string
-  needs_backend_installation: boolean
-  version?: string
-  backend?: string
-}
-
-/** One ggml GPU library that failed to load, with the cause. */
-export interface LoadProbeFailure {
-  library: string
-  /** Raw loader message. */
-  error: string
-  /** Names parsed out of `error`, for install advice. */
-  missing_libraries: string[]
-}
-
-export interface LoadProbeResult {
-  loaded: string[]
-  failures: LoadProbeFailure[]
-  /**
-   * The probe could not run, so an empty `failures` list must not be read as a
-   * healthy backend.
-   */
-  inconclusive: boolean
-}

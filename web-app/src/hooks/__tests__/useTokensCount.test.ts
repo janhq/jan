@@ -192,6 +192,47 @@ describe('useTokensCount', () => {
     expect(result.current.percentage).toBeUndefined()
   })
 
+  // Cowork keeps its own turns, not ThreadMessages, so it reports usage
+  // directly rather than synthesising messages to carry it.
+  describe('direct usage source', () => {
+    it('counts tokens for a remote provider with no messages at all', () => {
+      modelProviderState.selectedProvider = 'anthropic'
+      const { result } = renderHook(() =>
+        useTokensCount([], {
+          threadId: 'session-1',
+          usage: { inputTokens: 900, outputTokens: 100, totalTokens: 1000 },
+        })
+      )
+      expect(result.current.tokenCount).toBe(1000)
+      expect(result.current.inputTokens).toBe(900)
+    })
+
+    it('measures a local run against the context window', async () => {
+      modelProviderState.selectedProvider = 'llamacpp'
+      const { result } = renderHook(() =>
+        useTokensCount([], {
+          threadId: 'session-1',
+          usage: { inputTokens: 400, outputTokens: 100, totalTokens: 500 },
+        })
+      )
+      await waitFor(() => expect(result.current.modelProps).toBeDefined())
+      expect(result.current.tokenCount).toBe(500)
+      expect(result.current.maxTokens).toBe(1000)
+      expect(result.current.percentage).toBe(50)
+    })
+
+    // Otherwise a surface passing both would read a stale number off the
+    // messages while its own is fresher.
+    it('wins over usage found on the messages', () => {
+      modelProviderState.selectedProvider = 'anthropic'
+      const messages = [makeMessage({ metadata: { usage: { totalTokens: 7 } } })]
+      const { result } = renderHook(() =>
+        useTokensCount(messages, { usage: { totalTokens: 4242 } })
+      )
+      expect(result.current.tokenCount).toBe(4242)
+    })
+  })
+
   it('context overflow still works when there are no live stats at all', async () => {
     const messages = [
       makeMessage({

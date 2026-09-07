@@ -1,10 +1,8 @@
-import { useRouter } from 'next/router'
-import { useEffect } from 'react'
+---
+title: Jan Docs
+description: References for Jan Desktop, Jan Agent, and Tokamak.
+---
 
-export default function DocsIndex() {
-  const router = useRouter()
-  useEffect(() => {
-    router.replace('/docs/desktop')
-  }, [router])
-  return null
-}
+import DocsHome from "@/components/DocsHome"
+
+<DocsHome/>
