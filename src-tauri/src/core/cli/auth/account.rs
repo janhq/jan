@@ -1078,6 +1078,11 @@ async fn complete_code_login(
             .then_some("anthropic".to_string()),
         )
     };
+    // A failed configuration save must undo credential replacement, not
+    // erase the account that was authenticated before this login.
+    let credential_provider = provider.credential_provider();
+    let previous_credential = CredentialStore::load(credential_provider)
+        .map_err(|error| format!("could not read the existing credential: {error}"))?;
     store(provider, &token)?;
     if let Err(error) = crate::core::agent::global_config::set_provider(
         definition.id,
@@ -1090,7 +1095,15 @@ async fn complete_code_login(
             ..Default::default()
         },
     ) {
-        let _ = CredentialStore::delete(provider.credential_provider());
+        let rollback = match previous_credential {
+            Some(credential) => CredentialStore::store(credential_provider, &credential),
+            None => CredentialStore::delete(credential_provider),
+        };
+        if let Err(rollback_error) = rollback {
+            return Err(format!(
+                "could not save the provider configuration: {error}; restoring the previous credential also failed: {rollback_error}"
+            ));
+        }
         return Err(format!(
             "could not save the provider configuration: {error}"
         ));
@@ -1865,6 +1878,44 @@ mod tests {
             assert!(CredentialStore::load("openai").unwrap().is_none());
             assert!(!load_global_config().unwrap().contains_key("openai"));
         });
+    }
+
+    #[test]
+    fn codex_configuration_failure_restores_previous_credential() {
+        let previous_account = Credential::OAuthToken(OAuthToken {
+            access_token: codex_jwt("previous-account"),
+            refresh_token: Some("previous-refresh-token".to_string()),
+            expires_at: None,
+            token_type: "Bearer".to_string(),
+            scopes: vec!["profile".to_string()],
+        });
+        for previous in [None, Some(previous_account)] {
+            let _tmp = TempSecrets::new();
+            with_temp_home(|home| {
+                if let Some(credential) = &previous {
+                    CredentialStore::store("openai", credential).unwrap();
+                }
+                // A directory at the config path forces a real write failure
+                // on every platform, without relying on permission bits.
+                let config_path = home.join(".jan/config.toml");
+                std::fs::create_dir_all(&config_path).unwrap();
+                let (models_base_url, _request) =
+                    account_models_server("200 OK", |_| r#"{"models":[{"slug":"account-model"}]}"#);
+
+                let result = complete_account_for_test(models_base_url);
+
+                assert!(
+                    result.is_err(),
+                    "configuration failure must not complete login"
+                );
+                assert_eq!(
+                    CredentialStore::load("openai").unwrap(),
+                    previous,
+                    "configuration failure must restore the prior credential"
+                );
+                assert!(config_path.is_dir());
+            });
+        }
     }
 
     #[test]

@@ -85,6 +85,7 @@ the release lookup never includes your account token or account ID. If release o
 discovery fails, or the account has no available models, sign-in reports an error without
 changing saved credentials or provider configuration. Jan does not substitute guessed models;
 retry sign-in when discovery is available again.
+Configuration-save failures also attempt to restore the prior credential instead of deleting it.
 
 ## Tokamak
 
