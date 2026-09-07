@@ -194,4 +194,5 @@ mod tests {
             .collect();
         assert_eq!(enabled, vec!["opencode", "opencode-go"]);
     }
+
 }

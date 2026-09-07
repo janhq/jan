@@ -1851,6 +1851,8 @@ struct App {
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     max_tokens: Option<u64>,
+    /// Persisted preference for Codex priority processing; other providers ignore it.
+    fast_mode: bool,
     /// Token-spend ceiling for one message's run; `0` is unbounded. Advisory:
     /// crossing it compacts and files a note rather than stopping the run.
     max_session_tokens: u64,
@@ -2618,6 +2620,7 @@ impl App {
             compaction_ratio: limits.compaction_ratio,
             compaction_reserve_tokens: limits.compaction_reserve_tokens,
             max_tokens: limits.max_tokens,
+            fast_mode: false,
             max_session_tokens: limits.max_session_tokens,
             cost_ceiling: limits.cost_ceiling,
             repo_root,
@@ -4734,6 +4737,12 @@ impl App {
                 "cache_read_usd": ceiling.rates.cache_read_usd,
                 "cache_write_usd": ceiling.rates.cache_write_usd,
             });
+        }
+        // Internal orchestration hint. The loop consumes this before any wire
+        // conversion, so providers never receive the internal field itself: the
+        // Codex fast mode becomes the Responses service tier there.
+        if self.fast_mode {
+            body["fast_mode"] = serde_json::json!(true);
         }
         // Live plan-mode toggle: the backend reads this per turn and falls back
         // to the session default when absent. Only forwarded in Plan so normal
@@ -9345,6 +9354,7 @@ pub async fn run(
         provider: _,
         smol_model,
         limits,
+        fast_mode,
         show_reasoning,
         stream_reasoning,
         send_reasoning,
@@ -9432,6 +9442,7 @@ pub async fn run(
     app.monitor_set = monitor_set;
     app.shell_set = shell_set;
     app.subagent_set = subagent_set;
+    app.fast_mode = fast_mode;
     app.args = Some(args.clone());
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
     // shows immediately; a resumed thread overrides this via restore_run_mode.
@@ -11309,7 +11320,7 @@ async fn handle_key(
                         // `None`, not `""`: this removed the key, so a `Glyph`
                         // goes back to its default rather than to off, which
                         // is what a cleared edit field means.
-                        let when = if apply_live_unset(def) {
+                        let when = if apply_live_unset(app, def) {
                             "in effect now"
                         } else {
                             "takes effect on the next run"
@@ -12089,6 +12100,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/fast",
+        hint: "[on|off]",
+        description: "Toggle Codex priority processing (bare: toggle; persisted per project)",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/effort",
         hint: "[low|medium|high]",
         description: "Set reasoning effort (bare: show current; low: faster, high: deeper thinking)",
@@ -12374,6 +12391,7 @@ async fn run_command(
                 app.set_model(arg.to_string());
             }
         }
+        "fast" => fast_command(app, arg),
         "mcp" => open_mcp_picker(app, mcp_servers).await,
         "agents" => open_agents_picker(app),
         "shells" | "jobs" => open_background_shells_picker(app),
@@ -12852,9 +12870,9 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
     AgentSettingDef {
         key: "context_window",
         label: "context_window",
-        desc: "context limit in tokens",
+        desc: "context override; unset uses the model default",
         kind: AgentSettingKind::Int {
-            default: Some(128000),
+            default: None,
             min: 1,
         },
         scope: SettingScope::Project,
@@ -12868,6 +12886,13 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
             min: 0.1,
             max: 0.99,
         },
+        scope: SettingScope::Project,
+    },
+    AgentSettingDef {
+        key: "fast_mode",
+        label: "fast_mode",
+        desc: "Codex priority processing",
+        kind: AgentSettingKind::Bool { default: false },
         scope: SettingScope::Project,
     },
     AgentSettingDef {
@@ -13476,8 +13501,30 @@ fn setting_path(def: &AgentSettingDef, toml_path: &std::path::Path) -> String {
 /// the code does not have to tell. `entered` is the trimmed field; empty is an
 /// unset for most kinds and a written "off" for a `Glyph`, which is why this
 /// passes `Some` either way and lets the setter read it.
-fn apply_live_setting(def: &AgentSettingDef, entered: &str) -> bool {
+fn apply_live_setting(app: &mut App, def: &AgentSettingDef, entered: &str) -> bool {
     match def.key {
+        "context_window" => {
+            app.configured_context_window = if entered.is_empty() {
+                None
+            } else {
+                match entered.parse::<u64>() {
+                    Ok(tokens) => Some(tokens),
+                    Err(_) => return false,
+                }
+            };
+            if app.refresh_context_window() && app.should_auto_compact() {
+                app.compact_request = Some(CompactKind::Auto);
+            }
+            true
+        }
+        "fast_mode" => {
+            app.fast_mode = match entered {
+                "" | "false" => false,
+                "true" => true,
+                _ => return false,
+            };
+            true
+        }
         "wave" => {
             set_wave_glyph(Some(entered));
             true
@@ -13490,8 +13537,9 @@ fn apply_live_setting(def: &AgentSettingDef, entered: &str) -> bool {
 /// took. Separate from `apply_live_setting` because removing a key and saving
 /// an empty one are different outcomes for a `Glyph`: the first restores the
 /// default, the second is the off switch.
-fn apply_live_unset(def: &AgentSettingDef) -> bool {
+fn apply_live_unset(app: &mut App, def: &AgentSettingDef) -> bool {
     match def.key {
+        "context_window" | "fast_mode" => apply_live_setting(app, def, ""),
         "wave" => {
             set_wave_glyph(None);
             true
@@ -13750,7 +13798,8 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                         (true, false) => format!("{} unset (default applies)", prompt.key),
                         (false, _) => format!("{} = {entered} written", prompt.key),
                     };
-                    let when = if apply_live_setting(prompt.def(), &entered) {
+                    let def = prompt.def();
+                    let when = if apply_live_setting(app, def, &entered) {
                         "in effect now"
                     } else {
                         "takes effect on the next run"
@@ -14000,6 +14049,32 @@ fn plan_command(app: &mut App, arg: &str) {
 }
 
 const EFFORT_LEVELS: &[&str] = &["low", "medium", "high"];
+
+/// Toggle Codex priority processing and persist the project preference.
+fn fast_command(app: &mut App, arg: &str) {
+    let enabled = match arg.trim() {
+        "" => !app.fast_mode,
+        "on" => true,
+        "off" => false,
+        _ => return app.note("usage: /fast [on|off]"),
+    };
+    let path = app.agent_dir.join("agent.toml");
+    match crate::core::agent::project::set_agent_key(
+        &path,
+        "fast_mode",
+        Some(toml_edit::value(enabled)),
+    ) {
+        Ok(()) => {
+            app.fast_mode = enabled;
+            app.note(if enabled {
+                "Codex fast mode on (priority tier)"
+            } else {
+                "Codex fast mode off"
+            });
+        }
+        Err(error) => app.note(&format!("could not save fast mode: {error}")),
+    }
+}
 
 /// `/effort` -- report or change the reasoning effort level for subsequent model
 /// requests. Without arguments, shows the current level. With a level argument,
@@ -15576,6 +15651,7 @@ fn adopt_login_model(app: &mut App, login: &crate::core::cli::auth::LoginResult)
     // provider's own first-listed model, where `models` is merely sorted.
     if let Some(model) = login.default_model.as_ref().or_else(|| login.models.first()) {
         app.model = model.clone();
+        app.refresh_context_window();
         let _ = super::cli_set_project_model(&app.agent_dir, &app.model);
     }
 }
@@ -16636,6 +16712,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
         .and_then(|v| v.as_str())
     {
         app.model = model.to_string();
+        app.refresh_context_window();
     }
 
     // The journal holds what was rendered (reasoning, tool rows, diffs); the
@@ -24333,7 +24410,7 @@ mod tests {
                     api_key: None,
                     clear_api_key: true,
                     base_url: Some("https://api.openai.com/v1".into()),
-                    models: Some(vec!["gpt-4o-mini".into()]),
+                    models: Some(vec!["gpt-6-astra".into()]),
                     api_type: None,
                     ..Default::default()
                 },
@@ -24349,7 +24426,8 @@ mod tests {
                 "{text}"
             );
             assert!(app.account_login.is_none());
-            assert_eq!(app.model, "gpt-4o-mini");
+            assert_eq!(app.model, "gpt-6-astra");
+            assert_eq!(app.context_window, 272_000);
         });
 
         let mut app = test_app();
@@ -30376,7 +30454,7 @@ mod tests {
             json!({ "role": "user", "content": "first" }),
             json!({ "role": "assistant", "content": "reply" }),
         ];
-        let id = super::super::cli_save_thread(&app.agent_dir, None, "saved-model", &history, None)
+        let id = super::super::cli_save_thread(&app.agent_dir, None, "claude-fable-5-1", &history, None)
             .unwrap();
 
         let mut fresh = test_app();
@@ -30385,7 +30463,8 @@ mod tests {
 
         assert_eq!(fresh.thread_id.as_deref(), Some(id.as_str()));
         assert_eq!(fresh.history, history);
-        assert_eq!(fresh.model, "saved-model");
+        assert_eq!(fresh.model, "claude-fable-5-1");
+        assert_eq!(fresh.context_window, 1_000_000);
         let joined: String = fresh
             .transcript
             .iter()
@@ -30402,7 +30481,7 @@ mod tests {
         let same = super::super::cli_save_thread(
             &app.agent_dir,
             Some(&id),
-            "saved-model",
+            "claude-fable-5-1",
             &fresh.history,
             None,
         )
@@ -30412,6 +30491,9 @@ mod tests {
             super::super::list_threads_in(&app.agent_dir).unwrap().len(),
             1
         );
+        fresh.configured_context_window = Some(1_100_000);
+        apply_resume(&mut fresh, &ResumeRequest::resume(ResumeTarget::Latest)).await;
+        assert_eq!(fresh.context_window, 1_100_000);
     }
 
     #[tokio::test]
@@ -34307,6 +34389,65 @@ mod tests {
         run_command(&mut app, "goal", &no_mcp()).await;
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("no active goal"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn fast_command_persists_mode_and_rejects_invalid_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = test_app();
+        app.agent_dir = dir.path().to_path_buf();
+        let path = app.agent_dir.join("agent.toml");
+        std::fs::write(&path, "[agent]\ncontext_window = 1100000\n").unwrap();
+
+        run_command(&mut app, "fast on", &no_mcp()).await;
+        let saved = std::fs::read_to_string(&path).unwrap();
+        let config: toml::Value = toml::from_str(&saved).unwrap();
+        assert_eq!(config["agent"].get("fast_mode").and_then(toml::Value::as_bool), Some(true));
+        assert_eq!(app.body()["fast_mode"].as_bool(), Some(true));
+
+        run_command(&mut app, "fast nonsense", &no_mcp()).await;
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), saved);
+        assert_eq!(app.body()["fast_mode"].as_bool(), Some(true));
+        std::fs::write(&path, "[agent\n").unwrap();
+        run_command(&mut app, "fast off", &no_mcp()).await;
+        assert_eq!(app.body()["fast_mode"].as_bool(), Some(true));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "[agent\n");
+        std::fs::write(&path, &saved).unwrap();
+
+        run_command(&mut app, "fast", &no_mcp()).await;
+        let config: toml::Value =
+            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(config["agent"]["fast_mode"].as_bool(), Some(false));
+        assert!(app.body().get("fast_mode").is_none());
+        assert_eq!(config["agent"]["context_window"].as_integer(), Some(1_100_000));
+    }
+
+    #[test]
+    fn context_setting_applies_1_1m_live_and_survives_model_switches() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = test_app();
+        app.agent_dir = dir.path().to_path_buf();
+        std::fs::write(app.agent_dir.join("agent.toml"), "[agent]\n").unwrap();
+        let def = AGENT_SETTINGS.iter().find(|def| def.key == "context_window").unwrap();
+        let mut prompt = super::SettingsPrompt::new(def, None);
+        prompt.input = "1100000".to_string();
+        app.settings_prompt = Some(prompt);
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+
+        assert_eq!(app.context_window, 1_100_000);
+        for model in ["gpt-5.6-luna", "gpt-6-astra", "claude-fable-5-1"] {
+            app.set_model(model.to_string());
+            assert_eq!(app.context_window, 1_100_000);
+            assert!(app.body().get("context_window").is_none());
+            assert!(app.body().get("max_tokens").is_none());
+        }
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert_eq!(app.configured_context_window, None);
+        assert_eq!(
+            app.context_window,
+            crate::core::cli::model_capabilities::resolve_context_window(&app.model, None, None).tokens
+        );
     }
 
     #[tokio::test]
