@@ -77,6 +77,7 @@ import {
   startEngine,
   eraseThreadSlotState,
   getEngineInfo as pluginGetEngineInfo,
+  getEngineVersion as pluginGetEngineVersion,
   reloadEngineModels,
   engineDevices,
   generateApiKey as pluginGenerateApiKey,
@@ -90,6 +91,7 @@ import {
   EmbeddingResponse,
   ModelProps,
   DeviceList,
+  EngineVersion,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
@@ -438,6 +440,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
   private enginePort?: number
   private engineApiKey?: string
+  private engineVersion?: EngineVersion
   private presetPath?: string
   private engineStartLock: Promise<void> | null = null
   private userModelsMax: number = 1
@@ -992,6 +995,18 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       logger.warn('get_engine_info failed:', e)
     }
     return null
+  }
+
+  /**
+   * The bundled engine's identity. Cached after the first call: these are
+   * compile-time constants of the plugin, so they cannot change while the app
+   * is running, and the settings screen asks on every mount.
+   */
+  async getEngineVersion(): Promise<EngineVersion> {
+    if (!this.engineVersion) {
+      this.engineVersion = await pluginGetEngineVersion()
+    }
+    return this.engineVersion
   }
 
   /**
