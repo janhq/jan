@@ -70,6 +70,7 @@ export type LlamacppConfig = {
   batch_size: number
   ubatch_size: number
   n_cpu_moe: number
+  n_cpu_ffn: number
   no_kv_offload: boolean
   device: string
   split_mode: string
@@ -96,6 +97,12 @@ export type LlamacppConfig = {
   checkpoint_min_step: number
   swa_full: boolean
   kv_unified: string
+  /** Per-slot cap on the shared KV pool, in tokens. 0 = unset. */
+  kv_unified_per_slot: number
+  /** Keep reasoning for the whole history, not just the last assistant turn. */
+  reasoning_preserve: boolean
+  /** On-demand reading of arch-marked tensors: `auto` | `on` | `off`. */
+  lazy_mode: string
   keep: number
 }
 
