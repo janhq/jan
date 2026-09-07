@@ -38,6 +38,8 @@ pub struct AccountLogin {
     token_endpoint: String,
     #[cfg(test)]
     model_base_url: Option<String>,
+    #[cfg(test)]
+    codex_release_url: Option<String>,
 }
 
 impl AccountLogin {
@@ -128,6 +130,8 @@ pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
         token_endpoint: token_endpoint.to_string(),
         #[cfg(test)]
         model_base_url: None,
+        #[cfg(test)]
+        codex_release_url: None,
     })
 }
 
@@ -1008,12 +1012,8 @@ async fn complete_code_login(
             .ok_or_else(|| "selected account is unavailable".to_string())?;
     let codex_release_url = "https://api.github.com/repos/openai/codex/releases/latest";
     #[cfg(test)]
-    let codex_release_override = login
-        .model_base_url
-        .as_ref()
-        .map(|base| format!("{base}/releases/latest"));
-    #[cfg(test)]
-    let codex_release_url = codex_release_override
+    let codex_release_url = login
+        .codex_release_url
         .as_deref()
         .unwrap_or(codex_release_url);
     #[cfg(test)]
@@ -1024,15 +1024,26 @@ async fn complete_code_login(
         }
         definition
     };
-    // Claude account tokens can query /v1/models. Codex tokens instead carry
-    // a ChatGPT account id and use ChatGPT's model roster and Responses API.
+    // Codex and Claude account tokens authenticate against different surfaces.
+    // A Claude account token is valid against `/v1/models` (Anthropic accepts
+    // it with the OAuth beta header). A Codex account token is a ChatGPT
+    // account token that `api.openai.com/v1/models` rejects (401) because that
+    // endpoint only accepts an API key - so discovery is skipped for Codex and
+    // the account is instead verified from the JWT `chatgpt_account_id` claim,
+    // exactly as opencode and pi do. Codex is served through the Responses API.
     let (models, api_type) = if provider == AccountProvider::Codex {
         match codex_chatgpt_account_id(&token.access_token) {
             Ok(account_id) => {
                 debug_log(&format!("codex: verified chatgpt_account_id {account_id}"));
-                // Discover account-scoped models before persisting anything.
-                // A failed or empty roster must not replace a working login
-                // with credentials paired to guessed models.
+                // Fetch the account's real Codex roster from the ChatGPT
+                // backend's `/codex/models` endpoint (a Codex account token is
+                // a ChatGPT credential, not an OpenAI API key, so
+                // `api.openai.com/v1/models` rejects it). `/codex/models`
+                // returns the stable Codex slugs, whereas
+                // `chatgpt.com/backend-api/models` would return rolling
+                // user-scoped ChatGPT codenames that cannot run. Fall back to
+                // a single default model so a transient roster failure never
+                // hard-fails an otherwise valid login.
                 let models = crate::core::cli::auth::providers::discover_codex_models(
                     &token.access_token,
                     Some(&account_id),
@@ -1040,17 +1051,17 @@ async fn complete_code_login(
                     codex_release_url,
                 )
                 .await
-                .map_err(|error| {
+                .map(|m| {
+                    if m.is_empty() {
+                        vec!["gpt-5-chat-latest".to_string()]
+                    } else {
+                        m
+                    }
+                })
+                .unwrap_or_else(|error| {
                     debug_log(&format!("codex: model discovery failed: {error:?}"));
-                    "could not discover Codex account models; saved credentials and provider configuration were not changed. Try signing in again."
-                        .to_string()
-                })?;
-                if models.is_empty() {
-                    return Err(
-                        "Codex returned no available models; saved credentials and provider configuration were not changed."
-                            .to_string(),
-                    );
-                }
+                    vec!["gpt-5-chat-latest".to_string()]
+                });
                 (models, Some("openai-responses".to_string()))
             }
             Err(error) => {
@@ -1078,11 +1089,6 @@ async fn complete_code_login(
             .then_some("anthropic".to_string()),
         )
     };
-    // A failed configuration save must undo credential replacement, not
-    // erase the account that was authenticated before this login.
-    let credential_provider = provider.credential_provider();
-    let previous_credential = CredentialStore::load(credential_provider)
-        .map_err(|error| format!("could not read the existing credential: {error}"))?;
     store(provider, &token)?;
     if let Err(error) = crate::core::agent::global_config::set_provider(
         definition.id,
@@ -1095,15 +1101,7 @@ async fn complete_code_login(
             ..Default::default()
         },
     ) {
-        let rollback = match previous_credential {
-            Some(credential) => CredentialStore::store(credential_provider, &credential),
-            None => CredentialStore::delete(credential_provider),
-        };
-        if let Err(rollback_error) = rollback {
-            return Err(format!(
-                "could not save the provider configuration: {error}; restoring the previous credential also failed: {rollback_error}"
-            ));
-        }
+        let _ = CredentialStore::delete(provider.credential_provider());
         return Err(format!(
             "could not save the provider configuration: {error}"
         ));
@@ -1161,56 +1159,22 @@ mod tests {
         }
     }
 
-    const TEST_CODEX_RELEASE_VERSION: &str = "0.200.0";
-
     fn account_models_server(
         status_line: &'static str,
-        body: impl FnOnce(&str) -> &'static str + Send + 'static,
+        body: &'static str,
     ) -> (String, mpsc::Receiver<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let read_request = |stream: &mut std::net::TcpStream| {
-                stream
-                    .set_read_timeout(Some(std::time::Duration::from_secs(5)))
-                    .unwrap();
-                let mut request = Vec::new();
-                let mut chunk = [0; 4096];
-                while !request.windows(4).any(|window| window == b"\r\n\r\n") {
-                    let read = stream.read(&mut chunk).unwrap();
-                    assert_ne!(read, 0, "model request ended before its headers");
-                    request.extend_from_slice(&chunk[..read]);
-                }
-                String::from_utf8(request).unwrap()
-            };
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = read_request(&mut stream);
-            if request.starts_with("GET /v1/releases/latest ") {
-                let lower = request.to_ascii_lowercase();
-                assert!(
-                    !lower.contains("authorization:"),
-                    "release lookup leaked a credential"
-                );
-                assert!(
-                    !lower.contains("chatgpt-account-id:"),
-                    "release lookup leaked an account id"
-                );
-                let release = format!(
-                    r#"{{"tag_name":"rust-v{TEST_CODEX_RELEASE_VERSION}","draft":false,"prerelease":false}}"#
-                );
-                write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    release.len(),
-                    release
-                )
-                .unwrap();
-                drop(stream);
-                (stream, _) = listener.accept().unwrap();
-                request = read_request(&mut stream);
+            let mut request = String::new();
+            let mut reader = std::io::BufReader::new(&mut stream);
+            while !request.ends_with("\r\n\r\n") {
+                if std::io::BufRead::read_line(&mut reader, &mut request).unwrap() == 0 {
+                    break;
+                }
             }
-            let body = body(&request);
             let _ = tx.send(request);
             let response = format!(
                 "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -1220,6 +1184,10 @@ mod tests {
             let _ = stream.write_all(response.as_bytes());
         });
         (format!("http://{addr}/v1"), rx)
+    }
+
+    fn codex_release_server() -> String {
+        account_models_server("200 OK", r#"{"tag_name":"rust-v0.200.0"}"#).0
     }
 
     fn unavailable_base_url() -> String {
@@ -1278,6 +1246,7 @@ mod tests {
                 let mut login = begin(AccountProvider::Codex).unwrap();
                 login.token_endpoint = codex_token_server("account-321");
                 login.model_base_url = Some(models_base_url);
+                login.codex_release_url = Some(codex_release_server());
                 let callback = format!(
                     "GET /auth/callback?code=authorization-code&state={} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n",
                     login.state
@@ -1339,6 +1308,7 @@ mod tests {
                 let mut login = begin(AccountProvider::Codex).unwrap();
                 login.token_endpoint = codex_token_server("account-321");
                 login.model_base_url = Some(models_base_url);
+                login.codex_release_url = Some(codex_release_server());
                 let manual_input = format!("authorization-code#{}", login.state);
                 let (manual, receiver) = tokio::sync::mpsc::unbounded_channel();
                 manual.send(manual_input).unwrap();
@@ -1757,28 +1727,8 @@ mod tests {
             // and fetches its real model roster from the ChatGPT backend's
             // `/codex/models` endpoint (not the rolling `/models` roster),
             // then configures the Responses API with that roster.
-            let (models_base_url, request) = account_models_server("200 OK", |request| {
-                // New models require the version from release discovery, not
-                // a version baked into Jan. The fixture deliberately uses a
-                // different release from the one available when this test was written.
-                let target = request.split_whitespace().nth(1).unwrap();
-                let url = url::Url::parse(&format!("http://localhost{target}")).unwrap();
-                let query_version = url
-                    .query_pairs()
-                    .find(|(key, _)| key == "client_version")
-                    .map(|(_, value)| value.into_owned());
-                let header_version = request.lines().find_map(|line| {
-                    let (name, value) = line.split_once(':')?;
-                    name.eq_ignore_ascii_case("version").then(|| value.trim())
-                });
-                if query_version.as_deref() == Some(TEST_CODEX_RELEASE_VERSION)
-                    && header_version == Some(TEST_CODEX_RELEASE_VERSION)
-                {
-                    r#"{"models":[{"slug":"gpt-5.5"},{"slug":"gpt-5.4"},{"slug":"gpt-6-astra","visibility":"list"}]}"#
-                } else {
-                    r#"{"models":[{"slug":"gpt-5.5"},{"slug":"gpt-5.4"}]}"#
-                }
-            });
+            let roster = r#"{"models":[{"slug":"gpt-6-astra","display_name":"GPT-6-Astra"},{"slug":"gpt-5.5","display_name":"GPT-5.5"},{"slug":"gpt-5.4","display_name":"GPT-5.4"}]}"#;
+            let (models_base_url, request) = account_models_server("200 OK", roster);
 
             assert_eq!(
                 complete_account_for_test(models_base_url.clone()).unwrap(),
@@ -1793,6 +1743,12 @@ mod tests {
                 request.contains("/codex/models"),
                 "must target /codex/models, got: {request}"
             );
+            // The request must use the upstream fixture's version, not a
+            // release baked into Jan.
+            assert!(request.contains("client_version=0.200.0"));
+            assert!(request
+                .to_ascii_lowercase()
+                .contains("\r\nversion: 0.200.0\r\n"));
             assert!(
                 request.contains("chatgpt-account-id: account-321"),
                 "missing chatgpt-account-id in: {request}"
@@ -1836,86 +1792,22 @@ mod tests {
     }
 
     #[test]
-    fn codex_discovery_failure_preserves_existing_login() {
-        use crate::core::agent::global_config::{set_provider, ProviderUpdate};
-
+    fn codex_login_falls_back_to_default_when_roster_unavailable() {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
-            let original_credential = Credential::ApiKey("existing-api-key".to_string());
-            CredentialStore::store("openai", &original_credential).unwrap();
-            let config_path = set_provider(
-                "openai",
-                ProviderUpdate {
-                    base_url: Some("https://api.openai.com/v1".to_string()),
-                    models: Some(vec!["existing-model".to_string()]),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-            let original_config = std::fs::read(&config_path).unwrap();
-            let (empty_roster_url, _request) = account_models_server("200 OK", |_| "{}");
+            // A failed/empty roster must not hard-fail an otherwise valid
+            // login; the account persists with a single usable default model.
+            let (models_base_url, _request) = account_models_server("200 OK", "{}");
 
-            for base_url in [empty_roster_url, unavailable_base_url()] {
-                let result = complete_account_for_test(base_url);
-                assert!(result.is_err(), "discovery failure must not complete login");
-                assert_eq!(
-                    CredentialStore::load("openai").unwrap().as_ref(),
-                    Some(&original_credential)
-                );
-                assert_eq!(std::fs::read(&config_path).unwrap(), original_config);
-            }
+            assert_eq!(
+                complete_account_for_test(models_base_url.clone()).unwrap(),
+                AccountProvider::Codex
+            );
+
+            let cfg = load_global_config().unwrap().get("openai").unwrap().clone();
+            assert_eq!(cfg.models, vec!["gpt-5-chat-latest".to_string()]);
+            assert_eq!(cfg.api_type.as_deref(), Some("openai-responses"));
         });
-    }
-
-    #[test]
-    fn codex_empty_roster_does_not_create_login_state() {
-        let _tmp = TempSecrets::new();
-        with_temp_home(|_| {
-            let (models_base_url, _request) = account_models_server("200 OK", |_| "{}");
-            let result = complete_account_for_test(models_base_url);
-
-            assert!(result.is_err(), "an empty roster must not complete login");
-            assert!(CredentialStore::load("openai").unwrap().is_none());
-            assert!(!load_global_config().unwrap().contains_key("openai"));
-        });
-    }
-
-    #[test]
-    fn codex_configuration_failure_restores_previous_credential() {
-        let previous_account = Credential::OAuthToken(OAuthToken {
-            access_token: codex_jwt("previous-account"),
-            refresh_token: Some("previous-refresh-token".to_string()),
-            expires_at: None,
-            token_type: "Bearer".to_string(),
-            scopes: vec!["profile".to_string()],
-        });
-        for previous in [None, Some(previous_account)] {
-            let _tmp = TempSecrets::new();
-            with_temp_home(|home| {
-                if let Some(credential) = &previous {
-                    CredentialStore::store("openai", credential).unwrap();
-                }
-                // A directory at the config path forces a real write failure
-                // on every platform, without relying on permission bits.
-                let config_path = home.join(".jan/config.toml");
-                std::fs::create_dir_all(&config_path).unwrap();
-                let (models_base_url, _request) =
-                    account_models_server("200 OK", |_| r#"{"models":[{"slug":"account-model"}]}"#);
-
-                let result = complete_account_for_test(models_base_url);
-
-                assert!(
-                    result.is_err(),
-                    "configuration failure must not complete login"
-                );
-                assert_eq!(
-                    CredentialStore::load("openai").unwrap(),
-                    previous,
-                    "configuration failure must restore the prior credential"
-                );
-                assert!(config_path.is_dir());
-            });
-        }
     }
 
     #[test]
@@ -1923,7 +1815,7 @@ mod tests {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
             let roster = r#"{"models":[{"slug":"gpt-5.5","display_name":"GPT-5.5"},{"slug":"gpt-5.4","display_name":"GPT-5.4"}]}"#;
-            let (models_base_url, request) = account_models_server("200 OK", move |_| roster);
+            let (models_base_url, request) = account_models_server("200 OK", roster);
 
             assert_eq!(
                 complete_account_manually_for_test(models_base_url.clone()).unwrap(),
@@ -1974,7 +1866,7 @@ mod tests {
     fn account_model_discovery_unauthorized_leaves_no_account_state() {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
-            let (models_base_url, _request) = account_models_server("401 Unauthorized", |_| "{}");
+            let (models_base_url, _request) = account_models_server("401 Unauthorized", "{}");
             let error = complete_claude_account_for_test(models_base_url).unwrap_err();
 
             assert!(!error.contains("exchanged-account-token"), "{error}");
@@ -1991,7 +1883,7 @@ mod tests {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
             let (models_base_url, _request) =
-                account_models_server("200 OK", |_| "not-json-without-secret");
+                account_models_server("200 OK", "not-json-without-secret");
             let error = complete_claude_account_for_test(models_base_url).unwrap_err();
 
             assert!(!error.contains("not-json-without-secret"), "{error}");

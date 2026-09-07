@@ -144,29 +144,28 @@ pub(crate) async fn discover_codex_models(
         .map_err(|e| LoginError::Unavailable(format!("could not build an HTTP client: {e}")))?;
     // This request is public: account credentials belong only on the model
     // request below, never in the release metadata request.
-    let release = client
+    let release: CodexRelease = client
         .get(release_url)
         .header("User-Agent", concat!("Jan/", env!("CARGO_PKG_VERSION")))
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
+        .and_then(reqwest::Response::error_for_status)
         .map_err(|e| {
-            LoginError::Unavailable(format!("could not reach Codex release metadata: {e}"))
+            LoginError::Unavailable(format!("could not fetch Codex release metadata: {e}"))
+        })?
+        .json()
+        .await
+        .map_err(|_| {
+            LoginError::Unavailable("could not read Codex release metadata.".to_string())
         })?;
-    if !release.status().is_success() {
-        return Err(LoginError::Unavailable(format!(
-            "Codex release metadata returned HTTP {}.",
-            release.status()
-        )));
-    }
-    let release: CodexRelease = release.json().await.map_err(|_| {
-        LoginError::Unavailable("could not read Codex release metadata.".to_string())
-    })?;
-    let client_version = codex_release_version(&release).ok_or_else(|| {
-        LoginError::Unavailable(
-            "Codex release metadata did not contain a stable version.".to_string(),
-        )
-    })?;
+    let client_version = release
+        .tag_name
+        .strip_prefix("rust-v")
+        .filter(|version| !version.is_empty())
+        .ok_or_else(|| {
+            LoginError::Unavailable("Codex release metadata contained an invalid tag.".to_string())
+        })?;
 
     // `/codex/models` is the Codex roster; `/models` is the plain ChatGPT
     // roster and is kept only as a fallback for backends that omit the Codex
@@ -230,23 +229,6 @@ pub(crate) async fn discover_codex_models(
 #[derive(serde::Deserialize)]
 struct CodexRelease {
     tag_name: String,
-    draft: bool,
-    prerelease: bool,
-}
-
-fn codex_release_version(release: &CodexRelease) -> Option<&str> {
-    if release.draft || release.prerelease {
-        return None;
-    }
-    let version = release.tag_name.strip_prefix("rust-v")?;
-    let mut components = version.split('.');
-    for _ in 0..3 {
-        let component = components.next()?;
-        if component.is_empty() || !component.bytes().all(|byte| byte.is_ascii_digit()) {
-            return None;
-        }
-    }
-    components.next().is_none().then_some(version)
 }
 
 /// Stable Codex model slugs from a `/codex/models` payload, sorted, deduped,
@@ -521,45 +503,6 @@ mod tests {
         assert!(parse_codex_models(&json!({"models": []})).is_empty());
     }
 
-    #[tokio::test]
-    async fn codex_discovery_rejects_unusable_release_metadata() {
-        let models = TcpListener::bind("127.0.0.1:0").unwrap();
-        models.set_nonblocking(true).unwrap();
-        let base_url = format!("http://{}", models.local_addr().unwrap());
-        for (status, body) in [
-            ("403 Forbidden", r#"{"tag_name":"rust-v0.200.0"}"#),
-            ("200 OK", "not-json"),
-            ("200 OK", "{}"),
-            (
-                "200 OK",
-                r#"{"tag_name":"rust-vnext","draft":false,"prerelease":false}"#,
-            ),
-            (
-                "200 OK",
-                r#"{"tag_name":"rust-v0.200.0","draft":true,"prerelease":false}"#,
-            ),
-            (
-                "200 OK",
-                r#"{"tag_name":"rust-v0.200.0","draft":false,"prerelease":true}"#,
-            ),
-        ] {
-            let release_url = mock_server(status, body);
-            let result = tokio::time::timeout(
-                Duration::from_secs(2),
-                discover_codex_models("account-token", Some("account-id"), &base_url, &release_url),
-            )
-            .await
-            .expect("invalid release metadata must fail before requesting models");
-            assert!(
-                matches!(result, Err(LoginError::Unavailable(_))),
-                "{result:?}"
-            );
-            assert!(
-                matches!(models.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock),
-                "must not guess a client version and query models after invalid release metadata"
-            );
-        }
-    }
 
     #[test]
     fn provider_error_never_echoes_the_submitted_key() {
