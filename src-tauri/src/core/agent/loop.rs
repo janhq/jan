@@ -1176,6 +1176,8 @@ const PROXY_DEFAULT_MAX_TURNS: u64 = 8;
 
 /// A safe-boundary handoff. The TUI retains pending input until it can reply,
 /// so cancellation and late submissions use the ordinary next-turn path.
+// Only the CLI consumes handoffs; other callers always pass no channel.
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
 pub(crate) struct SteeringRequest {
     pub run_mode: crate::core::agent::plan::RunMode,
     pub messages: Vec<serde_json::Value>,
@@ -2758,12 +2760,13 @@ mod tests {
         )
         .await
         .unwrap();
-        let sent = model.requests.lock().unwrap();
-        let messages = sent[1]["messages"].as_array().unwrap();
-        assert_eq!(messages[4]["content"], "use pnpm");
-        assert_eq!(messages[5]["content"], "then test");
-        assert_eq!(sent.len(), 2);
-        drop(sent);
+        {
+            let sent = model.requests.lock().unwrap();
+            let messages = sent[1]["messages"].as_array().unwrap();
+            assert_eq!(messages[4]["content"], "use pnpm");
+            assert_eq!(messages[5]["content"], "then test");
+            assert_eq!(sent.len(), 2);
+        }
         drop(steering);
         consumer.await.unwrap();
     }
@@ -2810,14 +2813,15 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(result["choices"][0]["message"]["content"], "revised answer");
-        let sent = model.requests.lock().unwrap();
-        assert_eq!(sent[1]["messages"][1]["content"], "first answer");
-        assert_eq!(
-            sent[1]["messages"][1]["reasoning_content"],
-            "considered options"
-        );
-        assert_eq!(sent[1]["messages"][2]["content"], "correction");
-        drop(sent);
+        {
+            let sent = model.requests.lock().unwrap();
+            assert_eq!(sent[1]["messages"][1]["content"], "first answer");
+            assert_eq!(
+                sent[1]["messages"][1]["reasoning_content"],
+                "considered options"
+            );
+            assert_eq!(sent[1]["messages"][2]["content"], "correction");
+        }
         drop(steering);
         consumer.await.unwrap();
     }
