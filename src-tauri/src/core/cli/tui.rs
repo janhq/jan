@@ -8799,9 +8799,11 @@ fn handle_plugin_setup_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         paste_clipboard_into(app, |app| &mut app.plugin_setup);
         return;
     }
+    let Some(prompt) = app.plugin_setup.as_mut() else {
+        return;
+    };
     match key.code {
         KeyCode::Enter => {
-            let Some(prompt) = app.plugin_setup.as_mut() else { return };
             let plugin = prompt.plugin.clone();
             let Some(entry) = prompt.entry() else { return };
             let value = prompt.input.trim().to_string();
@@ -8815,12 +8817,8 @@ fn handle_plugin_setup_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                 return;
             }
             let key_name = entry.key.clone();
-            // Advance and test completion inside a block so the `prompt` borrow
-            // ends before the app-level calls below (which re-borrow `app`).
-            let done = {
-                prompt.advance();
-                prompt.done()
-            };
+            prompt.advance();
+            let done = prompt.done();
             // Sync on every save, not just at completion: a cancel after key
             // 1 must still leave the live registry holding key 1.
             crate::core::agent::plugins::sync_env_registry(&app.project_root);
@@ -8831,20 +8829,14 @@ fn handle_plugin_setup_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                 open_plugin_setup(app);
             }
         }
-        KeyCode::Char('s') | KeyCode::Char('S') if !ctrl => {
-            let Some(prompt) = app.plugin_setup.as_mut() else { return };
-            if !prompt.input.is_empty() {
-                return;
-            }
+        KeyCode::Char('s') | KeyCode::Char('S') if !ctrl && prompt.input.is_empty() => {
             let plugin = prompt.plugin.clone();
             let key_name = prompt
                 .entry()
                 .map(|e| e.key.clone())
                 .unwrap_or_default();
-            let done = {
-                prompt.advance();
-                prompt.done()
-            };
+            prompt.advance();
+            let done = prompt.done();
             if done {
                 app.plugin_setup = None;
                 app.note(&format!("plugin setup · {plugin} · skipped {key_name}"));
@@ -8852,11 +8844,9 @@ fn handle_plugin_setup_key(app: &mut App, key: KeyEvent, ctrl: bool) {
             }
         }
         KeyCode::Backspace => {
-            let Some(prompt) = app.plugin_setup.as_mut() else { return };
             prompt.input.pop();
         }
         KeyCode::Char(ch) if !ctrl => {
-            let Some(prompt) = app.plugin_setup.as_mut() else { return };
             prompt.input.push(ch);
         }
         _ => {}
@@ -30007,14 +29997,14 @@ mod tests {
         assert!(rendered.contains("ACME_TOKEN"), "{rendered}");
         assert!(rendered.contains("https://example.com/keys"), "{rendered}");
 
-        // Typed characters render masked, never verbatim. Simulate the paste
-        // path directly: the typed secret must not appear in the frame.
-        if let Some(prompt) = app.plugin_setup.as_mut() {
-            prompt.paste("supersecret123");
+        // Once input starts, s/S are secret characters, not skip shortcuts.
+        for ch in "a-superSecret123".chars() {
+            handle_plugin_setup_key(&mut app, key(KeyCode::Char(ch)), false);
         }
+        assert_eq!(app.plugin_setup.as_ref().unwrap().input, "a-superSecret123");
         let rows = render_rows(&mut app, 100, 30);
         let rendered = rows.join("\n");
-        assert!(!rendered.contains("supersecret123"), "{rendered}");
+        assert!(!rendered.contains("a-superSecret123"), "{rendered}");
         assert!(rendered.contains('*'), "mask row: {rendered}");
 
         // Esc cancels the dock.
