@@ -45,7 +45,10 @@ fn strip_provider_qualifier(model_id: &str) -> &str {
     let mut parts = model_id.splitn(2, '/');
     let first = parts.next().unwrap_or("");
     match (first, parts.next()) {
-        ("anthropic" | "openai" | "google" | "tokamak" | "jan", Some(rest)) => rest,
+        (
+            "anthropic" | "openai" | "google" | "tokamak" | "jan" | "opencode" | "opencode-go",
+            Some(rest),
+        ) => rest,
         _ => model_id,
     }
 }
@@ -55,14 +58,19 @@ fn strip_provider_qualifier(model_id: &str) -> &str {
 fn catalog_window(model_id: &str) -> Option<u64> {
     // Claude family: the two newest releases get 1M, everything else claude 200K.
     if model_id.starts_with("claude-") {
-        let is_new = ["haiku", "sonnet", "opus"]
-            .iter()
-            .any(|family| {
-                let prefix = format!("claude-{family}-4-6");
-                let prefix7 = format!("claude-{family}-4-7");
-                model_id.starts_with(&prefix) || model_id.starts_with(&prefix7)
-            });
+        let is_new = model_id.starts_with("claude-fable-5-1")
+            || ["haiku", "sonnet", "opus"]
+                .iter()
+                .any(|family| {
+                    let prefix = format!("claude-{family}-4-6");
+                    let prefix7 = format!("claude-{family}-4-7");
+                    model_id.starts_with(&prefix) || model_id.starts_with(&prefix7)
+                });
         return Some(if is_new { 1_000_000 } else { 200_000 });
+    }
+
+    if model_id == "gpt-5.6-luna" || model_id == "gpt-6-astra" {
+        return Some(272_000);
     }
 
     // Codex variants are matched before the base gpt-5.x rows they contain.
@@ -149,12 +157,42 @@ mod tests {
             1_000_000
         );
     }
+    #[test]
+    fn catalog_resolves_live_model_defaults() {
+        assert_eq!(
+            resolve_context_window("gpt-5.6-luna", None).tokens,
+            272_000
+        );
+        assert_eq!(
+            resolve_context_window("gpt-6-astra", None).tokens,
+            272_000
+        );
+        assert_eq!(
+            resolve_context_window("claude-fable-5-1", None).tokens,
+            1_000_000
+        );
+    }
 
     #[test]
-    fn provider_qualifier_does_not_change_resolution() {
+    fn configured_1_1m_overrides_live_model_catalog() {
         assert_eq!(
-            resolve_context_window("anthropic/claude-sonnet-4-6", None),
-            resolve_context_window("claude-sonnet-4-6", None),
+            resolve_context_window("gpt-5.6-luna", Some(1_100_000)),
+            ResolvedContextWindow {
+                tokens: 1_100_000,
+                source: ContextWindowSource::Configured,
+            }
+        );
+    }
+
+    #[test]
+    fn supported_provider_qualifiers_match_live_model_defaults() {
+        assert_eq!(
+            resolve_context_window("opencode/gpt-5.6-luna", None).tokens,
+            272_000
+        );
+        assert_eq!(
+            resolve_context_window("opencode-go/gpt-5.6-luna", None).tokens,
+            272_000
         );
     }
 

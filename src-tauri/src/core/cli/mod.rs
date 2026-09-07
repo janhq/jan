@@ -777,21 +777,26 @@ pub(crate) struct AgentSession {
     /// Fast model for the `smol` role (goal evaluation). Falls back to `model`.
     pub smol_model: String,
     pub limits: SessionLimits,
+    /// Whether this session requests Codex's priority service tier when the
+    /// resolved transport is OpenAI Responses with OAuth.
+    pub fast_mode: bool,
     /// Whether the TUI expands `<think>` reasoning blocks (default false).
     pub show_reasoning: bool,
     /// Whether the TUI streams reasoning into the live tail while it folds
     /// (`stream_reasoning` in `~/.jan/config.toml`, default true). Independent
     /// of `show_reasoning`, which unfolds it for good.
     pub stream_reasoning: bool,
-    /// Whether to resend a prior assistant turn's reasoning to the model
-    /// (default true). False drops `reasoning_content` from outgoing assistant
-    /// messages; the display journal still keeps reasoning for a resume.
+    /// Whether to resend a prior assistant turn's `reasoning_content` to the
+    /// model (default true). False drops `reasoning_content` from outgoing
+    /// assistant messages; the display journal still keeps reasoning for a
+    /// resume.
     pub send_reasoning: bool,
     /// Shared MCP connection map (same Arc held by `args`), so the TUI can
     /// connect/disconnect servers live via `/mcp` and later turns pick them up.
     pub mcp_servers: crate::core::state::SharedMcpServers,
-    /// Background connect of `active` MCP servers, awaited before the first turn.
-    /// `None` when no server is active. Resolves to the connected server names.
+    /// Background connect of `active` MCP servers, awaited before the first
+    /// turn. `None` when no server is active. Resolves to the connected server
+    /// names.
     pub mcp_task: Option<tokio::task::JoinHandle<mcp::ConnectOutcome>>,
 }
 
@@ -808,6 +813,11 @@ impl AgentSession {
         // the upstream via `copy_optional_chat_params`.
         if let Some(max) = self.limits.max_tokens {
             body["max_tokens"] = serde_json::json!(max);
+        }
+        // Internal orchestration hint. The loop consumes this before any wire
+        // conversion, so providers never receive the internal field itself.
+        if self.fast_mode {
+            body["fast_mode"] = serde_json::json!(true);
         }
         // Reasoning resend policy: the request-level flag the loop reads to
         // decide whether prior assistant `reasoning_content` goes back out.
@@ -988,6 +998,7 @@ fn prepare_agent_session(
             max_tokens: cfg.agent.max_tokens,
             max_session_tokens: cfg.budget.max_tokens.unwrap_or(DEFAULT_MAX_SESSION_TOKENS),
         },
+        fast_mode: cfg.agent.fast_mode.unwrap_or(false),
         show_reasoning: cfg.agent.show_reasoning.unwrap_or(false),
         stream_reasoning: crate::core::agent::global_config::stream_reasoning_enabled(),
         send_reasoning: cfg.agent.send_reasoning.unwrap_or(true),
