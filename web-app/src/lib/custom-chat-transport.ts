@@ -889,9 +889,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * @private
    */
   /**
-   * llama.cpp slot pin for this surface. Chat reuses one slot per thread so its
-   * KV prefix survives across turns; other surfaces override to claim their own
-   * and avoid evicting it. See CHAT_SLOT_ID.
+   * llama.cpp slot pin for this surface. Every surface shares slot 0 -- the one
+   * index guaranteed to exist -- and overrides only `thread_id`, which is what
+   * the engine parks and restores the slot's KV cache by. See CHAT_SLOT_ID.
    */
   protected slotParams(threadId?: string): Record<string, unknown> {
     return { id_slot: CHAT_SLOT_ID, thread_id: threadId }
@@ -1318,9 +1318,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       if (isPredefinedRemoteProvider(effectiveProviderName)) {
         for (const key of Object.keys(paramsSettings)) delete mergedParams[key]
       }
-      // Pin chat to the chat slot so llama-server reuses this thread's cached
-      // KV prefix across turns; background tasks use BACKGROUND_SLOT_ID and
-      // can't evict it.
+      // Pin chat to slot 0 so llama-server reuses this thread's cached KV
+      // prefix across turns. Cowork and background tasks share the same slot;
+      // what keeps them from destroying this prefix is thread_id below.
       //
       // thread_id names whose cache that is, which is what lets the engine
       // park it when another thread takes the slot and pick it back up later,
