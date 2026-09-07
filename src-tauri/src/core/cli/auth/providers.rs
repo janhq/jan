@@ -113,19 +113,21 @@ pub(crate) async fn discover_models(
 /// from `chatgpt.com/backend-api/models`: the latter returns the internal
 /// rolling/user-scoped ChatGPT roster (e.g. `gpt-5.6-luna-wm`) that has no real
 /// upstream session, whereas `/codex/models` returns the stable Codex slugs
-/// (`gpt-5.5`, `gpt-5.4`, ...) that the Responses API actually serves. The
-/// Codex client identifiers (`client_version`, `chatgpt-account-id`,
-/// `OpenAI-Beta`, `originator`, `version`) are mirrored from the pi coding
-/// agent so the backend returns the Codex roster instead of the ChatGPT one.
+/// (`gpt-5.5`, `gpt-5.4`, ...) that the Responses API actually serves.
+/// The backend requires a numeric `client_version` and gates new models on
+/// it. Resolve that version from Codex's latest stable GitHub release rather
+/// than baking a version (or model roster) into Jan.
 ///
 /// `base_url` is the persisted Codex provider base (the OpenAI API-key surface
 /// `api.openai.com/v1`); it is rewritten to the ChatGPT backend origin, or used
 /// verbatim in tests. Falls back to `/models` when `/codex/models` is not
-/// served.
+/// served. `release_url` supplies the official stable release metadata;
+/// keeping it explicit lets tests exercise the complete discovery transaction.
 pub(crate) async fn discover_codex_models(
     credential: &str,
     account_id: Option<&str>,
     base_url: &str,
+    release_url: &str,
 ) -> Result<Vec<String>, LoginError> {
     // The persisted Codex default_base_url points at the OpenAI API-key
     // surface (`api.openai.com/v1`), which rejects an account token. Discovery
@@ -140,6 +142,31 @@ pub(crate) async fn discover_codex_models(
         .timeout(VERIFY_TIMEOUT)
         .build()
         .map_err(|e| LoginError::Unavailable(format!("could not build an HTTP client: {e}")))?;
+    // This request is public: account credentials belong only on the model
+    // request below, never in the release metadata request.
+    let release = client
+        .get(release_url)
+        .header("User-Agent", concat!("Jan/", env!("CARGO_PKG_VERSION")))
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| {
+            LoginError::Unavailable(format!("could not reach Codex release metadata: {e}"))
+        })?;
+    if !release.status().is_success() {
+        return Err(LoginError::Unavailable(format!(
+            "Codex release metadata returned HTTP {}.",
+            release.status()
+        )));
+    }
+    let release: CodexRelease = release.json().await.map_err(|_| {
+        LoginError::Unavailable("could not read Codex release metadata.".to_string())
+    })?;
+    let client_version = codex_release_version(&release).ok_or_else(|| {
+        LoginError::Unavailable(
+            "Codex release metadata did not contain a stable version.".to_string(),
+        )
+    })?;
 
     // `/codex/models` is the Codex roster; `/models` is the plain ChatGPT
     // roster and is kept only as a fallback for backends that omit the Codex
@@ -155,10 +182,10 @@ pub(crate) async fn discover_codex_models(
         // Only the Codex route is marked with the Codex client identifiers.
         if path == "/codex/models" {
             request = request
-                .query(&[("client_version", "0.144.1")])
+                .query(&[("client_version", client_version)])
                 .header("OpenAI-Beta", "responses=experimental")
                 .header("originator", "jan")
-                .header("version", "0.144.1");
+                .header("version", client_version);
             if let Some(account_id) = account_id {
                 request = request.header("chatgpt-account-id", account_id);
             }
@@ -198,6 +225,28 @@ pub(crate) async fn discover_codex_models(
     Err(last_error.unwrap_or(LoginError::Unavailable(
         "the ChatGPT backend returned no usable model roster".to_string(),
     )))
+}
+
+#[derive(serde::Deserialize)]
+struct CodexRelease {
+    tag_name: String,
+    draft: bool,
+    prerelease: bool,
+}
+
+fn codex_release_version(release: &CodexRelease) -> Option<&str> {
+    if release.draft || release.prerelease {
+        return None;
+    }
+    let version = release.tag_name.strip_prefix("rust-v")?;
+    let mut components = version.split('.');
+    for _ in 0..3 {
+        let component = components.next()?;
+        if component.is_empty() || !component.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+    }
+    components.next().is_none().then_some(version)
 }
 
 /// Stable Codex model slugs from a `/codex/models` payload, sorted, deduped,
@@ -470,6 +519,46 @@ mod tests {
             vec!["gpt-5.4".to_string(), "gpt-5.5".to_string()]
         );
         assert!(parse_codex_models(&json!({"models": []})).is_empty());
+    }
+
+    #[tokio::test]
+    async fn codex_discovery_rejects_unusable_release_metadata() {
+        let models = TcpListener::bind("127.0.0.1:0").unwrap();
+        models.set_nonblocking(true).unwrap();
+        let base_url = format!("http://{}", models.local_addr().unwrap());
+        for (status, body) in [
+            ("403 Forbidden", r#"{"tag_name":"rust-v0.200.0"}"#),
+            ("200 OK", "not-json"),
+            ("200 OK", "{}"),
+            (
+                "200 OK",
+                r#"{"tag_name":"rust-vnext","draft":false,"prerelease":false}"#,
+            ),
+            (
+                "200 OK",
+                r#"{"tag_name":"rust-v0.200.0","draft":true,"prerelease":false}"#,
+            ),
+            (
+                "200 OK",
+                r#"{"tag_name":"rust-v0.200.0","draft":false,"prerelease":true}"#,
+            ),
+        ] {
+            let release_url = mock_server(status, body);
+            let result = tokio::time::timeout(
+                Duration::from_secs(2),
+                discover_codex_models("account-token", Some("account-id"), &base_url, &release_url),
+            )
+            .await
+            .expect("invalid release metadata must fail before requesting models");
+            assert!(
+                matches!(result, Err(LoginError::Unavailable(_))),
+                "{result:?}"
+            );
+            assert!(
+                matches!(models.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock),
+                "must not guess a client version and query models after invalid release metadata"
+            );
+        }
     }
 
     #[test]
