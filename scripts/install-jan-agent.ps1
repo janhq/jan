@@ -33,7 +33,10 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $BinaryName = 'jan.exe'
-$PlatformKey = 'windows-x86_64'
+# ARCHITEW6432 is what an emulated process sees; PROCESSOR_ARCHITECTURE alone
+# would report AMD64 for an x64 PowerShell on an ARM64 machine.
+$NativeArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+$PlatformKey = if ($NativeArch -eq 'ARM64') { 'windows-aarch64' } else { 'windows-x86_64' }
 
 if (-not $Dir) {
   if ($env:JAN_INSTALL_DIR) {
@@ -45,9 +48,6 @@ if (-not $Dir) {
 
 if ([Environment]::Is64BitOperatingSystem -eq $false) {
   throw 'no published build for 32-bit Windows; use -Source'
-}
-if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
-  Write-Warning 'no native ARM64 build is published; the x86_64 build runs under emulation'
 }
 
 # PowerShell 5.1 defaults to TLS 1.0, which delta.jan.ai rejects.

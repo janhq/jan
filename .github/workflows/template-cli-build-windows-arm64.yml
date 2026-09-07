@@ -1,0 +1,106 @@
+# Builds the Jan Agent CLI binary for Windows aarch64.
+# Runs natively on GitHub's windows-11-arm runner; no Tauri bundler, no
+# frontend, and none of the CUDA/Vulkan/signtool provisioning the desktop
+# ARM64 build needs -- this is a plain `cargo build` against the host triple.
+name: cli-build-windows-arm64
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+        default: refs/heads/dev
+      new_version:
+        required: true
+        type: string
+        default: ''
+      channel:
+        required: true
+        type: string
+        default: agent-nightly
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME:
+        required: false
+      DELTA_AWS_ACCESS_KEY_ID:
+        required: false
+      DELTA_AWS_SECRET_ACCESS_KEY:
+        required: false
+      DELTA_AWS_REGION:
+        required: false
+      # Baked into the binary at compile time via option_env!; without it the
+      # released CLI falls back to the local-dev key and its signed requests
+      # are rejected.
+      JAN_SIGNING_KEY:
+        required: false
+    outputs:
+      FILE_NAME:
+        value: ${{ jobs.build-windows-arm64.outputs.FILE_NAME }}
+      SHA256:
+        value: ${{ jobs.build-windows-arm64.outputs.SHA256 }}
+
+jobs:
+  build-windows-arm64:
+    runs-on: windows-11-arm
+    outputs:
+      FILE_NAME: ${{ steps.package.outputs.FILE_NAME }}
+      SHA256: ${{ steps.package.outputs.SHA256 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Build CLI binary
+        env:
+          JAN_CLI_UPDATE_CHANNEL: ${{ inputs.channel }}
+          JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
+          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
+        run: |
+          cd src-tauri
+          cargo build --no-default-features --features cli --bin jan --release
+
+      # The binary must be ARM64: the runner can run x64 under emulation, so a
+      # toolchain mix-up would produce a working but emulated build that this
+      # job would otherwise publish under the aarch64 key.
+      - name: Verify the binary is ARM64
+        shell: pwsh
+        run: |
+          $exe = 'src-tauri/target/release/jan.exe'
+          if (-not (Test-Path $exe)) { throw "$exe missing" }
+          # PE machine type sits at the COFF header, 4 bytes past the offset
+          # stored at 0x3C. 0xAA64 is ARM64.
+          $b = [IO.File]::ReadAllBytes((Resolve-Path $exe))
+          $machine = [BitConverter]::ToUInt16($b, [BitConverter]::ToInt32($b, 0x3C) + 4)
+          Write-Host ("machine: 0x{0:X4}" -f $machine)
+          if ($machine -ne 0xAA64) { throw ("not ARM64: 0x{0:X4}" -f $machine) }
+
+      - name: Package zip
+        id: package
+        shell: bash
+        run: |
+          VERSION="${{ inputs.new_version }}"
+          FILE_NAME="jan-agent-windows-aarch64-$VERSION.zip"
+          # Compress-Archive rather than the x64 template's 7z: it ships with
+          # PowerShell, so it needs nothing from the runner image.
+          powershell -Command "Compress-Archive -Path './src-tauri/target/release/jan.exe' -DestinationPath '$FILE_NAME' -Force"
+          echo "FILE_NAME=$FILE_NAME" >> "$GITHUB_OUTPUT"
+          echo "SHA256=$(sha256sum "$FILE_NAME" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to S3
+        shell: bash
+        run: |
+          aws s3 cp "./${{ steps.package.outputs.FILE_NAME }}" \
+            "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/${{ inputs.channel }}/${{ steps.package.outputs.FILE_NAME }}"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
