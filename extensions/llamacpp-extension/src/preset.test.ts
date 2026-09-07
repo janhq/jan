@@ -216,6 +216,65 @@ describe('generatePreset parallel', () => {
   })
 })
 
+describe('generatePreset 0.4.0 keys', () => {
+  it('emits n-cpu-ffn when set, and omits it at 0', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { n_cpu_ffn: 12 } as any)
+    expect(writtenFiles['/p/router.preset.ini']).toContain('n-cpu-ffn = 12')
+
+    await generatePreset('/p', '/jan', { n_cpu_ffn: 0 } as any)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('n-cpu-ffn')
+  })
+
+  it('emits a per-model n-cpu-ffn override', async () => {
+    setupModel('llama', { n_cpu_ffn: 4 })
+    await generatePreset('/p', '/jan', {} as any)
+    expect(writtenFiles['/p/router.preset.ini']).toContain('n-cpu-ffn = 4')
+  })
+
+  // auto is upstream's own default, so naming it would pin a value that is
+  // meant to track the engine.
+  it('emits lazy-mode only when it is not auto', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { lazy_mode: 'auto' } as any)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('lazy-mode')
+
+    await generatePreset('/p', '/jan', { lazy_mode: 'off' } as any)
+    expect(writtenFiles['/p/router.preset.ini']).toContain('lazy-mode = off')
+
+    await generatePreset('/p', '/jan', { lazy_mode: 'on' } as any)
+    expect(writtenFiles['/p/router.preset.ini']).toContain('lazy-mode = on')
+  })
+
+  it('emits kv-unified-per-slot when set, and omits it at 0', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { kv_unified_per_slot: 4096 } as any)
+    expect(writtenFiles['/p/router.preset.ini']).toContain(
+      'kv-unified-per-slot = 4096'
+    )
+
+    await generatePreset('/p', '/jan', { kv_unified_per_slot: 0 } as any)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain(
+      'kv-unified-per-slot'
+    )
+  })
+
+  // Enabled is the engine's default since 0.4.0, so only the off case is
+  // written; emitting `true` would be a no-op line that outlives the default.
+  it('emits reasoning-preserve only to turn it off', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { reasoning_preserve: true } as any)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain(
+      'reasoning-preserve'
+    )
+
+    await generatePreset('/p', '/jan', { reasoning_preserve: false } as any)
+    expect(writtenFiles['/p/router.preset.ini']).toContain(
+      'reasoning-preserve = false'
+    )
+  })
+})
+
 describe('generatePreset kv-unified', () => {
   it('enables unified KV on auto when an explicit parallel is emitted', async () => {
     setupModel('llama', {})

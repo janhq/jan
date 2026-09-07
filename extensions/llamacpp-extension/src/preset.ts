@@ -49,6 +49,7 @@ type ModelYaml = ModelConfig & {
   spec_draft_p_min?: number
   cpu_moe?: boolean
   n_cpu_moe?: number
+  n_cpu_ffn?: number
   no_kv_offload?: boolean
   override_tensor?: string
   mmproj_offload?: boolean
@@ -325,6 +326,15 @@ export async function generatePreset(
   ) {
     lines.push(`n-cpu-moe = ${Math.floor(config.n_cpu_moe)}`)
   }
+  // n-cpu-ffn default = 0. The dense-model counterpart of n-cpu-moe, added in
+  // llama.cpp 0.4.0; the two are independent and a model can want either.
+  if (
+    typeof config.n_cpu_ffn === 'number' &&
+    Number.isFinite(config.n_cpu_ffn) &&
+    config.n_cpu_ffn > 0
+  ) {
+    lines.push(`n-cpu-ffn = ${Math.floor(config.n_cpu_ffn)}`)
+  }
   // no-kv-offload default = false (the cache is offloaded). Spelled negatively
   // to match llama.cpp's own flag and the existing no_mmap setting.
   // common_preset's parse_bool_arg recognises `no-kv-offload` as the negated
@@ -435,6 +445,12 @@ export async function generatePreset(
   ) {
     lines.push(`cache-ram = ${Math.floor(config.cache_ram)}`)
   }
+  // lazy-mode default = auto (on for arch-marked tensors above 4 GiB). Needs
+  // mmap, so it is silently inert with `no_mmap` on; `off` is the pre-0.4.0
+  // behaviour of always keeping those tensors resident.
+  if (config.lazy_mode === 'on' || config.lazy_mode === 'off') {
+    lines.push(`lazy-mode = ${config.lazy_mode}`)
+  }
   // slot-save-path has no default: naming it is what enables llama.cpp's slot
   // save/restore routes at all. Emitted even with the feature off, so the worker
   // knows which directory to keep clear and can still erase a deleted thread's
@@ -458,6 +474,24 @@ export async function generatePreset(
     lines.push('kv-unified = true')
   } else if (config.kv_unified === 'off') {
     lines.push('kv-unified = false')
+  }
+  // kv-unified-per-slot default = unset. Caps one slot's share of the shared KV
+  // pool, which is what bounds a single conversation once the pool is unified
+  // and every surface shares a slot. Only sizes the pool itself when no
+  // ctx-size is pinned (server.cpp:160-170, mirrored in the shim).
+  if (
+    typeof config.kv_unified_per_slot === 'number' &&
+    Number.isFinite(config.kv_unified_per_slot) &&
+    config.kv_unified_per_slot > 0
+  ) {
+    lines.push(`kv-unified-per-slot = ${Math.floor(config.kv_unified_per_slot)}`)
+  }
+  // reasoning-preserve defaults to on since 0.4.0, for any template advertising
+  // `supports_preserve_reasoning`. Emitted only to turn it off, which restores
+  // the template's own default and keeps a per-request `chat_template_kwargs`
+  // (Jan's per-model `preserve_thinking`) the authoritative control.
+  if (config.reasoning_preserve === false) {
+    lines.push('reasoning-preserve = false')
   }
   // keep default = 0
   if (
@@ -602,6 +636,9 @@ export async function generatePreset(
     }
     if (typeof mc.n_cpu_moe === 'number' && mc.n_cpu_moe > 0) {
       lines.push(`n-cpu-moe = ${Math.floor(mc.n_cpu_moe)}`)
+    }
+    if (typeof mc.n_cpu_ffn === 'number' && mc.n_cpu_ffn > 0) {
+      lines.push(`n-cpu-ffn = ${Math.floor(mc.n_cpu_ffn)}`)
     }
     if (mc.no_kv_offload === true) {
       // INI key is the negated form; parse_bool_arg flips it server-side.
