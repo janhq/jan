@@ -189,8 +189,24 @@ export interface ModelsService {
   validateGgufFile(filePath: string): Promise<ModelValidationResult>
   getTokensCount(modelId: string, messages: ThreadMessage[]): Promise<number>
   startEngineSetup(): Promise<void>
+  getEngineVersion(): Promise<EngineVersionInfo | null>
   verifyEmbeddingModel(): Promise<EmbeddingModelReport>
   verifyGpuOffload(): Promise<GpuOffloadReport>
+}
+
+/**
+ * The bundled llama.cpp's identity. Redeclared here rather than imported from
+ * the plugin package, the same way DeviceList is: the web app talks to the
+ * extension, not to the plugin.
+ */
+export interface EngineVersionInfo {
+  /** llama.cpp's own version, e.g. "0.4.0". */
+  version: string
+  /** Upstream build tag, e.g. "b10809". */
+  tag: string
+  buildNumber: string
+  /** Full commit sha the build is pinned to. */
+  commit: string
 }
 
 // Mirrors the llamacpp extension's readiness module across the extension
