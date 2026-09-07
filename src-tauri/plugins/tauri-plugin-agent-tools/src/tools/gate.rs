@@ -124,17 +124,7 @@ pub enum Decision {
     Prompt(PromptKind),
 }
 
-/// Decide how a built-in tool call should be gated, combining the static
-/// agent.toml policy, capability class, sandbox escape, and session grants.
-///
-/// Precedence: deny (agent.toml) > explicit allow/allow_write (agent.toml) >
-/// session grant > capability rules. Reads inside the project are silently
-/// allowed; reads that escape the project, and all writes/exec, prompt (unless
-/// already granted this session or pre-approved in agent.toml).
-///
-/// The sandbox geometry is bundled in [`GateContext`] so callers describe the
-/// filesystem and hiding policy once instead of repeating four trailing args.
-
+/// Filesystem roots and hiding policy used when gating a tool call.
 #[derive(Debug, Clone, Copy)]
 pub struct GateContext<'a> {
     /// The project root: paths inside it are the agent's own workspace.
@@ -147,6 +137,13 @@ pub struct GateContext<'a> {
     pub hide_jan: bool,
 }
 
+/// Decide how a built-in tool call should be gated, combining the static
+/// agent.toml policy, capability class, sandbox escape, and session grants.
+///
+/// Precedence: deny (agent.toml) > explicit allow/allow_write (agent.toml) >
+/// session grant > capability rules. Reads inside the project are silently
+/// allowed; reads that escape the project, and all writes/exec, prompt (unless
+/// already granted this session or pre-approved in agent.toml).
 pub fn resolve_decision(
     tool: &BuiltinTool,
     args: &serde_json::Value,
