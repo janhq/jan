@@ -1024,26 +1024,15 @@ async fn complete_code_login(
         }
         definition
     };
-    // Codex and Claude account tokens authenticate against different surfaces.
-    // A Claude account token is valid against `/v1/models` (Anthropic accepts
-    // it with the OAuth beta header). A Codex account token is a ChatGPT
-    // account token that `api.openai.com/v1/models` rejects (401) because that
-    // endpoint only accepts an API key - so discovery is skipped for Codex and
-    // the account is instead verified from the JWT `chatgpt_account_id` claim,
-    // exactly as opencode and pi do. Codex is served through the Responses API.
+    // Claude account tokens can query /v1/models. Codex tokens instead carry
+    // a ChatGPT account id and use ChatGPT's model roster and Responses API.
     let (models, api_type) = if provider == AccountProvider::Codex {
         match codex_chatgpt_account_id(&token.access_token) {
             Ok(account_id) => {
                 debug_log(&format!("codex: verified chatgpt_account_id {account_id}"));
-                // Fetch the account's real Codex roster from the ChatGPT
-                // backend's `/codex/models` endpoint (a Codex account token is
-                // a ChatGPT credential, not an OpenAI API key, so
-                // `api.openai.com/v1/models` rejects it). `/codex/models`
-                // returns the stable Codex slugs, whereas
-                // `chatgpt.com/backend-api/models` would return rolling
-                // user-scoped ChatGPT codenames that cannot run. Fall back to
-                // a single default model so a transient roster failure never
-                // hard-fails an otherwise valid login.
+                // Discover account-scoped models before persisting anything.
+                // A failed or empty roster must not replace a working login
+                // with credentials paired to guessed models.
                 let models = crate::core::cli::auth::providers::discover_codex_models(
                     &token.access_token,
                     Some(&account_id),
@@ -1051,17 +1040,17 @@ async fn complete_code_login(
                     codex_release_url,
                 )
                 .await
-                .map(|m| {
-                    if m.is_empty() {
-                        vec!["gpt-5-chat-latest".to_string()]
-                    } else {
-                        m
-                    }
-                })
-                .unwrap_or_else(|error| {
+                .map_err(|error| {
                     debug_log(&format!("codex: model discovery failed: {error:?}"));
-                    vec!["gpt-5-chat-latest".to_string()]
-                });
+                    "could not discover Codex account models; saved credentials and provider configuration were not changed. Try signing in again."
+                        .to_string()
+                })?;
+                if models.is_empty() {
+                    return Err(
+                        "Codex returned no available models; saved credentials and provider configuration were not changed."
+                            .to_string(),
+                    );
+                }
                 (models, Some("openai-responses".to_string()))
             }
             Err(error) => {
@@ -1834,21 +1823,47 @@ mod tests {
     }
 
     #[test]
-    fn codex_login_falls_back_to_default_when_roster_unavailable() {
+    fn codex_discovery_failure_preserves_existing_login() {
+        use crate::core::agent::global_config::{set_provider, ProviderUpdate};
+
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
-            // A failed/empty roster must not hard-fail an otherwise valid
-            // login; the account persists with a single usable default model.
+            let original_credential = Credential::ApiKey("existing-api-key".to_string());
+            CredentialStore::store("openai", &original_credential).unwrap();
+            let config_path = set_provider(
+                "openai",
+                ProviderUpdate {
+                    base_url: Some("https://api.openai.com/v1".to_string()),
+                    models: Some(vec!["existing-model".to_string()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let original_config = std::fs::read(&config_path).unwrap();
+            let (empty_roster_url, _request) = account_models_server("200 OK", |_| "{}");
+
+            for base_url in [empty_roster_url, unavailable_base_url()] {
+                let result = complete_account_for_test(base_url);
+                assert!(result.is_err(), "discovery failure must not complete login");
+                assert_eq!(
+                    CredentialStore::load("openai").unwrap().as_ref(),
+                    Some(&original_credential)
+                );
+                assert_eq!(std::fs::read(&config_path).unwrap(), original_config);
+            }
+        });
+    }
+
+    #[test]
+    fn codex_empty_roster_does_not_create_login_state() {
+        let _tmp = TempSecrets::new();
+        with_temp_home(|_| {
             let (models_base_url, _request) = account_models_server("200 OK", |_| "{}");
+            let result = complete_account_for_test(models_base_url);
 
-            assert_eq!(
-                complete_account_for_test(models_base_url.clone()).unwrap(),
-                AccountProvider::Codex
-            );
-
-            let cfg = load_global_config().unwrap().get("openai").unwrap().clone();
-            assert_eq!(cfg.models, vec!["gpt-5-chat-latest".to_string()]);
-            assert_eq!(cfg.api_type.as_deref(), Some("openai-responses"));
+            assert!(result.is_err(), "an empty roster must not complete login");
+            assert!(CredentialStore::load("openai").unwrap().is_none());
+            assert!(!load_global_config().unwrap().contains_key("openai"));
         });
     }
 
