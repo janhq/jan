@@ -33,6 +33,7 @@ const COMMANDS: &[&str] = &[
     "start_engine",
     "stop_engine",
     "get_engine_info",
+    "get_engine_version",
     "reload_engine_models",
     "engine_devices",
     "force_stop_engine",
