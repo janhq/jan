@@ -136,24 +136,14 @@ struct Manifest {
     /// plugin author has no link to share).
     #[serde(default)]
     setup: Option<SetupSection>,
-    /// Claude-convention manifests declare their needs indirectly: an
-    /// `.claude-plugin/plugin.json` `mcpServers` block whose env values
-    /// reference `${VAR}`. Those references are collected as required
-    /// variables without a URL.
+    /// Inline MCP declarations; `.mcp.json` declarations are merged on read.
     #[serde(default, rename = "mcpServers")]
-    mcp_servers: Option<std::collections::BTreeMap<String, McpServerDecl>>,
+    mcp_servers: Option<std::collections::BTreeMap<String, serde_json::Value>>,
 }
 
 /// The `[setup]` manifest section.
 #[derive(Debug, Default, Deserialize)]
 struct SetupSection {
-    #[serde(default)]
-    env: Option<std::collections::BTreeMap<String, String>>,
-}
-
-/// One Claude `mcpServers` entry: only its env block matters here.
-#[derive(Debug, Default, Deserialize)]
-struct McpServerDecl {
     #[serde(default)]
     env: Option<std::collections::BTreeMap<String, String>>,
 }
@@ -175,11 +165,9 @@ impl Manifest {
             }
         }
         for server in self.mcp_servers.iter().flat_map(|m| m.values()) {
-            for value in server.env.iter().flatten().map(|(_, v)| v) {
-                for var in template_refs(value) {
-                    if is_env_name(&var) && !is_reserved_env_key(&var) {
-                        out.entry(var).or_default();
-                    }
+            for var in mcp_template_refs(server) {
+                if var != "CLAUDE_PLUGIN_ROOT" && is_env_name(&var) && !is_reserved_env_key(&var) {
+                    out.entry(var).or_default();
                 }
             }
         }
@@ -440,6 +428,14 @@ fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
 }
 
 fn read_manifest(root: &Path) -> Manifest {
+    let mut manifest = read_manifest_metadata(root);
+    if let Ok(servers) = read_mcp_declarations(root, manifest.mcp_servers.take()) {
+        manifest.mcp_servers = Some(servers);
+    }
+    manifest
+}
+
+fn read_manifest_metadata(root: &Path) -> Manifest {
     std::fs::read_to_string(root.join("plugin.toml"))
         .ok()
         .and_then(|raw| toml::from_str::<Manifest>(&raw).ok())
@@ -449,6 +445,115 @@ fn read_manifest(root: &Path) -> Manifest {
                 .and_then(|raw| serde_json::from_str::<Manifest>(&raw).ok())
         })
         .unwrap_or_default()
+}
+
+fn read_mcp_declarations(
+    root: &Path,
+    inline: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+) -> Result<std::collections::BTreeMap<String, serde_json::Value>, String> {
+    let mut servers = inline.unwrap_or_default();
+    let path = root.join(".mcp.json");
+    match std::fs::read_to_string(&path) {
+        Ok(raw) => {
+            let mut document: serde_json::Value = serde_json::from_str(&raw)
+                .map_err(|_| format!("invalid MCP JSON in {}", path.display()))?;
+            let entries = document.get_mut("mcpServers")
+                .map(serde_json::Value::take)
+                .unwrap_or(document);
+            let entries: std::collections::BTreeMap<String, serde_json::Value> =
+                serde_json::from_value(entries)
+                    .map_err(|_| format!("{} must contain an MCP server map", path.display()))?;
+            servers.extend(entries);
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("could not read {}: {e}", path.display())),
+    }
+    Ok(servers)
+}
+
+fn mcp_template_refs(value: &serde_json::Value) -> Vec<String> {
+    match value {
+        serde_json::Value::String(text) => template_refs(text),
+        serde_json::Value::Array(items) => items.iter().flat_map(mcp_template_refs).collect(),
+        serde_json::Value::Object(fields) => fields.values().flat_map(mcp_template_refs).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Installed MCP declarations, ready for the user to review before activation.
+/// Reads the plugin's own key store, never unrelated host credentials.
+#[cfg(feature = "cli")]
+pub(crate) fn plugin_mcp_servers(
+    root: &Path,
+    plugin: &str,
+) -> Result<Vec<(String, serde_json::Value)>, String> {
+    let plugin = skills::safe_stem(plugin)?;
+    let dir = skills::find_plugin_dir(root, &plugin)
+        .ok_or_else(|| format!("plugin '{plugin}' is not installed"))?;
+    let stored = stored_plugin_env_in(&plugin_env_dir()?, &plugin);
+    resolved_mcp_servers(&dir, &stored)
+}
+
+#[cfg(any(feature = "cli", test))]
+fn resolved_mcp_servers(
+    dir: &Path,
+    stored: &std::collections::BTreeMap<String, String>,
+) -> Result<Vec<(String, serde_json::Value)>, String> {
+    fn expand(
+        value: &mut serde_json::Value,
+        dir: &Path,
+        stored: &std::collections::BTreeMap<String, String>,
+    ) -> Result<(), String> {
+        match value {
+            serde_json::Value::String(text) => {
+                let original = std::mem::take(text);
+                let mut rest = original.as_str();
+                while let Some(start) = rest.find("${") {
+                    text.push_str(&rest[..start]);
+                    let end = rest[start + 2..].find('}')
+                        .ok_or("unterminated variable in plugin MCP configuration")? + start + 2;
+                    let var = &rest[start + 2..end];
+                    if var == "CLAUDE_PLUGIN_ROOT" {
+                        text.push_str(&dir.to_string_lossy());
+                    } else {
+                        let value = stored.get(var).filter(|v| !v.is_empty())
+                            .ok_or_else(|| format!("missing plugin key '{var}' - complete plugin setup first"))?;
+                        text.push_str(value);
+                    }
+                    rest = &rest[end + 1..];
+                }
+                text.push_str(rest);
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    expand(item, dir, stored)?;
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                for item in fields.values_mut() {
+                    expand(item, dir, stored)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    let metadata = read_manifest_metadata(dir);
+    let declarations = read_mcp_declarations(dir, metadata.mcp_servers)?;
+    let mut out = Vec::new();
+    for (name, mut config) in declarations {
+        let fields = config.as_object_mut()
+            .ok_or_else(|| format!("MCP server '{name}' must be an object"))?;
+        // Claude permits URL-only remote entries and omitted stdio args.
+        let transport = if fields.contains_key("url") { "http" } else { "stdio" };
+        fields.entry("type").or_insert_with(|| transport.into());
+        if fields.get("type").and_then(serde_json::Value::as_str) == Some("stdio") {
+            fields.entry("args").or_insert_with(|| serde_json::json!([]));
+        }
+        expand(&mut config, dir, stored)?;
+        out.push((name, config));
+    }
+    Ok(out)
 }
 
 /// Reject specs that could inject shell commands. The spec is later passed as
@@ -1923,6 +2028,32 @@ mod tests {
         let req = read_manifest(&root.join("bad")).required_env();
         assert!(req.is_empty(), "{req:?}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn required_env_reads_mcp_file_headers_without_prompting_for_plugin_root() {
+        let root = unique_root("mcp-env");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join(".mcp.json"),
+            r#"{"mcpServers":{"remote":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${ACME_TOKEN}"}},"local":{"command":"node","args":["${CLAUDE_PLUGIN_ROOT}/server.js"]}}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            read_manifest(&root).required_env(),
+            std::collections::BTreeMap::from([("ACME_TOKEN".to_string(), String::new())])
+        );
+        assert!(resolved_mcp_servers(&root, &Default::default()).is_err());
+        let stored = std::collections::BTreeMap::from([
+            ("ACME_TOKEN".to_string(), "secret-${NOT_A_TEMPLATE}".to_string()),
+        ]);
+        let servers: std::collections::BTreeMap<_, _> =
+            resolved_mcp_servers(&root, &stored).unwrap().into_iter().collect();
+        assert_eq!(servers["remote"]["headers"]["Authorization"], "Bearer secret-${NOT_A_TEMPLATE}");
+        assert_eq!(servers["local"]["args"][0], format!("{}/server.js", root.display()));
+        std::fs::write(root.join(".mcp.json"), "{broken").unwrap();
+        assert!(resolved_mcp_servers(&root, &stored).is_err());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
