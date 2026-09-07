@@ -3132,6 +3132,10 @@ impl App {
         }
         self.input.insert(self.cursor, c);
         self.cursor += c.len_utf8();
+        // IME bursts can desync crossterm so an SGR mouse report arrives as
+        // characters. Drop a completed (or prefix-truncated) report at the
+        // caret rather than leaving `65;50;42M` in the composer.
+        drain_trailing_sgr_mouse_reports(&mut self.input, &mut self.cursor);
         self.reset_slash_hint();
         // Refresh path hints on any character edit
         self.refresh_path_hints();
@@ -7009,6 +7013,42 @@ fn strip_system_xml_tags(text: &str) -> String {
     system_tag_re().replace_all(text, "").to_string()
 }
 
+/// SGR mouse report: `CSI < Cb ; Cx ; Cy M` (press) or `m` (release).
+///
+/// Crossterm turns a complete sequence into `Event::Mouse`. When an IME burst
+/// splits the bytes, the parser resyncs past `ESC[<` and the payload
+/// (`65;50;42M`) is delivered as ordinary text -- the tokens in #8813. The
+/// same leak shows up with a truncated CSI prefix (`[<...`, `<...`, or 8-bit
+/// CSI `0x9b<...`). Match the full form and every truncated prefix so none of
+/// them type into the composer.
+fn sgr_mouse_report_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r"(?:\x1b\[<|\x9b<|\[<|<)?\d{1,3};\d{1,4};\d{1,4}[Mm]").unwrap()
+    })
+}
+
+fn strip_sgr_mouse_reports(text: &str) -> String {
+    sgr_mouse_report_re().replace_all(text, "").into_owned()
+}
+
+/// Byte length of one SGR mouse report occupying the end of `text`, if any.
+fn trailing_sgr_mouse_report_len(text: &str) -> Option<usize> {
+    sgr_mouse_report_re()
+        .find_iter(text)
+        .last()
+        .filter(|m| m.end() == text.len())
+        .map(|m| m.len())
+}
+
+fn drain_trailing_sgr_mouse_reports(buf: &mut String, cursor: &mut usize) {
+    while let Some(n) = trailing_sgr_mouse_report_len(&buf[..*cursor]) {
+        let start = *cursor - n;
+        buf.drain(start..*cursor);
+        *cursor = start;
+    }
+}
+
 fn spawn_run(args: &Arc<OrchestrationArgs>, body: serde_json::Value) -> CurrentRun {
     let (tx, rx) = mpsc::unbounded_channel::<StreamEvent>();
     let args = Arc::clone(args);
@@ -8412,6 +8452,9 @@ fn route_paste_event(app: &mut App, event: Event) {
     } else if !app.ask_queue.is_empty() {
         handle_ask_paste(app, &text);
     } else {
+        // Bracketed paste of a split SGR report is the same leak as typing it
+        // a character at a time; strip before the composer sees it.
+        let text = strip_sgr_mouse_reports(&text);
         for c in text.chars() {
             app.input_insert(c);
         }
@@ -25107,6 +25150,103 @@ mod tests {
             "the wheel must never arrive as arrow keys"
         );
         assert!(ALT_SCROLL_RESTORE.contains("?1007r"), "restore on exit");
+    }
+
+    /// Orphaned SGR mouse payloads (`65;50;42M`) and the same token with a
+    /// truncated CSI prefix must not survive as text. Vietnamese (and any
+    /// other real typing) is unchanged.
+    #[test]
+    fn sgr_mouse_reports_are_stripped_from_text() {
+        assert_eq!(super::strip_sgr_mouse_reports("65;50;42M"), "");
+        assert_eq!(super::strip_sgr_mouse_reports("0;10;20m"), "");
+        assert_eq!(super::strip_sgr_mouse_reports("\x1b[<65;50;42M"), "");
+        assert_eq!(super::strip_sgr_mouse_reports("\u{9b}<32;8;12M"), "");
+        assert_eq!(super::strip_sgr_mouse_reports("[<65;59;29M"), "");
+        assert_eq!(super::strip_sgr_mouse_reports("<64;1;1M"), "");
+        assert_eq!(
+            super::strip_sgr_mouse_reports("hello65;50;42Mworld"),
+            "helloworld"
+        );
+        assert_eq!(super::strip_sgr_mouse_reports("65;50;42M65;59;29M"), "");
+        assert_eq!(
+            super::strip_sgr_mouse_reports("xin chào Nguyễn"),
+            "xin chào Nguyễn"
+        );
+        assert_eq!(
+            super::strip_sgr_mouse_reports("version 1.2.3"),
+            "version 1.2.3"
+        );
+        // Incomplete payload without the M/m terminator is not a report.
+        assert_eq!(super::strip_sgr_mouse_reports("65;50;42"), "65;50;42");
+    }
+
+    /// Char-by-char ingest (what a desynced parser emits) drops the token
+    /// once it completes, including when it is interleaved with real text.
+    #[test]
+    fn leaked_sgr_mouse_reports_never_enter_the_composer() {
+        let mut app = test_app();
+        for c in "65;50;42M".chars() {
+            app.input_insert(c);
+        }
+        assert!(
+            app.input.is_empty(),
+            "orphaned wheel report must not type: {:?}",
+            app.input
+        );
+
+        for c in "xin chào".chars() {
+            app.input_insert(c);
+        }
+        for c in "65;50;42M".chars() {
+            app.input_insert(c);
+        }
+        for c in "[<0;12;8m".chars() {
+            app.input_insert(c);
+        }
+        for c in " Nguyễn".chars() {
+            app.input_insert(c);
+        }
+        assert_eq!(app.input, "xin chào Nguyễn");
+        assert_eq!(app.cursor, app.input.len());
+    }
+
+    /// Dropping a leaked report is not a scroll: intact `Event::Mouse` still
+    /// moves the transcript, the leftover payload must not.
+    #[test]
+    fn leaked_sgr_mouse_reports_do_not_scroll() {
+        let mut app = test_app();
+        app.scrollback = 4;
+        for c in "65;50;42M".chars() {
+            app.input_insert(c);
+        }
+        assert_eq!(app.scrollback, 4, "a leaked payload is not a wheel event");
+        assert!(app.input.is_empty());
+
+        handle_mouse(&mut app, mouse_at(MouseEventKind::ScrollDown, 5, 1));
+        assert_eq!(app.scrollback, 3);
+        handle_mouse(&mut app, mouse_at(MouseEventKind::ScrollUp, 5, 1));
+        assert_eq!(app.scrollback, 4);
+    }
+
+    #[test]
+    fn paste_of_sgr_mouse_reports_is_dropped() {
+        let mut app = test_app();
+        route_paste_event(&mut app, Event::Paste("65;50;42M".into()));
+        assert!(app.input.is_empty(), "got {:?}", app.input);
+
+        route_paste_event(
+            &mut app,
+            Event::Paste("xin chào\x1b[<65;50;42M Nguyễn".into()),
+        );
+        assert_eq!(app.input, "xin chào Nguyễn");
+    }
+
+    #[tokio::test]
+    async fn handle_key_drops_orphaned_sgr_mouse_reports() {
+        let mut app = test_app();
+        type_key_chars(&mut app, "tiếng Việt65;50;42M").await;
+        assert_eq!(app.input, "tiếng Việt");
+        assert_eq!(app.scrollback, 0);
     }
 
     /// The keyboard enhancement flags are the only reason `Shift+Enter` and the
