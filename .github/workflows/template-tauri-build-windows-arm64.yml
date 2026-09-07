@@ -310,6 +310,16 @@ jobs:
           }
           echo "signtool -> $TAURI_WINDOWS_SIGNTOOL_PATH"
 
+          # scripts/download-bin.mjs names the bun/uv sidecars from node's
+          # os.arch(), while the NSIS retarget below rewrites them to aarch64
+          # unconditionally. An emulated x64 node would name them x86_64-* and
+          # the mismatch would not surface until bundling, after the engine.
+          node_arch=$(node -p 'process.arch')
+          echo "node -> $node_arch"
+          [ "$node_arch" = "arm64" ] || {
+            echo "::error::node reports $node_arch, not arm64 -- the bun/uv sidecars would be named for the wrong target"; exit 1;
+          }
+
       - name: Update app version and product name
         shell: bash
         run: |
