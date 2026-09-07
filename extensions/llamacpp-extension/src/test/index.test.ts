@@ -551,6 +551,71 @@ describe('llamacpp_extension', () => {
     })
   })
 
+  describe('migrateParallelToDefault', () => {
+    beforeEach(() => {
+      vi.mocked(getBackendSetting).mockResolvedValue(null)
+    })
+
+    it('should skip migration if already migrated', async () => {
+      vi.mocked(getBackendSetting).mockResolvedValue('1')
+      extension['config'] = { parallel: 1 } as any
+      extension['getSettings'] = vi.fn()
+
+      await extension['migrateParallelToDefault']()
+
+      expect(extension['getSettings']).not.toHaveBeenCalled()
+    })
+
+    it('should move the old default of 1 to 0', async () => {
+      extension['config'] = { parallel: 1 } as any
+      extension['getSettings'] = vi.fn().mockResolvedValue([
+        { key: 'parallel', controllerProps: { value: 1 } },
+        { key: 'ctx_size', controllerProps: { value: 2048 } },
+      ])
+      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+      await extension['migrateParallelToDefault']()
+
+      const updated = vi.mocked(extension['updateSettings']).mock.calls[0][0]
+      expect(
+        updated.find((s: any) => s.key === 'parallel').controllerProps.value
+      ).toBe(0)
+      expect(
+        updated.find((s: any) => s.key === 'ctx_size').controllerProps.value
+      ).toBe(2048)
+      expect(extension['config'].parallel).toBe(0)
+      expect(setBackendSetting).toHaveBeenCalledWith(
+        'llamacpp_parallel_default_v1',
+        '1'
+      )
+    })
+
+    it('should leave a deliberately raised value alone', async () => {
+      extension['config'] = { parallel: 4 } as any
+      extension['getSettings'] = vi.fn()
+      extension['updateSettings'] = vi.fn()
+
+      await extension['migrateParallelToDefault']()
+
+      expect(extension['updateSettings']).not.toHaveBeenCalled()
+      expect(extension['config'].parallel).toBe(4)
+      expect(setBackendSetting).toHaveBeenCalledWith(
+        'llamacpp_parallel_default_v1',
+        '1'
+      )
+    })
+
+    it('should leave an already-default 0 alone', async () => {
+      extension['config'] = { parallel: 0 } as any
+      extension['updateSettings'] = vi.fn()
+
+      await extension['migrateParallelToDefault']()
+
+      expect(extension['updateSettings']).not.toHaveBeenCalled()
+      expect(extension['config'].parallel).toBe(0)
+    })
+  })
+
   describe('getLoadedModels', () => {
     it('should return list of loaded models', async () => {
       const { invoke } = await import('@tauri-apps/api/core')

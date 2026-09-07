@@ -39,9 +39,11 @@ import type { StreamEvent } from '@/hooks/useCoworkRun'
  * instance, so a child costs no second llama-server load.
  *
  * The cost of that reuse: llama.cpp slot params are baked in at model creation,
- * so a child prefills on the parent's slot and evicts its KV prefix, which the
- * parent then re-prefills on its next step. Fixing it means a dedicated
- * subagent slot, which is part of the still-open slot-reservation decision.
+ * so a child inherits the parent's `thread_id` and prefills over its KV prefix,
+ * which the parent then re-prefills on its next step. Giving a child its own
+ * identity would park and restore instead, at the price of a state file per
+ * dispatch; concurrent children would still evict each other, since they share
+ * the slot and each has a different system prompt.
  *
  * `task` is non-blocking, as `dispatch_subagent` is in Rust: it returns the file
  * its child's answer will be written to, and the child runs on. Blocking held
