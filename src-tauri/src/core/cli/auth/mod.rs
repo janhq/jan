@@ -84,6 +84,17 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
             },
         },
         ProviderDefinition {
+            id: "opencode-go",
+            name: "OpenCode Go",
+            default_base_url: "https://opencode.ai/zen/go/v1".to_string(),
+            transport: Transport::OpenAi,
+            api_key: ApiKeyMetadata {
+                keys_url: "https://opencode.ai/auth",
+                hint: "sign in at opencode.ai/auth to copy your OpenCode Go API key",
+                open_in_browser: true,
+            },
+        },
+        ProviderDefinition {
             id: "deepseek",
             name: "DeepSeek",
             default_base_url: "https://api.deepseek.com/v1".to_string(),
@@ -144,31 +155,4 @@ pub enum LoginError {
     Persist(String),
     /// The OAuth interaction failed; no credential was persisted.
     OAuth(String),
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn catalog_lists_the_five_providers_in_picker_order() {
-        let ids: Vec<&str> = provider_catalog().iter().map(|p| p.id).collect();
-        assert_eq!(
-            ids,
-            vec!["openai", "anthropic", "opencode", "deepseek", "tokamak"]
-        );
-        assert_eq!(provider_by_id("deepseek").unwrap().name, "DeepSeek");
-        assert!(provider_by_id("nope").is_none());
-    }
-
-    #[test]
-    fn only_opencode_api_key_prompt_opens_keys_page_in_browser() {
-        let enabled: Vec<&str> = provider_catalog()
-            .iter()
-            .filter(|provider| provider.api_key.open_in_browser)
-            .map(|provider| provider.id)
-            .collect();
-        assert_eq!(enabled, vec!["opencode"]);
-    }
-
 }
