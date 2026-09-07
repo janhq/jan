@@ -147,7 +147,7 @@ jobs:
       - name: Replace Icons for Beta Build
         if: env.CHANNEL != 'stable'
         shell: bash
-        run: cp .github/scripts/icon-${CHANNEL}.png src-tauri/icons/icon.png
+        run: cp ".github/scripts/icon-${CHANNEL}.png" src-tauri/icons/icon.png
 
       - name: Installing node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -388,6 +388,16 @@ jobs:
           # VCREDIST_URL embeds the filename, so one replace covers both defines.
           # Left unpatched, an ARM64 install fetches and runs the x64 redist.
           $c = $c.Replace('vc_redist.x64.exe', 'vc_redist.arm64.exe')
+
+          # And the matching detection, which is the half that actually bites:
+          # the VC runtime registers per architecture, and an ARM64 machine
+          # almost always carries the x64 redist for emulated apps. Probing the
+          # x64 keys therefore finds it, concludes the runtime is present, and
+          # skips installing the ARM64 one the app links against. Guessing wrong
+          # the other way merely re-runs an idempotent installer -- it exits 1638
+          # and the script already treats that as success.
+          $c = $c.Replace('\VC\Runtimes\x64', '\VC\Runtimes\arm64')
+          $c = $c.Replace('VC_RuntimeMinimumVSU_amd64', 'VC_RuntimeMinimumVSU_arm64')
 
           $base, $build = $env:NEW_VERSION, $env:NEW_VERSION
           if ($env:NEW_VERSION -match '^([^-]+)-(?:rc(\d+)-beta|(.+))$') {

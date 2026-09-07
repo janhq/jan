@@ -263,6 +263,9 @@ async function main() {
     if (platform === 'win32') {
       copyFile(
         path.join(binDir, 'bun.exe'),
+        // uvPlatform, not bunPlatform: tauri resolves an externalBin by rust
+        // target triple, which is the spelling uv happens to use and bun does
+        // not (bun ships windows-aarch64, tauri wants aarch64-pc-windows-msvc).
         path.join(binDir, `bun-${uvPlatform}.exe`),
         (err) => {
           if (err) {
