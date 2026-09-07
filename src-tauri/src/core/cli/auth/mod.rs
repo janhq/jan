@@ -84,6 +84,17 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
             },
         },
         ProviderDefinition {
+            id: "opencode-go",
+            name: "OpenCode Go",
+            default_base_url: "https://opencode.ai/zen/go/v1".to_string(),
+            transport: Transport::OpenAi,
+            api_key: ApiKeyMetadata {
+                keys_url: "https://opencode.ai/auth",
+                hint: "sign in at opencode.ai/auth to copy your OpenCode Go API key",
+                open_in_browser: true,
+            },
+        },
+        ProviderDefinition {
             id: "deepseek",
             name: "DeepSeek",
             default_base_url: "https://api.deepseek.com/v1".to_string(),
@@ -151,24 +162,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalog_lists_the_five_providers_in_picker_order() {
+    fn catalog_lists_the_six_providers_in_picker_order() {
         let ids: Vec<&str> = provider_catalog().iter().map(|p| p.id).collect();
         assert_eq!(
             ids,
-            vec!["openai", "anthropic", "opencode", "deepseek", "tokamak"]
+            vec![
+                "openai",
+                "anthropic",
+                "opencode",
+                "opencode-go",
+                "deepseek",
+                "tokamak"
+            ]
         );
         assert_eq!(provider_by_id("deepseek").unwrap().name, "DeepSeek");
+        // Both OpenCode plans are keys from the same page, and both are key
+        // providers rather than OAuth accounts: one entry each, same URL.
+        assert_eq!(
+            provider_by_id("opencode-go").unwrap().default_base_url,
+            "https://opencode.ai/zen/go/v1"
+        );
         assert!(provider_by_id("nope").is_none());
     }
 
     #[test]
-    fn only_opencode_api_key_prompt_opens_keys_page_in_browser() {
+    fn only_the_opencode_api_key_prompts_open_the_keys_page_in_browser() {
         let enabled: Vec<&str> = provider_catalog()
             .iter()
             .filter(|provider| provider.api_key.open_in_browser)
             .map(|provider| provider.id)
             .collect();
-        assert_eq!(enabled, vec!["opencode"]);
+        assert_eq!(enabled, vec!["opencode", "opencode-go"]);
     }
-
 }
