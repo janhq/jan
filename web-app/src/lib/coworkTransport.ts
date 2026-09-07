@@ -1,6 +1,6 @@
 import type { Tool } from 'ai'
 import { CustomChatTransport } from '@/lib/custom-chat-transport'
-import { COWORK_SLOT_ID } from '@/constants/models'
+import { CHAT_SLOT_ID, coworkThreadId } from '@/constants/models'
 import {
   getMemoryCatalog,
   sandboxEnforces,
@@ -79,10 +79,11 @@ export class CoworkChatTransport extends CustomChatTransport {
     return this.frozenTools ?? this.tools
   }
 
-  /** Cowork gets its own llama.cpp slot: sharing chat's would evict the viewed
-   * thread's prefix on every one of this turn's many prefills, and vice versa. */
+  /** Cowork shares slot 0 with the main chat, under a thread identity of its
+   * own: the engine parks the outgoing thread's KV prefix when the identity on
+   * the slot changes, so neither surface loses its cache to the other. */
   protected override slotParams(threadId?: string): Record<string, unknown> {
-    return { id_slot: COWORK_SLOT_ID, thread_id: `cowork:${threadId ?? ''}` }
+    return { id_slot: CHAT_SLOT_ID, thread_id: coworkThreadId(threadId) }
   }
 
   /**

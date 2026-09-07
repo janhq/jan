@@ -468,6 +468,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
     await this.migrateAutoUnloadToModelsMax()
 
+    await this.migrateParallelToDefault()
+
     this.timeout = asI32(this.config.timeout, DEFAULT_TIMEOUT) || DEFAULT_TIMEOUT
     this.llamacpp_env = this.config.llamacpp_env
 
@@ -1082,6 +1084,36 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       }
     } catch (e) {
       logger.warn('migrateAutoUnloadToModelsMax failed:', e)
+      return
+    }
+
+    await setBackendSetting(MIGRATION_KEY, '1')
+  }
+
+  // The old default was 1 plus two slots Jan reserved for background work and
+  // Cowork; both now share slot 0, so the reservation is gone and a persisted
+  // 1 would pin the engine to a single slot rather than letting it resolve its
+  // own count. Only the old default value is moved.
+  private async migrateParallelToDefault(): Promise<void> {
+    const MIGRATION_KEY = 'llamacpp_parallel_default_v1'
+    if (await getBackendSetting(MIGRATION_KEY)) return
+
+    try {
+      if (asI32(this.config.parallel, 0) === 1) {
+        const settings = await this.getSettings()
+        await this.updateSettings(
+          settings.map((item) => {
+            if (item.key === 'parallel') {
+              item.controllerProps.value = 0
+            }
+            return item
+          })
+        )
+        this.config.parallel = 0
+        logger.info('Migrated parallel: 1 -> 0 (llama.cpp default)')
+      }
+    } catch (e) {
+      logger.warn('migrateParallelToDefault failed:', e)
       return
     }
 

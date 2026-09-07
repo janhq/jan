@@ -54,20 +54,6 @@ type ModelYaml = ModelConfig & {
   mmproj_offload?: boolean
 }
 
-// One extra llama-server slot beyond the user-visible "Parallel Sequences"
-// count, reserved for background requests (e.g. thread auto-titling) that
-// must never be able to evict the user's own chat KV cache from its slot.
-// Hidden from the setting's UI value.
-//
-// Added unconditionally, and that is load-bearing. The emitted `parallel` is
-// therefore always 3 or more, which is what lets the frontend pin background
-// work and Cowork to fixed slot ids (web-app/src/constants/models.ts) instead
-// of computing an index here that the two sides then have to keep in sync.
-// Upstream wraps an out-of-range id_slot modulo the slot count rather than
-// rejecting it, so any such desync is silent: the background request lands back
-// on the chat slot and overwrites the cache it was meant to protect.
-export const RESERVED_BACKGROUND_SLOTS = 2
-
 /**
  * The ubatch every embedding model's preset section is pinned to.
  *
@@ -164,17 +150,8 @@ function escapeIniValue(v: string): string {
 export async function generatePreset(
   providerPath: string,
   janDataFolderPath: string,
-  config: LlamacppConfig,
-  opts: { reservedBackgroundSlots?: number } = {}
+  config: LlamacppConfig
 ): Promise<{ path: string; embeddingCount: number }> {
-  // Overridable for tests only. Production callers take the default: gating it
-  // on the auto-title setting made the reservation appear and disappear behind
-  // a toggle that regenerates no preset, so the frontend's pin outlived the
-  // slot it named.
-  const reservedBackgroundSlots =
-    typeof opts.reservedBackgroundSlots === 'number'
-      ? opts.reservedBackgroundSlots
-      : RESERVED_BACKGROUND_SLOTS
   const modelsDir = await joinPath([providerPath, 'models'])
 
   // Ensure the directory exists; an empty install is fine — we still emit a
@@ -281,10 +258,12 @@ export async function generatePreset(
   ) {
     lines.push(`cache-type-v = ${escapeIniValue(config.cache_type_v)}`)
   }
-  // parallel default = -1 (auto); positive user value is intent. The reserved
-  // slot is added on top and never exposed in the setting's own value.
+  // parallel default = 0 (llama.cpp's own auto resolution); a positive user
+  // value is intent and is emitted verbatim. Jan adds no hidden slot of its
+  // own: every pinned surface shares slot 0 and is told apart by `thread_id`
+  // (web-app/src/constants/models.ts), so no slot has to be reserved for one.
   if (typeof config.parallel === 'number' && config.parallel > 0) {
-    lines.push(`parallel = ${config.parallel + reservedBackgroundSlots}`)
+    lines.push(`parallel = ${config.parallel}`)
     // llama.cpp only turns on unified KV as part of resolving parallel = -1;
     // passing parallel explicitly leaves it off, which splits ctx-size into
     // ctx-size/parallel per slot. Restore the auto behaviour so the configured
@@ -598,7 +577,7 @@ export async function generatePreset(
       lines.push(`cache-type-v = ${escapeIniValue(mc.cache_type_v)}`)
     }
     if (typeof mc.parallel === 'number' && mc.parallel > 0) {
-      lines.push(`parallel = ${mc.parallel + reservedBackgroundSlots}`)
+      lines.push(`parallel = ${mc.parallel}`)
       if (kvUnifiedIsAuto) lines.push('kv-unified = true')
     }
     if (mc.cont_batching === false) {

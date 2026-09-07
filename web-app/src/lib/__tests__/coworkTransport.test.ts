@@ -14,7 +14,7 @@ vi.mock('@/lib/coworkTools', async (orig) => ({
 }))
 
 import { CoworkChatTransport } from '../coworkTransport'
-import { CHAT_SLOT_ID, COWORK_SLOT_ID } from '@/constants/models'
+import { CHAT_SLOT_ID } from '@/constants/models'
 
 const config = (over = {}) => ({
   planMode: false,
@@ -40,15 +40,16 @@ describe('CoworkChatTransport', () => {
     sandboxEnforces.mockReturnValue(true)
   })
 
-  // Sharing slot 0 would have each of an agent turn's many prefills evict the
-  // viewed chat thread's KV cache, and vice versa. Nothing surfaces that but a
-  // slowdown, so it is asserted.
-  it('pins to the Cowork slot, not the chat slot', () => {
+  // Cowork reserves no slot of its own: it shares the chat slot and is told
+  // apart by thread_id, which is what makes the engine park the outgoing
+  // thread's KV cache instead of overwriting it. Nothing surfaces a regression
+  // here but a slowdown, so it is asserted.
+  it('shares the chat slot, under its own thread identity', () => {
     const t = new CoworkChatTransport('s1', config())
     const params = slotParamsOf(t, 's1')
-    expect(params.id_slot).toBe(COWORK_SLOT_ID)
-    expect(params.id_slot).not.toBe(CHAT_SLOT_ID)
+    expect(params.id_slot).toBe(CHAT_SLOT_ID)
     expect(params.thread_id).toBe('cowork:s1')
+    expect(params.thread_id).not.toBe('s1')
   })
 
   it('namespaces thread_id so a session cannot collide with a chat thread', () => {

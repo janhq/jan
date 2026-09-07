@@ -254,11 +254,11 @@
   {
     "key": "parallel",
     "title": "Parallel Sequences",
-    "description": "Number of parallel sequences to decode for your own chat requests (0 = llama.cpp default of 4). Jan reserves one additional internal slot beyond this for background requests (e.g. thread auto-titling), so they don't evict your chat's KV cache.",
+    "description": "Number of parallel sequences to decode (0 = llama.cpp default). Jan reserves no slot of its own: chat, Cowork and background requests all share slot 0 and their KV caches are parked and restored per conversation.",
     "controllerType": "input",
     "controllerProps": {
-      "value": 1,
-      "placeholder": "1",
+      "value": 0,
+      "placeholder": "0",
       "type": "number",
       "textAlign": "right",
       "min": 0
