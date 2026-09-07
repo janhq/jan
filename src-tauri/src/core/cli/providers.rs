@@ -13,7 +13,7 @@
 //!    env fallback via [`ProviderOverrides::with_env`]) win over all of the
 //!    above - the most explicit, most ephemeral signal.
 
-use std::{collections::HashMap, path::Path, time::Duration};
+use std::{collections::{BTreeMap, HashMap, HashSet}, path::Path, time::Duration};
 
 use crate::core::agent::global_config::load_global_config;
 use crate::core::agent::project::ProviderSection;
@@ -22,6 +22,25 @@ use crate::core::state::ProviderConfig;
 
 const MODEL_PROVIDER_KEY: &str = "model-provider";
 const API_KEY_SETTING_KEYS: [&str; 2] = ["api-key", "api_key"];
+
+/// A provider's model identifier and optional catalog metadata.
+///
+/// Metadata is best-effort: providers may omit fields or return values in
+/// shapes Jan does not understand without making the model unavailable.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProviderModel {
+    pub id: String,
+    pub context_length: Option<u64>,
+    pub input_price: Option<f64>,
+    pub output_price: Option<f64>,
+}
+
+/// A stable provider-qualified model row for picker consumers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProviderModelEntry {
+    pub provider: String,
+    pub model: ProviderModel,
+}
 
 /// CLI/env overrides applied after loading the persisted store.
 #[derive(Debug, Default, Clone)]
@@ -235,11 +254,64 @@ pub fn unreachable_local_provider(
         return Some(local.provider.clone());
     }
 
+
     let prefix = model_id.split_once('/')?.0;
     configs
         .get(prefix)
         .filter(|c| !is_cli_reachable(c))
         .map(|c| c.provider.clone())
+}
+
+
+pub fn parse_model_catalog(value: &serde_json::Value) -> Vec<ProviderModel> {
+    let entries = value.get("data").and_then(|v| v.as_array())
+        .or_else(|| value.get("models").and_then(|v| v.as_array()))
+        .or_else(|| value.as_array());
+    let Some(entries) = entries else { return Vec::new() };
+    let mut models = BTreeMap::<String, ProviderModel>::new();
+    for entry in entries {
+        let Some(id) = entry
+            .as_str()
+            .or_else(|| entry.get("id").and_then(|v| v.as_str()))
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+        else { continue };
+        let candidate = ProviderModel {
+            id: id.to_string(),
+            context_length: optional_u64(entry, &["context_length", "context_window", "max_context_length", "contextLength"]),
+            input_price: optional_price(entry, &["input_price", "input_cost", "prompt_price", "prompt_cost"]),
+            output_price: optional_price(entry, &["output_price", "output_cost", "completion_price", "completion_cost"]),
+        };
+        let mut candidate = candidate;
+        if let Some(pricing) = entry.get("pricing").or_else(|| entry.get("price")) {
+            if candidate.input_price.is_none() { candidate.input_price = optional_price(pricing, &["input", "prompt", "input_price", "prompt_price"]); }
+            if candidate.output_price.is_none() { candidate.output_price = optional_price(pricing, &["output", "completion", "output_price", "completion_price"]); }
+        }
+        let model = models.entry(id.to_string()).or_insert_with(|| ProviderModel { id: id.to_string(), context_length: None, input_price: None, output_price: None });
+        if model.context_length.is_none() { model.context_length = candidate.context_length; }
+        if model.input_price.is_none() { model.input_price = candidate.input_price; }
+        if model.output_price.is_none() { model.output_price = candidate.output_price; }
+    }
+    models.into_values().collect()
+}
+
+fn optional_u64(value: &serde_json::Value, keys: &[&str]) -> Option<u64> {
+    keys.iter().find_map(|key| value.get(*key).and_then(|v| v.as_u64().or_else(|| v.as_str()?.trim().parse().ok())))
+}
+
+fn optional_price(value: &serde_json::Value, keys: &[&str]) -> Option<f64> {
+    keys.iter().find_map(|key| value.get(*key).and_then(|v| {
+        let parsed = v.as_f64().or_else(|| v.as_str()?.trim().parse().ok())?;
+        parsed.is_finite().then_some(parsed).filter(|p| *p >= 0.0)
+    }))
+}
+
+pub fn merge_model_ids(previous: &[String], fetched: &[ProviderModel]) -> Vec<String> {
+    let mut ids: HashSet<String> = previous.iter().cloned().collect();
+    ids.extend(fetched.iter().map(|model| model.id.clone()));
+    let mut ids: Vec<_> = ids.into_iter().collect();
+    ids.sort();
+    ids
 }
 
 /// Runnable `(provider, model_id)` pairs for the TUI `/model` selector, taken
@@ -332,9 +404,9 @@ pub async fn fetch_missing_models(
                 continue;
             }
         };
-        if models.is_empty() {
-            continue;
-        }
+        let previous = global.get(&name).map(|c| c.models.as_slice()).unwrap_or(&[]);
+        let models = merge_model_ids(previous, &models.iter().map(|id| ProviderModel { id: id.clone(), context_length: None, input_price: None, output_price: None }).collect::<Vec<_>>());
+        if models == previous { continue; }
         crate::core::agent::global_config::set_provider(
             &name,
             crate::core::agent::global_config::ProviderUpdate {
@@ -351,55 +423,87 @@ pub async fn fetch_missing_models(
     Ok(populated)
 }
 
-/// Query an OpenAI-compatible `GET {base_url}/models` with Bearer auth (trying
-/// each key in the chain on 401/403, matching upstream resolution) and return
-/// the parsed, sorted, deduped ids from the response body. A provider with no
-/// key (a keyless local endpoint) is queried unauthenticated. A remote
-/// plaintext-`http` base URL is rejected up front so a bearer key is never
-/// sent over a cleartext connection (loopback `http` is allowed).
-async fn fetch_models(
+/// Fetch and parse a provider model catalog, retaining optional metadata.
+async fn fetch_model_catalog(
     client: &reqwest::Client,
     base_url: &str,
     keys: &[String],
-) -> Result<Vec<String>, String> {
-    if !(base_url.starts_with("https://")
-        || (base_url.starts_with("http://") && is_loopback_url(base_url)))
-    {
-        return Err(format!(
-            "base URL must be https:// (or http:// for localhost): {base_url}"
-        ));
+) -> Result<Vec<ProviderModel>, String> {
+    if !(base_url.starts_with("https://") || (base_url.starts_with("http://") && is_loopback_url(base_url))) {
+        return Err(format!("base URL must be https:// (or http:// for localhost): {base_url}"));
     }
     let url = format!("{}/models", base_url.trim_end_matches('/'));
     let mut last_err = format!("GET {url} failed");
-    let attempts: Vec<Option<&String>> = if keys.is_empty() {
-        vec![None]
-    } else {
-        keys.iter().map(Some).collect()
-    };
+    let attempts: Vec<Option<&String>> = if keys.is_empty() { vec![None] } else { keys.iter().map(Some).collect() };
     for key in attempts {
         let mut request = client.get(&url);
-        if let Some(key) = key {
-            request = request.header("Authorization", format!("Bearer {key}"));
-        }
-        let response = request
-            .send()
-            .await
-            .map_err(|e| format!("could not reach {url}: {e}"))?;
+        if let Some(key) = key { request = request.header("Authorization", format!("Bearer {key}")); }
+        let response = request.send().await.map_err(|e| format!("could not reach {url}: {e}"))?;
         let status = response.status();
         if status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            let parsed: serde_json::Value = serde_json::from_str(&body)
-                .map_err(|e| format!("{url} returned a response we could not read: {e}"))?;
-            return Ok(super::tokamak::parse_models(&parsed));
+            let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("{url} returned a response we could not read: {e}"))?;
+            return Ok(parse_model_catalog(&parsed));
         }
         if status != reqwest::StatusCode::UNAUTHORIZED && status != reqwest::StatusCode::FORBIDDEN {
-            // A non-auth error (rate limit, upstream down) won't be fixed by
-            // trying another key, so report it and stop.
             return Err(format!("GET {url} returned {status}"));
         }
         last_err = format!("{url} rejected the key ({status})");
     }
     Err(last_err)
+}
+
+async fn fetch_models(
+    client: &reqwest::Client,
+    base_url: &str,
+    keys: &[String],
+) -> Result<Vec<String>, String> {
+    Ok(fetch_model_catalog(client, base_url, keys).await?.into_iter().map(|model| model.id).collect())
+}
+
+pub async fn fetch_provider_model_entries(
+    project_root: Option<&std::path::Path>,
+) -> Result<Vec<ProviderModelEntry>, String> {
+    let global = load_global_config()?;
+    let configs = load_provider_configs(project_root, &ProviderOverrides::default().with_env())?;
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(15)).build().map_err(|e| e.to_string())?;
+    let requests: Vec<_> = configs.values().filter(|config| is_cli_reachable(config)).cloned().map(|mut config| {
+        hydrate_provider_keys(&mut config);
+        let client = &client;
+        async move {
+            let result = fetch_model_catalog(client, config.base_url.as_deref().unwrap_or_default(), &config.bearer_key_chain()).await;
+            (config, result)
+        }
+    }).collect();
+    let mut entries = Vec::new();
+    for (config, result) in futures::future::join_all(requests).await {
+        let fetched = result.unwrap_or_else(|error| {
+            log::warn!("could not list models for provider '{}': {error}", config.provider);
+            Vec::new()
+        });
+        let effective_ids = merge_model_ids(&config.models, &fetched);
+        if let Some(stored) = global.get(&config.provider) {
+            let persisted_ids = merge_model_ids(&stored.models, &fetched);
+            if stored.models != persisted_ids {
+                crate::core::agent::global_config::set_provider(
+                    &config.provider,
+                    crate::core::agent::global_config::ProviderUpdate { models: Some(persisted_ids), ..Default::default() },
+                )?;
+            }
+        }
+        let by_id: HashMap<&str, &ProviderModel> = fetched.iter().map(|model| (model.id.as_str(), model)).collect();
+        for id in effective_ids {
+            entries.push(ProviderModelEntry {
+                provider: config.provider.clone(),
+                model: by_id.get(id.as_str()).map_or_else(
+                    || ProviderModel { id: id.clone(), context_length: None, input_price: None, output_price: None },
+                    |model| (*model).clone(),
+                ),
+            });
+        }
+    }
+    entries.sort_by(|a, b| (a.provider.as_str(), a.model.id.as_str()).cmp(&(b.provider.as_str(), b.model.id.as_str())));
+    Ok(entries)
 }
 
 /// Load provider configs by layering the four `.jan`-based scopes (see module
@@ -1440,6 +1544,126 @@ mod tests {
                     vec!["sk-flag".to_string()]
                 );
             });
+        });
+    }
+    #[test]
+    fn parses_duplicate_metadata_preferring_valid_values() {
+        let payload = serde_json::json!({
+            "data": [
+                {"id": "delta", "context_length": "bad", "pricing": {"prompt": "bad", "completion": null}},
+                {"id": "delta", "context_length": 64000, "pricing": {"prompt": 0.0, "completion": "0.25"}}
+            ]
+        });
+
+        let models = parse_model_catalog(&payload);
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].context_length, Some(64000));
+        assert_eq!(models[0].input_price, Some(0.0));
+        assert_eq!(models[0].output_price, Some(0.25));
+    }
+
+    #[test]
+    fn fetch_provider_entries_persists_new_ids_and_preserves_partial_catalog() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(
+                serde_json::json!({
+                    "data": [{"id": "new-model", "context_length": 272000, "pricing": {"prompt": 0.1, "completion": 0.2}}]
+                })
+                .to_string(),
+                1,
+            );
+            crate::core::agent::global_config::set_provider(
+                "mock",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: None,
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["configured-model".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let entries = rt.block_on(fetch_provider_model_entries(None)).unwrap();
+            let ids: Vec<_> = entries.iter().map(|entry| entry.model.id.as_str()).collect();
+            assert_eq!(ids, vec!["configured-model", "new-model"]);
+            let new = entries.iter().find(|entry| entry.model.id == "new-model").unwrap();
+            assert_eq!(new.model.context_length, Some(272000));
+            assert_eq!(new.model.input_price, Some(0.1));
+
+            let persisted = load_global_config().unwrap();
+            assert_eq!(persisted.get("mock").unwrap().models, vec!["configured-model", "new-model"]);
+        });
+    }
+
+    #[test]
+    fn fetch_provider_entries_keeps_configured_ids_when_catalog_is_empty() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": []}).to_string(), 1);
+            crate::core::agent::global_config::set_provider(
+                "empty-mock",
+                crate::core::agent::global_config::ProviderUpdate {
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["keep-me".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let entries = rt.block_on(fetch_provider_model_entries(None)).unwrap();
+            assert_eq!(entries.iter().map(|entry| entry.model.id.as_str()).collect::<Vec<_>>(), vec!["keep-me"]);
+            assert_eq!(load_global_config().unwrap().get("empty-mock").unwrap().models, vec!["keep-me"]);
+        });
+    }
+
+    #[test]
+    fn fetch_provider_entries_folds_project_override_models_but_never_writes_global() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "fetched-model"}]}).to_string(), 1);
+            let root = std::env::temp_dir().join(format!("jan_provider_proj_{}", std::process::id()));
+            let agent_dir = root.join(".jan").join("agent");
+            std::fs::create_dir_all(&agent_dir).unwrap();
+            std::fs::write(
+                agent_dir.join("agent.toml"),
+                format!("[provider]\nname = \"proj\"\nbase_url = \"http://{addr}/v1\"\nmodels = [\"proj-model\"]\n"),
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let entries = rt.block_on(fetch_provider_model_entries(Some(&root))).unwrap();
+            let proj: Vec<_> = entries.iter().filter(|e| e.provider == "proj").map(|e| e.model.id.as_str()).collect();
+            assert_eq!(proj, ["fetched-model", "proj-model"]);
+            assert!(!load_global_config().unwrap().contains_key("proj"), "project override must not be written to global");
+            let _ = std::fs::remove_dir_all(&root);
+        });
+    }
+
+    #[test]
+    fn fetch_provider_entries_preserves_desktop_only_provider_without_global_write() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "desktop-new"}]}).to_string(), 1);
+            let data_dir = std::env::temp_dir().join(format!("jan_provider_data_{}", std::process::id()));
+            std::fs::create_dir_all(&data_dir).unwrap();
+            std::fs::write(
+                data_dir.join("settings.json"),
+                format!(r#"{{"model-provider":"{{\"state\":{{\"providers\":[{{\"provider\":\"desktop-only\",\"base_url\":\"http://{addr}/v1\",\"models\":[{{\"id\":\"desktop-model\"}}]}}]}}}}"}}"#),
+            )
+            .unwrap();
+            let prev = std::env::var("JAN_DATA_FOLDER").ok();
+            std::env::set_var("JAN_DATA_FOLDER", &data_dir);
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let entries = rt.block_on(fetch_provider_model_entries(None)).unwrap();
+            let ids: Vec<_> = entries.iter().filter(|e| e.provider == "desktop-only").map(|e| e.model.id.as_str()).collect();
+            assert_eq!(ids, ["desktop-model", "desktop-new"]);
+            assert!(!load_global_config().unwrap().contains_key("desktop-only"), "desktop-only provider must not shadow into global");
+
+            match &prev {
+                Some(v) => std::env::set_var("JAN_DATA_FOLDER", v),
+                None => std::env::remove_var("JAN_DATA_FOLDER"),
+            }
+            let _ = std::fs::remove_dir_all(&data_dir);
         });
     }
 }
