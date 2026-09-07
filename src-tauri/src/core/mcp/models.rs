@@ -18,10 +18,18 @@ pub struct McpServerConfig {
 /// Parse a raw `mcp_config.json` server entry into typed connection params.
 pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {
     let obj = config.as_object()?;
-    let command = obj.get("command")?.as_str()?.to_string();
-    let args = obj.get("args")?.as_array()?.clone();
     let url = obj.get("url").and_then(|u| u.as_str()).map(String::from);
     let transport_type = obj.get("type").and_then(|t| t.as_str()).map(String::from);
+    let (command, args) = match transport_type.as_deref() {
+        Some("http" | "sse") => {
+            url.as_ref()?;
+            (String::new(), Vec::new())
+        }
+        _ => (
+            obj.get("command")?.as_str()?.to_string(),
+            obj.get("args")?.as_array()?.clone(),
+        ),
+    };
     let timeout = obj
         .get("timeout")
         .and_then(|t| t.as_u64())
@@ -196,8 +204,6 @@ mod tests {
     #[test]
     fn test_extract_command_args_full_config() {
         let cfg = serde_json::json!({
-            "command": "",
-            "args": [],
             "type": "http",
             "url": "https://mcp.example.com/mcp",
             "timeout": 45,
@@ -236,6 +242,9 @@ mod tests {
         assert!(extract_command_args(&cfg).is_none());
         // args not an array
         let cfg = serde_json::json!({"command": "npx", "args": "oops"});
+        assert!(extract_command_args(&cfg).is_none());
+        // Remote transports require a URL, not a command fallback.
+        let cfg = serde_json::json!({"type": "http", "command": "npx", "args": []});
         assert!(extract_command_args(&cfg).is_none());
     }
 
