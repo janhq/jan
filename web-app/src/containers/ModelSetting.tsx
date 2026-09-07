@@ -172,7 +172,8 @@ export function ModelSetting({
         key === 'offload_mmproj' ||
         key === 'batch_size' ||
         key === 'cpu_moe' ||
-        key === 'n_cpu_moe'
+        key === 'n_cpu_moe' ||
+        key === 'n_cpu_ffn'
       ) {
         // Check if model is running before stopping it
         serviceHub

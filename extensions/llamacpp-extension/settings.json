@@ -150,6 +150,18 @@
     }
   },
   {
+    "key": "n_cpu_ffn",
+    "title": "Dense FFN Layers on CPU",
+    "description": "Keep the dense feed-forward weights of the first N layers in CPU memory. The counterpart of the MoE setting above, for dense models. 0 disables it.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
     "key": "no_kv_offload",
     "title": "Disable KV Cache Offload",
     "description": "Keep the KV cache in system RAM instead of GPU memory. Useful when VRAM is scarce, at the cost of speed.",
@@ -280,6 +292,29 @@
     "controllerType": "checkbox",
     "controllerProps": {
       "value": false
+    }
+  },
+  {
+    "key": "lazy_mode",
+    "title": "Lazy Tensor Reading",
+    "description": "Read the rows of large arch-marked tensors (e.g. per-layer embeddings) from disk on demand instead of keeping them in memory. Auto applies it above 4 GiB. Requires mmap.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "auto",
+      "options": [
+        {
+          "value": "auto",
+          "name": "Auto"
+        },
+        {
+          "value": "on",
+          "name": "On"
+        },
+        {
+          "value": "off",
+          "name": "Off"
+        }
+      ]
     }
   },
   {
@@ -538,6 +573,28 @@
           "name": "Off"
         }
       ]
+    }
+  },
+  {
+    "key": "kv_unified_per_slot",
+    "title": "Context Per Slot",
+    "description": "Cap how much of the unified KV cache one slot may use, in tokens. 0 leaves a slot free to fill the whole cache. Only applies when the cache is unified.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0",
+      "type": "number",
+      "textAlign": "right",
+      "min": 0
+    }
+  },
+  {
+    "key": "reasoning_preserve",
+    "title": "Preserve Reasoning History",
+    "description": "Keep the reasoning of every earlier assistant turn in the prompt, not just the most recent one. Only affects models whose chat template supports it, and costs prompt tokens.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": true
     }
   },
   {
