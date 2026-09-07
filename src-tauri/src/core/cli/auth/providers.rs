@@ -113,21 +113,19 @@ pub(crate) async fn discover_models(
 /// from `chatgpt.com/backend-api/models`: the latter returns the internal
 /// rolling/user-scoped ChatGPT roster (e.g. `gpt-5.6-luna-wm`) that has no real
 /// upstream session, whereas `/codex/models` returns the stable Codex slugs
-/// (`gpt-5.5`, `gpt-5.4`, ...) that the Responses API actually serves.
-/// The backend requires a numeric `client_version` and gates new models on
-/// it. Resolve that version from Codex's latest stable GitHub release rather
-/// than baking a version (or model roster) into Jan.
+/// (`gpt-5.5`, `gpt-5.4`, ...) that the Responses API actually serves. The
+/// Codex client identifiers (`client_version`, `chatgpt-account-id`,
+/// `OpenAI-Beta`, `originator`, `version`) are mirrored from the pi coding
+/// agent so the backend returns the Codex roster instead of the ChatGPT one.
 ///
 /// `base_url` is the persisted Codex provider base (the OpenAI API-key surface
 /// `api.openai.com/v1`); it is rewritten to the ChatGPT backend origin, or used
 /// verbatim in tests. Falls back to `/models` when `/codex/models` is not
-/// served. `release_url` supplies the official stable release metadata;
-/// keeping it explicit lets tests exercise the complete discovery transaction.
+/// served.
 pub(crate) async fn discover_codex_models(
     credential: &str,
     account_id: Option<&str>,
     base_url: &str,
-    release_url: &str,
 ) -> Result<Vec<String>, LoginError> {
     // The persisted Codex default_base_url points at the OpenAI API-key
     // surface (`api.openai.com/v1`), which rejects an account token. Discovery
@@ -142,30 +140,6 @@ pub(crate) async fn discover_codex_models(
         .timeout(VERIFY_TIMEOUT)
         .build()
         .map_err(|e| LoginError::Unavailable(format!("could not build an HTTP client: {e}")))?;
-    // This request is public: account credentials belong only on the model
-    // request below, never in the release metadata request.
-    let release: CodexRelease = client
-        .get(release_url)
-        .header("User-Agent", concat!("Jan/", env!("CARGO_PKG_VERSION")))
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|e| {
-            LoginError::Unavailable(format!("could not fetch Codex release metadata: {e}"))
-        })?
-        .json()
-        .await
-        .map_err(|_| {
-            LoginError::Unavailable("could not read Codex release metadata.".to_string())
-        })?;
-    let client_version = release
-        .tag_name
-        .strip_prefix("rust-v")
-        .filter(|version| !version.is_empty())
-        .ok_or_else(|| {
-            LoginError::Unavailable("Codex release metadata contained an invalid tag.".to_string())
-        })?;
 
     // `/codex/models` is the Codex roster; `/models` is the plain ChatGPT
     // roster and is kept only as a fallback for backends that omit the Codex
@@ -181,10 +155,10 @@ pub(crate) async fn discover_codex_models(
         // Only the Codex route is marked with the Codex client identifiers.
         if path == "/codex/models" {
             request = request
-                .query(&[("client_version", client_version)])
+                .query(&[("client_version", "0.153.4")])
                 .header("OpenAI-Beta", "responses=experimental")
                 .header("originator", "jan")
-                .header("version", client_version);
+                .header("version", "0.153.4");
             if let Some(account_id) = account_id {
                 request = request.header("chatgpt-account-id", account_id);
             }
@@ -224,11 +198,6 @@ pub(crate) async fn discover_codex_models(
     Err(last_error.unwrap_or(LoginError::Unavailable(
         "the ChatGPT backend returned no usable model roster".to_string(),
     )))
-}
-
-#[derive(serde::Deserialize)]
-struct CodexRelease {
-    tag_name: String,
 }
 
 /// Stable Codex model slugs from a `/codex/models` payload, sorted, deduped,
@@ -502,7 +471,6 @@ mod tests {
         );
         assert!(parse_codex_models(&json!({"models": []})).is_empty());
     }
-
 
     #[test]
     fn provider_error_never_echoes_the_submitted_key() {

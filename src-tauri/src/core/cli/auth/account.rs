@@ -38,8 +38,6 @@ pub struct AccountLogin {
     token_endpoint: String,
     #[cfg(test)]
     model_base_url: Option<String>,
-    #[cfg(test)]
-    codex_release_url: Option<String>,
 }
 
 impl AccountLogin {
@@ -130,8 +128,6 @@ pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
         token_endpoint: token_endpoint.to_string(),
         #[cfg(test)]
         model_base_url: None,
-        #[cfg(test)]
-        codex_release_url: None,
     })
 }
 
@@ -1010,12 +1006,6 @@ async fn complete_code_login(
     let definition =
         crate::core::cli::auth::provider_by_id(provider.credential_provider())
             .ok_or_else(|| "selected account is unavailable".to_string())?;
-    let codex_release_url = "https://api.github.com/repos/openai/codex/releases/latest";
-    #[cfg(test)]
-    let codex_release_url = login
-        .codex_release_url
-        .as_deref()
-        .unwrap_or(codex_release_url);
     #[cfg(test)]
     let definition = {
         let mut definition = definition;
@@ -1048,7 +1038,6 @@ async fn complete_code_login(
                     &token.access_token,
                     Some(&account_id),
                     &definition.default_base_url,
-                    codex_release_url,
                 )
                 .await
                 .map(|m| {
@@ -1168,14 +1157,9 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = String::new();
-            let mut reader = std::io::BufReader::new(&mut stream);
-            while !request.ends_with("\r\n\r\n") {
-                if std::io::BufRead::read_line(&mut reader, &mut request).unwrap() == 0 {
-                    break;
-                }
-            }
-            let _ = tx.send(request);
+            let mut request = [0; 4096];
+            let read = stream.read(&mut request).unwrap_or(0);
+            let _ = tx.send(String::from_utf8_lossy(&request[..read]).into_owned());
             let response = format!(
                 "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 body.len(),
@@ -1184,10 +1168,6 @@ mod tests {
             let _ = stream.write_all(response.as_bytes());
         });
         (format!("http://{addr}/v1"), rx)
-    }
-
-    fn codex_release_server() -> String {
-        account_models_server("200 OK", r#"{"tag_name":"rust-v0.200.0"}"#).0
     }
 
     fn unavailable_base_url() -> String {
@@ -1246,7 +1226,6 @@ mod tests {
                 let mut login = begin(AccountProvider::Codex).unwrap();
                 login.token_endpoint = codex_token_server("account-321");
                 login.model_base_url = Some(models_base_url);
-                login.codex_release_url = Some(codex_release_server());
                 let callback = format!(
                     "GET /auth/callback?code=authorization-code&state={} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n",
                     login.state
@@ -1308,7 +1287,6 @@ mod tests {
                 let mut login = begin(AccountProvider::Codex).unwrap();
                 login.token_endpoint = codex_token_server("account-321");
                 login.model_base_url = Some(models_base_url);
-                login.codex_release_url = Some(codex_release_server());
                 let manual_input = format!("authorization-code#{}", login.state);
                 let (manual, receiver) = tokio::sync::mpsc::unbounded_channel();
                 manual.send(manual_input).unwrap();
@@ -1727,7 +1705,7 @@ mod tests {
             // and fetches its real model roster from the ChatGPT backend's
             // `/codex/models` endpoint (not the rolling `/models` roster),
             // then configures the Responses API with that roster.
-            let roster = r#"{"models":[{"slug":"gpt-6-astra","display_name":"GPT-6-Astra"},{"slug":"gpt-5.5","display_name":"GPT-5.5"},{"slug":"gpt-5.4","display_name":"GPT-5.4"}]}"#;
+            let roster = r#"{"models":[{"slug":"gpt-5.5","display_name":"GPT-5.5"},{"slug":"gpt-5.4","display_name":"GPT-5.4"}]}"#;
             let (models_base_url, request) = account_models_server("200 OK", roster);
 
             assert_eq!(
@@ -1743,12 +1721,6 @@ mod tests {
                 request.contains("/codex/models"),
                 "must target /codex/models, got: {request}"
             );
-            // The request must use the upstream fixture's version, not a
-            // release baked into Jan.
-            assert!(request.contains("client_version=0.200.0"));
-            assert!(request
-                .to_ascii_lowercase()
-                .contains("\r\nversion: 0.200.0\r\n"));
             assert!(
                 request.contains("chatgpt-account-id: account-321"),
                 "missing chatgpt-account-id in: {request}"
@@ -1781,11 +1753,7 @@ mod tests {
             assert_eq!(cfg.base_url.as_deref(), Some(models_base_url.as_str()));
             assert_eq!(
                 cfg.models,
-                vec![
-                    "gpt-5.4".to_string(),
-                    "gpt-5.5".to_string(),
-                    "gpt-6-astra".to_string()
-                ]
+                vec!["gpt-5.4".to_string(), "gpt-5.5".to_string()]
             );
             assert_eq!(cfg.api_type.as_deref(), Some("openai-responses"));
         });
