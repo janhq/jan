@@ -1,8 +1,15 @@
 name: Rust Check
 on:
   workflow_dispatch:
-  pull_request:
+  # Caches are branch-scoped and only the default branch's are readable from
+  # anywhere, so main has to run this to leave anything worth restoring.
+  push:
     branches:
+      - main
+  pull_request:
+    # PRs open against main; the dev-only filter left this to manual dispatch.
+    branches:
+      - main
       - dev
 
 concurrency:
@@ -44,6 +51,9 @@ jobs:
         with:
           workspaces: src-tauri
           key: ${{ matrix.name }}
+          # Branches restore but never save: one 3.5GB cache set on main
+          # rather than one per branch, which is what breached the 10GB cap.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Tauri dependencies
         if: matrix.tauri
@@ -95,6 +105,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri/${{ matrix.crate }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Tauri dependencies
         run: |

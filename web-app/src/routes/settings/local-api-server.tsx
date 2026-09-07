@@ -62,6 +62,8 @@ function LocalAPIServerContent() {
     setVerboseLogs,
     enableOnStartup,
     setEnableOnStartup,
+    runInBackground,
+    setRunInBackground,
     serverHost,
     serverPort,
     setServerPort,
@@ -456,6 +458,20 @@ function LocalAPIServerContent() {
                     />
                   }
                 />
+                {!IS_MACOS && (
+                  <CardItem
+                    title={t('settings:localApiServer.runInBackground')}
+                    description={t(
+                      'settings:localApiServer.runInBackgroundDesc'
+                    )}
+                    actions={
+                      <Switch
+                        checked={runInBackground}
+                        onCheckedChange={setRunInBackground}
+                      />
+                    }
+                  />
+                )}
                 <CardItem
                   title={t('settings:localApiServer.defaultModel')}
                   description={t('settings:localApiServer.defaultModelDesc')}

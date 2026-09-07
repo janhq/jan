@@ -41,6 +41,7 @@ vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
       models_max: 1,
     }),
     engineDevices: vi.fn().mockResolvedValue([]),
+    eraseThreadSlotState: vi.fn().mockResolvedValue(0),
   }
 })
 
@@ -1268,5 +1269,46 @@ describe('embedding readiness during the first-run fetch', () => {
     expect(report.status).toBe('warning')
     expect(report.pending).toBeUndefined()
     expect(report.error).toContain('no embedder')
+  })
+})
+
+describe('forgetThreadCache', () => {
+  let extension: llamacpp_extension
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    extension = new llamacpp_extension('http://localhost', 'llamacpp')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // The worker resolves state file names against slot-save-path, so erasing
+  // has to name the very directory the preset named. On Windows the provider
+  // path is extended (`\\?\C:\...`), where a `/` is a literal name character
+  // rather than a separator.
+  it('erases from the directory the preset names, on a Windows provider path', async () => {
+    const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
+    const { eraseThreadSlotState } = await import(
+      '@janhq/tauri-plugin-llamacpp-api'
+    )
+    const { threadCacheDir } = await import('../preset')
+    const providerPath = '\\\\?\\C:\\Users\\u\\AppData\\Roaming\\Jan-nightly\\data\\llamacpp'
+
+    vi.mocked(getJanDataFolderPath).mockResolvedValue(
+      '\\\\?\\C:\\Users\\u\\AppData\\Roaming\\Jan-nightly\\data'
+    )
+    vi.mocked(joinPath).mockResolvedValue(providerPath)
+
+    await extension.forgetThreadCache('t1')
+
+    expect(eraseThreadSlotState).toHaveBeenCalledWith({
+      threadId: 't1',
+      cacheDir: threadCacheDir(providerPath),
+    })
+    expect(
+      vi.mocked(eraseThreadSlotState).mock.calls[0][0].cacheDir
+    ).not.toContain('/')
   })
 })

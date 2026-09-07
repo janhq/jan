@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const writtenFiles: Record<string, string> = {}
 const modelYamls: Record<string, unknown> = {}
+const existingPaths = new Set<string>()
 
 vi.mock('@janhq/core', () => ({
   logger: {
@@ -11,7 +12,10 @@ vi.mock('@janhq/core', () => ({
     error: vi.fn(),
   },
   fs: {
-    existsSync: vi.fn(async (p: string) => p === '/p/models' || p in modelYamls),
+    existsSync: vi.fn(
+      async (p: string) =>
+        p === '/p/models' || p in modelYamls || existingPaths.has(p)
+    ),
     mkdir: vi.fn(async () => undefined),
     readdirSync: vi.fn(async (dir: string) => {
       if (dir === '/p/models') {
@@ -50,6 +54,7 @@ const CONFIG = {} as any
 beforeEach(() => {
   for (const k of Object.keys(writtenFiles)) delete writtenFiles[k]
   for (const k of Object.keys(modelYamls)) delete modelYamls[k]
+  existingPaths.clear()
 })
 
 function setupModel(id: string, yaml: Record<string, unknown>) {
@@ -700,6 +705,56 @@ describe('generatePreset chat template', () => {
     await generatePreset('/p', '/jan', CONFIG)
     expect(writtenFiles['/p/router.preset.ini']).not.toContain('chat-template')
   })
+
+  it('passes an absolute path to an existing file straight through', async () => {
+    existingPaths.add('/home/u/templates/custom.jinja')
+    setupModel('glm', { chat_template: '/home/u/templates/custom.jinja' })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('chat-template-file = /home/u/templates/custom.jinja')
+    expect(writtenFiles['/p/models/glm/chat_template.jinja']).toBeUndefined()
+  })
+
+  // A path that resolves to nothing is not silently trusted; it falls back to
+  // the inline-body path so the value still reaches llama.cpp somehow.
+  it('treats an absolute path to a missing file as an inline body', async () => {
+    setupModel('glm', { chat_template: '/nope/custom.jinja' })
+    await generatePreset('/p', '/jan', CONFIG)
+    expect(writtenFiles['/p/models/glm/chat_template.jinja']).toBe(
+      '/nope/custom.jinja'
+    )
+    expect(writtenFiles['/p/router.preset.ini']).toContain(
+      'chat-template-file = /p/models/glm/chat_template.jinja'
+    )
+  })
+})
+
+// GBNF uses `#` for comments, so an inline grammar can never survive the ini;
+// it always reaches llama.cpp as a file.
+describe('generatePreset grammar', () => {
+  it('writes an inline grammar to a file and points the preset at it', async () => {
+    const grammar = '# yes/no only\nroot ::= "yes" | "no"'
+    setupModel('glm', { grammar })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('grammar-file = /p/models/glm/grammar.gbnf')
+    expect(writtenFiles['/p/models/glm/grammar.gbnf']).toBe(grammar)
+  })
+
+  it('passes an absolute path to an existing file straight through', async () => {
+    existingPaths.add('/home/u/grammars/json.gbnf')
+    setupModel('glm', { grammar: '/home/u/grammars/json.gbnf' })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('grammar-file = /home/u/grammars/json.gbnf')
+    expect(writtenFiles['/p/models/glm/grammar.gbnf']).toBeUndefined()
+  })
+
+  it('emits nothing for a blank grammar', async () => {
+    setupModel('glm', { grammar: '   ' })
+    await generatePreset('/p', '/jan', CONFIG)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('grammar')
+  })
 })
 
 // The four draft flavours differ only in the `spec-type` value; a draft that
@@ -753,5 +808,55 @@ describe('generatePreset spec type', () => {
     expect(writtenFiles['/p/router.preset.ini']).toContain(
       'spec-type = draft-mtp'
     )
+  })
+})
+
+describe('threadCacheDir separator handling', () => {
+  const WIN_EXT = '\\\\?\\C:\\Users\\u\\AppData\\Roaming\\Jan-nightly\\data\\llamacpp'
+
+  it('joins a POSIX path with a forward slash', () => {
+    expect(threadCacheDir('/p')).toBe('/p/thread-cache')
+    expect(threadCacheDir('/home/u/.local/share/Jan/data/llamacpp')).toBe(
+      '/home/u/.local/share/Jan/data/llamacpp/thread-cache'
+    )
+  })
+
+  it('joins a Windows extended path with a backslash', () => {
+    // Win32 normalizes `/` to `\` for ordinary paths but not for `\\?\` ones,
+    // where a `/` is a literal name character -- so create_dir_all fails with
+    // ERROR_INVALID_NAME (os error 123) and the worker exits 7 before serving.
+    expect(threadCacheDir(WIN_EXT)).toBe(`${WIN_EXT}\\thread-cache`)
+    expect(threadCacheDir(WIN_EXT)).not.toContain('/')
+  })
+
+  it('joins a plain Windows path with a backslash', () => {
+    expect(threadCacheDir('C:\\Users\\u\\llamacpp')).toBe(
+      'C:\\Users\\u\\llamacpp\\thread-cache'
+    )
+  })
+
+  it('does not read a backslash in a POSIX name as a Windows separator', () => {
+    // `\` is a legal filename character on Linux, so the separator follows the
+    // path's root rather than whether a backslash appears anywhere in it.
+    expect(threadCacheDir('/home/u/od\\d/llamacpp')).toBe(
+      '/home/u/od\\d/llamacpp/thread-cache'
+    )
+  })
+
+  it('does not double an existing trailing separator', () => {
+    expect(threadCacheDir('/p/')).toBe('/p/thread-cache')
+    expect(threadCacheDir('C:\\p\\')).toBe('C:\\p\\thread-cache')
+  })
+
+  it('is the one definition the preset and the erase path both use', async () => {
+    // index.ts's forgetThreadCache passes threadCacheDir(providerPath) as
+    // cacheDir, and llama.cpp joins state file names onto slot-save-path, so a
+    // preset that derived the directory differently would erase from a
+    // directory the worker never wrote to.
+    await generatePreset(WIN_EXT, 'C:\\jan', CONFIG)
+    const ini = Object.entries(writtenFiles).find(([p]) =>
+      p.endsWith('router.preset.ini')
+    )?.[1] as string
+    expect(ini).toContain(`slot-save-path = ${threadCacheDir(WIN_EXT)}`)
   })
 })

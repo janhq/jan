@@ -215,21 +215,41 @@ pub(crate) fn repair_dangling_tool_calls(messages: &mut Vec<serde_json::Value>) 
 ///
 /// Runs before [`repair_dangling_tool_calls`], so a surviving call that lost
 /// its result still gets the synthetic error reply from that pass.
-pub(crate) fn drop_malformed_tool_calls(messages: &mut Vec<serde_json::Value>) -> usize {
-    // A call is poison when arguments are present but unparsable. An absent or
-    // empty `arguments` is the well-formed "no arguments" spelling several
-    // providers use, and is left alone.
-    fn is_malformed(call: &serde_json::Value) -> bool {
-        let Some(args) = call
-            .get("function")
-            .and_then(|f| f.get("arguments"))
-            .and_then(|v| v.as_str())
-        else {
-            return false;
-        };
-        let args = args.trim();
-        !args.is_empty() && serde_json::from_str::<serde_json::Value>(args).is_err()
+/// Whether a tool call's arguments are safe to execute and to keep in
+/// provider-visible history.
+///
+/// The invariant: what the provider sees as `arguments` must decode to a
+/// plain JSON object. The OpenAI wire shape is a JSON-encoded string, so a
+/// string decoding to an object is the normal case. A string decoding to
+/// another string, number, boolean, null, or array is the poisoned shape a
+/// truncated or confused model emits: it parses cleanly, so a parse-only
+/// check calls it safe, and the upstream rejects the whole request over it
+/// ("arguments must be a JSON object"). Absent, null, and empty arguments
+/// are the "no arguments" spelling.
+pub(crate) fn arguments_are_executable(tc: &serde_json::Value) -> bool {
+    let Some(args) = tc.get("function").and_then(|f| f.get("arguments")) else {
+        return true;
+    };
+    let Some(args) = args.as_str() else {
+        // Off-wire shapes: an object is equivalent to valid arguments; a
+        // list or scalar is poison; null means "no arguments".
+        return matches!(args, serde_json::Value::Object(_) | serde_json::Value::Null);
+    };
+    let args = args.trim();
+    if args.is_empty() {
+        return true;
     }
+    matches!(
+        serde_json::from_str::<serde_json::Value>(args),
+        Ok(v) if v.is_object()
+    )
+}
+
+pub(crate) fn drop_malformed_tool_calls(messages: &mut Vec<serde_json::Value>) -> usize {
+    // A call is poison when its arguments are not a plain JSON object. An
+    // absent or empty `arguments` is the well-formed "no arguments" spelling
+    // several providers use, and is left alone.
+    let is_malformed = |call: &serde_json::Value| !arguments_are_executable(call);
 
     let mut dropped_ids: Vec<String> = Vec::new();
     let mut dropped = 0;
@@ -2158,6 +2178,64 @@ mod tests {
         // Only the poisoned call's result was dropped.
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[1]["tool_call_id"], "ok");
+    }
+
+    /// The full fixture matrix behind the plain-object invariant: what the
+    /// provider sees as `arguments` must decode to a JSON object. A parse-only
+    /// check is not enough -- the poisoned shapes here all parse cleanly and
+    /// were accepted by the earlier code.
+    #[test]
+    fn arguments_must_decode_to_a_plain_object() {
+        let call_with = |args: serde_json::Value| {
+            json!({ "type": "function", "function": { "name": "edit", "arguments": args } })
+        };
+        let decodes_to_object = json!("{\"path\":\"a.rs\",\"content\":\"fn main() {}\"}");
+        assert!(arguments_are_executable(&call_with(decodes_to_object)));
+        // A plain object in the field is off-wire but semantically valid.
+        assert!(arguments_are_executable(&call_with(json!({ "path": "a.rs" }))));
+        // Absent, null, and empty are the "no arguments" spelling.
+        assert!(arguments_are_executable(&call_with(json!(""))));
+        assert!(arguments_are_executable(&call_with(json!("   "))));
+        assert!(arguments_are_executable(&call_with(serde_json::Value::Null)));
+        assert!(arguments_are_executable(&json!({ "type": "function", "function": { "name": "now" } })));
+
+        // The reported poison: a JSON string literal whose decoding is another
+        // string. JSON.parse succeeds; typeof parsed === "string". The same
+        // family covers every other scalar, arrays, and truncated JSON.
+        assert!(!arguments_are_executable(&call_with(json!("\"{\\\"path\\\":\\\"a.rs\\\"}\""))));
+        assert!(!arguments_are_executable(&call_with(json!("[1,2,3]"))));
+        assert!(!arguments_are_executable(&call_with(json!("42"))));
+        assert!(!arguments_are_executable(&call_with(json!("true"))));
+        assert!(!arguments_are_executable(&call_with(json!("null"))));
+        assert!(!arguments_are_executable(&call_with(json!("{\"path\":\"a.rs\",\"co"))));
+        // Off-wire non-string shapes: lists and scalars are poison.
+        assert!(!arguments_are_executable(&call_with(json!(["a"]))));
+        assert!(!arguments_are_executable(&call_with(json!(7))));
+    }
+
+    #[test]
+    fn sanitize_drops_the_double_encoded_argument_case() {
+        // The reported incident: the model emitted a tool call whose arguments
+        // were a JSON string literal containing JSON. It parses, so the call
+        // survived, and the upstream rejected every request carrying it.
+        let mut messages = vec![
+            json!({ "role": "user", "content": "edit the file" }),
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "call_edit",
+                    "type": "function",
+                    "function": { "name": "edit", "arguments": "\"{\\\"path\\\": \\\"a.rs\\\"}\"" }
+                }]
+            }),
+            json!({ "role": "tool", "tool_call_id": "call_edit", "content": "(arguments incomplete; not executed)" }),
+            json!({ "role": "user", "content": "hello?" }),
+        ];
+        assert_eq!(drop_malformed_tool_calls(&mut messages), 1);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["content"], "edit the file");
+        assert_eq!(messages[1]["content"], "hello?");
     }
 
     #[test]

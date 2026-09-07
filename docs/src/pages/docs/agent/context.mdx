@@ -31,6 +31,27 @@ At the end of a turn you get a receipt:
 `↑` is context sent, `↓` tokens produced, then elapsed time and throughput. The two differ on
 purpose: context is the size of the request, output is what came back.
 
+### The `/context` overlay
+
+```
+/context
+```
+
+Opens a centered overlay on top of the live transcript (the turn keeps running behind it).
+Inside is a rail that shows the fill as a percentage of the window, a visual bar with the
+`^` marker at the current usage point and `╳` marking the auto-compact reserve zone, a
+token scale, and a headroom line (`N tokens available before auto-compact`), followed by a
+per-category breakdown: System prompt, System tools, Project context, Skills, and Messages.
+Press <kbd>Esc</kbd>, <kbd>q</kbd>, or <kbd>Ctrl</kbd>+<kbd>C</kbd> to close; closing never
+cancels the turn.
+
+The headline fill uses the provider's own `prompt_tokens` when available. After a compaction,
+rewind, or resume the provider count is reset, so the number falls back to an estimate
+(labelled *estimated*) and climbs back to the real value on the next request.
+
+The report is a point-in-time snapshot taken when `/context` is typed, so numbers stay fixed
+until you open it again.
+
 ## Automatic compaction
 
 As the conversation approaches the window, older turns are summarized to make room. The reserve is

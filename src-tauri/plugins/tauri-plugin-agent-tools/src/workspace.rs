@@ -245,13 +245,12 @@ const SCRATCH_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(
 /// Failures are silent per entry: another user's `jan-agent-*` in a shared
 /// `/tmp` is not ours to delete and simply fails the unlink.
 pub async fn sweep_stale_scratch_dirs() -> usize {
-    sweep_scratch_older_than(SCRATCH_STALE_AFTER).await
+    sweep_scratch_older_than(&std::env::temp_dir(), SCRATCH_STALE_AFTER).await
 }
 
-/// [`sweep_stale_scratch_dirs`] with an explicit age, so a test can collect a
-/// scratch it just created instead of waiting a day.
-async fn sweep_scratch_older_than(max_age: std::time::Duration) -> usize {
-    let Ok(mut entries) = tokio::fs::read_dir(std::env::temp_dir()).await else {
+/// Sweep an explicit directory so tests never collect another session's scratch.
+async fn sweep_scratch_older_than(root: &Path, max_age: std::time::Duration) -> usize {
+    let Ok(mut entries) = tokio::fs::read_dir(root).await else {
         return 0;
     };
     let mut removed = 0;
@@ -457,24 +456,6 @@ pub fn workspace_filename(name: &str) -> Result<String, String> {
     Ok(format!("{stem}.md"))
 }
 
-/// Serialises tests that touch the *global* scratch namespace.
-///
-/// `sweep_scratch_older_than` collects every scratch dir in the shared host temp
-/// dir, so running it beside a test that needs its own scratch alive is a race:
-/// the sweep deletes the directory the other test is mid-way through using. Any
-/// test that either sweeps or depends on a live scratch takes this first.
-#[cfg(test)]
-pub(crate) static SCRATCH_NAMESPACE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// Take [`SCRATCH_NAMESPACE_LOCK`], ignoring poisoning: a panic in one test must
-/// not cascade into unrelated failures in every other one.
-#[cfg(test)]
-pub(crate) fn lock_scratch_namespace() -> std::sync::MutexGuard<'static, ()> {
-    SCRATCH_NAMESPACE_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -545,28 +526,31 @@ mod tests {
     /// survives the real 24h threshold.
     #[tokio::test]
     async fn stale_scratch_dirs_are_swept_and_fresh_ones_are_not() {
-        let session = format!("sweep-stale-{}", std::process::id());
-        let _guard = lock_scratch_namespace();
-        let orphan = ensure_scratch_dir(&session).await.unwrap();
+        let root = tmp_root("scratch_sweep");
+        let orphan = root.join("jan-agent-orphan");
+        ensure_scratch_dir_path(&orphan).await.unwrap();
         std::fs::write(orphan.join("spill.txt"), b"leaked").unwrap();
-        let bystander = std::env::temp_dir().join(format!("not-a-scratch-{session}"));
+        let bystander = root.join("not-a-scratch");
         std::fs::create_dir_all(&bystander).unwrap();
 
         assert_eq!(
-            sweep_stale_scratch_dirs().await,
+            sweep_scratch_older_than(&root, SCRATCH_STALE_AFTER).await,
             0,
             "a fresh scratch is live"
         );
         assert!(orphan.is_dir());
 
-        assert!(sweep_scratch_older_than(std::time::Duration::ZERO).await >= 1);
+        assert_eq!(
+            sweep_scratch_older_than(&root, std::time::Duration::ZERO).await,
+            1
+        );
         assert!(!orphan.exists(), "an abandoned scratch must be collected");
         assert!(
             bystander.is_dir(),
             "swept a directory that is not a scratch"
         );
 
-        let _ = std::fs::remove_dir_all(&bystander);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The scratch root must never be a pre-planted symlink to another

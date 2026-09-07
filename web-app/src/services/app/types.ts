@@ -22,5 +22,6 @@ export interface AppService {
   getJanDataFolder(): Promise<string | undefined>
   relocateJanDataFolder(path: string): Promise<void>
   getServerStatus(): Promise<boolean>
+  setServerRunInBackground(enabled: boolean): Promise<void>
   readYaml<T = unknown>(path: string): Promise<T>
 }

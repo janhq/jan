@@ -15,8 +15,10 @@ inputs:
     required: true
   ccache-max:
     description: >
-      ccache size limit. 25G rather than the 5G default because CUDA objects are
-      large and a smaller cache thrashes instead of rolling over.
+      ccache size limit on self-hosted runners. 25G rather than the 5G default
+      because CUDA objects are large and a smaller cache thrashes instead of
+      rolling over. GitHub-hosted runners are capped at 2G, the actions/cache
+      upload budget for a Vulkan plus CPU-variant build.
     required: false
     default: '25G'
 
@@ -27,9 +29,8 @@ runs:
       shell: bash
       run: echo "JAN_ENGINE_VARIANT=${{ inputs.variant }}" >> "$GITHUB_ENV"
 
-    # The cache lives outside the workspace, which is re-cloned per run. Nothing
-    # is saved or restored through actions/cache: the runner's disk persists, so
-    # a hit costs no upload and survives across workflows.
+    # Outside the workspace, which is re-cloned per run. NOHASHDIR because cmake
+    # runs under cargo's hashed OUT_DIR, which would otherwise key every object.
     - name: Point ccache at the runner's persistent cache
       shell: bash
       run: |
@@ -38,7 +39,38 @@ runs:
         else
           echo "CCACHE_DIR=${HOME}/.ccache" >> "$GITHUB_ENV"
         fi
-        echo "CCACHE_MAXSIZE=${{ inputs.ccache-max }}" >> "$GITHUB_ENV"
+        if [ "$RUNNER_ENVIRONMENT" = "github-hosted" ]; then
+          echo "CCACHE_MAXSIZE=2G" >> "$GITHUB_ENV"
+        else
+          echo "CCACHE_MAXSIZE=${{ inputs.ccache-max }}" >> "$GITHUB_ENV"
+        fi
+        echo "CCACHE_NOHASHDIR=1" >> "$GITHUB_ENV"
+
+    # GitHub-hosted images have no ccache and no persistent disk.
+    - name: Install ccache
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      run: |
+        if command -v ccache >/dev/null 2>&1; then
+          echo "engine toolchain: ccache already on the image"
+          exit 0
+        fi
+        case "$RUNNER_OS" in
+        Linux)   sudo apt-get update && sudo apt-get install -y ccache ;;
+        macOS)   brew install ccache ;;
+        Windows) choco install ccache -y --no-progress ;;
+        esac
+
+    # build.rs holds the llama.cpp pin and cmake flags, so the cache is rebuilt
+    # when they change and an exact hit saves nothing; a per-commit key would
+    # upload on every run and churn the repo's 10 GB quota.
+    - name: Restore the ccache directory
+      if: runner.environment == 'github-hosted'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ${{ env.CCACHE_DIR }}
+        key: ccache-${{ runner.os }}-${{ inputs.variant }}-${{ hashFiles('src-tauri/plugins/tauri-plugin-llamacpp/build.rs') }}
+        restore-keys: ccache-${{ runner.os }}-${{ inputs.variant }}-
 
     # No GitHub-hosted image ships a Vulkan shader compiler, and the desktop
     # templates default to the vulkan variant on one. Guarded on glslc rather
@@ -65,10 +97,16 @@ runs:
           sudo apt-get install -y vulkan-sdk
           ;;
         Windows)
-          curl -fL -o "$RUNNER_TEMP/vulkan-sdk.exe" \
-            https://sdk.lunarg.com/sdk/download/latest/windows/vulkan_sdk.exe
-          "$RUNNER_TEMP/vulkan-sdk.exe" --root 'C:\VulkanSDK' \
-            --accept-licenses --default-answer --confirm-command install
+          # A persistent runner keeps the last run's install, and the installer
+          # refuses to install over it.
+          if [ -x /c/VulkanSDK/Bin/glslc.exe ]; then
+            echo "engine toolchain: reusing the Vulkan SDK in C:\VulkanSDK"
+          else
+            curl -fL -o "$RUNNER_TEMP/vulkan-sdk.exe" \
+              https://sdk.lunarg.com/sdk/download/latest/windows/vulkan_sdk.exe
+            "$RUNNER_TEMP/vulkan-sdk.exe" --root 'C:\VulkanSDK' \
+              --accept-licenses --default-answer --confirm-command install
+          fi
           echo 'VULKAN_SDK=C:\VulkanSDK' >> "$GITHUB_ENV"
           echo 'C:\VulkanSDK\Bin' >> "$GITHUB_PATH"
           ;;
@@ -103,8 +141,28 @@ runs:
         fi
 
 
+    # nvcc on Windows accepts only cl as its host compiler and finds it on PATH.
+    - name: Enter the MSVC developer environment for nvcc
+      if: runner.os == 'Windows' && contains(inputs.variant, 'cuda')
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+
+    # Inside a VS developer environment rustc takes link.exe from PATH, and make
+    # runs its recipes through Git's sh.exe, whose MSYS runtime prepends its own
+    # usr/bin -- where GNU coreutils `link` lives. Pin the linker by full path.
+    - name: Pin cargo's linker to MSVC link.exe
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        if (-not $env:VCToolsInstallDir) { Write-Host "no VS developer environment; rustc locates link.exe itself"; exit 0 }
+        $link = Join-Path $env:VCToolsInstallDir 'bin\Hostx64\x64\link.exe'
+        if (-not (Test-Path $link)) { throw "link.exe not found at $link" }
+        Add-Content $env:GITHUB_ENV "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$link"
+
     # Asserts the image, not the steps above: a mis-provisioned runner fails
     # here in seconds instead of five minutes into `make build`.
+    # Stats zeroed so the post-build report covers this build only.
     - name: Verify the toolchain
       shell: bash
-      run: make check-engine-toolchain
+      run: |
+        if command -v ccache >/dev/null 2>&1; then ccache -z; fi
+        make check-engine-toolchain

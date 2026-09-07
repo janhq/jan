@@ -43,7 +43,7 @@
       "resources/LICENSE",
       "resources/bin/jan.exe",
       "resources/bin/jan-llama-worker.exe",
-      "resources/bin/ggml*.dll"
+      "resources/bin/*.dll"
     ],
     "externalBin": [
       "resources/bin/bun",

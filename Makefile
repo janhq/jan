@@ -327,6 +327,12 @@ JAN_ENGINE_VULKAN_FALLBACK ?= 1
 JAN_ENGINE_CUDA_ARCHS ?=
 export JAN_ENGINE_CUDA_ARCHS
 
+# Overrides the AMD GPUs a HIP build targets (cmake GPU_TARGETS). Empty means
+# the list build.rs carries over from the previous engine's releases:
+#     make build-engine JAN_ENGINE_VARIANT=rocm JAN_ENGINE_HIP_TARGETS=gfx1100
+JAN_ENGINE_HIP_TARGETS ?=
+export JAN_ENGINE_HIP_TARGETS
+
 # One token to one cargo feature. `engine` alone is the CPU-only worker, and it
 # is implied by every other feature, so `cpu` maps to it and the GPU tokens do
 # not have to name it.

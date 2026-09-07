@@ -246,12 +246,49 @@ pub fn setup_mcp<R: Runtime>(app: &App<R>) {
 }
 
 #[cfg(feature = "desktop")]
-pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
-    let show_i = MenuItem::with_id(app.handle(), "open", "Open Jan", true, None::<&str>)?;
-    let quit_i = MenuItem::with_id(app.handle(), "quit", "Quit", true, None::<&str>)?;
-    let separator_i = PredefinedMenuItem::separator(app.handle())?;
-    let menu = Menu::with_items(app.handle(), &[&show_i, &separator_i, &quit_i])?;
-    TrayIconBuilder::with_id("tray")
+pub const TRAY_ID: &str = "tray";
+
+/// Tray icon forced on for the whole app lifetime at compile time; otherwise it
+/// only exists while the Local API Server is running.
+#[cfg(feature = "desktop")]
+pub fn tray_always_visible() -> bool {
+    option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true"
+}
+
+#[cfg(feature = "desktop")]
+pub fn show_tray<R: Runtime>(app: &AppHandle<R>) {
+    if app.tray_by_id(TRAY_ID).is_some() {
+        return;
+    }
+    let handle = app.clone();
+    // Tray creation must happen on the main thread (hard requirement on macOS).
+    let _ = app.run_on_main_thread(move || {
+        if handle.tray_by_id(TRAY_ID).is_none() {
+            if let Err(e) = setup_tray(&handle) {
+                log::error!("Failed to create tray icon: {e}");
+            }
+        }
+    });
+}
+
+#[cfg(feature = "desktop")]
+pub fn remove_tray<R: Runtime>(app: &AppHandle<R>) {
+    if tray_always_visible() {
+        return;
+    }
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let _ = handle.remove_tray_by_id(TRAY_ID);
+    });
+}
+
+#[cfg(feature = "desktop")]
+pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayIcon<R>> {
+    let show_i = MenuItem::with_id(app, "open", "Open Jan", true, None::<&str>)?;
+    let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let separator_i = PredefinedMenuItem::separator(app)?;
+    let menu = Menu::with_items(app, &[&show_i, &separator_i, &quit_i])?;
+    TrayIconBuilder::with_id(TRAY_ID)
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
         .show_menu_on_left_click(false)

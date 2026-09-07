@@ -127,12 +127,26 @@ export const modelSettings = {
   chatTemplate: {
     key: 'chat_template',
     title: 'Custom Jinja Chat template',
-    description: 'Custom Jinja chat_template to be used for the model',
+    description:
+      'Custom Jinja chat_template for the model: a built-in template name, an inline template body, or an absolute path to a .jinja file',
     controller_type: 'textarea',
     controller_props: {
       value: '',
       placeholder:
-        'e.g., {% for message in messages %}...{% endfor %} (default is read from GGUF)',
+        'e.g., {% for message in messages %}...{% endfor %} or /path/to/template.jinja (default is read from GGUF)',
+      type: 'text',
+      textAlign: 'right',
+    },
+  },
+  grammar: {
+    key: 'grammar',
+    title: 'Grammar',
+    description:
+      'GBNF grammar to constrain generations: an inline grammar body or an absolute path to a .gbnf file',
+    controller_type: 'textarea',
+    controller_props: {
+      value: '',
+      placeholder: 'e.g., root ::= "yes" | "no" or /path/to/grammar.gbnf',
       type: 'text',
       textAlign: 'right',
     },

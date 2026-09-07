@@ -278,6 +278,11 @@ const MODEL_SETTINGS_YAML_MAPPING: Record<
     coerce: (v) =>
       typeof v === 'string' && v.trim().length > 0 ? v : null,
   },
+  grammar: {
+    yamlKey: 'grammar',
+    coerce: (v) =>
+      typeof v === 'string' && v.trim().length > 0 ? v : null,
+  },
   batch_size: {
     yamlKey: 'batch_size',
     coerce: (v) => {
