@@ -247,6 +247,34 @@ pub(crate) fn find_plugin_dir(root: &Path, plugin: &str) -> Option<PathBuf> {
         .find(|p| p.is_dir())
 }
 
+/// Visit every installed plugin directory across the discovery roots, with
+/// first-root-wins shadowing: a project-local plugin hides a same-named one
+/// shared from the main worktree. Skips non-directories and interrupted
+/// `.installing-*` staging directories (a partially-copied plugin must not
+/// leak its payload mid-install). Shared by the skill, command, agent, and
+/// plugin-listing discovery passes so they all agree on what is installed.
+pub(crate) fn plugin_dirs_across_roots(root: &Path, mut visit: impl FnMut(&str, &Path)) {
+    let mut seen = std::collections::HashSet::new();
+    for r in discovery_roots(root) {
+        let Ok(rd) = std::fs::read_dir(plugins_dir(&r)) else {
+            continue;
+        };
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if plugin.starts_with(".installing-") || !seen.insert(plugin.to_string()) {
+                continue;
+            }
+            visit(plugin, &path);
+        }
+    }
+}
+
 /// Recursively yield every `*.md` file under `dir`, skipping dotfiles and
 /// `README` files (any case). Callers read each file themselves so read-failure
 /// handling stays with them. Shared by plugin command and plugin agent
@@ -297,33 +325,9 @@ pub(crate) fn invocation_wrapper(name: &str, kind: &str) -> String {
 /// (folder and flat forms, same rules as project skills) plus an optional
 /// single `SKILL.md` at the plugin root (a repo that is itself one skill).
 pub(crate) fn discover_plugins(root: &Path) -> Vec<SkillEntry> {
-    let mut seen = std::collections::HashSet::new();
     let mut out: Vec<SkillEntry> = Vec::new();
-    for r in discovery_roots(root) {
-        let dir = plugins_dir(&r);
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in rd.flatten() {
-            let path = entry.path();
-            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                continue;
-            }
-            let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            // Ignore interrupted `.installing-*` staging directories, matching
-            // the command/agent loaders: a partially-copied plugin must not
-            // leak its skills into the catalog during an install.
-            if plugin.starts_with(".installing-") {
-                continue;
-            }
-            // Earlier roots shadow: a plugin installed in this checkout hides
-            // a same-named one shared from the main worktree.
-            if !seen.insert(plugin.to_string()) {
-                continue;
-            }
-            let mut tagged = Vec::new();
+    plugin_dirs_across_roots(root, |plugin, path| {
+        let mut tagged = Vec::new();
             for e in scan_skill_dir(&path.join("skills")) {
                 tagged.push(SkillEntry {
                     plugin: Some(plugin.to_string()),
@@ -340,8 +344,7 @@ pub(crate) fn discover_plugins(root: &Path) -> Vec<SkillEntry> {
                 });
             }
             out.extend(tagged);
-        }
-    }
+    });
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
 }
