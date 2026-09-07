@@ -258,23 +258,9 @@ impl SubagentRegistry {
 /// metadata and ignored (the parent's model runs the child); `tools` maps
 /// Claude tool names onto Jan tool names, dropping names with no equivalent.
 fn load_plugin_agents(project_root: &Path, out: &mut Vec<SubagentDefinition>) {
-    let dir = crate::core::agent::skills::plugins_dir(project_root);
-    let Ok(rd) = std::fs::read_dir(&dir) else {
-        return;
-    };
-    for entry in rd.flatten() {
-        let path = entry.path();
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if plugin.starts_with(".installing-") {
-            continue;
-        }
+    crate::core::agent::skills::plugin_dirs_across_roots(project_root, |_, path| {
         scan_agent_dir(&path.join("agents"), out);
-    }
+    });
 }
 
 /// Number of agent markdown files one plugin ships, for the plugin listing.

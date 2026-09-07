@@ -854,7 +854,7 @@ impl PluginSetupPrompt {
         self.input.push_str(super::secret_input::pasted(text));
     }
 
-    /// Advance past the current entry; `None` once every entry is done.
+    /// Advance past the current entry, clearing the field and any error.
     fn advance(&mut self) {
         self.current += 1;
         self.input.clear();
@@ -8555,18 +8555,7 @@ fn handle_account_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         return;
     }
     if ctrl && key.code == KeyCode::Char('v') {
-        match clipboard_text() {
-            Ok(text) => {
-                if let Some(prompt) = app.account_login.as_mut() {
-                    prompt.paste(&text);
-                }
-            }
-            Err(e) => {
-                if let Some(prompt) = app.account_login.as_mut() {
-                    prompt.error = Some(format!("could not read the clipboard: {e}"));
-                }
-            }
-        }
+        paste_clipboard_into(app, |app| &mut app.account_login);
         return;
     }
 
@@ -8651,18 +8640,7 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         if !app.login.as_ref().is_some_and(LoginPrompt::editable) {
             return;
         }
-        match super::secret_input::clipboard_text() {
-            Ok(text) => {
-                if let Some(prompt) = app.login.as_mut() {
-                    prompt.paste(&text);
-                }
-            }
-            Err(e) => {
-                if let Some(prompt) = app.login.as_mut() {
-                    prompt.error = Some(format!("could not read the clipboard: {e}"));
-                }
-            }
-        }
+        paste_clipboard_into(app, |app| &mut app.login);
         return;
     }
 
@@ -8698,6 +8676,62 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
 /// image path is `clipboard_image`).
 fn clipboard_text() -> Result<String, String> {
     super::secret_input::clipboard_text()
+}
+
+/// Input handling the three masked prompts (`/login`, account login,
+/// `/plugin setup`) share for Ctrl-V routing.
+trait MaskedPrompt {
+    /// Store the pasted text (each impl applies its own masking/editability
+    /// rules).
+    fn paste_text(&mut self, text: &str);
+    /// Surface a failure on the prompt's error line.
+    fn set_error(&mut self, message: String);
+}
+
+/// Some terminals deliver a paste as a key rather than an `Event::Paste`, so
+/// the masked prompts' key handlers route Ctrl-V here: read the clipboard,
+/// feed the text to the prompt, or record the failure on its error line.
+/// `prompt` selects the docked prompt from the app state.
+fn paste_clipboard_into<P: MaskedPrompt>(app: &mut App, prompt: fn(&mut App) -> &mut Option<P>) {
+    match clipboard_text() {
+        Ok(text) => {
+            if let Some(p) = prompt(app) {
+                p.paste_text(&text);
+            }
+        }
+        Err(e) => {
+            if let Some(p) = prompt(app) {
+                p.set_error(format!("could not read the clipboard: {e}"));
+            }
+        }
+    }
+}
+
+impl MaskedPrompt for LoginPrompt {
+    fn paste_text(&mut self, text: &str) {
+        self.paste(text);
+    }
+    fn set_error(&mut self, message: String) {
+        self.error = Some(message);
+    }
+}
+
+impl MaskedPrompt for AccountLoginPrompt {
+    fn paste_text(&mut self, text: &str) {
+        self.paste(text);
+    }
+    fn set_error(&mut self, message: String) {
+        self.error = Some(message);
+    }
+}
+
+impl MaskedPrompt for PluginSetupPrompt {
+    fn paste_text(&mut self, text: &str) {
+        self.paste(text);
+    }
+    fn set_error(&mut self, message: String) {
+        self.error = Some(message);
+    }
 }
 
 /// Open `/plugin setup` for the first installed plugin whose declared env
@@ -8749,8 +8783,9 @@ fn start_plugin_setup(app: &mut App, plugin: &str, entries: Vec<PluginEnvEntry>)
 }
 
 /// Keys for the `/plugin setup` prompt: Enter saves the value and advances,
-/// `s` skips an entry, Esc/Ctrl-C abandons the rest. Same masked-entry rules
-/// as the `/login` paste field.
+/// `s` skips the current entry when the field is still empty (once something
+/// is typed, `s` is just a character of the secret), Esc/Ctrl-C abandons the
+/// rest. Same masked-entry rules as the `/login` paste field.
 fn handle_plugin_setup_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     let cancel = key.code == KeyCode::Esc
         || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')));
@@ -8761,25 +8796,12 @@ fn handle_plugin_setup_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     }
     // Ctrl-V: some terminals send a paste as a key rather than Event::Paste.
     if ctrl && key.code == KeyCode::Char('v') {
-        match super::secret_input::clipboard_text() {
-            Ok(text) => {
-                if let Some(prompt) = app.plugin_setup.as_mut() {
-                    prompt.paste(&text);
-                }
-            }
-            Err(e) => {
-                if let Some(prompt) = app.plugin_setup.as_mut() {
-                    prompt.error = Some(format!("could not read the clipboard: {e}"));
-                }
-            }
-        }
+        paste_clipboard_into(app, |app| &mut app.plugin_setup);
         return;
     }
-    let Some(prompt) = app.plugin_setup.as_mut() else {
-        return;
-    };
     match key.code {
         KeyCode::Enter => {
+            let Some(prompt) = app.plugin_setup.as_mut() else { return };
             let plugin = prompt.plugin.clone();
             let Some(entry) = prompt.entry() else { return };
             let value = prompt.input.trim().to_string();
@@ -8793,40 +8815,53 @@ fn handle_plugin_setup_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                 return;
             }
             let key_name = entry.key.clone();
-            prompt.advance();
-            if prompt.done() {
+            // Advance and test completion inside a block so the `prompt` borrow
+            // ends before the app-level calls below (which re-borrow `app`).
+            let done = {
+                prompt.advance();
+                prompt.done()
+            };
+            // Sync on every save, not just at completion: a cancel after key
+            // 1 must still leave the live registry holding key 1.
+            crate::core::agent::plugins::sync_env_registry(&app.project_root);
+            app.note(&format!("plugin setup · {plugin} · {key_name} saved"));
+            if done {
                 app.plugin_setup = None;
-                crate::core::agent::plugins::sync_env_registry(&app.project_root);
-                app.note(&format!("plugin setup · {plugin} · {key_name} saved"));
                 // Chain into the next plugin that still needs keys.
                 open_plugin_setup(app);
-            } else {
-                app.note(&format!(
-                    "plugin setup · {plugin} · {key_name} saved"
-                ));
             }
         }
         KeyCode::Char('s') | KeyCode::Char('S') if !ctrl => {
+            let Some(prompt) = app.plugin_setup.as_mut() else { return };
+            if !prompt.input.is_empty() {
+                return;
+            }
             let plugin = prompt.plugin.clone();
             let key_name = prompt
                 .entry()
                 .map(|e| e.key.clone())
                 .unwrap_or_default();
-            prompt.advance();
-            if prompt.done() {
+            let done = {
+                prompt.advance();
+                prompt.done()
+            };
+            if done {
                 app.plugin_setup = None;
                 app.note(&format!("plugin setup · {plugin} · skipped {key_name}"));
                 open_plugin_setup(app);
             }
         }
         KeyCode::Backspace => {
+            let Some(prompt) = app.plugin_setup.as_mut() else { return };
             prompt.input.pop();
         }
-        KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
+        KeyCode::Char(ch) if !ctrl => {
+            let Some(prompt) = app.plugin_setup.as_mut() else { return };
+            prompt.input.push(ch);
+        }
         _ => {}
     }
 }
-
 fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     if key.code == KeyCode::Esc
         || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')))

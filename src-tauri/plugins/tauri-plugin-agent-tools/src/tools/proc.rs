@@ -4,7 +4,7 @@
 //! top-level shell. Without this, any command that spawns children (a build, a
 //! `foo &`, a pipeline) leaks orphans when the run is torn down.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Mutex, OnceLock, RwLock};
@@ -19,16 +19,16 @@ use tokio::process::{Child, Command};
 /// plugin's manifest *declares* (see the host's `plugins::required_env`) may
 /// land here, and only with a value the user typed into the masked setup
 /// prompt; the map is replaced wholesale by the host on every run start.
-static PLUGIN_ENV: OnceLock<RwLock<std::collections::BTreeMap<String, String>>> = OnceLock::new();
+static PLUGIN_ENV: OnceLock<RwLock<BTreeMap<String, String>>> = OnceLock::new();
 
 /// Replace the plugin-declared environment values handed to sandboxed shells.
-pub fn set_plugin_env(vars: std::collections::BTreeMap<String, String>) {
+pub fn set_plugin_env(vars: BTreeMap<String, String>) {
     let lock = PLUGIN_ENV.get_or_init(|| RwLock::new(Default::default()));
     *lock.write().unwrap() = vars;
 }
 
 /// A snapshot of the current plugin-declared environment values.
-fn plugin_env() -> std::collections::BTreeMap<String, String> {
+fn plugin_env() -> BTreeMap<String, String> {
     PLUGIN_ENV
         .get()
         .map(|lock| lock.read().unwrap().clone())
@@ -37,8 +37,21 @@ fn plugin_env() -> std::collections::BTreeMap<String, String> {
 
 /// Read back the current plugin env values (tests / diagnostics).
 #[doc(hidden)]
-pub fn plugin_env_snapshot() -> std::collections::BTreeMap<String, String> {
+pub fn plugin_env_snapshot() -> BTreeMap<String, String> {
     plugin_env()
+}
+
+/// True for variable names the sandbox owns itself: the static allowlist, the
+/// scratch temp keys, and the classic dynamic-linker/loader injection
+/// prefixes. The host refuses to store or inject plugin-declared values under
+/// these names -- a plugin declaring `PATH` or `LD_PRELOAD` would otherwise
+/// let one pasted value clobber (or escape) the sandbox environment wholesale.
+pub fn is_reserved_env_key(key: &str) -> bool {
+    SANDBOX_ENV_ALLOW.contains(&key)
+        || TEMP_ENV_KEYS.contains(&key)
+        || key.starts_with("LD_")
+        || key.starts_with("DYLD_")
+        || key.starts_with("SUDO_")
 }
 
 /// How to invoke the host shell. `program` + `args` are fixed; the command
@@ -274,7 +287,8 @@ pub async fn spawn(
         }
     }
     // Plugin-declared credentials come last so they always win over an
-    // allowlist key of the same name.
+    // allowlist key of the same name (reserved names never get this far --
+    // see `is_reserved_env_key`).
     for (key, val) in plugin_env() {
         cmd.env(key, val);
     }

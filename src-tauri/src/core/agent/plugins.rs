@@ -161,11 +161,15 @@ struct McpServerDecl {
 impl Manifest {
     /// Environment variables this plugin requires, as `(var, url)` pairs —
     /// the URL the user can obtain the value from, empty when unknown.
+    /// Variables the sandbox owns (`PATH`, temp keys, loader injection
+    /// prefixes) are refused: a pasted value under one of those names could
+    /// clobber or escape the sandbox environment wholesale.
     fn required_env(&self) -> std::collections::BTreeMap<String, String> {
+        use tauri_plugin_agent_tools::tools::proc::is_reserved_env_key;
         let mut out = std::collections::BTreeMap::new();
         if let Some(setup) = &self.setup {
             for (key, url) in setup.env.iter().flatten() {
-                if is_env_name(key) {
+                if is_env_name(key) && !is_reserved_env_key(key) {
                     out.insert(key.clone(), url.trim().to_string());
                 }
             }
@@ -173,7 +177,7 @@ impl Manifest {
         for server in self.mcp_servers.iter().flat_map(|m| m.values()) {
             for value in server.env.iter().flatten().map(|(_, v)| v) {
                 for var in template_refs(value) {
-                    if is_env_name(&var) {
+                    if is_env_name(&var) && !is_reserved_env_key(&var) {
                         out.entry(var).or_default();
                     }
                 }
@@ -244,12 +248,8 @@ pub(crate) fn find_installed(root: &Path, query: &str) -> Option<(String, Instal
 }
 
 /// `~/.jan/agent/plugin-env/` — where the setup prompt stores plugin API keys.
-/// Resolved from the home directory directly (not the cli-gated global config
-/// helpers) so the desktop run path syncs the same registry.
 fn plugin_env_dir() -> Result<PathBuf, String> {
-    dirs::home_dir()
-        .map(|home| home.join(".jan").join("agent").join("plugin-env"))
-        .ok_or_else(|| "could not resolve the user's home directory".to_string())
+    crate::core::agent::global_config::global_jan_dir().map(|jan| jan.join("agent").join("plugin-env"))
 }
 
 /// `plugin-env/<plugin>.toml` under `dir`.
@@ -260,8 +260,7 @@ fn plugin_env_path(dir: &Path, plugin: &str) -> Result<PathBuf, String> {
 
 /// The stored env values for one plugin, resolved against the real plugin-env
 /// store directory. Missing or malformed file -> empty.
-/// [`stored_plugin_env_in`] is the variant taking an explicit directory (tests).
-pub(crate) fn stored_plugin_env_in(
+fn stored_plugin_env_in(
     dir: &Path,
     plugin: &str,
 ) -> std::collections::BTreeMap<String, String> {
@@ -289,11 +288,26 @@ pub(crate) fn save_plugin_env_in(
     if !is_env_name(key) {
         return Err(format!("invalid environment variable name '{key}'"));
     }
+    if tauri_plugin_agent_tools::tools::proc::is_reserved_env_key(key) {
+        return Err(format!("'{key}' is reserved by the sandbox and cannot be set for a plugin"));
+    }
     let path = plugin_env_path(dir, plugin)?;
-    let mut values: std::collections::BTreeMap<String, String> = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|raw| toml::from_str(&raw).ok())
-        .unwrap_or_default();
+    let mut values: std::collections::BTreeMap<String, String> = match
+        std::fs::read_to_string(&path)
+    {
+        Ok(raw) => match toml::from_str(&raw) {
+            Ok(v) => v,
+            // Refuse to merge into a file we cannot parse: saving would
+            // silently destroy the other stored keys for this plugin.
+            Err(_) => {
+                return Err(format!(
+                    "stored env file {} is malformed - delete it and re-run setup",
+                    path.display()
+                ))
+            }
+        },
+        Err(_) => Default::default(),
+    };
     values.insert(key.to_string(), value.to_string());
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("could not create {parent:?}: {e}"))?;
@@ -331,8 +345,11 @@ pub(crate) fn declared_plugin_env(root: &Path, plugin: &str) -> Vec<(String, Str
 }
 
 /// Setup requirements that are not yet satisfied: `(plugin, var, url)` in
-/// scan order. A var is satisfied when the user stored a value or the process
-/// environment already provides one (CI, shells, direnv...).
+/// scan order. A var is satisfied only when the user stored a value via the
+/// setup prompt: the sandboxed shell drops every host variable except the
+/// static allowlist, so a var provided by the host environment would never
+/// reach the plugin's commands even though the prompt claimed it was
+/// satisfied.
 #[cfg(feature = "cli")]
 pub(crate) fn missing_plugin_env(root: &Path) -> Vec<(String, String, String)> {
     match plugin_env_dir() {
@@ -351,9 +368,7 @@ fn missing_plugin_env_in(root: &Path, env_dir: &Path) -> Vec<(String, String, St
         };
         let stored = stored_plugin_env_in(env_dir, &directory);
         for (var, url) in read_manifest(&dir).required_env() {
-            let in_store = stored.get(&var).is_some_and(|v| !v.is_empty());
-            let in_host = std::env::var_os(&var).is_some_and(|v| !v.is_empty());
-            if !in_store && !in_host {
+            if stored.get(&var).is_none_or(|v| v.is_empty()) {
                 out.push((directory.clone(), var, url));
             }
         }
@@ -393,32 +408,11 @@ fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
     // A linked git worktree also sees the main worktree's plugins, the
     // project-local one shadowing a same-named shared one. Counts come from
     // the merged discovery above, so shared plugins report real payloads.
-    let mut seen = std::collections::HashSet::new();
     let all_skills = skills::discover_plugins(root);
     let all_commands = crate::core::agent::plugin_commands::discover(root);
     let mut out = Vec::new();
-    for r in skills::discovery_roots(root) {
-        let dir = skills::plugins_dir(&r);
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        // Scan each artifact kind once; per-plugin counts filter the shared
-        // lists rather than re-walking the whole plugin tree per plugin.
-        for entry in rd.flatten() {
-            let path = entry.path();
-            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                continue;
-            }
-            let Some(directory) = path.file_name().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            if directory.starts_with(".installing-") {
-                continue;
-            }
-            if !seen.insert(directory.to_string()) {
-                continue;
-            }
-            let manifest = read_manifest(&path);
+    skills::plugin_dirs_across_roots(root, |directory, path| {
+        let manifest = read_manifest(path);
             let plugin_skills = all_skills
                 .iter()
                 .filter(|e| e.plugin.as_deref() == Some(directory))
@@ -440,8 +434,7 @@ fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
                     agents: plugin_agents,
                 },
             ));
-        }
-    }
+    });
     out.sort_by(|a, b| a.1.name.cmp(&b.1.name));
     out
 }
@@ -1092,7 +1085,18 @@ pub(crate) fn remove(root: &Path, name: &str) -> Result<(), String> {
     if !target.is_dir() {
         return Err(format!("ERROR: plugin '{name}' is not installed"));
     }
-    std::fs::remove_dir_all(&target).map_err(|e| format!("ERROR: {e}"))
+    std::fs::remove_dir_all(&target).map_err(|e| format!("ERROR: {e}"))?;
+    // Drop the stored credentials too: they live outside the plugin
+    // directory (a reinstall must not silently reactivate them), so removing
+    // the plugin has to clean them up here. Then refresh the live registry so
+    // the sandboxed shells of the current session stop receiving the values.
+    if let Ok(dir) = plugin_env_dir() {
+        if let Ok(path) = plugin_env_path(&dir, name) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+    sync_env_registry(root);
+    Ok(())
 }
 
 /// List marketplace plugins matching `query` (name or description, case
