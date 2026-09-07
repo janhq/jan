@@ -1762,7 +1762,7 @@ async fn orchestrate_inner(
             auto_approve: *auto_approve,
             run_mode,
         };
-        let result = run_turn_cycle_steered(
+        let result = run_turn_cycle(
             events,
             json_body,
             &model_id,
@@ -1797,7 +1797,7 @@ async fn orchestrate_inner(
         }
         result
     } else {
-        run_turn_cycle_steered(
+        run_turn_cycle(
             events,
             json_body,
             &model_id,
@@ -2002,43 +2002,6 @@ fn body_session_budget(json_body: &serde_json::Value) -> Option<u64> {
         .filter(|v| *v > 0)
 }
 
-#[cfg(test)]
-#[allow(clippy::too_many_arguments)]
-async fn run_turn_cycle(
-    events: &mpsc::UnboundedSender<StreamEvent>,
-    json_body: &serde_json::Value,
-    model_id: &str,
-    openai_tools: &[serde_json::Value],
-    conversation_messages: Vec<serde_json::Value>,
-    max_turns: usize,
-    budget: &mut SessionBudget,
-    model: &dyn ModelInvoker,
-    tools: &dyn ToolInvoker,
-    run_mode: crate::core::agent::plan::RunMode,
-    todo_registry: Option<&crate::core::agent::todo::TodoRegistry>,
-    // Forces the model's very first tool call (`turn == 0` only) to be this
-    // named tool -- used to make the eager-todo nudge actually reliable
-    // instead of an easily-ignored suggestion. `None` for every later turn.
-    force_first_tool: Option<&str>,
-) -> Result<serde_json::Value, String> {
-    run_turn_cycle_steered(
-        events,
-        json_body,
-        model_id,
-        openai_tools,
-        conversation_messages,
-        max_turns,
-        budget,
-        model,
-        tools,
-        run_mode,
-        todo_registry,
-        force_first_tool,
-        None,
-    )
-    .await
-}
-
 async fn receive_steering(
     steering: Option<&mpsc::UnboundedSender<SteeringRequest>>,
     messages: &mut Vec<serde_json::Value>,
@@ -2065,7 +2028,7 @@ async fn receive_steering(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn run_turn_cycle_steered(
+async fn run_turn_cycle(
     events: &mpsc::UnboundedSender<StreamEvent>,
     json_body: &serde_json::Value,
     model_id: &str,
@@ -2743,7 +2706,7 @@ mod tests {
             }
         });
         let mut budget = SessionBudget::new(None);
-        run_turn_cycle_steered(
+        run_turn_cycle(
             &events,
             &json!({}),
             "m",
@@ -2795,7 +2758,7 @@ mod tests {
             }
         });
         let mut budget = SessionBudget::new(None);
-        let result = run_turn_cycle_steered(
+        let result = run_turn_cycle(
             &events,
             &json!({}),
             "m",
@@ -2864,6 +2827,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -2947,6 +2911,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -3044,6 +3009,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await;
         assert!(
@@ -3072,6 +3038,7 @@ mod tests {
             &healed,
             &MockTool::default(),
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -3109,6 +3076,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             Some("todo"),
+            None,
         )
         .await
         .unwrap();
@@ -3303,6 +3271,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -3379,6 +3348,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -3423,6 +3393,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -3457,6 +3428,7 @@ mod tests {
             &tool,
             crate::core::agent::plan::RunMode::Plan,
             Some(&registry),
+            None,
             None,
         )
         .await
@@ -3508,6 +3480,7 @@ mod tests {
             &tool,
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
+            None,
             None,
         )
         .await
@@ -3585,6 +3558,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -3638,6 +3612,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -3743,6 +3718,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await
         .expect("run completes");
@@ -3807,6 +3783,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -3887,6 +3864,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -3932,6 +3910,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -3984,6 +3963,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -4049,6 +4029,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await;
 
@@ -4105,6 +4086,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await;
 
@@ -4155,6 +4137,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -4190,6 +4173,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -4970,6 +4954,7 @@ mod tests {
                     model.as_ref(),
                     invoker.as_ref(),
                     crate::core::agent::plan::RunMode::Normal,
+                    None,
                     None,
                     None,
                 )
