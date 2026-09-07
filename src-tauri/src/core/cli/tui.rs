@@ -7953,6 +7953,8 @@ async fn apply_stream_event(
                 app.status = Status::Idle;
                 app.run_started = None;
             }
+            // A closed stream must not leave the terminal reporting a running turn.
+            app.publish_agent_status();
             // Auto-dequeue the next queued message
             app.dequeue_next();
             *current = None;

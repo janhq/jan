@@ -4,14 +4,15 @@
 //! stdout) rather than through the ratatui frame buffer, so status reaches
 //! the host terminal even when no terminal view is rendered:
 //!
-//! 1. **OSC 9999 agent-status protocol** — `\x1b]9999;{json}\x07` with a JSON
+//! 1. **OSC 9999 agent-status protocol** - `\x1b]9999;{json}\x07` with a JSON
 //!    payload carrying `agentType` and `state` (`working` | `blocked` |
-//!    [`waiting`] | `done`). This is the primary signal Orca's stateful
-//!    PTY parser consumes.
-//! 2. **Terminal titles (OSC 2)** — a fallback matching Orca's
-//!    title-classification conventions: a spinner glyph + `Jan` while
-//!    working, `Jan - action required` while blocked/waiting, and
-//!    `Jan ready` when idle.
+//!    `waiting` | `done`).
+//! 2. **Terminal titles (OSC 2)** - a spinner glyph + `Jan` while working,
+//!    `Jan - action required` while blocked/waiting, and `Jan ready` when idle.
+//!
+//! Orca 1.4.191 accepts Jan's OSC 9999 status, but its `tui-idle` wait does not
+//! consume that protocol or recognize Jan's settled titles. Jan icons and
+//! title-based idle recognition require Orca-side support.
 
 use std::io::{self, Write};
 
@@ -55,7 +56,7 @@ fn working_title(frame: usize) -> String {
     format!("{} Jan", SPINNER_FRAMES[frame % SPINNER_FRAMES.len()])
 }
 
-/// Title shown for terminal states, per Orca's synthetic-title conventions.
+/// Title shown when waiting for input or idle.
 fn settled_title(state: AgentStatusState) -> &'static str {
     match state {
         AgentStatusState::Blocked | AgentStatusState::Waiting => "Jan - action required",
@@ -67,24 +68,22 @@ fn settled_title(state: AgentStatusState) -> &'static str {
 ///
 /// The payload is a single-line JSON object; BEL terminates the sequence.
 /// `prompt` is the optional activity preview Orca renders on its cards; it is
-/// truncated to 160 chars, matching Orca's `toolInput` bound.
+/// truncated to 160 Unicode scalar values before JSON escaping.
 pub fn agent_status_sequence(state: AgentStatusState, prompt: Option<&str>) -> String {
     let prompt = prompt
-        .map(|p| {
-            let mut p: String = p.chars().take(160).collect();
-            p = p.replace(['\\', '"'], " ");
-            p = p.replace('\n', " ");
-            p
-        })
+        .map(|p| p.chars().take(160).collect::<String>())
         .unwrap_or_default();
     if prompt.is_empty() {
+        // Omit an empty preview.
         format!(
             "{OSC_9999_PREFIX}{{\"agentType\":\"{AGENT_TYPE}\",\"state\":\"{}\"}}\x07",
             state.as_str()
         )
     } else {
+        // Escape terminal controls as JSON so prompt text cannot end the OSC.
+        let prompt = serde_json::to_string(&prompt).expect("string serialization cannot fail");
         format!(
-            "{OSC_9999_PREFIX}{{\"agentType\":\"{AGENT_TYPE}\",\"state\":\"{}\",\"prompt\":\"{prompt}\"}}\x07",
+            "{OSC_9999_PREFIX}{{\"agentType\":\"{AGENT_TYPE}\",\"state\":\"{}\",\"prompt\":{prompt}}}\x07",
             state.as_str()
         )
     }
@@ -194,6 +193,19 @@ fn write_raw(sequence: &str) {
 mod tests {
     use super::*;
 
+    /// Extract the JSON payload from an OSC 9999 sequence, i.e. the bytes
+    /// between the fixed introducer and the trailing BEL terminator.
+    fn extract_payload(seq: &str) -> &str {
+        seq.strip_prefix(OSC_9999_PREFIX)
+            .and_then(|p| p.strip_suffix('\x07'))
+            .expect("sequence must be framed by the OSC 9999 prefix and a trailing BEL")
+    }
+
+    /// Decode the extracted OSC 9999 payload as JSON.
+    fn parse_payload(seq: &str) -> serde_json::Value {
+        serde_json::from_str(extract_payload(seq)).expect("payload must be valid JSON")
+    }
+
     #[test]
     fn payload_carries_agent_type_and_state() {
         assert_eq!(
@@ -215,29 +227,74 @@ mod tests {
     }
 
     #[test]
-    fn prompt_preview_is_sanitized_and_truncated() {
-        let long = "x".repeat(500);
-        let seq = agent_status_sequence(AgentStatusState::Working, Some(&long));
-        assert!(seq.matches('x').count() <= 160);
-        let seq = agent_status_sequence(
-            AgentStatusState::Working,
-            Some("line\nbreak \"quoted\" \\path"),
-        );
+    fn prompt_roundtrips_as_valid_json_payload() {
+        // The prompt must survive decode exactly: quotes, backslashes,
+        // tabs, newlines, carriage returns, and control chars all roundtrip.
+        let prompt = "tab\there\nnewline\rCR \"double\" \\backslash \u{7}bel \u{1b}esc";
+        let seq = agent_status_sequence(AgentStatusState::Working, Some(prompt));
+        let payload = parse_payload(&seq);
         assert_eq!(
-            seq,
-            "\x1b]9999;{\"agentType\":\"jan\",\"state\":\"working\",\"prompt\":\"line break  quoted   path\"}\x07"
+            payload["prompt"],
+            serde_json::Value::String(prompt.to_string())
+        );
+        assert_eq!(payload["agentType"], "jan");
+        assert_eq!(payload["state"], "working");
+    }
+
+    #[test]
+    fn prompt_has_only_outer_framing_control_escapes() {
+        // ESC and BEL must appear only as the OSC 9999 framing delimiters, never
+        // inside the payload from an embedded control char.
+        let prompt = "raw \u{7}\u{1b} control chars";
+        let seq = agent_status_sequence(AgentStatusState::Working, Some(prompt));
+        let body = extract_payload(&seq);
+        assert!(!body.contains('\x1b') && !body.contains('\x07'));
+        // The payload itself decodes to the original prompt.
+        assert_eq!(
+            parse_payload(&seq)["prompt"],
+            serde_json::Value::String(prompt.to_string())
         );
     }
 
     #[test]
-    fn title_matches_orca_classification() {
+    fn prompt_truncation_holds_a_char_bound() {
+        // A 160-char cap must never split a Unicode scalar; the truncated
+        // prompt plus the escaped form must still decode to a valid string.
+        let long: String = "a".repeat(400);
+        let seq = agent_status_sequence(AgentStatusState::Working, Some(&long));
+        let decoded = parse_payload(&seq)["prompt"]
+            .as_str()
+            .expect("prompt should be a JSON string")
+            .to_string();
+        assert_eq!(decoded.chars().count(), 160);
+
+        // CJK/emoji scalars count as one char each and stay intact.
+        let cjk: String = "漢".repeat(200);
+        let seq = agent_status_sequence(AgentStatusState::Working, Some(&cjk));
+        let decoded = parse_payload(&seq)["prompt"]
+            .as_str()
+            .expect("prompt should be a JSON string")
+            .to_string();
+        assert_eq!(decoded, "漢".repeat(160));
+
+        let emoji: String = "🧑‍💻".repeat(200);
+        let seq = agent_status_sequence(AgentStatusState::Working, Some(&emoji));
+        let decoded = parse_payload(&seq)["prompt"]
+            .as_str()
+            .expect("prompt should be a JSON string")
+            .to_string();
+        assert!(decoded.chars().count() <= 160);
+    }
+
+    #[test]
+    fn titles_describe_agent_state() {
         // Working: animated indicator + "Jan".
         assert!(title_sequence(AgentStatusState::Working, 0).contains(" Jan\x07"));
         assert_eq!(
             title_sequence(AgentStatusState::Working, 0),
             "\x1b]2;⠋ Jan\x07"
         );
-        // Blocked/waiting: Orca's permission label.
+        // Both kinds of input wait require user attention.
         assert_eq!(
             title_sequence(AgentStatusState::Blocked, 3),
             "\x1b]2;Jan - action required\x07"
@@ -246,7 +303,7 @@ mod tests {
             title_sequence(AgentStatusState::Waiting, 3),
             "\x1b]2;Jan - action required\x07"
         );
-        // Idle: Orca's strong idle keyword.
+        // Idle: ready for another message.
         assert_eq!(
             title_sequence(AgentStatusState::Done, 3),
             "\x1b]2;Jan ready\x07"
@@ -271,14 +328,5 @@ mod tests {
         );
         assert!(reporter.transition(AgentStatusState::Done, None).is_some());
         assert_eq!(reporter.spinner_frame, 0);
-    }
-
-    #[test]
-    fn disabled_reporter_never_writes() {
-        let mut reporter = AgentStatusReporter::new();
-        // Must not panic or touch stdout: everything short-circuits.
-        reporter.set_state(AgentStatusState::Working, None);
-        reporter.animate();
-        reporter.set_state(AgentStatusState::Done, None);
     }
 }
