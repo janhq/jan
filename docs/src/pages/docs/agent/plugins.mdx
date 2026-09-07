@@ -87,8 +87,13 @@ Imported MCP servers use names such as `figma:figma` to avoid collisions. Existi
 servers with different settings are not overwritten; review them in `/mcp`.
 Stored key references such as `${API_KEY}` and `${CLAUDE_PLUGIN_ROOT}` are resolved
 from the plugin's key store and installed directory. Key files and generated MCP
-configuration are owner-only (`0600`) on Unix. Provider-side OAuth client
-restrictions still apply.
+configuration are owner-only (`0600`) on Unix.
+
+OAuth browser sign-in requires successful client registration. If the provider
+rejects registration, Jan shows the endpoint, HTTP status, and rejection detail
+in the TUI instead of opening a consent page with a placeholder client ID.
+[Figma restricts its remote MCP server to approved clients](https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/);
+installing its plugin does not grant Jan that approval.
 
 ## Invoking plugin skills
 

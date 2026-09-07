@@ -4,11 +4,11 @@
 //! transport, `core::cli::tui` for the `/mcp` screen) and the desktop
 //! activation stack is expected to adopt it unchanged.
 //!
-//! `rmcp`'s `auth` feature owns the protocol -- metadata discovery, PKCE, the
-//! token exchange and the `AuthClient` wrapper that injects the bearer token
-//! into either transport. What lives here is everything around it that rmcp
-//! leaves to the caller: a persistent token store keyed by server name, the
-//! loopback listener that receives the redirect, and absolute expiry tracking.
+//! `rmcp` owns metadata discovery and the authenticated transport. Session
+//! creation uses `oauth2` directly: rmcp 0.8 silently substitutes "mcp-client"
+//! when registration fails, producing an unusable consent URL. Jan requires
+//! successful registration before exposing a browser URL, and keeps the
+//! provider's rejection visible to the user.
 //!
 //! Absolute expiry is not redundant. `rmcp`'s `get_access_token` tests
 //! `expires_in()`, which is the *original* lifetime from the token response and
@@ -21,7 +21,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use rmcp::transport::auth::{AuthClient, OAuthState, OAuthTokenResponse};
+use rmcp::transport::auth::{AuthClient, OAuthClientConfig, OAuthState, OAuthTokenResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -59,6 +59,9 @@ pub const NEEDS_AUTH_PREFIX: &str = "NEEDS_AUTH: ";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredCredentials {
     pub client_id: String,
+    /// Some registrations issue a secret required again when refreshing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_secret: Option<oauth2::ClientSecret>,
     pub tokens: OAuthTokenResponse,
     /// Unix seconds at which `tokens`' access token stops being valid. `None`
     /// when the provider returned no `expires_in`, which means "until refused".
@@ -73,6 +76,7 @@ impl StoredCredentials {
         let expires_at = expires_at_from(&tokens);
         Self {
             client_id,
+            client_secret: None,
             tokens,
             expires_at,
             resource,
@@ -289,10 +293,23 @@ pub async fn advertises_oauth(url: &str) -> bool {
     manager.discover_metadata().await.is_ok()
 }
 
+type CodeClient = oauth2::basic::BasicClient<
+    oauth2::EndpointSet,
+    oauth2::EndpointNotSet,
+    oauth2::EndpointNotSet,
+    oauth2::EndpointNotSet,
+    oauth2::EndpointSet,
+>;
+
 /// An authorization in flight: the browser has somewhere to go and the loopback
 /// listener is already bound, so the redirect cannot race the port.
 pub struct PendingAuth {
-    state: OAuthState,
+    client: CodeClient,
+    http: reqwest::Client,
+    verifier: oauth2::PkceCodeVerifier,
+    csrf: oauth2::CsrfToken,
+    client_id: String,
+    client_secret: Option<oauth2::ClientSecret>,
     listener: tokio::net::TcpListener,
     server: String,
     resource: String,
@@ -302,8 +319,8 @@ pub struct PendingAuth {
     pub redirect_uri: String,
 }
 
-/// Start an authorization: bind the loopback listener, register (or reuse) a
-/// client, and build the consent url. Nothing is persisted and no browser is
+/// Start an authorization: bind the loopback listener, register a real
+/// client, and build the consent URL. Nothing is persisted and no browser is
 /// opened here -- the caller owns both.
 ///
 /// The listener is bound *before* the redirect uri is minted because dynamic
@@ -321,24 +338,75 @@ pub async fn begin(server: &str, url: &str) -> Result<PendingAuth, String> {
     // hostname form in a loopback redirect, and both resolve to this listener.
     let redirect_uri = format!("http://localhost:{port}/callback");
 
-    let mut state = OAuthState::new(url.to_string(), None)
+    let state = OAuthState::new(url.to_string(), None)
         .await
         .map_err(|e| format!("could not reach '{url}' for OAuth discovery: {e}"))?;
-    state
-        .start_authorization(&[], &redirect_uri, Some(CLIENT_NAME))
-        .await
+    let OAuthState::Unauthorized(manager) = state else {
+        return Err("OAuth discovery did not create an authorization manager".into());
+    };
+    let metadata = manager.discover_metadata().await
         .map_err(|e| format!("'{server}' does not offer OAuth we can use: {e}"))?;
-    let authorization_url = state
-        .get_authorization_url()
-        .await
-        .map_err(|e| format!("could not build the sign-in url for '{server}': {e}"))?;
+    let endpoint = metadata.registration_endpoint.as_deref()
+        .ok_or_else(|| format!("'{server}' requires a pre-registered OAuth client; no registration endpoint was advertised"))?;
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
+        .build().map_err(|e| e.to_string())?;
+    let response = http.post(endpoint)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .json(&serde_json::json!({
+            "client_name": CLIENT_NAME,
+            "redirect_uris": [&redirect_uri],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+            "application_type": "native",
+        }))
+        .send().await
+        .map_err(|e| format!("OAuth client registration for '{server}' failed: {e}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        let detail: String = body.lines().next().unwrap_or("").trim().chars().take(200).collect();
+        return Err(format!(
+            "OAuth client registration for '{server}' was rejected (POST {endpoint}: HTTP {status}): {detail}. \
+             The provider must issue or approve a client ID for Jan before browser sign-in can work."
+        ));
+    }
+    #[derive(Deserialize)]
+    struct Registration {
+        client_id: String,
+        client_secret: Option<String>,
+    }
+    let registration: Registration = response.json().await
+        .map_err(|_| format!("OAuth registration for '{server}' returned no usable client credentials"))?;
+    let client_id = registration.client_id.trim().to_string();
+    if client_id.is_empty() {
+        return Err(format!("OAuth registration for '{server}' returned an empty client ID"));
+    }
+    let client_secret = registration.client_secret.filter(|s| !s.is_empty()).map(oauth2::ClientSecret::new);
+    let mut client = oauth2::basic::BasicClient::new(oauth2::ClientId::new(client_id.clone()))
+        .set_auth_uri(oauth2::AuthUrl::new(metadata.authorization_endpoint).map_err(|e| e.to_string())?)
+        .set_token_uri(oauth2::TokenUrl::new(metadata.token_endpoint).map_err(|e| e.to_string())?)
+        .set_redirect_uri(oauth2::RedirectUrl::new(redirect_uri.clone()).map_err(|e| e.to_string())?);
+    if let Some(secret) = &client_secret {
+        client = client.set_client_secret(secret.clone());
+    }
+    let (challenge, verifier) = oauth2::PkceCodeChallenge::new_random_sha256();
+    let (authorization_url, csrf) = client.authorize_url(oauth2::CsrfToken::new_random)
+        .set_pkce_challenge(challenge).url();
 
     Ok(PendingAuth {
-        state,
+        client,
+        http,
+        verifier,
+        csrf,
+        client_id,
+        client_secret,
         listener,
         server: server.to_string(),
         resource: url.to_string(),
-        authorization_url,
+        authorization_url: authorization_url.to_string(),
         redirect_uri,
     })
 }
@@ -348,25 +416,21 @@ impl PendingAuth {
     /// tokens. Consumes the flow: the PKCE verifier and CSRF token are
     /// single-use, so a failed exchange means starting over rather than
     /// retrying against spent state.
-    pub async fn complete(mut self, data_folder: &Path) -> Result<StoredCredentials, String> {
+    pub async fn complete(self, data_folder: &Path) -> Result<StoredCredentials, String> {
         let callback = tokio::time::timeout(CALLBACK_TIMEOUT, accept_callback(&self.listener))
             .await
             .map_err(|_| "timed out waiting for the browser to come back".to_string())??;
 
-        self.state
-            .handle_callback(&callback.code, &callback.state)
-            .await
+        if callback.state != *self.csrf.secret() {
+            return Err("OAuth callback state did not match this sign-in attempt".into());
+        }
+        let tokens = self.client
+            .exchange_code(oauth2::AuthorizationCode::new(callback.code))
+            .set_pkce_verifier(self.verifier)
+            .request_async(&self.http).await
             .map_err(|e| format!("could not exchange the authorization code: {e}"))?;
-
-        let (client_id, tokens) = self
-            .state
-            .get_credentials()
-            .await
-            .map_err(|e| format!("authorization finished without usable tokens: {e}"))?;
-        let tokens =
-            tokens.ok_or_else(|| "authorization finished without an access token".to_string())?;
-
-        let creds = StoredCredentials::from_exchange(client_id, tokens, self.resource);
+        let mut creds = StoredCredentials::from_exchange(self.client_id, tokens, self.resource);
+        creds.client_secret = self.client_secret;
         save(data_folder, &self.server, &creds)?;
         Ok(creds)
     }
@@ -554,6 +618,14 @@ pub async fn authorized_client(
         .set_credentials(&stored.client_id, stored.tokens.clone())
         .await
         .map_err(|e| format!("stored credentials for '{name}' are unusable: {e}"))?;
+    if let (Some(secret), OAuthState::Authorized(manager)) = (&stored.client_secret, &mut state) {
+        manager.configure_client(OAuthClientConfig {
+            client_id: stored.client_id.clone(),
+            client_secret: Some(secret.secret().clone()),
+            scopes: Vec::new(),
+            redirect_uri: url.to_string(),
+        }).map_err(|e| format!("could not restore OAuth registration for '{name}': {e}"))?;
+    }
 
     if stored.is_expired() {
         if !stored.has_refresh_token() {
@@ -571,11 +643,9 @@ pub async fn authorized_client(
             .await
             .map_err(|e| format!("refresh for '{name}' returned no tokens: {e}"))?;
         if let Some(tokens) = tokens {
-            save(
-                data_folder,
-                name,
-                &StoredCredentials::from_exchange(client_id, tokens, url.to_string()),
-            )?;
+            let mut refreshed = StoredCredentials::from_exchange(client_id, tokens, url.to_string());
+            refreshed.client_secret = stored.client_secret.clone();
+            save(data_folder, name, &refreshed)?;
         }
     }
 
@@ -604,6 +674,134 @@ mod tests {
             t.set_refresh_token(Some(RefreshToken::new("rt-1".to_string())));
         }
         t
+    }
+
+    async fn registration_server(
+        status: u16,
+        registration_body: &'static str,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let origin = base.clone();
+        let task = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut bytes = Vec::new();
+                let mut buf = [0; 4096];
+                loop {
+                    let n = socket.read(&mut buf).await.unwrap();
+                    if n == 0 { break; }
+                    bytes.extend_from_slice(&buf[..n]);
+                    if let Some(end) = bytes.windows(4).position(|b| b == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&bytes[..end]);
+                        let length = headers.lines().find_map(|line| {
+                            let (key, value) = line.split_once(':')?;
+                            key.eq_ignore_ascii_case("content-length")
+                                .then(|| value.trim().parse::<usize>().unwrap())
+                        }).unwrap_or(0);
+                        if bytes.len() >= end + 4 + length { break; }
+                    }
+                }
+                let registration = bytes.starts_with(b"POST /register ");
+                let (code, body) = if registration {
+                    (status, registration_body.to_string())
+                } else if bytes.starts_with(b"POST /token ") {
+                    let request = String::from_utf8_lossy(&bytes).to_ascii_lowercase();
+                    assert!(request.contains("authorization: basic "));
+                    let refreshed = request.contains("grant_type=refresh_token");
+                    if !refreshed {
+                        assert!(request.contains("code_verifier="));
+                    }
+                    (200, json!({
+                        "access_token": if refreshed { "refreshed" } else { "issued" },
+                        "token_type": "Bearer", "expires_in": 3600, "refresh_token": "refresh",
+                    }).to_string())
+                } else {
+                    (200, json!({
+                        "authorization_endpoint": format!("{origin}/authorize"),
+                        "token_endpoint": format!("{origin}/token"),
+                        "registration_endpoint": format!("{origin}/register"),
+                    }).to_string())
+                };
+                let reply = format!(
+                    "HTTP/1.1 {code} Response\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len(),
+                );
+                socket.write_all(reply.as_bytes()).await.unwrap();
+            }
+        });
+        (base, task)
+    }
+
+    #[tokio::test]
+    async fn rejected_registration_never_opens_a_placeholder_client_url() {
+        let (base, task) = registration_server(403, r#"{"error":"unapproved_client"}"#).await;
+        let result = begin("restricted", &format!("{base}/mcp")).await;
+        task.abort();
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("rejected registration must not produce a browser URL"),
+        };
+        assert!(error.contains("403"), "{error}");
+        assert!(error.contains("unapproved_client"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn registered_client_completes_pkce_and_retains_secret_for_refresh() {
+        let (base, task) = registration_server(
+            201, r#"{"client_id":"registered","client_secret":"registration-secret"}"#,
+        ).await;
+        let url = format!("{base}/mcp");
+        let pending = begin("server", &url).await.unwrap();
+        let auth_url = reqwest::Url::parse(&pending.authorization_url).unwrap();
+        let params: BTreeMap<_, _> = auth_url.query_pairs().into_owned().collect();
+        assert_eq!(params["client_id"], "registered");
+        assert_eq!(params["code_challenge_method"], "S256");
+        let callback = format!("{}?code=issued-code&state={}", pending.redirect_uri, params["state"]);
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().to_path_buf();
+        let completion = tokio::spawn(async move { pending.complete(&folder).await });
+        reqwest::get(callback).await.unwrap().error_for_status().unwrap();
+        let mut stored = completion.await.unwrap().unwrap();
+        assert_eq!(stored.tokens.access_token().secret(), "issued");
+        assert!(!format!("{stored:?}").contains("registration-secret"));
+        stored.expires_at = Some(0);
+        save(dir.path(), "server", &stored).unwrap();
+        let client = authorized_client(
+            dir.path(), "server", &url, &json!({}), reqwest::Client::new(),
+        ).await.unwrap().unwrap();
+        assert_eq!(client.get_access_token().await.unwrap(), "refreshed");
+        assert_eq!(
+            load(dir.path(), "server").unwrap().client_secret.unwrap().secret(),
+            "registration-secret",
+        );
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn empty_registered_client_id_is_rejected_before_browser_sign_in() {
+        let (base, task) = registration_server(201, r#"{"client_id":" "}"#).await;
+        let result = begin("server", &format!("{base}/mcp")).await;
+        task.abort();
+        assert!(matches!(result, Err(error) if error.contains("empty client ID")));
+    }
+
+    #[tokio::test]
+    async fn mismatched_callback_state_cannot_save_credentials() {
+        let (base, task) = registration_server(201, r#"{"client_id":"registered"}"#).await;
+        let pending = begin("server", &format!("{base}/mcp")).await.unwrap();
+        let callback = format!("{}?code=code&state=wrong-session", pending.redirect_uri);
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().to_path_buf();
+        let completion = tokio::spawn(async move { pending.complete(&folder).await });
+        reqwest::get(callback).await.unwrap();
+        assert!(matches!(
+            completion.await.unwrap(),
+            Err(error) if error.contains("state did not match"),
+        ));
+        assert!(load(dir.path(), "server").is_none());
+        task.abort();
     }
 
     /// The message from a `parse_callback_query` outcome that must be an error.
