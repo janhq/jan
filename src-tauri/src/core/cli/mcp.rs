@@ -78,7 +78,23 @@ fn write_config(data_folder: &std::path::Path, cfg: &Value) -> Result<(), String
 
     let body = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, body).map_err(|e| e.to_string())?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&tmp).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| e.to_string())?;
+    }
+    // MCP env/header fields can contain keys entered during plugin setup.
+    std::io::Write::write_all(&mut file, body.as_bytes()).map_err(|e| e.to_string())?;
+    drop(file);
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
     Ok(())
 }
