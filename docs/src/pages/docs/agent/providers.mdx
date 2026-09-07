@@ -82,7 +82,9 @@ Codex gates model discovery by client version. Jan resolves that version from
 [OpenAI's latest stable Codex release](https://github.com/openai/codex/releases/latest)
 before requesting the account's model roster. This requires access to GitHub's public API;
 the release lookup never includes your account token or account ID. If release or model
-discovery is unavailable, login retains its existing default-model fallback.
+discovery fails, or the account has no available models, sign-in reports an error without
+changing saved credentials or provider configuration. Jan does not substitute guessed models;
+retry sign-in when discovery is available again.
 
 ## Tokamak
 
