@@ -42,6 +42,15 @@ pub struct ProviderModelEntry {
     pub model: ProviderModel,
 }
 
+/// Result of refreshing all reachable provider catalogs. Successful providers
+/// contribute entries even when a sibling provider fails; failures are kept so
+/// picker consumers can surface a concise warning without discarding rows.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProviderModelRefresh {
+    pub entries: Vec<ProviderModelEntry>,
+    pub failures: Vec<String>,
+}
+
 /// CLI/env overrides applied after loading the persisted store.
 #[derive(Debug, Default, Clone)]
 pub struct ProviderOverrides {
@@ -463,47 +472,84 @@ async fn fetch_models(
 
 pub async fn fetch_provider_model_entries(
     project_root: Option<&std::path::Path>,
-) -> Result<Vec<ProviderModelEntry>, String> {
+) -> Result<ProviderModelRefresh, String> {
     let global = load_global_config()?;
     let configs = load_provider_configs(project_root, &ProviderOverrides::default().with_env())?;
-    let client = reqwest::Client::builder().timeout(Duration::from_secs(15)).build().map_err(|e| e.to_string())?;
-    let requests: Vec<_> = configs.values().filter(|config| is_cli_reachable(config)).cloned().map(|mut config| {
-        hydrate_provider_keys(&mut config);
-        let client = &client;
-        async move {
-            let result = fetch_model_catalog(client, config.base_url.as_deref().unwrap_or_default(), &config.bearer_key_chain()).await;
-            (config, result)
-        }
-    }).collect();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let requests: Vec<_> = configs
+        .values()
+        .filter(|config| is_cli_reachable(config))
+        .cloned()
+        .map(|mut config| {
+            hydrate_provider_keys(&mut config);
+            let client = &client;
+            async move {
+                let result = fetch_model_catalog(
+                    client,
+                    config.base_url.as_deref().unwrap_or_default(),
+                    &config.bearer_key_chain(),
+                )
+                .await;
+                (config, result)
+            }
+        })
+        .collect();
+    let mut failures = Vec::new();
     let mut entries = Vec::new();
     for (config, result) in futures::future::join_all(requests).await {
-        let fetched = result.unwrap_or_else(|error| {
-            log::warn!("could not list models for provider '{}': {error}", config.provider);
-            Vec::new()
-        });
+        let (fetched, catalog_ok) = match result {
+            Ok(models) => {
+                if models.is_empty() {
+                    failures.push(format!("{}: empty model catalog", config.provider));
+                }
+                (models, true)
+            }
+            Err(error) => {
+                log::warn!("could not list models for provider '{}': {error}", config.provider);
+                failures.push(format!("{}: {error}", config.provider));
+                (Vec::new(), false)
+            }
+        };
         let effective_ids = merge_model_ids(&config.models, &fetched);
-        if let Some(stored) = global.get(&config.provider) {
-            let persisted_ids = merge_model_ids(&stored.models, &fetched);
-            if stored.models != persisted_ids {
-                crate::core::agent::global_config::set_provider(
-                    &config.provider,
-                    crate::core::agent::global_config::ProviderUpdate { models: Some(persisted_ids), ..Default::default() },
-                )?;
+        if catalog_ok {
+            if let Some(stored) = global.get(&config.provider) {
+                let persisted_ids = merge_model_ids(&stored.models, &fetched);
+                if stored.models != persisted_ids {
+                    crate::core::agent::global_config::set_provider(
+                        &config.provider,
+                        crate::core::agent::global_config::ProviderUpdate {
+                            models: Some(persisted_ids),
+                            ..Default::default()
+                        },
+                    )?;
+                }
             }
         }
-        let by_id: HashMap<&str, &ProviderModel> = fetched.iter().map(|model| (model.id.as_str(), model)).collect();
+        let by_id: HashMap<&str, &ProviderModel> =
+            fetched.iter().map(|model| (model.id.as_str(), model)).collect();
         for id in effective_ids {
             entries.push(ProviderModelEntry {
                 provider: config.provider.clone(),
                 model: by_id.get(id.as_str()).map_or_else(
-                    || ProviderModel { id: id.clone(), context_length: None, input_price: None, output_price: None },
+                    || ProviderModel {
+                        id: id.clone(),
+                        context_length: None,
+                        input_price: None,
+                        output_price: None,
+                    },
                     |model| (*model).clone(),
                 ),
             });
         }
     }
-    entries.sort_by(|a, b| (a.provider.as_str(), a.model.id.as_str()).cmp(&(b.provider.as_str(), b.model.id.as_str())));
-    Ok(entries)
+    entries.sort_by(|a, b| {
+        (a.provider.as_str(), a.model.id.as_str())
+            .cmp(&(b.provider.as_str(), b.model.id.as_str()))
+    });
+    Ok(ProviderModelRefresh { entries, failures })
 }
 
 /// Load provider configs by layering the four `.jan`-based scopes (see module
@@ -1584,7 +1630,9 @@ mod tests {
             .unwrap();
 
             let rt = tokio::runtime::Runtime::new().unwrap();
-            let entries = rt.block_on(fetch_provider_model_entries(None)).unwrap();
+            let refresh = rt.block_on(fetch_provider_model_entries(None)).unwrap();
+            assert!(refresh.failures.is_empty());
+            let entries = refresh.entries;
             let ids: Vec<_> = entries.iter().map(|entry| entry.model.id.as_str()).collect();
             assert_eq!(ids, vec!["configured-model", "new-model"]);
             let new = entries.iter().find(|entry| entry.model.id == "new-model").unwrap();
@@ -1593,6 +1641,49 @@ mod tests {
 
             let persisted = load_global_config().unwrap();
             assert_eq!(persisted.get("mock").unwrap().models, vec!["configured-model", "new-model"]);
+        });
+    }
+
+    #[test]
+    fn fetch_provider_entries_reports_partial_failure_without_dropping_success() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(
+                serde_json::json!({"data": [{"id": "good-new"}]}).to_string(),
+                1,
+            );
+            crate::core::agent::global_config::set_provider(
+                "good",
+                crate::core::agent::global_config::ProviderUpdate {
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["good-old".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            crate::core::agent::global_config::set_provider(
+                "bad",
+                crate::core::agent::global_config::ProviderUpdate {
+                    base_url: Some("http://127.0.0.1:9/v1".into()),
+                    models: Some(vec!["bad-old".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refresh = rt.block_on(fetch_provider_model_entries(None)).unwrap();
+            assert_eq!(refresh.failures.len(), 1);
+            assert!(refresh.failures[0].starts_with("bad:"));
+            let good_ids: Vec<_> = refresh
+                .entries
+                .iter()
+                .filter(|entry| entry.provider == "good")
+                .map(|entry| entry.model.id.as_str())
+                .collect();
+            assert_eq!(good_ids, vec!["good-new", "good-old"]);
+            assert!(refresh.entries.iter().any(|entry| {
+                entry.provider == "bad" && entry.model.id == "bad-old"
+            }));
         });
     }
 
@@ -1611,8 +1702,9 @@ mod tests {
             .unwrap();
 
             let rt = tokio::runtime::Runtime::new().unwrap();
-            let entries = rt.block_on(fetch_provider_model_entries(None)).unwrap();
-            assert_eq!(entries.iter().map(|entry| entry.model.id.as_str()).collect::<Vec<_>>(), vec!["keep-me"]);
+            let refresh = rt.block_on(fetch_provider_model_entries(None)).unwrap();
+            assert_eq!(refresh.failures, vec!["empty-mock: empty model catalog"]);
+            assert_eq!(refresh.entries.iter().map(|entry| entry.model.id.as_str()).collect::<Vec<_>>(), vec!["keep-me"]);
             assert_eq!(load_global_config().unwrap().get("empty-mock").unwrap().models, vec!["keep-me"]);
         });
     }
@@ -1631,8 +1723,9 @@ mod tests {
             .unwrap();
 
             let rt = tokio::runtime::Runtime::new().unwrap();
-            let entries = rt.block_on(fetch_provider_model_entries(Some(&root))).unwrap();
-            let proj: Vec<_> = entries.iter().filter(|e| e.provider == "proj").map(|e| e.model.id.as_str()).collect();
+            let refresh = rt.block_on(fetch_provider_model_entries(Some(&root))).unwrap();
+            assert!(refresh.failures.is_empty());
+            let proj: Vec<_> = refresh.entries.iter().filter(|e| e.provider == "proj").map(|e| e.model.id.as_str()).collect();
             assert_eq!(proj, ["fetched-model", "proj-model"]);
             assert!(!load_global_config().unwrap().contains_key("proj"), "project override must not be written to global");
             let _ = std::fs::remove_dir_all(&root);
@@ -1654,8 +1747,9 @@ mod tests {
             std::env::set_var("JAN_DATA_FOLDER", &data_dir);
 
             let rt = tokio::runtime::Runtime::new().unwrap();
-            let entries = rt.block_on(fetch_provider_model_entries(None)).unwrap();
-            let ids: Vec<_> = entries.iter().filter(|e| e.provider == "desktop-only").map(|e| e.model.id.as_str()).collect();
+            let refresh = rt.block_on(fetch_provider_model_entries(None)).unwrap();
+            assert!(refresh.failures.is_empty());
+            let ids: Vec<_> = refresh.entries.iter().filter(|e| e.provider == "desktop-only").map(|e| e.model.id.as_str()).collect();
             assert_eq!(ids, ["desktop-model", "desktop-new"]);
             assert!(!load_global_config().unwrap().contains_key("desktop-only"), "desktop-only provider must not shadow into global");
 

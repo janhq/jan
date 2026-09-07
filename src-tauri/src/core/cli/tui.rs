@@ -7439,11 +7439,11 @@ async fn await_context(
 /// still ensuring the network work is never on the render loop.
 const MODEL_PICKER_POLL_INTERVAL: Duration = Duration::from_secs(10);
 
-type ModelPickerEntries = Vec<crate::core::cli::providers::ProviderModelEntry>;
+type ModelPickerRefresh = crate::core::cli::providers::ProviderModelRefresh;
 
 fn spawn_model_picker_refresh(
     project_root: &std::path::Path,
-) -> tokio::task::JoinHandle<Result<ModelPickerEntries, String>> {
+) -> tokio::task::JoinHandle<Result<ModelPickerRefresh, String>> {
     let root = project_root.to_path_buf();
     tokio::spawn(async move {
         crate::core::cli::providers::fetch_provider_model_entries(Some(&root)).await
@@ -7454,8 +7454,8 @@ fn spawn_model_picker_refresh(
 /// `await_*` helpers this parks forever when no refresh is in flight, so it can
 /// remain in `select!` without a readiness branch.
 async fn await_model_picker_refresh(
-    task: &mut Option<tokio::task::JoinHandle<Result<ModelPickerEntries, String>>>,
-) -> Result<ModelPickerEntries, String> {
+    task: &mut Option<tokio::task::JoinHandle<Result<ModelPickerRefresh, String>>>,
+) -> Result<ModelPickerRefresh, String> {
     let joined = match task.as_mut() {
         Some(handle) => handle.await,
         None => return pending().await,
@@ -7464,7 +7464,7 @@ async fn await_model_picker_refresh(
     joined.map_err(|e| e.to_string())?
 }
 
-async fn finish_model_picker_refresh(app: &mut App, result: Result<ModelPickerEntries, String>) {
+async fn finish_model_picker_refresh(app: &mut App, result: Result<ModelPickerRefresh, String>) {
     // A completion is only valid for a picker that is still open. Never reopen
     // a picker after Esc/Enter closed it, and never let a late response mutate
     // the ordinary chat surface.
@@ -7472,21 +7472,26 @@ async fn finish_model_picker_refresh(app: &mut App, result: Result<ModelPickerEn
         app.model_refresh_requested = false;
         return;
     }
-    // A refresh completion is the sole synchronization point for project
-    // config: a malformed file reports an error and leaves all current values
-    // untouched, while a valid file applies live settings before rows redraw.
     app.hot_reload_agent_settings();
     match result {
-        Ok(entries) if entries.is_empty() => {
-            app.note("model refresh returned no models; keeping the current list");
-        }
-        Ok(entries) => {
-            // The provider task persists ids before returning. Update the
-            // in-memory snapshot before Enter can submit a newly discovered id.
-            reload_provider_configs(app).await;
-            if let Some(picker) = app.model_picker.as_mut() {
-                if !picker.apply_entries(entries, app.configured_context_window) {
-                    app.note("model refresh returned no models; keeping the current list");
+        Ok(refresh) => {
+            let ModelPickerRefresh { entries, failures } = refresh;
+            if !failures.is_empty() {
+                app.note(&format!(
+                    "model refresh warning: {}",
+                    failures.join("; ")
+                ));
+            }
+            if entries.is_empty() {
+                app.note("model refresh returned no models; keeping the current list");
+            } else {
+                // Successful providers update the in-memory config before a
+                // newly discovered model can be submitted via Enter.
+                reload_provider_configs(app).await;
+                if let Some(picker) = app.model_picker.as_mut() {
+                    if !picker.apply_entries(entries, app.configured_context_window) {
+                        app.note("model refresh returned no models; keeping the current list");
+                    }
                 }
             }
         }
@@ -8110,7 +8115,7 @@ async fn chat_loop<B: Backend>(
     // the user is in the ordinary chat surface. The first tick is intentionally
     // left pending so a picker opened later gets an immediate refresh.
     let mut model_picker_task: Option<
-        tokio::task::JoinHandle<Result<ModelPickerEntries, String>>,
+        tokio::task::JoinHandle<Result<ModelPickerRefresh, String>>,
     > = None;
     let mut model_picker_poll = tokio::time::interval(MODEL_PICKER_POLL_INTERVAL);
     model_picker_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -15659,15 +15664,15 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
         return;
     }
 
-    let scope_w = body
-        .width
-        .saturating_sub(1)
-        .min(28)
-        .max(body.width.saturating_sub(1).min(14));
+    // Metadata needs a minimum model pane wide enough for both compact columns.
+    // Prefer the readable scope width, but let it shrink before metadata does.
+    let model_min = body.width.min(24);
+    let scope_max = body.width.saturating_sub(1).saturating_sub(model_min);
+    let scope_w = body.width.saturating_sub(1).min(28).min(scope_max.max(1));
     let panes = Layout::horizontal([
         Constraint::Length(scope_w),
         Constraint::Length(1),
-        Constraint::Min(0),
+        Constraint::Min(model_min),
     ])
     .split(body);
 
@@ -23563,10 +23568,10 @@ mod tests {
 
             // Simulate the loop applying the refresh that discovered the model.
             let project_root = app.project_root.clone();
-            let entries = rt
+            let refresh = rt
                 .block_on(crate::core::cli::providers::fetch_provider_model_entries(Some(&project_root)))
                 .expect("mock /models reachable");
-            rt.block_on(super::finish_model_picker_refresh(&mut app, Ok(entries)));
+            rt.block_on(super::finish_model_picker_refresh(&mut app, Ok(refresh)));
 
             let picker = app.model_picker.as_ref().expect("model picker opened");
             assert!(
@@ -32134,6 +32139,54 @@ mod tests {
         );
         assert!(prices[0].1.contains("ctx=1.1m price=$1/2"), "first metadata cell was clipped: {rows:?}");
         assert!(prices[1].1.contains("ctx=128k price=-"), "second metadata cell was clipped: {rows:?}");
+    }
+
+    #[tokio::test]
+    async fn model_picker_partial_refresh_notes_failure_and_keeps_rows() {
+        let mut app = test_app();
+        app.model_picker = super::ModelPicker::from_pairs(
+            vec![("bad".into(), "bad-old".into())],
+            "bad-old",
+        );
+        let refresh = crate::core::cli::providers::ProviderModelRefresh {
+            entries: vec![crate::core::cli::providers::ProviderModelEntry {
+                provider: "good".into(),
+                model: crate::core::cli::providers::ProviderModel {
+                    id: "good-new".into(),
+                    context_length: None,
+                    input_price: None,
+                    output_price: None,
+                },
+            }],
+            failures: vec!["bad: connection refused".into()],
+        };
+        super::finish_model_picker_refresh(&mut app, Ok(refresh)).await;
+        let picker = app.model_picker.as_ref().unwrap();
+        assert!(picker.all_items.iter().any(|item| item.value == "good-new"));
+        let note = last_row(&app)
+            .into_iter()
+            .map(|(text, _)| text)
+            .collect::<String>();
+        assert!(note.contains("model refresh warning"), "missing failure note: {note}");
+        assert!(note.contains("bad: connection refused"), "missing provider detail: {note}");
+    }
+
+    #[test]
+    fn model_picker_narrow_layout_retains_model_pane() {
+        let mut app = test_app();
+        app.model_picker = Some(
+            super::ModelPicker::from_pairs(
+                vec![("openai".into(), "gpt-narrow".into())],
+                "gpt-narrow",
+            )
+            .unwrap(),
+        );
+        let rows = render_rows(&mut app, 30, 10);
+        let model_row = rows.iter().find(|row| row.contains("ctx=")).unwrap();
+        assert!(
+            model_row.contains("ctx=128k") && model_row.contains("price=-"),
+            "narrow model metadata was clipped: {rows:?}"
+        );
     }
     #[test]
     fn refresh_apply_hot_agent_toml_context_override() {
