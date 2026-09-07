@@ -1,15 +1,93 @@
 # Windows ARM64 desktop build.
 #
-# Standalone on purpose: it neither calls the x64 template nor edits any file
-# that build reads, so it cannot change an x64 artifact. Folding the two behind
-# an `arch` input comes once ARM64 is green.
+# Separate from the x64 template on purpose: the arm64 CUDA pool, the vswhere
+# MSVC resolution and the NSIS retarget below are ~200 lines x64 has no use for,
+# so folding the two behind an `arch` input would buy a conditional maze. That
+# merge waits until ARM64 has a few green releases behind it.
 #
-# Signing and updater artifacts match x64. Publication does not -- no S3, no
-# release upload, no `windows-aarch64` in latest.json -- so ARM64 builds cannot
-# yet reach users through the updater.
-name: Tauri Build Windows ARM64
+# Publishes the same way x64 does -- release asset, S3, and the `windows-aarch64`
+# key its FILE_NAME/WIN_SIG outputs feed into latest.json.
+name: tauri-build-windows-arm64
 
 on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+        default: 'refs/heads/main'
+      public_provider:
+        required: true
+        type: string
+        default: none
+        description: 'none: build only, github: build and publish to github, aws s3: build and publish to aws s3'
+      new_version:
+        required: true
+        type: string
+        default: ''
+      upload_url:
+        required: false
+        type: string
+        default: ''
+      channel:
+        required: true
+        type: string
+        default: 'nightly'
+        description: 'The channel to use for this job'
+      engine_variant:
+        required: false
+        type: string
+        default: 'cuda13'
+        description: >
+          JAN_ENGINE_VARIANT. `cuda13` is the minimum that exercises CUDA;
+          `cuda13-vulkan` adds the fallback for GPUs with no CUDA runtime.
+      vulkan_fallback:
+        required: false
+        type: string
+        default: '0'
+        description: >
+          JAN_ENGINE_VULKAN_FALLBACK. Defaults to 1 in the Makefile, which adds
+          the vulkan feature -- and the SDK requirement -- to any vendor build
+          whether or not the variant named it. Set to 1 with cuda13-vulkan.
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME:
+        required: false
+      DELTA_AWS_ACCESS_KEY_ID:
+        required: false
+      DELTA_AWS_SECRET_ACCESS_KEY:
+        required: false
+      DELTA_AWS_REGION:
+        required: false
+      AZURE_KEY_VAULT_URI:
+        required: false
+      AZURE_CLIENT_ID:
+        required: false
+      AZURE_TENANT_ID:
+        required: false
+      AZURE_CLIENT_SECRET:
+        required: false
+      AZURE_CERT_NAME:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+      JAN_SIGNING_KEY:
+        required: false
+      POSTHOG_KEY:
+        required: false
+      POSTHOG_HOST:
+        required: false
+    outputs:
+      WIN_SIG:
+        value: ${{ jobs.build-windows-arm64.outputs.WIN_SIG }}
+      FILE_NAME:
+        value: ${{ jobs.build-windows-arm64.outputs.FILE_NAME }}
+
+  # Standalone entry point, kept because a 3-hour build wants an iteration loop
+  # that is not a full nightly. `ref` and `public_provider` are deliberately not
+  # declared here: unset, checkout takes the dispatched branch and every publish
+  # step's `if:` is false, so a manual run builds without publishing.
   workflow_dispatch:
     inputs:
       channel:
@@ -23,37 +101,26 @@ on:
         type: string
         default: '0.0.0'
       engine_variant:
-        description: >
-          JAN_ENGINE_VARIANT. `cuda13` is the minimum that exercises CUDA;
-          `cuda13-vulkan` adds the fallback for GPUs with no CUDA runtime.
         required: false
         type: string
         default: 'cuda13'
+        description: >
+          JAN_ENGINE_VARIANT. `cuda13` is the minimum that exercises CUDA;
+          `cuda13-vulkan` adds the fallback for GPUs with no CUDA runtime.
       vulkan_fallback:
+        required: false
+        type: string
+        default: '0'
         description: >
           JAN_ENGINE_VULKAN_FALLBACK. Defaults to 1 in the Makefile, which adds
           the vulkan feature -- and the SDK requirement -- to any vendor build
           whether or not the variant named it. Set to 1 with cuda13-vulkan.
-        required: false
-        type: string
-        default: '0'
-  # Pre-merge hook: workflow_dispatch is not offered until the file is on the
-  # default branch. Drop this once it lands there.
-  push:
-    branches: ['feat/windows-arm64']
-
-concurrency:
-  group: tauri-win-arm64-${{ github.ref }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
 
 env:
-  CHANNEL: ${{ inputs.channel || 'nightly' }}
-  NEW_VERSION: ${{ inputs.new_version || '0.0.0' }}
-  JAN_ENGINE_VARIANT: ${{ inputs.engine_variant || 'cuda13' }}
-  JAN_ENGINE_VULKAN_FALLBACK: ${{ inputs.vulkan_fallback || '0' }}
+  CHANNEL: ${{ inputs.channel }}
+  NEW_VERSION: ${{ inputs.new_version }}
+  JAN_ENGINE_VARIANT: ${{ inputs.engine_variant }}
+  JAN_ENGINE_VULKAN_FALLBACK: ${{ inputs.vulkan_fallback }}
   CUDA_SHORT: '13.4'
   # Redistributable archives, as upstream llama.cpp provisions this same
   # toolkit (.github/actions/windows-setup-cuda). The 3.8 GB installer spends
@@ -65,10 +132,17 @@ jobs:
   build-windows-arm64:
     runs-on: windows-11-arm
     timeout-minutes: 180
+    outputs:
+      WIN_SIG: ${{ steps.metadata.outputs.WIN_SIG }}
+      FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
+    permissions:
+      contents: write
 
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Replace Icons for Beta Build
         if: env.CHANNEL != 'stable'
@@ -262,6 +336,19 @@ jobs:
           ctoml ./src-tauri/Cargo.toml package.version "$NEW_VERSION"
 
           if [ "$CHANNEL" != "stable" ]; then
+            # Without this an arm64 nightly keeps the stable endpoints baked into
+            # tauri.conf.json and checks the wrong manifest.
+            if [ "$CHANNEL" = "nightly" ]; then
+              jq --arg fallback "https://delta.jan.ai/$CHANNEL/latest.json" \
+                 '.plugins.updater.endpoints = ["https://apps-nightly.jan.ai/update-check", $fallback]' \
+                 ./src-tauri/tauri.conf.json > /tmp/c.json
+            else
+              jq --arg fallback "https://delta.jan.ai/$CHANNEL/latest.json" \
+                 '.plugins.updater.endpoints = [$fallback]' \
+                 ./src-tauri/tauri.conf.json > /tmp/c.json
+            fi
+            mv /tmp/c.json ./src-tauri/tauri.conf.json
+
             jq --arg name "Jan-$CHANNEL" '.productName = $name' ./src-tauri/tauri.conf.json > /tmp/c.json
             mv /tmp/c.json ./src-tauri/tauri.conf.json
             chmod +x .github/scripts/rename-tauri-app.sh .github/scripts/rename-workspace.sh
@@ -288,6 +375,9 @@ jobs:
           # Sidecars are named by target triple, so they land as aarch64-*.
           # Without this NSIS fails late with "could not find file".
           $c = $c.Replace('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')
+          # VCREDIST_URL embeds the filename, so one replace covers both defines.
+          # Left unpatched, an ARM64 install fetches and runs the x64 redist.
+          $c = $c.Replace('vc_redist.x64.exe', 'vc_redist.arm64.exe')
 
           $base, $build = $env:NEW_VERSION, $env:NEW_VERSION
           if ($env:NEW_VERSION -match '^([^-]+)-(?:rc(\d+)-beta|(.+))$') {
@@ -394,6 +484,30 @@ jobs:
           Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -Include *.exe |
             ForEach-Object { Write-Host "bundle: $($_.FullName)" }
 
+      # Reconstructed rather than globbed, because latest.json needs the exact
+      # name too. `arm64` is the bundler's own token for AArch64, so this is the
+      # x64 template's step with that one substitution.
+      - name: Set output filename for windows
+        id: metadata
+        shell: bash
+        run: |
+          cd ./src-tauri/target/release/bundle/nsis
+          if [ "$CHANNEL" != "stable" ]; then
+            FILE_NAME="Jan-${CHANNEL}_${NEW_VERSION}_arm64-setup.exe"
+          else
+            FILE_NAME="Jan_${NEW_VERSION}_arm64-setup.exe"
+          fi
+
+          # Fails here rather than in the updater, where a missing signature
+          # surfaces to users as a download error.
+          [ -f "$FILE_NAME" ]     || { echo "::error::$FILE_NAME not in $(pwd)"; ls -la; exit 1; }
+          [ -s "$FILE_NAME.sig" ] || { echo "::error::$FILE_NAME.sig missing or empty -- createUpdaterArtifacts or the signing key did not take"; exit 1; }
+
+          {
+            echo "FILE_NAME=$FILE_NAME"
+            echo "WIN_SIG=$(cat "$FILE_NAME.sig")"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Upload NSIS Installer Artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -402,3 +516,30 @@ jobs:
             ./src-tauri/target/release/bundle/nsis/*.exe
             ./src-tauri/target/release/bundle/nsis/*.sig
           if-no-files-found: error
+
+      ## Upload to s3 for nightly and beta
+      - name: upload to aws s3 if public provider is aws
+        shell: bash
+        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        run: |
+          cd ./src-tauri/target/release/bundle/nsis
+
+          # Upload for tauri updater
+          aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}
+          aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }}.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}.sig
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
+      - name: Upload release assert if public provider is github
+        if: inputs.public_provider == 'github'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.FILE_NAME }}
+          asset_name: ${{ steps.metadata.outputs.FILE_NAME }}
+          asset_content_type: application/octet-stream
