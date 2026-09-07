@@ -73,6 +73,23 @@ The plugin is cloned (`--depth 1`), validated to contain a plugin manifest, `ski
 Reinstalling an existing plugin is refused (remove it first). Specs with shell metacharacters are
 rejected outright - a plugin name is a name, not a command.
 
+In the TUI, installation continues directly into setup. Jan reads the plugin's
+`.mcp.json` or inline `mcpServers` declarations, collects required keys in a masked
+field, and offers **Enable and connect** for each server. Nothing is enabled or
+executed until you confirm. Remote servers that require OAuth continue into
+browser sign-in and reconnect automatically afterward.
+
+Choose **Not now** or press Esc to keep the plugin installed without completing
+its connections. Resume with `/plugin setup <name>`; no separate terminal command
+or Jan restart is needed. Plugins without keys or MCP servers are ready immediately.
+
+Imported MCP servers use names such as `figma:figma` to avoid collisions. Existing
+servers with different settings are not overwritten; review them in `/mcp`.
+Stored key references such as `${API_KEY}` and `${CLAUDE_PLUGIN_ROOT}` are resolved
+from the plugin's key store and installed directory. Key files and generated MCP
+configuration are owner-only (`0600`) on Unix. Provider-side OAuth client
+restrictions still apply.
+
 ## Invoking plugin skills
 
 Plugin skills are qualified with their plugin name: `release-tools:prepare`.
@@ -135,6 +152,7 @@ Interactive commands:
 /plugin list                  # one compact summary line per plugin
 /plugin list release-tools    # description and skill names for one plugin
 /plugin remove release-tools  # uninstall
+/plugin setup release-tools   # resume API-key or MCP connection setup
 /plugin search prepare        # search the marketplace (name/description)
 ```
 

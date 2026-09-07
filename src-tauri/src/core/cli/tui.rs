@@ -425,6 +425,8 @@ enum PickerKind {
     /// `/plugin install <collection>`: choose which plugins inside a collection
     /// repo to install. Space toggles a row, Enter installs everything checked.
     PluginSelect,
+    /// Review a plugin-provided MCP server before enabling or executing it.
+    PluginConnect,
     /// One MCP server's detail screen: the info block plus the actions that
     /// apply to it (see `open_mcp_detail`). Reached with Enter from `ToggleMcp`.
     McpServer,
@@ -455,6 +457,7 @@ impl Picker {
             PickerKind::ProviderSettings => " providers ",
             PickerKind::Todo => " todo ",
             PickerKind::PluginSelect => " install plugins ",
+            PickerKind::PluginConnect => " plugin connection ",
             PickerKind::McpServer => " mcp server ",
         }
     }
@@ -475,6 +478,7 @@ impl Picker {
             }
             PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
             PickerKind::PluginSelect => " ↑/↓ select   Space toggle   Enter install   Esc cancel",
+            PickerKind::PluginConnect => " Up/Down select   Enter confirm   Esc cancel setup",
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
         }
     }
@@ -674,6 +678,8 @@ enum McpJob {
     /// screen is open, so the screen refreshes when the connect lands instead of
     /// sitting on `not connected` until the user navigates away and back.
     Connect(String),
+    /// First connection during plugin setup; an OAuth challenge starts sign-in.
+    PluginConnect(String),
 }
 
 /// What an `McpJob` came back with.
@@ -693,6 +699,10 @@ enum McpJobDone {
     Connected {
         server: String,
         result: Result<(), String>,
+    },
+    PluginConnected {
+        server: String,
+        result: Result<(), super::mcp::ConnectError>,
     },
 }
 
@@ -1865,6 +1875,10 @@ struct App {
     /// Active `/plugin setup` prompt (docked like `/login`); owns the keyboard
     /// while open and collects the plugin's required API keys, masked.
     plugin_setup: Option<PluginSetupPrompt>,
+    /// Remaining plugins/connections in the current install or setup flow.
+    plugin_setup_queue: std::collections::VecDeque<String>,
+    plugin_mcp_pending: std::collections::VecDeque<(String, serde_json::Value)>,
+    plugin_mcp_connecting: Option<String>,
     /// Active `/settings` edit prompt (docked like `/login`); owns the
     /// keyboard while open. Holds the setting being edited and any validation
     /// error; writes go straight to agent.toml on Enter.
@@ -2380,6 +2394,9 @@ impl App {
             probed_models: std::collections::HashSet::new(),
             login_submit: None,
             plugin_setup: None,
+            plugin_setup_queue: Default::default(),
+            plugin_mcp_pending: Default::default(),
+            plugin_mcp_connecting: None,
             account_login: None,
             account_login_submit: None,
             account_login_manual_tx: None,
@@ -7382,10 +7399,8 @@ fn finish_plugin_install(
                     p.name, p.skills
                 ));
             }
-            // A plugin that declares required API keys opens its setup dock
-            // right away: the link to obtain each key plus a masked paste
-            // field, so the user never has to edit env files by hand.
-            open_plugin_setup(app);
+            app.plugin_setup_queue = plugins.into_iter().map(|p| p.name).collect();
+            next_plugin_setup(app);
         }
         Ok(GitInstall::Collection(candidates)) => {
             let Some(url) = url else {
@@ -8734,34 +8749,128 @@ impl MaskedPrompt for PluginSetupPrompt {
     }
 }
 
-/// Open `/plugin setup` for the first installed plugin whose declared env
-/// variables are not yet satisfied. Returns whether a dock opened.
+/// Set up installed plugins without leaving the TUI.
 fn open_plugin_setup(app: &mut App) -> bool {
-    let missing = crate::core::agent::plugins::missing_plugin_env(&app.project_root);
-    let Some((plugin, _, _)) = missing.first() else {
-        return false;
-    };
-    let plugin = plugin.clone();
-    let entries = missing
-        .into_iter()
-        .filter(|(p, _, _)| p == &plugin)
-        .map(|(_, key, url)| PluginEnvEntry { key, url })
-        .collect::<Vec<_>>();
-    start_plugin_setup(app, &plugin, entries)
+    app.plugin_setup_queue = crate::core::agent::plugins::installed(&app.project_root)
+        .into_iter().map(|p| p.name).collect();
+    next_plugin_setup(app)
 }
 
-/// Open `/plugin setup` for a named plugin, offering every variable it
-/// declares (even satisfied ones, so a value can be replaced). Returns whether
-/// a dock opened.
+fn next_plugin_setup(app: &mut App) -> bool {
+    while let Some(plugin) = app.plugin_setup_queue.pop_front() {
+        if open_plugin_setup_for(app, &plugin) {
+            return true;
+        }
+    }
+    false
+}
+
 fn open_plugin_setup_for(app: &mut App, plugin: &str) -> bool {
-    let entries = crate::core::agent::plugins::declared_plugin_env(&app.project_root, plugin)
+    let Some((directory, _)) = crate::core::agent::plugins::find_installed(&app.project_root, plugin) else {
+        app.note(&format!("plugin '{plugin}' is not installed - use /plugin install <git-url> first"));
+        return false;
+    };
+    let entries = crate::core::agent::plugins::declared_plugin_env(&app.project_root, &directory)
         .into_iter()
         .map(|(key, url)| PluginEnvEntry { key, url })
         .collect::<Vec<_>>();
     if entries.is_empty() {
-        return false;
+        return open_plugin_mcp_setup(app, &directory);
     }
-    start_plugin_setup(app, plugin, entries)
+    start_plugin_setup(app, &directory, entries)
+}
+
+fn open_plugin_mcp_setup(app: &mut App, plugin: &str) -> bool {
+    match crate::core::agent::plugins::plugin_mcp_servers(&app.project_root, plugin) {
+        Ok(servers) if servers.is_empty() => {
+            app.note(&format!("plugin '{plugin}' is ready - no connection required"));
+            false
+        }
+        Ok(servers) => {
+            app.plugin_mcp_pending = servers.into_iter()
+                .map(|(name, config)| (format!("{plugin}:{name}"), config)).collect();
+            show_next_plugin_connection(app);
+            true
+        }
+        Err(e) => {
+            app.note(&format!("plugin '{plugin}' setup: {e}"));
+            false
+        }
+    }
+}
+
+fn show_next_plugin_connection(app: &mut App) {
+    let Some((name, config)) = app.plugin_mcp_pending.front() else {
+        next_plugin_setup(app);
+        return;
+    };
+    let target = if let Some(url) = config.get("url").and_then(serde_json::Value::as_str) {
+        // Do not put URL credentials, query strings or headers in the transcript.
+        reqwest::Url::parse(url).ok()
+            .and_then(|u| u.host_str().map(str::to_owned))
+            .unwrap_or_else(|| "remote MCP server".to_string())
+    } else {
+        config.get("command").and_then(serde_json::Value::as_str)
+            .unwrap_or("local MCP process").to_string()
+    };
+    app.picker = Some(Picker {
+        kind: PickerKind::PluginConnect,
+        items: vec![
+            PickerItem {
+                value: "connect".into(),
+                label: format!("Enable and connect {name}"),
+                hint: Some(format!("{target} - allow this plugin's MCP server")),
+                checkbox: None,
+            },
+            PickerItem {
+                value: "skip".into(),
+                label: "Not now".into(),
+                hint: Some("Keep installed; resume with /plugin setup <name>".into()),
+                checkbox: None,
+            },
+        ],
+        selected: 0,
+        armed_delete: None,
+    });
+}
+
+fn confirm_plugin_connection(app: &mut App, connect: bool) {
+    app.picker = None;
+    let Some((name, mut config)) = app.plugin_mcp_pending.pop_front() else { return };
+    if !connect {
+        show_next_plugin_connection(app);
+        return;
+    }
+    // The shared MCP config is user-owned. Never replace an unrelated server.
+    let result = (|| {
+        super::mcp::validate_server_name(&name)?;
+        super::mcp::validate_config(&config)?;
+        if let Some(existing) = super::mcp::get_server(&name) {
+            let mut existing = existing.config;
+            existing.as_object_mut().map(|o| o.remove("active"));
+            config.as_object_mut().map(|o| o.remove("active"));
+            if existing != config {
+                return Err(format!("MCP server '{name}' already has different settings; review it in /mcp"));
+            }
+        }
+        config["active"] = true.into();
+        super::mcp::upsert_server(&name, &config)
+    })();
+    if let Err(e) = result {
+        app.note(&e);
+        show_next_plugin_connection(app);
+        return;
+    }
+    app.note(&format!("connecting '{name}' - sign-in will open if required..."));
+    app.plugin_mcp_connecting = Some(name.clone());
+    app.mcp_job_request = Some(McpJob::PluginConnect(name));
+}
+
+fn finish_plugin_connection(app: &mut App, server: &str) {
+    if app.plugin_mcp_connecting.as_deref() == Some(server) {
+        app.plugin_mcp_connecting = None;
+        show_next_plugin_connection(app);
+    }
 }
 
 /// Install the dock state for `plugin` with `entries`, after announcing it.
@@ -8791,6 +8900,8 @@ fn handle_plugin_setup_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')));
     if cancel {
         app.plugin_setup = None;
+        app.plugin_setup_queue.clear();
+        app.plugin_mcp_pending.clear();
         app.note("plugin setup cancelled - resume with /plugin setup <name>");
         return;
     }
@@ -8825,8 +8936,9 @@ fn handle_plugin_setup_key(app: &mut App, key: KeyEvent, ctrl: bool) {
             app.note(&format!("plugin setup · {plugin} · {key_name} saved"));
             if done {
                 app.plugin_setup = None;
-                // Chain into the next plugin that still needs keys.
-                open_plugin_setup(app);
+                if !open_plugin_mcp_setup(app, &plugin) {
+                    next_plugin_setup(app);
+                }
             }
         }
         KeyCode::Char('s') | KeyCode::Char('S') if !ctrl && prompt.input.is_empty() => {
@@ -8840,7 +8952,9 @@ fn handle_plugin_setup_key(app: &mut App, key: KeyEvent, ctrl: bool) {
             if done {
                 app.plugin_setup = None;
                 app.note(&format!("plugin setup · {plugin} · skipped {key_name}"));
-                open_plugin_setup(app);
+                if !open_plugin_mcp_setup(app, &plugin) {
+                    next_plugin_setup(app);
+                }
             }
         }
         KeyCode::Backspace => {
@@ -9123,6 +9237,10 @@ async fn handle_key(
                 let action = picker.items[picker.selected].value.clone();
                 run_mcp_action(app, &action, mcp_servers).await;
             }
+            KeyCode::Enter if picker.kind == PickerKind::PluginConnect => {
+                let connect = picker.items[picker.selected].value == "connect";
+                confirm_plugin_connection(app, connect);
+            }
             // `/mcp` picker: `a` opens the add wizard, `e` opens the edit
             // wizard prefilled from the selected row, `d` removes the selected
             // server. All act through the shared config layer.
@@ -9380,6 +9498,7 @@ async fn handle_key(
                     PickerKind::PluginSelect => {}
                     // McpServer Enter is handled by the guarded arm above.
                     PickerKind::McpServer => {}
+                    PickerKind::PluginConnect => {}
                 }
             }
             // Esc on the detail screen steps back to the server list rather
@@ -9389,11 +9508,15 @@ async fn handle_key(
                 open_mcp_picker(app, mcp_servers).await;
             }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
+                app.plugin_setup_queue.clear();
+                app.plugin_mcp_pending.clear();
                 app.plugin_collection_url = None;
                 app.picker = None;
                 app.mcp_detail = None;
             }
             _ if ctrl_c || ctrl_d => {
+                app.plugin_setup_queue.clear();
+                app.plugin_mcp_pending.clear();
                 app.plugin_collection_url = None;
                 app.picker = None;
                 app.mcp_detail = None;
@@ -12038,16 +12161,16 @@ async fn plugin_command(app: &mut App, arg: &str) {
             app.note("installing plugin...");
         }
         "setup" => {
+            if app.plugin_mcp_connecting.is_some() {
+                app.note("plugin connection is in progress");
+                return;
+            }
+            app.plugin_setup_queue.clear();
+            app.plugin_mcp_pending.clear();
             if rest.is_empty() {
-                if !open_plugin_setup(app) {
-                    app.note(
-                        "no plugin is missing keys (usage: /plugin setup <name>)",
-                    );
-                }
-            } else if !open_plugin_setup_for(app, &rest) {
-                app.note(&format!(
-                    "plugin '{rest}' declares no setup keys (declare [setup.env] in its plugin.toml)"
-                ));
+                open_plugin_setup(app);
+            } else {
+                open_plugin_setup_for(app, &rest);
             }
         }
         "remove" => {
@@ -13212,8 +13335,13 @@ async fn run_mcp_job(job: McpJob, servers: crate::core::state::SharedMcpServers)
             McpJobDone::Authorized { server, result }
         }
         McpJob::Connect(server) => {
-            let result = connect_mcp_server(&server, &servers).await;
+            let result = connect_mcp_server(&server, &servers).await.map_err(|e| e.to_string());
             McpJobDone::Connected { server, result }
+        }
+        McpJob::PluginConnect(server) => {
+            super::mcp::disconnect(&server, &servers).await;
+            let result = connect_mcp_server(&server, &servers).await;
+            McpJobDone::PluginConnected { server, result }
         }
     }
 }
@@ -13266,7 +13394,10 @@ async fn finish_mcp_job(
                     servers,
                 )));
             }
-            Err(e) => app.note(&format!("could not start sign-in for '{server}': {e}")),
+            Err(e) => {
+                app.note(&format!("could not start sign-in for '{server}': {e}"));
+                finish_plugin_connection(app, &server);
+            }
         },
         McpJobDone::Authorized { server, result } => match result {
             Ok(()) => {
@@ -13282,6 +13413,7 @@ async fn finish_mcp_job(
             Err(e) => {
                 app.browser_confirm = None;
                 app.note(&format!("sign-in for '{server}' failed: {e}"));
+                finish_plugin_connection(app, &server);
             }
         },
         McpJobDone::Connected { server, result } => {
@@ -13289,12 +13421,30 @@ async fn finish_mcp_job(
                 Ok(()) => app.note(&format!("'{server}' connected")),
                 Err(e) => app.note(&format!("MCP: {e}")),
             }
+            finish_plugin_connection(app, &server);
             if app
                 .mcp_detail
                 .as_ref()
                 .is_some_and(|d| d.server.name == server)
             {
                 open_mcp_detail(app, &server, mcp_servers).await;
+            }
+        }
+        McpJobDone::PluginConnected { server, result } => {
+            match result {
+                Err(super::mcp::ConnectError::NeedsAuth { .. }) => {
+                    app.note(&format!("'{server}' requires sign-in - preparing authorization..."));
+                    *job = Some(tokio::spawn(run_mcp_job(
+                        McpJob::BeginAuth(server), mcp_servers.clone(),
+                    )));
+                }
+                result => {
+                    match result {
+                        Ok(()) => app.note(&format!("'{server}' connected - tools are ready")),
+                        Err(e) => app.note(&format!("could not connect '{server}': {e}; retry from /plugin setup")),
+                    }
+                    finish_plugin_connection(app, &server);
+                }
             }
         }
     }
@@ -13430,7 +13580,7 @@ fn show_mcp_tools(app: &mut App) {
 async fn connect_mcp_server(
     name: &str,
     servers: &crate::core::state::SharedMcpServers,
-) -> Result<(), String> {
+) -> Result<(), super::mcp::ConnectError> {
     let cfg = super::mcp::list_servers()
         .into_iter()
         .find(|s| s.name == name)
@@ -13438,7 +13588,6 @@ async fn connect_mcp_server(
         .ok_or_else(|| format!("'{name}' is no longer in mcp_config.json"))?;
     super::mcp::connect(name, &cfg, servers)
         .await
-        .map_err(|e| e.to_string())
 }
 
 /// `connect_mcp_server`, detached: for the paths with no screen waiting on the
@@ -30012,6 +30161,67 @@ mod tests {
         assert!(app.plugin_setup.is_none());
         assert!(transcript_text(&app).contains("plugin setup cancelled"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn plugin_setup_offers_mcp_connection_without_manual_configuration() {
+        crate::core::app::commands::with_temp_data_folder(|_| {
+            let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+            rt().block_on(run_command(&mut app, "plugin setup design", &no_mcp()));
+            assert!(transcript_text(&app).contains("is not installed"));
+            assert!(app.plugin_setup.is_none());
+            let dir = root.join(".jan/agent/plugins/design");
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("plugin.toml"), "name = \"design\"\n").unwrap();
+            std::fs::write(
+                dir.join(".mcp.json"),
+                r#"{"mcpServers":{"remote":{"url":"https://example.com/mcp"}}}"#,
+            )
+            .unwrap();
+            finish_plugin_install(
+                &mut app,
+                None,
+                Ok(crate::core::agent::plugins::GitInstall::Installed(
+                    crate::core::agent::plugins::installed(&root),
+                )),
+            );
+            let screen = render_rows(&mut app, 100, 30).join("\n");
+            assert!(screen.contains("Enable and connect"), "{screen}");
+            assert!(screen.contains("example.com"), "{screen}");
+            assert!(super::super::mcp::get_server("design:remote").is_none());
+            rt().block_on(handle_key(
+                &mut app, key(KeyCode::Esc), &PermissionRegistry::default(), &mut None, &no_mcp(),
+            ));
+            assert!(super::super::mcp::get_server("design:remote").is_none());
+            rt().block_on(run_command(&mut app, "plugin setup design", &no_mcp()));
+            rt().block_on(handle_key(
+                &mut app, key(KeyCode::Enter), &PermissionRegistry::default(), &mut None, &no_mcp(),
+            ));
+            let configured = super::super::mcp::get_server("design:remote").unwrap();
+            assert!(configured.active);
+            assert_eq!(configured.config["url"], "https://example.com/mcp");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mode = std::fs::metadata(super::super::mcp::config_file_path())
+                    .unwrap().permissions().mode();
+                assert_eq!(mode & 0o777, 0o600);
+            }
+            // An existing user-owned server must not be silently replaced.
+            app.plugin_mcp_connecting = None;
+            super::super::mcp::upsert_server("design:remote", &serde_json::json!({
+                "type": "http", "url": "https://other.example/mcp",
+            })).unwrap();
+            rt().block_on(run_command(&mut app, "plugin setup design", &no_mcp()));
+            rt().block_on(handle_key(
+                &mut app, key(KeyCode::Enter), &PermissionRegistry::default(), &mut None, &no_mcp(),
+            ));
+            assert_eq!(
+                super::super::mcp::get_server("design:remote").unwrap().config["url"],
+                "https://other.example/mcp",
+            );
+            std::fs::remove_dir_all(root).unwrap();
+        });
     }
 
     #[tokio::test]
