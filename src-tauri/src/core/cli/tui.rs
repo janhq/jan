@@ -32365,9 +32365,9 @@ mod tests {
         // Removed keys fall back to their defaults, not stale in-memory values.
         assert_eq!(app.configured_context_window, None);
         assert_eq!(app.max_tokens, None);
-        assert_eq!(app.fast_mode, false);
-        assert_eq!(app.show_reasoning, false);
-        assert_eq!(app.send_reasoning, true);
+        assert!(!app.fast_mode);
+        assert!(!app.show_reasoning);
+        assert!(app.send_reasoning);
         assert_eq!(app.reserve_tokens, 16_384);
     }
 
