@@ -40,6 +40,10 @@ import {
   type MessageCircleIconHandle,
 } from '@/components/animated-icon/message-circle'
 import {
+  SettingsIcon,
+  type SettingsIconHandle,
+} from '@/components/animated-icon/settings'
+import {
   startNewSession,
   useCoworkSessions,
   type CoworkSession,
@@ -148,6 +152,7 @@ export function NavCowork() {
 
   const goCowork = useCallback(() => navigate({ to: route.cowork }), [navigate])
   const newSessionIconRef = useRef<MessageCircleIconHandle>(null)
+  const settingsIconRef = useRef<SettingsIconHandle>(null)
   const newSession = () => {
     startNewSession(Object.keys(useCoworkRun.getState().runId))
     goCowork()
@@ -215,6 +220,20 @@ export function NavCowork() {
             </SidebarMenuItem>
           )
         })}
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            onClick={() => navigate({ to: route.settings.general })}
+            onMouseEnter={() => settingsIconRef.current?.startAnimation()}
+            onMouseLeave={() => settingsIconRef.current?.stopAnimation()}
+          >
+            <SettingsIcon
+              ref={settingsIconRef}
+              className="text-foreground/70"
+              size={16}
+            />
+            <span>{t('common:settings')}</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
       </SidebarMenu>
 
       {/* px-0: the group's own p-2 would indent the session rows past the nav

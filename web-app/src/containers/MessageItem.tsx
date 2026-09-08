@@ -566,7 +566,7 @@ export const MessageItem = memo(
           usedSkills.length > 0 && (
             <div
               aria-label={t('common:skillsUsedLabel')}
-              className="mt-2 inline-flex rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground"
+              className="mt-3 inline-flex rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground"
             >
               {t('common:skillsUsed', { skills: usedSkills.join(', ') })}
             </div>
@@ -579,13 +579,13 @@ export const MessageItem = memo(
           message.role === 'assistant' &&
           !awaitingApproval &&
           (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED) && (
-            <div className="mt-2">
+            <div className="mt-3">
               <PromptProgress hideIdle={hasPendingToolCall} />
             </div>
           )}
 
         {typeof messageError === 'string' && messageError.length > 0 && (
-          <div className="mt-2 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
             <IconAlertTriangle
               size={16}
               className="mt-0.5 shrink-0 text-destructive"
@@ -615,49 +615,53 @@ export const MessageItem = memo(
           </div>
         )}
 
-        {/* Message actions for user messages */}
+        {/* Message actions for user messages. Same shape as the assistant row
+            below -- a timestamp, gap-2, then a gap-1 icon cluster -- so the two
+            meta rows line up across roles. */}
         {message.role === 'user' && !hideActions && (
-          <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
+          <div className="mt-3 flex items-center justify-end gap-2 text-muted-foreground text-xs opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
             <span className="text-muted-foreground">
               {formatDate(createdAt)}
             </span>
-            {versionNav}
-            <CopyButton text={getFullTextContent()} />
+            <div className="flex items-center gap-1">
+              {versionNav}
+              <CopyButton text={getFullTextContent()} />
 
-            {onEdit &&
-              status !== CHAT_STATUS.STREAMING &&
-              status !== CHAT_STATUS.SUBMITTED && (
-                <EditMessageDialog
-                  message={getFullTextContent()}
-                  imageUrls={imageUrls.length > 0 ? imageUrls : undefined}
-                  onSave={handleEdit}
-                />
-              )}
+              {onEdit &&
+                status !== CHAT_STATUS.STREAMING &&
+                status !== CHAT_STATUS.SUBMITTED && (
+                  <EditMessageDialog
+                    message={getFullTextContent()}
+                    imageUrls={imageUrls.length > 0 ? imageUrls : undefined}
+                    onSave={handleEdit}
+                  />
+                )}
 
-            {onRetry &&
-              status !== CHAT_STATUS.STREAMING &&
-              status !== CHAT_STATUS.SUBMITTED && (
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => onRetry(message.id, getFullTextContent())}
-                  title={t('chat:actions.askAgain')}
-                >
-                  <IconRefresh size={16} className="text-muted-foreground" />
-                </Button>
-              )}
+              {onRetry &&
+                status !== CHAT_STATUS.STREAMING &&
+                status !== CHAT_STATUS.SUBMITTED && (
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => onRetry(message.id, getFullTextContent())}
+                    title={t('chat:actions.askAgain')}
+                  >
+                    <IconRefresh size={16} className="text-muted-foreground" />
+                  </Button>
+                )}
 
-            {onDelete &&
-              status !== CHAT_STATUS.STREAMING &&
-              status !== CHAT_STATUS.SUBMITTED && (
-                <DeleteMessageDialog onDelete={handleDelete} />
-              )}
+              {onDelete &&
+                status !== CHAT_STATUS.STREAMING &&
+                status !== CHAT_STATUS.SUBMITTED && (
+                  <DeleteMessageDialog onDelete={handleDelete} />
+                )}
+            </div>
           </div>
         )}
 
         {/* Message actions for assistant messages (non-tool) */}
         {message.role === 'assistant' && !hideActions && (
-          <div className="flex items-center gap-2 text-muted-foreground text-xs">
+          <div className="mt-3 flex items-center gap-2 text-muted-foreground text-xs">
             {!isStreaming && (
               <span className="text-muted-foreground">
                 {formatDate(createdAt)}

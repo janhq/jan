@@ -34,6 +34,7 @@ export const localStorageKey = {
   pausedDownloads: 'paused-downloads',
   // Value predates the Cowork rename; changing it would orphan saved sessions.
   coworkSessions: 'code-sessions',
+  cotDuration: 'cot-duration',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

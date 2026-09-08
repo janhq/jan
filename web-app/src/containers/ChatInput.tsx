@@ -2809,7 +2809,10 @@ const ChatInput = memo(function ChatInput({
                   })()}
               </div>
               {surfaceControls && (
-                <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-hide">
+                // Wrap on narrow widths instead of scrolling behind a hidden
+                // scrollbar: a control strip that overflows off-screen reads as
+                // clipped, and the scroll is undiscoverable on desktop.
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-y-1 gap-x-1">
                   <Separator
                     orientation="vertical"
                     className="mx-1 h-4 shrink-0"

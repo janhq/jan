@@ -1,5 +1,12 @@
 import type { CoworkTurn, SubagentRun } from '@/types/coworkSession'
 
+/**
+ * One dark-mode-aware treatment for additions/deletions, shared by the changes
+ * chip and the diff panel so the same +/- figure never reads three ways.
+ */
+export const DIFF_ADD_TEXT = 'text-emerald-600 dark:text-emerald-400'
+export const DIFF_DEL_TEXT = 'text-red-600 dark:text-red-500'
+
 export type CoworkDiffOperation = {
   diff: string
   source: 'main' | 'subagent'

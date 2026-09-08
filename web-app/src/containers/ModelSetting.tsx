@@ -28,12 +28,14 @@ type ModelSettingProps = {
   model: Model
 }
 
-export function ModelSetting({
-  model,
-  provider,
-}: ModelSettingProps) {
+/**
+ * Shared model-settings form + persistence, driven by both the header Sheet
+ * (ModelSetting) and the Cowork right rail (CoworkModelPanel). Keeping the
+ * handlers here avoids two copies of the debounced yaml-write / router-restart
+ * logic diverging.
+ */
+function useModelSettingControls(model: Model, provider: ProviderObject) {
   const { updateProvider } = useModelProvider()
-  const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const setActiveModels = useAppState((state) => state.setActiveModels)
 
@@ -249,26 +251,28 @@ export function ModelSetting({
     true
   const fitCtxSetting = provider.settings?.find((s) => s.key === 'fit_ctx')
 
-  return (
-    <Sheet>
-      <SheetTrigger asChild>
-        <Button variant="ghost" size="icon-xs">
-          <IconSettings size={18} className="text-muted-foreground" />
-        </Button>
-      </SheetTrigger>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>
-            {t('common:modelSettings.title', {
-              modelId: getModelDisplayName(model),
-            })}
-          </SheetTitle>
-          <SheetDescription className='text-xs leading-normal'>
-            {t('common:modelSettings.description')}
-          </SheetDescription>
-        </SheetHeader>
+  return {
+    handleSettingChange,
+    handleTemplateKwargsChange,
+    handleEngineSettingChange,
+    fitEnabled,
+    fitCtxSetting,
+  }
+}
 
-        <div className="px-4 space-y-8 pb-4 flex-1 min-h-0 overflow-y-auto">
+/** The settings body, shared by the header Sheet and the Cowork rail. */
+export function ModelSettingFields({ model, provider }: ModelSettingProps) {
+  const { t } = useTranslation()
+  const {
+    handleSettingChange,
+    handleTemplateKwargsChange,
+    handleEngineSettingChange,
+    fitEnabled,
+    fitCtxSetting,
+  } = useModelSettingControls(model, provider)
+
+  return (
+    <div className="px-4 space-y-8 pb-4 flex-1 min-h-0 overflow-y-auto">
           {provider.provider === 'llamacpp' && (
             <SpecDraftPanel modelId={model.id} />
           )}
@@ -372,7 +376,31 @@ export function ModelSetting({
             )
           })
           })()}
-        </div>
+    </div>
+  )
+}
+
+export function ModelSetting({ model, provider }: ModelSettingProps) {
+  const { t } = useTranslation()
+  return (
+    <Sheet>
+      <SheetTrigger asChild>
+        <Button variant="ghost" size="icon-xs">
+          <IconSettings size={18} className="text-muted-foreground" />
+        </Button>
+      </SheetTrigger>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>
+            {t('common:modelSettings.title', {
+              modelId: getModelDisplayName(model),
+            })}
+          </SheetTitle>
+          <SheetDescription className="text-xs leading-normal">
+            {t('common:modelSettings.description')}
+          </SheetDescription>
+        </SheetHeader>
+        <ModelSettingFields model={model} provider={provider} />
       </SheetContent>
     </Sheet>
   )
