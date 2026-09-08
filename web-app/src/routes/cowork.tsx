@@ -1348,6 +1348,20 @@ function CoworkPage() {
                         isReasoningAtBottom={isReasoningAtBottom}
                         onReasoningScroll={handleReasoningScroll}
                         onReasoningScrollToBottom={forceScrollReasoningToBottom}
+                        highlightedPrefix={
+                          message.role === 'user'
+                            ? skillCommandPrefix(
+                                message.parts
+                                  .filter(
+                                    (part): part is { type: 'text'; text: string } =>
+                                      part.type === 'text'
+                                  )
+                                  .map((part) => part.text)
+                                  .join('\n'),
+                                skillCommands
+                              )
+                            : null
+                        }
                       />
                       {/* Derived from the message's own write parts, so nothing
                         shared with the chat surface needs to know artifacts
