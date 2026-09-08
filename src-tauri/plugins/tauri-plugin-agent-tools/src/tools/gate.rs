@@ -124,6 +124,19 @@ pub enum Decision {
     Prompt(PromptKind),
 }
 
+/// Filesystem roots and hiding policy used when gating a tool call.
+#[derive(Debug, Clone, Copy)]
+pub struct GateContext<'a> {
+    /// The project root: paths inside it are the agent's own workspace.
+    pub project_root: &'a Path,
+    /// The session scratch, bound over `/tmp` in the sandbox where it is mounted.
+    pub scratch: Option<&'a Path>,
+    /// Folders the user attached read-only: reads may reach them, writes may not.
+    pub read_roots: &'a [PathBuf],
+    /// Hide the agent's own `.jan` state (skills/memory/config) from general tools.
+    pub hide_jan: bool,
+}
+
 /// Decide how a built-in tool call should be gated, combining the static
 /// agent.toml policy, capability class, sandbox escape, and session grants.
 ///
@@ -131,16 +144,12 @@ pub enum Decision {
 /// session grant > capability rules. Reads inside the project are silently
 /// allowed; reads that escape the project, and all writes/exec, prompt (unless
 /// already granted this session or pre-approved in agent.toml).
-#[allow(clippy::too_many_arguments)]
 pub fn resolve_decision(
     tool: &BuiltinTool,
     args: &serde_json::Value,
-    project_root: &Path,
-    scratch: Option<&Path>,
-    read_roots: &[PathBuf],
+    ctx: &GateContext,
     perms: &ToolPermissions,
     grants: &SessionGrants,
-    hide_jan: bool,
 ) -> Decision {
     if perms.is_denied(tool.name) {
         return Decision::HardDeny(DenyReason::Policy);
@@ -150,19 +159,19 @@ pub fn resolve_decision(
     // Checked ahead of allow rules so an allowed tool name cannot bypass it.
     // The whole check is skipped when not hiding, so an unconfined CLI run can
     // read and edit its own `.jan` like any other project state.
-    let hits_hidden = hide_jan
+    let hits_hidden = ctx.hide_jan
         && tool.path_args.iter().any(|key| {
             args.get(key)
                 .and_then(|v| v.as_str())
-                .map(|p| is_hidden_jan_path(project_root, p))
+                .map(|p| is_hidden_jan_path(ctx.project_root, p))
                 .unwrap_or(false)
         });
-    let exec_hits_hidden = hide_jan
+    let exec_hits_hidden = ctx.hide_jan
         && tool.capability == Capability::Exec
         && args
             .get("command")
             .and_then(|v| v.as_str())
-            .map(|c| command_touches_hidden_jan_path(project_root, c))
+            .map(|c| command_touches_hidden_jan_path(ctx.project_root, c))
             .unwrap_or(false);
     if hits_hidden || exec_hits_hidden {
         return Decision::HardDeny(DenyReason::Hidden);
@@ -184,7 +193,8 @@ pub fn resolve_decision(
                 args.get(key)
                     .and_then(|v| v.as_str())
                     .map(|p| {
-                        escapes_read_roots(project_root, scratch, read_roots, p).unwrap_or(true)
+                        escapes_read_roots(ctx.project_root, ctx.scratch, ctx.read_roots, p)
+                            .unwrap_or(true)
                     })
                     .unwrap_or(false)
             });
@@ -207,7 +217,7 @@ pub fn resolve_decision(
             let escapes = tool.path_args.iter().any(|key| {
                 args.get(key)
                     .and_then(|v| v.as_str())
-                    .map(|p| escapes_project(project_root, scratch, p).unwrap_or(true))
+                    .map(|p| escapes_project(ctx.project_root, ctx.scratch, p).unwrap_or(true))
                     .unwrap_or(false)
             });
             if escapes {
@@ -282,12 +292,14 @@ mod tests {
         let d = resolve_decision(
             lookup("read").unwrap(),
             &json!({"path": "inner.txt"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -301,12 +313,14 @@ mod tests {
         let d = resolve_decision(
             lookup("read").unwrap(),
             &json!({"path": "../x"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
         let _ = std::fs::remove_dir_all(&root);
@@ -321,12 +335,14 @@ mod tests {
             let d = resolve_decision(
                 lookup(tool).unwrap(),
                 &json!({}),
-                &root,
-                None,
-                &[],
+                &GateContext {
+                    project_root: &root,
+                    scratch: None,
+                    read_roots: &[],
+                    hide_jan: true,
+                },
                 &perms,
                 &grants,
-                true,
             );
             assert_eq!(d, Decision::Allow, "{tool} should be auto-allowed");
         }
@@ -342,12 +358,14 @@ mod tests {
         let d = resolve_decision(
             lookup("web_search").unwrap(),
             &json!({}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(
             d,
@@ -369,12 +387,14 @@ mod tests {
             let d = resolve_decision(
                 lookup(tool).unwrap(),
                 &json!({ "path": ".jan/agent/agent.toml" }),
-                &root,
-                None,
-                &[],
+                &GateContext {
+                    project_root: &root,
+                    scratch: None,
+                    read_roots: &[],
+                    hide_jan: true,
+                },
                 &perms,
                 &grants,
-                true,
             );
             assert_eq!(
                 d,
@@ -386,12 +406,14 @@ mod tests {
         let d = resolve_decision(
             lookup("bash").unwrap(),
             &json!({"command": "cat .jan/agent/agent.toml"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::HardDeny(DenyReason::Hidden));
         // The instructions file is an ordinary project file at the root.
@@ -399,12 +421,14 @@ mod tests {
         let d = resolve_decision(
             lookup("read").unwrap(),
             &json!({"path": "JAN.md"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -424,12 +448,14 @@ mod tests {
             let d = resolve_decision(
                 lookup(tool).unwrap(),
                 &json!({ "path": ".jan/agent/agent.toml" }),
-                &root,
-                None,
-                &[],
+                &GateContext {
+                    project_root: &root,
+                    scratch: None,
+                    read_roots: &[],
+                    hide_jan: false,
+                },
                 &perms,
                 &grants,
-                false,
             );
             assert_ne!(
                 d,
@@ -441,12 +467,14 @@ mod tests {
         let d = resolve_decision(
             lookup("bash").unwrap(),
             &json!({"command": "cat .jan/agent/agent.toml"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: false,
+            },
             &perms,
             &grants,
-            false,
         );
         assert_ne!(d, Decision::HardDeny(DenyReason::Hidden));
         let _ = std::fs::remove_dir_all(&root);
@@ -460,12 +488,14 @@ mod tests {
         let d = resolve_decision(
             lookup("write").unwrap(),
             &json!({"path": "out.txt"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Write));
         let _ = std::fs::remove_dir_all(&root);
@@ -479,12 +509,14 @@ mod tests {
         let d = resolve_decision(
             lookup("bash").unwrap(),
             &json!({"command": "ls"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
         let _ = std::fs::remove_dir_all(&root);
@@ -499,12 +531,14 @@ mod tests {
             let d = resolve_decision(
                 lookup("bash").unwrap(),
                 &json!({"command": "ls", "job_id": job_id}),
-                &root,
-                None,
-                &[],
+                &GateContext {
+                    project_root: &root,
+                    scratch: None,
+                    read_roots: &[],
+                    hide_jan: true,
+                },
                 &perms,
                 &grants,
-                true,
             );
             assert_eq!(d, Decision::Prompt(PromptKind::Exec), "job_id {job_id:?}");
         }
@@ -519,12 +553,14 @@ mod tests {
         let d = resolve_decision(
             lookup("bash").unwrap(),
             &json!({"job_id": "bash-0"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -550,12 +586,14 @@ mod tests {
         let d = resolve_decision(
             lookup("bash").unwrap(),
             &json!({"command": "git push"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Allow);
 
@@ -563,12 +601,14 @@ mod tests {
         let d = resolve_decision(
             lookup("bash").unwrap(),
             &json!({"command": "rm -rf /"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
         let _ = std::fs::remove_dir_all(&root);
@@ -590,12 +630,14 @@ mod tests {
             let d = resolve_decision(
                 lookup("bash").unwrap(),
                 &json!({ "command": cmd }),
-                &root,
-                None,
-                &[],
+                &GateContext {
+                    project_root: &root,
+                    scratch: None,
+                    read_roots: &[],
+                    hide_jan: true,
+                },
                 &perms,
                 &grants,
-                true,
             );
             assert_eq!(
                 d,
@@ -617,12 +659,14 @@ mod tests {
             let d = resolve_decision(
                 lookup("bash").unwrap(),
                 &json!({ "command": cmd }),
-                &root,
-                None,
-                &[],
+                &GateContext {
+                    project_root: &root,
+                    scratch: None,
+                    read_roots: &[],
+                    hide_jan: true,
+                },
                 &perms,
                 &grants,
-                true,
             );
             assert_eq!(d, Decision::Allow, "should be covered: {cmd}");
         }
@@ -640,12 +684,14 @@ mod tests {
         let d = resolve_decision(
             lookup("bash").unwrap(),
             &json!({"command": "sudo   systemctl restart nginx"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Allow);
 
@@ -653,12 +699,14 @@ mod tests {
         let d = resolve_decision(
             lookup("bash").unwrap(),
             &json!({"command": "sudo rm -rf /"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
         let _ = std::fs::remove_dir_all(&root);
@@ -681,12 +729,14 @@ mod tests {
                 let d = resolve_decision(
                     lookup(tool).unwrap(),
                     &json!({ "path": path }),
-                    &root,
-                    None,
-                    &[],
+                    &GateContext {
+                        project_root: &root,
+                        scratch: None,
+                        read_roots: &[],
+                        hide_jan: true,
+                    },
                     &perms,
                     &grants,
-                    true,
                 );
                 assert_eq!(
                     d,
@@ -707,12 +757,14 @@ mod tests {
             let d = resolve_decision(
                 lookup(name).unwrap(),
                 &json!({"name": "x", "content": "y"}),
-                &root,
-                None,
-                &[],
+                &GateContext {
+                    project_root: &root,
+                    scratch: None,
+                    read_roots: &[],
+                    hide_jan: true,
+                },
                 &perms,
                 &grants,
-                true,
             );
             assert_eq!(d, Decision::Allow, "{name} should auto-allow");
         }
@@ -722,12 +774,14 @@ mod tests {
         let d = resolve_decision(
             lookup("memory_write").unwrap(),
             &json!({"name": "x", "content": "y"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &denied,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::HardDeny(DenyReason::Policy));
         let _ = std::fs::remove_dir_all(&root);
@@ -741,12 +795,14 @@ mod tests {
         let d = resolve_decision(
             lookup("write").unwrap(),
             &json!({"path": "out.txt"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::HardDeny(DenyReason::Policy));
         let _ = std::fs::remove_dir_all(&root);
@@ -760,12 +816,14 @@ mod tests {
         let d = resolve_decision(
             lookup("write").unwrap(),
             &json!({"path": "out.txt"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -780,12 +838,14 @@ mod tests {
         let d = resolve_decision(
             lookup("write").unwrap(),
             &json!({"path": "out.txt"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -800,12 +860,14 @@ mod tests {
         let d = resolve_decision(
             lookup("read").unwrap(),
             &json!({"path": "../x"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -819,12 +881,14 @@ mod tests {
         let d = resolve_decision(
             lookup("write").unwrap(),
             &json!({"path": "sub/new.txt"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Write));
         let _ = std::fs::remove_dir_all(&root);
@@ -840,12 +904,14 @@ mod tests {
             let d = resolve_decision(
                 lookup("write").unwrap(),
                 &json!({"path": path}),
-                &root,
-                None,
-                &[],
+                &GateContext {
+                    project_root: &root,
+                    scratch: None,
+                    read_roots: &[],
+                    hide_jan: true,
+                },
                 &perms,
                 &grants,
-                true,
             );
             assert_eq!(d, Decision::Prompt(PromptKind::WriteEscape), "{}", path);
         }
@@ -861,12 +927,14 @@ mod tests {
         let d = resolve_decision(
             lookup("write").unwrap(),
             &json!({"path": "../x"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
@@ -880,12 +948,14 @@ mod tests {
         let d = resolve_decision(
             lookup("read").unwrap(),
             &json!({"path": "../x"}),
-            &root,
-            None,
-            &[],
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
         let _ = std::fs::remove_dir_all(&root);
@@ -905,24 +975,28 @@ mod tests {
         let read = resolve_decision(
             lookup("read").unwrap(),
             &json!({"path": target}),
-            &root,
-            None,
-            &roots,
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &roots,
+                hide_jan: true,
+            },
             &perms,
             &grants,
-            true,
         );
         assert_eq!(read, Decision::Allow);
 
         let write = resolve_decision(
             lookup("write").unwrap(),
             &json!({"path": repo.join("new.txt").to_string_lossy(), "content": "y"}),
-            &root,
-            None,
-            &roots,
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &roots,
+                hide_jan: true,
+            },
             &ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
             &grants,
-            true,
         );
         assert_eq!(write, Decision::Prompt(PromptKind::WriteEscape));
 
@@ -939,12 +1013,14 @@ mod tests {
         let d = resolve_decision(
             lookup("read").unwrap(),
             &json!({"path": elsewhere.join("secret").to_string_lossy()}),
-            &root,
-            None,
-            &roots,
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &roots,
+                hide_jan: true,
+            },
             &ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
             &SessionGrants::default(),
-            true,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
         for d in [&root, &repo, &elsewhere] {
