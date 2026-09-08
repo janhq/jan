@@ -8,10 +8,10 @@ import { Callout } from 'nextra/components'
 
 # Plugins
 
-A plugin is a set of [skills](/docs/agent/skills) installed from a git repository. Any repo that
-looks like a skill collection - or is a single skill - can be installed with one command, without
-copying files by hand or trusting a download step. Installing a plugin never runs its code: a
-plugin carries instructions plus optional metadata, nothing executable.
+A plugin packages skills, commands, agent definitions, and optional MCP server
+declarations from a git repository. Installing it copies those files without
+running its scripts or starting its MCP servers. Enabling a declared MCP server
+is a separate, explicit setup action that can run local code or contact a remote service.
 
 ## Where they live
 
@@ -38,8 +38,9 @@ A plugin's payload is discovered conventionally, so a repo needs no manifest to 
   and `repo`. The directory name is the plugin's identity; the manifest's `name` is what
   `plugin list` shows when present.
 
-This is the same layout Claude Code and Codex plugins use, so existing plugins install and work
-unchanged: `anthropics/claude-plugins-official` and similar marketplaces are drop-in compatible.
+Jan discovers these conventional directories in Claude Code-style plugin repositories,
+including `anthropics/claude-plugins-official`. Installation does not guarantee runtime
+compatibility: external commands, credentials, and provider approval may still be required.
 
 ## Installing
 
@@ -76,24 +77,38 @@ rejected outright - a plugin name is a name, not a command.
 In the TUI, installation continues directly into setup. Jan reads the plugin's
 `.mcp.json` or inline `mcpServers` declarations, collects required keys in a masked
 field, and offers **Enable and connect** for each server. Nothing is enabled or
-executed until you confirm. Remote servers that require OAuth continue into
-browser sign-in and reconnect automatically afterward.
+executed until you confirm. For providers that accept Jan's OAuth client registration,
+setup offers browser sign-in and reconnects after successful authorization.
 
 Choose **Not now** or press Esc to keep the plugin installed without completing
-its connections. Resume with `/plugin setup <name>`; no separate terminal command
-or Jan restart is needed. Plugins without keys or MCP servers are ready immediately.
+its connections. Resume with `/plugin setup <name>`, or use `/plugin setup` to
+choose one installed plugin. Type or paste to filter by name and description
+(case-insensitive); Backspace edits the search, Up/Down selects, Enter opens setup,
+and Esc cancels. Rows identify the installation directory and also show the manifest
+name when it differs. Opening the picker does not run setup for every plugin or enable
+any servers. No separate terminal command or Jan restart is needed. Plugins without
+keys or MCP servers need no connection setup.
 
 Imported MCP servers use names such as `figma:figma` to avoid collisions. Existing
 servers with different settings are not overwritten; review them in `/mcp`.
 Stored key references such as `${API_KEY}` and `${CLAUDE_PLUGIN_ROOT}` are resolved
 from the plugin's key store and installed directory. Key files and generated MCP
 configuration are owner-only (`0600`) on Unix.
+Shell credential injection is scoped to the project that registered the keys;
+starting a run in another project does not replace that project's shell credentials.
 
 OAuth browser sign-in requires successful client registration. If the provider
 rejects registration, Jan shows the endpoint, HTTP status, and rejection detail
 in the TUI instead of opening a consent page with a placeholder client ID.
-[Figma restricts its remote MCP server to approved clients](https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/);
-installing its plugin does not grant Jan that approval.
+[Figma restricts its remote MCP server to approved clients](https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/).
+**Remote Figma sign-in is currently blocked for Jan:** registration returns HTTP 403.
+Installing the Figma plugin does not grant approval, and retrying setup does not remove
+that restriction. Jan does not currently accept pre-registered OAuth client credentials.
+
+MCP connections already enabled in Jan remain in its user-owned configuration.
+Skipping setup does not disable them, and removing a plugin does not remove its imported
+MCP entries. Use `/mcp`, select the server, then **Disable** or **Remove server**.
+This also applies to placeholder servers declared by example plugins.
 
 ## Invoking plugin skills
 

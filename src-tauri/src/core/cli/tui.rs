@@ -425,6 +425,8 @@ enum PickerKind {
     /// `/plugin install <collection>`: choose which plugins inside a collection
     /// repo to install. Space toggles a row, Enter installs everything checked.
     PluginSelect,
+    /// `/plugin setup`: choose one installed plugin without starting setup.
+    PluginSetup,
     /// Review a plugin-provided MCP server before enabling or executing it.
     PluginConnect,
     /// One MCP server's detail screen: the info block plus the actions that
@@ -438,13 +440,40 @@ struct Picker {
     kind: PickerKind,
     items: Vec<PickerItem>,
     selected: usize,
+    search: Option<PickerSearch>,
     /// Index of the provider row a first `d` armed for deletion, so a second
     /// `d` on the same row confirms it. `None` = nothing armed. Resets on
     /// navigation so an unrelated keypress can never delete by accident.
     armed_delete: Option<usize>,
 }
 
+/// Preserve the source rows while typing narrows the visible selection.
+struct PickerSearch {
+    all_items: Vec<PickerItem>,
+    query: String,
+}
+
 impl Picker {
+    fn with_search(mut self) -> Self {
+        self.search = Some(PickerSearch {
+            all_items: self.items.clone(),
+            query: String::new(),
+        });
+        self
+    }
+
+    fn refresh_search(&mut self) {
+        let Some(search) = &self.search else { return };
+        let query = search.query.to_lowercase();
+        let terms: Vec<&str> = query.split_whitespace().collect();
+        self.items = search.all_items.iter().filter(|item| {
+            let searchable = format!("{} {}", item.label, item.hint.as_deref().unwrap_or(""))
+                .to_lowercase();
+            terms.iter().all(|term| searchable.contains(term))
+        }).cloned().collect();
+        self.selected = 0;
+    }
+
     fn title(&self) -> &'static str {
         match self.kind {
             PickerKind::ResumeThread => " resume thread ",
@@ -457,6 +486,7 @@ impl Picker {
             PickerKind::ProviderSettings => " providers ",
             PickerKind::Todo => " todo ",
             PickerKind::PluginSelect => " install plugins ",
+            PickerKind::PluginSetup => " set up plugin ",
             PickerKind::PluginConnect => " plugin connection ",
             PickerKind::McpServer => " mcp server ",
         }
@@ -478,6 +508,7 @@ impl Picker {
             }
             PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
             PickerKind::PluginSelect => " ↑/↓ select   Space toggle   Enter install   Esc cancel",
+            PickerKind::PluginSetup => " Type to search   Up/Down select   Enter set up   Esc cancel",
             PickerKind::PluginConnect => " Up/Down select   Enter confirm   Esc cancel setup",
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
         }
@@ -7414,6 +7445,7 @@ fn finish_plugin_install(
             ));
             app.picker = Some(Picker {
                 kind: PickerKind::PluginSelect,
+                search: None,
                 items: candidates
                     .into_iter()
                     .map(|c| PickerItem {
@@ -8476,6 +8508,11 @@ fn route_paste_event(app: &mut App, event: Event) {
     } else if let Some(prompt) = app.plugin_setup.as_mut() {
         // A pasted plugin API key belongs to the setup field.
         prompt.paste(&text);
+    } else if let Some(picker) = app.picker.as_mut().filter(|picker| picker.search.is_some()) {
+        if let Some(search) = picker.search.as_mut() {
+            search.query.extend(text.chars().filter(|c| !c.is_control()));
+        }
+        picker.refresh_search();
     } else if let Some(prompt) = app.settings_prompt.as_mut() {
         prompt.paste(&text);
     } else if let Some(prompt) = app.mcp_prompt.as_mut() {
@@ -8749,11 +8786,30 @@ impl MaskedPrompt for PluginSetupPrompt {
     }
 }
 
-/// Set up installed plugins without leaving the TUI.
+/// Choose one installed plugin; opening setup must not run the whole catalog.
 fn open_plugin_setup(app: &mut App) -> bool {
-    app.plugin_setup_queue = crate::core::agent::plugins::installed(&app.project_root)
-        .into_iter().map(|p| p.name).collect();
-    next_plugin_setup(app)
+    let plugins = crate::core::agent::plugins::installed_entries(&app.project_root);
+    if plugins.is_empty() {
+        app.note("no plugins installed - use /plugin install <git-url> first");
+        return false;
+    }
+    app.picker = Some(Picker {
+        kind: PickerKind::PluginSetup,
+        search: None,
+        items: plugins.into_iter().map(|(directory, plugin)| PickerItem {
+            label: if directory == plugin.name {
+                directory.clone()
+            } else {
+                format!("{directory} ({})", plugin.name)
+            },
+            value: directory,
+            hint: (!plugin.description.is_empty()).then_some(plugin.description),
+            checkbox: None,
+        }).collect(),
+        selected: 0,
+        armed_delete: None,
+    }.with_search());
+    true
 }
 
 fn next_plugin_setup(app: &mut App) -> bool {
@@ -8815,6 +8871,7 @@ fn show_next_plugin_connection(app: &mut App) {
     };
     app.picker = Some(Picker {
         kind: PickerKind::PluginConnect,
+        search: None,
         items: vec![
             PickerItem {
                 value: "connect".into(),
@@ -9198,6 +9255,19 @@ async fn handle_key(
     // act and close; the `/mcp` picker toggles the selected row in place.
     if let Some(picker) = app.picker.as_mut() {
         match key.code {
+            KeyCode::Char(ch) if picker.search.is_some() && !ctrl && !alt && !sup => {
+                if let Some(search) = picker.search.as_mut() {
+                    search.query.push(ch);
+                }
+                picker.refresh_search();
+            }
+            KeyCode::Backspace if picker.search.is_some() => {
+                if let Some(search) = picker.search.as_mut() {
+                    search.query.pop();
+                }
+                picker.refresh_search();
+            }
+            KeyCode::Enter if picker.items.is_empty() => {}
             KeyCode::Up | KeyCode::Char('k') => {
                 picker.armed_delete = None;
                 picker.selected = picker.selected.saturating_sub(1);
@@ -9496,6 +9566,9 @@ async fn handle_key(
                     PickerKind::Todo => {}
                     // PluginSelect Enter is handled by the guarded arm above.
                     PickerKind::PluginSelect => {}
+                    PickerKind::PluginSetup => {
+                        open_plugin_setup_for(app, &value);
+                    }
                     // McpServer Enter is handled by the guarded arm above.
                     PickerKind::McpServer => {}
                     PickerKind::PluginConnect => {}
@@ -10122,8 +10195,8 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/plugin",
-        hint: "[list|install <spec>|remove <name>|search [query]|setup <name>]",
-        description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace, set up required API keys",
+        hint: "[list|install <spec>|remove <name>|search [query]|setup [name]]",
+        description: "Manage plugins: install, list/remove, search, or choose a plugin to set up its API keys and MCP connections",
         alias_of: None,
     },
     SlashCommand {
@@ -11389,6 +11462,7 @@ fn open_settings_screen(app: &mut App) {
     let toml_path = app.agent_dir.join("agent.toml");
     app.picker = Some(Picker {
         kind: PickerKind::AgentSettings,
+        search: None,
         items: build_agent_settings_items(&toml_path),
         selected: 0,
         armed_delete: None,
@@ -11435,6 +11509,7 @@ fn open_provider_settings(app: &mut App) {
     };
     app.picker = Some(Picker {
         kind: PickerKind::ProviderSettings,
+        search: None,
         items,
         selected: 0,
         armed_delete: None,
@@ -11949,6 +12024,7 @@ fn open_todo_picker(app: &mut App) {
     }
     app.picker = Some(Picker {
         kind: PickerKind::Todo,
+        search: None,
         items: build_todo_items(&app.todos),
         selected: 0,
         armed_delete: None,
@@ -12468,6 +12544,7 @@ fn open_thread_picker(app: &mut App) {
             } else {
                 app.picker = Some(Picker {
                     kind: PickerKind::ResumeThread,
+                    search: None,
                     items,
                     selected: 0,
                     armed_delete: None,
@@ -12567,6 +12644,7 @@ async fn open_mcp_picker(app: &mut App, mcp_servers: &crate::core::state::Shared
     app.mcp_detail = None;
     app.picker = Some(Picker {
         kind: PickerKind::ToggleMcp,
+        search: None,
         items,
         selected: 0,
         armed_delete: None,
@@ -12597,6 +12675,7 @@ async fn open_mcp_detail(
     };
     app.picker = Some(Picker {
         kind: PickerKind::McpServer,
+        search: None,
         items: mcp_action_items(&server),
         selected: 0,
         armed_delete: None,
@@ -12858,6 +12937,7 @@ fn open_login_picker_at(app: &mut App, selected_provider: Option<&str>) {
         .unwrap_or(0);
     app.picker = Some(Picker {
         kind: PickerKind::LoginProvider,
+        search: None,
         items,
         selected,
         armed_delete: None,
@@ -13312,6 +13392,7 @@ fn open_config_screen(app: &mut App) {
     };
     app.picker = Some(Picker {
         kind: PickerKind::ViewConfig,
+        search: None,
         items,
         selected: 0,
         armed_delete: None,
@@ -13727,6 +13808,7 @@ fn open_rewind_picker(app: &mut App) {
     let selected = items.len() - 1;
     app.picker = Some(Picker {
         kind: PickerKind::RewindMessage,
+        search: None,
         items,
         selected,
         armed_delete: None,
@@ -13753,6 +13835,7 @@ fn open_rewind_scope(app: &mut App, user_index: usize) {
     }
     app.picker = Some(Picker {
         kind: PickerKind::RewindScope,
+        search: None,
         items,
         selected: 0,
         armed_delete: None,
@@ -15874,10 +15957,17 @@ fn draw_picker(
                 };
                 spans.push(Span::styled(mark, style));
             }
-            if let Some(hint) = &it.hint {
-                spans.push(Span::styled(format!("{hint}  "), Style::new().dark_gray()));
+            if picker.kind == PickerKind::PluginSetup {
+                spans.push(Span::raw(it.label.clone()));
+                if let Some(hint) = &it.hint {
+                    spans.push(Span::styled(format!("  {hint}"), Style::new().dark_gray()));
+                }
+            } else {
+                if let Some(hint) = &it.hint {
+                    spans.push(Span::styled(format!("{hint}  "), Style::new().dark_gray()));
+                }
+                spans.push(Span::raw(it.label.clone()));
             }
-            spans.push(Span::raw(it.label.clone()));
             ListItem::new(Line::from(spans))
         })
         .collect();
@@ -15892,7 +15982,27 @@ fn draw_picker(
     // setting's description, default, valid range, and current value - the
     // rows themselves stay terse (`key  = value`) because the detail footer
     // explains what each knob does.
-    if picker.kind == PickerKind::AgentSettings {
+    if let Some(search) = &picker.search {
+        let block = Block::default().borders(Borders::ALL).title(picker.title());
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let rows = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(inner);
+        f.render_widget(
+            Paragraph::new(truncate(
+                &format!(" Search: {}|", search.query),
+                rows[0].width as usize,
+            )),
+            rows[0],
+        );
+        if picker.items.is_empty() {
+            f.render_widget(
+                Paragraph::new(" No plugins match").style(Style::new().dark_gray()),
+                rows[1],
+            );
+        } else {
+            f.render_stateful_widget(list.block(Block::default()), rows[1], &mut state);
+        }
+    } else if picker.kind == PickerKind::AgentSettings {
         let list_area = Rect {
             height: area.height.saturating_sub(2),
             ..area
@@ -30130,6 +30240,145 @@ mod tests {
             format!("name = \"acme\"\n\n[setup.env]\n{var} = \"{url}\"\n"),
         )
         .unwrap();
+    }
+    #[tokio::test]
+    async fn plugin_setup_selection_preserves_directory_identity() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        for (directory, name, description) in [
+            ("alpha", "shared", "First"),
+            ("beta", "shared", "Second"),
+            ("gamma", "beta", "Third"),
+        ] {
+            let dir = root.join(".jan/agent/plugins").join(directory);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("plugin.toml"),
+                format!("name = \"{name}\"\ndescription = \"{description}\"\n"),
+            ).unwrap();
+        }
+        for (directory, query) in [("alpha", "First"), ("beta", "Second"), ("gamma", "Third")] {
+            run_command(&mut app, "plugin setup", &no_mcp()).await;
+            route_paste_event(&mut app, Event::Paste(query.into()));
+            handle_key(
+                &mut app, key(KeyCode::Enter), &PermissionRegistry::default(), &mut None, &no_mcp(),
+            ).await;
+            let last = transcript_text(&app);
+            assert!(
+                last.ends_with(&format!("plugin '{directory}' is ready - no connection required")),
+                "selection must use the installation directory: {last}",
+            );
+        }
+        run_command(&mut app, "plugin setup beta", &no_mcp()).await;
+        assert!(transcript_text(&app).ends_with("plugin 'beta' is ready - no connection required"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn plugin_setup_search_filters_without_leaking_or_selecting_empty_results() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        for (name, description) in [
+            ("alpha", "General development tools"),
+            ("figma", "Canvas design tools with a long description that must not hide the plugin name"),
+            ("qjk-tools", "Keyboard tools"),
+        ] {
+            let dir = root.join(".jan/agent/plugins").join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("plugin.toml"),
+                format!("name = \"{name}\"\ndescription = \"{description}\"\n"),
+            ).unwrap();
+        }
+        run_command(&mut app, "plugin setup", &no_mcp()).await;
+        let screen = render_rows(&mut app, 50, 20).join("\n");
+        assert!(screen.contains("figma"), "name must remain visible: {screen}");
+
+        // q/j/k are search text here, not the generic picker's shortcuts.
+        for ch in "qjk".chars() {
+            handle_key(
+                &mut app, key(KeyCode::Char(ch)), &PermissionRegistry::default(), &mut None, &no_mcp(),
+            ).await;
+        }
+        let screen = render_rows(&mut app, 70, 20).join("\n");
+        assert!(screen.contains("qjk-tools") && !screen.contains("alpha"), "{screen}");
+        handle_key(
+            &mut app, key(KeyCode::Esc), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        run_command(&mut app, "plugin setup", &no_mcp()).await;
+
+        // Paste matches descriptions case-insensitively and stays out of chat.
+        route_paste_event(&mut app, Event::Paste("CANVAS".into()));
+        assert!(app.input.is_empty(), "search paste leaked into chat");
+        let screen = render_rows(&mut app, 70, 20).join("\n");
+        assert!(screen.contains("figma") && !screen.contains("alpha"), "{screen}");
+        handle_key(
+            &mut app, key(KeyCode::Char('é')), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        let screen = render_rows(&mut app, 70, 20).join("\n");
+        assert!(screen.contains("No plugins match"), "{screen}");
+        handle_key(
+            &mut app, key(KeyCode::Enter), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        assert!(app.picker.is_some(), "Enter with no matches must keep search open");
+        handle_key(
+            &mut app, key(KeyCode::Backspace), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        handle_key(
+            &mut app, key(KeyCode::Enter), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        assert!(app.picker.is_none());
+        let transcript = transcript_text(&app);
+        assert!(transcript.contains("plugin 'figma' is ready"), "{transcript}");
+        assert!(!transcript.contains("alpha") && !transcript.contains("qjk-tools"), "{transcript}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+
+    #[tokio::test]
+    async fn plugin_setup_without_name_waits_for_one_selection() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        for name in ["alpha", "example-plugin", "figma"] {
+            let dir = root.join(".jan/agent/plugins").join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("plugin.toml"), format!("name = \"{name}\"\n")).unwrap();
+            if name != "alpha" {
+                std::fs::write(
+                    dir.join(".mcp.json"),
+                    r#"{"mcpServers":{"remote":{"url":"https://mcp.example.com/api"}}}"#,
+                ).unwrap();
+            }
+        }
+        let before = transcript_text(&app);
+        run_command(&mut app, "plugin setup", &no_mcp()).await;
+        assert_eq!(transcript_text(&app), before, "opening setup must not run every plugin");
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("alpha") && screen.contains("figma"), "{screen}");
+        assert!(!screen.contains("Enable and connect"), "{screen}");
+        handle_key(
+            &mut app, key(KeyCode::Esc), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        assert!(app.picker.is_none());
+        assert!(app.mcp_job_request.is_none());
+        assert_eq!(transcript_text(&app), before);
+
+        run_command(&mut app, "plugin setup", &no_mcp()).await;
+        let picker = app.picker.as_mut().unwrap();
+        picker.selected = picker.items.iter().position(|p| p.value == "figma").unwrap();
+        handle_key(
+            &mut app, key(KeyCode::Enter), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("Enable and connect figma:remote"), "{screen}");
+        assert!(app.mcp_job_request.is_none(), "selection still requires connection consent");
+        handle_key(
+            &mut app, key(KeyCode::Down), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        handle_key(
+            &mut app, key(KeyCode::Enter), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        assert!(app.picker.is_none(), "skipping the selected plugin must not start another");
+        assert!(app.mcp_job_request.is_none());
+        assert_eq!(transcript_text(&app), before);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]
