@@ -7,14 +7,14 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{LazyLock, Mutex, OnceLock, RwLock};
+use std::sync::{Mutex, OnceLock, RwLock};
 
 use tokio::process::{Child, Command};
 
 /// User-supplied, plugin-declared credentials, scoped to the project that
 /// registered them. Concurrent projects must never replace each other's keys.
-static PLUGIN_ENV: LazyLock<RwLock<BTreeMap<PathBuf, BTreeMap<String, String>>>> =
-    LazyLock::new(|| RwLock::new(BTreeMap::new()));
+static PLUGIN_ENV: RwLock<BTreeMap<PathBuf, BTreeMap<String, String>>> =
+    RwLock::new(BTreeMap::new());
 
 /// Replace one project's plugin credentials, or revoke them with an empty map.
 pub fn set_plugin_env(root: &Path, vars: BTreeMap<String, String>) {
