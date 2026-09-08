@@ -44,6 +44,15 @@ export class DefaultModelsService implements ModelsService {
     return this.getEngine()?.get(modelId)
   }
 
+  async getModelContextLimit(modelId: string, provider: string): Promise<number | undefined> {
+    const engine = this.getEngine(provider) as (AIEngine & {
+      getModelContextLimit?: (id: string) => Promise<number | undefined>
+    }) | undefined
+    if (!engine?.getModelContextLimit)
+      throw new Error('This provider cannot read model context limits. Update its extension or check provider settings.')
+    return engine.getModelContextLimit(modelId)
+  }
+
   async fetchModels(): Promise<modelInfo[]> {
     return this.getEngine()?.list() ?? []
   }

@@ -357,8 +357,8 @@
   "modelControls": {
     "label": "Model controls",
     "context": "Context window",
-    "increaseContext": "Increase context to {{value}}",
     "contextMax": "Context is at the model maximum",
+    "increaseContext": "Increase context to {{value}}",
     "fit": "Fit model to device memory",
     "updateFailed": "Could not update model settings"
   },

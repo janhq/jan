@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -51,6 +51,8 @@ import {
   userTurn,
 } from '@/lib/coworkTurns'
 import { extractFilesFromPrompt } from '@/lib/fileMetadata'
+import { coworkLocalModel, coworkModelContext, recoverCoworkContext } from '@/lib/coworkModelControls'
+import { isContextOverflowMessage } from '@/utils/error'
 import { importAttachedFiles, withAttachedFiles } from '@/lib/coworkAttachments'
 import { useToolCallRuntime, withToolTiming } from '@/hooks/useToolCallRuntime'
 import { PromptProgress } from '@/components/PromptProgress'
@@ -62,8 +64,8 @@ import {
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation'
 import { CoworkWorkspacePill } from '@/containers/CoworkWorkspacePill'
-import { CoworkPlanToggle } from '@/containers/CoworkPlanToggle'
 import { CoworkModelControls } from '@/containers/CoworkModelControls'
+import { CoworkPlanToggle } from '@/containers/CoworkPlanToggle'
 import { CoworkEmptyState } from '@/containers/CoworkEmptyState'
 import { usePrompt } from '@/hooks/usePrompt'
 import { awaitsModel } from '@/lib/agentActivity'
@@ -181,6 +183,7 @@ function sessionMonitorLane(sid: string): MonitorLane {
 
 function CoworkPage() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const serviceHub = useServiceHub()
   const { selectedModel, selectedProvider, providers } = useModelProvider()
 
@@ -213,6 +216,12 @@ function CoworkPage() {
   const planMode = session?.planMode ?? false
 
   const [running, setRunning] = useState(false)
+  const contextRecovery = useRef({ mounted: true, pending: false })
+  useEffect(() => {
+    const recovery = contextRecovery.current
+    recovery.mounted = true
+    return () => { recovery.mounted = false }
+  }, [])
   // The session the in-flight run belongs to. The live rows are appended to
   // that session's transcript only — without this, switching sessions mid-run
   // rendered the running session's live turns under the viewed one.
@@ -249,6 +258,12 @@ function CoworkPage() {
     null
   )
   const [runError, setRunError] = useState<string | undefined>(undefined)
+  const overflowProvider =
+    stoppedBy === 'error' && runError && isContextOverflowMessage(runError)
+      ? providers.find((provider) => provider.provider === selectedProvider)
+      : undefined
+  const overflowModel = coworkLocalModel(overflowProvider, selectedModel?.id)
+  const overflowContext = coworkModelContext(overflowProvider, selectedModel?.id)
   const [gitBranch, setGitBranch] = useState<string | null>(null)
   const [subagentDefs, setSubagentDefs] = useState<SubagentDefinition[]>([])
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
@@ -1160,6 +1175,29 @@ function CoworkPage() {
     void runRequestRef.current(null)
   }, [running, session?.id])
 
+  const handleIncreaseContext = useCallback(async () => {
+    if (running || contextRecovery.current.pending) return
+    const providerName = useModelProvider.getState().selectedProvider
+    contextRecovery.current.pending = true
+    try {
+      await recoverCoworkContext(serviceHub.models(), () => {
+        if (contextRecovery.current.mounted) void runRequestRef.current(null)
+      })
+    } catch (error) {
+      toast.error(t('common:modelControls.updateFailed'), {
+        description: error instanceof Error ? error.message : String(error),
+        action: {
+          label: t('common:toast.openSettings'),
+          onClick: () => void navigate({
+            to: route.settings.providers,
+            params: { providerName },
+          }),
+        },
+      })
+    } finally {
+      contextRecovery.current.pending = false
+    }
+  }, [running, serviceHub, t, navigate])
   /**
    * The transcript turn a rendered user message came from.
    *
@@ -1411,6 +1449,12 @@ function CoworkPage() {
                       kind="error"
                       message={runError}
                       onRetry={() => void runRequest(null)}
+                      onIncreaseContext={
+                        overflowModel?.settings?.ctx_len &&
+                        (!overflowContext || overflowContext.next !== undefined)
+                          ? () => void handleIncreaseContext()
+                          : undefined
+                      }
                     />
                   )}
                   {stoppedBy === 'tokens' && (
