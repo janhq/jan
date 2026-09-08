@@ -9,6 +9,11 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   }),
 }))
 
+const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }))
+vi.mock('sonner', () => ({
+  toast: { error: toastError },
+}))
+
 const openPath = vi.fn()
 const revealItemInDir = vi.fn()
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -19,8 +24,9 @@ import { CoworkWorkspacePill } from '../CoworkWorkspacePill'
 
 describe('CoworkWorkspacePill', () => {
   beforeEach(() => {
-    openPath.mockReset()
-    revealItemInDir.mockReset()
+    openPath.mockReset().mockResolvedValue(undefined)
+    revealItemInDir.mockReset().mockResolvedValue(undefined)
+    toastError.mockReset()
   })
 
   it('invites attaching a folder when none is attached', async () => {
@@ -76,6 +82,58 @@ describe('CoworkWorkspacePill', () => {
 
     await userEvent.click(screen.getByText('common:workspace.reveal'))
     expect(revealItemInDir).toHaveBeenCalledWith('/home/u/Projects/jan-app')
+  })
+
+  it('notifies and offers a replacement when the folder cannot be opened', async () => {
+    openPath.mockRejectedValueOnce(new Error('path does not exist'))
+    const onAttach = vi.fn()
+    render(
+      <CoworkWorkspacePill
+        folder="/home/u/Projects/jan-app"
+        onAttach={onAttach}
+        onDetach={vi.fn()}
+      />
+    )
+    await userEvent.click(screen.getByRole('button', { name: /a11yWithFolder/ }))
+    await userEvent.click(screen.getAllByText('common:workspace.open')[0])
+
+    await vi.waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith(
+        'common:workspace.missing',
+        expect.objectContaining({
+          action: expect.objectContaining({
+            label: 'common:workspace.change',
+            onClick: onAttach,
+          }),
+        })
+      )
+    })
+  })
+
+  it('notifies and offers a replacement when the folder cannot be revealed', async () => {
+    revealItemInDir.mockRejectedValueOnce(new Error('path does not exist'))
+    const onAttach = vi.fn()
+    render(
+      <CoworkWorkspacePill
+        folder="/home/u/Projects/jan-app"
+        onAttach={onAttach}
+        onDetach={vi.fn()}
+      />
+    )
+    await userEvent.click(screen.getByRole('button', { name: /a11yWithFolder/ }))
+    await userEvent.click(screen.getByText('common:workspace.reveal'))
+
+    await vi.waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith(
+        'common:workspace.missing',
+        expect.objectContaining({
+          action: expect.objectContaining({
+            label: 'common:workspace.change',
+            onClick: onAttach,
+          }),
+        })
+      )
+    })
   })
 
   it('detaches the folder', async () => {
