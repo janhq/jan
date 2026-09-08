@@ -71,15 +71,13 @@ A run is bounded — up to 100 agent steps and 200,000 tokens per request — so
 stuck task can't spin forever. When the cap is hit, the agent reports where
 things stand and you can continue it with another message.
 
-## Quick model controls
+## Context recovery
 
-For a supported local model, open **Model controls** in the composer to increase
-the context window without leaving Cowork. Jan reads the model's context limit
-from its local metadata and caps the increase at that limit.
-
-For llama.cpp models, the same menu offers **Fit model to device memory**.
-Changes apply before the control finishes saving and affect the next request.
-Larger context windows can require more memory.
+Cowork keeps the composer minimal: model context controls appear only when a
+run exceeds its context window, rather than as a permanent toolbar button.
+For supported local models, Jan reads the model's context limit on demand and
+caps the increase at that limit. Larger context windows can require more memory.
+Other model settings remain available in the existing provider settings.
 
 When a run exceeds its context window, **Increase Context Size** applies the
 increase and resumes the committed history, including completed tool work.
