@@ -13,7 +13,11 @@
 //!    env fallback via [`ProviderOverrides::with_env`]) win over all of the
 //!    above - the most explicit, most ephemeral signal.
 
-use std::{collections::{BTreeMap, HashMap, HashSet}, path::Path, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    path::Path,
+    time::Duration,
+};
 
 use crate::core::agent::global_config::load_global_config;
 use crate::core::agent::project::ProviderSection;
@@ -263,7 +267,6 @@ pub fn unreachable_local_provider(
         return Some(local.provider.clone());
     }
 
-
     let prefix = model_id.split_once('/')?.0;
     configs
         .get(prefix)
@@ -271,12 +274,15 @@ pub fn unreachable_local_provider(
         .map(|c| c.provider.clone())
 }
 
-
 pub fn parse_model_catalog(value: &serde_json::Value) -> Vec<ProviderModel> {
-    let entries = value.get("data").and_then(|v| v.as_array())
+    let entries = value
+        .get("data")
+        .and_then(|v| v.as_array())
         .or_else(|| value.get("models").and_then(|v| v.as_array()))
         .or_else(|| value.as_array());
-    let Some(entries) = entries else { return Vec::new() };
+    let Some(entries) = entries else {
+        return Vec::new();
+    };
     let mut models = BTreeMap::<String, ProviderModel>::new();
     for entry in entries {
         let Some(id) = entry
@@ -284,35 +290,83 @@ pub fn parse_model_catalog(value: &serde_json::Value) -> Vec<ProviderModel> {
             .or_else(|| entry.get("id").and_then(|v| v.as_str()))
             .map(str::trim)
             .filter(|id| !id.is_empty())
-        else { continue };
+        else {
+            continue;
+        };
         let candidate = ProviderModel {
             id: id.to_string(),
-            context_length: optional_u64(entry, &["context_length", "context_window", "max_context_length", "contextLength"]),
-            input_price: optional_price(entry, &["input_price", "input_cost", "prompt_price", "prompt_cost"]),
-            output_price: optional_price(entry, &["output_price", "output_cost", "completion_price", "completion_cost"]),
+            context_length: optional_u64(
+                entry,
+                &[
+                    "context_length",
+                    "context_window",
+                    "max_context_length",
+                    "contextLength",
+                ],
+            ),
+            input_price: optional_price(
+                entry,
+                &["input_price", "input_cost", "prompt_price", "prompt_cost"],
+            ),
+            output_price: optional_price(
+                entry,
+                &[
+                    "output_price",
+                    "output_cost",
+                    "completion_price",
+                    "completion_cost",
+                ],
+            ),
         };
         let mut candidate = candidate;
         if let Some(pricing) = entry.get("pricing").or_else(|| entry.get("price")) {
-            if candidate.input_price.is_none() { candidate.input_price = optional_price(pricing, &["input", "prompt", "input_price", "prompt_price"]); }
-            if candidate.output_price.is_none() { candidate.output_price = optional_price(pricing, &["output", "completion", "output_price", "completion_price"]); }
+            if candidate.input_price.is_none() {
+                candidate.input_price =
+                    optional_price(pricing, &["input", "prompt", "input_price", "prompt_price"]);
+            }
+            if candidate.output_price.is_none() {
+                candidate.output_price = optional_price(
+                    pricing,
+                    &["output", "completion", "output_price", "completion_price"],
+                );
+            }
         }
-        let model = models.entry(id.to_string()).or_insert_with(|| ProviderModel { id: id.to_string(), context_length: None, input_price: None, output_price: None });
-        if model.context_length.is_none() { model.context_length = candidate.context_length; }
-        if model.input_price.is_none() { model.input_price = candidate.input_price; }
-        if model.output_price.is_none() { model.output_price = candidate.output_price; }
+        let model = models
+            .entry(id.to_string())
+            .or_insert_with(|| ProviderModel {
+                id: id.to_string(),
+                context_length: None,
+                input_price: None,
+                output_price: None,
+            });
+        if model.context_length.is_none() {
+            model.context_length = candidate.context_length;
+        }
+        if model.input_price.is_none() {
+            model.input_price = candidate.input_price;
+        }
+        if model.output_price.is_none() {
+            model.output_price = candidate.output_price;
+        }
     }
     models.into_values().collect()
 }
 
 fn optional_u64(value: &serde_json::Value, keys: &[&str]) -> Option<u64> {
-    keys.iter().find_map(|key| value.get(*key).and_then(|v| v.as_u64().or_else(|| v.as_str()?.trim().parse().ok())))
+    keys.iter().find_map(|key| {
+        value
+            .get(*key)
+            .and_then(|v| v.as_u64().or_else(|| v.as_str()?.trim().parse().ok()))
+    })
 }
 
 fn optional_price(value: &serde_json::Value, keys: &[&str]) -> Option<f64> {
-    keys.iter().find_map(|key| value.get(*key).and_then(|v| {
-        let parsed = v.as_f64().or_else(|| v.as_str()?.trim().parse().ok())?;
-        parsed.is_finite().then_some(parsed).filter(|p| *p >= 0.0)
-    }))
+    keys.iter().find_map(|key| {
+        value.get(*key).and_then(|v| {
+            let parsed = v.as_f64().or_else(|| v.as_str()?.trim().parse().ok())?;
+            parsed.is_finite().then_some(parsed).filter(|p| *p >= 0.0)
+        })
+    })
 }
 
 pub fn merge_model_ids(previous: &[String], fetched: &[ProviderModel]) -> Vec<String> {
@@ -413,9 +467,25 @@ pub async fn fetch_missing_models(
                 continue;
             }
         };
-        let previous = global.get(&name).map(|c| c.models.as_slice()).unwrap_or(&[]);
-        let models = merge_model_ids(previous, &models.iter().map(|id| ProviderModel { id: id.clone(), context_length: None, input_price: None, output_price: None }).collect::<Vec<_>>());
-        if models == previous { continue; }
+        let previous = global
+            .get(&name)
+            .map(|c| c.models.as_slice())
+            .unwrap_or(&[]);
+        let models = merge_model_ids(
+            previous,
+            &models
+                .iter()
+                .map(|id| ProviderModel {
+                    id: id.clone(),
+                    context_length: None,
+                    input_price: None,
+                    output_price: None,
+                })
+                .collect::<Vec<_>>(),
+        );
+        if models == previous {
+            continue;
+        }
         crate::core::agent::global_config::set_provider(
             &name,
             crate::core::agent::global_config::ProviderUpdate {
@@ -438,20 +508,34 @@ async fn fetch_model_catalog(
     base_url: &str,
     keys: &[String],
 ) -> Result<Vec<ProviderModel>, String> {
-    if !(base_url.starts_with("https://") || (base_url.starts_with("http://") && is_loopback_url(base_url))) {
-        return Err(format!("base URL must be https:// (or http:// for localhost): {base_url}"));
+    if !(base_url.starts_with("https://")
+        || (base_url.starts_with("http://") && is_loopback_url(base_url)))
+    {
+        return Err(format!(
+            "base URL must be https:// (or http:// for localhost): {base_url}"
+        ));
     }
     let url = format!("{}/models", base_url.trim_end_matches('/'));
     let mut last_err = format!("GET {url} failed");
-    let attempts: Vec<Option<&String>> = if keys.is_empty() { vec![None] } else { keys.iter().map(Some).collect() };
+    let attempts: Vec<Option<&String>> = if keys.is_empty() {
+        vec![None]
+    } else {
+        keys.iter().map(Some).collect()
+    };
     for key in attempts {
         let mut request = client.get(&url);
-        if let Some(key) = key { request = request.header("Authorization", format!("Bearer {key}")); }
-        let response = request.send().await.map_err(|e| format!("could not reach {url}: {e}"))?;
+        if let Some(key) = key {
+            request = request.header("Authorization", format!("Bearer {key}"));
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|e| format!("could not reach {url}: {e}"))?;
         let status = response.status();
         if status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("{url} returned a response we could not read: {e}"))?;
+            let parsed: serde_json::Value = serde_json::from_str(&body)
+                .map_err(|e| format!("{url} returned a response we could not read: {e}"))?;
             return Ok(parse_model_catalog(&parsed));
         }
         if status != reqwest::StatusCode::UNAUTHORIZED && status != reqwest::StatusCode::FORBIDDEN {
@@ -467,7 +551,11 @@ async fn fetch_models(
     base_url: &str,
     keys: &[String],
 ) -> Result<Vec<String>, String> {
-    Ok(fetch_model_catalog(client, base_url, keys).await?.into_iter().map(|model| model.id).collect())
+    Ok(fetch_model_catalog(client, base_url, keys)
+        .await?
+        .into_iter()
+        .map(|model| model.id)
+        .collect())
 }
 
 pub async fn fetch_provider_model_entries(
@@ -513,7 +601,10 @@ pub async fn fetch_provider_model_entries(
                 (models, true)
             }
             Err(error) => {
-                log::warn!("could not list models for provider '{}': {error}", config.provider);
+                log::warn!(
+                    "could not list models for provider '{}': {error}",
+                    config.provider
+                );
                 failures.push(format!("{}: {error}", config.provider));
                 (Vec::new(), false)
             }
@@ -535,8 +626,10 @@ pub async fn fetch_provider_model_entries(
                 }
             }
         }
-        let by_id: HashMap<&str, &ProviderModel> =
-            fetched.iter().map(|model| (model.id.as_str(), model)).collect();
+        let by_id: HashMap<&str, &ProviderModel> = fetched
+            .iter()
+            .map(|model| (model.id.as_str(), model))
+            .collect();
         for id in effective_ids {
             entries.push(ProviderModelEntry {
                 provider: config.provider.clone(),
@@ -553,8 +646,7 @@ pub async fn fetch_provider_model_entries(
         }
     }
     entries.sort_by(|a, b| {
-        (a.provider.as_str(), a.model.id.as_str())
-            .cmp(&(b.provider.as_str(), b.model.id.as_str()))
+        (a.provider.as_str(), a.model.id.as_str()).cmp(&(b.provider.as_str(), b.model.id.as_str()))
     });
     Ok(ProviderModelRefresh { entries, failures })
 }
@@ -1651,14 +1743,23 @@ mod tests {
             let refresh = rt.block_on(fetch_provider_model_entries(None)).unwrap();
             assert!(refresh.failures.is_empty());
             let entries = refresh.entries;
-            let ids: Vec<_> = entries.iter().map(|entry| entry.model.id.as_str()).collect();
+            let ids: Vec<_> = entries
+                .iter()
+                .map(|entry| entry.model.id.as_str())
+                .collect();
             assert_eq!(ids, vec!["configured-model", "new-model"]);
-            let new = entries.iter().find(|entry| entry.model.id == "new-model").unwrap();
+            let new = entries
+                .iter()
+                .find(|entry| entry.model.id == "new-model")
+                .unwrap();
             assert_eq!(new.model.context_length, Some(272000));
             assert_eq!(new.model.input_price, Some(0.1));
 
             let persisted = load_global_config().unwrap();
-            assert_eq!(persisted.get("mock").unwrap().models, vec!["configured-model", "new-model"]);
+            assert_eq!(
+                persisted.get("mock").unwrap().models,
+                vec!["configured-model", "new-model"]
+            );
         });
     }
 
@@ -1699,9 +1800,10 @@ mod tests {
                 .map(|entry| entry.model.id.as_str())
                 .collect();
             assert_eq!(good_ids, vec!["good-new", "good-old"]);
-            assert!(refresh.entries.iter().any(|entry| {
-                entry.provider == "bad" && entry.model.id == "bad-old"
-            }));
+            assert!(refresh
+                .entries
+                .iter()
+                .any(|entry| { entry.provider == "bad" && entry.model.id == "bad-old" }));
         });
     }
 
@@ -1722,8 +1824,22 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
             let refresh = rt.block_on(fetch_provider_model_entries(None)).unwrap();
             assert_eq!(refresh.failures, vec!["empty-mock: empty model catalog"]);
-            assert_eq!(refresh.entries.iter().map(|entry| entry.model.id.as_str()).collect::<Vec<_>>(), vec!["keep-me"]);
-            assert_eq!(load_global_config().unwrap().get("empty-mock").unwrap().models, vec!["keep-me"]);
+            assert_eq!(
+                refresh
+                    .entries
+                    .iter()
+                    .map(|entry| entry.model.id.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["keep-me"]
+            );
+            assert_eq!(
+                load_global_config()
+                    .unwrap()
+                    .get("empty-mock")
+                    .unwrap()
+                    .models,
+                vec!["keep-me"]
+            );
         });
     }
 
@@ -1759,8 +1875,12 @@ mod tests {
                 )
                 .unwrap();
                 let before = std::fs::read(home.join(".jan/config.toml")).unwrap();
-                let refresh = rt.block_on(fetch_provider_model_entries(Some(&root))).unwrap();
-                let ids: Vec<_> = refresh.entries.iter()
+                let refresh = rt
+                    .block_on(fetch_provider_model_entries(Some(&root)))
+                    .unwrap();
+                let ids: Vec<_> = refresh
+                    .entries
+                    .iter()
                     .filter(|entry| entry.provider == "shared")
                     .map(|entry| entry.model.id.as_str())
                     .collect();
@@ -1777,8 +1897,12 @@ mod tests {
     #[test]
     fn fetch_provider_entries_folds_project_override_models_but_never_writes_global() {
         crate::core::agent::global_config::with_temp_home(|_| {
-            let addr = models_stub(serde_json::json!({"data": [{"id": "fetched-model"}]}).to_string(), 1);
-            let root = std::env::temp_dir().join(format!("jan_provider_proj_{}", std::process::id()));
+            let addr = models_stub(
+                serde_json::json!({"data": [{"id": "fetched-model"}]}).to_string(),
+                1,
+            );
+            let root =
+                std::env::temp_dir().join(format!("jan_provider_proj_{}", std::process::id()));
             let agent_dir = root.join(".jan").join("agent");
             std::fs::create_dir_all(&agent_dir).unwrap();
             std::fs::write(
@@ -1788,11 +1912,21 @@ mod tests {
             .unwrap();
 
             let rt = tokio::runtime::Runtime::new().unwrap();
-            let refresh = rt.block_on(fetch_provider_model_entries(Some(&root))).unwrap();
+            let refresh = rt
+                .block_on(fetch_provider_model_entries(Some(&root)))
+                .unwrap();
             assert!(refresh.failures.is_empty());
-            let proj: Vec<_> = refresh.entries.iter().filter(|e| e.provider == "proj").map(|e| e.model.id.as_str()).collect();
+            let proj: Vec<_> = refresh
+                .entries
+                .iter()
+                .filter(|e| e.provider == "proj")
+                .map(|e| e.model.id.as_str())
+                .collect();
             assert_eq!(proj, ["fetched-model", "proj-model"]);
-            assert!(!load_global_config().unwrap().contains_key("proj"), "project override must not be written to global");
+            assert!(
+                !load_global_config().unwrap().contains_key("proj"),
+                "project override must not be written to global"
+            );
             let _ = std::fs::remove_dir_all(&root);
         });
     }
@@ -1800,8 +1934,12 @@ mod tests {
     #[test]
     fn fetch_provider_entries_preserves_desktop_only_provider_without_global_write() {
         crate::core::agent::global_config::with_temp_home(|_| {
-            let addr = models_stub(serde_json::json!({"data": [{"id": "desktop-new"}]}).to_string(), 1);
-            let data_dir = std::env::temp_dir().join(format!("jan_provider_data_{}", std::process::id()));
+            let addr = models_stub(
+                serde_json::json!({"data": [{"id": "desktop-new"}]}).to_string(),
+                1,
+            );
+            let data_dir =
+                std::env::temp_dir().join(format!("jan_provider_data_{}", std::process::id()));
             std::fs::create_dir_all(&data_dir).unwrap();
             std::fs::write(
                 data_dir.join("settings.json"),
@@ -1814,9 +1952,17 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
             let refresh = rt.block_on(fetch_provider_model_entries(None)).unwrap();
             assert!(refresh.failures.is_empty());
-            let ids: Vec<_> = refresh.entries.iter().filter(|e| e.provider == "desktop-only").map(|e| e.model.id.as_str()).collect();
+            let ids: Vec<_> = refresh
+                .entries
+                .iter()
+                .filter(|e| e.provider == "desktop-only")
+                .map(|e| e.model.id.as_str())
+                .collect();
             assert_eq!(ids, ["desktop-model", "desktop-new"]);
-            assert!(!load_global_config().unwrap().contains_key("desktop-only"), "desktop-only provider must not shadow into global");
+            assert!(
+                !load_global_config().unwrap().contains_key("desktop-only"),
+                "desktop-only provider must not shadow into global"
+            );
 
             match &prev {
                 Some(v) => std::env::set_var("JAN_DATA_FOLDER", v),
