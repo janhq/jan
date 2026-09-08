@@ -550,7 +550,7 @@ pub fn monitor_tool_schema() -> serde_json::Value {
         "type": "function",
         "function": {
             "name": MONITOR_TOOL_NAME,
-            "description": "Wait for something in the background: poll a shell script on an interval until it exits 0, then get its stdout as a <SYSTEM> note while you keep working. Use it to wait on a backgrounded job, e.g. script \"grep -m1 'BUILD FAILED' build.log\" or \"test -f done.flag\". The script runs from the project root on every poll; a nonzero exit means not yet. The first match ends the monitor, as does its timeout. Start one monitor per thing you are waiting for.",
+            "description": "Wait in the background for a condition and be told when it happens. start polls a shell script from the project root every interval; the first poll that exits 0 ends the monitor and hands you its stdout as a <SYSTEM> note while you keep working (a nonzero exit means not yet), e.g. \"grep -m1 'BUILD FAILED' build.log\" or \"test -f done.flag\". A monitor also ends on its timeout. stop ends one early by its id once you no longer need it, and list shows active monitors and their ids. Start one monitor per thing you are waiting for.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -559,7 +559,7 @@ pub fn monitor_tool_schema() -> serde_json::Value {
                     "name": { "type": "string", "description": "For start: optional short label quoted back to you when it matches (defaults to the script)." },
                     "interval": { "type": "integer", "description": "For start: seconds between polls (default 5, min 1, max 300)." },
                     "timeout": { "type": "integer", "description": "For start: seconds before the monitor gives up (default 1800, max 7200)." },
-                    "monitor_id": { "type": "string", "description": "For stop: the id returned by start." }
+                    "monitor_id": { "type": "string", "description": "The monitor's id, from start's result (or list); required for stop." }
                 },
                 "required": ["op"]
             }

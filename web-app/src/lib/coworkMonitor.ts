@@ -22,7 +22,7 @@ export const MONITOR_TOOL_NAME = 'monitor'
 export function monitorTool(): Tool {
   return {
     description:
-      'Wait for something in the background: poll a shell script on an interval until it exits 0, then get its stdout as a <SYSTEM> note while you keep working. Use it to wait on a backgrounded job, e.g. script "grep -m1 \'BUILD FAILED\' build.log" or "test -f done.flag". The script runs from the project root on every poll; a nonzero exit means not yet. The first match ends the monitor, as does its timeout. Start one monitor per thing you are waiting for.',
+      'Wait in the background for a condition and be told when it happens. start polls a shell script from the project root every interval; the first poll that exits 0 ends the monitor and hands you its stdout as a <SYSTEM> note while you keep working (a nonzero exit means not yet), e.g. "grep -m1 \'BUILD FAILED\' build.log" or "test -f done.flag". A monitor also ends on its timeout. stop ends one early by its id once you no longer need it, and list shows active monitors and their ids. Start one monitor per thing you are waiting for.',
     inputSchema: jsonSchema({
       type: 'object',
       properties: {
@@ -49,7 +49,7 @@ export function monitorTool(): Tool {
         },
         monitor_id: {
           type: 'string',
-          description: 'For stop: the id returned by start.',
+          description: "The monitor's id, from start's result (or list); required for stop.",
         },
       },
       required: ['op'],
