@@ -4167,6 +4167,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -4217,6 +4218,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -4316,6 +4318,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -4361,6 +4364,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
