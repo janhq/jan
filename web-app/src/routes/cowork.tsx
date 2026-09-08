@@ -48,6 +48,7 @@ import SkillSelector from '@/containers/SkillSelector'
 import {
   appendLiveMessages,
   coworkTurnsToUIMessages,
+  liveTailStart,
   userTurn,
 } from '@/lib/coworkTurns'
 import { extractFilesFromPrompt } from '@/lib/fileMetadata'
@@ -378,29 +379,36 @@ function CoworkPage() {
       coworkTurnsToUIMessages(session?.turns ?? [], session?.id ?? 'cowork'),
     [session?.turns, session?.id]
   )
+  const liveMessages = useMemo(
+    () =>
+      viewingRun
+        ? coworkTurnsToUIMessages(
+            liveTurns,
+            session?.id ?? 'cowork',
+            session?.turns?.length ?? 0
+          )
+        : [],
+    [viewingRun, liveTurns, session?.id, session?.turns]
+  )
   const uiMessages = useMemo(
     () =>
       viewingRun
-        ? appendLiveMessages(
-            committedMessages,
-            coworkTurnsToUIMessages(
-              liveTurns,
-              session?.id ?? 'cowork',
-              session?.turns?.length ?? 0
-            )
-          )
+        ? appendLiveMessages(committedMessages, liveMessages)
         : committedMessages,
-    [viewingRun, committedMessages, liveTurns, session?.id, session?.turns]
+    [viewingRun, committedMessages, liveMessages]
   )
-  // While a run streams, the last assistant message is the only one that can
-  // still gain parts; its artifact cards wait until the turn finishes.
-  const streamingMessageIdx = useMemo(() => {
-    if (!viewingRun) return -1
-    for (let i = uiMessages.length - 1; i >= 0; i--) {
-      if (uiMessages[i].role === 'assistant') return i
-    }
-    return -1
-  }, [viewingRun, uiMessages])
+  // Where the live tail begins. Every message from here on is mid-run: its
+  // write parts may yet be rewritten, and a <SYSTEM> note (a subagent finishing,
+  // a monitor matching) can split the turn so an earlier fragment is not the
+  // final answer either. Artifact cards wait until the run ends and control is
+  // back with the user; committed turns from before the run keep theirs.
+  const liveStartIdx = useMemo(
+    () =>
+      viewingRun
+        ? liveTailStart(committedMessages, liveMessages)
+        : uiMessages.length,
+    [viewingRun, committedMessages, liveMessages, uiMessages.length]
+  )
 
   const usage = liveUsage ?? session?.lastUsage ?? null
   const tokenSource = useMemo(
@@ -1438,10 +1446,10 @@ function CoworkPage() {
                       />
                       {/* Derived from the message's own write parts, so nothing
                         shared with the chat surface needs to know artifacts
-                        exist. Held back on the message still streaming: a card
-                        mid-run announces a deliverable the agent may yet
-                        rewrite, and it pushes the live tail around. */}
-                      {i !== streamingMessageIdx &&
+                        exist. Held back for the whole live tail: a card mid-run
+                        announces a deliverable the agent may yet rewrite, and it
+                        pushes the live tail around. */}
+                      {i < liveStartIdx &&
                         artifactsFromParts(message.parts).map((artifact) => (
                           <CoworkArtifactCard
                             key={artifact.path}

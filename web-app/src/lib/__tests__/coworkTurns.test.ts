@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   appendLiveMessages,
   coworkTurnsToUIMessages,
+  liveTailStart,
   userTurn,
 } from '@/lib/coworkTurns'
 import type { CoworkTurn } from '@/hooks/useCoworkSessions'
@@ -293,5 +294,59 @@ describe('appendLiveMessages', () => {
   it('returns the committed list itself when nothing is live', () => {
     const base = coworkTurnsToUIMessages(committed, 's')
     expect(appendLiveMessages(base, [])).toBe(base)
+  })
+})
+
+describe('liveTailStart', () => {
+  const committed: CoworkTurn[] = [
+    { role: 'user', content: 'q' },
+    { role: 'assistant', content: 'first' },
+  ]
+  const base = coworkTurnsToUIMessages(committed, 's')
+
+  it('is the whole list when nothing is live', () => {
+    expect(liveTailStart(base, [])).toBe(base.length)
+  })
+
+  it('marks the appended live messages when the run opens a new message', () => {
+    // First live row is a user turn, so it is appended, not joined: the tail
+    // starts right after the committed messages.
+    const live = coworkTurnsToUIMessages(
+      [{ role: 'user', content: 'again' }],
+      's',
+      committed.length
+    )
+    expect(liveTailStart(base, live)).toBe(base.length)
+  })
+
+  it('steps back onto the joined assistant message', () => {
+    // First live row continues the committed assistant, so they merge; that
+    // joined message is mid-run and must be inside the tail.
+    const live = coworkTurnsToUIMessages(
+      [{ role: 'assistant', content: 'continued' }],
+      's',
+      committed.length
+    )
+    expect(liveTailStart(base, live)).toBe(base.length - 1)
+    // The index it returns is the joined message in the appended list.
+    const out = appendLiveMessages(base, live)
+    expect(out[liveTailStart(base, live)].role).toBe('assistant')
+  })
+
+  it('agrees with the appended length so every live message is covered', () => {
+    const live = coworkTurnsToUIMessages(
+      [
+        { role: 'assistant', content: 'mid' },
+        { role: 'system', content: 'subagent finished' },
+        { role: 'assistant', content: 'after' },
+      ],
+      's',
+      committed.length
+    )
+    const start = liveTailStart(base, live)
+    const out = appendLiveMessages(base, live)
+    // Everything from `start` on is live; everything before is committed.
+    expect(out.slice(0, start)).toEqual(base.slice(0, start))
+    expect(start).toBeLessThan(out.length)
   })
 })
