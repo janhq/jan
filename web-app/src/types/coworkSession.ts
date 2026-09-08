@@ -96,8 +96,10 @@ export type MonitorView = {
   name: string
   script: string
   status: 'running' | 'done'
-  /** How a done monitor ended. */
-  outcome?: 'matched' | 'timeout' | 'stopped'
+  /** How a done monitor ended. `ended` is a monitor the rail reconciled as
+   * retired in Rust after a terminal update went undelivered, so match vs
+   * timeout is no longer known. */
+  outcome?: 'matched' | 'timeout' | 'stopped' | 'ended'
   startedAt: number
   endedAt?: number
 }

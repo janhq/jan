@@ -671,6 +671,7 @@
   "monitorMatched": "Matched",
   "monitorTimedOut": "Timed out",
   "monitorStopped": "Stopped",
+  "monitorEnded": "Ended",
   "coworkWatching_one": "Watching {{count}} monitor…",
   "coworkWatching_other": "Watching {{count}} monitors…",
   "coworkWaitingBackground": "Waiting on background tasks…",

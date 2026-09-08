@@ -492,6 +492,15 @@ export async function listMonitors(threadId: string): Promise<string> {
   return await invoke('plugin:agent-tools|list_monitors', { threadId })
 }
 
+/**
+ * The ids of a session's still-active monitors. Every monitor is one-shot, so a
+ * monitor no longer listed here has ended; the UI reconciles its rail against
+ * this so a row cannot stay 'running' after a missed terminal update.
+ */
+export async function sessionMonitorIds(threadId: string): Promise<string[]> {
+  return await invoke('plugin:agent-tools|session_monitor_ids', { threadId })
+}
+
 /** Abort every monitor a session still has. Called at run end. */
 export async function stopSessionMonitors(threadId: string): Promise<void> {
   await invoke('plugin:agent-tools|stop_session_monitors', { threadId })

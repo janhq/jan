@@ -99,6 +99,7 @@ import {
   importAttachment,
   reserveSubagentResult,
   cancelAgentThreadBash,
+  activeAgentMonitorIds,
 } from '@/lib/agentTools'
 import { monitorLaneFor, type MonitorLane } from '@/lib/coworkMonitor'
 import { CoworkParkedNotice } from '@/containers/CoworkParkedNotice'
@@ -1336,6 +1337,23 @@ function CoworkPage() {
     deliver()
     return () => {
       if (lane.onPing === deliver) lane.onPing = null
+    }
+  }, [session?.id, running])
+
+  // Reconcile the rail against Rust's authoritative active set when no run is
+  // up (mount, and each run end): a one-shot monitor that matched but whose
+  // terminal update never reached the rail would otherwise spin forever. A live
+  // run is left alone -- it delivers through the channel.
+  useEffect(() => {
+    const sid = session?.id
+    if (!sid || running) return
+    let cancelled = false
+    void activeAgentMonitorIds(sid).then((ids) => {
+      if (cancelled || ids === null) return
+      useCoworkRun.getState().reconcileMonitors(sid, ids)
+    })
+    return () => {
+      cancelled = true
     }
   }, [session?.id, running])
 

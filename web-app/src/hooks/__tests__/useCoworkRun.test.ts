@@ -193,6 +193,38 @@ describe('useCoworkRun - monitors and parking', () => {
     })
   })
 
+  it('reconcile settles a running monitor Rust no longer lists as active', () => {
+    const s = useCoworkRun.getState()
+    s.startMonitor('sid', view)
+    // Rust reports no active monitors: the one-shot watcher retired but its
+    // terminal update never flipped the rail.
+    s.reconcileMonitors('sid', [])
+    expect(useCoworkRun.getState().monitors.sid[0]).toMatchObject({
+      status: 'done',
+      outcome: 'ended',
+    })
+  })
+
+  it('reconcile leaves a still-active monitor running', () => {
+    const s = useCoworkRun.getState()
+    s.startMonitor('sid', view)
+    s.reconcileMonitors('sid', ['mon-1'])
+    expect(useCoworkRun.getState().monitors.sid[0]).toMatchObject({
+      status: 'running',
+    })
+  })
+
+  it('reconcile does not reopen or relabel an already-closed monitor', () => {
+    const s = useCoworkRun.getState()
+    s.startMonitor('sid', view)
+    s.updateMonitor('sid', update(true))
+    s.reconcileMonitors('sid', [])
+    expect(useCoworkRun.getState().monitors.sid[0]).toMatchObject({
+      status: 'done',
+      outcome: 'matched',
+    })
+  })
+
   it('a new run keeps the session monitors and clears the parked flag', () => {
     const s = useCoworkRun.getState()
     s.startMonitor('sid', view)

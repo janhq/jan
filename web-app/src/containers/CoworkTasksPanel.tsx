@@ -61,6 +61,7 @@ const MONITOR_OUTCOME_KEYS = {
   matched: 'common:monitorMatched',
   timeout: 'common:monitorTimedOut',
   stopped: 'common:monitorStopped',
+  ended: 'common:monitorEnded',
 } as const
 
 /** One monitor: its name, how it ended (or that it is still polling), and the
