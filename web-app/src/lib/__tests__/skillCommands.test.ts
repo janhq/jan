@@ -3,6 +3,7 @@ import {
   filterSkillCommands,
   parseSkillCommand,
   resolveSkillCommand,
+  skillCommandPrefix,
 } from '@/lib/skillCommands'
 
 describe('skill slash commands', () => {
@@ -40,5 +41,19 @@ describe('skill slash commands', () => {
       skills[0]
     )
     expect(resolveSkillCommand(skills, { name: 'missing', args: '', explicit: true })).toBeNull()
+  })
+})
+
+describe('skill command highlighting', () => {
+  const skills = [{ name: 'code-review', description: 'Review code', user_invocable: true }]
+
+  it('returns only the recognized command prefix', () => {
+    expect(skillCommandPrefix('/code-review hi hi', skills)).toBe('/code-review')
+    expect(skillCommandPrefix('/code-review', skills)).toBe('/code-review')
+  })
+
+  it('does not highlight unknown or embedded command-like text', () => {
+    expect(skillCommandPrefix('/missing hello', skills)).toBeNull()
+    expect(skillCommandPrefix('please /code-review', skills)).toBeNull()
   })
 })
