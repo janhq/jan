@@ -15,9 +15,11 @@ import {
 } from 'react'
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
+import { Bot, Command, Sparkles } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { sessionWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
-import { cn, getModelDisplayName, getProviderTitle } from '@/lib/utils'
+import { getModelDisplayName, getProviderTitle } from '@/lib/utils'
 import { predefinedProviders } from '@/constants/providers'
 import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
 import { runSlashCommand, SLASH_COMMANDS } from '@/lib/coworkCommands'
@@ -139,12 +141,14 @@ export const Route = createFileRoute(route.cowork as any)({
   component: CoworkPage,
 })
 
-// A row in the slash menu — commands and model options share one shape so the
-// keyboard navigation works uniformly across both.
+// Slash-menu rows share keyboard behavior but expose their category visually.
+type MenuItemKind = 'skill' | 'command' | 'model'
+
 type MenuItem = {
   key: string
   label: string
   description: string
+  kind: MenuItemKind
   onSelect: () => void
 }
 
@@ -1072,6 +1076,7 @@ function CoworkPage() {
           key: `${m.providerName}/${m.id}`,
           label: m.label,
           description: getProviderTitle(m.providerName),
+          kind: 'model' as const,
           onSelect: () => switchModel(m.providerName, m.id),
         }))
     }
@@ -1085,6 +1090,7 @@ function CoworkPage() {
           key: `skill:${skill.name}`,
           label: `/${explicit ? 'skill:' : ''}${skill.name}`,
           description: skill.description,
+          kind: 'skill' as const,
           onSelect: () =>
             usePrompt
               .getState()
@@ -1097,6 +1103,7 @@ function CoworkPage() {
               key: c.name,
               label: c.name,
               description: t(c.descKey),
+              kind: 'command' as const,
               onSelect: () => {
                 if (c.mode === 'args') {
                   usePrompt.getState().setPrompt(`${c.name} `)
@@ -1435,11 +1442,24 @@ function CoworkPage() {
                           i === menuIndex ? 'bg-accent' : 'hover:bg-accent'
                         )}
                       >
-                        <span className="font-mono font-medium">
-                          {item.label}
+                        <span
+                          className="flex size-6 shrink-0 items-center justify-center text-muted-foreground"
+                          aria-hidden="true"
+                        >
+                          {item.kind === 'skill' ? <Sparkles className="size-4" strokeWidth={1.8} /> : null}
+                          {item.kind === 'command' ? <Command className="size-4" strokeWidth={1.8} /> : null}
+                          {item.kind === 'model' ? <Bot className="size-4" strokeWidth={1.8} /> : null}
                         </span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {item.description}
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <span className="font-mono font-medium">{item.label}</span>
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                              {item.kind}
+                            </span>
+                          </span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {item.description}
+                          </span>
                         </span>
                       </button>
                     ))}
