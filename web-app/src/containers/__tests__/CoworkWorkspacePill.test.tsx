@@ -99,8 +99,9 @@ describe('CoworkWorkspacePill', () => {
 
     await vi.waitFor(() => {
       expect(toastError).toHaveBeenCalledWith(
-        'common:workspace.missing',
+        'common:workspace.unavailable',
         expect.objectContaining({
+          description: 'common:workspace.missing jan-app',
           action: expect.objectContaining({
             label: 'common:workspace.change',
             onClick: onAttach,
@@ -108,6 +109,9 @@ describe('CoworkWorkspacePill', () => {
         })
       )
     })
+    const [, options] = toastError.mock.calls[0]
+    options.action.onClick()
+    expect(onAttach).toHaveBeenCalledOnce()
   })
 
   it('notifies and offers a replacement when the folder cannot be revealed', async () => {
@@ -125,8 +129,9 @@ describe('CoworkWorkspacePill', () => {
 
     await vi.waitFor(() => {
       expect(toastError).toHaveBeenCalledWith(
-        'common:workspace.missing',
+        'common:workspace.unavailable',
         expect.objectContaining({
+          description: 'common:workspace.missing jan-app',
           action: expect.objectContaining({
             label: 'common:workspace.change',
             onClick: onAttach,

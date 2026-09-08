@@ -690,7 +690,10 @@
     "detach": "Detach folder",
     "open": "Open",
     "reveal": "Reveal",
-    "missing": "This folder isn't there anymore. Attach a different one.",
+    "unavailable": "Workspace unavailable",
+    "missing": "The workspace folder {{folder}} is no longer available. Choose a different folder.",
+    "openFailed": "Couldn't open workspace",
+    "revealFailed": "Couldn't reveal workspace",
     "a11yWithFolder": "Project folder {{folder}}, attached with read and write access. Change or detach it.",
     "a11yNoFolder": "No project folder attached. Attach one."
   },
