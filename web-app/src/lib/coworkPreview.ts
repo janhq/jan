@@ -149,6 +149,30 @@ export function resolveInRoot(root: string, path: string): string | null {
 }
 
 /**
+ * Resolve `path` against the first of `roots` that contains it, returning both
+ * the absolute path and the root that matched.
+ *
+ * A Cowork session writes into two places at once: its own sandbox and, since
+ * the shared folder became writable, the attached project folder. An artifact
+ * can therefore land in either, so the preview and the artifact card resolve
+ * against both roots instead of the sandbox alone -- resolving against only the
+ * sandbox reported a slide written into the folder as "outside the workspace".
+ * The matched root is returned so the unsandboxed `preview://` mode can register
+ * the directory the file actually lives in.
+ */
+export function resolveInRoots(
+  roots: Array<string | null | undefined>,
+  path: string
+): { abs: string; root: string } | null {
+  for (const root of roots) {
+    if (!root) continue
+    const abs = resolveInRoot(root, path)
+    if (abs) return { abs, root }
+  }
+  return null
+}
+
+/**
  * The `preview://` URL for `abs`. `sampleUrl` is what `convertFileSrc` produced
  * for any path under that scheme, which is how the platform's spelling of the
  * origin (`preview://localhost` on macOS, `http://preview.localhost` elsewhere)

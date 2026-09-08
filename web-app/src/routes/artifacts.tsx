@@ -30,16 +30,17 @@ export const Route = createFileRoute(route.artifacts as any)({
 
 const PAGE = 24
 
-type Row = CoworkArtifact & { sessionId: string; root: string | null }
+type Row = CoworkArtifact & {
+  sessionId: string
+  roots: Array<string | null>
+}
 
 /**
  * Each session's sandbox, keyed by id.
  *
- * Artifacts only ever live there: an attached folder is mounted read-only, so
- * every write the agent lands is inside the sandbox. Resolving against
- * `session.folder` pointed at a path that does not exist -- and at nothing at
- * all for a session with no folder attached, which hid Open and the thumbnails
- * entirely.
+ * A session writes into two places: its own sandbox and, since the shared
+ * folder became writable, the attached project folder. Both are resolution
+ * roots, so an artifact the agent wrote into the folder is still openable here.
  */
 function useSessionWorkspaces(sessionIds: string[]): Record<string, string> {
   const [paths, setPaths] = useState<Record<string, string>>({})
@@ -100,7 +101,7 @@ function ArtifactsPage() {
         return artifactsFromTurns(session.turns, root).map((artifact) => ({
           ...artifact,
           sessionId: session.id,
-          root,
+          roots: [root, session.folder],
         }))
       }),
     [sessions, workspaces]
@@ -179,7 +180,7 @@ function ArtifactsPage() {
                 <CoworkArtifactCard
                   key={`${row.sessionId}:${row.path}`}
                   artifact={row}
-                  root={row.root}
+                  roots={row.roots}
                   onPreview={() => open(row)}
                   showPath
                 />

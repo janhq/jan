@@ -1268,7 +1268,7 @@ function CoworkPage() {
                           <CoworkArtifactCard
                             key={artifact.path}
                             artifact={artifact}
-                            root={workspacePath}
+                            roots={[workspacePath, folder]}
                             onPreview={showPreview}
                             className="my-3"
                           />
@@ -1439,7 +1439,7 @@ function CoworkPage() {
 
         {rail?.kind === 'preview' && (
           <CoworkPreviewPanel
-            root={workspacePath}
+            roots={[workspacePath, folder]}
             path={rail.path}
             onClose={() => setRail(null)}
           />

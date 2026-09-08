@@ -30,7 +30,7 @@ import {
   externalRefs,
   isAssetKind,
   previewKindFor,
-  resolveInRoot,
+  resolveInRoots,
   unresolvedRefs,
   type PreviewState,
 } from '@/lib/coworkPreview'
@@ -40,8 +40,9 @@ import {
 const TOO_LARGE = 'common:preview.tooLarge'
 
 type Props = {
-  /** The session sandbox. Every previewed path must resolve inside it. */
-  root: string | null
+  /** Every place the session may have written the file: its sandbox and, when
+   * attached, the writable project folder. The path must resolve inside one. */
+  roots: Array<string | null>
   path: string
   onClose: () => void
 }
@@ -54,7 +55,7 @@ type Props = {
  * footer, which is right for a model and wrong for a preview, and it hands back
  * a description of an image rather than its bytes.
  */
-export function CoworkPreviewPanel({ root, path, onClose }: Props) {
+export function CoworkPreviewPanel({ roots, path, onClose }: Props) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const [state, setState] = useState<PreviewState>({ status: 'idle' })
@@ -66,10 +67,19 @@ export function CoworkPreviewPanel({ root, path, onClose }: Props) {
   // from `preview://` with an origin of its own (see previewProtocol.ts).
   const [unsandboxed, setUnsandboxed] = useState(false)
 
-  const abs = useMemo(
-    () => (root ? resolveInRoot(root, path) : null),
-    [root, path]
+  // Keyed on the values, not the array identity, which the parent rebuilds each
+  // render.
+  const rootsKey = roots.join('\n')
+  // Both the absolute path and the root that contained it: the unsandboxed
+  // `preview://` mode registers the matched directory, which may be the attached
+  // folder rather than the sandbox.
+  const resolved = useMemo(
+    () => resolveInRoots(roots, path),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rootsKey, path]
   )
+  const abs = resolved?.abs ?? null
+  const matchedRoot = resolved?.root ?? null
   const kind = useMemo(() => previewKindFor(path), [path])
 
   useEffect(() => {
@@ -127,16 +137,17 @@ export function CoworkPreviewPanel({ root, path, onClose }: Props) {
 
   // The scheme serves nothing until the root is registered, and the network
   // flag rides on the registration, so a toggle re-registers. Closing the
-  // panel or leaving the mode withdraws the root.
-  const live = unsandboxed && kind === 'html' && !!root
+  // panel or leaving the mode withdraws the root. The registered root is the
+  // one the file resolved inside -- sandbox or attached folder.
+  const live = unsandboxed && kind === 'html' && !!matchedRoot
   useEffect(() => {
-    if (!live || !root) return
-    void registerPreviewRoot(root, allowNetwork).catch(() => {
+    if (!live || !matchedRoot) return
+    void registerPreviewRoot(matchedRoot, allowNetwork).catch(() => {
       // A failed registration leaves the frame 404ing; the reload button
       // retries it by re-running this effect.
     })
-    return () => void unregisterPreviewRoot(root).catch(() => {})
-  }, [live, root, allowNetwork, nonce])
+    return () => void unregisterPreviewRoot(matchedRoot).catch(() => {})
+  }, [live, matchedRoot, allowNetwork, nonce])
 
   const iconButton = (
     label: string,
@@ -178,7 +189,7 @@ export function CoworkPreviewPanel({ root, path, onClose }: Props) {
                 () => setAllowNetwork((v) => !v),
                 allowNetwork
               )}
-              {root &&
+              {matchedRoot &&
                 iconButton(
                   t('common:preview.unsandboxed'),
                   ShieldOff,
