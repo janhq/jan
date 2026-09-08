@@ -3,6 +3,53 @@ import type { UIMessage } from 'ai'
 import type { CoworkTurn } from '@/types/coworkSession'
 import { reasoningPartsFromText } from '@/lib/messages'
 
+/** Media ChatInput already serializes on submit (`onSubmit(text, files)`). */
+export type ChatMediaFile = {
+  type: string
+  mediaType: string
+  url: string
+}
+
+export function imageUrlsFromChatFiles(files?: ChatMediaFile[]): string[] {
+  if (!files?.length) return []
+  return files
+    .filter((file) => file.url && file.mediaType.startsWith('image/'))
+    .map((file) => file.url)
+}
+
+/**
+ * Same shape Chat's thread send uses: a text part (possibly empty) plus
+ * each attached file. Empty text is kept so a file-only send still has the
+ * part some templates expect as the first user content.
+ */
+export function userPartsFromCoworkInput(
+  text: string,
+  files?: ChatMediaFile[]
+): Array<
+  | { type: 'text'; text: string }
+  | { type: 'file'; mediaType: string; url: string }
+> {
+  const parts: Array<
+    | { type: 'text'; text: string }
+    | { type: 'file'; mediaType: string; url: string }
+  > = [{ type: 'text', text }]
+  for (const file of files ?? []) {
+    if (!file.url || !file.mediaType) continue
+    parts.push({
+      type: 'file',
+      mediaType: file.mediaType,
+      url: file.url,
+    })
+  }
+  return parts
+}
+
+function mediaTypeFromDataUrl(url: string): string {
+  const match = /^data:([^;,]+)/.exec(url)
+  const type = match?.[1]
+  return type && type.startsWith('image/') ? type : 'image/jpeg'
+}
+
 /**
  * Adapts the code screen's flat `CoworkTurn[]` transcript into the AI SDK
  * `UIMessage[]` shape that `MessageItem` (the shared chat renderer) consumes.
@@ -39,10 +86,21 @@ export function coworkTurnsToUIMessages(
   turns.forEach((turn, i) => {
     if (turn.role === 'user') {
       flushAssistant()
+      const parts: any[] = []
+      if (turn.content) {
+        parts.push({ type: 'text', text: turn.content })
+      }
+      for (const url of turn.images ?? []) {
+        parts.push({
+          type: 'file',
+          mediaType: mediaTypeFromDataUrl(url),
+          url,
+        })
+      }
       messages.push({
         id: `${idPrefix}-user-${i}`,
         role: 'user',
-        parts: [{ type: 'text', text: turn.content }],
+        parts: parts.length > 0 ? parts : [{ type: 'text', text: '' }],
       } as any)
       return
     }

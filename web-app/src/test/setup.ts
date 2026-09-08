@@ -110,6 +110,11 @@ const mockServiceHub = {
     save: vi.fn().mockResolvedValue('/path/to/file'),
     message: vi.fn().mockResolvedValue(undefined),
   }),
+  uploads: () => ({
+    ingestImage: vi.fn().mockResolvedValue({ id: 'img-1' }),
+    ingestFileAttachment: vi.fn().mockResolvedValue({ id: 'doc-1' }),
+    ingestFileAttachmentForProject: vi.fn().mockResolvedValue({ id: 'doc-1' }),
+  }),
   opener: vi.fn().mockReturnValue({
     open: vi.fn().mockResolvedValue(undefined),
     revealItemInDir: vi.fn().mockResolvedValue(undefined),

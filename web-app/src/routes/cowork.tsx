@@ -27,7 +27,12 @@ import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { MessageItem } from '@/containers/MessageItem'
 import SkillSelector from '@/containers/SkillSelector'
-import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
+import {
+  coworkTurnsToUIMessages,
+  imageUrlsFromChatFiles,
+  userPartsFromCoworkInput,
+  type ChatMediaFile,
+} from '@/lib/coworkTurns'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useAppState } from '@/hooks/useAppState'
@@ -241,14 +246,17 @@ function CoworkPage() {
   /**
    * Drive one request. `text` is null for a resume — a retry after a failure
    * re-runs the committed history rather than re-sending the question, which
-   * would leave the model reading it twice.
+   * would leave the model reading it twice. `files` is ChatInput's media
+   * payload (pasted/picked images); ignored on resume.
    */
-  const runRequest = async (text: string | null) => {
+  const runRequest = async (text: string | null, files?: ChatMediaFile[]) => {
     if (running) return
     const sid = ensureCurrentSession()
     const store = useCoworkSessions.getState()
     const current = store.sessions.find((s) => s.id === sid)
-    if (!text && !(current?.messages?.length ?? 0)) return
+    const imageUrls = text != null ? imageUrlsFromChatFiles(files) : []
+    const hasUserTurn = Boolean(text) || imageUrls.length > 0
+    if (!hasUserTurn && !(current?.messages?.length ?? 0)) return
     if (!selectedModel?.id) {
       toast.error(t('common:selectModel'))
       return
@@ -266,7 +274,15 @@ function CoworkPage() {
     setStoppedBy(null)
     setRunError(undefined)
     setLiveUsage(null)
-    liveTurnsRef.current = text ? [{ role: 'user', content: text }] : []
+    liveTurnsRef.current = hasUserTurn
+      ? [
+          {
+            role: 'user',
+            content: text ?? '',
+            images: imageUrls.length > 0 ? imageUrls : undefined,
+          },
+        ]
+      : []
     setLiveTurns(liveTurnsRef.current)
     useCoworkRun.getState().resetSubagents(sid)
     setRunning(true)
@@ -333,13 +349,13 @@ function CoworkPage() {
     }
 
     const baseMessages = current?.messages ?? []
-    const messages = text
+    const messages = hasUserTurn
       ? [
           ...baseMessages,
           {
             id: `${sid}-user-${baseMessages.length}`,
             role: 'user',
-            parts: [{ type: 'text', text }],
+            parts: userPartsFromCoworkInput(text ?? '', files),
           } as any,
         ]
       : [...baseMessages]
@@ -537,7 +553,8 @@ function CoworkPage() {
   const runRequestRef = useRef(runRequest)
   runRequestRef.current = runRequest
 
-  const handleSubmit = (text: string) => void runRequest(text)
+  const handleSubmit = (text: string, files?: ChatMediaFile[]) =>
+    void runRequest(text, files)
 
   /**
    * Take the last turn again. Rewinding to the question and resuming is the

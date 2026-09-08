@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
+import {
+  coworkTurnsToUIMessages,
+  imageUrlsFromChatFiles,
+  userPartsFromCoworkInput,
+} from '@/lib/coworkTurns'
 import type { CoworkTurn } from '@/hooks/useCoworkSessions'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -100,5 +104,79 @@ describe('coworkTurnsToUIMessages', () => {
     const committed = coworkTurnsToUIMessages(turns, 'c')
     const live = coworkTurnsToUIMessages(turns, 'l')
     expect(committed[0].id).not.toBe(live[0].id)
+  })
+
+  it('turns user-row images into file parts so the transcript can render them', () => {
+    const url = 'data:image/png;base64,AAA'
+    const parts = partsOf(
+      coworkTurnsToUIMessages([
+        { role: 'user', content: 'look', images: [url] },
+      ])
+    )
+    expect(parts).toEqual([
+      { type: 'text', text: 'look' },
+      { type: 'file', mediaType: 'image/png', url },
+    ])
+  })
+
+  it('still renders an image-only user turn', () => {
+    const url = 'data:image/jpeg;base64,BBB'
+    const parts = partsOf(
+      coworkTurnsToUIMessages([{ role: 'user', content: '', images: [url] }])
+    )
+    expect(parts).toEqual([
+      { type: 'file', mediaType: 'image/jpeg', url },
+    ])
+  })
+})
+
+describe('userPartsFromCoworkInput', () => {
+  it('keeps a text part and appends each file, matching Chat send', () => {
+    expect(
+      userPartsFromCoworkInput('hi', [
+        { type: 'file', mediaType: 'image/png', url: 'data:image/png;base64,AAA' },
+      ])
+    ).toEqual([
+      { type: 'text', text: 'hi' },
+      {
+        type: 'file',
+        mediaType: 'image/png',
+        url: 'data:image/png;base64,AAA',
+      },
+    ])
+  })
+
+  it('keeps the text part on a file-only send', () => {
+    const parts = userPartsFromCoworkInput('', [
+      { type: 'file', mediaType: 'image/png', url: 'data:image/png;base64,AAA' },
+    ])
+    expect(parts[0]).toEqual({ type: 'text', text: '' })
+    expect(parts).toHaveLength(2)
+  })
+
+  it('skips files that have no url or media type', () => {
+    expect(
+      userPartsFromCoworkInput('x', [
+        { type: 'file', mediaType: '', url: 'data:image/png;base64,AAA' },
+        { type: 'file', mediaType: 'image/png', url: '' },
+      ])
+    ).toEqual([{ type: 'text', text: 'x' }])
+  })
+})
+
+describe('imageUrlsFromChatFiles', () => {
+  it('keeps only image files with a url', () => {
+    expect(
+      imageUrlsFromChatFiles([
+        { type: 'file', mediaType: 'image/png', url: 'data:image/png;base64,AAA' },
+        { type: 'file', mediaType: 'audio/wav', url: 'data:audio/wav;base64,BBB' },
+        { type: 'file', mediaType: 'image/jpeg', url: '' },
+      ])
+    ).toEqual(['data:image/png;base64,AAA'])
+  })
+
+  it('returns an empty list when nothing was attached', () => {
+    expect(imageUrlsFromChatFiles()).toEqual([])
+    expect(imageUrlsFromChatFiles([])).toEqual([])
   })
 })

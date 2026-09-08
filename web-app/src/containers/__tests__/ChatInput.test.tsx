@@ -3,6 +3,7 @@ import {
   render,
   screen,
   fireEvent,
+  createEvent,
   act,
   waitFor,
 } from '@testing-library/react'
@@ -336,6 +337,8 @@ const resetAll = () => {
   navigateHistoryMock.mockClear()
   enqueueMock.mockClear()
   clearQueueMock.mockClear()
+  setAttachmentsMock.mockClear()
+  clearAttachmentsMock.mockClear()
   for (const k of Object.keys(queueState)) delete queueState[k]
   getCurrentThreadMock.mockReturnValue(undefined)
 }
@@ -642,6 +645,177 @@ describe('ChatInput', () => {
   it('does not migrate the new-thread draft into a scopeKey surface', () => {
     renderInput({ scopeKey: 'code-session-1' })
     expect(transferAttachmentsMock).not.toHaveBeenCalled()
+  })
+
+  describe('clipboard paste', () => {
+    const pngFile = (name = 'shot.png') =>
+      new File([new Uint8Array([137, 80, 78, 71])], name, {
+        type: 'image/png',
+      })
+
+    const pasteFiles = (files: File[]) => {
+      fireEvent.paste(getTextarea(), {
+        clipboardData: {
+          items: files.map((file) => ({
+            kind: 'file',
+            type: file.type,
+            getAsFile: () => file,
+          })),
+          files,
+          types: files.map((f) => f.type),
+          getData: () => '',
+        },
+      })
+    }
+
+    const enableVision = () => {
+      selectedModelOverride = {
+        id: 'model-a',
+        capabilities: ['tools', 'vision'],
+        provider: 'llamacpp',
+      }
+    }
+
+    const installFileReader = () => {
+      const Original = globalThis.FileReader
+      let n = 0
+      class FakeFileReader {
+        result: string | ArrayBuffer | null = null
+        onload: ((this: FileReader, ev: ProgressEvent<FileReader>) => void) | null =
+          null
+        readAsDataURL(_blob: Blob) {
+          n += 1
+          this.result = `data:image/png;base64,${btoa(`img${n}`)}`
+          queueMicrotask(() => {
+            this.onload?.({} as ProgressEvent<FileReader>)
+          })
+        }
+      }
+      globalThis.FileReader = FakeFileReader as unknown as typeof FileReader
+      return () => {
+        globalThis.FileReader = Original
+      }
+    }
+
+    it('attaches pasted images under the Cowork scope key', async () => {
+      enableVision()
+      const restore = installFileReader()
+      try {
+        renderInput({ scopeKey: 'cowork-1' })
+        await waitFor(() =>
+          expect(screen.getByText('Add Images')).toBeInTheDocument()
+        )
+        pasteFiles([pngFile()])
+        await waitFor(() => expect(setAttachmentsMock).toHaveBeenCalled())
+        expect(setAttachmentsMock.mock.calls[0][0]).toBe('cowork-1')
+        const next = setAttachmentsMock.mock.calls[0][1]([])
+        expect(next).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: 'image',
+              mimeType: 'image/png',
+              dataUrl: expect.stringMatching(/^data:image\/png;base64,/),
+            }),
+          ])
+        )
+      } finally {
+        restore()
+      }
+    })
+
+    it('attaches multiple pasted images in one paste', async () => {
+      enableVision()
+      const restore = installFileReader()
+      try {
+        renderInput({ scopeKey: 'cowork-1' })
+        await waitFor(() =>
+          expect(screen.getByText('Add Images')).toBeInTheDocument()
+        )
+        pasteFiles([pngFile('one.png'), pngFile('two.png')])
+        await waitFor(() => expect(setAttachmentsMock).toHaveBeenCalled())
+        const next = setAttachmentsMock.mock.calls[0][1]([])
+        expect(next).toHaveLength(2)
+      } finally {
+        restore()
+      }
+    })
+
+    it('does not attach on a plain text paste', async () => {
+      enableVision()
+      renderInput({ scopeKey: 'cowork-1' })
+      await waitFor(() =>
+        expect(screen.getByText('Add Images')).toBeInTheDocument()
+      )
+      const event = createEvent.paste(getTextarea(), {
+        clipboardData: {
+          items: [
+            {
+              kind: 'string',
+              type: 'text/plain',
+              getAsFile: () => null,
+            },
+          ],
+          files: [],
+          types: ['text/plain'],
+          getData: (type: string) => (type === 'text/plain' ? 'hello' : ''),
+        },
+      })
+      fireEvent(getTextarea(), event)
+      expect(event.defaultPrevented).toBe(false)
+      expect(setAttachmentsMock).not.toHaveBeenCalled()
+    })
+
+    it('does not keep an unsupported pasted image as an attachment', async () => {
+      enableVision()
+      renderInput({ scopeKey: 'cowork-1' })
+      await waitFor(() =>
+        expect(screen.getByText('Add Images')).toBeInTheDocument()
+      )
+      const gif = new File([new Uint8Array([1, 2, 3])], 'shot.gif', {
+        type: 'image/gif',
+      })
+      pasteFiles([gif])
+      await waitFor(() => expect(setAttachmentsMock).toHaveBeenCalled())
+      const next = setAttachmentsMock.mock.calls[0][1]([])
+      expect(next).toEqual([])
+    })
+
+    it('attaches pasted images on the Chat thread key as well', async () => {
+      enableVision()
+      const restore = installFileReader()
+      try {
+        renderInput()
+        await waitFor(() =>
+          expect(screen.getByText('Add Images')).toBeInTheDocument()
+        )
+        pasteFiles([pngFile()])
+        await waitFor(() => expect(setAttachmentsMock).toHaveBeenCalled())
+        expect(setAttachmentsMock.mock.calls[0][0]).toBe('thread-1')
+      } finally {
+        restore()
+      }
+    })
+
+    it('does not attach images when the model has no vision', () => {
+      renderInput({ scopeKey: 'cowork-1' })
+      const event = createEvent.paste(getTextarea(), {
+        clipboardData: {
+          items: [
+            {
+              kind: 'file',
+              type: 'image/png',
+              getAsFile: () => pngFile(),
+            },
+          ],
+          files: [pngFile()],
+          types: ['image/png'],
+          getData: () => '',
+        },
+      })
+      fireEvent(getTextarea(), event)
+      expect(event.defaultPrevented).toBe(false)
+      expect(setAttachmentsMock).not.toHaveBeenCalled()
+    })
   })
 
   describe('tool controls', () => {

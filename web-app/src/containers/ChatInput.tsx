@@ -1261,7 +1261,10 @@ const ChatInput = memo(function ChatInput({
       newFiles.length > 0 ? [...prev, ...newFiles] : prev
     )
 
-    if (currentThreadId && newFiles.length > 0) {
+    // Cowork keys attachments by session id (`scopeKey`) and sends them as
+    // data URLs on submit. Ingesting against leftover chat `currentThreadId`
+    // can fail and strip the chip we just added.
+    if (!scopeKey && currentThreadId && newFiles.length > 0) {
       const ingestTotal = newFiles.length
       void (async () => {
         setFileIngestProgress({ completed: 0, total: ingestTotal })
@@ -1350,7 +1353,7 @@ const ChatInput = memo(function ChatInput({
     } else {
       setMessage('')
     }
-  }, [attachmentsKey, currentThreadId, setAttachmentsForThread, serviceHub, setFileIngestProgress])
+  }, [attachmentsKey, currentThreadId, scopeKey, setAttachmentsForThread, serviceHub, setFileIngestProgress])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
