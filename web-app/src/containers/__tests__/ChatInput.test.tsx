@@ -717,7 +717,9 @@ describe('ChatInput', () => {
     })
 
     const controls = screen.getByText('folder').parentElement
-    expect(controls).toHaveClass('overflow-x-auto', 'scrollbar-hide')
+    // The controls wrap onto a second line when the composer narrows rather
+    // than hiding behind a horizontal scroll, so no control is unreachable.
+    expect(controls).toHaveClass('flex-wrap')
     expect(controls).toHaveClass('min-w-0', 'flex-1')
   })
  })

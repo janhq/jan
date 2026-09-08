@@ -313,7 +313,11 @@ export const ChainOfThoughtContent = memo(
     <CollapsibleContent
       className={cn(
         'mt-4 text-sm relative',
-        'data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in',
+        // Expand animates in; collapse unmounts synchronously (no exit
+        // animation). A lingering exit keeps the content's height while the
+        // root has already snapped to the folded w-fit/rounded-full pill,
+        // which renders a tall narrow rounded box as a circle for that frame.
+        'data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=open]:animate-in',
         className
       )}
       {...props}
