@@ -48,7 +48,7 @@ use super::{sort_threads_recent, AgentSession, ResumeTarget, SessionLimits};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{
-    run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
+    run_orchestration_steered, OrchestrationArgs, PermissionRegistry, SteeringRequest,
 };
 use serde_json::Value;
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
@@ -857,7 +857,36 @@ impl AccountLoginPrompt {
 /// A spawned agent run: the event stream and its abort handle.
 struct CurrentRun {
     rx: mpsc::UnboundedReceiver<StreamEvent>,
+    steering: mpsc::UnboundedReceiver<SteeringRequest>,
     handle: JoinHandle<()>,
+}
+
+enum RunEvent {
+    Stream(Option<StreamEvent>),
+    Steering(SteeringRequest),
+}
+
+struct PendingMessage {
+    text: String,
+    message: serde_json::Value,
+    images: Vec<String>,
+    display: bool,
+    invocation: Option<(String, String, String)>,
+    run_mode: Option<crate::core::agent::plan::RunMode>,
+}
+
+#[cfg(test)]
+impl From<&str> for PendingMessage {
+    fn from(text: &str) -> Self {
+        Self {
+            text: text.to_string(),
+            message: serde_json::json!({ "role": "user", "content": text }),
+            images: Vec::new(),
+            display: true,
+            invocation: None,
+            run_mode: None,
+        }
+    }
 }
 
 /// One folded call's retained detail, so an expanded group can reconstruct each
@@ -1976,9 +2005,8 @@ struct App {
     copy_request: Option<String>,
     /// (when, line count) of the last copy, for the transient dock notice.
     copied: Option<(Instant, usize)>,
-    /// Messages queued while a run is in progress, dequeued automatically
-    /// when the current turn finishes.
-    message_queue: std::collections::VecDeque<String>,
+    /// Pending input, consumed at the next safe loop boundary or next run.
+    message_queue: std::collections::VecDeque<PendingMessage>,
     /// Canonical session todo list projection, kept in sync via
     /// `StreamEvent::TodoUpdate`. Empty = no todos declared this session.
     todos: crate::core::agent::todo::TodoList,
@@ -3619,11 +3647,6 @@ impl App {
         self.refresh_path_hints();
     }
 
-    /// Queue a user message: record it in history and the transcript, and ask
-    /// the loop to start a run. Flips to `Running` synchronously so further keys
-    /// in the same input batch can't slip through as a second submit.
-    /// When already running, the message is enqueued instead and auto-submitted
-    /// when the current turn finishes.
     /// Advance the spinner by however many whole `SPINNER_ADVANCE_MS` frames
     /// have elapsed since the last advance (0 if under one frame, >1 on catch-up
     /// after a stalled tick). The baseline moves forward by whole frames only so
@@ -3656,24 +3679,6 @@ impl App {
             self.note("not signed in — run /login to choose a provider first");
             return;
         }
-        // If a turn is already in progress, enqueue the message instead
-        if self.status == Status::Running {
-            self.message_queue.push_back(text.clone());
-            self.note(&format!(
-                "⏳ message queued ({} in queue)",
-                self.message_queue.len()
-            ));
-            return;
-        }
-        // Mid-prompt `/skill:<name>` token: dispatch to the skill, threading
-        // the surrounding prose as its arguments (queued messages re-enter
-        // this method via `dequeue_next`, so the token is re-parsed there too).
-        if let Some((name, args)) = crate::core::agent::skills::parse_invocation(&text) {
-            if self.dispatch_skill(&name, &args) {
-                return;
-            }
-        }
-        self.ensure_base_snapshot();
         let images = if display {
             std::mem::take(&mut self.pending_images)
         } else {
@@ -3688,16 +3693,58 @@ impl App {
         } else {
             format!("{clean_text}\n\n---\nReferenced file contents:\n\n{injected_contents}")
         };
-        self.history.push(build_user_message(&final_text, &images));
-        if display {
-            self.push_user_line(&text, &names);
-            // The typed text, not `final_text`: `@path` expansions are context
-            // for the model, and the row never showed them.
+        let invocation =
+            crate::core::agent::skills::parse_invocation(&text).and_then(|(name, args)| {
+                crate::core::agent::skills::build_invocation_message(
+                    &self.project_root,
+                    &name,
+                    &args,
+                )
+                .ok()
+                .map(|(message, description)| (name, args, message, description))
+            });
+        let model_text = invocation
+            .as_ref()
+            .map_or(final_text.as_str(), |(_, _, message, _)| message.as_str());
+        let pending = PendingMessage {
+            message: build_user_message(model_text, &images),
+            invocation: invocation.map(|(name, args, _, description)| (name, args, description)),
+            text,
+            images: names,
+            display,
+            run_mode: Some(self.run_mode),
+        };
+        if self.status == Status::Running {
+            self.message_queue.push_back(pending);
+            self.note(&format!(
+                "message pending for next agent step ({} pending)",
+                self.message_queue.len()
+            ));
+            return;
+        }
+        self.start_pending_message(pending);
+    }
+
+    fn record_pending_message(&mut self, pending: PendingMessage) {
+        self.history.push(pending.message);
+        if pending.display {
+            let text = if let Some((name, args, description)) = pending.invocation {
+                self.push_invocation_row(&format!("[skill:{name}]"), &args, &description);
+                format!("[skill:{name}] {args}")
+            } else {
+                self.push_user_line(&pending.text, &pending.images);
+                pending.text
+            };
             self.display_log.push(DisplayEntry::User {
-                text: text.clone(),
-                images: names,
+                text,
+                images: pending.images,
             });
         }
+    }
+
+    fn start_pending_message(&mut self, pending: PendingMessage) {
+        self.ensure_base_snapshot();
+        self.record_pending_message(pending);
         self.begin_turn();
         // A fresh user turn is new context: allow the next boundary to remind
         // again even if the open work is unchanged (dedup is "twice in a row"),
@@ -3862,13 +3909,51 @@ impl App {
             .message_queue
             .pop_front()
             .expect("checked non-empty above");
-        if !next.is_empty() {
+        if !next.text.is_empty() || !next.images.is_empty() {
             self.note(&format!(
                 "⏩ dequeuing next message ({} remaining)",
                 self.message_queue.len()
             ));
-            self.submit_user(next);
+            self.start_pending_message(next);
         }
+    }
+
+    fn steer_run(&mut self, request: SteeringRequest) {
+        // A plan-mode transition needs a fresh run with rebuilt tool policy.
+        // Dedicated permission/ask replies remain separate from chat input.
+        let count = if self.pending_queue.is_empty() && self.ask_queue.is_empty() {
+            self.message_queue
+                .iter()
+                .take_while(|m| {
+                    m.run_mode.is_none_or(|mode| mode == request.run_mode) && !self.want_start
+                })
+                .count()
+        } else {
+            0
+        };
+        let messages = self
+            .message_queue
+            .iter()
+            .take(count)
+            .map(|m| m.message.clone())
+            .collect();
+        if request.reply.send(messages).is_err() || count == 0 {
+            return;
+        }
+        self.flush_assistant();
+        self.finalize_tool_group();
+        self.history = request.messages;
+        for _ in 0..count {
+            let pending = self
+                .message_queue
+                .pop_front()
+                .expect("counted pending messages");
+            self.record_pending_message(pending);
+        }
+        self.last_todo_reminder = None;
+        self.reminder_count = 0;
+        self.reminder_awaiting_progress = false;
+        self.persist();
     }
 
     /// Render a user turn: the prompt line, then one dotted connector row per
@@ -7028,17 +7113,28 @@ fn strip_system_xml_tags(text: &str) -> String {
 
 fn spawn_run(args: &Arc<OrchestrationArgs>, body: serde_json::Value) -> CurrentRun {
     let (tx, rx) = mpsc::unbounded_channel::<StreamEvent>();
+    let (steering_tx, steering) = mpsc::unbounded_channel();
     let args = Arc::clone(args);
     let handle = tokio::spawn(async move {
-        let _ = run_orchestration_streamed(&tx, &body, &args).await;
+        let _ = run_orchestration_steered(&tx, &body, &args, Some(&steering_tx)).await;
     });
-    CurrentRun { rx, handle }
+    CurrentRun {
+        rx,
+        steering,
+        handle,
+    }
 }
 
 /// Await the next event of the active run, or park forever when idle.
-async fn next_event(current: &mut Option<CurrentRun>) -> Option<StreamEvent> {
+async fn next_event(current: &mut Option<CurrentRun>) -> RunEvent {
     match current {
-        Some(c) => c.rx.recv().await,
+        Some(c) => tokio::select! {
+            // Preserve event order: commit streamed prose/tool results before
+            // showing the user message accepted at their boundary.
+            biased;
+            event = c.rx.recv() => RunEvent::Stream(event),
+            Some(request) = c.steering.recv() => RunEvent::Steering(request),
+        },
         None => pending().await,
     }
 }
@@ -8134,7 +8230,10 @@ async fn chat_loop<B: Backend>(
                 }
             }
             ev = next_event(&mut current) => {
-                apply_stream_event(app, ev, &mut current).await;
+                match ev {
+                    RunEvent::Stream(ev) => apply_stream_event(app, ev, &mut current).await,
+                    RunEvent::Steering(request) => app.steer_run(request),
+                }
                 drain_stream_events(app, &mut current).await;
             }
         }
@@ -9857,7 +9956,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/cancel",
         hint: "[N]",
-        description: "Cancel queued messages (bare: all, or index)",
+        description: "Cancel pending messages (bare: all, or index)",
         alias_of: None,
     },
     SlashCommand {
@@ -11726,13 +11825,13 @@ async fn todo_command(app: &mut App, arg: &str) {
 /// message. Notes the result or when the queue is empty.
 fn cancel_command(app: &mut App, arg: &str) {
     if app.message_queue.is_empty() {
-        app.note("no queued messages to cancel");
+        app.note("no pending messages to cancel");
         return;
     }
     if arg.is_empty() {
         let n = app.message_queue.len();
         app.message_queue.clear();
-        app.note(&format!("cancelled all {n} queued message(s)"));
+        app.note(&format!("cancelled all {n} pending message(s)"));
         return;
     }
     // Try to parse as a 1-indexed position
@@ -11746,7 +11845,7 @@ fn cancel_command(app: &mut App, arg: &str) {
         }
         let removed = app.message_queue.remove(idx - 1);
         if let Some(text) = removed {
-            let preview = truncate(&text, 40);
+            let preview = truncate(&text.text, 40);
             app.note(&format!(
                 "cancelled message #{idx}: \"{preview}\" ({} remaining)",
                 app.message_queue.len()
@@ -16150,7 +16249,7 @@ fn input_box(app: &App) -> Paragraph<'static> {
                 }
             }
             spans.push(Span::styled(
-                " (Esc to cancel, type to queue next message)",
+                " (Esc to cancel, type to steer the agent)",
                 Style::new().dim().italic(),
             ));
             Paragraph::new(Line::from(spans)).block(block)
@@ -16159,7 +16258,7 @@ fn input_box(app: &App) -> Paragraph<'static> {
             Paragraph::new(Line::from(vec![
                 Span::styled(format!("{} ", app.spinner()), Style::new().yellow()),
                 Span::styled(
-                    format!("⏳ Queued ({n}) — Esc to cancel, type to add more"),
+                    format!("⏳ Pending ({n}) — /cancel to remove, type to steer"),
                     Style::new().yellow(),
                 ),
             ]))
@@ -16177,7 +16276,7 @@ fn input_box(app: &App) -> Paragraph<'static> {
         // Same `> ` prompt as the typing view, then a fixed (non-blinking)
         // block cursor in front of the placeholder.
         let placeholder = if app.status == Status::Running {
-            "Type to queue next message"
+            "Type to steer the agent"
         } else {
             "Type here to chat with agent"
         };
@@ -16308,7 +16407,7 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
                 s.insert(
                     0,
                     Span::styled(
-                        format!("⏳ Queued ({queue_count})  "),
+                        format!("⏳ Pending ({queue_count})  "),
                         Style::new().yellow().bold(),
                     ),
                 );
@@ -16327,7 +16426,7 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
                 s.insert(
                     0,
                     Span::styled(
-                        format!("⏳ Queued ({queue_count})  "),
+                        format!("⏳ Pending ({queue_count})  "),
                         Style::new().yellow().bold(),
                     ),
                 );
@@ -16356,7 +16455,8 @@ mod tests {
         std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()))
     }
     use super::journal::{self, DisplayEntry};
-    use super::SessionLimits;
+    use super::{cancel_command, next_event, RunEvent, SessionLimits, SteeringRequest};
+    use tokio::sync::mpsc;
     use super::{
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
         apply_repaint, apply_resume, apply_stream_event, assistant_is_awaiting_user_answer,
@@ -16475,6 +16575,251 @@ mod tests {
             None,
         );
         TestApp { app, _dir: dir }
+    }
+
+    fn steering_request(
+        messages: Vec<serde_json::Value>,
+    ) -> (
+        SteeringRequest,
+        tokio::sync::oneshot::Receiver<Vec<serde_json::Value>>,
+    ) {
+        let (reply, receiver) = tokio::sync::oneshot::channel();
+        (
+            SteeringRequest {
+                messages,
+                reply,
+                run_mode: crate::core::agent::plan::RunMode::Normal,
+            },
+            receiver,
+        )
+    }
+
+    #[test]
+    fn steering_preserves_images_paths_order_and_transcript_once() {
+        let mut app = test_app();
+        let files = tempfile::tempdir().unwrap();
+        app.project_root = files.path().to_path_buf();
+        std::fs::write(files.path().join("note.txt"), "original context").unwrap();
+        app.submit_user("start".into());
+        app.want_start = false;
+        app.pending_images.push(PendingImage {
+            name: "pic.png".into(),
+            data_url: "data:image/png;base64,AAAA".into(),
+        });
+        app.submit_user("read @note.txt".into());
+        app.submit_user("then test".into());
+        assert!(app.pending_images.is_empty());
+        assert_eq!(app.history.len(), 1);
+        std::fs::write(files.path().join("note.txt"), "changed later").unwrap();
+        let (request, mut receiver) = steering_request(app.history.clone());
+        app.steer_run(request);
+        let messages = receiver.try_recv().unwrap();
+        assert_eq!(messages.len(), 2);
+        assert!(messages[0]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("original context"));
+        assert_eq!(
+            messages[0]["content"][1]["image_url"]["url"],
+            "data:image/png;base64,AAAA"
+        );
+        assert_eq!(messages[1]["content"], "then test");
+        assert_eq!(app.history.len(), 3);
+        assert!(app.message_queue.is_empty());
+        assert_eq!(
+            app.display_log
+                .iter()
+                .filter(|e| matches!(e, DisplayEntry::User { .. }))
+                .count(),
+            3
+        );
+        let (request, mut receiver) = steering_request(app.history.clone());
+        app.steer_run(request);
+        assert!(receiver.try_recv().unwrap().is_empty());
+        assert_eq!(app.history.len(), 3);
+    }
+
+    #[test]
+    fn steering_cancel_removes_only_pending_input() {
+        let mut app = test_app();
+        app.submit_user("start".into());
+        app.want_start = false;
+        app.submit_user("remove me".into());
+        app.submit_user("keep me".into());
+        cancel_command(&mut app, "1");
+        let (request, mut receiver) = steering_request(app.history.clone());
+        app.steer_run(request);
+        assert_eq!(
+            receiver.try_recv().unwrap(),
+            vec![json!({"role": "user", "content": "keep me"})]
+        );
+    }
+
+    #[test]
+    fn steering_does_not_answer_or_bypass_a_permission_prompt() {
+        let mut app = test_app();
+        app.submit_user("start".into());
+        app.want_start = false;
+        app.submit_user("correction".into());
+        app.pending_queue.push_back(pending(false));
+        let (request, mut receiver) = steering_request(app.history.clone());
+        app.steer_run(request);
+        assert!(receiver.try_recv().unwrap().is_empty());
+        assert_eq!(app.pending_queue.len(), 1);
+        assert_eq!(app.message_queue.len(), 1);
+    }
+
+    #[test]
+    fn steering_failed_handoff_keeps_input_for_next_turn() {
+        let mut app = test_app();
+        app.submit_user("start".into());
+        app.want_start = false;
+        app.submit_user("late follow-up".into());
+        let (request, receiver) = steering_request(app.history.clone());
+        drop(receiver);
+        app.steer_run(request);
+        assert_eq!(app.message_queue.len(), 1);
+        assert_eq!(app.history.len(), 1);
+        app.on_done("stop".into(), None);
+        assert!(app.message_queue.is_empty());
+        assert_eq!(app.history.last().unwrap()["content"], "late follow-up");
+        assert!(app.want_start);
+    }
+
+    #[test]
+    fn steering_plan_transition_waits_for_a_new_run() {
+        let mut app = test_app();
+        app.submit_user("start".into());
+        app.want_start = false;
+        app.run_mode = crate::core::agent::plan::RunMode::Plan;
+        app.submit_user("plan only".into());
+        let (request, mut receiver) = steering_request(app.history.clone());
+        app.steer_run(request);
+        assert!(receiver.try_recv().unwrap().is_empty());
+        assert_eq!(app.message_queue.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn steering_waits_until_earlier_stream_events_are_rendered() {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let (steering_tx, steering) = mpsc::unbounded_channel();
+        tx.send(StreamEvent::Token {
+            text: "answer".into(),
+        })
+        .unwrap();
+        let (request, _receiver) = steering_request(vec![]);
+        steering_tx.send(request).unwrap();
+        let mut current = Some(CurrentRun {
+            rx,
+            steering,
+            handle: tokio::spawn(async {}),
+        });
+        assert!(matches!(
+            next_event(&mut current).await,
+            RunEvent::Stream(Some(StreamEvent::Token { .. }))
+        ));
+        assert!(matches!(
+            next_event(&mut current).await,
+            RunEvent::Steering(_)
+        ));
+    }
+
+    #[test]
+    fn steering_error_and_cancel_fallback_keep_attachments() {
+        for cancel in [false, true] {
+            let mut app = test_app();
+            app.submit_user("start".into());
+            app.want_start = false;
+            app.pending_images.push(PendingImage {
+                name: "pic.png".into(),
+                data_url: "data:image/png;base64,AAAA".into(),
+            });
+            app.submit_user("follow-up".into());
+            if cancel {
+                app.cancel_run();
+            } else {
+                app.on_error("error".into(), "offline".into());
+            }
+            assert!(app.message_queue.is_empty());
+            assert!(app.want_start);
+            assert_eq!(
+                app.history.last().unwrap()["content"][1]["image_url"]["url"],
+                "data:image/png;base64,AAAA"
+            );
+        }
+    }
+
+    #[test]
+    fn steering_session_reset_discards_old_pending_input() {
+        let mut app = test_app();
+        app.submit_user("start".into());
+        app.want_start = false;
+        app.submit_user("old session only".into());
+        app.reset_session();
+        let (request, mut receiver) = steering_request(vec![]);
+        app.steer_run(request);
+        assert!(receiver.try_recv().unwrap().is_empty());
+        assert!(app.history.is_empty());
+        assert!(app.message_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn steering_consumed_input_survives_resume_once() {
+        let mut app = test_app();
+        app.submit_user("start".into());
+        app.want_start = false;
+        app.submit_user("correction".into());
+        let (request, mut receiver) = steering_request(app.history.clone());
+        app.steer_run(request);
+        assert_eq!(receiver.try_recv().unwrap().len(), 1);
+        app.join_journal();
+        let mut restored = test_app();
+        restored.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut restored, &ResumeTarget::Latest).await;
+        assert_eq!(
+            restored
+                .history
+                .iter()
+                .filter(|m| m["content"] == "correction")
+                .count(),
+            1
+        );
+        assert_eq!(
+            restored
+                .display_log
+                .iter()
+                .filter(|e| matches!(e, DisplayEntry::User { text, .. } if text == "correction"))
+                .count(),
+            1
+        );
+        assert!(restored.message_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn steering_expands_skill_input_without_resetting_the_run() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.submit_user("start".into());
+        app.want_start = false;
+        app.pending_images.push(PendingImage {
+            name: "pic.png".into(),
+            data_url: "data:image/png;base64,AAAA".into(),
+        });
+        app.submit_user("please /skill:deploy carefully".into());
+        let (request, mut receiver) = steering_request(app.history.clone());
+        app.steer_run(request);
+        let messages = receiver.try_recv().unwrap();
+        assert!(messages[0]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("User: please carefully"));
+        assert_eq!(
+            messages[0]["content"][1]["image_url"]["url"],
+            "data:image/png;base64,AAAA"
+        );
+        assert!(!app.want_start);
+        assert!(transcript_text(&app).contains("[skill:deploy] please carefully"));
+        app.join_journal();
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// App whose project has one installed skill `<name>/SKILL.md` with the
@@ -26146,7 +26491,7 @@ mod tests {
             with_wave_glyph(None, || {
                 render_rows(app, 80, 12)
                     .into_iter()
-                    .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                    .find(|r| r.contains("(Esc to cancel, type to steer the agent)"))
                     .expect("running placeholder present")
             })
         };
@@ -26174,7 +26519,7 @@ mod tests {
         assert_ne!(first, later, "row must change as the frame advances");
 
         assert!(
-            later.contains("(Esc to cancel, type to queue next message)"),
+            later.contains("(Esc to cancel, type to steer the agent)"),
             "{later:?}"
         );
     }
@@ -26193,7 +26538,7 @@ mod tests {
         let row = with_wave_glyph(None, || {
             render_rows(&mut app, 80, 12)
                 .into_iter()
-                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                .find(|r| r.contains("(Esc to cancel, type to steer the agent)"))
                 .expect("running placeholder present")
         });
         assert!(
@@ -26247,7 +26592,7 @@ mod tests {
             let row = with_wave_glyph(None, || {
                 render_rows(&mut app, 80, 12)
                     .into_iter()
-                    .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                    .find(|r| r.contains("(Esc to cancel, type to steer the agent)"))
                     .expect("running placeholder present")
             });
             WORKING_WORDS
@@ -26270,7 +26615,7 @@ mod tests {
         app.spinner_frame = 5;
         let row = render_rows(&mut app, 80, 12)
             .into_iter()
-            .find(|r| r.contains("Queued"))
+            .find(|r| r.contains("Pending"))
             .expect("queued row present");
         assert!(row.contains(SPINNER[5]), "expected frame 5 glyph: {row:?}");
     }
@@ -26292,7 +26637,7 @@ mod tests {
         let row = with_wave_glyph(None, || {
             render_rows(&mut app, 80, 12)
                 .into_iter()
-                .find(|r| r.contains("(Esc to cancel, type to queue next message)"))
+                .find(|r| r.contains("(Esc to cancel, type to steer the agent)"))
                 .expect("running placeholder present")
         });
         assert!(
@@ -27343,6 +27688,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let mut current = Some(CurrentRun {
             rx,
+            steering: mpsc::unbounded_channel().1,
             handle: tokio::spawn(async {}),
         });
 
@@ -27376,6 +27722,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let mut current = Some(CurrentRun {
             rx,
+            steering: mpsc::unbounded_channel().1,
             handle: tokio::spawn(async {}),
         });
         for _ in 0..(super::EVENT_DRAIN_MAX + 50) {
@@ -27396,6 +27743,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let mut current = Some(CurrentRun {
             rx,
+            steering: mpsc::unbounded_channel().1,
             handle: tokio::spawn(async {}),
         });
         tx.send(StreamEvent::Token { text: "hi".into() })
@@ -28945,7 +29293,7 @@ mod tests {
         assert!(
             app.message_queue
                 .iter()
-                .any(|m| m.as_str() == "Proceed with the plan."),
+                .any(|m| m.text == "Proceed with the plan."),
             "execute must queue a continuation turn"
         );
         let answers = receiver.await.unwrap().unwrap();
